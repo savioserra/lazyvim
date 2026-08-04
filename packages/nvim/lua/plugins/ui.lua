@@ -1,33 +1,4 @@
 return {
-  -- IDE-style breadcrumbs and symbol menus in the winbar.
-  {
-    "Bekaboo/dropbar.nvim",
-    lazy = false,
-    keys = {
-      {
-        "<leader>;",
-        function()
-          require("dropbar.api").pick()
-        end,
-        desc = "Pick Winbar Symbol",
-      },
-      {
-        "[;",
-        function()
-          require("dropbar.api").goto_context_start()
-        end,
-        desc = "Previous Winbar Context",
-      },
-      {
-        "];",
-        function()
-          require("dropbar.api").select_next_context()
-        end,
-        desc = "Next Winbar Context",
-      },
-    },
-  },
-
   -- Replace diagnostic virtual text with a cleaner inline display.
   {
     "rachartier/tiny-inline-diagnostic.nvim",
