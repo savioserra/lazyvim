@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
+# shellcheck source=lib/common.sh
+source "$script_dir/lib/common.sh"
+REPO_ROOT="$(repo_root)"
+require_command git
+
+[[ -z "$(git -C "$REPO_ROOT" status --porcelain)" ]] \
+  || die "commit or stash repository changes before syncing"
+
+if git -C "$REPO_ROOT" rev-parse --abbrev-ref '@{upstream}' >/dev/null 2>&1; then
+  log "Pulling configuration changes"
+  git -C "$REPO_ROOT" pull --ff-only
+else
+  warn "no upstream branch is configured; skipping git pull"
+fi
+
+"$REPO_ROOT/scripts/install" --no-restore
+"$REPO_ROOT/scripts/restore"
+"$REPO_ROOT/scripts/check"
+log "Sync complete"

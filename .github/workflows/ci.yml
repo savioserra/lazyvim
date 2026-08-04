@@ -1,0 +1,27 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  neovim:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pinned Neovim and link configuration
+        run: ./scripts/install --minimal --no-restore
+
+      - name: Restore locked plugins
+        run: ./scripts/restore --plugins-only
+
+      - name: Validate configuration
+        run: ./scripts/check
+
+      - name: Ensure checks did not rewrite tracked files
+        run: git diff --exit-code

@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
+# shellcheck source=lib/common.sh
+source "$script_dir/lib/common.sh"
+REPO_ROOT="$(repo_root)"
+# shellcheck source=../manifests/tools.env
+source "$REPO_ROOT/manifests/tools.env"
+NVIM_BIN="${NVIM_BIN:-$REPO_ROOT/packages/bin/nvim}"
+
+require_command jq
+require_command bash
+
+log "Checking shell syntax"
+while IFS= read -r file; do
+  bash -n "$file"
+done < <(find "$REPO_ROOT/scripts" "$REPO_ROOT/packages/bin" -type f -print | sort)
+
+log "Checking JSON files"
+while IFS= read -r file; do
+  jq empty "$file"
+done < <(find "$REPO_ROOT/packages/nvim" -type f -name '*.json' -print | sort)
+
+log "Checking pinned Neovim"
+actual_nvim_version="$($NVIM_BIN --version | awk 'NR == 1 { sub(/^NVIM v/, ""); print }')"
+[[ "$actual_nvim_version" == "$NEOVIM_VERSION" ]] \
+  || die "expected Neovim $NEOVIM_VERSION, found $actual_nvim_version"
+
+config_target="${XDG_CONFIG_HOME:-$HOME/.config}/nvim"
+if [[ ! -L "$config_target" ]] \
+  || [[ "$(canonical_path "$config_target")" != "$(canonical_path "$REPO_ROOT/packages/nvim")" ]]; then
+  warn "$config_target is not linked to this repository; run scripts/install"
+fi
+
+data_home="${XDG_DATA_HOME:-$HOME/.local/share}"
+case "$data_home" in
+  "$HOME"/snap/code/*/.local/share) data_home="$HOME/.local/share" ;;
+esac
+stylua="$data_home/nvim/mason/bin/stylua"
+if [[ -x "$stylua" ]]; then
+  log "Checking Lua formatting"
+  "$stylua" --check "$REPO_ROOT/packages/nvim/lua"
+else
+  warn "Stylua is not installed; skipping Lua formatting check"
+fi
+
+mason_dir="$data_home/nvim/mason/packages"
+if [[ -d "$mason_dir" ]]; then
+  log "Checking installed Mason versions"
+  while IFS=$'\t' read -r package expected; do
+    receipt="$mason_dir/$package/mason-receipt.json"
+    [[ -f "$receipt" ]] || continue
+    actual="$(mason_receipt_version "$receipt")"
+    [[ "$actual" == "$expected" ]] \
+      || die "Mason package $package is $actual; lockfile requires $expected"
+  done < <(jq -r 'to_entries[] | [.key, .value] | @tsv' "$REPO_ROOT/packages/nvim/mason-lock.json")
+fi
+
+log "Checking headless startup"
+"$NVIM_BIN" --headless \
+  "+lua assert(vim.g.lazyvim_ts_lsp == 'vtsls', 'LazyVim options were not loaded')" \
+  +qa
+
+log "All checks passed"

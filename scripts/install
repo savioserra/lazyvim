@@ -1,0 +1,214 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
+# shellcheck source=lib/common.sh
+source "$script_dir/lib/common.sh"
+REPO_ROOT="$(repo_root)"
+# shellcheck source=../manifests/tools.env
+source "$REPO_ROOT/manifests/tools.env"
+
+install_companions=true
+install_font=true
+run_restore=true
+
+usage() {
+  cat <<'EOF'
+Usage: scripts/install [options]
+
+Install pinned Neovim tooling and link this repository into the XDG paths.
+Existing files are moved to a timestamped backup; they are never deleted.
+
+Options:
+  --minimal      Install Neovim and links only (useful in CI)
+  --no-font      Do not install JetBrainsMono Nerd Font
+  --no-restore   Do not restore plugins, Mason tools, or parsers
+  -h, --help     Show this help
+EOF
+}
+
+while (($#)); do
+  case "$1" in
+    --minimal)
+      install_companions=false
+      install_font=false
+      ;;
+    --no-font) install_font=false ;;
+    --no-restore) run_restore=false ;;
+    -h | --help)
+      usage
+      exit 0
+      ;;
+    *)
+      usage >&2
+      die "unknown option: $1"
+      ;;
+  esac
+  shift
+done
+
+[[ "$(uname -s)" == "Linux" ]] || die "the pinned binary installer currently supports Linux only"
+[[ "$(uname -m)" == "x86_64" ]] || die "the pinned binary installer currently supports x86_64 only"
+
+for command in curl sha256sum tar unzip readlink; do
+  require_command "$command"
+done
+if $run_restore; then
+  require_command git
+  require_command jq
+fi
+
+opt_home="${DOTFILES_OPT_HOME:-$HOME/.local/opt}"
+bin_home="${DOTFILES_BIN_HOME:-$HOME/.local/bin}"
+config_home="${XDG_CONFIG_HOME:-$HOME/.config}"
+data_home="${XDG_DATA_HOME:-$HOME/.local/share}"
+case "$data_home" in
+  "$HOME"/snap/code/*/.local/share) data_home="$HOME/.local/share" ;;
+esac
+cache_home="${XDG_CACHE_HOME:-$HOME/.cache}/dotfiles/downloads"
+state_home="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles"
+backup_root="$state_home/backups/$(date -u +%Y%m%dT%H%M%SZ)-$$"
+mkdir -p "$opt_home" "$bin_home" "$config_home" "$cache_home" "$state_home"
+
+install_tar_directory() {
+  local name="$1"
+  local version="$2"
+  local url="$3"
+  local sha256="$4"
+  local archive_name="$5"
+  local extracted_name="$6"
+  local expected_binary="$7"
+  local target="$opt_home/$name-$version"
+
+  if [[ -x "$target/$expected_binary" ]]; then
+    log "Already installed: $name $version"
+    return
+  fi
+  if [[ -e "$target" ]]; then
+    backup_path "$target" "$backup_root"
+  fi
+
+  local archive="$cache_home/$archive_name"
+  local temporary
+  temporary="$(mktemp -d)"
+  download_verified "$url" "$sha256" "$archive"
+  tar -xf "$archive" -C "$temporary"
+  [[ -d "$temporary/$extracted_name" ]] || die "unexpected archive layout for $name"
+  mv "$temporary/$extracted_name" "$target"
+  rm -rf "$temporary"
+  [[ -x "$target/$expected_binary" ]] || die "$name did not install correctly"
+  log "Installed $name $version"
+}
+
+install_flat_tar() {
+  local name="$1"
+  local version="$2"
+  local url="$3"
+  local sha256="$4"
+  local archive_name="$5"
+  local expected_binary="$6"
+  local target="$opt_home/$name-$version"
+
+  if [[ -x "$target/$expected_binary" ]]; then
+    log "Already installed: $name $version"
+    return
+  fi
+  if [[ -e "$target" ]]; then
+    backup_path "$target" "$backup_root"
+  fi
+
+  local archive="$cache_home/$archive_name"
+  download_verified "$url" "$sha256" "$archive"
+  mkdir -p "$target"
+  tar -xf "$archive" -C "$target"
+  [[ -x "$target/$expected_binary" ]] || die "$name did not install correctly"
+  log "Installed $name $version"
+}
+
+install_neovim() {
+  install_tar_directory \
+    nvim "$NEOVIM_VERSION" "$NEOVIM_URL" "$NEOVIM_SHA256" \
+    "nvim-linux-x86_64-${NEOVIM_VERSION}.tar.gz" "nvim-linux-x86_64" "bin/nvim"
+}
+
+install_companion_tools() {
+  install_tar_directory \
+    ripgrep "$RIPGREP_VERSION" "$RIPGREP_URL" "$RIPGREP_SHA256" \
+    "ripgrep-${RIPGREP_VERSION}.tar.gz" \
+    "ripgrep-${RIPGREP_VERSION}-x86_64-unknown-linux-musl" "rg"
+
+  install_tar_directory \
+    fd "$FD_VERSION" "$FD_URL" "$FD_SHA256" \
+    "fd-${FD_VERSION}.tar.gz" "fd-v${FD_VERSION}-x86_64-unknown-linux-gnu" "fd"
+
+  local fzf_target="$opt_home/fzf-$FZF_VERSION"
+  if [[ ! -x "$fzf_target/bin/fzf" ]]; then
+    [[ ! -e "$fzf_target" ]] || backup_path "$fzf_target" "$backup_root"
+    local fzf_archive="$cache_home/fzf-${FZF_VERSION}.tar.gz"
+    download_verified "$FZF_URL" "$FZF_SHA256" "$fzf_archive"
+    mkdir -p "$fzf_target/bin"
+    tar -xf "$fzf_archive" -C "$fzf_target/bin" fzf
+    log "Installed fzf $FZF_VERSION"
+  else
+    log "Already installed: fzf $FZF_VERSION"
+  fi
+
+  install_flat_tar \
+    lazygit "$LAZYGIT_VERSION" "$LAZYGIT_URL" "$LAZYGIT_SHA256" \
+    "lazygit-${LAZYGIT_VERSION}.tar.gz" "lazygit"
+
+  local tree_sitter_target="$opt_home/tree-sitter-$TREE_SITTER_VERSION"
+  if [[ ! -x "$tree_sitter_target/bin/tree-sitter" ]]; then
+    [[ ! -e "$tree_sitter_target" ]] || backup_path "$tree_sitter_target" "$backup_root"
+    local tree_sitter_archive="$cache_home/tree-sitter-${TREE_SITTER_VERSION}.zip"
+    download_verified "$TREE_SITTER_URL" "$TREE_SITTER_SHA256" "$tree_sitter_archive"
+    mkdir -p "$tree_sitter_target/bin"
+    unzip -q "$tree_sitter_archive" -d "$tree_sitter_target/bin"
+    chmod +x "$tree_sitter_target/bin/tree-sitter"
+    log "Installed tree-sitter $TREE_SITTER_VERSION"
+  else
+    log "Already installed: tree-sitter $TREE_SITTER_VERSION"
+  fi
+}
+
+install_nerd_font() {
+  local font_home="$data_home/fonts"
+  local target="$font_home/JetBrainsMonoNerdFont"
+  if [[ -f "$target/JetBrainsMonoNerdFont-Regular.ttf" ]] \
+    && strings "$target/JetBrainsMonoNerdFont-Regular.ttf" 2>/dev/null | grep "Nerd Fonts $NERD_FONT_VERSION" >/dev/null; then
+    log "Already installed: JetBrainsMono Nerd Font $NERD_FONT_VERSION"
+    return
+  fi
+  if [[ -e "$target" ]]; then
+    backup_path "$target" "$backup_root"
+  fi
+
+  local archive="$cache_home/JetBrainsMono-${NERD_FONT_VERSION}.tar.xz"
+  download_verified "$NERD_FONT_URL" "$NERD_FONT_SHA256" "$archive"
+  mkdir -p "$target"
+  tar -xf "$archive" -C "$target"
+  command -v fc-cache >/dev/null 2>&1 && fc-cache -f "$target" >/dev/null
+  log "Installed JetBrainsMono Nerd Font $NERD_FONT_VERSION"
+}
+
+install_neovim
+$install_companions && install_companion_tools
+$install_font && install_nerd_font
+
+link_managed_path "$REPO_ROOT/packages/nvim" "$config_home/nvim" "$backup_root"
+link_managed_path "$REPO_ROOT/packages/bin/nvim" "$bin_home/nvim" "$backup_root"
+
+if $install_companions; then
+  link_managed_path "$opt_home/ripgrep-$RIPGREP_VERSION/rg" "$bin_home/rg" "$backup_root"
+  link_managed_path "$opt_home/fd-$FD_VERSION/fd" "$bin_home/fd" "$backup_root"
+  link_managed_path "$opt_home/fzf-$FZF_VERSION/bin/fzf" "$bin_home/fzf" "$backup_root"
+  link_managed_path "$opt_home/lazygit-$LAZYGIT_VERSION/lazygit" "$bin_home/lazygit" "$backup_root"
+  link_managed_path "$opt_home/tree-sitter-$TREE_SITTER_VERSION/bin/tree-sitter" "$bin_home/tree-sitter" "$backup_root"
+fi
+
+if $run_restore; then
+  "$REPO_ROOT/scripts/restore"
+fi
+
+log "Installation complete"
+printf 'Ensure %s is in PATH, then run: nvim\n' "$bin_home"

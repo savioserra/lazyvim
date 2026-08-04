@@ -1,0 +1,10 @@
+# Repository-local or generated files
+.DS_Store
+*.log
+*.tmp
+*.bak
+
+# Neovim runtime data belongs under XDG data/state/cache, not in Git.
+.nvim-data/
+.nvim-state/
+.nvim-cache/
