@@ -1,14 +1,14 @@
 # Installer code review
 
-Reviewed after adding macOS and Windows support.
+Reviewed after adding macOS and Windows support. Configuration deployment subsequently migrated from repository links to a pinned chezmoi source state; the platform installer findings below still describe the download and tool-installation layer.
 
 ## Refactored architecture
 
 - `scripts/install` is only an OS dispatcher.
 - `scripts/install-linux` owns Linux architecture and release selection.
 - `scripts/install-macos` owns macOS architecture and release selection.
-- `scripts/lib/install-unix.sh` owns shared Bash option parsing, verified downloads, extraction, backups, linking, fonts, and restore orchestration.
-- `scripts/install-windows.ps1` owns native Windows/PowerShell installation.
+- `scripts/lib/install-unix.sh` owns shared Bash option parsing, verified downloads, extraction, backups, chezmoi application, links, fonts, and restore orchestration.
+- `scripts/install-windows.ps1` owns native Windows/PowerShell installation and applies the same chezmoi source state.
 - `scripts/lib/Common.ps1` owns shared PowerShell paths, downloads, hashing, backups, links, shims, release markers, and native-command error handling.
 - `scripts/install.ps1` remains a backward-compatible Windows wrapper.
 

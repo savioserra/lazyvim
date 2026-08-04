@@ -44,22 +44,7 @@ The original single `lua/plugins/dev.lua` specification was split by concern int
 
 ## Health observations
 
-The actionable terminal warnings are outside Neovim itself:
-
-- tmux `escape-time` is 500 ms; Neovim recommends at most 300 ms;
-- tmux focus events are disabled, which can weaken file-change detection;
-- true-color support was not detectable through the current tmux session.
-
-A future tmux configuration could use:
-
-```tmux
-set -sg escape-time 10
-set -g focus-events on
-set -g default-terminal "tmux-256color"
-set -as terminal-features ",xterm-256color:RGB"
-```
-
-Validate the terminal name before applying the last line; terminal overrides are host-specific and were intentionally not added to this Neovim-only repository.
+The original tmux session used a 500 ms escape delay, disabled focus events, and did not advertise true-color support. The managed `home/dot_tmux.conf` now resolves those observations with a 10 ms delay, focus forwarding, `tmux-256color`, and an idempotent `xterm-256color:RGB` terminal feature. The installer reloads an active tmux server after applying the file.
 
 Other health warnings are optional for this plugin set:
 
@@ -68,17 +53,17 @@ Other health warnings are optional for this plugin set:
 - Node, Python, Ruby, and Perl Neovim providers are absent, but no configured plugin currently requires them;
 - some Snacks checks report lazy-loaded UI integrations as not set during a headless health run.
 
-## Chosen repository model
+## Repository model
 
-A package-oriented link repository was chosen over committing `~/.config/nvim` directly:
+The first version used a package-oriented link repository. Once tmux and general configuration synchronization entered scope, it migrated to a chezmoi source state:
 
-- it can grow to include tmux, shell, Git, or terminal packages without changing its lifecycle;
-- the live configuration remains editable through the XDG path on Linux/macOS or `%LOCALAPPDATA%\nvim` on Windows;
-- it supports Linux x86_64, Apple Silicon/Intel macOS, and ARM64/x64 Windows from one checksummed manifest;
-- platform selection is isolated in `install-linux`, `install-macos`, and `install-windows.ps1`, while extraction/linking primitives stay shared;
-- it avoids a runtime dependency on GNU Stow or a Windows dotfile manager;
-- every replaced configuration target gets a timestamped backup;
+- `home/dot_config/nvim` maps to `~/.config/nvim`;
+- `home/dot_tmux.conf` maps to `~/.tmux.conf` on Linux, macOS, and WSL;
+- native Windows ignores tmux and junctions `%LOCALAPPDATA%\nvim` to the applied configuration under the user profile;
+- live changes are captured with `scripts/capture`, while repository changes are deployed with `scripts/apply`;
+- platform selection remains isolated in `install-linux`, `install-macos`, and `install-windows.ps1`;
+- every replaced unmanaged target gets a timestamped backup;
 - machine-generated data/state/cache stays outside Git;
 - checksummed host tools and both lockfiles provide a practical reproducibility boundary.
 
-Chezmoi would become preferable if this repository later needs secrets, encrypted values, or extensive host-specific templates. GNU Stow remains a good simpler alternative when only symlinks are needed, but the small repository-native linker avoids requiring it on a fresh host.
+Chezmoi is itself pinned and checksummed by the installers. This preserves fresh-host bootstrapping without requiring a preinstalled dotfile manager, while enabling future host templates and encrypted values.

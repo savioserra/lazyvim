@@ -23,6 +23,8 @@ if (-not (Test-Path -LiteralPath $Nvim -PathType Leaf)) {
     throw 'Pinned Neovim is not installed; run scripts/install-windows.ps1 first.'
 }
 
+& (Join-Path $RepoRoot 'scripts\apply.ps1')
+
 $RestorePlugins = -not $MasonOnly
 $RestoreMason = -not $PluginsOnly
 $RestoreParsers = -not $PluginsOnly -and -not $MasonOnly -and -not $SkipParsers
@@ -33,7 +35,7 @@ if ($RestorePlugins) {
 }
 
 if ($RestoreMason) {
-    $lockPath = Join-Path $RepoRoot 'packages\nvim\mason-lock.json'
+    $lockPath = Join-Path $RepoRoot 'home\dot_config\nvim\mason-lock.json'
     $lock = Get-Content -LiteralPath $lockPath -Raw | ConvertFrom-Json
     $packagesHome = Join-Path (Get-NvimDataHome) 'mason\packages'
     $specs = @()

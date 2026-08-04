@@ -34,5 +34,8 @@ jq -Rn '
   )
 ' <"$entries" >"$output"
 
-mv "$output" "$REPO_ROOT/packages/nvim/mason-lock.json"
-log "Locked $(wc -l <"$entries") Mason packages in packages/nvim/mason-lock.json"
+lockfile="$HOME/.config/nvim/mason-lock.json"
+[[ -d "$(dirname "$lockfile")" ]] || die "managed Neovim configuration is missing; run scripts/apply first"
+mv "$output" "$lockfile"
+"$REPO_ROOT/scripts/capture" "$lockfile"
+log "Locked $(wc -l <"$entries") Mason packages in home/dot_config/nvim/mason-lock.json"

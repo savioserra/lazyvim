@@ -12,12 +12,12 @@ unix_install_usage() {
   cat <<EOF
 Usage: scripts/$(basename "$0") [options]
 
-Install pinned Neovim tooling for $platform and link this repository into its
-XDG paths. Existing files are moved to a timestamped backup; they are never
-deleted.
+Install pinned Neovim tooling for $platform and apply this repository's chezmoi
+source state. Existing unmanaged files are moved to a timestamped backup; they
+are never deleted.
 
 Options:
-  --minimal      Install Neovim and links only (useful in CI)
+  --minimal      Install Neovim, chezmoi, and managed configuration only
   --no-font      Do not install JetBrainsMono Nerd Font
   --no-restore   Do not restore plugins, Mason tools, or parsers
   -h, --help     Show this help
@@ -29,6 +29,7 @@ validate_platform_configuration() {
   for variable in \
     platform host_os font_installer \
     neovim_url neovim_sha256 neovim_extracted \
+    chezmoi_url chezmoi_sha256 \
     ripgrep_url ripgrep_sha256 ripgrep_extracted \
     fd_effective_version fd_url fd_sha256 fd_extracted \
     fzf_url fzf_sha256 \
@@ -156,6 +157,12 @@ install_neovim() {
     "nvim-${NEOVIM_VERSION}-${platform}.tar.gz" "$neovim_extracted" "bin/nvim"
 }
 
+install_chezmoi() {
+  install_flat_tar \
+    chezmoi "$CHEZMOI_VERSION" "$chezmoi_url" "$chezmoi_sha256" \
+    "chezmoi-${CHEZMOI_VERSION}-${platform}.tar.gz" "chezmoi"
+}
+
 install_companion_tools() {
   install_tar_directory \
     ripgrep "$RIPGREP_VERSION" "$ripgrep_url" "$ripgrep_sha256" \
@@ -259,6 +266,34 @@ install_macos_font() {
   log "Installed JetBrainsMono Nerd Font $NERD_FONT_VERSION"
 }
 
+apply_chezmoi_configuration() {
+  local chezmoi="$opt_home/chezmoi-$CHEZMOI_VERSION/chezmoi"
+  local migration_marker="$state_home/chezmoi-source-state-v1"
+  local managed_nvim="$HOME/.config/nvim"
+  local target
+
+  if [[ ! -f "$migration_marker" ]]; then
+    for target in "$managed_nvim" "$HOME/.tmux.conf"; do
+      if [[ -e "$target" || -L "$target" ]]; then
+        backup_path "$target" "$backup_root"
+      fi
+    done
+  fi
+
+  log "Applying managed configuration with chezmoi"
+  "$chezmoi" --source "$REPO_ROOT" --destination "$HOME" apply
+  touch "$migration_marker"
+
+  if [[ "$config_home/nvim" != "$managed_nvim" ]]; then
+    link_managed_path "$managed_nvim" "$config_home/nvim" "$backup_root"
+  fi
+
+  if command -v tmux >/dev/null 2>&1 && tmux list-sessions >/dev/null 2>&1; then
+    tmux source-file "$HOME/.tmux.conf"
+    log "Reloaded the active tmux server"
+  fi
+}
+
 run_unix_install() {
   validate_platform_configuration
 
@@ -314,6 +349,7 @@ run_unix_install() {
   trap 'exit 143' TERM
 
   install_neovim
+  install_chezmoi
   $install_companions && install_companion_tools
   if $install_font; then
     case "$font_installer" in
@@ -323,8 +359,9 @@ run_unix_install() {
     esac
   fi
 
-  link_managed_path "$REPO_ROOT/packages/nvim" "$config_home/nvim" "$backup_root"
+  apply_chezmoi_configuration
   link_managed_path "$REPO_ROOT/packages/bin/nvim" "$bin_home/nvim" "$backup_root"
+  link_managed_path "$opt_home/chezmoi-$CHEZMOI_VERSION/chezmoi" "$bin_home/chezmoi" "$backup_root"
 
   if $install_companions; then
     link_managed_path "$opt_home/ripgrep-$RIPGREP_VERSION/rg" "$bin_home/rg" "$backup_root"

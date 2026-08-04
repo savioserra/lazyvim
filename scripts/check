@@ -23,15 +23,25 @@ done < <(
 log "Checking JSON files"
 while IFS= read -r file; do
   jq empty "$file"
-done < <(find "$REPO_ROOT/packages/nvim" -type f -name '*.json' -print | sort)
+done < <(find "$REPO_ROOT/home/dot_config/nvim" -type f -name '*.json' -print | sort)
 
 log "Checking pinned Neovim"
 actual_nvim_version="$($NVIM_BIN --version | awk 'NR == 1 { sub(/^NVIM v/, ""); print }')"
 [[ "$actual_nvim_version" == "$NEOVIM_VERSION" ]] \
   || die "expected Neovim $NEOVIM_VERSION, found $actual_nvim_version"
 
-log "Checking companion tool versions"
 bin_home="${DOTFILES_BIN_HOME:-$HOME/.local/bin}"
+chezmoi="$bin_home/chezmoi"
+[[ -x "$chezmoi" ]] || die "managed chezmoi is missing: $chezmoi"
+"$chezmoi" --version | grep -F "chezmoi version v${CHEZMOI_VERSION}," >/dev/null \
+  || die "chezmoi does not match version $CHEZMOI_VERSION"
+
+log "Checking chezmoi source and target state"
+chezmoi_diff="$("$chezmoi" --source "$REPO_ROOT" --destination "$HOME" --no-pager diff)"
+[[ -z "$chezmoi_diff" ]] \
+  || die "managed configuration differs from the repository; run scripts/capture or scripts/apply"
+
+log "Checking companion tool versions"
 for command in rg fd fzf lazygit tree-sitter; do
   [[ -x "$bin_home/$command" ]] || die "managed companion tool is missing: $bin_home/$command"
 done
@@ -56,10 +66,7 @@ rg_version="$("$bin_home/rg" --version | awk 'NR == 1 { print }')"
   || die "tree-sitter does not match version $TREE_SITTER_VERSION"
 
 config_target="${XDG_CONFIG_HOME:-$HOME/.config}/nvim"
-if [[ ! -L "$config_target" ]] \
-  || [[ "$(canonical_path "$config_target")" != "$(canonical_path "$REPO_ROOT/packages/nvim")" ]]; then
-  warn "$config_target is not linked to this repository; run scripts/install"
-fi
+[[ -d "$config_target" ]] || die "managed Neovim configuration is missing: $config_target"
 
 data_home="${XDG_DATA_HOME:-$HOME/.local/share}"
 case "$data_home" in
@@ -68,7 +75,7 @@ esac
 stylua="$data_home/nvim/mason/bin/stylua"
 if [[ -x "$stylua" ]]; then
   log "Checking Lua formatting"
-  "$stylua" --check "$REPO_ROOT/packages/nvim/lua"
+  "$stylua" --check "$REPO_ROOT/home/dot_config/nvim/lua"
 else
   warn "Stylua is not installed; skipping Lua formatting check"
 fi
@@ -82,7 +89,28 @@ if [[ -d "$mason_dir" ]]; then
     actual="$(mason_receipt_version "$receipt")"
     [[ "$actual" == "$expected" ]] \
       || die "Mason package $package is $actual; lockfile requires $expected"
-  done < <(jq -r 'to_entries[] | [.key, .value] | @tsv' "$REPO_ROOT/packages/nvim/mason-lock.json")
+  done < <(jq -r 'to_entries[] | [.key, .value] | @tsv' "$REPO_ROOT/home/dot_config/nvim/mason-lock.json")
+fi
+
+if command -v tmux >/dev/null 2>&1; then
+  log "Checking tmux configuration"
+  tmux_socket="dotfiles-check-$$"
+  trap 'TMUX="" tmux -L "$tmux_socket" kill-server >/dev/null 2>&1 || true' EXIT
+  TMUX='' tmux -L "$tmux_socket" -f "$HOME/.tmux.conf" new-session -d -s dotfiles-check
+  [[ "$(TMUX='' tmux -L "$tmux_socket" show-options -gqv mouse)" == "on" ]] \
+    || die "tmux mouse support is not enabled"
+  [[ "$(TMUX='' tmux -L "$tmux_socket" show-options -sqv escape-time)" == "10" ]] \
+    || die "tmux escape-time is not 10ms"
+  [[ "$(TMUX='' tmux -L "$tmux_socket" show-options -gqv focus-events)" == "on" ]] \
+    || die "tmux focus events are not enabled"
+  [[ "$(TMUX='' tmux -L "$tmux_socket" show-options -gqv default-terminal)" == "tmux-256color" ]] \
+    || die "tmux default terminal is not tmux-256color"
+  [[ "$(TMUX='' tmux -L "$tmux_socket" show-options -sqv 'terminal-features[100]')" == "xterm-256color:RGB" ]] \
+    || die "tmux true-color support is not configured"
+  TMUX='' tmux -L "$tmux_socket" kill-server
+  trap - EXIT
+else
+  warn "tmux is not installed; skipping tmux configuration check"
 fi
 
 log "Checking headless startup"

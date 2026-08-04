@@ -20,6 +20,7 @@ $Platform = "windows-$($Architecture.ToLowerInvariant())"
 $OptHome = Get-DotfilesOptHome
 $BinHome = Get-DotfilesBinHome
 $ConfigHome = Get-NvimConfigHome
+$ManagedConfigHome = Join-Path $HOME '.config\nvim'
 $StateHome = Join-Path $env:LOCALAPPDATA 'dotfiles\state'
 $CacheHome = Join-Path $env:LOCALAPPDATA 'dotfiles\cache\downloads'
 $BackupRoot = Join-Path $StateHome ("backups\{0}-{1}" -f (Get-Date).ToUniversalTime().ToString('yyyyMMddTHHmmssZ'), $PID)
@@ -38,6 +39,8 @@ if ($Architecture -eq 'ARM64') {
     $NeovimUrl = $Tools.NEOVIM_WINDOWS_ARM64_URL
     $NeovimSha256 = $Tools.NEOVIM_WINDOWS_ARM64_SHA256
     $NeovimExtracted = 'nvim-win-arm64'
+    $ChezmoiUrl = $Tools.CHEZMOI_WINDOWS_ARM64_URL
+    $ChezmoiSha256 = $Tools.CHEZMOI_WINDOWS_ARM64_SHA256
     $RipgrepUrl = $Tools.RIPGREP_WINDOWS_ARM64_URL
     $RipgrepSha256 = $Tools.RIPGREP_WINDOWS_ARM64_SHA256
     $RipgrepExtracted = "ripgrep-$($Tools.RIPGREP_VERSION)-aarch64-pc-windows-msvc"
@@ -56,6 +59,8 @@ else {
     $NeovimUrl = $Tools.NEOVIM_WINDOWS_X86_64_URL
     $NeovimSha256 = $Tools.NEOVIM_WINDOWS_X86_64_SHA256
     $NeovimExtracted = 'nvim-win64'
+    $ChezmoiUrl = $Tools.CHEZMOI_WINDOWS_X86_64_URL
+    $ChezmoiSha256 = $Tools.CHEZMOI_WINDOWS_X86_64_SHA256
     $RipgrepUrl = $Tools.RIPGREP_WINDOWS_X86_64_URL
     $RipgrepSha256 = $Tools.RIPGREP_WINDOWS_X86_64_SHA256
     $RipgrepExtracted = "ripgrep-$($Tools.RIPGREP_VERSION)-x86_64-pc-windows-msvc"
@@ -163,6 +168,15 @@ $NeovimHome = Install-ZipDirectory `
     -ExtractedName $NeovimExtracted `
     -ExpectedBinary 'bin\nvim.exe'
 
+$ChezmoiHome = Install-FlatZip `
+    -Name 'chezmoi' `
+    -Version $Tools.CHEZMOI_VERSION `
+    -Uri $ChezmoiUrl `
+    -Sha256 $ChezmoiSha256 `
+    -ArchiveName "chezmoi-$($Tools.CHEZMOI_VERSION)-$Platform.zip" `
+    -ExpectedBinary 'chezmoi.exe'
+$Chezmoi = Join-Path $ChezmoiHome 'chezmoi.exe'
+
 if ($InstallCompanions) {
     $RipgrepHome = Install-ZipDirectory `
         -Name 'ripgrep' `
@@ -242,12 +256,26 @@ if ($InstallFont) {
     }
 }
 
+$migrationMarker = Join-Path $StateHome 'chezmoi-source-state-v1'
+if (-not (Test-Path -LiteralPath $migrationMarker -PathType Leaf) -and (Test-PathEntry $ManagedConfigHome)) {
+    Backup-Path -Path $ManagedConfigHome -BackupRoot $BackupRoot
+}
+
+Write-DotfilesLog 'Applying managed configuration with chezmoi'
+Invoke-NativeCommand -FilePath $Chezmoi -Arguments @(
+    '--source', $RepoRoot,
+    '--destination', $HOME,
+    'apply'
+)
+Set-Content -LiteralPath $migrationMarker -Value 'applied' -Encoding ASCII
+
 Connect-ManagedDirectory `
-    -Source (Join-Path $RepoRoot 'packages\nvim') `
+    -Source $ManagedConfigHome `
     -Target $ConfigHome `
     -BackupRoot $BackupRoot
 
 Write-CommandShim -Name 'nvim' -Executable (Join-Path $NeovimHome 'bin\nvim.exe') -BinHome $BinHome
+Write-CommandShim -Name 'chezmoi' -Executable $Chezmoi -BinHome $BinHome
 if ($InstallCompanions) {
     Write-CommandShim -Name 'rg' -Executable (Join-Path $RipgrepHome 'rg.exe') -BinHome $BinHome
     Write-CommandShim -Name 'fd' -Executable (Join-Path $FdHome 'fd.exe') -BinHome $BinHome

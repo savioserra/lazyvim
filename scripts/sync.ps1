@@ -6,6 +6,26 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'lib\Common.ps1')
 
 $RepoRoot = Get-DotfilesRepoRoot
+$Tools = Import-ToolManifest (Join-Path $RepoRoot 'manifests\tools.env')
+$Chezmoi = if (-not [string]::IsNullOrWhiteSpace($env:CHEZMOI_BIN)) {
+    $env:CHEZMOI_BIN
+}
+else {
+    Join-Path (Get-DotfilesOptHome) "chezmoi-$($Tools.CHEZMOI_VERSION)\chezmoi.exe"
+}
+if (-not (Test-Path -LiteralPath $Chezmoi -PathType Leaf)) {
+    throw 'Pinned chezmoi is not installed; run scripts/install-windows.ps1 first.'
+}
+$chezmoiDiff = @(Invoke-NativeCommand -FilePath $Chezmoi -Arguments @(
+    '--source', $RepoRoot,
+    '--destination', $HOME,
+    '--no-pager',
+    'diff'
+))
+if (-not [string]::IsNullOrWhiteSpace(($chezmoiDiff -join "`n"))) {
+    throw 'Capture or apply managed configuration changes before syncing.'
+}
+
 $changes = & git -C $RepoRoot status --porcelain
 if ($LASTEXITCODE -ne 0) {
     throw 'Could not inspect the Git worktree.'

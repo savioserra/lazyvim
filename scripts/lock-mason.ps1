@@ -28,8 +28,12 @@ foreach ($name in $names) {
     $entries[$name] = $packages[$name]
 }
 
-$output = Join-Path $RepoRoot 'packages\nvim\mason-lock.json'
+$output = Join-Path $HOME '.config\nvim\mason-lock.json'
+if (-not (Test-Path -LiteralPath (Split-Path $output -Parent) -PathType Container)) {
+    throw 'Managed Neovim configuration is missing; run scripts\apply.ps1 first.'
+}
 $json = $entries | ConvertTo-Json
 $encoding = New-Object System.Text.UTF8Encoding($false)
 [System.IO.File]::WriteAllText($output, "$json`n", $encoding)
-Write-DotfilesLog "Locked $($entries.Count) Mason packages in packages\nvim\mason-lock.json"
+& (Join-Path $RepoRoot 'scripts\capture.ps1') $output
+Write-DotfilesLog "Locked $($entries.Count) Mason packages in home\dot_config\nvim\mason-lock.json"

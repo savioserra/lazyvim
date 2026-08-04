@@ -30,7 +30,7 @@ foreach ($file in Get-ChildItem -LiteralPath (Join-Path $RepoRoot 'scripts') -Re
 }
 
 Write-DotfilesLog 'Checking JSON files'
-foreach ($file in Get-ChildItem -LiteralPath (Join-Path $RepoRoot 'packages\nvim') -Recurse -File -Filter '*.json') {
+foreach ($file in Get-ChildItem -LiteralPath (Join-Path $RepoRoot 'home\dot_config\nvim') -Recurse -File -Filter '*.json') {
     $null = Get-Content -LiteralPath $file.FullName -Raw | ConvertFrom-Json
 }
 
@@ -45,6 +45,23 @@ if ($LASTEXITCODE -ne 0) {
 $actualVersion = ([string]$versionOutput[0]) -replace '^NVIM v', ''
 if ($actualVersion -ne $Tools.NEOVIM_VERSION) {
     throw "Expected Neovim $($Tools.NEOVIM_VERSION), found $actualVersion"
+}
+
+$Chezmoi = Join-Path $OptHome "chezmoi-$($Tools.CHEZMOI_VERSION)\chezmoi.exe"
+$chezmoiOutput = @(Invoke-NativeCommand -FilePath $Chezmoi -Arguments @('--version'))
+if ([string]$chezmoiOutput[0] -notlike "chezmoi version v$($Tools.CHEZMOI_VERSION),*") {
+    throw "chezmoi does not match version $($Tools.CHEZMOI_VERSION)"
+}
+
+Write-DotfilesLog 'Checking chezmoi source and target state'
+$chezmoiDiff = @(Invoke-NativeCommand -FilePath $Chezmoi -Arguments @(
+    '--source', $RepoRoot,
+    '--destination', $HOME,
+    '--no-pager',
+    'diff'
+))
+if (-not [string]::IsNullOrWhiteSpace(($chezmoiDiff -join "`n"))) {
+    throw 'Managed configuration differs from the repository; run scripts/capture.ps1 or scripts/apply.ps1.'
 }
 
 Write-DotfilesLog 'Checking companion tool versions'
@@ -92,12 +109,13 @@ if ([string]$treeSitterOutput[0] -ne "tree-sitter $($Tools.TREE_SITTER_VERSION)"
 }
 
 $configHome = Get-NvimConfigHome
+$managedConfigHome = Join-Path $HOME '.config\nvim'
 if (-not (Test-PathEntry $configHome) -or
     -not (Get-ResolvedPath $configHome).Equals(
-        [System.IO.Path]::GetFullPath((Join-Path $RepoRoot 'packages\nvim')),
+        [System.IO.Path]::GetFullPath($managedConfigHome),
         [System.StringComparison]::OrdinalIgnoreCase
     )) {
-    Write-DotfilesWarning "$configHome is not linked to this repository; run scripts/install-windows.ps1"
+    throw "$configHome is not linked to the chezmoi-managed Neovim configuration; run scripts/install-windows.ps1"
 }
 
 $dataHome = Get-NvimDataHome
@@ -108,7 +126,7 @@ $stylua = @(
 ) | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
 if ($null -ne $stylua) {
     Write-DotfilesLog 'Checking Lua formatting'
-    Invoke-NativeCommand -FilePath $stylua -Arguments @('--check', (Join-Path $RepoRoot 'packages\nvim\lua'))
+    Invoke-NativeCommand -FilePath $stylua -Arguments @('--check', (Join-Path $RepoRoot 'home\dot_config\nvim\lua'))
 }
 else {
     Write-DotfilesWarning 'Stylua is not installed; skipping Lua formatting check.'
@@ -117,7 +135,7 @@ else {
 $packagesHome = Join-Path $masonHome 'packages'
 if (Test-Path -LiteralPath $packagesHome -PathType Container) {
     Write-DotfilesLog 'Checking installed Mason versions'
-    $lock = Get-Content -LiteralPath (Join-Path $RepoRoot 'packages\nvim\mason-lock.json') -Raw | ConvertFrom-Json
+    $lock = Get-Content -LiteralPath (Join-Path $RepoRoot 'home\dot_config\nvim\mason-lock.json') -Raw | ConvertFrom-Json
     foreach ($property in @($lock.PSObject.Properties)) {
         $receipt = Join-Path $packagesHome "$($property.Name)\mason-receipt.json"
         if (-not (Test-Path -LiteralPath $receipt -PathType Leaf)) {

@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
+# shellcheck source=lib/common.sh
+source "$script_dir/lib/common.sh"
+REPO_ROOT="$(repo_root)"
+# shellcheck source=../manifests/tools.env
+source "$REPO_ROOT/manifests/tools.env"
+
+opt_home="${DOTFILES_OPT_HOME:-$HOME/.local/opt}"
+bin_home="${DOTFILES_BIN_HOME:-$HOME/.local/bin}"
+chezmoi="${CHEZMOI_BIN:-$bin_home/chezmoi}"
+[[ -x "$chezmoi" ]] || chezmoi="$opt_home/chezmoi-$CHEZMOI_VERSION/chezmoi"
+[[ -x "$chezmoi" ]] || die "pinned chezmoi is not installed; run scripts/install first"
+
+log "Applying managed configuration with chezmoi"
+"$chezmoi" --source "$REPO_ROOT" --destination "$HOME" apply "$@"
+
+managed_nvim="$HOME/.config/nvim"
+config_target="${XDG_CONFIG_HOME:-$HOME/.config}/nvim"
+if [[ "$config_target" != "$managed_nvim" ]]; then
+  state_home="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles"
+  backup_root="$state_home/backups/$(date -u +%Y%m%dT%H%M%SZ)-$$"
+  mkdir -p "$state_home"
+  link_managed_path "$managed_nvim" "$config_target" "$backup_root"
+fi
+
+if command -v tmux >/dev/null 2>&1 && tmux list-sessions >/dev/null 2>&1; then
+  tmux source-file "$HOME/.tmux.conf"
+  log "Reloaded the active tmux server"
+fi

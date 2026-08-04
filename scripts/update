@@ -5,12 +5,20 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 # shellcheck source=lib/common.sh
 source "$script_dir/lib/common.sh"
 REPO_ROOT="$(repo_root)"
+# shellcheck source=../manifests/tools.env
+source "$REPO_ROOT/manifests/tools.env"
 NVIM_BIN="${NVIM_BIN:-$REPO_ROOT/packages/bin/nvim}"
+bin_home="${DOTFILES_BIN_HOME:-$HOME/.local/bin}"
+chezmoi="${CHEZMOI_BIN:-$bin_home/chezmoi}"
+[[ -x "$chezmoi" ]] || chezmoi="${DOTFILES_OPT_HOME:-$HOME/.local/opt}/chezmoi-$CHEZMOI_VERSION/chezmoi"
 
 require_command git
 require_command jq
 [[ -z "$(git -C "$REPO_ROOT" status --porcelain)" ]] \
   || die "commit or stash repository changes before updating"
+[[ -x "$chezmoi" ]] || die "pinned chezmoi is not installed; run scripts/install first"
+[[ -z "$("$chezmoi" --source "$REPO_ROOT" --destination "$HOME" --no-pager diff)" ]] \
+  || die "capture or apply managed configuration changes before updating"
 
 log "Updating plugins and lazy-lock.json"
 "$NVIM_BIN" --headless "+Lazy! sync" +qa
@@ -18,7 +26,7 @@ log "Updating plugins and lazy-lock.json"
 mason_packages=()
 while IFS= read -r package; do
   mason_packages+=("$package")
-done < <(jq -r 'keys[]' "$REPO_ROOT/packages/nvim/mason-lock.json")
+done < <(jq -r 'keys[]' "$REPO_ROOT/home/dot_config/nvim/mason-lock.json")
 if ((${#mason_packages[@]})); then
   log "Updating ${#mason_packages[@]} Mason packages"
   "$NVIM_BIN" --headless \
@@ -34,5 +42,6 @@ log "Updating installed Tree-sitter parsers"
   "+lua assert(require('nvim-treesitter').update(nil, { summary = true }):wait())" \
   +qa
 
+"$REPO_ROOT/scripts/capture" "$HOME/.config/nvim"
 "$REPO_ROOT/scripts/check"
 log "Update complete; review and commit the lockfile changes"
