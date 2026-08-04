@@ -18,9 +18,9 @@ Generated plugins, tools, logs, caches, undo data, sessions, and editor history 
 
 | Platform | Architectures | Installer |
 | --- | --- | --- |
-| Linux | x86_64 | Bash: `scripts/install` |
-| macOS | Apple Silicon and Intel | Bash: `scripts/install` |
-| Windows 10/11 | ARM64 and x64 | PowerShell: `scripts/install.ps1` |
+| Linux | x86_64 | Bash: `scripts/install-linux` |
+| macOS | Apple Silicon and Intel | Bash: `scripts/install-macos` |
+| Windows 10/11 | ARM64 and x64 | PowerShell: `scripts/install-windows.ps1` |
 
 Intel macOS uses fd 10.3.0 because fd stopped publishing Intel macOS binaries after that release. Other supported platforms use fd 10.4.2.
 
@@ -52,15 +52,23 @@ winget install --id LLVM.LLVM
 
 Restart the terminal after installing prerequisites so their updated `PATH` is visible.
 
-## Install on Linux or macOS
+## Install on Linux
 
 ```bash
 git clone <your-repository-url> ~/Documents/Dev/dotfiles
 cd ~/Documents/Dev/dotfiles
-./scripts/install
+./scripts/install-linux
 ```
 
-The Unix installer uses `~/.local/opt`, `~/.local/bin`, and `~/.config/nvim`. On macOS, fonts are installed into `~/Library/Fonts`; on Linux they use the XDG data directory.
+## Install on macOS
+
+```bash
+git clone <your-repository-url> ~/Documents/Dev/dotfiles
+cd ~/Documents/Dev/dotfiles
+./scripts/install-macos
+```
+
+`scripts/install` remains a convenience dispatcher that selects one of those explicit entry points. Both use the shared `scripts/lib/install-unix.sh` engine and install into `~/.local/opt`, `~/.local/bin`, and `~/.config/nvim`. macOS fonts go to `~/Library/Fonts`; Linux fonts use the XDG data directory.
 
 Existing targets are moved—not deleted—to:
 
@@ -78,7 +86,7 @@ Run PowerShell—not Git Bash:
 git clone <your-repository-url> "$HOME\Documents\Dev\dotfiles"
 Set-Location "$HOME\Documents\Dev\dotfiles"
 Set-ExecutionPolicy -Scope Process Bypass
-.\scripts\install.ps1
+.\scripts\install-windows.ps1
 ```
 
 The Windows installer:
@@ -105,7 +113,7 @@ If junction creation fails, enable **Windows Developer Mode** or keep the reposi
 4. Restores plugins and Mason tools at locked versions.
 5. Installs missing Tree-sitter parsers.
 
-Use `--minimal --no-restore` on Unix or `-Minimal -NoRestore` on Windows for a configuration/CI installation without companion tools.
+Use `--minimal --no-restore` with the Linux/macOS entry points or `-Minimal -NoRestore` with the Windows entry point for a configuration-only installation without companion tools.
 
 ## Daily maintenance
 
@@ -161,8 +169,13 @@ Sync refuses a dirty worktree, performs a fast-forward-only pull, reapplies link
 ├── manifests/tools.env       # cross-platform release artifacts and hashes
 ├── packages/bin/nvim         # Linux/macOS portable wrapper
 ├── packages/nvim/            # complete Neovim configuration
-├── scripts/                  # Bash and PowerShell lifecycle commands
+├── scripts/install-linux     # Linux release selection
+├── scripts/install-macos     # macOS/architecture release selection
+├── scripts/install-windows.ps1 # native Windows installation
+├── scripts/lib/              # shared Unix and PowerShell primitives
+├── scripts/                  # restore/update/check/sync lifecycle
 ├── docs/setup-analysis.md    # findings from the original machine
+├── docs/code-review.md       # installer critique and remaining constraints
 └── .github/workflows/ci.yml  # Linux/macOS/Windows headless validation
 ```
 

@@ -32,4 +32,4 @@ $output = Join-Path $RepoRoot 'packages\nvim\mason-lock.json'
 $json = $entries | ConvertTo-Json
 $encoding = New-Object System.Text.UTF8Encoding($false)
 [System.IO.File]::WriteAllText($output, "$json`n", $encoding)
-Write-Log "Locked $($entries.Count) Mason packages in packages\nvim\mason-lock.json"
+Write-DotfilesLog "Locked $($entries.Count) Mason packages in packages\nvim\mason-lock.json"

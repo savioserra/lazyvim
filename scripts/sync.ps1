@@ -16,14 +16,14 @@ if (-not [string]::IsNullOrWhiteSpace(($changes -join "`n"))) {
 
 $upstream = & git -C $RepoRoot rev-parse --abbrev-ref '@{upstream}' 2>$null
 if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace(($upstream -join ''))) {
-    Write-Log 'Pulling configuration changes'
+    Write-DotfilesLog 'Pulling configuration changes'
     Invoke-NativeCommand -FilePath 'git' -Arguments @('-C', $RepoRoot, 'pull', '--ff-only')
 }
 else {
-    Write-WarningMessage 'No upstream branch is configured; skipping git pull.'
+    Write-DotfilesWarning 'No upstream branch is configured; skipping git pull.'
 }
 
-& (Join-Path $RepoRoot 'scripts\install.ps1') -NoRestore
+& (Join-Path $RepoRoot 'scripts\install-windows.ps1') -NoRestore
 & (Join-Path $RepoRoot 'scripts\restore.ps1')
 & (Join-Path $RepoRoot 'scripts\check.ps1')
-Write-Log 'Sync complete'
+Write-DotfilesLog 'Sync complete'

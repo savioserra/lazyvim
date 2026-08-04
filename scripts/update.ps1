@@ -22,13 +22,13 @@ if (-not [string]::IsNullOrWhiteSpace(($changes -join "`n"))) {
     throw 'Commit or stash repository changes before updating.'
 }
 
-Write-Log 'Updating plugins and lazy-lock.json'
+Write-DotfilesLog 'Updating plugins and lazy-lock.json'
 Invoke-NativeCommand -FilePath $Nvim -Arguments @('--headless', '+Lazy! sync', '+qa')
 
 $lock = Get-Content -LiteralPath (Join-Path $RepoRoot 'packages\nvim\mason-lock.json') -Raw | ConvertFrom-Json
 $packages = @($lock.PSObject.Properties | ForEach-Object { $_.Name } | Sort-Object)
 if ($packages.Count -gt 0) {
-    Write-Log "Updating $($packages.Count) Mason packages"
+    Write-DotfilesLog "Updating $($packages.Count) Mason packages"
     Invoke-NativeCommand -FilePath $Nvim -Arguments @(
         '--headless',
         '+Lazy load mason.nvim',
@@ -38,7 +38,7 @@ if ($packages.Count -gt 0) {
     & (Join-Path $RepoRoot 'scripts\lock-mason.ps1')
 }
 
-Write-Log 'Updating installed Tree-sitter parsers'
+Write-DotfilesLog 'Updating installed Tree-sitter parsers'
 Invoke-NativeCommand -FilePath $Nvim -Arguments @(
     '--headless',
     '+Lazy load nvim-treesitter',
@@ -47,4 +47,4 @@ Invoke-NativeCommand -FilePath $Nvim -Arguments @(
 )
 
 & (Join-Path $RepoRoot 'scripts\check.ps1')
-Write-Log 'Update complete; review and commit the lockfile changes.'
+Write-DotfilesLog 'Update complete; review and commit the lockfile changes.'

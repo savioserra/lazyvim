@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+# Platform contract variables are consumed by the sourced shared installer.
+# shellcheck disable=SC2034
+set -euo pipefail
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
+# shellcheck source=lib/common.sh
+source "$script_dir/lib/common.sh"
+REPO_ROOT="$(repo_root)"
+# shellcheck source=../manifests/tools.env
+source "$REPO_ROOT/manifests/tools.env"
+# shellcheck source=lib/install-unix.sh
+source "$script_dir/lib/install-unix.sh"
+
+os="$(uname -s)"
+arch="$(uname -m)"
+[[ "$os" == "Darwin" ]] || die "scripts/install-macos only supports macOS"
+
+host_os="Darwin"
+font_installer="macos"
+case "$arch" in
+  arm64)
+    platform="darwin-arm64"
+    neovim_url="$NEOVIM_DARWIN_ARM64_URL"
+    neovim_sha256="$NEOVIM_DARWIN_ARM64_SHA256"
+    neovim_extracted="nvim-macos-arm64"
+    ripgrep_url="$RIPGREP_DARWIN_ARM64_URL"
+    ripgrep_sha256="$RIPGREP_DARWIN_ARM64_SHA256"
+    ripgrep_extracted="ripgrep-${RIPGREP_VERSION}-aarch64-apple-darwin"
+    fd_effective_version="$FD_DARWIN_ARM64_VERSION"
+    fd_url="$FD_DARWIN_ARM64_URL"
+    fd_sha256="$FD_DARWIN_ARM64_SHA256"
+    fd_extracted="fd-v${fd_effective_version}-aarch64-apple-darwin"
+    fzf_url="$FZF_DARWIN_ARM64_URL"
+    fzf_sha256="$FZF_DARWIN_ARM64_SHA256"
+    lazygit_url="$LAZYGIT_DARWIN_ARM64_URL"
+    lazygit_sha256="$LAZYGIT_DARWIN_ARM64_SHA256"
+    tree_sitter_url="$TREE_SITTER_DARWIN_ARM64_URL"
+    tree_sitter_sha256="$TREE_SITTER_DARWIN_ARM64_SHA256"
+    ;;
+  x86_64)
+    platform="darwin-x86_64"
+    neovim_url="$NEOVIM_DARWIN_X86_64_URL"
+    neovim_sha256="$NEOVIM_DARWIN_X86_64_SHA256"
+    neovim_extracted="nvim-macos-x86_64"
+    ripgrep_url="$RIPGREP_DARWIN_X86_64_URL"
+    ripgrep_sha256="$RIPGREP_DARWIN_X86_64_SHA256"
+    ripgrep_extracted="ripgrep-${RIPGREP_VERSION}-x86_64-apple-darwin"
+    fd_effective_version="$FD_DARWIN_X86_64_VERSION"
+    fd_url="$FD_DARWIN_X86_64_URL"
+    fd_sha256="$FD_DARWIN_X86_64_SHA256"
+    fd_extracted="fd-v${fd_effective_version}-x86_64-apple-darwin"
+    fzf_url="$FZF_DARWIN_X86_64_URL"
+    fzf_sha256="$FZF_DARWIN_X86_64_SHA256"
+    lazygit_url="$LAZYGIT_DARWIN_X86_64_URL"
+    lazygit_sha256="$LAZYGIT_DARWIN_X86_64_SHA256"
+    tree_sitter_url="$TREE_SITTER_DARWIN_X86_64_URL"
+    tree_sitter_sha256="$TREE_SITTER_DARWIN_X86_64_SHA256"
+    ;;
+  *) die "unsupported macOS architecture: $arch (supported: arm64, x86_64)" ;;
+esac
+
+run_unix_install "$@"

@@ -12,17 +12,20 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os:
-          - ubuntu-24.04
-          - macos-15
-          - macos-15-intel
+        include:
+          - os: ubuntu-24.04
+            installer: ./scripts/install-linux
+          - os: macos-15
+            installer: ./scripts/install-macos
+          - os: macos-15-intel
+            installer: ./scripts/install-macos
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install pinned Neovim and link configuration
-        run: ./scripts/install --minimal --no-restore
+      - name: Install pinned tools and link configuration
+        run: ${{ matrix.installer }} --no-font --no-restore
 
       - name: Restore locked plugins
         run: ./scripts/restore --plugins-only
@@ -31,7 +34,9 @@ jobs:
         run: ./scripts/check
 
       - name: Ensure checks did not rewrite tracked files
-        run: git diff --exit-code
+        run: |
+          git diff --exit-code
+          test -z "$(git status --porcelain)"
 
   windows:
     runs-on: windows-2025
@@ -42,8 +47,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install pinned Neovim and link configuration
-        run: ./scripts/install.ps1 -Minimal -NoRestore
+      - name: Install pinned tools and link configuration
+        run: ./scripts/install-windows.ps1 -NoFont -NoRestore
 
       - name: Restore locked plugins
         run: ./scripts/restore.ps1 -PluginsOnly
@@ -52,4 +57,9 @@ jobs:
         run: ./scripts/check.ps1
 
       - name: Ensure checks did not rewrite tracked files
-        run: git diff --exit-code
+        run: |
+          git diff --exit-code
+          $status = @(git status --porcelain)
+          if ($status.Count -gt 0) {
+            throw "Commands created uncommitted files: $($status -join ', ')"
+          }

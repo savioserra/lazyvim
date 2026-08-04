@@ -15,7 +15,7 @@ else {
     Join-Path $OptHome "nvim-$($Tools.NEOVIM_VERSION)\bin\nvim.exe"
 }
 
-Write-Log 'Checking PowerShell syntax'
+Write-DotfilesLog 'Checking PowerShell syntax'
 foreach ($file in Get-ChildItem -LiteralPath (Join-Path $RepoRoot 'scripts') -Recurse -File -Filter '*.ps1') {
     $tokens = $null
     $errors = $null
@@ -29,15 +29,15 @@ foreach ($file in Get-ChildItem -LiteralPath (Join-Path $RepoRoot 'scripts') -Re
     }
 }
 
-Write-Log 'Checking JSON files'
+Write-DotfilesLog 'Checking JSON files'
 foreach ($file in Get-ChildItem -LiteralPath (Join-Path $RepoRoot 'packages\nvim') -Recurse -File -Filter '*.json') {
     $null = Get-Content -LiteralPath $file.FullName -Raw | ConvertFrom-Json
 }
 
 if (-not (Test-Path -LiteralPath $Nvim -PathType Leaf)) {
-    throw 'Pinned Neovim is not installed; run scripts/install.ps1 first.'
+    throw 'Pinned Neovim is not installed; run scripts/install-windows.ps1 first.'
 }
-Write-Log 'Checking pinned Neovim'
+Write-DotfilesLog 'Checking pinned Neovim'
 $versionOutput = & $Nvim --version
 if ($LASTEXITCODE -ne 0) {
     throw 'Neovim failed to report its version.'
@@ -47,13 +47,57 @@ if ($actualVersion -ne $Tools.NEOVIM_VERSION) {
     throw "Expected Neovim $($Tools.NEOVIM_VERSION), found $actualVersion"
 }
 
+Write-DotfilesLog 'Checking companion tool versions'
+$architecture = Get-WindowsArchitecture
+$fdVersion = if ($architecture -eq 'ARM64') {
+    $Tools.FD_WINDOWS_ARM64_VERSION
+}
+else {
+    $Tools.FD_WINDOWS_X86_64_VERSION
+}
+
+$rgOutput = @(Invoke-NativeCommand `
+    -FilePath (Join-Path $OptHome "ripgrep-$($Tools.RIPGREP_VERSION)\rg.exe") `
+    -Arguments @('--version'))
+if ([string]$rgOutput[0] -notlike "ripgrep $($Tools.RIPGREP_VERSION)*") {
+    throw "Ripgrep does not match version $($Tools.RIPGREP_VERSION)"
+}
+
+$fdOutput = @(Invoke-NativeCommand `
+    -FilePath (Join-Path $OptHome "fd-$fdVersion\fd.exe") `
+    -Arguments @('--version'))
+if ([string]$fdOutput[0] -ne "fd $fdVersion") {
+    throw "fd does not match version $fdVersion"
+}
+
+$fzfOutput = @(Invoke-NativeCommand `
+    -FilePath (Join-Path $OptHome "fzf-$($Tools.FZF_VERSION)\fzf.exe") `
+    -Arguments @('--version'))
+if ([string]$fzfOutput[0] -notlike "$($Tools.FZF_VERSION) *") {
+    throw "fzf does not match version $($Tools.FZF_VERSION)"
+}
+
+$lazygitOutput = @(Invoke-NativeCommand `
+    -FilePath (Join-Path $OptHome "lazygit-$($Tools.LAZYGIT_VERSION)\lazygit.exe") `
+    -Arguments @('--version'))
+if (($lazygitOutput -join "`n") -notmatch "version=$([regex]::Escape($Tools.LAZYGIT_VERSION))(,|$)") {
+    throw "lazygit does not match version $($Tools.LAZYGIT_VERSION)"
+}
+
+$treeSitterOutput = @(Invoke-NativeCommand `
+    -FilePath (Join-Path $OptHome "tree-sitter-$($Tools.TREE_SITTER_VERSION)\tree-sitter.exe") `
+    -Arguments @('--version'))
+if ([string]$treeSitterOutput[0] -ne "tree-sitter $($Tools.TREE_SITTER_VERSION)") {
+    throw "tree-sitter does not match version $($Tools.TREE_SITTER_VERSION)"
+}
+
 $configHome = Get-NvimConfigHome
 if (-not (Test-PathEntry $configHome) -or
     -not (Get-ResolvedPath $configHome).Equals(
         [System.IO.Path]::GetFullPath((Join-Path $RepoRoot 'packages\nvim')),
         [System.StringComparison]::OrdinalIgnoreCase
     )) {
-    Write-WarningMessage "$configHome is not linked to this repository; run scripts/install.ps1"
+    Write-DotfilesWarning "$configHome is not linked to this repository; run scripts/install-windows.ps1"
 }
 
 $dataHome = Get-NvimDataHome
@@ -63,16 +107,16 @@ $stylua = @(
     (Join-Path $masonHome 'bin\stylua.exe')
 ) | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
 if ($null -ne $stylua) {
-    Write-Log 'Checking Lua formatting'
+    Write-DotfilesLog 'Checking Lua formatting'
     Invoke-NativeCommand -FilePath $stylua -Arguments @('--check', (Join-Path $RepoRoot 'packages\nvim\lua'))
 }
 else {
-    Write-WarningMessage 'Stylua is not installed; skipping Lua formatting check.'
+    Write-DotfilesWarning 'Stylua is not installed; skipping Lua formatting check.'
 }
 
 $packagesHome = Join-Path $masonHome 'packages'
 if (Test-Path -LiteralPath $packagesHome -PathType Container) {
-    Write-Log 'Checking installed Mason versions'
+    Write-DotfilesLog 'Checking installed Mason versions'
     $lock = Get-Content -LiteralPath (Join-Path $RepoRoot 'packages\nvim\mason-lock.json') -Raw | ConvertFrom-Json
     foreach ($property in @($lock.PSObject.Properties)) {
         $receipt = Join-Path $packagesHome "$($property.Name)\mason-receipt.json"
@@ -86,11 +130,11 @@ if (Test-Path -LiteralPath $packagesHome -PathType Container) {
     }
 }
 
-Write-Log 'Checking headless startup'
+Write-DotfilesLog 'Checking headless startup'
 Invoke-NativeCommand -FilePath $Nvim -Arguments @(
     '--headless',
     "+lua assert(vim.g.lazyvim_ts_lsp == 'vtsls', 'LazyVim options were not loaded')",
     '+qa'
 )
 
-Write-Log 'All checks passed'
+Write-DotfilesLog 'All checks passed'

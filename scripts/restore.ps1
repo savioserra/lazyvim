@@ -20,7 +20,7 @@ else {
 }
 
 if (-not (Test-Path -LiteralPath $Nvim -PathType Leaf)) {
-    throw 'Pinned Neovim is not installed; run scripts/install.ps1 first.'
+    throw 'Pinned Neovim is not installed; run scripts/install-windows.ps1 first.'
 }
 
 $RestorePlugins = -not $MasonOnly
@@ -28,7 +28,7 @@ $RestoreMason = -not $PluginsOnly
 $RestoreParsers = -not $PluginsOnly -and -not $MasonOnly -and -not $SkipParsers
 
 if ($RestorePlugins) {
-    Write-Log 'Restoring plugins from lazy-lock.json'
+    Write-DotfilesLog 'Restoring plugins from lazy-lock.json'
     Invoke-NativeCommand -FilePath $Nvim -Arguments @('--headless', '+Lazy! restore', '+qa')
 }
 
@@ -52,7 +52,7 @@ if ($RestoreMason) {
     }
 
     if ($specs.Count -gt 0) {
-        Write-Log "Restoring $($specs.Count) Mason package(s) from mason-lock.json"
+        Write-DotfilesLog "Restoring $($specs.Count) Mason package(s) from mason-lock.json"
         Invoke-NativeCommand -FilePath $Nvim -Arguments @(
             '--headless',
             '+Lazy load mason.nvim',
@@ -61,12 +61,12 @@ if ($RestoreMason) {
         )
     }
     else {
-        Write-Log 'Mason packages already match mason-lock.json'
+        Write-DotfilesLog 'Mason packages already match mason-lock.json'
     }
 }
 
 if ($RestoreParsers) {
-    Write-Log 'Installing missing Tree-sitter parsers'
+    Write-DotfilesLog 'Installing missing Tree-sitter parsers'
     Invoke-NativeCommand -FilePath $Nvim -Arguments @(
         '--headless',
         '+Lazy load nvim-treesitter',
@@ -75,4 +75,4 @@ if ($RestoreParsers) {
     )
 }
 
-Write-Log 'Restore complete'
+Write-DotfilesLog 'Restore complete'

@@ -18,9 +18,6 @@ function Write-DotfilesWarning {
     Write-Host "warning: $Message" -ForegroundColor Yellow
 }
 
-Set-Alias -Name Write-Log -Value Write-DotfilesLog
-Set-Alias -Name Write-WarningMessage -Value Write-DotfilesWarning
-
 function Import-ToolManifest {
     param([Parameter(Mandatory = $true)][string]$Path)
 
@@ -152,6 +149,34 @@ function Connect-ManagedDirectory {
 function Get-Sha256 {
     param([Parameter(Mandatory = $true)][string]$Path)
     return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
+}
+
+function Test-ReleaseInstallation {
+    param(
+        [Parameter(Mandatory = $true)][string]$Target,
+        [Parameter(Mandatory = $true)][string]$ExpectedBinary,
+        [Parameter(Mandatory = $true)][string]$ReleaseIdentity
+    )
+
+    if (-not (Test-Path -LiteralPath (Join-Path $Target $ExpectedBinary) -PathType Leaf)) {
+        return $false
+    }
+
+    $marker = Join-Path $Target '.dotfiles-release'
+    if (Test-Path -LiteralPath $marker -PathType Leaf) {
+        return (Get-Content -LiteralPath $marker -Raw).Trim() -eq $ReleaseIdentity
+    }
+
+    # Windows has no dependency-free PE architecture check; reinstall pre-marker releases once.
+    return $false
+}
+
+function Write-ReleaseIdentity {
+    param(
+        [Parameter(Mandatory = $true)][string]$Target,
+        [Parameter(Mandatory = $true)][string]$ReleaseIdentity
+    )
+    Set-Content -LiteralPath (Join-Path $Target '.dotfiles-release') -Value $ReleaseIdentity -Encoding ASCII
 }
 
 function Get-VerifiedDownload {

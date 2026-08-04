@@ -75,6 +75,7 @@ A package-oriented link repository was chosen over committing `~/.config/nvim` d
 - it can grow to include tmux, shell, Git, or terminal packages without changing its lifecycle;
 - the live configuration remains editable through the XDG path on Linux/macOS or `%LOCALAPPDATA%\nvim` on Windows;
 - it supports Linux x86_64, Apple Silicon/Intel macOS, and ARM64/x64 Windows from one checksummed manifest;
+- platform selection is isolated in `install-linux`, `install-macos`, and `install-windows.ps1`, while extraction/linking primitives stay shared;
 - it avoids a runtime dependency on GNU Stow or a Windows dotfile manager;
 - every replaced configuration target gets a timestamped backup;
 - machine-generated data/state/cache stays outside Git;

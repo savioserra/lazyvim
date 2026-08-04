@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# Platform contract variables are consumed by the sourced shared installer.
+# shellcheck disable=SC2034
+set -euo pipefail
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
+# shellcheck source=lib/common.sh
+source "$script_dir/lib/common.sh"
+REPO_ROOT="$(repo_root)"
+# shellcheck source=../manifests/tools.env
+source "$REPO_ROOT/manifests/tools.env"
+# shellcheck source=lib/install-unix.sh
+source "$script_dir/lib/install-unix.sh"
+
+os="$(uname -s)"
+arch="$(uname -m)"
+[[ "$os" == "Linux" ]] || die "scripts/install-linux only supports Linux"
+[[ "$arch" == "x86_64" ]] || die "unsupported Linux architecture: $arch (supported: x86_64)"
+
+platform="linux-x86_64"
+host_os="Linux"
+font_installer="linux"
+neovim_url="$NEOVIM_LINUX_X86_64_URL"
+neovim_sha256="$NEOVIM_LINUX_X86_64_SHA256"
+neovim_extracted="nvim-linux-x86_64"
+ripgrep_url="$RIPGREP_LINUX_X86_64_URL"
+ripgrep_sha256="$RIPGREP_LINUX_X86_64_SHA256"
+ripgrep_extracted="ripgrep-${RIPGREP_VERSION}-x86_64-unknown-linux-musl"
+fd_effective_version="$FD_LINUX_X86_64_VERSION"
+fd_url="$FD_LINUX_X86_64_URL"
+fd_sha256="$FD_LINUX_X86_64_SHA256"
+fd_extracted="fd-v${fd_effective_version}-x86_64-unknown-linux-gnu"
+fzf_url="$FZF_LINUX_X86_64_URL"
+fzf_sha256="$FZF_LINUX_X86_64_SHA256"
+lazygit_url="$LAZYGIT_LINUX_X86_64_URL"
+lazygit_sha256="$LAZYGIT_LINUX_X86_64_SHA256"
+tree_sitter_url="$TREE_SITTER_LINUX_X86_64_URL"
+tree_sitter_sha256="$TREE_SITTER_LINUX_X86_64_SHA256"
+
+run_unix_install "$@"
