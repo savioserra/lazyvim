@@ -30,7 +30,29 @@ require_command() {
 }
 
 canonical_path() {
-  readlink -f -- "$1"
+  local source_path="$1"
+  local source_dir
+  while [[ -L "$source_path" ]]; do
+    source_dir="$(cd -P "$(dirname "$source_path")" >/dev/null 2>&1 && pwd)"
+    source_path="$(readlink "$source_path")"
+    [[ "$source_path" = /* ]] || source_path="$source_dir/$source_path"
+  done
+  source_dir="$(cd -P "$(dirname "$source_path")" >/dev/null 2>&1 && pwd)"
+  printf '%s/%s\n' "$source_dir" "$(basename "$source_path")"
+}
+
+sha256_file() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{ print $1 }'
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1" | awk '{ print $1 }'
+  else
+    die "neither sha256sum nor shasum is installed"
+  fi
+}
+
+checksum_matches() {
+  [[ -f "$2" ]] && [[ "$(sha256_file "$2")" == "$1" ]]
 }
 
 download_verified() {
@@ -39,17 +61,16 @@ download_verified() {
   local output="$3"
 
   mkdir -p "$(dirname "$output")"
-  if [[ -f "$output" ]] && printf '%s  %s\n' "$sha256" "$output" | sha256sum --check --status; then
+  if checksum_matches "$sha256" "$output"; then
     log "Using cached $(basename "$output")"
     return
   fi
 
-  rm -f "$output"
+  rm -f "$output" "$output.part"
   log "Downloading $(basename "$output")"
   curl --fail --location --retry 3 --retry-delay 2 --output "$output.part" "$url"
   mv "$output.part" "$output"
-  printf '%s  %s\n' "$sha256" "$output" | sha256sum --check --status \
-    || die "checksum mismatch for $output"
+  checksum_matches "$sha256" "$output" || die "checksum mismatch for $output"
 }
 
 backup_path() {

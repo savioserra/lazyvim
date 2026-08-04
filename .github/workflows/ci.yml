@@ -8,8 +8,15 @@ permissions:
   contents: read
 
 jobs:
-  neovim:
-    runs-on: ubuntu-24.04
+  unix:
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-24.04
+          - macos-15
+          - macos-15-intel
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -22,6 +29,27 @@ jobs:
 
       - name: Validate configuration
         run: ./scripts/check
+
+      - name: Ensure checks did not rewrite tracked files
+        run: git diff --exit-code
+
+  windows:
+    runs-on: windows-2025
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pinned Neovim and link configuration
+        run: ./scripts/install.ps1 -Minimal -NoRestore
+
+      - name: Restore locked plugins
+        run: ./scripts/restore.ps1 -PluginsOnly
+
+      - name: Validate configuration
+        run: ./scripts/check.ps1
 
       - name: Ensure checks did not rewrite tracked files
         run: git diff --exit-code

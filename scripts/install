@@ -16,8 +16,9 @@ usage() {
   cat <<'EOF'
 Usage: scripts/install [options]
 
-Install pinned Neovim tooling and link this repository into the XDG paths.
-Existing files are moved to a timestamped backup; they are never deleted.
+Install pinned Neovim tooling on Linux or macOS and link this repository into
+its XDG paths. Existing files are moved to a timestamped backup; they are never
+deleted. On Windows, run scripts/install.ps1 from PowerShell instead.
 
 Options:
   --minimal      Install Neovim and links only (useful in CI)
@@ -47,12 +48,80 @@ while (($#)); do
   shift
 done
 
-[[ "$(uname -s)" == "Linux" ]] || die "the pinned binary installer currently supports Linux only"
-[[ "$(uname -m)" == "x86_64" ]] || die "the pinned binary installer currently supports x86_64 only"
+os="$(uname -s)"
+arch="$(uname -m)"
+case "$os:$arch" in
+  Linux:x86_64)
+    platform="linux-x86_64"
+    neovim_url="$NEOVIM_LINUX_X86_64_URL"
+    neovim_sha256="$NEOVIM_LINUX_X86_64_SHA256"
+    neovim_extracted="nvim-linux-x86_64"
+    ripgrep_url="$RIPGREP_LINUX_X86_64_URL"
+    ripgrep_sha256="$RIPGREP_LINUX_X86_64_SHA256"
+    ripgrep_extracted="ripgrep-${RIPGREP_VERSION}-x86_64-unknown-linux-musl"
+    fd_effective_version="$FD_LINUX_X86_64_VERSION"
+    fd_url="$FD_LINUX_X86_64_URL"
+    fd_sha256="$FD_LINUX_X86_64_SHA256"
+    fd_extracted="fd-v${fd_effective_version}-x86_64-unknown-linux-gnu"
+    fzf_url="$FZF_LINUX_X86_64_URL"
+    fzf_sha256="$FZF_LINUX_X86_64_SHA256"
+    lazygit_url="$LAZYGIT_LINUX_X86_64_URL"
+    lazygit_sha256="$LAZYGIT_LINUX_X86_64_SHA256"
+    tree_sitter_url="$TREE_SITTER_LINUX_X86_64_URL"
+    tree_sitter_sha256="$TREE_SITTER_LINUX_X86_64_SHA256"
+    ;;
+  Darwin:arm64)
+    platform="darwin-arm64"
+    neovim_url="$NEOVIM_DARWIN_ARM64_URL"
+    neovim_sha256="$NEOVIM_DARWIN_ARM64_SHA256"
+    neovim_extracted="nvim-macos-arm64"
+    ripgrep_url="$RIPGREP_DARWIN_ARM64_URL"
+    ripgrep_sha256="$RIPGREP_DARWIN_ARM64_SHA256"
+    ripgrep_extracted="ripgrep-${RIPGREP_VERSION}-aarch64-apple-darwin"
+    fd_effective_version="$FD_DARWIN_ARM64_VERSION"
+    fd_url="$FD_DARWIN_ARM64_URL"
+    fd_sha256="$FD_DARWIN_ARM64_SHA256"
+    fd_extracted="fd-v${fd_effective_version}-aarch64-apple-darwin"
+    fzf_url="$FZF_DARWIN_ARM64_URL"
+    fzf_sha256="$FZF_DARWIN_ARM64_SHA256"
+    lazygit_url="$LAZYGIT_DARWIN_ARM64_URL"
+    lazygit_sha256="$LAZYGIT_DARWIN_ARM64_SHA256"
+    tree_sitter_url="$TREE_SITTER_DARWIN_ARM64_URL"
+    tree_sitter_sha256="$TREE_SITTER_DARWIN_ARM64_SHA256"
+    ;;
+  Darwin:x86_64)
+    platform="darwin-x86_64"
+    neovim_url="$NEOVIM_DARWIN_X86_64_URL"
+    neovim_sha256="$NEOVIM_DARWIN_X86_64_SHA256"
+    neovim_extracted="nvim-macos-x86_64"
+    ripgrep_url="$RIPGREP_DARWIN_X86_64_URL"
+    ripgrep_sha256="$RIPGREP_DARWIN_X86_64_SHA256"
+    ripgrep_extracted="ripgrep-${RIPGREP_VERSION}-x86_64-apple-darwin"
+    fd_effective_version="$FD_DARWIN_X86_64_VERSION"
+    fd_url="$FD_DARWIN_X86_64_URL"
+    fd_sha256="$FD_DARWIN_X86_64_SHA256"
+    fd_extracted="fd-v${fd_effective_version}-x86_64-apple-darwin"
+    fzf_url="$FZF_DARWIN_X86_64_URL"
+    fzf_sha256="$FZF_DARWIN_X86_64_SHA256"
+    lazygit_url="$LAZYGIT_DARWIN_X86_64_URL"
+    lazygit_sha256="$LAZYGIT_DARWIN_X86_64_SHA256"
+    tree_sitter_url="$TREE_SITTER_DARWIN_X86_64_URL"
+    tree_sitter_sha256="$TREE_SITTER_DARWIN_X86_64_SHA256"
+    ;;
+  MINGW*:* | MSYS*:* | CYGWIN*:*)
+    die "use scripts/install.ps1 from PowerShell on Windows"
+    ;;
+  *)
+    die "unsupported platform: $os $arch (supported: Linux x86_64, macOS arm64/x86_64)"
+    ;;
+esac
 
-for command in curl sha256sum tar unzip readlink; do
+for command in curl tar unzip readlink; do
   require_command "$command"
 done
+if ! command -v sha256sum >/dev/null 2>&1 && ! command -v shasum >/dev/null 2>&1; then
+  die "a SHA-256 utility is required (sha256sum or shasum)"
+fi
 if $run_restore; then
   require_command git
   require_command jq
@@ -69,6 +138,12 @@ cache_home="${XDG_CACHE_HOME:-$HOME/.cache}/dotfiles/downloads"
 state_home="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles"
 backup_root="$state_home/backups/$(date -u +%Y%m%dT%H%M%SZ)-$$"
 mkdir -p "$opt_home" "$bin_home" "$config_home" "$cache_home" "$state_home"
+
+clear_macos_quarantine() {
+  if [[ "$os" == "Darwin" ]] && command -v xattr >/dev/null 2>&1; then
+    xattr -cr "$1" 2>/dev/null || true
+  fi
+}
 
 install_tar_directory() {
   local name="$1"
@@ -96,6 +171,7 @@ install_tar_directory() {
   [[ -d "$temporary/$extracted_name" ]] || die "unexpected archive layout for $name"
   mv "$temporary/$extracted_name" "$target"
   rm -rf "$temporary"
+  clear_macos_quarantine "$target"
   [[ -x "$target/$expected_binary" ]] || die "$name did not install correctly"
   log "Installed $name $version"
 }
@@ -121,61 +197,67 @@ install_flat_tar() {
   download_verified "$url" "$sha256" "$archive"
   mkdir -p "$target"
   tar -xf "$archive" -C "$target"
+  clear_macos_quarantine "$target"
   [[ -x "$target/$expected_binary" ]] || die "$name did not install correctly"
   log "Installed $name $version"
 }
 
 install_neovim() {
   install_tar_directory \
-    nvim "$NEOVIM_VERSION" "$NEOVIM_URL" "$NEOVIM_SHA256" \
-    "nvim-linux-x86_64-${NEOVIM_VERSION}.tar.gz" "nvim-linux-x86_64" "bin/nvim"
+    nvim "$NEOVIM_VERSION" "$neovim_url" "$neovim_sha256" \
+    "nvim-${NEOVIM_VERSION}-${platform}.tar.gz" "$neovim_extracted" "bin/nvim"
 }
 
 install_companion_tools() {
   install_tar_directory \
-    ripgrep "$RIPGREP_VERSION" "$RIPGREP_URL" "$RIPGREP_SHA256" \
-    "ripgrep-${RIPGREP_VERSION}.tar.gz" \
-    "ripgrep-${RIPGREP_VERSION}-x86_64-unknown-linux-musl" "rg"
+    ripgrep "$RIPGREP_VERSION" "$ripgrep_url" "$ripgrep_sha256" \
+    "ripgrep-${RIPGREP_VERSION}-${platform}.tar.gz" "$ripgrep_extracted" "rg"
 
   install_tar_directory \
-    fd "$FD_VERSION" "$FD_URL" "$FD_SHA256" \
-    "fd-${FD_VERSION}.tar.gz" "fd-v${FD_VERSION}-x86_64-unknown-linux-gnu" "fd"
+    fd "$fd_effective_version" "$fd_url" "$fd_sha256" \
+    "fd-${fd_effective_version}-${platform}.tar.gz" "$fd_extracted" "fd"
 
   local fzf_target="$opt_home/fzf-$FZF_VERSION"
   if [[ ! -x "$fzf_target/bin/fzf" ]]; then
     [[ ! -e "$fzf_target" ]] || backup_path "$fzf_target" "$backup_root"
-    local fzf_archive="$cache_home/fzf-${FZF_VERSION}.tar.gz"
-    download_verified "$FZF_URL" "$FZF_SHA256" "$fzf_archive"
+    local fzf_archive="$cache_home/fzf-${FZF_VERSION}-${platform}.tar.gz"
+    download_verified "$fzf_url" "$fzf_sha256" "$fzf_archive"
     mkdir -p "$fzf_target/bin"
     tar -xf "$fzf_archive" -C "$fzf_target/bin" fzf
+    clear_macos_quarantine "$fzf_target"
     log "Installed fzf $FZF_VERSION"
   else
     log "Already installed: fzf $FZF_VERSION"
   fi
 
   install_flat_tar \
-    lazygit "$LAZYGIT_VERSION" "$LAZYGIT_URL" "$LAZYGIT_SHA256" \
-    "lazygit-${LAZYGIT_VERSION}.tar.gz" "lazygit"
+    lazygit "$LAZYGIT_VERSION" "$lazygit_url" "$lazygit_sha256" \
+    "lazygit-${LAZYGIT_VERSION}-${platform}.tar.gz" "lazygit"
 
   local tree_sitter_target="$opt_home/tree-sitter-$TREE_SITTER_VERSION"
   if [[ ! -x "$tree_sitter_target/bin/tree-sitter" ]]; then
     [[ ! -e "$tree_sitter_target" ]] || backup_path "$tree_sitter_target" "$backup_root"
-    local tree_sitter_archive="$cache_home/tree-sitter-${TREE_SITTER_VERSION}.zip"
-    download_verified "$TREE_SITTER_URL" "$TREE_SITTER_SHA256" "$tree_sitter_archive"
+    local tree_sitter_archive="$cache_home/tree-sitter-${TREE_SITTER_VERSION}-${platform}.zip"
+    download_verified "$tree_sitter_url" "$tree_sitter_sha256" "$tree_sitter_archive"
     mkdir -p "$tree_sitter_target/bin"
     unzip -q "$tree_sitter_archive" -d "$tree_sitter_target/bin"
     chmod +x "$tree_sitter_target/bin/tree-sitter"
+    clear_macos_quarantine "$tree_sitter_target"
     log "Installed tree-sitter $TREE_SITTER_VERSION"
   else
     log "Already installed: tree-sitter $TREE_SITTER_VERSION"
   fi
 }
 
-install_nerd_font() {
-  local font_home="$data_home/fonts"
-  local target="$font_home/JetBrainsMonoNerdFont"
-  if [[ -f "$target/JetBrainsMonoNerdFont-Regular.ttf" ]] \
-    && strings "$target/JetBrainsMonoNerdFont-Regular.ttf" 2>/dev/null | grep "Nerd Fonts $NERD_FONT_VERSION" >/dev/null; then
+font_is_current() {
+  [[ -f "$1" ]] || return 1
+  command -v strings >/dev/null 2>&1 || return 1
+  strings "$1" 2>/dev/null | grep "Nerd Fonts $NERD_FONT_VERSION" >/dev/null
+}
+
+install_linux_font() {
+  local target="$data_home/fonts/JetBrainsMonoNerdFont"
+  if font_is_current "$target/JetBrainsMonoNerdFont-Regular.ttf"; then
     log "Already installed: JetBrainsMono Nerd Font $NERD_FONT_VERSION"
     return
   fi
@@ -184,23 +266,61 @@ install_nerd_font() {
   fi
 
   local archive="$cache_home/JetBrainsMono-${NERD_FONT_VERSION}.tar.xz"
-  download_verified "$NERD_FONT_URL" "$NERD_FONT_SHA256" "$archive"
+  download_verified "$NERD_FONT_UNIX_URL" "$NERD_FONT_UNIX_SHA256" "$archive"
   mkdir -p "$target"
   tar -xf "$archive" -C "$target"
   command -v fc-cache >/dev/null 2>&1 && fc-cache -f "$target" >/dev/null
   log "Installed JetBrainsMono Nerd Font $NERD_FONT_VERSION"
 }
 
+install_macos_font() {
+  local font_home="$HOME/Library/Fonts"
+  local regular="$font_home/JetBrainsMonoNerdFont-Regular.ttf"
+  if font_is_current "$regular"; then
+    log "Already installed: JetBrainsMono Nerd Font $NERD_FONT_VERSION"
+    return
+  fi
+
+  local archive="$cache_home/JetBrainsMono-${NERD_FONT_VERSION}.tar.xz"
+  local temporary
+  temporary="$(mktemp -d)"
+  download_verified "$NERD_FONT_UNIX_URL" "$NERD_FONT_UNIX_SHA256" "$archive"
+  tar -xf "$archive" -C "$temporary"
+  mkdir -p "$font_home"
+
+  local destination
+  local backup
+  while IFS= read -r font; do
+    destination="$font_home/$(basename "$font")"
+    if [[ -e "$destination" ]]; then
+      backup="$backup_root/Library/Fonts/$(basename "$font")"
+      mkdir -p "$(dirname "$backup")"
+      mv "$destination" "$backup"
+    fi
+    cp "$font" "$destination"
+  done < <(find "$temporary" -type f -name '*.ttf' -print)
+
+  rm -rf "$temporary"
+  font_is_current "$regular" || die "JetBrainsMono Nerd Font did not install correctly"
+  log "Installed JetBrainsMono Nerd Font $NERD_FONT_VERSION"
+}
+
 install_neovim
 $install_companions && install_companion_tools
-$install_font && install_nerd_font
+if $install_font; then
+  if [[ "$os" == "Darwin" ]]; then
+    install_macos_font
+  else
+    install_linux_font
+  fi
+fi
 
 link_managed_path "$REPO_ROOT/packages/nvim" "$config_home/nvim" "$backup_root"
 link_managed_path "$REPO_ROOT/packages/bin/nvim" "$bin_home/nvim" "$backup_root"
 
 if $install_companions; then
   link_managed_path "$opt_home/ripgrep-$RIPGREP_VERSION/rg" "$bin_home/rg" "$backup_root"
-  link_managed_path "$opt_home/fd-$FD_VERSION/fd" "$bin_home/fd" "$backup_root"
+  link_managed_path "$opt_home/fd-$fd_effective_version/fd" "$bin_home/fd" "$backup_root"
   link_managed_path "$opt_home/fzf-$FZF_VERSION/bin/fzf" "$bin_home/fzf" "$backup_root"
   link_managed_path "$opt_home/lazygit-$LAZYGIT_VERSION/lazygit" "$bin_home/lazygit" "$backup_root"
   link_managed_path "$opt_home/tree-sitter-$TREE_SITTER_VERSION/bin/tree-sitter" "$bin_home/tree-sitter" "$backup_root"
@@ -210,5 +330,5 @@ if $run_restore; then
   "$REPO_ROOT/scripts/restore"
 fi
 
-log "Installation complete"
+log "Installation complete for $platform"
 printf 'Ensure %s is in PATH, then run: nvim\n' "$bin_home"

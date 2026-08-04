@@ -1,39 +1,58 @@
 # Neovim dotfiles
 
-A package-oriented dotfiles monorepository for installing, maintaining, and synchronizing this LazyVim setup. It captures the configuration, editor binary, companion CLI tools, plugin revisions, Mason package versions, and Nerd Font without committing generated runtime data.
+A package-oriented dotfiles monorepository for installing, maintaining, and synchronizing this LazyVim setup on Linux, macOS, and Windows. It captures the configuration, editor binary, companion CLI tools, plugin revisions, Mason package versions, and Nerd Font without committing generated runtime data.
 
 ## What is reproducible
 
 | Layer | Source of truth |
 | --- | --- |
-| Neovim, ripgrep, fd, fzf, lazygit, tree-sitter CLI, font | `manifests/tools.env` (version, release URL, SHA-256) |
+| Neovim, ripgrep, fd, fzf, lazygit, tree-sitter CLI, font | `manifests/tools.env` (platform assets, URLs, SHA-256) |
 | LazyVim and Neovim plugins | `packages/nvim/lazy-lock.json` |
 | LSP servers, formatters, linters, and debuggers | `packages/nvim/mason-lock.json` |
 | Tree-sitter parsers | parser revisions supplied by the locked `nvim-treesitter` plugin |
 | Configuration | `packages/nvim/` |
 
-Generated plugins, tools, logs, caches, undo data, sessions, and editor history remain in the normal XDG data/state/cache directories and are rebuilt from the repository.
+Generated plugins, tools, logs, caches, undo data, sessions, and editor history remain in the platform-standard Neovim data/state/cache directories and are rebuilt from the repository.
 
-## Supported host
+## Supported hosts
 
-The release installer currently targets **Linux x86_64**. It does not require root and installs under `~/.local` by default.
+| Platform | Architectures | Installer |
+| --- | --- | --- |
+| Linux | x86_64 | Bash: `scripts/install` |
+| macOS | Apple Silicon and Intel | Bash: `scripts/install` |
+| Windows 10/11 | ARM64 and x64 | PowerShell: `scripts/install.ps1` |
 
-Host prerequisites:
+Intel macOS uses fd 10.3.0 because fd stopped publishing Intel macOS binaries after that release. Other supported platforms use fd 10.4.2.
 
-- Bash, Git, curl, tar, unzip, xz, jq, and SHA-256 utilities
-- a C compiler and `make` for native plugins/parsers
-- Node.js/npm and Go for the configured Mason packages
-- optional: `xclip`, `tmux`, `inotify-tools`, and `fontconfig`
+### Host prerequisites
 
-On Ubuntu/Zorin, the system utilities can be installed with:
+All platforms need Git, a C compiler for Tree-sitter/native code, Node.js/npm, and Go for the configured Mason packages.
+
+Ubuntu/Zorin:
 
 ```bash
 sudo apt install build-essential curl git jq unzip xz-utils xclip inotify-tools fontconfig
 ```
 
-Keep Node and Go in your preferred runtime manager (the current machine uses NVM and Snap respectively).
+macOS:
 
-## Install on a new machine
+```bash
+xcode-select --install
+brew install git jq node go
+```
+
+Windows—install Git, Node.js, Go, and a compiler such as LLVM/MSVC. For example:
+
+```powershell
+winget install --id Git.Git
+winget install --id OpenJS.NodeJS.LTS
+winget install --id GoLang.Go
+winget install --id LLVM.LLVM
+```
+
+Restart the terminal after installing prerequisites so their updated `PATH` is visible.
+
+## Install on Linux or macOS
 
 ```bash
 git clone <your-repository-url> ~/Documents/Dev/dotfiles
@@ -41,13 +60,7 @@ cd ~/Documents/Dev/dotfiles
 ./scripts/install
 ```
 
-The installer:
-
-1. verifies pinned release artifacts before extracting them;
-2. links `packages/nvim` to `~/.config/nvim`;
-3. links the wrapper and companion tools into `~/.local/bin`;
-4. restores plugins and Mason tools at locked versions;
-5. installs missing Tree-sitter parsers.
+The Unix installer uses `~/.local/opt`, `~/.local/bin`, and `~/.config/nvim`. On macOS, fonts are installed into `~/Library/Fonts`; on Linux they use the XDG data directory.
 
 Existing targets are moved—not deleted—to:
 
@@ -55,11 +68,48 @@ Existing targets are moved—not deleted—to:
 ~/.local/state/dotfiles/backups/<UTC timestamp>/
 ```
 
-Ensure `~/.local/bin` is in `PATH`. Set `DOTFILES_OPT_HOME` or `DOTFILES_BIN_HOME` before installation to override the default binary locations.
+Ensure `~/.local/bin` is in `PATH`. Set `DOTFILES_OPT_HOME` or `DOTFILES_BIN_HOME` before installation to override the binary locations.
+
+## Install on Windows
+
+Run PowerShell—not Git Bash:
+
+```powershell
+git clone <your-repository-url> "$HOME\Documents\Dev\dotfiles"
+Set-Location "$HOME\Documents\Dev\dotfiles"
+Set-ExecutionPolicy -Scope Process Bypass
+.\scripts\install.ps1
+```
+
+The Windows installer:
+
+- installs tools under `%LOCALAPPDATA%\Programs\dotfiles`;
+- creates command shims and adds their directory to the user `PATH`;
+- junctions `%LOCALAPPDATA%\nvim` to `packages\nvim`;
+- keeps generated data under `%LOCALAPPDATA%\nvim-data`;
+- installs the Nerd Font for the current user without requiring administrator rights.
+
+Existing configuration is moved to:
+
+```text
+%LOCALAPPDATA%\dotfiles\state\backups\<UTC timestamp>\
+```
+
+If junction creation fails, enable **Windows Developer Mode** or keep the repository and `%LOCALAPPDATA%` on compatible local volumes.
+
+## What every installer does
+
+1. Selects the release asset for the host OS and CPU architecture.
+2. Verifies its committed SHA-256 before extraction.
+3. Safely links the live Neovim configuration to this repository.
+4. Restores plugins and Mason tools at locked versions.
+5. Installs missing Tree-sitter parsers.
+
+Use `--minimal --no-restore` on Unix or `-Minimal -NoRestore` on Windows for a configuration/CI installation without companion tools.
 
 ## Daily maintenance
 
-Because `~/.config/nvim` is a symlink, normal edits are made directly in this repository.
+Linux/macOS:
 
 ```bash
 make check       # syntax, JSON, Stylua, lock versions, startup
@@ -68,9 +118,18 @@ make lock-mason  # snapshot currently installed Mason versions
 make update      # intentionally update plugins, Mason tools, and parsers
 ```
 
-`make update` requires a clean worktree and leaves lockfile changes for review. Test them, inspect `git diff`, then commit and push. To roll back, restore an older Git commit and run `make restore`.
+Windows:
 
-Host-side binaries update less frequently and deliberately stay outside `make update`. Change each version, release URL, and SHA-256 together in `manifests/tools.env`, run `make install`, and verify with `make check`.
+```powershell
+.\scripts\check.ps1
+.\scripts\restore.ps1
+.\scripts\lock-mason.ps1
+.\scripts\update.ps1
+```
+
+Updates require a clean worktree and leave lockfile changes for review. Test them, inspect `git diff`, then commit and push. To roll back, restore an older Git commit and run the platform restore command.
+
+Host-side binaries deliberately stay outside the automatic update command. Change the matching version, release URLs, and SHA-256 values together in `manifests/tools.env`, rerun the installer, and verify with the check command.
 
 ## Synchronize machines
 
@@ -81,10 +140,16 @@ git remote add origin <your-repository-url>
 git push -u origin main
 ```
 
-On each machine:
+Linux/macOS:
 
 ```bash
 make sync
+```
+
+Windows:
+
+```powershell
+.\scripts\sync.ps1
 ```
 
 Sync refuses a dirty worktree, performs a fast-forward-only pull, reapplies links, restores the lockfiles, and runs checks. Configuration changes should be committed and pushed normally with Git.
@@ -93,12 +158,12 @@ Sync refuses a dirty worktree, performs a fast-forward-only pull, reapplies link
 
 ```text
 .
-├── manifests/tools.env       # pinned host-side release artifacts
-├── packages/bin/nvim         # portable wrapper
-├── packages/nvim/            # complete XDG Neovim configuration
-├── scripts/                  # install/restore/update/check/sync lifecycle
+├── manifests/tools.env       # cross-platform release artifacts and hashes
+├── packages/bin/nvim         # Linux/macOS portable wrapper
+├── packages/nvim/            # complete Neovim configuration
+├── scripts/                  # Bash and PowerShell lifecycle commands
 ├── docs/setup-analysis.md    # findings from the original machine
-└── .github/workflows/ci.yml  # isolated headless startup validation
+└── .github/workflows/ci.yml  # Linux/macOS/Windows headless validation
 ```
 
 ## Design references

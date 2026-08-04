@@ -26,7 +26,7 @@ for receipt in "$packages_dir"/*/mason-receipt.json; do
 done
 
 [[ -s "$entries" ]] || die "no installed Mason packages found"
-sort -o "$entries" "$entries"
+LC_ALL=C sort -o "$entries" "$entries"
 jq -Rn '
   reduce inputs as $line ({};
     ($line | split("\t")) as $entry

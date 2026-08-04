@@ -13,9 +13,17 @@ require_command jq
 require_command bash
 
 log "Checking shell syntax"
-while IFS= read -r file; do
+for file in \
+  "$REPO_ROOT/packages/bin/nvim" \
+  "$REPO_ROOT/scripts/check" \
+  "$REPO_ROOT/scripts/install" \
+  "$REPO_ROOT/scripts/lock-mason" \
+  "$REPO_ROOT/scripts/restore" \
+  "$REPO_ROOT/scripts/sync" \
+  "$REPO_ROOT/scripts/update" \
+  "$REPO_ROOT/scripts/lib/common.sh"; do
   bash -n "$file"
-done < <(find "$REPO_ROOT/scripts" "$REPO_ROOT/packages/bin" -type f -print | sort)
+done
 
 log "Checking JSON files"
 while IFS= read -r file; do

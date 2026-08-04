@@ -15,7 +15,10 @@ require_command jq
 log "Updating plugins and lazy-lock.json"
 "$NVIM_BIN" --headless "+Lazy! sync" +qa
 
-mapfile -t mason_packages < <(jq -r 'keys[]' "$REPO_ROOT/packages/nvim/mason-lock.json")
+mason_packages=()
+while IFS= read -r package; do
+  mason_packages+=("$package")
+done < <(jq -r 'keys[]' "$REPO_ROOT/packages/nvim/mason-lock.json")
 if ((${#mason_packages[@]})); then
   log "Updating ${#mason_packages[@]} Mason packages"
   "$NVIM_BIN" --headless \

@@ -70,13 +70,14 @@ Other health warnings are optional for this plugin set:
 
 ## Chosen repository model
 
-A package-oriented symlink repository was chosen over committing `~/.config/nvim` directly:
+A package-oriented link repository was chosen over committing `~/.config/nvim` directly:
 
 - it can grow to include tmux, shell, Git, or terminal packages without changing its lifecycle;
-- the live configuration remains editable through the XDG path;
-- it avoids a runtime dependency on GNU Stow;
-- every replaced target gets a timestamped backup;
-- machine-generated XDG data/state/cache stays outside Git;
+- the live configuration remains editable through the XDG path on Linux/macOS or `%LOCALAPPDATA%\nvim` on Windows;
+- it supports Linux x86_64, Apple Silicon/Intel macOS, and ARM64/x64 Windows from one checksummed manifest;
+- it avoids a runtime dependency on GNU Stow or a Windows dotfile manager;
+- every replaced configuration target gets a timestamped backup;
+- machine-generated data/state/cache stays outside Git;
 - checksummed host tools and both lockfiles provide a practical reproducibility boundary.
 
 Chezmoi would become preferable if this repository later needs secrets, encrypted values, or extensive host-specific templates. GNU Stow remains a good simpler alternative when only symlinks are needed, but the small repository-native linker avoids requiring it on a fresh host.
