@@ -41,7 +41,8 @@ validate_platform_configuration() {
 
 cleanup_install_temporaries() {
   local temporary
-  for temporary in "${install_temporaries[@]}"; do
+  # macOS ships Bash 3.2, where an empty array expansion fails under nounset.
+  for temporary in "${install_temporaries[@]:-}"; do
     [[ -z "$temporary" ]] || rm -rf "$temporary"
   done
 }
