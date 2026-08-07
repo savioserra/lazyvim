@@ -11,6 +11,7 @@ NVIM_BIN="${NVIM_BIN:-$REPO_ROOT/packages/bin/nvim}"
 
 require_command jq
 require_command bash
+require_command git
 
 log "Checking shell syntax"
 while IFS= read -r file; do
@@ -93,7 +94,23 @@ if [[ -d "$mason_dir" ]]; then
 fi
 
 if command -v tmux >/dev/null 2>&1; then
-  log "Checking tmux configuration"
+  log "Checking locked tmux plugins and configuration"
+  tmux_bash_version="$(bash -c 'printf "%s.%s" "${BASH_VERSINFO[0]}" "${BASH_VERSINFO[1]}"')"
+  tmux_bash_major="${tmux_bash_version%%.*}"
+  tmux_bash_minor="${tmux_bash_version#*.}"
+  if ((tmux_bash_major < 5 || (tmux_bash_major == 5 && tmux_bash_minor < 2))); then
+    die "tmux2k requires Bash 5.2 or newer; found $tmux_bash_version"
+  fi
+
+  while IFS='|' read -r name _repository revision; do
+    [[ -n "$name" && "$name" != \#* ]] || continue
+    plugin="$HOME/.tmux/plugins/$name"
+    [[ -d "$plugin/.git" ]] || die "locked tmux plugin is missing: $name; run scripts/restore-tmux"
+    actual_revision="$(git -C "$plugin" rev-parse HEAD)"
+    [[ "$actual_revision" == "$revision" ]] \
+      || die "tmux plugin $name is $actual_revision; lockfile requires $revision"
+  done <"$REPO_ROOT/manifests/tmux-plugins.lock"
+
   tmux_socket="dotfiles-check-$$"
   trap 'TMUX="" tmux -L "$tmux_socket" kill-server >/dev/null 2>&1 || true' EXIT
   TMUX='' tmux -L "$tmux_socket" -f "$HOME/.tmux.conf" new-session -d -s dotfiles-check
@@ -107,6 +124,14 @@ if command -v tmux >/dev/null 2>&1; then
     || die "tmux default terminal is not tmux-256color"
   [[ "$(TMUX='' tmux -L "$tmux_socket" show-options -sqv 'terminal-features[100]')" == "xterm-256color:RGB" ]] \
     || die "tmux true-color support is not configured"
+  [[ "$(TMUX='' tmux -L "$tmux_socket" show-options -gqv '@tmux2k-theme')" == "catppuccin" ]] \
+    || die "tmux2k Catppuccin theme is not configured"
+  [[ "$(TMUX='' tmux -L "$tmux_socket" show-options -gqv '@tmux2k-left-plugins')" == "session git cwd" ]] \
+    || die "tmux2k left status extensions do not match the repository"
+  [[ "$(TMUX='' tmux -L "$tmux_socket" show-options -gqv '@tmux2k-right-plugins')" == "cpu ram uptime time" ]] \
+    || die "tmux2k right status extensions do not match the repository"
+  status_left="$(TMUX='' tmux -L "$tmux_socket" show-options -gqv status-left)"
+  [[ "$status_left" == *"/tmux2k/plugins/"* ]] || die "tmux2k did not initialize the status bar"
   TMUX='' tmux -L "$tmux_socket" kill-server
   trap - EXIT
 else

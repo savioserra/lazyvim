@@ -11,10 +11,13 @@ A chezmoi-managed dotfiles repository for reproducing this Neovim and tmux setup
 | LSP servers, formatters, linters, and debuggers | `home/dot_config/nvim/mason-lock.json` |
 | Tree-sitter parsers | Revisions supplied by the locked `nvim-treesitter` plugin |
 | Neovim configuration | `home/dot_config/nvim/` |
-| tmux configuration | `home/dot_tmux.conf` |
+| tmux extensions | `manifests/tmux-plugins.lock` |
+| tmux configuration and tmux2k theme | `home/dot_tmux.conf` and `home/dot_config/tmux/themes/tmux2k.conf` |
 | Target-file mapping and host conditions | `.chezmoiroot` and `home/.chezmoiignore` |
 
 Chezmoi applies Neovim to `~/.config/nvim` and tmux to `~/.tmux.conf`. On native Windows, tmux is ignored and `%LOCALAPPDATA%\nvim` is junctioned to the chezmoi-managed configuration under the user profile.
+
+The tmux status bar uses tmux2k's built-in Catppuccin palette with session, Git, working-directory, CPU, memory, uptime, and clock segments. TPM, tmux2k, tmux-fingers, and tmux-yank are restored to exact commits from `manifests/tmux-plugins.lock`.
 
 Generated plugins, tools, logs, caches, undo data, sessions, editor history, and tmux session state remain in platform-standard data/state/cache directories.
 
@@ -30,7 +33,7 @@ WSL is treated as Linux and receives the tmux configuration. Linux ARM64 and oth
 
 ### Host prerequisites
 
-All platforms need Git, a C compiler, Node.js/npm, and Go for configured Mason packages. Linux and macOS also need tmux 3.2 or newer to use the managed tmux configuration.
+All platforms need Git, a C compiler, Node.js/npm, and Go for configured Mason packages. Linux and macOS also need tmux 3.2 or newer and Bash 5.2 or newer for the managed tmux2k status bar.
 
 Ubuntu/Zorin:
 
@@ -42,7 +45,7 @@ macOS:
 
 ```bash
 xcode-select --install
-brew install git jq node go tmux
+brew install bash git jq node go tmux
 ```
 
 Windows—install Git, Node.js, Go, and LLVM/MSVC. Use PowerShell, not Git Bash:
@@ -99,7 +102,7 @@ Installer options:
 - Unix: `--minimal`, `--no-font`, `--no-restore`
 - Windows: `-Minimal`, `-NoFont`, `-NoRestore`
 
-Every installer selects platform assets, verifies committed SHA-256 values, installs pinned chezmoi, and applies configuration. Unless restore is disabled, it also restores both lockfiles and installs missing Tree-sitter parsers.
+Every installer selects platform assets, verifies committed SHA-256 values, installs pinned chezmoi, and applies configuration. Unless restore is disabled, it also restores the Neovim, Mason, and tmux plugin locks and installs missing Tree-sitter parsers.
 
 ## Configuration workflow
 
@@ -150,7 +153,8 @@ Linux/macOS:
 make apply       # apply repository configuration to the home directory
 make capture     # capture modified managed files into the repository
 make check       # syntax, versions, chezmoi drift, formatting, tmux, startup
-make restore     # apply configuration and enforce both lockfiles
+make restore     # apply configuration and enforce Neovim, Mason, and tmux locks
+make restore-tmux # restore exact TPM/tmux2k/extension revisions
 make lock-mason  # snapshot installed Mason versions and capture the lockfile
 make update      # intentionally update plugins, Mason tools, and parsers
 make sync        # fast-forward pull, apply, restore, and check
@@ -170,7 +174,7 @@ Windows:
 
 `sync` and `update` refuse a dirty Git worktree. Capture and commit live configuration changes before synchronizing. To roll back, restore an older Git commit and run `make restore` or `scripts\restore.ps1`.
 
-Host binary updates remain intentional: change each version, platform URL, and SHA-256 together in `manifests/tools.env`, rerun the installer, and run checks.
+Host binary updates remain intentional: change each version, platform URL, and SHA-256 together in `manifests/tools.env`, rerun the installer, and run checks. For tmux extension updates, replace the corresponding commit in `manifests/tmux-plugins.lock`, then run `make restore-tmux` and `make check`; TPM updates that are not recorded in the lockfile are deliberately rejected.
 
 ## Repository layout
 
@@ -180,8 +184,10 @@ Host binary updates remain intentional: change each version, platform URL, and S
 ├── home/                     # chezmoi source state
 │   ├── .chezmoiignore        # native-Windows tmux exclusion
 │   ├── dot_config/nvim/      # maps to ~/.config/nvim
+│   ├── dot_config/tmux/      # tmux2k status theme and extension layout
 │   └── dot_tmux.conf         # maps to ~/.tmux.conf
 ├── manifests/tools.env       # pinned cross-platform artifacts and hashes
+├── manifests/tmux-plugins.lock # exact tmux extension revisions
 ├── packages/bin/nvim         # portable Linux/macOS launcher
 ├── scripts/                  # install/apply/capture/restore/update/check/sync
 ├── docs/                     # original analysis and installer review
@@ -196,3 +202,5 @@ Host binary updates remain intentional: change each version, platform URL, and S
 - [LazyVim installation](https://www.lazyvim.org/installation)
 - [mason.nvim documentation](https://github.com/mason-org/mason.nvim/blob/main/doc/mason.txt)
 - [Neovim standard paths](https://neovim.io/doc/user/starting.html#standard-path)
+- [tmux2k configuration](https://github.com/2KAbhishek/tmux2k)
+- [Tmux Plugin Manager](https://github.com/tmux-plugins/tpm)

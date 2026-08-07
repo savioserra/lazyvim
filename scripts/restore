@@ -7,6 +7,7 @@ source "$script_dir/lib/common.sh"
 REPO_ROOT="$(repo_root)"
 
 restore_plugins=true
+restore_tmux=true
 restore_mason=true
 restore_parsers=true
 
@@ -17,7 +18,7 @@ Usage: scripts/restore [options]
 Restore the editor from the committed lockfiles.
 
 Options:
-  --plugins-only  Restore lazy.nvim plugins only
+  --plugins-only  Restore Neovim and tmux plugins only
   --mason-only    Restore Mason packages only
   --skip-parsers  Do not install missing Tree-sitter parsers
   -h, --help      Show this help
@@ -32,6 +33,7 @@ while (($#)); do
       ;;
     --mason-only)
       restore_plugins=false
+      restore_tmux=false
       restore_parsers=false
       ;;
     --skip-parsers) restore_parsers=false ;;
@@ -56,6 +58,10 @@ NVIM_BIN="${NVIM_BIN:-$REPO_ROOT/packages/bin/nvim}"
 if $restore_plugins; then
   log "Restoring plugins from lazy-lock.json"
   "$NVIM_BIN" --headless "+Lazy! restore" +qa
+fi
+
+if $restore_tmux; then
+  "$REPO_ROOT/scripts/restore-tmux"
 fi
 
 if $restore_mason; then

@@ -1,4 +1,4 @@
-.PHONY: install install-linux install-macos apply capture restore check update sync lock-mason
+.PHONY: install install-linux install-macos apply capture restore restore-tmux check update sync lock-mason
 
 install:
 	./scripts/install
@@ -17,6 +17,9 @@ capture:
 
 restore:
 	./scripts/restore
+
+restore-tmux:
+	./scripts/restore-tmux
 
 check:
 	./scripts/check

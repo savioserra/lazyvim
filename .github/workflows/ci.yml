@@ -24,6 +24,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install tmux test dependencies
+        run: |
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            sudo apt-get update
+            sudo apt-get install --yes tmux
+          else
+            brew install bash tmux
+          fi
+
       - name: Install pinned tools and link configuration
         run: ${{ matrix.installer }} --no-font --no-restore
 
