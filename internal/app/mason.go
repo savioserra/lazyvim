@@ -54,7 +54,7 @@ func (a *App) LockMason(ctx context.Context) error {
 	content = append(content, '\n')
 	active := filepath.Join(a.paths.Home, ".config", "nvim", "mason-lock.json")
 	if !directory(filepath.Dir(active)) {
-		return fmt.Errorf("managed Neovim configuration is missing; run dotfiles apply first")
+		return fmt.Errorf("managed Neovim configuration is missing; run lazyvim apply first")
 	}
 	if err := atomicfile.Write(active, content, 0o644); err != nil {
 		return err

@@ -26,11 +26,11 @@ jobs:
       - name: Cross-compile supported hosts
         run: |
           mkdir -p .build/cross
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o .build/cross/dotfiles-linux-amd64 ./cmd/dotfiles
-          CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -o .build/cross/dotfiles-darwin-arm64 ./cmd/dotfiles
-          CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -o .build/cross/dotfiles-darwin-amd64 ./cmd/dotfiles
-          CGO_ENABLED=0 GOOS=windows GOARCH=arm64 go build -o .build/cross/dotfiles-windows-arm64.exe ./cmd/dotfiles
-          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o .build/cross/dotfiles-windows-amd64.exe ./cmd/dotfiles
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o .build/cross/lazyvim-linux-amd64 ./cmd/lazyvim
+          CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -o .build/cross/lazyvim-darwin-arm64 ./cmd/lazyvim
+          CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -o .build/cross/lazyvim-darwin-amd64 ./cmd/lazyvim
+          CGO_ENABLED=0 GOOS=windows GOARCH=arm64 go build -o .build/cross/lazyvim-windows-arm64.exe ./cmd/lazyvim
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o .build/cross/lazyvim-windows-amd64.exe ./cmd/lazyvim
 
   unix:
     strategy:
@@ -62,16 +62,16 @@ jobs:
         run: |
           go test ./...
           mkdir -p .build
-          go build -trimpath -o .build/dotfiles ./cmd/dotfiles
+          go build -trimpath -o .build/lazyvim ./cmd/lazyvim
 
       - name: Install pinned tools and configuration
-        run: .build/dotfiles install --no-font --no-restore
+        run: .build/lazyvim install --no-font --no-restore
 
       - name: Restore locked environment
-        run: .build/dotfiles restore
+        run: .build/lazyvim restore
 
       - name: Validate configuration
-        run: .build/dotfiles check
+        run: .build/lazyvim check
 
       - name: Ensure checks did not rewrite tracked files
         run: |
@@ -95,16 +95,16 @@ jobs:
         run: |
           go test ./...
           New-Item -ItemType Directory -Force .build | Out-Null
-          go build -trimpath -o .build/dotfiles.exe ./cmd/dotfiles
+          go build -trimpath -o .build/lazyvim.exe ./cmd/lazyvim
 
       - name: Install pinned tools and configuration
-        run: ./.build/dotfiles.exe install --no-font --no-restore
+        run: ./.build/lazyvim.exe install --no-font --no-restore
 
       - name: Restore locked environment
-        run: ./.build/dotfiles.exe restore
+        run: ./.build/lazyvim.exe restore
 
       - name: Validate configuration
-        run: ./.build/dotfiles.exe check
+        run: ./.build/lazyvim.exe check
 
       - name: Ensure checks did not rewrite tracked files
         run: |

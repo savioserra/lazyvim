@@ -35,26 +35,26 @@ func ResolvePaths(platform config.Platform) (Paths, error) {
 		if local == "" {
 			return Paths{}, errors.New("LOCALAPPDATA is not set")
 		}
-		paths.Opt = EnvironmentOr("DOTFILES_OPT_HOME", filepath.Join(local, "Programs", "dotfiles"))
-		paths.Bin = EnvironmentOr("DOTFILES_BIN_HOME", filepath.Join(paths.Opt, "bin"))
+		paths.Opt = EnvironmentOr("LAZYVIM_OPT_HOME", filepath.Join(local, "Programs", "lazyvim"))
+		paths.Bin = EnvironmentOr("LAZYVIM_BIN_HOME", filepath.Join(paths.Opt, "bin"))
 		paths.Config = local
 		paths.Data = local
-		paths.Cache = filepath.Join(local, "dotfiles", "cache")
-		paths.State = filepath.Join(local, "dotfiles", "state")
+		paths.Cache = filepath.Join(local, "lazyvim", "cache")
+		paths.State = filepath.Join(local, "lazyvim", "state")
 		paths.NvimConfig = filepath.Join(local, "nvim")
 		paths.NvimData = filepath.Join(local, "nvim-data")
 	} else {
-		paths.Opt = EnvironmentOr("DOTFILES_OPT_HOME", filepath.Join(home, ".local", "opt"))
-		paths.Bin = EnvironmentOr("DOTFILES_BIN_HOME", filepath.Join(home, ".local", "bin"))
+		paths.Opt = EnvironmentOr("LAZYVIM_OPT_HOME", filepath.Join(home, ".local", "opt"))
+		paths.Bin = EnvironmentOr("LAZYVIM_BIN_HOME", filepath.Join(home, ".local", "bin"))
 		paths.Config = EnvironmentOr("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 		paths.Data = NormalizedDataHome(home, EnvironmentOr("XDG_DATA_HOME", filepath.Join(home, ".local", "share")))
 		paths.Cache = EnvironmentOr("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
-		paths.State = filepath.Join(EnvironmentOr("XDG_STATE_HOME", filepath.Join(home, ".local", "state")), "dotfiles")
+		paths.State = filepath.Join(EnvironmentOr("XDG_STATE_HOME", filepath.Join(home, ".local", "state")), "lazyvim")
 		paths.NvimConfig = filepath.Join(paths.Config, "nvim")
 		paths.NvimData = filepath.Join(paths.Data, "nvim")
 		paths.TmuxPlugins = EnvironmentOr("TMUX_PLUGIN_HOME", filepath.Join(home, ".tmux", "plugins"))
 	}
-	paths.DownloadCache = filepath.Join(paths.Cache, "dotfiles", "downloads")
+	paths.DownloadCache = filepath.Join(paths.Cache, "lazyvim", "downloads")
 	if platform.GOOS == "windows" {
 		paths.DownloadCache = filepath.Join(paths.Cache, "downloads")
 	}

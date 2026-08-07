@@ -12,7 +12,7 @@ import (
 
 func TestInstallSelfUsesInjectedExecutable(t *testing.T) {
 	root := t.TempDir()
-	source := filepath.Join(root, "source-dotfiles")
+	source := filepath.Join(root, "source-lazyvim")
 	if err := os.WriteFile(source, []byte("binary"), 0o755); err != nil {
 		t.Fatal(err)
 	}

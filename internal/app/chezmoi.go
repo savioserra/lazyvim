@@ -11,7 +11,8 @@ import (
 func (a *App) migrateAndApply(ctx context.Context) error {
 	marker := filepath.Join(a.paths.State, "chezmoi-source-state-v1")
 	managedNvim := filepath.Join(a.paths.Home, ".config", "nvim")
-	if !regularFile(marker) {
+	firstApply := !regularFile(marker)
+	if firstApply {
 		targets := []string{managedNvim}
 		if runtime.GOOS != "windows" {
 			targets = append(targets, filepath.Join(a.paths.Home, ".tmux.conf"))
@@ -24,7 +25,12 @@ func (a *App) migrateAndApply(ctx context.Context) error {
 			}
 		}
 	}
-	if err := a.Apply(ctx, nil); err != nil {
+	applyArguments := []string(nil)
+	if firstApply {
+		// Existing targets were preserved above, so non-interactive replacement is safe.
+		applyArguments = []string{"--force"}
+	}
+	if err := a.Apply(ctx, applyArguments); err != nil {
 		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(marker), 0o755); err != nil {

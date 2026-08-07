@@ -38,9 +38,9 @@ func TestNewAcceptsInjectedHostDependencies(t *testing.T) {
 }
 
 func TestSyncBuildArgumentsIncludeVersionMetadata(t *testing.T) {
-	arguments := syncBuildArguments("v1.2.3", "/tmp/dotfiles")
+	arguments := syncBuildArguments("v1.2.3", "/tmp/lazyvim")
 	joined := strings.Join(arguments, " ")
-	if !strings.Contains(joined, "internal/buildinfo.version=v1.2.3") || !strings.Contains(joined, "-o /tmp/dotfiles") {
+	if !strings.Contains(joined, "internal/buildinfo.version=v1.2.3") || !strings.Contains(joined, "-o /tmp/lazyvim") {
 		t.Fatalf("unexpected build arguments: %q", joined)
 	}
 }
@@ -67,7 +67,7 @@ func TestMasonReceiptVersion(t *testing.T) {
 }
 
 func TestRepositoryDiscoveryDoesNotTrustWorkingDirectory(t *testing.T) {
-	t.Setenv("DOTFILES_REPO", "")
+	t.Setenv("LAZYVIM_REPO", "")
 	fake := t.TempDir()
 	for name, content := range map[string]string{
 		".chezmoiroot":                  "home\n",
@@ -168,9 +168,9 @@ func TestEmbeddedSourceIsRevalidated(t *testing.T) {
 }
 
 func TestInvalidRepositoryEnvironmentFailsClosed(t *testing.T) {
-	t.Setenv("DOTFILES_REPO", filepath.Join(t.TempDir(), "missing"))
+	t.Setenv("LAZYVIM_REPO", filepath.Join(t.TempDir(), "missing"))
 	if _, _, err := resolveRepository("", t.TempDir()); err == nil {
-		t.Fatal("expected invalid DOTFILES_REPO to fail")
+		t.Fatal("expected invalid LAZYVIM_REPO to fail")
 	}
 }
 

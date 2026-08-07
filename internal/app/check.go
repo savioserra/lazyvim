@@ -82,7 +82,7 @@ func (a *App) Check(ctx context.Context) error {
 		return err
 	}
 	if difference != "" {
-		return fmt.Errorf("managed configuration differs from the repository; run dotfiles capture or dotfiles apply")
+		return fmt.Errorf("managed configuration differs from the repository; run lazyvim capture or lazyvim apply")
 	}
 	if err := a.checkCompanionVersions(ctx); err != nil {
 		return err
@@ -97,7 +97,7 @@ func (a *App) Check(ctx context.Context) error {
 		return err
 	}
 	a.logf("Checking installed plugin revisions")
-	if err := a.run(ctx, nvim, "--headless", "+lua require('dotfiles.restore').plugins()", "+qa"); err != nil {
+	if err := a.run(ctx, nvim, "--headless", "+lua require('lazyvim.restore').plugins()", "+qa"); err != nil {
 		return err
 	}
 	if runtime.GOOS != "windows" {
@@ -224,7 +224,7 @@ func (a *App) checkConfigTarget() error {
 		return fmt.Errorf("resolve managed Neovim configuration %s: %w", a.paths.NvimConfig, err)
 	}
 	if !samePath(resolved, expected) {
-		return fmt.Errorf("%s resolves to %s, expected %s; run dotfiles install", a.paths.NvimConfig, resolved, expected)
+		return fmt.Errorf("%s resolves to %s, expected %s; run lazyvim install", a.paths.NvimConfig, resolved, expected)
 	}
 	return nil
 }
@@ -240,7 +240,7 @@ func (a *App) checkStylua(ctx context.Context) error {
 			a.logf("Checking Lua formatting")
 			luaDirectory := filepath.Join(a.repoRoot, "home", "dot_config", "nvim", "lua")
 			if runtime.GOOS == "windows" && strings.EqualFold(filepath.Ext(stylua), ".cmd") {
-				return a.runWithEnvironment(ctx, []string{"DOTFILES_STYLUA=" + stylua, "DOTFILES_LUA_DIR=" + luaDirectory}, "cmd.exe", "/d", "/v:off", "/s", "/c", `"%DOTFILES_STYLUA%" --check "%DOTFILES_LUA_DIR%"`)
+				return a.runWithEnvironment(ctx, []string{"LAZYVIM_STYLUA=" + stylua, "LAZYVIM_LUA_DIR=" + luaDirectory}, "cmd.exe", "/d", "/v:off", "/s", "/c", `"%LAZYVIM_STYLUA%" --check "%LAZYVIM_LUA_DIR%"`)
 			}
 			return a.run(ctx, stylua, "--check", luaDirectory)
 		}
@@ -259,18 +259,18 @@ func (a *App) checkMason() error {
 	}
 	packagesHome := filepath.Join(a.paths.NvimData, "mason", "packages")
 	if !directory(packagesHome) {
-		return fmt.Errorf("Mason package directory is missing: %s; run dotfiles restore", packagesHome)
+		return fmt.Errorf("Mason package directory is missing: %s; run lazyvim restore", packagesHome)
 	}
 	a.logf("Checking installed Mason versions")
 	for _, name := range sortedKeys(lock) {
 		expected := lock[name]
 		packageHome := filepath.Join(packagesHome, name)
 		if !directory(packageHome) {
-			return fmt.Errorf("locked Mason package is missing: %s; run dotfiles restore", name)
+			return fmt.Errorf("locked Mason package is missing: %s; run lazyvim restore", name)
 		}
 		receiptPath := filepath.Join(packageHome, "mason-receipt.json")
 		if !regularFile(receiptPath) {
-			return fmt.Errorf("Mason package %s has no receipt: %s; run dotfiles restore", name, receiptPath)
+			return fmt.Errorf("Mason package %s has no receipt: %s; run lazyvim restore", name, receiptPath)
 		}
 		receipt, err := readMasonReceipt(receiptPath)
 		if err != nil {
@@ -314,7 +314,7 @@ func (a *App) checkTmux(ctx context.Context) (returnErr error) {
 	for _, plugin := range plugins {
 		target := filepath.Join(a.paths.TmuxPlugins, plugin.Name)
 		if !directory(filepath.Join(target, ".git")) {
-			return fmt.Errorf("locked tmux plugin is missing: %s; run dotfiles restore-tmux", plugin.Name)
+			return fmt.Errorf("locked tmux plugin is missing: %s; run lazyvim restore-tmux", plugin.Name)
 		}
 		actual, err := a.output(ctx, "git", "-C", target, "rev-parse", "HEAD")
 		if err != nil {
@@ -325,7 +325,7 @@ func (a *App) checkTmux(ctx context.Context) (returnErr error) {
 		}
 	}
 
-	socket := fmt.Sprintf("dotfiles-check-%d", os.Getpid())
+	socket := fmt.Sprintf("lazyvim-check-%d", os.Getpid())
 	tmux := func(arguments ...string) (string, error) {
 		command := append([]string{"-L", socket}, arguments...)
 		return a.outputWithEnvironment(ctx, []string{"TMUX="}, "tmux", command...)
@@ -333,7 +333,7 @@ func (a *App) checkTmux(ctx context.Context) (returnErr error) {
 	defer func() {
 		_, _ = tmux("kill-server")
 	}()
-	if _, err := tmux("-f", filepath.Join(a.paths.Home, ".tmux.conf"), "new-session", "-d", "-s", "dotfiles-check"); err != nil {
+	if _, err := tmux("-f", filepath.Join(a.paths.Home, ".tmux.conf"), "new-session", "-d", "-s", "lazyvim-check"); err != nil {
 		return err
 	}
 	checks := []struct {

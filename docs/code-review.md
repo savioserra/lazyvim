@@ -34,7 +34,7 @@ The original Bash installer mixed OS detection, every platform asset mapping, ar
 
 An executable at `nvim-0.12.4` was accepted without knowing whether it came from Linux, Intel macOS, Apple Silicon, Windows x64, or Windows ARM64. This matters after architecture migrations or shared-home restores.
 
-**Resolution:** every managed release directory now contains `.dotfiles-release` with its platform and archive SHA-256. A mismatched marker causes a safe backup and reinstall. Unix pre-marker installations are adopted only after checking the executable format and architecture; Windows pre-marker installations are safely reinstalled once because there is no dependency-free PE architecture check.
+**Resolution:** every managed release directory now contains `.lazyvim-release` with its platform and archive SHA-256. A mismatched marker causes a safe backup and reinstall. Unix pre-marker installations are adopted only after checking the executable format and architecture; Windows pre-marker installations are safely reinstalled once because there is no dependency-free PE architecture check.
 
 ### Shell validation used a hand-maintained file list
 
@@ -58,7 +58,7 @@ Companion asset URLs, archive layouts, and executable paths could regress withou
 
 Compatibility aliases named `Write-Log` made command resolution less explicit.
 
-**Resolution:** all code now calls `Write-DotfilesLog` and `Write-DotfilesWarning` directly.
+**Resolution:** all code now calls `Write-LazyVimLog` and `Write-LazyVimWarning` directly.
 
 ## Remaining constraints
 

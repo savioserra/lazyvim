@@ -83,21 +83,21 @@ func (a *App) Sync(ctx context.Context) error {
 		return err
 	}
 	defer os.RemoveAll(temporary)
-	binary := filepath.Join(temporary, "dotfiles"+runtimeExecutableExtension())
+	binary := filepath.Join(temporary, "lazyvim"+runtimeExecutableExtension())
 	version, err := a.output(ctx, "git", "-C", a.repoRoot, "describe", "--always", "--dirty")
 	if err != nil {
 		return fmt.Errorf("determine updated CLI version: %w", err)
 	}
-	a.logf("Building the updated dotfiles CLI")
+	a.logf("Building the updated lazyvim CLI")
 	if err := a.runIn(ctx, a.repoRoot, "go", syncBuildArguments(version, binary)...); err != nil {
-		return fmt.Errorf("build updated dotfiles CLI: %w", err)
+		return fmt.Errorf("build updated lazyvim CLI: %w", err)
 	}
 	return a.run(ctx, binary, "--repo", a.repoRoot, "sync-continue")
 }
 
 func syncBuildArguments(version, binary string) []string {
 	ldflags := "-s -w -X " + buildinfo.Variable() + "=" + version
-	return []string{"build", "-trimpath", "-ldflags", ldflags, "-o", binary, "./cmd/dotfiles"}
+	return []string{"build", "-trimpath", "-ldflags", ldflags, "-o", binary, "./cmd/lazyvim"}
 }
 
 func (a *App) SyncContinue(ctx context.Context) error {

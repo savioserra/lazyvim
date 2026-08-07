@@ -65,7 +65,7 @@ func (a *App) Restore(ctx context.Context, options RestoreOptions) error {
 	}
 	if restoreParsers {
 		a.logf("Installing missing Tree-sitter parsers")
-		if err := a.run(ctx, nvim, "--headless", "+Lazy load nvim-treesitter", "+lua require('dotfiles.restore').parsers()", "+qa"); err != nil {
+		if err := a.run(ctx, nvim, "--headless", "+Lazy load nvim-treesitter", "+lua require('lazyvim.restore').parsers()", "+qa"); err != nil {
 			return err
 		}
 	}
@@ -77,7 +77,7 @@ func (a *App) restorePlugins(ctx context.Context, nvim string) (returnErr error)
 	a.logf("Installing missing plugins before enforcing lazy-lock.json")
 	committed := filepath.Join(a.repoRoot, "home", "dot_config", "nvim", "lazy-lock.json")
 	active := filepath.Join(a.paths.Home, ".config", "nvim", "lazy-lock.json")
-	snapshot, err := os.CreateTemp("", "dotfiles-lazy-lock-*.json")
+	snapshot, err := os.CreateTemp("", "lazyvim-lazy-lock-*.json")
 	if err != nil {
 		return err
 	}
@@ -108,7 +108,7 @@ func (a *App) restorePlugins(ctx context.Context, nvim string) (returnErr error)
 	if err := a.copyFile(snapshotPath, active, 0o644); err != nil {
 		return err
 	}
-	if err := a.run(ctx, nvim, "--headless", "+lua require('dotfiles.restore').plugins()", "+qa"); err != nil {
+	if err := a.run(ctx, nvim, "--headless", "+lua require('lazyvim.restore').plugins()", "+qa"); err != nil {
 		return err
 	}
 	return nil

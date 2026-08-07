@@ -65,7 +65,7 @@ func (a *App) Install(ctx context.Context, options InstallOptions) error {
 	if err != nil {
 		return err
 	}
-	if err := a.writeCommandShim("dotfiles", self); err != nil {
+	if err := a.writeCommandShim("lazyvim", self); err != nil {
 		return err
 	}
 	if runtime.GOOS == "windows" {
@@ -107,7 +107,7 @@ func (a *App) Install(ctx context.Context, options InstallOptions) error {
 
 func (a *App) installRelease(ctx context.Context, release config.Release) (string, error) {
 	target := filepath.Join(a.paths.Opt, release.TargetName)
-	marker := filepath.Join(target, ".dotfiles-release")
+	marker := filepath.Join(target, ".lazyvim-release")
 	installedBinary := filepath.Join(target, filepath.FromSlash(release.ExpectedBinary))
 	if executableFile(installedBinary) {
 		if content, err := os.ReadFile(marker); err == nil && strings.TrimSpace(string(content)) == release.ReleaseIdentity() {
@@ -150,7 +150,7 @@ func (a *App) installRelease(ctx context.Context, release config.Release) (strin
 	if !executableFile(expected) {
 		return "", fmt.Errorf("%s archive installed a non-executable %s", release.Name, release.ExpectedBinary)
 	}
-	if err := os.WriteFile(filepath.Join(temporary, ".dotfiles-release"), []byte(release.ReleaseIdentity()+"\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(temporary, ".lazyvim-release"), []byte(release.ReleaseIdentity()+"\n"), 0o644); err != nil {
 		return "", err
 	}
 	backup := ""

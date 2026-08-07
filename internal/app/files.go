@@ -94,8 +94,8 @@ func (a *App) connectDirectory(source, target string) error {
 		return err
 	}
 	if runtime.GOOS == "windows" {
-		command := exec.Command("cmd.exe", "/d", "/v:off", "/s", "/c", `mklink /J "%DOTFILES_JUNCTION_TARGET%" "%DOTFILES_JUNCTION_SOURCE%"`)
-		command.Env = append(os.Environ(), "DOTFILES_JUNCTION_TARGET="+target, "DOTFILES_JUNCTION_SOURCE="+source)
+		command := exec.Command("cmd.exe", "/d", "/v:off", "/s", "/c", `mklink /J "%LAZYVIM_JUNCTION_TARGET%" "%LAZYVIM_JUNCTION_SOURCE%"`)
+		command.Env = append(os.Environ(), "LAZYVIM_JUNCTION_TARGET="+target, "LAZYVIM_JUNCTION_SOURCE="+source)
 		if output, err := command.CombinedOutput(); err == nil {
 			a.logf("Linked %s -> %s", target, source)
 			return nil
@@ -250,26 +250,26 @@ func fileSHA(path string) (string, error) {
 func (a *App) installSelf() (string, error) {
 	executable, err := a.executablePath()
 	if err != nil {
-		return "", fmt.Errorf("locate dotfiles executable: %w", err)
+		return "", fmt.Errorf("locate lazyvim executable: %w", err)
 	}
 	executable, err = filepath.EvalSymlinks(executable)
 	if err != nil {
-		return "", fmt.Errorf("resolve dotfiles executable: %w", err)
+		return "", fmt.Errorf("resolve lazyvim executable: %w", err)
 	}
 	source, err := os.Open(executable)
 	if err != nil {
-		return "", fmt.Errorf("open dotfiles executable: %w", err)
+		return "", fmt.Errorf("open lazyvim executable: %w", err)
 	}
 	defer source.Close()
 	hash := sha256.New()
 	if _, err := io.Copy(hash, source); err != nil {
-		return "", fmt.Errorf("hash dotfiles executable: %w", err)
+		return "", fmt.Errorf("hash lazyvim executable: %w", err)
 	}
 	digest := hex.EncodeToString(hash.Sum(nil))
 	if _, err := source.Seek(0, io.SeekStart); err != nil {
 		return "", err
 	}
-	target := filepath.Join(a.paths.Opt, "dotfiles-"+digest, "dotfiles"+runtimeExecutableExtension())
+	target := filepath.Join(a.paths.Opt, "lazyvim-"+digest, "lazyvim"+runtimeExecutableExtension())
 	if info, err := os.Lstat(target); err == nil {
 		actual, hashErr := fileSHA(target)
 		if info.Mode().IsRegular() && executableFile(target) && hashErr == nil && actual == digest {
@@ -284,7 +284,7 @@ func (a *App) installSelf() (string, error) {
 	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 		return "", err
 	}
-	output, err := os.CreateTemp(filepath.Dir(target), ".dotfiles.tmp-*")
+	output, err := os.CreateTemp(filepath.Dir(target), ".lazyvim.tmp-*")
 	if err != nil {
 		return "", err
 	}
@@ -310,9 +310,9 @@ func (a *App) installSelf() (string, error) {
 		return "", closeErr
 	}
 	if err := os.Rename(temporary, target); err != nil {
-		return "", fmt.Errorf("publish dotfiles executable: %w", err)
+		return "", fmt.Errorf("publish lazyvim executable: %w", err)
 	}
-	a.logf("Installed dotfiles CLI %s", digest[:12])
+	a.logf("Installed lazyvim CLI %s", digest[:12])
 	return target, nil
 }
 

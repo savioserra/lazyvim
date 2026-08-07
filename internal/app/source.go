@@ -12,7 +12,7 @@ import (
 	"sort"
 	"strings"
 
-	dotfiles "github.com/savioserra/lazyvim"
+	lazyvim "github.com/savioserra/lazyvim"
 )
 
 func resolveRepository(explicit, stateHome string) (string, bool, error) {
@@ -20,10 +20,10 @@ func resolveRepository(explicit, stateHome string) (string, bool, error) {
 		root, err := validateRepository(explicit)
 		return root, err == nil, err
 	}
-	if environment := strings.TrimSpace(os.Getenv("DOTFILES_REPO")); environment != "" {
+	if environment := strings.TrimSpace(os.Getenv("LAZYVIM_REPO")); environment != "" {
 		root, err := validateRepository(environment)
 		if err != nil {
-			return "", false, fmt.Errorf("invalid DOTFILES_REPO: %w", err)
+			return "", false, fmt.Errorf("invalid LAZYVIM_REPO: %w", err)
 		}
 		return root, true, nil
 	}
@@ -63,7 +63,7 @@ func validateRepository(root string) (string, error) {
 	}
 	for _, required := range []string{".chezmoiroot", filepath.Join("manifests", "tools.env"), filepath.Join("home", "dot_config", "nvim", "init.lua")} {
 		if _, err := os.Stat(filepath.Join(absolute, required)); err != nil {
-			return "", fmt.Errorf("%s is not a dotfiles repository: missing %s", absolute, required)
+			return "", fmt.Errorf("%s is not a LazyVim repository: missing %s", absolute, required)
 		}
 	}
 	return absolute, nil
@@ -85,7 +85,7 @@ func openManifest(embedded fs.FS, repository string, actual bool) (io.ReadCloser
 }
 
 func materializeEmbeddedSource(stateHome string) (string, error) {
-	return materializeEmbeddedSourceFrom(dotfiles.Embedded, stateHome)
+	return materializeEmbeddedSourceFrom(lazyvim.Embedded, stateHome)
 }
 
 func materializeEmbeddedSourceFrom(embedded fs.FS, stateHome string) (string, error) {

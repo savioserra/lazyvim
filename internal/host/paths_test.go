@@ -22,8 +22,8 @@ func TestResolvePathsHonorsUnixOverrides(t *testing.T) {
 	}
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	t.Setenv("DOTFILES_OPT_HOME", filepath.Join(home, "opt"))
-	t.Setenv("DOTFILES_BIN_HOME", filepath.Join(home, "bin"))
+	t.Setenv("LAZYVIM_OPT_HOME", filepath.Join(home, "opt"))
+	t.Setenv("LAZYVIM_BIN_HOME", filepath.Join(home, "bin"))
 	platform, err := config.PlatformFor("linux", "amd64")
 	if err != nil {
 		t.Fatal(err)

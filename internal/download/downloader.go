@@ -123,7 +123,7 @@ func (d *Downloader) downloadOnce(ctx context.Context, artifact Artifact, destin
 	if err != nil {
 		return err
 	}
-	request.Header.Set("User-Agent", "dotfiles-cli/1")
+	request.Header.Set("User-Agent", "lazyvim-cli/1")
 	response, err := d.Client.Do(request)
 	if err != nil {
 		return retryError{err: err}

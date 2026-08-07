@@ -56,7 +56,7 @@ func TestInstallReleaseStagesAndBacksUpExistingTarget(t *testing.T) {
 	if string(content) != "new binary" {
 		t.Fatalf("got %q", content)
 	}
-	marker, err := os.ReadFile(filepath.Join(installed, ".dotfiles-release"))
+	marker, err := os.ReadFile(filepath.Join(installed, ".lazyvim-release"))
 	if err != nil || strings.TrimSpace(string(marker)) != release.ReleaseIdentity() {
 		t.Fatalf("invalid release marker %q: %v", marker, err)
 	}

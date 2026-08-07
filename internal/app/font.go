@@ -26,7 +26,7 @@ func (a *App) installFont(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	temporary, err := os.MkdirTemp("", "dotfiles-fonts-")
+	temporary, err := os.MkdirTemp("", "lazyvim-fonts-")
 	if err != nil {
 		return err
 	}

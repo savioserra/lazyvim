@@ -42,7 +42,7 @@ The original single `lua/plugins/dev.lua` specification was split by concern int
 5. The Neovim launcher hard-coded the home directory and Neovim version.
 6. The installed Nerd Font and its version were documented but not installable from the configuration.
 7. There were no automated formatting, JSON, shell syntax, startup, or CI checks.
-8. Runtime data was nearly 1 GiB; copying it would make a poor dotfiles repository and would sync machine-local history/state.
+8. Runtime data was nearly 1 GiB; copying it would make a poor lazyvim repository and would sync machine-local history/state.
 
 ## Health observations
 
@@ -62,7 +62,7 @@ The first version used a package-oriented link repository. Once tmux and general
 - `home/dot_config/nvim` maps to `~/.config/nvim`;
 - `home/dot_tmux.conf` maps to `~/.tmux.conf` on Linux, macOS, and WSL;
 - native Windows ignores tmux and junctions `%LOCALAPPDATA%\nvim` to the applied configuration under the user profile;
-- live changes are captured with `dotfiles capture`, while repository changes are deployed with `dotfiles apply`;
+- live changes are captured with `lazyvim capture`, while repository changes are deployed with `lazyvim apply`;
 - typed Go catalogs select the supported runtime platform and archive layouts;
 - every replaced unmanaged target gets a timestamped backup;
 - machine-generated data/state/cache stays outside Git;

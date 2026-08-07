@@ -47,7 +47,7 @@ func New(in io.Reader, out, stderr io.Writer) *cobra.Command {
 func newWithFactory(in io.Reader, out, stderr io.Writer, factory applicationFactory) *cobra.Command {
 	options := &rootOptions{in: in, out: out, err: stderr, factory: factory}
 	root := &cobra.Command{
-		Use:           "dotfiles",
+		Use:           "lazyvim",
 		Short:         "Install and maintain the pinned development environment",
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -56,7 +56,7 @@ func newWithFactory(in io.Reader, out, stderr io.Writer, factory applicationFact
 	root.SetIn(in)
 	root.SetOut(out)
 	root.SetErr(stderr)
-	root.PersistentFlags().StringVar(&options.repository, "repo", "", "dotfiles repository root (auto-detected by default)")
+	root.PersistentFlags().StringVar(&options.repository, "repo", "", "LazyVim repository root (auto-detected by default)")
 	root.CompletionOptions.DisableDefaultCmd = true
 	root.AddCommand(
 		newInstallCommand(options),
@@ -116,7 +116,7 @@ func newApplyCommand(root *rootOptions) *cobra.Command {
 	return &cobra.Command{
 		Use:   "apply [-- chezmoi arguments...]",
 		Short: "Apply repository configuration to the home directory",
-		Long:  "Apply repository configuration. Put chezmoi flags after -- so Cobra can parse dotfiles flags and help.",
+		Long:  "Apply repository configuration. Put chezmoi flags after -- so Cobra can parse LazyVim flags and help.",
 		Args:  cobra.ArbitraryArgs,
 		RunE: runWithAppArgs(root, func(ctx context.Context, application application, arguments []string) error {
 			return application.Apply(ctx, arguments)
@@ -289,7 +289,7 @@ func newNvimCommand(root *rootOptions) *cobra.Command {
 	return &cobra.Command{
 		Use:   "nvim [-- arguments...]",
 		Short: "Run the pinned Neovim with normalized environment",
-		Long:  "Run pinned Neovim. Put Neovim flags after -- so Cobra can parse dotfiles flags and help.",
+		Long:  "Run pinned Neovim. Put Neovim flags after -- so Cobra can parse LazyVim flags and help.",
 		Args:  cobra.ArbitraryArgs,
 		RunE: runWithAppArgs(root, func(ctx context.Context, application application, arguments []string) error {
 			return application.LaunchNvim(ctx, arguments)

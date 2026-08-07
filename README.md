@@ -1,4 +1,4 @@
-# Cross-platform development dotfiles
+# LazyVim
 
 A chezmoi-managed Neovim and tmux environment for Linux, macOS, and Windows. A single Go/Cobra CLI now owns installation, verified downloads, configuration deployment, lock restoration, validation, updates, and synchronization; no Bash or PowerShell implementation is required.
 
@@ -54,7 +54,7 @@ winget install --id GoLang.Go
 winget install --id LLVM.LLVM
 ```
 
-A published prebuilt `dotfiles` binary does not require Go for installation. It embeds the manifests and chezmoi source state, and can optionally embed all pinned release archives.
+A published prebuilt `lazyvim` binary does not require Go for installation. It embeds the manifests and chezmoi source state, and can optionally embed all pinned release archives.
 
 ## Install
 
@@ -63,44 +63,44 @@ A published prebuilt `dotfiles` binary does not require Go for installation. It 
 Every version tag publishes GitHub release assets for Apple Silicon and Intel macOS. After cloning, `make bootstrap` detects the architecture, downloads the latest archive and `SHA256SUMS`, verifies it, and hands installation to the Go CLI:
 
 ```bash
-git clone https://github.com/savioserra/lazyvim.git ~/Documents/Dev/dotfiles
-cd ~/Documents/Dev/dotfiles
+git clone https://github.com/savioserra/lazyvim.git ~/Documents/Dev/lazyvim
+cd ~/Documents/Dev/lazyvim
 make bootstrap
 ```
 
-Installer flags can be passed with `INSTALL_ARGS`, for example `make bootstrap INSTALL_ARGS="--minimal --no-font"`. For later no-Go updates, run `git pull --ff-only` in the clone followed by `make bootstrap`. Other installed lifecycle commands do not need Go; `dotfiles sync` intentionally rebuilds the CLI from pulled source and therefore remains the source-build path.
+Installer flags can be passed with `INSTALL_ARGS`, for example `make bootstrap INSTALL_ARGS="--minimal --no-font"`. For later no-Go updates, run `git pull --ff-only` in the clone followed by `make bootstrap`. Other installed lifecycle commands do not need Go; `lazyvim sync` intentionally rebuilds the CLI from pulled source and therefore remains the source-build path.
 
 ### Build from source
 
 Linux and macOS:
 
 ```bash
-git clone https://github.com/savioserra/lazyvim.git ~/Documents/Dev/dotfiles
-cd ~/Documents/Dev/dotfiles
+git clone https://github.com/savioserra/lazyvim.git ~/Documents/Dev/lazyvim
+cd ~/Documents/Dev/lazyvim
 make build
-.build/dotfiles install
+.build/lazyvim install
 ```
 
 Windows (PowerShell):
 
 ```powershell
-git clone <your-repository-url> "$HOME\Documents\Dev\dotfiles"
-Set-Location "$HOME\Documents\Dev\dotfiles"
+git clone <your-repository-url> "$HOME\Documents\Dev\lazyvim"
+Set-Location "$HOME\Documents\Dev\lazyvim"
 New-Item -ItemType Directory -Force .build | Out-Null
-go build -trimpath -o .build/dotfiles.exe ./cmd/dotfiles
-./.build/dotfiles.exe install
+go build -trimpath -o .build/lazyvim.exe ./cmd/lazyvim
+./.build/lazyvim.exe install
 ```
 
-The installer copies itself into the managed tool directory and installs `dotfiles` and `nvim` launchers. It remembers the repository location, so lifecycle commands work outside the clone. Existing unmanaged targets are moved—not deleted—to timestamped backup directories.
+The installer copies itself into the managed tool directory and installs `lazyvim` and `nvim` launchers. It remembers the repository location, so lifecycle commands work outside the clone. Existing unmanaged targets are moved—not deleted—to timestamped backup directories.
 
 Defaults:
 
 - Unix tools: `~/.local/opt`; launchers: `~/.local/bin`
-- Windows tools: `%LOCALAPPDATA%\Programs\dotfiles`
-- Unix backups: `~/.local/state/dotfiles/backups/`
-- Windows backups: `%LOCALAPPDATA%\dotfiles\state\backups\`
+- Windows tools: `%LOCALAPPDATA%\Programs\lazyvim`
+- Unix backups: `~/.local/state/lazyvim/backups/`
+- Windows backups: `%LOCALAPPDATA%\lazyvim\state\backups\`
 
-Set `DOTFILES_OPT_HOME` or `DOTFILES_BIN_HOME` to override tool and launcher locations.
+Set `LAZYVIM_OPT_HOME` or `LAZYVIM_BIN_HOME` to override tool and launcher locations.
 
 Installer options:
 
@@ -111,30 +111,30 @@ Installer options:
 --offline      Forbid network downloads; requires --no-restore
 ```
 
-Every archive is cached, SHA-256 verified, safely extracted by Go, and identified by a platform/hash release marker. The CLI no longer depends on curl, jq, tar, unzip, or PowerShell for this work. `dotfiles check` is strict: after a minimal or `--no-restore` installation, run `dotfiles restore` before expecting all lock checks to pass.
+Every archive is cached, SHA-256 verified, safely extracted by Go, and identified by a platform/hash release marker. The CLI no longer depends on curl, jq, tar, unzip, or PowerShell for this work. `lazyvim check` is strict: after a minimal or `--no-restore` installation, run `lazyvim restore` before expecting all lock checks to pass.
 
 ## CLI
 
 ```bash
-dotfiles apply          # apply repository configuration
-dotfiles capture        # capture modified managed files
-dotfiles restore        # enforce editor, Mason, parser, and tmux locks
-dotfiles restore-tmux   # enforce exact tmux plugin commits
-dotfiles lock-mason     # snapshot installed Mason versions
-dotfiles check          # validate tools, drift, locks, formatting, tmux, startup
-dotfiles update         # intentionally update editor locks and parsers
-dotfiles sync           # fast-forward pull, install, restore, and check
-dotfiles nvim -- --version # run pinned Neovim through the normalized launcher
+lazyvim apply          # apply repository configuration
+lazyvim capture        # capture modified managed files
+lazyvim restore        # enforce editor, Mason, parser, and tmux locks
+lazyvim restore-tmux   # enforce exact tmux plugin commits
+lazyvim lock-mason     # snapshot installed Mason versions
+lazyvim check          # validate tools, drift, locks, formatting, tmux, startup
+lazyvim update         # intentionally update editor locks and parsers
+lazyvim sync           # fast-forward pull, install, restore, and check
+lazyvim nvim -- --version # run pinned Neovim through the normalized launcher
 ```
 
-Flags for delegated programs go after `--`; this preserves Cobra help and global flags such as `dotfiles apply --repo <path> -- --dry-run`.
+Flags for delegated programs go after `--`; this preserves Cobra help and global flags such as `lazyvim apply --repo <path> -- --dry-run`.
 
 Restore selectors:
 
 ```bash
-dotfiles restore --plugins-only
-dotfiles restore --mason-only
-dotfiles restore --skip-parsers
+lazyvim restore --plugins-only
+lazyvim restore --mason-only
+lazyvim restore --skip-parsers
 ```
 
 Make targets (`make apply`, `make capture`, `make restore`, `make check`, `make update`, and `make sync`) build the CLI when needed and call the same commands.
@@ -145,32 +145,32 @@ Edit live files, inspect chezmoi drift, and capture them:
 
 ```bash
 nvim ~/.config/nvim/lua/config/options.lua
-dotfiles apply -- --dry-run
-dotfiles capture
+lazyvim apply -- --dry-run
+lazyvim capture
 git diff
 git add .
 git commit -m "feat: update development configuration"
 ```
 
-`sync` and `update` refuse a dirty Git worktree or uncaptured chezmoi drift. To roll back, check out an older commit and run `dotfiles restore`.
+`sync` and `update` refuse a dirty Git worktree or uncaptured chezmoi drift. To roll back, check out an older commit and run `lazyvim restore`.
 
 ## Downloads and offline builds
 
 The installer downloads missing archives automatically. The dedicated command group also exposes cache management:
 
 ```bash
-dotfiles downloads list --font
-dotfiles downloads fetch --font
-dotfiles downloads verify --font
-dotfiles downloads clean
+lazyvim downloads list --font
+lazyvim downloads fetch --font
+lazyvim downloads verify --font
+lazyvim downloads clean
 ```
 
 To build a self-contained offline host-tool installer, fetch archives into `bundles/` and rebuild:
 
 ```bash
-dotfiles downloads bundle --all-platforms --font
+lazyvim downloads bundle --all-platforms --font
 make build
-.build/dotfiles install --offline --no-restore
+.build/lazyvim install --offline --no-restore
 ```
 
 Offline mode covers the CLI, pinned host tools, font, and chezmoi configuration. Lazy/Mason/Tree-sitter/tmux restoration has its own upstream network requirements and is therefore disabled explicitly with `--no-restore`.
@@ -181,7 +181,7 @@ Offline mode covers the CLI, pinned host tools, font, and chezmoi configuration.
 
 ```text
 .
-├── cmd/dotfiles/                 # Cobra executable
+├── cmd/lazyvim/                     # Cobra executable
 ├── internal/
 │   ├── app/                      # install/apply/restore/check/update orchestration
 │   ├── archive/                  # traversal-safe zip/tar.gz/tar.xz extraction
@@ -203,6 +203,6 @@ Offline mode covers the CLI, pinned host tools, font, and chezmoi configuration.
 
 - Repository commands use an explicit, remembered, or executable-relative checkout; ambient working directories are not trusted. Standalone embedded mode supports install/apply/restore/check but intentionally rejects capture/lock-mason/update/sync.
 - The `nvim` launcher is the Go binary invoked under a second name. It normalizes Snap VS Code's revision-specific `XDG_DATA_HOME` before replacing itself with pinned Neovim.
-- Release directories include `.dotfiles-release` with platform and archive hash, preventing accidental reuse across architecture migrations.
+- Release directories include `.lazyvim-release` with platform and archive hash, preventing accidental reuse across architecture migrations.
 - Archive extraction rejects absolute paths, traversal, escaping symlinks, hard links, devices, and other special entries.
 - Host tool updates remain intentional: change version, URL, and digest together in `manifests/tools.env`, rebuild, install, and check.

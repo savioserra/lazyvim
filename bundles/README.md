@@ -1,6 +1,6 @@
 # Optional embedded downloads
 
-`dotfiles downloads bundle` writes pinned release archives here. Any archive
+`lazyvim downloads bundle` writes pinned release archives here. Any archive
 present when `go build` runs is included in the binary with `go:embed`; the
 installer verifies its committed SHA-256 before use and falls back to the
 network when an archive is not bundled.

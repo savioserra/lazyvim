@@ -1,5 +1,5 @@
 GO ?= go
-BINARY := .build/dotfiles
+BINARY := .build/lazyvim
 VERSION ?= $(shell git describe --always --dirty 2>/dev/null || printf dev)
 RELEASE_BASE ?= https://github.com/savioserra/lazyvim/releases/latest/download
 INSTALL_ARGS ?=
@@ -11,7 +11,7 @@ build: $(BINARY)
 
 $(BINARY): $(GO_SOURCES)
 	@mkdir -p $(dir $@)
-	$(GO) build -trimpath -ldflags "-s -w -X github.com/savioserra/lazyvim/internal/buildinfo.version=$(VERSION)" -o $@ ./cmd/dotfiles
+	$(GO) build -trimpath -ldflags "-s -w -X github.com/savioserra/lazyvim/internal/buildinfo.version=$(VERSION)" -o $@ ./cmd/lazyvim
 
 test:
 	$(GO) test ./...
@@ -26,9 +26,9 @@ bootstrap:
 		Darwin/arm64) architecture=arm64 ;; \
 		Darwin/x86_64) architecture=amd64 ;; \
 		Linux/x86_64) architecture=amd64 ;; \
-		*) printf 'No published dotfiles binary supports %s/%s\n' "$$platform" "$$machine" >&2; exit 1 ;; \
+		*) printf 'No published lazyvim binary supports %s/%s\n' "$$platform" "$$machine" >&2; exit 1 ;; \
 	esac; \
-	asset="dotfiles_$${platform}_$${architecture}.tar.gz"; \
+	asset="lazyvim_$${platform}_$${architecture}.tar.gz"; \
 	base="$(RELEASE_BASE)"; \
 	temporary=$$(mktemp -d); \
 	trap 'rm -rf "$$temporary"' 0 1 2 15; \
@@ -39,7 +39,7 @@ bootstrap:
 	if command -v shasum >/dev/null 2>&1; then verifier='shasum -a 256'; else verifier=sha256sum; fi; \
 	(cd "$$temporary" && printf '%s\n' "$$checksum" | $$verifier -c -); \
 	tar -C "$$temporary" -xzf "$$temporary/$$asset"; \
-	"$$temporary/dotfiles" --repo "$(CURDIR)" install $(INSTALL_ARGS)
+	"$$temporary/lazyvim" --repo "$(CURDIR)" install $(INSTALL_ARGS)
 
 install: $(BINARY)
 	$(BINARY) install

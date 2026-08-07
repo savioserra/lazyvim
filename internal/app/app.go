@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	dotfiles "github.com/savioserra/lazyvim"
+	lazyvim "github.com/savioserra/lazyvim"
 	"github.com/savioserra/lazyvim/internal/config"
 	"github.com/savioserra/lazyvim/internal/download"
 	"github.com/savioserra/lazyvim/internal/host"
@@ -91,7 +91,7 @@ func New(options Options) (*App, error) {
 	}
 	embedded := options.Embedded
 	if embedded == nil {
-		embedded = dotfiles.Embedded
+		embedded = lazyvim.Embedded
 	}
 	if options.Now == nil {
 		options.Now = time.Now
@@ -248,7 +248,7 @@ func (a *App) nvimPath() (string, error) {
 	}
 	path := host.EnvironmentOr("NVIM_BIN", a.executable(release))
 	if !executableFile(path) {
-		return "", fmt.Errorf("pinned Neovim is not installed or executable: %s; run dotfiles install first", path)
+		return "", fmt.Errorf("pinned Neovim is not installed or executable: %s; run lazyvim install first", path)
 	}
 	return path, nil
 }
@@ -260,7 +260,7 @@ func (a *App) chezmoiPath() (string, error) {
 	}
 	path := host.EnvironmentOr("CHEZMOI_BIN", a.executable(release))
 	if !executableFile(path) {
-		return "", fmt.Errorf("pinned chezmoi is not installed or executable: %s; run dotfiles install first", path)
+		return "", fmt.Errorf("pinned chezmoi is not installed or executable: %s; run lazyvim install first", path)
 	}
 	return path, nil
 }

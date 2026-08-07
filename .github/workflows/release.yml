@@ -29,21 +29,21 @@ jobs:
 
           build_unix() {
             local goos="$1" goarch="$2" platform="$3"
-            local name="dotfiles_${platform}_${goarch}"
+            local name="lazyvim_${platform}_${goarch}"
             mkdir -p "dist/${name}"
             CGO_ENABLED=0 GOOS="${goos}" GOARCH="${goarch}" \
-              go build -trimpath -ldflags "${ldflags}" -o "dist/${name}/dotfiles" ./cmd/dotfiles
-            tar -C "dist/${name}" -czf "dist/${name}.tar.gz" dotfiles
+              go build -trimpath -ldflags "${ldflags}" -o "dist/${name}/lazyvim" ./cmd/lazyvim
+            tar -C "dist/${name}" -czf "dist/${name}.tar.gz" lazyvim
             rm -rf "dist/${name}"
           }
 
           build_windows() {
             local goarch="$1"
-            local name="dotfiles_Windows_${goarch}"
+            local name="lazyvim_Windows_${goarch}"
             mkdir -p "dist/${name}"
             CGO_ENABLED=0 GOOS=windows GOARCH="${goarch}" \
-              go build -trimpath -ldflags "${ldflags}" -o "dist/${name}/dotfiles.exe" ./cmd/dotfiles
-            tar -C "dist/${name}" -czf "dist/${name}.tar.gz" dotfiles.exe
+              go build -trimpath -ldflags "${ldflags}" -o "dist/${name}/lazyvim.exe" ./cmd/lazyvim
+            tar -C "dist/${name}" -czf "dist/${name}.tar.gz" lazyvim.exe
             rm -rf "dist/${name}"
           }
 
@@ -52,7 +52,7 @@ jobs:
           build_unix darwin arm64 Darwin
           build_windows amd64
           build_windows arm64
-          (cd dist && sha256sum dotfiles_* > SHA256SUMS)
+          (cd dist && sha256sum lazyvim_* > SHA256SUMS)
 
       - name: Publish GitHub release
         env:

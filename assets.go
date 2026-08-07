@@ -1,4 +1,4 @@
-package dotfiles
+package lazyvim
 
 import "embed"
 
