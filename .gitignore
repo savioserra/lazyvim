@@ -3,6 +3,11 @@
 *.log
 *.tmp
 *.bak
+.build/
+
+# Optional release archives are local build inputs unless explicitly force-added.
+bundles/*
+!bundles/README.md
 
 # Neovim runtime data belongs under XDG data/state/cache, not in Git.
 .nvim-data/

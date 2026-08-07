@@ -1,5 +1,7 @@
 # Original setup analysis
 
+> Lifecycle command references in this historical analysis were subsequently migrated to the Go/Cobra CLI. See [go-migration.md](go-migration.md).
+
 Analyzed on 2026-08-04 before migration into this repository.
 
 ## Inventory
@@ -60,8 +62,8 @@ The first version used a package-oriented link repository. Once tmux and general
 - `home/dot_config/nvim` maps to `~/.config/nvim`;
 - `home/dot_tmux.conf` maps to `~/.tmux.conf` on Linux, macOS, and WSL;
 - native Windows ignores tmux and junctions `%LOCALAPPDATA%\nvim` to the applied configuration under the user profile;
-- live changes are captured with `scripts/capture`, while repository changes are deployed with `scripts/apply`;
-- platform selection remains isolated in `install-linux`, `install-macos`, and `install-windows.ps1`;
+- live changes are captured with `dotfiles capture`, while repository changes are deployed with `dotfiles apply`;
+- typed Go catalogs select the supported runtime platform and archive layouts;
 - every replaced unmanaged target gets a timestamped backup;
 - machine-generated data/state/cache stays outside Git;
 - checksummed host tools and both lockfiles provide a practical reproducibility boundary.

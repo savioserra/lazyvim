@@ -1,5 +1,5 @@
 # name|repository|commit
-# Update commits intentionally, then run scripts/restore-tmux and scripts/check.
+# Update commits intentionally, then run dotfiles restore-tmux and dotfiles check.
 tpm|https://github.com/tmux-plugins/tpm.git|e261deb1b47614eed3400089ce7197dc68acc4eb
 tmux2k|https://github.com/2KAbhishek/tmux2k.git|07b3228b56c1a7b6109f00009df80b53f7eae892
 tmux-fingers|https://github.com/Morantron/tmux-fingers.git|fc3c750b8d73ac3e29675aae3b3ac6a00a0718f1

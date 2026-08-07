@@ -1,6 +1,8 @@
-# Installer code review
+# Historical installer code review
 
-Reviewed after adding macOS and Windows support. Configuration deployment subsequently migrated from repository links to a pinned chezmoi source state; the platform installer findings below still describe the download and tool-installation layer.
+> This review describes the retired Bash/PowerShell implementation. The lifecycle was migrated to the Go/Cobra binary documented in [go-migration.md](go-migration.md). It is retained as design history and as a parity record.
+
+Reviewed after adding macOS and Windows support. Configuration deployment subsequently migrated from repository links to a pinned chezmoi source state.
 
 ## Refactored architecture
 

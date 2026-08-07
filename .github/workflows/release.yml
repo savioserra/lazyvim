@@ -1,0 +1,65 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  binaries:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build release archives
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          version="${GITHUB_REF_NAME}"
+          ldflags="-s -w -X github.com/savioserra/lazyvim/internal/buildinfo.version=${version}"
+
+          build_unix() {
+            local goos="$1" goarch="$2" platform="$3"
+            local name="dotfiles_${platform}_${goarch}"
+            mkdir -p "dist/${name}"
+            CGO_ENABLED=0 GOOS="${goos}" GOARCH="${goarch}" \
+              go build -trimpath -ldflags "${ldflags}" -o "dist/${name}/dotfiles" ./cmd/dotfiles
+            tar -C "dist/${name}" -czf "dist/${name}.tar.gz" dotfiles
+            rm -rf "dist/${name}"
+          }
+
+          build_windows() {
+            local goarch="$1"
+            local name="dotfiles_Windows_${goarch}"
+            mkdir -p "dist/${name}"
+            CGO_ENABLED=0 GOOS=windows GOARCH="${goarch}" \
+              go build -trimpath -ldflags "${ldflags}" -o "dist/${name}/dotfiles.exe" ./cmd/dotfiles
+            tar -C "dist/${name}" -czf "dist/${name}.tar.gz" dotfiles.exe
+            rm -rf "dist/${name}"
+          }
+
+          build_unix linux amd64 Linux
+          build_unix darwin amd64 Darwin
+          build_unix darwin arm64 Darwin
+          build_windows amd64
+          build_windows arm64
+          (cd dist && sha256sum dotfiles_* > SHA256SUMS)
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" dist/* \
+            --repo "${GITHUB_REPOSITORY}" \
+            --title "${GITHUB_REF_NAME}" \
+            --generate-notes \
+            --verify-tag

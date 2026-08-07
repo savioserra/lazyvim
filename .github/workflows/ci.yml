@@ -8,21 +8,46 @@ permissions:
   contents: read
 
 jobs:
+  go:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Check formatting
+        run: test -z "$(gofmt -l .)"
+      - name: Test and vet
+        run: |
+          go test -race ./...
+          go vet ./...
+      - name: Cross-compile supported hosts
+        run: |
+          mkdir -p .build/cross
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o .build/cross/dotfiles-linux-amd64 ./cmd/dotfiles
+          CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -o .build/cross/dotfiles-darwin-arm64 ./cmd/dotfiles
+          CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -o .build/cross/dotfiles-darwin-amd64 ./cmd/dotfiles
+          CGO_ENABLED=0 GOOS=windows GOARCH=arm64 go build -o .build/cross/dotfiles-windows-arm64.exe ./cmd/dotfiles
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o .build/cross/dotfiles-windows-amd64.exe ./cmd/dotfiles
+
   unix:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: ubuntu-24.04
-            installer: ./scripts/install-linux
-          - os: macos-15
-            installer: ./scripts/install-macos
-          - os: macos-15-intel
-            installer: ./scripts/install-macos
+        os:
+          - ubuntu-24.04
+          - macos-15
+          - macos-15-intel
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          cache: true
 
       - name: Install tmux test dependencies
         run: |
@@ -33,14 +58,20 @@ jobs:
             brew install bash tmux
           fi
 
-      - name: Install pinned tools and link configuration
-        run: ${{ matrix.installer }} --no-font --no-restore
+      - name: Run native Go tests and build CLI
+        run: |
+          go test ./...
+          mkdir -p .build
+          go build -trimpath -o .build/dotfiles ./cmd/dotfiles
 
-      - name: Restore locked plugins
-        run: ./scripts/restore --plugins-only
+      - name: Install pinned tools and configuration
+        run: .build/dotfiles install --no-font --no-restore
+
+      - name: Restore locked environment
+        run: .build/dotfiles restore
 
       - name: Validate configuration
-        run: ./scripts/check
+        run: .build/dotfiles check
 
       - name: Ensure checks did not rewrite tracked files
         run: |
@@ -49,21 +80,31 @@ jobs:
 
   windows:
     runs-on: windows-2025
-    timeout-minutes: 15
+    timeout-minutes: 30
     defaults:
       run:
         shell: pwsh
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          cache: true
 
-      - name: Install pinned tools and link configuration
-        run: ./scripts/install-windows.ps1 -NoFont -NoRestore
+      - name: Run native Go tests and build CLI
+        run: |
+          go test ./...
+          New-Item -ItemType Directory -Force .build | Out-Null
+          go build -trimpath -o .build/dotfiles.exe ./cmd/dotfiles
 
-      - name: Restore locked plugins
-        run: ./scripts/restore.ps1 -PluginsOnly
+      - name: Install pinned tools and configuration
+        run: ./.build/dotfiles.exe install --no-font --no-restore
+
+      - name: Restore locked environment
+        run: ./.build/dotfiles.exe restore
 
       - name: Validate configuration
-        run: ./scripts/check.ps1
+        run: ./.build/dotfiles.exe check
 
       - name: Ensure checks did not rewrite tracked files
         run: |
