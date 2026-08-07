@@ -233,24 +233,22 @@ func (a *App) checkStylua(ctx context.Context) error {
 	mason := filepath.Join(a.paths.NvimData, "mason")
 	candidates := []string{filepath.Join(mason, "bin", "stylua")}
 	if runtime.GOOS == "windows" {
-		candidates = []string{filepath.Join(mason, "bin", "stylua.cmd"), filepath.Join(mason, "bin", "stylua.exe")}
+		// Prefer Mason's real executable. Passing a quoted .cmd path through
+		// os/exec and cmd.exe applies incompatible quote escaping on Windows.
+		candidates = []string{
+			filepath.Join(mason, "packages", "stylua", "stylua.exe"),
+			filepath.Join(mason, "bin", "stylua.exe"),
+		}
 	}
 	for _, stylua := range candidates {
 		if regularFile(stylua) {
 			a.logf("Checking Lua formatting")
 			luaDirectory := filepath.Join(a.repoRoot, "home", "dot_config", "nvim", "lua")
-			if runtime.GOOS == "windows" && strings.EqualFold(filepath.Ext(stylua), ".cmd") {
-				return a.runWithEnvironment(ctx, []string{"LAZYVIM_STYLUA=" + stylua, "LAZYVIM_LUA_DIR=" + luaDirectory}, "cmd.exe", styluaBatchArguments()...)
-			}
 			return a.run(ctx, stylua, "--check", luaDirectory)
 		}
 	}
 	a.warnf("Stylua is not installed; skipping Lua formatting check")
 	return nil
-}
-
-func styluaBatchArguments() []string {
-	return []string{"/d", "/v:off", "/c", `call "%LAZYVIM_STYLUA%" --check "%LAZYVIM_LUA_DIR%"`}
 }
 
 func (a *App) checkMason() error {

@@ -8,14 +8,6 @@ import (
 	"testing"
 )
 
-func TestStyluaBatchCommandUsesCallWithoutCmdQuoteRewriting(t *testing.T) {
-	arguments := styluaBatchArguments()
-	joined := strings.Join(arguments, " ")
-	if strings.Contains(joined, " /s ") || !strings.Contains(joined, `call "%LAZYVIM_STYLUA%"`) {
-		t.Fatalf("unexpected cmd.exe arguments: %v", arguments)
-	}
-}
-
 func TestCheckConfigTargetRequiresCustomXDGLink(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Unix XDG link behavior")
