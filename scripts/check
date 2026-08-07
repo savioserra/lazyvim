@@ -131,8 +131,12 @@ if command -v tmux >/dev/null 2>&1; then
     || die "tmux2k Catppuccin theme is not configured"
   [[ "$(TMUX='' tmux -L "$tmux_socket" show-options -gqv '@tmux2k-left-plugins')" == "session git cwd" ]] \
     || die "tmux2k left status extensions do not match the repository"
-  [[ "$(TMUX='' tmux -L "$tmux_socket" show-options -gqv '@tmux2k-right-plugins')" == "cpu ram uptime time" ]] \
+  [[ "$(TMUX='' tmux -L "$tmux_socket" show-options -gqv '@tmux2k-right-plugins')" == "cpu ram time" ]] \
     || die "tmux2k right status extensions do not match the repository"
+  [[ -z "$(TMUX='' tmux -L "$tmux_socket" show-options -gqv '@tmux2k-cpu-gradient')" ]] \
+    || die "tmux2k CPU gradient reduces status contrast"
+  [[ -z "$(TMUX='' tmux -L "$tmux_socket" show-options -gqv '@tmux2k-ram-gradient')" ]] \
+    || die "tmux2k RAM gradient reduces status contrast"
   status_left="$(TMUX='' tmux -L "$tmux_socket" show-options -gqv status-left)"
   [[ "$status_left" == *"/tmux2k/plugins/"* ]] || die "tmux2k did not initialize the status bar"
   TMUX='' tmux -L "$tmux_socket" kill-server
