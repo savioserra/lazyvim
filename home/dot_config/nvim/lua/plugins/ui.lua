@@ -1,4 +1,12 @@
 return {
+  -- Disable LazyVim's animated scrolling while keeping other Snacks features enabled.
+  {
+    "folke/snacks.nvim",
+    opts = {
+      scroll = { enabled = false },
+    },
+  },
+
   -- Replace diagnostic virtual text with a cleaner inline display.
   {
     "rachartier/tiny-inline-diagnostic.nvim",
