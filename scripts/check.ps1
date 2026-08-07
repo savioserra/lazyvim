@@ -158,7 +158,7 @@ Invoke-NativeCommand -FilePath $Nvim -Arguments @(
 Write-DotfilesLog 'Checking headless startup'
 Invoke-NativeCommand -FilePath $Nvim -Arguments @(
     '--headless',
-    "+lua assert(vim.g.lazyvim_ts_lsp == 'vtsls', 'LazyVim options were not loaded')",
+    "+lua assert(vim.g.lazyvim_ts_lsp == 'vtsls', 'LazyVim options were not loaded'); assert(vim.g.colors_name == 'catppuccin' and require('catppuccin').options.flavour == 'macchiato', 'Catppuccin Macchiato was not loaded')",
     '+qa'
 )
 

@@ -17,6 +17,8 @@ A chezmoi-managed dotfiles repository for reproducing this Neovim and tmux setup
 
 Chezmoi applies Neovim to `~/.config/nvim` and tmux to `~/.tmux.conf`. On native Windows, tmux is ignored and `%LOCALAPPDATA%\nvim` is junctioned to the chezmoi-managed configuration under the user profile.
 
+Neovim uses the pinned `catppuccin/nvim` plugin with the Macchiato flavour.
+
 The tmux status bar uses tmux2k's built-in Catppuccin palette with session, Git, working-directory, CPU, memory, and clock segments. High-contrast text replaces utilization gradients, and uptime is omitted to avoid a clock-like duplicate. TPM, tmux2k, tmux-fingers, and tmux-yank are restored to exact commits from `manifests/tmux-plugins.lock`.
 
 Generated plugins, tools, logs, caches, undo data, sessions, editor history, and tmux session state remain in platform-standard data/state/cache directories.
