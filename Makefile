@@ -39,7 +39,7 @@ bootstrap:
 	if command -v shasum >/dev/null 2>&1; then verifier='shasum -a 256'; else verifier=sha256sum; fi; \
 	(cd "$$temporary" && printf '%s\n' "$$checksum" | $$verifier -c -); \
 	tar -C "$$temporary" -xzf "$$temporary/$$asset"; \
-	"$$temporary/lazyvim" --repo "$(CURDIR)" install $(INSTALL_ARGS)
+	"$$temporary/lazyvim" --repo "$(CURDIR)" install --no-restore $(INSTALL_ARGS)
 
 install: $(BINARY)
 	$(BINARY) install

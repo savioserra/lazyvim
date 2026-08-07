@@ -28,7 +28,7 @@ WSL is treated as Linux. Intel macOS uses fd 10.3.0 because newer releases no lo
 
 ### Prerequisites
 
-A published release binary needs no Go toolchain. Configured Mason packages still need a C compiler and Node.js/npm. Linux and macOS need tmux 3.2+ and Bash 5.2+ for the managed tmux2k status bar. Building the CLI from source additionally requires Go.
+A published release binary needs no Go toolchain. The no-Go bootstrap installs the CLI, host tools, and configuration without restoring Mason packages. A complete locked restore additionally needs a C compiler, Node.js/npm, and Go 1.26+ because several Mason tools are built from Go source. Linux and macOS need tmux 3.2+ and Bash 5.2+ for the managed tmux2k status bar.
 
 Ubuntu/Zorin:
 
@@ -43,7 +43,7 @@ xcode-select --install
 brew install bash git node tmux
 ```
 
-Add `go` to the Homebrew command only when building from source.
+Add `go` to the Homebrew command when building from source or restoring the complete locked Mason environment.
 
 Windows:
 
@@ -60,7 +60,7 @@ A published prebuilt `lazyvim` binary does not require Go for installation. It e
 
 ### Published binary on macOS—no Go required
 
-Every version tag publishes GitHub release assets for Apple Silicon and Intel macOS. After cloning, `make bootstrap` detects the architecture, downloads the latest archive and `SHA256SUMS`, verifies it, and hands installation to the Go CLI:
+Every version tag publishes GitHub release assets for Apple Silicon and Intel macOS. After cloning, `make bootstrap` detects the architecture, downloads the latest archive and `SHA256SUMS`, verifies it, and installs the CLI, host tools, and configuration with `--no-restore`:
 
 ```bash
 git clone https://github.com/savioserra/lazyvim.git ~/Documents/Dev/lazyvim
@@ -68,7 +68,7 @@ cd ~/Documents/Dev/lazyvim
 make bootstrap
 ```
 
-Installer flags can be passed with `INSTALL_ARGS`, for example `make bootstrap INSTALL_ARGS="--minimal --no-font"`. For later no-Go updates, run `git pull --ff-only` in the clone followed by `make bootstrap`. Other installed lifecycle commands do not need Go; `lazyvim sync` intentionally rebuilds the CLI from pulled source and therefore remains the source-build path.
+Installer flags can be passed with `INSTALL_ARGS`, for example `make bootstrap INSTALL_ARGS="--minimal --no-font"`. Neovim and the installed CLI can then run without Go. To restore and validate every locked Mason tool, install Go 1.26+ and run `lazyvim restore && lazyvim check`. For later no-Go updates, run `git pull --ff-only` followed by `make bootstrap`; `lazyvim sync` intentionally rebuilds from source and therefore requires Go.
 
 ### Build from source
 
