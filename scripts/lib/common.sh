@@ -68,7 +68,8 @@ download_verified() {
 
   rm -f "$output" "$output.part"
   log "Downloading $(basename "$output")"
-  curl --fail --location --retry 3 --retry-delay 2 --output "$output.part" "$url"
+  curl --fail --location --retry 5 --retry-all-errors --retry-delay 2 \
+    --output "$output.part" "$url"
   mv "$output.part" "$output"
   checksum_matches "$sha256" "$output" || die "checksum mismatch for $output"
 }
