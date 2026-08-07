@@ -62,12 +62,32 @@ func TestLinkBacksUpUnmanagedTarget(t *testing.T) {
 		t.Fatal(err)
 	}
 	resolved, err := filepath.EvalSymlinks(target)
-	if err != nil || resolved != source {
+	if err != nil || !samePath(resolved, source) {
 		t.Fatalf("target was not linked: %s, %v", resolved, err)
 	}
 	backups, err := filepath.Glob(filepath.Join(root, "state", "backups", "*", ".local", "bin", "tool"))
 	if err != nil || len(backups) != 1 {
 		t.Fatalf("unmanaged target was not backed up: %v, %v", backups, err)
+	}
+}
+
+func TestSamePathResolvesSymlinkedParentDirectories(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix symlink behavior")
+	}
+	root := t.TempDir()
+	realDirectory := filepath.Join(root, "real")
+	if err := os.MkdirAll(realDirectory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(realDirectory, "target")
+	mustWriteFile(t, target, []byte("target"), 0o600)
+	alias := filepath.Join(root, "alias")
+	if err := os.Symlink(realDirectory, alias); err != nil {
+		t.Fatal(err)
+	}
+	if !samePath(filepath.Join(alias, "target"), target) {
+		t.Fatal("paths through a symlinked parent were not considered equal")
 	}
 }
 

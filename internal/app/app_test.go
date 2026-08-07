@@ -45,6 +45,24 @@ func TestSyncBuildArgumentsIncludeVersionMetadata(t *testing.T) {
 	}
 }
 
+func TestCommandEnvironmentPrependsManagedBin(t *testing.T) {
+	inherited := filepath.Join(t.TempDir(), "system-bin")
+	managed := filepath.Join(t.TempDir(), "managed-bin")
+	t.Setenv("PATH", inherited)
+	application := &App{paths: Paths{Bin: managed}}
+	var actual string
+	for _, entry := range application.commandEnvironment("tool") {
+		name, value, _ := strings.Cut(entry, "=")
+		if strings.EqualFold(name, "PATH") {
+			actual = value
+		}
+	}
+	expected := managed + string(os.PathListSeparator) + inherited
+	if actual != expected {
+		t.Fatalf("got PATH %q, want %q", actual, expected)
+	}
+}
+
 func TestJoinCleanupErrorRetainsBothFailures(t *testing.T) {
 	primary := errors.New("primary")
 	cleanup := errors.New("cleanup")

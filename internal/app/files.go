@@ -113,8 +113,17 @@ func (a *App) connectDirectory(source, target string) error {
 }
 
 func samePath(left, right string) bool {
-	left = filepath.Clean(left)
-	right = filepath.Clean(right)
+	canonical := func(path string) string {
+		if absolute, err := filepath.Abs(path); err == nil {
+			path = absolute
+		}
+		if resolved, err := filepath.EvalSymlinks(path); err == nil {
+			path = resolved
+		}
+		return filepath.Clean(path)
+	}
+	left = canonical(left)
+	right = canonical(right)
 	if runtime.GOOS == "windows" {
 		return strings.EqualFold(left, right)
 	}

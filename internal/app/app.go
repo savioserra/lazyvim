@@ -199,6 +199,13 @@ func (a *App) output(ctx context.Context, name string, arguments ...string) (str
 
 func (a *App) commandEnvironment(name string) []string {
 	environment := os.Environ()
+	if a.paths.Bin != "" {
+		path := a.paths.Bin
+		if inherited := os.Getenv("PATH"); inherited != "" {
+			path += string(os.PathListSeparator) + inherited
+		}
+		environment = environmentOverrides(environment, []string{"PATH=" + path})
+	}
 	if filepath.Base(name) != "nvim" && filepath.Base(name) != "nvim.exe" {
 		return environment
 	}
@@ -220,7 +227,12 @@ func environmentOverrides(baseEnvironment, overrides []string) []string {
 		name, _, _ := strings.Cut(override, "=")
 		filtered := baseEnvironment[:0]
 		for _, entry := range baseEnvironment {
-			if !strings.HasPrefix(entry, name+"=") {
+			entryName, _, _ := strings.Cut(entry, "=")
+			matches := entryName == name
+			if runtime.GOOS == "windows" {
+				matches = strings.EqualFold(entryName, name)
+			}
+			if !matches {
 				filtered = append(filtered, entry)
 			}
 		}

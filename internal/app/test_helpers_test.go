@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/savioserra/lazyvim/internal/download"
+	"github.com/savioserra/lazyvim/internal/host"
 )
 
 type fakeDownloader struct {
@@ -21,8 +22,15 @@ func (d *fakeDownloader) Fetch(_ context.Context, artifact download.Artifact, _ 
 
 func (d *fakeDownloader) SetOffline(offline bool) { d.offline = offline }
 
+type noopRunner struct{}
+
+func (noopRunner) Run(context.Context, host.Command) error { return nil }
+func (noopRunner) Output(context.Context, host.Command) (host.Output, error) {
+	return host.Output{}, nil
+}
+
 func discardApp() *App {
-	return &App{in: nil, out: io.Discard, err: io.Discard}
+	return &App{in: nil, out: io.Discard, err: io.Discard, runner: noopRunner{}}
 }
 
 func mustWriteFile(t interface{ Fatal(...any) }, path string, content []byte, mode os.FileMode) {

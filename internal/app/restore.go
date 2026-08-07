@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -143,8 +144,19 @@ func (a *App) restoreMason(ctx context.Context, nvim string) error {
 		a.logf("Mason packages already match mason-lock.json")
 		return nil
 	}
+	masonHome := filepath.Join(a.paths.NvimData, "lazy", "mason.nvim")
+	if !directory(masonHome) {
+		return fmt.Errorf("mason.nvim is not installed: %s; restore plugins first", masonHome)
+	}
 	a.logf("Restoring %d Mason package(s) from mason-lock.json", len(specs))
-	return a.run(ctx, nvim, "--headless", "+Lazy load mason.nvim", "+MasonInstall --force --strict "+strings.Join(specs, " "), "+qa")
+	bootstrap := "vim.opt.rtp:prepend(" + strconv.Quote(masonHome) + "); require('mason').setup(); vim.cmd.runtime('plugin/mason.lua')"
+	if err := a.run(ctx, nvim, "--headless", "-u", "NONE", "+lua "+bootstrap, "+MasonInstall --force --strict "+strings.Join(specs, " "), "+qa"); err != nil {
+		return err
+	}
+	if err := a.checkMason(); err != nil {
+		return fmt.Errorf("verify restored Mason packages: %w", err)
+	}
+	return nil
 }
 
 func joinCleanupError(primary, cleanup error) error {

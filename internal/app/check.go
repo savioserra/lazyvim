@@ -240,13 +240,17 @@ func (a *App) checkStylua(ctx context.Context) error {
 			a.logf("Checking Lua formatting")
 			luaDirectory := filepath.Join(a.repoRoot, "home", "dot_config", "nvim", "lua")
 			if runtime.GOOS == "windows" && strings.EqualFold(filepath.Ext(stylua), ".cmd") {
-				return a.runWithEnvironment(ctx, []string{"LAZYVIM_STYLUA=" + stylua, "LAZYVIM_LUA_DIR=" + luaDirectory}, "cmd.exe", "/d", "/v:off", "/s", "/c", `"%LAZYVIM_STYLUA%" --check "%LAZYVIM_LUA_DIR%"`)
+				return a.runWithEnvironment(ctx, []string{"LAZYVIM_STYLUA=" + stylua, "LAZYVIM_LUA_DIR=" + luaDirectory}, "cmd.exe", styluaBatchArguments()...)
 			}
 			return a.run(ctx, stylua, "--check", luaDirectory)
 		}
 	}
 	a.warnf("Stylua is not installed; skipping Lua formatting check")
 	return nil
+}
+
+func styluaBatchArguments() []string {
+	return []string{"/d", "/v:off", "/c", `call "%LAZYVIM_STYLUA%" --check "%LAZYVIM_LUA_DIR%"`}
 }
 
 func (a *App) checkMason() error {
