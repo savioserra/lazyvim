@@ -30,8 +30,29 @@ $RestoreMason = -not $PluginsOnly
 $RestoreParsers = -not $PluginsOnly -and -not $MasonOnly -and -not $SkipParsers
 
 if ($RestorePlugins) {
-    Write-DotfilesLog 'Restoring plugins from lazy-lock.json'
-    Invoke-NativeCommand -FilePath $Nvim -Arguments @('--headless', '+Lazy! restore', '+qa')
+    Write-DotfilesLog 'Installing missing plugins before enforcing lazy-lock.json'
+    $committedLock = Join-Path $RepoRoot 'home\dot_config\nvim\lazy-lock.json'
+    $activeLock = Join-Path (Join-Path $HOME '.config\nvim') 'lazy-lock.json'
+    $lockSnapshot = [System.IO.Path]::GetTempFileName()
+    Copy-Item -LiteralPath $committedLock -Destination $lockSnapshot -Force
+    try {
+        # lazy.nvim only restores plugins that already exist. Install first, then put
+        # the committed lockfile back before checking out every exact revision.
+        Invoke-NativeCommand -FilePath $Nvim -Arguments @('--headless', '+Lazy! install', '+qa')
+        Copy-Item -LiteralPath $lockSnapshot -Destination $activeLock -Force
+        Write-DotfilesLog 'Restoring plugins from lazy-lock.json'
+        Invoke-NativeCommand -FilePath $Nvim -Arguments @('--headless', '+Lazy! restore', '+qa')
+        Copy-Item -LiteralPath $lockSnapshot -Destination $activeLock -Force
+        Invoke-NativeCommand -FilePath $Nvim -Arguments @(
+            '--headless',
+            "+lua require('dotfiles.restore').plugins()",
+            '+qa'
+        )
+    }
+    finally {
+        Copy-Item -LiteralPath $lockSnapshot -Destination $activeLock -Force
+        Remove-Item -LiteralPath $lockSnapshot -Force
+    }
 }
 
 if ($RestoreMason) {

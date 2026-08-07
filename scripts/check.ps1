@@ -148,6 +148,13 @@ if (Test-Path -LiteralPath $packagesHome -PathType Container) {
     }
 }
 
+Write-DotfilesLog 'Checking installed plugin revisions'
+Invoke-NativeCommand -FilePath $Nvim -Arguments @(
+    '--headless',
+    "+lua require('dotfiles.restore').plugins()",
+    '+qa'
+)
+
 Write-DotfilesLog 'Checking headless startup'
 Invoke-NativeCommand -FilePath $Nvim -Arguments @(
     '--headless',

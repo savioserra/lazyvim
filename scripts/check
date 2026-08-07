@@ -93,6 +93,9 @@ if [[ -d "$mason_dir" ]]; then
   done < <(jq -r 'to_entries[] | [.key, .value] | @tsv' "$REPO_ROOT/home/dot_config/nvim/mason-lock.json")
 fi
 
+log "Checking installed plugin revisions"
+"$NVIM_BIN" --headless "+lua require('dotfiles.restore').plugins()" +qa
+
 if command -v tmux >/dev/null 2>&1; then
   log "Checking locked tmux plugins and configuration"
   tmux_bash_version="$(bash -c 'printf "%s.%s" "${BASH_VERSINFO[0]}" "${BASH_VERSINFO[1]}"')"

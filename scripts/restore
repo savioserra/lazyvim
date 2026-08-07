@@ -56,8 +56,27 @@ NVIM_BIN="${NVIM_BIN:-$REPO_ROOT/packages/bin/nvim}"
 "$NVIM_BIN" --version >/dev/null 2>&1 || die "pinned Neovim is not installed; run scripts/install first"
 
 if $restore_plugins; then
+  log "Installing missing plugins before enforcing lazy-lock.json"
+  committed_lock="$REPO_ROOT/home/dot_config/nvim/lazy-lock.json"
+  active_lock="${XDG_CONFIG_HOME:-$HOME/.config}/nvim/lazy-lock.json"
+  lock_snapshot="$(mktemp "${TMPDIR:-/tmp}/dotfiles-lazy-lock.XXXXXX")"
+  cp "$committed_lock" "$lock_snapshot"
+  cleanup_lock_snapshot() {
+    cp "$lock_snapshot" "$active_lock"
+    rm -f "$lock_snapshot"
+  }
+  trap cleanup_lock_snapshot EXIT
+
+  # lazy.nvim only restores plugins that already exist. Install first, then put
+  # the committed lockfile back before checking out every exact revision.
+  "$NVIM_BIN" --headless "+Lazy! install" +qa
+  cp "$lock_snapshot" "$active_lock"
   log "Restoring plugins from lazy-lock.json"
   "$NVIM_BIN" --headless "+Lazy! restore" +qa
+  cp "$lock_snapshot" "$active_lock"
+  "$NVIM_BIN" --headless "+lua require('dotfiles.restore').plugins()" +qa
+  rm -f "$lock_snapshot"
+  trap - EXIT
 fi
 
 if $restore_tmux; then
