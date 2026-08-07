@@ -137,6 +137,8 @@ if command -v tmux >/dev/null 2>&1; then
     || die "tmux2k CPU gradient reduces status contrast"
   [[ -z "$(TMUX='' tmux -L "$tmux_socket" show-options -gqv '@tmux2k-ram-gradient')" ]] \
     || die "tmux2k RAM gradient reduces status contrast"
+  [[ "$(TMUX='' tmux -L "$tmux_socket" show-options -gqv '@tmux2k-ram-icon')" == "󰍛" ]] \
+    || die "tmux2k RAM icon does not match the repository"
   status_left="$(TMUX='' tmux -L "$tmux_socket" show-options -gqv status-left)"
   [[ "$status_left" == *"/tmux2k/plugins/"* ]] || die "tmux2k did not initialize the status bar"
   TMUX='' tmux -L "$tmux_socket" kill-server
