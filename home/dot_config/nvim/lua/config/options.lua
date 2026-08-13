@@ -16,3 +16,7 @@ vim.g.lazyvim_blink_main = false
 
 -- Neoconf files use the jsonc filetype; the JSON parser supports its syntax.
 vim.treesitter.language.register("json", "jsonc")
+
+-- Use native rounded borders and reserve the tabline for actual Neovim tabs.
+vim.opt.winborder = "rounded"
+vim.opt.showtabline = 1
