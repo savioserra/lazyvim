@@ -106,7 +106,7 @@ func (a *App) Check(ctx context.Context) error {
 		}
 	}
 	a.logf("Checking headless startup")
-	if err := a.run(ctx, nvim, "--headless", "+lua assert(vim.g.lazyvim_ts_lsp == 'vtsls', 'LazyVim options were not loaded'); assert(vim.g.colors_name == 'catppuccin' and require('catppuccin').options.flavour == 'macchiato', 'Catppuccin Macchiato was not loaded')", "+qa"); err != nil {
+	if err := a.run(ctx, nvim, "--headless", "+lua assert(vim.g.lazyvim_ts_lsp == 'tsgo', 'LazyVim options were not loaded'); assert(vim.g.colors_name == 'catppuccin' and require('catppuccin').options.flavour == 'macchiato', 'Catppuccin Macchiato was not loaded')", "+qa"); err != nil {
 		return err
 	}
 	a.logf("All checks passed")

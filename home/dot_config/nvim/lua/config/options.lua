@@ -1,8 +1,8 @@
 -- Options are loaded before lazy.nvim starts.
 -- LazyVim defaults: https://github.com/LazyVim/LazyVim/blob/main/lua/lazyvim/config/options.lua
 
--- Use the project-compatible TypeScript language server for JavaScript, TypeScript, and React/TSX.
-vim.g.lazyvim_ts_lsp = "vtsls"
+-- Use the native TypeScript language server for lower latency in large monorepos.
+vim.g.lazyvim_ts_lsp = "tsgo"
 
 -- Keep Prettier as the sole JS/TS formatter; ESLint provides diagnostics and fixes.
 vim.g.lazyvim_eslint_auto_format = false

@@ -38,7 +38,7 @@ return {
         -- The Go extra supplies gopls settings, formatting, debugging, and tests.
         gopls = {},
 
-        -- Use vtsls with enough heap for large TypeScript monorepos.
+        -- Keep vtsls configured with enough heap as a compatibility fallback.
         vtsls = {
           before_init = import_vscode_settings({ "javascript", "typescript" }),
           settings = {
@@ -59,7 +59,7 @@ return {
           },
         },
 
-        -- Keep native tsgo ready as an optional alternative to vtsls.
+        -- Use native tsgo as the primary TypeScript server.
         tsgo = {
           before_init = import_vscode_settings({ "javascript", "typescript" }),
           capabilities = {

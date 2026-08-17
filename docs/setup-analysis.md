@@ -21,7 +21,7 @@ The setup starts headlessly and Neovim/LazyVim core health checks pass.
 
 ## Configuration behavior
 
-- `vtsls` is the selected TypeScript LSP; `tsgo` remains configured as an optional alternative.
+- `tsgo` is the selected TypeScript LSP; `vtsls` remains configured as a compatibility fallback.
 - JavaScript/TypeScript files organize imports synchronously before every save.
 - Prettier is the sole JS/TS formatter and only runs in projects that explicitly configure it.
 - ESLint provides diagnostics and code actions without competing for formatting.
