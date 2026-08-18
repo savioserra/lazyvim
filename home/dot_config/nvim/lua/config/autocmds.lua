@@ -14,7 +14,13 @@ local function organize_imports(bufnr)
   end
 
   for _, client in ipairs(vim.lsp.get_clients({ bufnr = bufnr, method = "textDocument/codeAction" })) do
-    if client.name == "tsgo" or client.name == "vtsls" then
+    if
+      client.name == "tsgo"
+      or client.name == "vtsls"
+      or client.name == "typescript-tools"
+      or client.name == "tsserver"
+      or client.name == "ts_ls"
+    then
       local win = vim.fn.bufwinid(bufnr)
       if win == -1 then
         return
