@@ -34,6 +34,18 @@ local function organize_imports(bufnr)
 
       local response = client:request_sync("textDocument/codeAction", params, 2000, bufnr)
       for _, action in ipairs((response and response.result) or {}) do
+        local command
+        if type(action.command) == "table" then
+          command = action.command
+        elseif type(action.command) == "string" then
+          command = action
+        end
+
+        -- Avoid interactive refactors like 'Move to file' during save-time organize imports.
+        if type(command) == "table" and command.command == "interactive_codeaction" then
+          goto continue
+        end
+
         if action.data and not action.edit and client:supports_method("codeAction/resolve", bufnr) then
           local resolved = client:request_sync("codeAction/resolve", action, 2000, bufnr)
           action = (resolved and resolved.result) or action
@@ -43,17 +55,12 @@ local function organize_imports(bufnr)
           vim.lsp.util.apply_workspace_edit(action.edit, client.offset_encoding)
         end
 
-        local command
-        if type(action.command) == "table" then
-          command = action.command
-        elseif type(action.command) == "string" then
-          command = action
-        end
         if command then
           client:request_sync("workspace/executeCommand", command, 2000, bufnr)
         end
         return
       end
+      ::continue::
     end
   end
 end
