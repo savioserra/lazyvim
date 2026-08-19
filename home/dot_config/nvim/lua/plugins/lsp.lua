@@ -178,22 +178,52 @@ return {
       require("typescript-tools").setup(opts)
 
       -- Work around two upstream bugs that leave `<leader>sS` (workspace/symbol)
-      -- stuck loading forever instead of returning results or erroring:
+      -- stuck loading forever, or silently empty, instead of returning results:
       -- 1. It resolves the "current file" via `vim.fn.bufnr("$")` (highest
       --    buffer number), not the actually-active buffer -- any incidental
       --    unlisted scratch buffer (e.g. mini.icons' filetype-match scratch)
-      --    outranks it, so tsserver gets sent a bogus file and replies
+      --    outranks it. Worse, `<leader>sS` itself opens a Snacks picker with
+      --    its own unnamed prompt buffer *before* sending the request, so even
+      --    "the active buffer" at request time is never the real file -- it's
+      --    the picker's own buffer (empty name, filetype snacks_picker_input).
+      --    Either way tsserver gets sent a bogus/empty file and replies
       --    `success = false, message = "No Project."`.
       -- 2. On that (or any) error response, `body` is the raw error table, not
       --    an item list, and indexing it as one throws before a response is
       --    ever sent, orphaning the pending request.
       -- https://github.com/pmizio/typescript-tools.nvim/issues/357
       -- Drop this once upstream fixes protocol/workspace/symbol.lua.
+      local ts_filetypes = {
+        javascript = true,
+        javascriptreact = true,
+        ["javascript.jsx"] = true,
+        typescript = true,
+        typescriptreact = true,
+        ["typescript.tsx"] = true,
+      }
+
+      -- Never trust "the current buffer": the picker that triggers this request
+      -- has already stolen focus for its own prompt buffer by the time it fires.
+      -- Find any real, loaded TS/JS buffer instead so tsserver has a valid
+      -- project to anchor the search to.
+      local function find_ts_buf_name()
+        for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+          if
+            vim.api.nvim_buf_is_loaded(buf)
+            and vim.bo[buf].buflisted
+            and ts_filetypes[vim.bo[buf].filetype]
+          then
+            return vim.api.nvim_buf_get_name(buf)
+          end
+        end
+        return vim.api.nvim_buf_get_name(vim.api.nvim_get_current_buf())
+      end
+
       local ok, workspace_symbol = pcall(require, "typescript-tools.protocol.workspace.symbol")
       if ok then
         local ts_utils = require("typescript-tools.protocol.utils")
         function workspace_symbol.handler(request, response, params)
-          local buf_name = vim.api.nvim_buf_get_name(vim.api.nvim_get_current_buf())
+          local buf_name = find_ts_buf_name()
 
           request({
             command = "navto",
