@@ -176,6 +176,52 @@ return {
     config = function(_, opts)
       opts.capabilities = complete_capabilities()
       require("typescript-tools").setup(opts)
+
+      -- Work around two upstream bugs that leave `<leader>sS` (workspace/symbol)
+      -- stuck loading forever instead of returning results or erroring:
+      -- 1. It resolves the "current file" via `vim.fn.bufnr("$")` (highest
+      --    buffer number), not the actually-active buffer -- any incidental
+      --    unlisted scratch buffer (e.g. mini.icons' filetype-match scratch)
+      --    outranks it, so tsserver gets sent a bogus file and replies
+      --    `success = false, message = "No Project."`.
+      -- 2. On that (or any) error response, `body` is the raw error table, not
+      --    an item list, and indexing it as one throws before a response is
+      --    ever sent, orphaning the pending request.
+      -- https://github.com/pmizio/typescript-tools.nvim/issues/357
+      -- Drop this once upstream fixes protocol/workspace/symbol.lua.
+      local ok, workspace_symbol = pcall(require, "typescript-tools.protocol.workspace.symbol")
+      if ok then
+        local ts_utils = require("typescript-tools.protocol.utils")
+        function workspace_symbol.handler(request, response, params)
+          local buf_name = vim.api.nvim_buf_get_name(vim.api.nvim_get_current_buf())
+
+          request({
+            command = "navto",
+            arguments = { searchValue = params.query, file = buf_name },
+          })
+
+          local body = coroutine.yield()
+          if type(body) ~= "table" or not vim.islist(body) then
+            response({})
+            return
+          end
+
+          response(vim.tbl_map(function(item)
+            return {
+              name = item.name,
+              kind = ts_utils.get_lsp_symbol_kind(item.kind),
+              containerName = item.containerName,
+              location = {
+                uri = vim.uri_from_fname(item.file),
+                range = ts_utils.convert_tsserver_range_to_lsp(item),
+              },
+              tags = (item.kindModifiers or ""):find("deprecated", 1, true) and { 1 } or nil,
+            }
+          end, vim.tbl_filter(function(item)
+            return item.file ~= nil
+          end, body)))
+        end
+      end
     end,
   },
 }
