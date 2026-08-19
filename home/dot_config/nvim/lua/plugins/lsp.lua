@@ -27,6 +27,15 @@ local function import_vscode_settings(namespaces)
   end
 end
 
+local function complete_capabilities()
+  local capabilities = vim.lsp.protocol.make_client_capabilities()
+  local ok, cmp_nvim_lsp = pcall(require, "cmp_nvim_lsp")
+  if ok then
+    capabilities = vim.tbl_deep_extend("force", capabilities, cmp_nvim_lsp.default_capabilities())
+  end
+  return capabilities
+end
+
 return {
   {
     "neovim/nvim-lspconfig",
@@ -78,9 +87,33 @@ return {
     end,
   },
 
+  -- Load eagerly. cmp-nvim-lsp normally lazy-loads on InsertEnter, but its own
+  -- completion-source registration also hooks InsertEnter (via its after/plugin
+  -- script), which can race lazy.nvim's own InsertEnter loader on the very first
+  -- insert of a session. Loading it at startup sidesteps that and guarantees
+  -- `default_capabilities()` is available before any LSP client attaches.
+  {
+    "hrsh7th/cmp-nvim-lsp",
+    lazy = false,
+  },
+
+  -- Merge nvim-cmp's LSP capabilities into every lspconfig-managed server
+  -- directly, instead of relying solely on the nvim-cmp extra's own
+  -- InsertEnter-gated `vim.lsp.config("*", ...)` registration.
+  {
+    "neovim/nvim-lspconfig",
+    dependencies = { "hrsh7th/cmp-nvim-lsp" },
+    opts = function(_, opts)
+      opts.servers = opts.servers or {}
+      opts.servers["*"] = vim.tbl_deep_extend("force", opts.servers["*"] or {}, {
+        capabilities = complete_capabilities(),
+      })
+    end,
+  },
+
   {
     "pmizio/typescript-tools.nvim",
-    dependencies = { "nvim-lua/plenary.nvim", "neovim/nvim-lspconfig" },
+    dependencies = { "nvim-lua/plenary.nvim", "neovim/nvim-lspconfig", "hrsh7th/cmp-nvim-lsp" },
     ft = {
       "javascript",
       "javascriptreact",
@@ -140,5 +173,9 @@ return {
         },
       },
     },
+    config = function(_, opts)
+      opts.capabilities = complete_capabilities()
+      require("typescript-tools").setup(opts)
+    end,
   },
 }
