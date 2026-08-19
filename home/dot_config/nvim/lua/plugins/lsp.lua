@@ -204,9 +204,32 @@ return {
 
       -- Never trust "the current buffer": the picker that triggers this request
       -- has already stolen focus for its own prompt buffer by the time it fires.
-      -- Find any real, loaded TS/JS buffer instead so tsserver has a valid
-      -- project to anchor the search to.
+      -- Falling back to "any loaded TS/JS buffer" isn't enough either -- in an
+      -- Nx-style monorepo each app is usually its own isolated tsconfig
+      -- project, so grabbing an arbitrary buffer (e.g. the first one by buffer
+      -- number) can anchor the search to a *different* project than the one
+      -- you're actually working in, silently missing every real match.
+      -- Track the most recently entered real TS/JS buffer instead, so the
+      -- anchor always reflects what you were actually editing.
+      local last_ts_buf_name = nil
+      vim.api.nvim_create_autocmd("BufEnter", {
+        callback = function(args)
+          if vim.bo[args.buf].buflisted and ts_filetypes[vim.bo[args.buf].filetype] then
+            last_ts_buf_name = vim.api.nvim_buf_get_name(args.buf)
+          end
+        end,
+      })
+
       local function find_ts_buf_name()
+        local cur = vim.api.nvim_get_current_buf()
+        if vim.bo[cur].buflisted and ts_filetypes[vim.bo[cur].filetype] then
+          return vim.api.nvim_buf_get_name(cur)
+        end
+
+        if last_ts_buf_name and last_ts_buf_name ~= "" then
+          return last_ts_buf_name
+        end
+
         for _, buf in ipairs(vim.api.nvim_list_bufs()) do
           if
             vim.api.nvim_buf_is_loaded(buf)
@@ -216,7 +239,8 @@ return {
             return vim.api.nvim_buf_get_name(buf)
           end
         end
-        return vim.api.nvim_buf_get_name(vim.api.nvim_get_current_buf())
+
+        return vim.api.nvim_buf_get_name(cur)
       end
 
       local ok, workspace_symbol = pcall(require, "typescript-tools.protocol.workspace.symbol")
