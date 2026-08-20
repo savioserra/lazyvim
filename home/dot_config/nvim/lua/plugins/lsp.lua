@@ -29,9 +29,9 @@ end
 
 local function complete_capabilities()
   local capabilities = vim.lsp.protocol.make_client_capabilities()
-  local ok, cmp_nvim_lsp = pcall(require, "cmp_nvim_lsp")
+  local ok, blink = pcall(require, "blink.cmp")
   if ok then
-    capabilities = vim.tbl_deep_extend("force", capabilities, cmp_nvim_lsp.default_capabilities())
+    capabilities = blink.get_lsp_capabilities(capabilities)
   end
   return capabilities
 end
@@ -87,33 +87,14 @@ return {
     end,
   },
 
-  -- Load eagerly. cmp-nvim-lsp normally lazy-loads on InsertEnter, but its own
-  -- completion-source registration also hooks InsertEnter (via its after/plugin
-  -- script), which can race lazy.nvim's own InsertEnter loader on the very first
-  -- insert of a session. Loading it at startup sidesteps that and guarantees
-  -- `default_capabilities()` is available before any LSP client attaches.
-  {
-    "hrsh7th/cmp-nvim-lsp",
-    lazy = false,
-  },
-
-  -- Merge nvim-cmp's LSP capabilities into every lspconfig-managed server
-  -- directly, instead of relying solely on the nvim-cmp extra's own
-  -- InsertEnter-gated `vim.lsp.config("*", ...)` registration.
-  {
-    "neovim/nvim-lspconfig",
-    dependencies = { "hrsh7th/cmp-nvim-lsp" },
-    opts = function(_, opts)
-      opts.servers = opts.servers or {}
-      opts.servers["*"] = vim.tbl_deep_extend("force", opts.servers["*"] or {}, {
-        capabilities = complete_capabilities(),
-      })
-    end,
-  },
-
   {
     "pmizio/typescript-tools.nvim",
-    dependencies = { "nvim-lua/plenary.nvim", "neovim/nvim-lspconfig", "hrsh7th/cmp-nvim-lsp" },
+    -- blink.cmp isn't wired up via nvim-lspconfig, so listing it as a
+    -- dependency here (lazy.nvim always loads dependencies first) guarantees
+    -- it has finished loading -- and registered its LSP capabilities -- before
+    -- `complete_capabilities()` runs below, instead of racing its own
+    -- InsertEnter/CmdlineEnter lazy-load trigger.
+    dependencies = { "nvim-lua/plenary.nvim", "neovim/nvim-lspconfig", "saghen/blink.cmp" },
     ft = {
       "javascript",
       "javascriptreact",
@@ -231,11 +212,7 @@ return {
         end
 
         for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-          if
-            vim.api.nvim_buf_is_loaded(buf)
-            and vim.bo[buf].buflisted
-            and ts_filetypes[vim.bo[buf].filetype]
-          then
+          if vim.api.nvim_buf_is_loaded(buf) and vim.bo[buf].buflisted and ts_filetypes[vim.bo[buf].filetype] then
             return vim.api.nvim_buf_get_name(buf)
           end
         end
@@ -260,20 +237,23 @@ return {
             return
           end
 
-          response(vim.tbl_map(function(item)
-            return {
-              name = item.name,
-              kind = ts_utils.get_lsp_symbol_kind(item.kind),
-              containerName = item.containerName,
-              location = {
-                uri = vim.uri_from_fname(item.file),
-                range = ts_utils.convert_tsserver_range_to_lsp(item),
-              },
-              tags = (item.kindModifiers or ""):find("deprecated", 1, true) and { 1 } or nil,
-            }
-          end, vim.tbl_filter(function(item)
-            return item.file ~= nil
-          end, body)))
+          response(vim.tbl_map(
+            function(item)
+              return {
+                name = item.name,
+                kind = ts_utils.get_lsp_symbol_kind(item.kind),
+                containerName = item.containerName,
+                location = {
+                  uri = vim.uri_from_fname(item.file),
+                  range = ts_utils.convert_tsserver_range_to_lsp(item),
+                },
+                tags = (item.kindModifiers or ""):find("deprecated", 1, true) and { 1 } or nil,
+              }
+            end,
+            vim.tbl_filter(function(item)
+              return item.file ~= nil
+            end, body)
+          ))
         end
       end
     end,

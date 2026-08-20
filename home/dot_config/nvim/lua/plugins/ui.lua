@@ -97,7 +97,7 @@ return {
   },
 
   -- Keep Noice's polished command palette, but leave messages, notifications,
-  -- completion, and LSP popups to Neovim, Snacks, and nvim-cmp.
+  -- completion, and LSP popups to Neovim, Snacks, and blink.cmp.
   {
     "folke/noice.nvim",
     opts = {

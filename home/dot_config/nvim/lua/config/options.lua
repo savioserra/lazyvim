@@ -7,8 +7,9 @@ vim.g.lazyvim_eslint_auto_format = false
 -- Only run Prettier in projects that explicitly configure it.
 vim.g.lazyvim_prettier_needs_config = true
 
--- Use nvim-cmp for completion.
-vim.g.lazyvim_cmp = "nvim-cmp"
+-- Use the stable blink.cmp release rather than its development branch.
+vim.g.lazyvim_cmp = "blink.cmp"
+vim.g.lazyvim_blink_main = false
 
 -- Neoconf files use the jsonc filetype; the JSON parser supports its syntax.
 vim.treesitter.language.register("json", "jsonc")
