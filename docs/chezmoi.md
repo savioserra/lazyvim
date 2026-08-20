@@ -14,6 +14,8 @@ Source root: `home/` (set via `.chezmoiroot` at repo root). All paths below are 
 
 Nested target paths require real nested source directories — `dot_local/bin/symlink_nvim.tmpl` produces `~/.local/bin/nvim`; a flat file named `symlink_dot_local_bin_nvim.tmpl` at the source root would instead produce `~/.local_bin_nvim` (verified).
 
+Removing a source entry does not delete its deployed target — `chezmoi apply` only adds/updates what it still manages. Deleting a managed file from the repo also requires manually removing the deployed copy from `~`, unless it's inside an `exact` directory (e.g. the `.local/opt/nvim`/font externals, which prune on their own).
+
 ## `.chezmoiignore` matching for scripts
 
 A script's `.chezmoiignore` target name has its `run_`/`once_`/`onchange_`/`before_`/`after_` attributes and `.tmpl` suffix already stripped — match against what's left, not the source filename.
