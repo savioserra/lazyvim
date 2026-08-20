@@ -1,7 +1,7 @@
 {{- /*
 Pinned host-tool provisioning. Update version, URL, and checksum together.
 
-Single-binary tools (rg/fd/fzf/lazygit/tree-sitter/rainfrog) land straight on PATH at
+Single-binary tools (rg/fd/fzf/lazygit/tree-sitter/rainfrog/op) land straight on PATH at
 .local/bin/<tool> via `archive-file`. Neovim is a whole runtime tree, so it's
 extracted with `archive` into .local/opt/nvim (exact = true drops old-version
 files on upgrade) and exposed via .local/bin/nvim -- a symlink on Unix
@@ -19,6 +19,7 @@ script adds the equivalent directories once.
 {{- $lazygitURL := "" -}}{{- $lazygitSha := "" -}}
 {{- $treeSitterURL := "" -}}{{- $treeSitterSha := "" -}}
 {{- $rainfrogURL := "" -}}{{- $rainfrogSha := "" -}}
+{{- $opURL := "" -}}{{- $opSha := "" -}}
 {{- $nvimURL := "" -}}{{- $nvimSha := "" -}}
 {{- $fontURL := "" -}}{{- $fontSha := "" -}}{{- $fontKind := "tar.xz" -}}
 {{- $ext := "" -}}
@@ -38,6 +39,8 @@ script adds the equivalent directories once.
   {{- $treeSitterSha = "ff1b7f9863f2faafd78dc0e66d902ee85b37f709b314b22c009f51caf233eebd" -}}
   {{- $rainfrogURL = "https://github.com/achristmascarl/rainfrog/releases/download/v0.4.4/rainfrog-v0.4.4-x86_64-unknown-linux-musl.tar.gz" -}}
   {{- $rainfrogSha = "b3712391ec2c07c705fc5fd1ca1eb4b7246c8b104f94a9cdb626a08c7d1b3abd" -}}
+  {{- $opURL = "https://cache.agilebits.com/dist/1P/op2/pkg/v2.39.0/op_linux_amd64_v2.39.0.zip" -}}
+  {{- $opSha = "6fba7f376b6c6dec49f41b06408930a43ad064cce103c6a2ce5b3d0413a86434" -}}
   {{- $nvimURL = "https://github.com/neovim/neovim/releases/download/v0.12.4/nvim-linux-x86_64.tar.gz" -}}
   {{- $nvimSha = "012bf3fcac5ade43914df3f174668bf64d05e049a4f032a388c027b1ebd78628" -}}
   {{- $fontURL = "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.5.0/JetBrainsMono.tar.xz" -}}
@@ -58,6 +61,8 @@ script adds the equivalent directories once.
     {{- $treeSitterSha = "050f41d60a054b608ea392ba14722bba9457bdc0ab11a5706c77f034dafc68ac" -}}
     {{- $rainfrogURL = "https://github.com/achristmascarl/rainfrog/releases/download/v0.4.4/rainfrog-v0.4.4-aarch64-apple-darwin.tar.gz" -}}
     {{- $rainfrogSha = "29d1ddb19b4d2c3888c7abf61b0f6fe9c99e3df309418ca59e449fa11b0c1a9f" -}}
+    {{- $opURL = "https://cache.agilebits.com/dist/1P/op2/pkg/v2.39.0/op_darwin_arm64_v2.39.0.zip" -}}
+    {{- $opSha = "05391d3388a0c0b4f602691bedc1ab368541c487b6f14d2e3399743b4682af67" -}}
     {{- $nvimURL = "https://github.com/neovim/neovim/releases/download/v0.12.4/nvim-macos-arm64.tar.gz" -}}
     {{- $nvimSha = "51ab83afa66d663627c2ab1be43209b0f4e81360d4598b53efaa4d8195f24c89" -}}
   {{- else -}}
@@ -75,6 +80,8 @@ script adds the equivalent directories once.
     {{- $treeSitterSha = "e3c2cdec71bbc60344b25df3dad5da378a174f2292af953ff0d641e06aaee099" -}}
     {{- $rainfrogURL = "https://github.com/achristmascarl/rainfrog/releases/download/v0.4.4/rainfrog-v0.4.4-x86_64-apple-darwin.tar.gz" -}}
     {{- $rainfrogSha = "f7de36aa710608ba2c77831f21a57e24c5c500a7e87929fd221f86c97d2915e2" -}}
+    {{- $opURL = "https://cache.agilebits.com/dist/1P/op2/pkg/v2.39.0/op_darwin_amd64_v2.39.0.zip" -}}
+    {{- $opSha = "753fbf56b00996426edbb8439d2f3c0be9227b9557cdff468fb144cd3621aa6e" -}}
     {{- $nvimURL = "https://github.com/neovim/neovim/releases/download/v0.12.4/nvim-macos-x86_64.tar.gz" -}}
     {{- $nvimSha = "03fe16f8dd9f1e9eaf52d5e294913a39917b9e2faea30d7fb0fb385fbd36fe59" -}}
   {{- end -}}
@@ -98,7 +105,7 @@ script adds the equivalent directories once.
     {{- $lazygitSha = "8ced1a9e788cb9b5a8e27f61080ceecede0d76e86fb8ed74d882d2982d480458" -}}
     {{- $treeSitterURL = "https://github.com/tree-sitter/tree-sitter/releases/download/v0.26.11/tree-sitter-cli-windows-arm64.zip" -}}
     {{- $treeSitterSha = "405b108531872a12d9a607b84ff8be21f96ad09bb40bd76043f31ce6565069f9" -}}
-    {{- /* rainfrog does not publish a windows-arm64 build. */ -}}
+    {{- /* rainfrog and the 1Password CLI do not publish windows-arm64 builds. */ -}}
     {{- $nvimURL = "https://github.com/neovim/neovim/releases/download/v0.12.4/nvim-win-arm64.zip" -}}
     {{- $nvimSha = "49906085a3c473ee87a28319942c62216fb365a1a1a4f83dbc4ac41365f5e609" -}}
   {{- else -}}
@@ -116,6 +123,8 @@ script adds the equivalent directories once.
     {{- $treeSitterSha = "d40e158839062803a5182ecefca76f809b89464146625d303ef779ed8ceb0f73" -}}
     {{- $rainfrogURL = "https://github.com/achristmascarl/rainfrog/releases/download/v0.4.4/rainfrog-v0.4.4-x86_64-pc-windows-msvc.tar.gz" -}}
     {{- $rainfrogSha = "61083e41d8e257fe1fb401a25af04da7c8c93c3d64c3bbfcbff8949db2da79d2" -}}
+    {{- $opURL = "https://cache.agilebits.com/dist/1P/op2/pkg/v2.39.0/op_windows_amd64_v2.39.0.zip" -}}
+    {{- $opSha = "38b3748d76d104469eb6e2744f843d2a7e03d1b6d330cc42d600cff379c37bab" -}}
     {{- $nvimURL = "https://github.com/neovim/neovim/releases/download/v0.12.4/nvim-win64.zip" -}}
     {{- $nvimSha = "9fc3572829ffd13debb6e32555da2c8cc02555568260a9fc4cf1f65bbcca319c" -}}
   {{- end -}}
@@ -170,6 +179,17 @@ script adds the equivalent directories once.
     executable = true
     [".local/bin/rainfrog{{ $ext }}".checksum]
         sha256 = {{ $rainfrogSha | quote }}
+{{- end }}
+
+{{- if ne $opURL "" }}
+
+[".local/bin/op{{ $ext }}"]
+    type = "archive-file"
+    url = {{ $opURL | quote }}
+    path = "op{{ $ext }}"
+    executable = true
+    [".local/bin/op{{ $ext }}".checksum]
+        sha256 = {{ $opSha | quote }}
 {{- end }}
 
 [".local/opt/nvim"]
