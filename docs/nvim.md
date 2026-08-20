@@ -47,4 +47,4 @@ Target: `~/.config/nvim`. Distribution: LazyVim, plugin manager: lazy.nvim.
 | `lazy-lock.json` | lazy.nvim | `:Lazy restore` | Auto-installs missing plugins on startup; explicit restore only needed to fix drift |
 | `mason-lock.json` | mason-lock.nvim | `:MasonLockRestore` | `:MasonLock` snapshots current versions; default `lockfile_path` already matches this file |
 
-Tree-sitter parsers have no lockfile — `nvim-treesitter`'s `ensure_installed`/auto-install follows the locked plugin commit; `:TSUpdateSync` to force.
+Tree-sitter parsers have no lockfile — `nvim-treesitter`'s `ensure_installed`/auto-install follows the locked plugin commit; `:TSUpdate` to force.

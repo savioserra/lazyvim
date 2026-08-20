@@ -44,27 +44,22 @@ xcode-select --install
 brew install tmux git
 ```
 
-## Install
+## Bootstrap
 
-Install [chezmoi](https://www.chezmoi.io) itself first — it can't provision itself, so this is the one manual step:
+One command installs chezmoi (it can't provision itself, so this is the exception) and immediately applies this repository — chezmoi's official installer forwards everything after `--` to the freshly installed binary. This repo is **private**, so `--ssh` is required (a working SSH key for GitHub must already be set up) — the bare `user/repo` shorthand defaults to anonymous HTTPS and fails to clone:
 
 ```bash
 # Linux/macOS
-sh -c "$(curl -fsLS get.chezmoi.io)"
+sh -c "$(curl -fsLS get.chezmoi.io)" -b "$HOME/.local/bin" -- init --apply savioserra/lazyvim --ssh
 ```
 
 ```powershell
 # Windows
 winget install twpayne.chezmoi
+chezmoi init --apply savioserra/lazyvim --ssh
 ```
 
-Then initialize and apply this repository. `.chezmoiroot` in the repo points chezmoi at the `home/` subdirectory as the actual source state:
-
-```bash
-chezmoi init --apply savioserra/lazyvim
-```
-
-This single command deploys Neovim/tmux configuration, downloads and checksum-verifies Neovim/ripgrep/fd/fzf/lazygit/tree-sitter/the Nerd Font into `~/.local/bin` and `~/.local/opt/nvim`, installs the pinned tmux plugins, and (on Windows) adds those directories to your user `PATH`. On Linux/macOS, `~/.local/bin` is expected to already be on `PATH` (add it to your shell rc if it isn't).
+`.chezmoiroot` in the repo points chezmoi at the `home/` subdirectory as the actual source state. This deploys Neovim/tmux configuration, downloads and checksum-verifies Neovim/ripgrep/fd/fzf/lazygit/tree-sitter/the Nerd Font into `~/.local/bin` and `~/.local/opt/nvim`, installs the pinned tmux plugins, and (on Windows) adds those directories to your user `PATH`. On Linux/macOS, `~/.local/bin` is expected to already be on `PATH` (add it to your shell rc if it isn't).
 
 Once applied, open Neovim once to let lazy.nvim and Mason install everything locked in `lazy-lock.json`/`mason-lock.json`:
 
@@ -73,6 +68,16 @@ nvim
 :Lazy restore
 :MasonLockRestore
 ```
+
+## Sync
+
+Pull the latest repository state, re-apply, and restore everything locked, in one line:
+
+```bash
+chezmoi update && nvim --headless -c "Lazy restore" -c "sleep 3" -c "MasonLockRestore" -c "sleep 3" -c "TSUpdate" -c "sleep 3" -c "qa"
+```
+
+(`chezmoi update` is `git pull` + `apply`; the sleeps give each nvim step time to finish before the next one starts.)
 
 ## Workflow
 
@@ -95,12 +100,12 @@ git -C ~/.local/share/chezmoi diff
 git -C ~/.local/share/chezmoi commit -m "feat: update development configuration"
 ```
 
-Restoring locked state (rarely needed — lazy.nvim/mason.nvim/tree-sitter auto-install on a fresh machine; these fix drift on an existing one):
+Restoring locked state individually (rarely needed — lazy.nvim/mason.nvim/tree-sitter auto-install on a fresh machine; these fix drift on an existing one; see Sync above for the combined one-liner):
 
 ```text
 :Lazy restore          " Neovim plugins back to lazy-lock.json
 :MasonLockRestore       " Mason tools back to mason-lock.json
-:TSUpdateSync            " Tree-sitter parsers
+:TSUpdate                " Tree-sitter parsers
 ```
 
 Updating a pinned host tool: change its version, URL, and checksum together in `home/.chezmoiexternal.toml.tmpl`, then `chezmoi apply`.
@@ -112,7 +117,7 @@ Updating a pinned tmux plugin: change its commit in `home/.chezmoiscripts/run_on
 ```text
 .
 ├── home/                              # chezmoi source state (.chezmoiroot)
-│   ├── .chezmoiexternal.toml.tmpl        # pinned host-tool downloads (nvim, rg, fd, fzf, lazygit, tree-sitter, font)
+│   ├── .chezmoiexternal.toml.tmpl        # pinned host-tool downloads (see docs/tools.md)
 │   ├── .chezmoiscripts/                  # run_onchange_ scripts: tmux plugin pinning, Windows PATH/fonts, Linux fontcache
 │   ├── .chezmoiignore                    # platform-conditional exclusions
 │   ├── dot_config/nvim/                  # Neovim configuration
