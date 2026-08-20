@@ -122,6 +122,8 @@ Updating a pinned tmux plugin: change its commit in `home/.chezmoiscripts/run_on
 └── .github/workflows/ci.yml           # applies into a scratch HOME on every supported platform
 ```
 
+Reference documentation (structure, pinned tools, per-area config maps): [docs/index.md](docs/index.md).
+
 ## Design notes
 
 - TPM's `'user/repo#<ref>'` pinning syntax only accepts branches and tags — it clones via `git clone -b <ref> --single-branch`, which rejects a raw commit SHA. Exact-commit pinning for tmux plugins is therefore done directly with `git clone`/`git checkout` in `run_onchange_after_30-tmux-plugins.sh.tmpl` rather than through TPM's own install path.
