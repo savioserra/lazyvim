@@ -1,8 +1,7 @@
 {{- /* Windows only: see .chezmoiignore, which excludes this script elsewhere. */ -}}
 # Add the directories .chezmoiexternal.toml.tmpl installs tools into to the
-# user PATH once. Unix relies on the user's own shell rc already having
-# .local/bin on PATH (unchanged from before); Windows has no such convention,
-# so this replaces the old CLI's registry PATH editing.
+# user PATH once. Unix relies on the shell rc already having .local/bin on
+# PATH; Windows has no such convention.
 $ErrorActionPreference = "Stop"
 
 $paths = @(

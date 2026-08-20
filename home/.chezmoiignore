@@ -1,9 +1,6 @@
-{{- /*
-Script target names below have had their run_/before_/after_/onchange_
-attributes and .tmpl suffix stripped by chezmoi already -- verified
-empirically, since chezmoi computes these before matching .chezmoiignore
-patterns (a script's raw source filename here would silently not match).
-*/ -}}
+{{- /* Script paths below use their stripped target name (no run_/before_/
+after_/onchange_ attributes or .tmpl suffix) -- that's what .chezmoiignore
+actually matches against, not the source filename. */ -}}
 {{- if eq .chezmoi.os "windows" }}
 .tmux.conf
 .config/tmux/**

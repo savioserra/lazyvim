@@ -124,6 +124,5 @@ Updating a pinned tmux plugin: change its commit in `home/.chezmoiscripts/run_on
 
 ## Design notes
 
-- This repo previously shipped a custom Go/Cobra CLI to do all of the above; it was retired in favor of chezmoi's own `external` mechanism plus each tool's native restore support (lazy.nvim, mason-lock.nvim, nvim-treesitter, TPM), once it became clear most of that CLI was reimplementing features those tools already had. History is in Git if the rationale is ever needed again.
 - TPM's `'user/repo#<ref>'` pinning syntax only accepts branches and tags — it clones via `git clone -b <ref> --single-branch`, which rejects a raw commit SHA. Exact-commit pinning for tmux plugins is therefore done directly with `git clone`/`git checkout` in `run_onchange_after_30-tmux-plugins.sh.tmpl` rather than through TPM's own install path.
 - Host tool updates remain intentional: change version, URL, and checksum together in `.chezmoiexternal.toml.tmpl`.

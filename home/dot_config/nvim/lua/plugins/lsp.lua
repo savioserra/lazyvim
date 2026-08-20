@@ -89,11 +89,8 @@ return {
 
   {
     "pmizio/typescript-tools.nvim",
-    -- blink.cmp isn't wired up via nvim-lspconfig, so listing it as a
-    -- dependency here (lazy.nvim always loads dependencies first) guarantees
-    -- it has finished loading -- and registered its LSP capabilities -- before
-    -- `complete_capabilities()` runs below, instead of racing its own
-    -- InsertEnter/CmdlineEnter lazy-load trigger.
+    -- Listed as a dependency (not wired up via nvim-lspconfig) so blink.cmp
+    -- is loaded, with capabilities registered, before complete_capabilities() runs.
     dependencies = { "nvim-lua/plenary.nvim", "neovim/nvim-lspconfig", "saghen/blink.cmp" },
     ft = {
       "javascript",
@@ -158,22 +155,12 @@ return {
       opts.capabilities = complete_capabilities()
       require("typescript-tools").setup(opts)
 
-      -- Work around two upstream bugs that leave `<leader>sS` (workspace/symbol)
-      -- stuck loading forever, or silently empty, instead of returning results:
-      -- 1. It resolves the "current file" via `vim.fn.bufnr("$")` (highest
-      --    buffer number), not the actually-active buffer -- any incidental
-      --    unlisted scratch buffer (e.g. mini.icons' filetype-match scratch)
-      --    outranks it. Worse, `<leader>sS` itself opens a Snacks picker with
-      --    its own unnamed prompt buffer *before* sending the request, so even
-      --    "the active buffer" at request time is never the real file -- it's
-      --    the picker's own buffer (empty name, filetype snacks_picker_input).
-      --    Either way tsserver gets sent a bogus/empty file and replies
-      --    `success = false, message = "No Project."`.
-      -- 2. On that (or any) error response, `body` is the raw error table, not
-      --    an item list, and indexing it as one throws before a response is
-      --    ever sent, orphaning the pending request.
-      -- https://github.com/pmizio/typescript-tools.nvim/issues/357
-      -- Drop this once upstream fixes protocol/workspace/symbol.lua.
+      -- Work around typescript-tools.nvim bugs that leave `<leader>sS`
+      -- (workspace/symbol) stuck loading or silently empty: it resolves the
+      -- "current file" via the highest buffer number rather than the real
+      -- active buffer, and mishandles the error response's shape, silently
+      -- orphaning the request.
+      -- https://github.com/pmizio/typescript-tools.nvim/issues/357 -- drop once fixed upstream.
       local ts_filetypes = {
         javascript = true,
         javascriptreact = true,
@@ -183,15 +170,9 @@ return {
         ["typescript.tsx"] = true,
       }
 
-      -- Never trust "the current buffer": the picker that triggers this request
-      -- has already stolen focus for its own prompt buffer by the time it fires.
-      -- Falling back to "any loaded TS/JS buffer" isn't enough either -- in an
-      -- Nx-style monorepo each app is usually its own isolated tsconfig
-      -- project, so grabbing an arbitrary buffer (e.g. the first one by buffer
-      -- number) can anchor the search to a *different* project than the one
-      -- you're actually working in, silently missing every real match.
-      -- Track the most recently entered real TS/JS buffer instead, so the
-      -- anchor always reflects what you were actually editing.
+      -- Track the most recently entered TS/JS buffer instead of trusting
+      -- "current buffer" (the picker steals focus) or any loaded buffer
+      -- (wrong project in an Nx-style monorepo with per-app tsconfigs).
       local last_ts_buf_name = nil
       vim.api.nvim_create_autocmd("BufEnter", {
         callback = function(args)

@@ -1,21 +1,16 @@
 {{- /*
-Pinned host-tool provisioning, replacing the old Go CLI's download/verify/
-extract machinery with chezmoi's native `external` mechanism. Versions, URLs,
-and checksums are copied from the retired manifests/tools.env and updated
-here directly -- change version, URL, and digest together, same discipline
-as before.
+Pinned host-tool provisioning. Update version, URL, and checksum together.
 
 Single-binary tools (rg/fd/fzf/lazygit/tree-sitter) land straight on PATH at
 .local/bin/<tool> via `archive-file`. Neovim is a whole runtime tree, so it's
-extracted with `archive` into .local/opt/nvim (exact = true keeps old-version
-files from lingering across an upgrade) and exposed via .local/bin/nvim,
-either a symlink (Unix, see symlink_dot_local_bin_nvim.tmpl) or PATH itself
-(Windows, see .chezmoiscripts/run_onchange_after_10-windows-path.ps1.tmpl --
-Windows symlinks need Developer Mode/admin, so it isn't used there).
+extracted with `archive` into .local/opt/nvim (exact = true drops old-version
+files on upgrade) and exposed via .local/bin/nvim -- a symlink on Unix
+(dot_local/bin/symlink_nvim.tmpl), or via PATH directly on Windows
+(run_onchange_after_10-windows-path.ps1.tmpl; Windows symlinks need Developer
+Mode/admin, so they aren't used there).
 
-.local/bin is expected to already be on PATH on Unix (unchanged from the old
-CLI's install message); the Windows PATH script adds the equivalent
-directories once.
+.local/bin is expected to already be on PATH on Unix; the Windows PATH
+script adds the equivalent directories once.
 */ -}}
 
 {{- $rgURL := "" -}}{{- $rgPath := "" -}}{{- $rgSha := "" -}}

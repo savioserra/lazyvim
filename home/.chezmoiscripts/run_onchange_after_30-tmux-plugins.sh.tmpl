@@ -1,17 +1,12 @@
 #!/bin/sh
 # Clone every tmux plugin (including TPM itself) directly at its exact
-# pinned commit. TPM's own install mechanism (`prefix + I` / install_plugins.sh)
-# clones via `git clone -b <ref> --single-branch`, which only accepts a
-# branch or tag name -- not a raw commit SHA -- so it can't do this pinning
-# itself (confirmed empirically: it fails with "download fail" for every
-# plugin pinned past its default branch). TPM still *loads* each plugin at
-# tmux startup (dot_tmux.conf's `run-shell '~/.tmux/plugins/tpm/tpm'`); this
-# script only owns getting the right commit onto disk, replacing the old Go
-# CLI's tmux.go + manifests/tmux-plugins.lock.
-#
-# Fixing drift on an already-cloned plugin at the wrong commit is still a
-# manual step (re-run this script, or delete the plugin dir and re-apply) --
-# same "auto-install fresh, manual fix for drift" tradeoff as :Lazy restore.
+# pinned commit. TPM's own install mechanism clones via
+# `git clone -b <ref> --single-branch`, which only accepts a branch or tag
+# name, not a raw commit SHA -- so it can't do this pinning itself. TPM
+# still *loads* each plugin at tmux startup (dot_tmux.conf's
+# `run-shell '~/.tmux/plugins/tpm/tpm'`); this script only gets the right
+# commit onto disk. Fixing drift on an already-cloned plugin is a manual
+# re-run of this script, same tradeoff as :Lazy restore.
 set -eu
 
 plugins_dir="$HOME/.tmux/plugins"
