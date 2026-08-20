@@ -1,4 +1,19 @@
+{{- /*
+Script target names below have had their run_/before_/after_/onchange_
+attributes and .tmpl suffix stripped by chezmoi already -- verified
+empirically, since chezmoi computes these before matching .chezmoiignore
+patterns (a script's raw source filename here would silently not match).
+*/ -}}
 {{- if eq .chezmoi.os "windows" }}
 .tmux.conf
 .config/tmux/**
+.local/bin/nvim
+.chezmoiscripts/20-linux-fontcache.sh
+.chezmoiscripts/30-tmux-plugins.sh
+{{- else }}
+.chezmoiscripts/10-windows-path.ps1
+.chezmoiscripts/20-windows-fonts.ps1
+{{- end }}
+{{- if eq .chezmoi.os "darwin" }}
+.chezmoiscripts/20-linux-fontcache.sh
 {{- end }}

@@ -1,0 +1,21 @@
+{{- /* Windows only: see .chezmoiignore, which excludes this script elsewhere. */ -}}
+# Per-user font install on Windows needs more than dropping files in a
+# folder: each font must also be registered under
+# HKCU:\...\CurrentVersion\Fonts by its real internal family name.
+# .chezmoiexternal.toml.tmpl places the .ttf files; this registers them.
+$ErrorActionPreference = "Stop"
+Add-Type -AssemblyName System.Drawing
+
+$fontsDir = Join-Path $env:LOCALAPPDATA "Microsoft\Windows\Fonts\JetBrainsMonoNerdFont"
+$regPath = "HKCU:\Software\Microsoft\Windows NT\CurrentVersion\Fonts"
+
+if (Test-Path $fontsDir) {
+  Get-ChildItem $fontsDir -Filter *.ttf | ForEach-Object {
+    $collection = New-Object System.Drawing.Text.PrivateFontCollection
+    $collection.AddFontFile($_.FullName)
+    $familyName = $collection.Families[0].Name
+    $valueName = "$familyName (TrueType)"
+    New-ItemProperty -Path $regPath -Name $valueName -PropertyType String -Value $_.Name -Force | Out-Null
+    $collection.Dispose()
+  }
+}
