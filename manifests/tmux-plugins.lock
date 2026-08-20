@@ -1,8 +1,0 @@
-# name|repository|commit
-# Update commits intentionally, then run lazyvim restore-tmux and lazyvim check.
-tpm|https://github.com/tmux-plugins/tpm.git|e261deb1b47614eed3400089ce7197dc68acc4eb
-tmux2k|https://github.com/2KAbhishek/tmux2k.git|07b3228b56c1a7b6109f00009df80b53f7eae892
-tmux-fingers|https://github.com/Morantron/tmux-fingers.git|fc3c750b8d73ac3e29675aae3b3ac6a00a0718f1
-tmux-yank|https://github.com/tmux-plugins/tmux-yank.git|acfd36e4fcba99f8310a7dfb432111c242fe7392
-vim-tmux-navigator|https://github.com/christoomey/vim-tmux-navigator.git|e41c431a0c7b7388ae7ba341f01a0d217eb3a432
-tmux-resurrect|https://github.com/tmux-plugins/tmux-resurrect.git|cff343cf9e81983d3da0c8562b01616f12e8d548

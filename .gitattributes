@@ -1,6 +1,2 @@
 # Keep source files and lockfiles stable when the repository is shared with Windows.
 * text=auto eol=lf
-*.ttf binary
-*.zip binary
-*.gz binary
-*.xz binary
