@@ -36,7 +36,7 @@ Declares every pinned host-tool download. Full table in [tools.md](tools.md). Me
 
 - `type = "archive-file"` — extracts one named file from an archive to a target path. Used for every flat single-binary tool.
 - `type = "archive"` with `stripComponents = 1`, `exact = true` — extracts a whole tree (Neovim's runtime, fonts), dropping stale files across a version bump.
-- Templated on `.chezmoi.os` / `.chezmoi.arch`; branches with no available upstream build for a platform (e.g. Windows ARM64 for `rainfrog`/`op`) render an empty URL, and the corresponding `[...]` table is skipped via `{{ if ne $url "" }}`.
+- Templated on `.chezmoi.os` / `.chezmoi.arch`; branches with no available upstream build for a platform (e.g. Windows ARM64 for `rainfrog`) render an empty URL, and the corresponding `[...]` table is skipped via `{{ if ne $url "" }}`.
 - No `refreshPeriod` set anywhere — updates are explicit (edit version/URL/checksum, `chezmoi apply`), never automatic.
 
 ## `.chezmoiscripts/`
