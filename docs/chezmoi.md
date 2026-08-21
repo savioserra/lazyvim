@@ -12,7 +12,7 @@ Source root: `home/` (set via `.chezmoiroot` at repo root). All paths below are 
 | `.chezmoiexternal.toml[.tmpl]` | declares downloaded targets (not represented as source files at all) |
 | `.chezmoiignore[.tmpl]` | excludes target paths, templated per `.chezmoi.os`/`.chezmoi.arch` |
 
-Nested target paths require real nested source directories — `dot_local/bin/symlink_nvim.tmpl` produces `~/.local/bin/nvim`; a flat file named `symlink_dot_local_bin_nvim.tmpl` at the source root would instead produce `~/.local_bin_nvim` (verified).
+Nested target paths require real nested source directories — `dot_local/bin/symlink_nvim.tmpl` produces `~/.local/bin/nvim`; a flat file named `symlink_dot_local_bin_nvim.tmpl` at the source root would instead produce `~/.local_bin_nvim`.
 
 Removing a source entry does not delete its deployed target — `chezmoi apply` only adds/updates what it still manages. Deleting a managed file from the repo also requires manually removing the deployed copy from `~`, unless it's inside an `exact` directory (e.g. the `.local/opt/nvim`/font externals, which prune on their own).
 
@@ -50,4 +50,4 @@ Declares every pinned host-tool download. Full table in [tools.md](tools.md). Me
 
 ## Root-level layer
 
-Two files live outside `home/` (read by `chezmoi init` before `.chezmoiroot` redirection): `.chezmoiroot` itself. No `.chezmoi.toml.tmpl` exists yet — add one at the repo root if machine-specific config data (e.g. 1Password integration settings) is needed.
+`.chezmoiroot` lives at the true repo root (read by `chezmoi init` before redirecting into `home/`). No `.chezmoi.toml.tmpl` exists yet — would also live at the true repo root if added.

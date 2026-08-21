@@ -20,6 +20,6 @@ All declared in `home/.chezmoiexternal.toml.tmpl`. Update version, URL, and chec
 | chezmoi itself | Can't provision itself (bootstrapping) | Manual, README.md Install section |
 | tmux, TPM-installed plugins | tmux/TPM aren't host-tool binaries in the same sense | `home/.chezmoiscripts/run_onchange_after_30-tmux-plugins.sh.tmpl`, `home/dot_tmux.conf` |
 | Tailscale | Needs a root-level system daemon (`tailscaled` via systemd/launchd/Windows service), not a `.local/bin` binary | Not automated; install manually via the OS package manager if needed |
-| 1Password CLI (`op`) | The desktop app's CLI-integration handshake requires whatever the official `1password-cli` system package sets up beyond just the binary — a manually downloaded `op` at `.local/bin` shadows the properly-integrated one on `PATH` and never completes the handshake (`connection reset`) | Not automated; install the official `1password-cli` package via the OS package manager |
+| 1Password CLI (`op`) | Desktop app CLI-integration needs the official `1password-cli` package; a manually downloaded binary at `.local/bin` shadows it on `PATH` | Not automated; install `1password-cli` via the OS package manager |
 | Mason-installed LSP servers/formatters/linters | Neovim-internal package manager, not a host binary | `zapling/mason-lock.nvim`, `home/dot_config/nvim/mason-lock.json` — see nvim.md |
 | lazy.nvim-installed Neovim plugins | Neovim-internal package manager | `home/dot_config/nvim/lazy-lock.json` — see nvim.md |

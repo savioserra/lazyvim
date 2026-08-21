@@ -17,7 +17,7 @@ Sources `~/.config/tmux/themes/tmux2k.conf` for status-bar presentation; runs `~
 
 ## Plugins and pinned commits
 
-TPM's `'user/repo#<ref>'` syntax only accepts branches/tags (not raw SHAs — confirmed empirically: it clones via `git clone -b <ref> --single-branch`). Pinning is therefore done directly in `home/.chezmoiscripts/run_onchange_after_30-tmux-plugins.sh.tmpl`, not in `dot_tmux.conf`'s `@plugin` lines (which stay bare `user/repo`).
+TPM's `'user/repo#<ref>'` syntax only accepts branches/tags, not raw SHAs (`git clone -b <ref> --single-branch`). Pinning is done directly in `home/.chezmoiscripts/run_onchange_after_30-tmux-plugins.sh.tmpl` instead; `dot_tmux.conf`'s `@plugin` lines stay bare `user/repo`.
 
 | Plugin | Commit |
 | --- | --- |
