@@ -23,12 +23,13 @@ TPM's `'user/repo#<ref>'` syntax only accepts branches/tags, not raw SHAs (`git 
 | --- | --- |
 | tmux-plugins/tpm | `e261deb1b47614eed3400089ce7197dc68acc4eb` |
 | 2KAbhishek/tmux2k | `07b3228b56c1a7b6109f00009df80b53f7eae892` |
-| Morantron/tmux-fingers | `fc3c750b8d73ac3e29675aae3b3ac6a00a0718f1` |
 | tmux-plugins/tmux-yank | `acfd36e4fcba99f8310a7dfb432111c242fe7392` |
 | christoomey/vim-tmux-navigator | `e41c431a0c7b7388ae7ba341f01a0d217eb3a432` |
 | tmux-plugins/tmux-resurrect | `cff343cf9e81983d3da0c8562b01616f12e8d548` |
 
 Fixing drift on an already-cloned plugin at the wrong commit: re-run the script (`chezmoi apply` re-runs it on content change) or delete `~/.tmux/plugins/<name>` and re-apply.
+
+`tmux-fingers` is intentionally not managed: its bootstrap downloads the latest executable without a checksum, and upstream does not publish an Intel macOS executable. That conflicts with this repository's pinned, cross-platform dependency model.
 
 ## `tmux2k.conf` (theme)
 

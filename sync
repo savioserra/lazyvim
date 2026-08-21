@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+repo_root="$(
+  CDPATH=''
+  cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
+  pwd -P
+)"
+
+require_command() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    printf 'sync: required command not found: %s\n' "$1" >&2
+    exit 127
+  fi
+}
+
+run_step() {
+  local description="$1"
+  shift
+  printf '\n==> %s\n' "$description"
+  "$@"
+}
+
+run_nvim_operation() {
+  local operation="$1"
+  nvim --headless \
+    -c "lua local ok, err = xpcall(function() require('config.sync').run('${operation}') end, debug.traceback); if not ok then io.stderr:write(err .. '\\n'); vim.cmd('cquit 1') end" \
+    +qa
+}
+
+require_command chezmoi
+require_command nvim
+
+run_step "Pulling and applying chezmoi source state" \
+  chezmoi --source "$repo_root" update
+
+run_step "Restoring Neovim plugins" \
+  run_nvim_operation lazy-restore
+
+run_step "Removing inactive Neovim plugins" \
+  run_nvim_operation lazy-clean
+
+run_step "Restoring Mason packages" \
+  run_nvim_operation mason
+
+run_step "Updating Tree-sitter parsers" \
+  run_nvim_operation treesitter
+
+printf '\nSync complete.\n'

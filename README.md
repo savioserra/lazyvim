@@ -50,12 +50,14 @@ One command installs chezmoi (it can't provision itself, so this is the exceptio
 
 ```bash
 # Linux/macOS
-sh -c "$(curl -fsLS get.chezmoi.io)" -b "$HOME/.local/bin" -- init --apply savioserra/lazyvim --ssh
+sh -c "$(curl -fsLS https://get.chezmoi.io)" -- \
+  -b "$HOME/.local/bin" -t v2.72.0 -- \
+  init --apply savioserra/lazyvim --ssh
 ```
 
 ```powershell
 # Windows
-winget install twpayne.chezmoi
+winget install --id twpayne.chezmoi --version 2.72.0 --exact
 chezmoi init --apply savioserra/lazyvim --ssh
 ```
 
@@ -71,17 +73,17 @@ nvim
 
 ## Sync
 
-Pull the latest repository state, re-apply, and restore everything locked, in one line:
+From the repository root, pull the latest state, re-apply it, and restore every editor lock with:
 
 ```bash
-chezmoi update && nvim --headless -c "Lazy restore" -c "sleep 3" -c "MasonLockRestore" -c "sleep 3" -c "TSUpdate" -c "sleep 3" -c "qa"
+./sync
 ```
 
-(`chezmoi update` is `git pull` + `apply`; the sleeps give each nvim step time to finish before the next one starts.)
+The Bash script supplies its own repository path to chezmoi, so it works both from chezmoi's normal source directory and from a regular Git clone. It uses blocking Lazy and Tree-sitter operations and separate Neovim processes rather than fixed sleeps, which can quit Neovim during an install.
 
 ## Workflow
 
-There is no wrapper CLI — use chezmoi directly:
+Use chezmoi directly for individual source-state operations; `./sync` is the convenience wrapper for the complete update and restore sequence:
 
 ```bash
 chezmoi diff              # preview what would change
@@ -100,7 +102,7 @@ git -C ~/.local/share/chezmoi diff
 git -C ~/.local/share/chezmoi commit -m "feat: update development configuration"
 ```
 
-Restoring locked state individually (rarely needed — lazy.nvim/mason.nvim/tree-sitter auto-install on a fresh machine; these fix drift on an existing one; see Sync above for the combined one-liner):
+Restoring locked state individually (rarely needed — lazy.nvim/mason.nvim/tree-sitter auto-install on a fresh machine; these fix drift on an existing one; see Sync above for the combined script):
 
 ```text
 :Lazy restore          " Neovim plugins back to lazy-lock.json
@@ -116,6 +118,7 @@ Updating a pinned tmux plugin: change its commit in `home/.chezmoiscripts/run_on
 
 ```text
 .
+├── sync                               # complete Bash update/restore workflow
 ├── home/                              # chezmoi source state (.chezmoiroot)
 │   ├── .chezmoiexternal.toml.tmpl        # pinned host-tool downloads (see docs/tools.md)
 │   ├── .chezmoiscripts/                  # run_onchange_ scripts: tmux plugin pinning, Windows PATH/fonts, Linux fontcache
@@ -124,8 +127,16 @@ Updating a pinned tmux plugin: change its commit in `home/.chezmoiscripts/run_on
 │   ├── dot_config/tmux/themes/           # tmux2k theme
 │   ├── dot_local/bin/symlink_nvim.tmpl   # ~/.local/bin/nvim -> ~/.local/opt/nvim/bin/nvim (Unix)
 │   └── dot_tmux.conf                     # tmux configuration
-└── .github/workflows/ci.yml           # applies into a scratch HOME on every supported platform
+└── .github/workflows/
+    ├── ci.yml                         # validates and applies on every push/PR
+    └── release.yml                    # publishes checksummed archives for v* tags
 ```
+
+## CI/CD
+
+GitHub Actions runs Linux, Apple Silicon macOS, Intel macOS, and Windows scratch-home applies on every push and pull request. The lint job validates the Bash sync script and JSON lockfiles.
+
+Pushing a semantic `vMAJOR.MINOR.PATCH` tag runs the complete CI matrix first, then publishes `.tar.gz` and `.zip` source archives plus `SHA256SUMS` to a generated GitHub release.
 
 Reference documentation (structure, pinned tools, per-area config maps): [docs/index.md](docs/index.md).
 

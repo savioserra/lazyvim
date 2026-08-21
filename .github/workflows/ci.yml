@@ -2,7 +2,10 @@ name: ci
 
 on:
   push:
+    branches:
+      - "**"
   pull_request:
+  workflow_call:
 
 permissions:
   contents: read
@@ -21,15 +24,32 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
-      - name: Install chezmoi
-        run: sh -c "$(curl -fsLS get.chezmoi.io)"
+      - name: Install pinned chezmoi
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(cat home/.chezmoiversion)"
+          install_dir="$RUNNER_TEMP/chezmoi-bin"
+          sh -c "$(curl -fsLS https://get.chezmoi.io)" -- \
+            -b "$install_dir" -t "v${version}"
+          "$install_dir/chezmoi" --version | grep -F "chezmoi version v${version}"
+          echo "CHEZMOI=$install_dir/chezmoi" >> "$GITHUB_ENV"
 
       - name: Apply into a scratch HOME
+        shell: bash
         run: |
           set -euo pipefail
           scratch="$RUNNER_TEMP/home"
           mkdir -p "$scratch"
-          "$HOME/bin/chezmoi" apply --source home --destination "$scratch" --force -v
+          HOME="$scratch" \
+            XDG_CONFIG_HOME="$scratch/.config" \
+            XDG_DATA_HOME="$scratch/.local/share" \
+            XDG_STATE_HOME="$scratch/.local/state" \
+            XDG_CACHE_HOME="$scratch/.cache" \
+            "$CHEZMOI" apply \
+              --source "$GITHUB_WORKSPACE/home" \
+              --destination "$scratch" \
+              --force -v
 
       - name: Confirm pinned tools landed at the right versions
         run: |
@@ -48,15 +68,27 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
-      - name: Install chezmoi
-        run: choco install chezmoi -y --no-progress
+      - name: Install pinned chezmoi
+        shell: pwsh
+        run: |
+          $version = (Get-Content home/.chezmoiversion -Raw).Trim()
+          choco install chezmoi --version=$version -y --no-progress
+          if (-not ((chezmoi --version) -match "chezmoi version v$([regex]::Escape($version))")) {
+            throw "Unexpected chezmoi version"
+          }
 
       - name: Apply into a scratch HOME
         shell: pwsh
         run: |
           $scratch = Join-Path $env:RUNNER_TEMP "home"
           New-Item -ItemType Directory -Force -Path $scratch | Out-Null
-          chezmoi apply --source home --destination $scratch --force -v
+          $env:HOME = $scratch
+          $env:USERPROFILE = $scratch
+          $env:LOCALAPPDATA = Join-Path $scratch "AppData/Local"
+          chezmoi apply `
+            --source (Join-Path $env:GITHUB_WORKSPACE "home") `
+            --destination $scratch `
+            --force -v
 
       - name: Confirm pinned tools landed at the right versions
         shell: pwsh
@@ -74,9 +106,14 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-      - name: Validate JSON lockfiles
+      - name: Validate scripts and JSON lockfiles
         run: |
           set -euo pipefail
+          bash -n sync
+          shellcheck sync
+          version="$(cat home/.chezmoiversion)"
+          grep -F -- "-t v${version}" README.md
+          grep -F -- "--version ${version}" README.md
           python3 -m json.tool home/dot_config/nvim/lazy-lock.json > /dev/null
           python3 -m json.tool home/dot_config/nvim/mason-lock.json > /dev/null
           python3 -m json.tool home/dot_config/nvim/lazyvim.json > /dev/null

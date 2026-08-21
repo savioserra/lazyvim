@@ -11,7 +11,7 @@ Target: `~/.config/nvim`. Distribution: LazyVim, plugin manager: lazy.nvim.
 | `lua/config/options.lua` | Non-default options (see table below) |
 | `lua/config/keymaps.lua` | Custom keymaps (`<C-s>` save, `gl` go-to-line) |
 | `lua/config/autocmds.lua` | Custom autocmds (organize-imports-on-save, external-file reload) |
-| `lazyvim.json` | Enabled LazyVim extras (22 — coding/blink, lang.typescript, lang.go, dap.core, test.core, etc; full list in the file) |
+| `lazyvim.json` | Enabled LazyVim extras (21 — coding/blink, lang.typescript, lang.go, dap.core, test.core, etc; full list in the file) |
 | `neoconf.json` | Per-project VS Code settings import config (`lua_ls` enabled) |
 | `stylua.toml` | Lua formatter config: 2-space indent, 120 column width |
 
@@ -45,6 +45,8 @@ Target: `~/.config/nvim`. Distribution: LazyVim, plugin manager: lazy.nvim.
 | File | Package manager | Restore command | Notes |
 | --- | --- | --- | --- |
 | `lazy-lock.json` | lazy.nvim | `:Lazy restore` | Auto-installs missing plugins on startup; explicit restore only needed to fix drift |
-| `mason-lock.json` | mason-lock.nvim | `:MasonLockRestore` | `:MasonLock` snapshots current versions; default `lockfile_path` already matches this file |
+| `mason-lock.json` | mason-lock.nvim | `:MasonLockRestore` | `:MasonLock` snapshots current versions; restore verifies exact versions and removes packages absent from the lock |
 
 Tree-sitter parsers have no lockfile — `nvim-treesitter`'s `ensure_installed`/auto-install follows the locked plugin commit; `:TSUpdate` to force.
+
+`plenary.nvim` is retained despite its upstream maintenance wind-down because both `typescript-tools.nvim` and LazyVim's DAP extra still import it directly. Remove it only after those active dependents migrate.

@@ -1,14 +1,16 @@
 # Repository map
 
-chezmoi-managed Neovim + tmux configuration for Linux, macOS, Windows. No build step, no wrapper CLI.
+chezmoi-managed Neovim + tmux configuration for Linux, macOS, Windows. No build step or compiled wrapper CLI; `sync` is a small Bash orchestration script.
 
 ## Layout
 
 ```
 .
 ├── README.md                    human install/workflow doc
+├── sync                         Bash update/apply/restore workflow
 ├── docs/                        this directory
 ├── .github/workflows/ci.yml     applies into a scratch HOME per platform
+├── .github/workflows/release.yml publishes checksummed archives for v* tags
 └── home/                        chezmoi source state (.chezmoiroot = "home")
     ├── .chezmoiversion            pinned chezmoi version
     ├── .chezmoiexternal.toml.tmpl  pinned host-tool downloads — see tools.md

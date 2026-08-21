@@ -3,6 +3,7 @@
 *.log
 *.tmp
 *.bak
+.build/
 
 # Neovim runtime data belongs under XDG data/state/cache, not in Git.
 .nvim-data/
