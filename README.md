@@ -140,7 +140,7 @@ Updating a pinned tmux plugin: change its commit in `home/.chezmoiscripts/run_on
 
 ## CI/CD
 
-GitHub Actions runs Linux, Apple Silicon macOS, Intel macOS, and Windows scratch-home applies on every push and pull request. The lint job validates both sync scripts and the JSON lockfiles.
+GitHub Actions runs the complete sync from an empty scratch home on Linux, Apple Silicon macOS, Intel macOS, and Windows on every push and pull request. Reusable platform test drivers verify the provisioned tool versions, Neovim plugin/Mason/Tree-sitter restoration, Unix tmux startup and pinned plugins, and Windows font registration. The lint job validates the production and CI scripts plus the JSON lockfiles.
 
 Pushing a semantic `vMAJOR.MINOR.PATCH` tag runs the complete CI matrix first, then publishes `.tar.gz` and `.zip` source archives plus `SHA256SUMS` to a generated GitHub release.
 

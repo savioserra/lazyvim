@@ -2,6 +2,7 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 $repoRoot = $PSScriptRoot
+$targetHome = if ($env:CHEZMOI_DESTDIR) { $env:CHEZMOI_DESTDIR } else { $HOME }
 
 function Resolve-RequiredCommand {
   param([Parameter(Mandatory)][string]$Name)
@@ -28,30 +29,36 @@ function Invoke-Step {
 
 $chezmoi = Resolve-RequiredCommand chezmoi
 
-# Chezmoi deploys the shared Neovim configuration under ~/.config/nvim.
-# Native Windows otherwise looks under %LOCALAPPDATA%/nvim. Set this in the
-# current process as well as in chezmoi's persistent Windows environment script
-# so this sync works immediately after the first apply.
-$env:XDG_CONFIG_HOME = Join-Path $HOME '.config'
+if ($env:CHEZMOI_SYNC_APPLY_ONLY -eq '1') {
+  Invoke-Step 'Applying checked-out chezmoi source state' {
+    & $chezmoi --source $repoRoot --destination $targetHome apply --force
+  }
+} else {
+  Invoke-Step 'Pulling and applying chezmoi source state' {
+    & $chezmoi --source $repoRoot --destination $targetHome update --force
+  }
+}
+
+# Chezmoi has now provisioned the tools and configuration. Update this process
+# immediately because environment changes made by child scripts only persist
+# automatically in future terminals.
+$env:XDG_CONFIG_HOME = Join-Path $targetHome '.config'
 $managedPaths = @(
-  (Join-Path $HOME '.local\bin'),
-  (Join-Path $HOME '.local\opt\nvim\bin'),
-  (Join-Path $HOME '.local\opt\go\bin'),
-  (Join-Path $HOME '.local\opt\nvm-windows'),
-  (Join-Path $HOME '.local\opt\nvm-windows\nodejs')
+  (Join-Path $targetHome '.local\bin'),
+  (Join-Path $targetHome '.local\opt\nvim\bin'),
+  (Join-Path $targetHome '.local\opt\go\bin'),
+  (Join-Path $targetHome '.local\opt\nvm-windows'),
+  (Join-Path $targetHome '.local\opt\nvm-windows\nodejs')
 )
-$env:NVM_HOME = Join-Path $HOME '.local\opt\nvm-windows'
+$env:NVM_HOME = Join-Path $targetHome '.local\opt\nvm-windows'
 $env:NVM_SYMLINK = Join-Path $env:NVM_HOME 'nodejs'
 $env:PATH = ($managedPaths + $env:PATH) -join [IO.Path]::PathSeparator
 
-# A terminal opened before chezmoi's Windows PATH script ran will not see the
-# updated user PATH. Resolve the managed Neovim directly in that case so the
-# very first sync works without restarting the terminal.
 $nvimCommand = Get-Command nvim -ErrorAction SilentlyContinue
 if ($nvimCommand) {
   $nvim = $nvimCommand.Source
 } else {
-  $managedNvim = Join-Path $HOME '.local\opt\nvim\bin\nvim.exe'
+  $managedNvim = Join-Path $targetHome '.local\opt\nvim\bin\nvim.exe'
   if (-not (Test-Path -LiteralPath $managedNvim -PathType Leaf)) {
     throw 'sync: required command not found: nvim'
   }
@@ -63,10 +70,6 @@ function Invoke-NvimOperation {
 
   $lua = "local ok, err = xpcall(function() require('config.sync').run('$Operation') end, debug.traceback); if not ok then io.stderr:write(err .. '\n'); vim.cmd('cquit 1') end"
   & $nvim --headless -c "lua $lua" +qa
-}
-
-Invoke-Step 'Pulling and applying chezmoi source state' {
-  & $chezmoi --source $repoRoot update --force
 }
 
 Invoke-Step 'Restoring Neovim plugins' {

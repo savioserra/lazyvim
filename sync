@@ -6,6 +6,7 @@ repo_root="$(
   cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
   pwd -P
 )"
+target_home="${CHEZMOI_DESTDIR:-$HOME}"
 
 require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -29,10 +30,16 @@ run_nvim_operation() {
 }
 
 require_command chezmoi
-require_command nvim
 
-run_step "Pulling and applying chezmoi source state" \
-  chezmoi --source "$repo_root" update --force
+if [[ "${CHEZMOI_SYNC_APPLY_ONLY:-0}" == 1 ]]; then
+  run_step "Applying checked-out chezmoi source state" \
+    chezmoi --source "$repo_root" --destination "$target_home" apply --force
+else
+  run_step "Pulling and applying chezmoi source state" \
+    chezmoi --source "$repo_root" --destination "$target_home" update --force
+fi
+
+require_command nvim
 
 run_step "Restoring Neovim plugins" \
   run_nvim_operation lazy-restore
