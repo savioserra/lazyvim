@@ -12,6 +12,7 @@ export function configureUnixHost() {
 }
 
 export function configureUnixRuntimeEnvironment() {
+  process.env.PATH = `${path.dirname(managedNodeExecutable)}:${path.join(localDirectory, "bin")}:${process.env.PATH || ""}`;
   process.env.XDG_DATA_HOME ||= path.join(localDirectory, "share");
   process.env.XDG_STATE_HOME ||= path.join(localDirectory, "state");
   process.env.XDG_CACHE_HOME ||= path.join(targetHome, ".cache");

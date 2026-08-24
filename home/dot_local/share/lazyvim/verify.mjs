@@ -4,6 +4,7 @@ import path from "node:path";
 import { captureCommandOutput } from "./lib/commands.mjs";
 import { targetHome } from "./lib/paths.mjs";
 import {
+  configureRuntimeEnvironment,
   managedNeovimExecutable,
   managedNodeExecutable,
   managedToolExecutable,
@@ -40,6 +41,15 @@ function verifyManagedToolVersions() {
     captureCommandOutput(managedNodeExecutable, ["--version"]) ===
       `v${versions.node}`,
     "Unexpected Node.js version",
+  );
+  requireCondition(
+    captureCommandOutput("node", ["--version"]) === `v${versions.node}`,
+    "The configured environment does not resolve node to the managed version",
+  );
+  requireCondition(
+    captureCommandOutput("nvim", ["--version"]).split(/\r?\n/)[0] ===
+      `NVIM v${versions.neovim}`,
+    "The configured environment does not resolve nvim to the managed version",
   );
   requireOutputPrefix(
     captureCommandOutput(managedToolExecutable("rg"), ["--version"]),
@@ -94,26 +104,89 @@ function verifyNeovimDependencies() {
   }
 }
 
-function verifyTypescriptLspAttachment() {
+function verifyLanguageSupport() {
   const temporaryDirectory = fs.mkdtempSync(
-    path.join(os.tmpdir(), "lazyvim-typescript-lsp-"),
+    path.join(os.tmpdir(), "lazyvim-language-support-"),
   );
-  const javascriptFile = path.join(temporaryDirectory, "attachment-test.js");
-  fs.writeFileSync(javascriptFile, "const answer = 42;\n");
+  const languageCases = [
+    [
+      "javascript",
+      "attachment-test.js",
+      "const answer = 42;\n",
+      "typescript-tools",
+    ],
+    ["lua", "attachment-test.lua", "local answer = 42\n", "lua_ls"],
+    [
+      "go",
+      "attachment_test.go",
+      "package behavior\n\nvar answer = 42\n",
+      "gopls",
+    ],
+    [
+      "html",
+      "attachment-test.html",
+      "<!doctype html><title>test</title>\n",
+      "html",
+    ],
+    ["css", "attachment-test.css", "body { color: red; }\n", "cssls"],
+    ["json", "attachment-test.json", '{ "answer": 42 }\n', "jsonls"],
+    ["yaml", "attachment-test.yaml", "answer: 42\n", "yamlls"],
+    ["markdown", "attachment-test.md", "# Behavior test\n", "marksman"],
+    ["dockerfile", "Dockerfile", "FROM scratch\n", "dockerls"],
+  ];
+
+  try {
+    for (const [
+      language,
+      filename,
+      contents,
+      expectedClient,
+    ] of languageCases) {
+      const sourceFile = path.join(temporaryDirectory, filename);
+      fs.writeFileSync(sourceFile, contents);
+      const escapedFile = sourceFile
+        .replaceAll("\\", "/")
+        .replaceAll("'", "''");
+      const lua = [
+        `vim.cmd("edit " .. vim.fn.fnameescape('${escapedFile}'))`,
+        "local parser_ok, parser = pcall(vim.treesitter.get_parser, 0)",
+        `if not parser_ok then error('${language} Tree-sitter parser unavailable: ' .. tostring(parser)) end`,
+        "parser:parse()",
+        "local attached = vim.wait(15000, function()",
+        "  for _, client in ipairs(vim.lsp.get_clients({ bufnr = 0 })) do",
+        `    if client.name == '${expectedClient}' then return true end`,
+        "  end",
+        "  return false",
+        "end, 100)",
+        `if not attached then error('${expectedClient} did not attach to ${language}') end`,
+      ].join("; ");
+      captureCommandOutput(managedNeovimExecutable, [
+        "--headless",
+        "-c",
+        `lua ${lua}`,
+        "+qa",
+      ]);
+    }
+  } finally {
+    fs.rmSync(temporaryDirectory, { recursive: true, force: true });
+  }
+}
+
+function verifyJavascriptFormatting() {
+  const temporaryDirectory = fs.mkdtempSync(
+    path.join(os.tmpdir(), "lazyvim-formatting-"),
+  );
+  const javascriptFile = path.join(temporaryDirectory, "format-test.js");
+  fs.writeFileSync(javascriptFile, "const answer=42\n");
+  fs.writeFileSync(path.join(temporaryDirectory, ".prettierrc.json"), "{}\n");
   const escapedFile = javascriptFile
     .replaceAll("\\", "/")
     .replaceAll("'", "''");
   const lua = [
     `vim.cmd("edit " .. vim.fn.fnameescape('${escapedFile}'))`,
-    "local attached = vim.wait(15000, function()",
-    "  for _, client in ipairs(vim.lsp.get_clients({ bufnr = 0 })) do",
-    "    if client.name == 'typescript-tools' then return true end",
-    "  end",
-    "  return false",
-    "end, 100)",
-    "if not attached then error('typescript-tools did not attach to JavaScript') end",
+    "require('conform').format({ async = false, timeout_ms = 15000 })",
+    "vim.cmd('write')",
   ].join("; ");
-
   try {
     captureCommandOutput(managedNeovimExecutable, [
       "--headless",
@@ -121,14 +194,20 @@ function verifyTypescriptLspAttachment() {
       `lua ${lua}`,
       "+qa",
     ]);
+    requireCondition(
+      fs.readFileSync(javascriptFile, "utf8") === "const answer = 42;\n",
+      "Prettier did not format JavaScript through Conform",
+    );
   } finally {
     fs.rmSync(temporaryDirectory, { recursive: true, force: true });
   }
 }
 
+configureRuntimeEnvironment();
 verifyManagedToolVersions();
 verifyNeovimDependencies();
-verifyTypescriptLspAttachment();
+verifyLanguageSupport();
+verifyJavascriptFormatting();
 verifyHostIntegration();
 
 console.log(`Verified complete ${platformName} environment.`);

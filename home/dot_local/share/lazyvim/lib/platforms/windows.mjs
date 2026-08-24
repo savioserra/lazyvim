@@ -38,7 +38,14 @@ export function managedToolExecutable(name) {
 export function configureRuntimeEnvironment() {
   process.env.NVM_HOME = nvmDirectory;
   process.env.NVM_SYMLINK = activeNodeDirectory;
-  process.env.PATH = `${nvmDirectory};${activeNodeDirectory};${process.env.PATH || ""}`;
+  process.env.PATH = [
+    path.join(localDirectory, "bin"),
+    path.join(localDirectory, "opt", "nvim", "bin"),
+    path.join(localDirectory, "opt", "go", "bin"),
+    nvmDirectory,
+    activeNodeDirectory,
+    process.env.PATH || "",
+  ].join(";");
 }
 
 export function configureHost() {
