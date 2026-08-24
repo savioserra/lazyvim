@@ -6,7 +6,8 @@ export default defineCapability({
   enhancements: {
     nvim: [
       {
-        pluginModule: "capabilities.typescript",
+        extrasModule: "capabilities.extras.typescript",
+        pluginModule: "capabilities.plugins.typescript",
         lazyvimExtras: [
           "lazyvim.plugins.extras.lang.typescript",
           "lazyvim.plugins.extras.linting.eslint",

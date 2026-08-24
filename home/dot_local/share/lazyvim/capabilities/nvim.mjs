@@ -24,6 +24,15 @@ function verifyLockedState({ platform, targetHome, versions }) {
     captureCommandOutput("nvim", ["--version"]).split(/\r?\n/)[0] === firstLine,
     "The configured environment does not resolve managed Neovim",
   );
+  runNeovimLua(
+    platform.managedNeovimExecutable,
+    [
+      "local messages = vim.api.nvim_exec2('messages', { output = true }).output",
+      "if messages:find('order of your `lazy.nvim` imports', 1, true) then",
+      " error('LazyVim reported invalid lazy.nvim import order')",
+      "end",
+    ].join("; "),
+  );
   const configDirectory = path.join(targetHome, ".config", "nvim");
   for (const [lockName, installedDirectory] of [
     ["lazy-lock.json", path.join(platform.neovimDataDirectory, "lazy")],
@@ -58,10 +67,10 @@ function verifyEnhancementContracts(context) {
         `Neovim enhancement requires unlocked Mason package ${packageName}`,
       );
     }
-    if (!enhancement.pluginModule) continue;
+    if (!enhancement.extrasModule) continue;
     const expectedImports = JSON.stringify(enhancement.lazyvimExtras || []);
     const lua = [
-      `local spec = require('${enhancement.pluginModule}')`,
+      `local spec = require('${enhancement.extrasModule}')`,
       "local imports = {}",
       "for _, item in ipairs(spec) do if item.import then imports[item.import] = true end end",
       `for _, name in ipairs(vim.json.decode('${expectedImports}')) do`,
@@ -69,6 +78,12 @@ function verifyEnhancementContracts(context) {
       "end",
     ].join("; ");
     runNeovimLua(context.platform.managedNeovimExecutable, lua);
+    if (enhancement.pluginModule) {
+      runNeovimLua(
+        context.platform.managedNeovimExecutable,
+        `assert(type(require('${enhancement.pluginModule}')) == 'table', 'invalid capability plugin module')`,
+      );
+    }
   }
 }
 

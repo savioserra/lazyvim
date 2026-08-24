@@ -6,7 +6,7 @@ export default defineCapability({
   enhancements: {
     nvim: [
       {
-        pluginModule: "capabilities.standard",
+        extrasModule: "capabilities.extras.standard",
         lazyvimExtras: [
           "lazyvim.plugins.extras.lang.docker",
           "lazyvim.plugins.extras.lang.json",

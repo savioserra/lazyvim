@@ -7,7 +7,7 @@ export default defineCapability({
   enhancements: {
     nvim: [
       {
-        pluginModule: "capabilities.go",
+        extrasModule: "capabilities.extras.go",
         lazyvimExtras: ["lazyvim.plugins.extras.lang.go"],
         languageCases: [
           {

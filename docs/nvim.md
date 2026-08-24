@@ -12,7 +12,8 @@ Target: `~/.config/nvim`. Distribution: LazyVim, plugin manager: lazy.nvim.
 | `lua/config/keymaps.lua` | Custom keymaps (`<C-s>` save, `gl` go-to-line) |
 | `lua/config/autocmds.lua` | Custom autocmds (organize-imports-on-save, external-file reload) |
 | `lazyvim.json` | Base LazyVim extras; language extras are capability imports |
-| `lua/capabilities/*.lua` | Go, TypeScript, and standard-language enhancements composed onto Neovim |
+| `lua/capabilities/extras/*.lua` | Capability-owned LazyVim extras, imported before custom plugins as LazyVim requires |
+| `lua/capabilities/plugins/*.lua` | Capability-owned custom plugin specs, imported after base `plugins/` |
 | `neoconf.json` | Per-project VS Code settings import config (`lua_ls` enabled) |
 | `stylua.toml` | Lua formatter config: 2-space indent, 120 column width |
 

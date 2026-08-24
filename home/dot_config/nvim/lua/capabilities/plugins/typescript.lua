@@ -8,9 +8,6 @@ local function complete_capabilities()
 end
 
 return {
-  { import = "lazyvim.plugins.extras.lang.typescript" },
-  { import = "lazyvim.plugins.extras.linting.eslint" },
-  { import = "lazyvim.plugins.extras.formatting.prettier" },
   -- Let typescript-tools.nvim own TypeScript/JavaScript LSP setup.
   {
     "neovim/nvim-lspconfig",

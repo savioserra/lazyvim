@@ -61,7 +61,9 @@ dot_local/share/lazyvim/
 
 dot_config/nvim/lua/
 ├── plugins/                base Neovim capability
-└── capabilities/           imported language enhancements
+└── capabilities/
+    ├── extras/             LazyVim extras, imported before custom plugins
+    └── plugins/            language-specific custom specs, imported last
 ```
 
 Provisioning follows the same ownership boundary: capability-specific files in
