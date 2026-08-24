@@ -1,6 +1,6 @@
 # Repository map
 
-chezmoi-managed Neovim + tmux configuration for Linux, macOS, Windows. Dependency-free Node.js modules provide shared orchestration; `sync` and `sync.ps1` only bootstrap them.
+chezmoi-managed Neovim + tmux configuration for Linux, macOS, Windows. Lua modules running on the pinned Neovim provide shared orchestration; `sync` and `sync.ps1` only bootstrap them.
 
 ## Layout
 

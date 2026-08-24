@@ -1,6 +1,6 @@
 # LazyVim
 
-A chezmoi-managed Neovim and tmux environment for Linux, macOS, and Windows. Chezmoi owns deployment and host-tool provisioning; dependency-free Node.js modules share setup, synchronization, and verification logic across every platform.
+A chezmoi-managed Neovim and tmux environment for Linux, macOS, and Windows. Chezmoi owns deployment and host-tool provisioning; Lua modules executed by the pinned Neovim share setup, synchronization, and behavioral verification across every platform.
 
 ## Reproducibility boundary
 
@@ -85,7 +85,7 @@ From the repository root, pull the latest state, re-apply it, and restore every 
 .\sync.ps1
 ```
 
-Both launchers supply their own repository path to chezmoi and then invoke the same deployed `sync.mjs` with the pinned managed Node.js 24 binary. The shared module uses blocking Lazy, Mason, and Tree-sitter operations in separate Neovim processes rather than fixed sleeps.
+Both launchers supply their own repository path to chezmoi and then invoke the same deployed `run.lua sync` lifecycle with the pinned managed Neovim binary. The shared module uses blocking Lazy, Mason, and Tree-sitter operations in separate configured Neovim processes rather than fixed sleeps.
 
 ## Workflow
 
@@ -118,7 +118,7 @@ Restoring locked state individually (rarely needed — lazy.nvim/mason.nvim/tree
 
 Updating a pinned host tool: change its version, URL, and checksum together in its `home/.chezmoiexternals/` capability manifest, then `chezmoi apply`.
 
-Updating a pinned tmux plugin: change its commit in `home/dot_local/share/lazyvim/lib/tmux.mjs`, then `chezmoi apply`.
+Updating a pinned tmux plugin: change its commit in `home/dot_local/share/lazyvim/lua/lazyvim_capabilities/capabilities/tmux.lua`, then `chezmoi apply`.
 
 ## Repository layout
 
@@ -127,27 +127,19 @@ Updating a pinned tmux plugin: change its commit in `home/dot_local/share/lazyvi
 ├── sync / sync.ps1                    # minimal platform bootstrap launchers
 ├── home/                              # chezmoi source state (.chezmoiroot)
 │   ├── .chezmoiexternals/                # pinned downloads, split by capability
-│   ├── .chezmoiscripts/                  # minimal managed-Node launchers/bootstrap
+│   ├── .chezmoiscripts/                  # minimal pinned-Neovim lifecycle launchers
 │   ├── .chezmoiignore                    # platform-conditional exclusions
 │   ├── dot_config/nvim/                  # Neovim configuration
 │   │   └── lua/capabilities/             # language enhancements imported by lazy.nvim
 │   ├── dot_config/tmux/themes/           # tmux2k theme
 │   ├── dot_local/bin/symlink_nvim.tmpl   # ~/.local/bin/nvim -> ~/.local/opt/nvim/bin/nvim (Unix)
 │   ├── dot_local/share/lazyvim/
-│   │   ├── run.mjs                        # capability lifecycle entry point
-│   │   ├── setup.mjs / sync.mjs / verify.mjs # compatibility entry points
-│   │   ├── capabilities/                  # capability registry and implementations
-│   │   └── lib/
-│   │       ├── commands.mjs               # child-process execution
-│   │       ├── paths.mjs                  # managed installation paths
-│   │       ├── platforms/
-│   │       │   ├── runtime.mjs            # selects the current platform contract
-│   │       │   ├── linux.mjs              # Linux implementation
-│   │       │   ├── macos.mjs              # macOS implementation
-│   │       │   ├── windows.mjs            # Windows implementation
-│   │       │   └── unix.mjs               # shared Linux/macOS implementation
-│   │       ├── tmux.mjs                   # pinned plugins and verification
-│   │       └── versions.mjs               # expected tool versions
+│   │   ├── run.lua                        # capability lifecycle entry point
+│   │   └── lua/lazyvim_capabilities/
+│   │       ├── capabilities/              # capability implementations
+│   │       ├── platforms/                 # same contract, per-OS implementations
+│   │       ├── registry.lua               # dependency ordering and composition
+│   │       └── commands.lua / paths.lua / versions.lua
 │   └── dot_tmux.conf                     # tmux configuration
 └── .github/workflows/
     ├── ci.yml                         # validates and applies on every push/PR
@@ -164,5 +156,5 @@ Reference documentation (structure, pinned tools, per-area config maps): [docs/i
 
 ## Design notes
 
-- TPM's `'user/repo#<ref>'` pinning syntax only accepts branches and tags. Exact-commit pinning is therefore implemented once in the shared Node setup module rather than through TPM's install path.
+- TPM's `'user/repo#<ref>'` pinning syntax only accepts branches and tags. Exact-commit pinning is therefore implemented once in the shared Lua tmux capability rather than through TPM's install path.
 - Host tool updates remain intentional: change version, URL, and checksum together in the owning `.chezmoiexternals/` manifest.

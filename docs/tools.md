@@ -22,7 +22,7 @@ Declared by capability in `home/.chezmoiexternals/`. Update version, URL, and ch
 | Tool | Why | Where it's handled |
 | --- | --- | --- |
 | chezmoi itself | Can't provision itself (bootstrapping) | Manual, README.md Install section |
-| tmux, TPM-installed plugins | tmux/TPM aren't host-tool binaries in the same sense | `home/dot_local/share/lazyvim/setup.mjs`, `home/dot_tmux.conf` |
+| tmux, TPM-installed plugins | tmux/TPM aren't host-tool binaries in the same sense | `home/dot_local/share/lazyvim/lua/lazyvim_capabilities/capabilities/tmux.lua`, `home/dot_tmux.conf` |
 | Tailscale | Needs a root-level system daemon (`tailscaled` via systemd/launchd/Windows service), not a `.local/bin` binary | Not automated; install manually via the OS package manager if needed |
 | 1Password CLI (`op`) | Desktop app CLI-integration needs the official `1password-cli` package; a manually downloaded binary at `.local/bin` shadows it on `PATH` | Not automated; install `1password-cli` via the OS package manager |
 | Mason-installed LSP servers/formatters/linters | Neovim-internal package manager, not a host binary | `zapling/mason-lock.nvim`, `home/dot_config/nvim/mason-lock.json` — see nvim.md |

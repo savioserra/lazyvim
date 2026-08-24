@@ -5,7 +5,7 @@ adapters, not the top-level architecture.
 
 ## Contract
 
-Every Node capability exports a definition with:
+Every Lua capability returns a definition with:
 
 - `id`: stable capability name.
 - `requires`: capabilities that must run first.
@@ -30,7 +30,7 @@ foundation
 ├── node
 ├── nvim
 │   ├── enhanced by language.lua
-│   ├── enhanced by language.go ───── requires node
+│   ├── enhanced by language.go ───────── requires node
 │   ├── enhanced by language.typescript ─ requires node
 │   └── enhanced by language.web
 └── tmux (Linux/macOS only)
@@ -45,25 +45,26 @@ the Neovim capability.
 
 ```text
 dot_local/share/lazyvim/
-├── capabilities/
-│   ├── registry.mjs
-│   ├── foundation.mjs
-│   ├── fonts.mjs
-│   ├── node.mjs
-│   ├── nvim.mjs
-│   ├── tmux.mjs
-│   └── languages/
-│       ├── go.mjs
-│       ├── typescript.mjs
-│       └── ...
-├── platforms/              host-operation adapters
-└── run.mjs                 lifecycle entry point
+├── run.lua                   lifecycle entry point
+└── lua/lazyvim_capabilities/
+    ├── registry.lua
+    ├── capabilities/
+    │   ├── foundation.lua
+    │   ├── fonts.lua
+    │   ├── node.lua
+    │   ├── nvim.lua
+    │   ├── tmux.lua
+    │   └── languages/
+    │       ├── go.lua
+    │       ├── typescript.lua
+    │       └── ...
+    └── platforms/            same contract, per-OS implementations
 
 dot_config/nvim/lua/
-├── plugins/                base Neovim capability
+├── plugins/                  base Neovim capability
 └── capabilities/
-    ├── extras/             LazyVim extras, imported before custom plugins
-    └── plugins/            language-specific custom specs, imported last
+    ├── extras/               LazyVim extras, imported before custom plugins
+    └── plugins/              language-specific custom specs, imported last
 ```
 
 Provisioning follows the same ownership boundary: capability-specific files in
@@ -76,25 +77,20 @@ Verification belongs to the capability that promises the behavior:
 
 - Node resolves through the configured environment and runs the pinned version.
 - tmux starts, loads its theme, and runs pinned plugins.
-- Neovim starts and restores its locked state.
+- Neovim starts and restores its locked state without the LazyVim import-order warning.
 - Each language enhancement opens a real fixture, parses it, and attaches the
   expected LSP. Formatter enhancements must transform a fixture on disk.
-- Font verification checks registration/cache visibility, not only archive
-  extraction.
+- Font verification checks registration/cache visibility, not only archive extraction.
 
 Directory existence is diagnostic evidence only; it is never sufficient proof
 that a capability works.
 
-## Migration plan
+## Runtime migration
 
-1. Introduce and validate the capability registry and lifecycle runner.
-2. Move Node, fonts, tmux, Neovim, and tool behavior out of platform-oriented
-   orchestration into capability modules.
-3. Express languages as Neovim enhancements and move their lazy.nvim specs into
-   `lua/capabilities/`.
-4. Split the external manifest by capability without changing targets or pins.
-5. Make local sync and CI invoke the same lifecycle runner.
-6. Run clean-home Linux, macOS, and Windows behavioral verification.
+The lifecycle uses the pinned Neovim binary as its cross-platform Lua runtime,
+so orchestration does not depend on Node being configured first. See
+[lua-migration.md](lua-migration.md) for the decision, bootstrap sequence, and
+official documentation used to validate it.
 
 ## Research basis
 
@@ -104,4 +100,5 @@ that a capability works.
 - [lazy.nvim plugin spec](https://lazy.folke.io/spec)
 - [LazyVim plugin composition](https://www.lazyvim.org/configuration/plugins)
 - [Neovim LSP activation](https://neovim.io/doc/user/lsp/)
-- [Node ECMAScript modules](https://nodejs.org/api/esm.html)
+- [Neovim command-line Lua execution](https://neovim.io/doc/user/starting/)
+- [Neovim Lua modules](https://neovim.io/doc/user/lua/)

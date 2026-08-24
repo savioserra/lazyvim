@@ -32,12 +32,11 @@ else
     chezmoi --source "$repo_root" --destination "$target_home" update --force
 fi
 
-node_version="$(<"$target_home/.node-version")"
-node="$target_home/.local/opt/nvm/versions/node/v${node_version}/bin/node"
-if [[ ! -x "$node" ]]; then
-  printf 'sync: managed Node.js not found: %s\n' "$node" >&2
+nvim="$target_home/.local/opt/nvim/bin/nvim"
+if [[ ! -x "$nvim" ]]; then
+  printf 'sync: managed Neovim not found: %s\n' "$nvim" >&2
   exit 127
 fi
 
-run_step "Running shared Node.js sync" \
-  "$node" "$target_home/.local/share/lazyvim/sync.mjs"
+run_step "Running Lua capability sync" \
+  "$nvim" -l "$target_home/.local/share/lazyvim/run.lua" sync

@@ -1,9 +1,8 @@
 {{- /* Windows only: see .chezmoiignore, which excludes this script elsewhere. */ -}}
 $ErrorActionPreference = 'Stop'
-$nodeVersion = '{{ include "dot_node-version" | trim }}'
-$node = Join-Path $env:USERPROFILE ".local\opt\nvm-windows\v$nodeVersion\node.exe"
-$setup = Join-Path $env:USERPROFILE '.local\share\lazyvim\setup.mjs'
-& $node $setup
+$nvim = Join-Path $env:USERPROFILE '.local\opt\nvim\bin\nvim.exe'
+$runtime = Join-Path $env:USERPROFILE '.local\share\lazyvim\run.lua'
+& $nvim -l $runtime setup
 if ($LASTEXITCODE -ne 0) {
-  throw "Shared Node setup failed with exit code $LASTEXITCODE"
+  throw "Lua capability setup failed with exit code $LASTEXITCODE"
 }

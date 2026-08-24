@@ -42,10 +42,10 @@ Declares every pinned host-tool download. Full table in [tools.md](tools.md). Me
 
 | Script (stripped name) | Phase | Platforms | Purpose |
 | --- | --- | --- | --- |
-| `20-unix-setup.sh` | after, every apply | Linux/macOS | Minimal launcher for the shared Node setup module |
+| `20-unix-setup.sh` | after, every apply | Linux/macOS | Minimal launcher for the shared Lua setup lifecycle |
 | `20-windows-setup.ps1` | after, every apply | Windows only | Launches the shared setup module with checksum-pinned Node from nvm-windows' version directory |
 
-`~/.local/share/lazyvim/run.mjs` executes setup, sync, and verification through the capability registry. Capabilities own behavior; platform adapters only implement host operations. The tiny chezmoi scripts invoke the `setup` lifecycle after externals are applied. Node's version has one machine-readable source of truth, `~/.node-version` (`home/dot_node-version`).
+`~/.local/share/lazyvim/run.lua` executes setup, sync, and verification through the capability registry using the pinned Neovim runtime. Capabilities own behavior; platform adapters only implement host operations. The tiny chezmoi scripts invoke the `setup` lifecycle after externals are applied. Node's managed version has one machine-readable source of truth, `~/.node-version` (`home/dot_node-version`).
 
 ## Root-level layer
 

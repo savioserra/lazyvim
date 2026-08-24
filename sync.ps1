@@ -39,11 +39,11 @@ if ($env:CHEZMOI_SYNC_APPLY_ONLY -eq '1') {
   }
 }
 
-$node = Join-Path $targetHome '.local\opt\nvm-windows\nodejs\node.exe'
-if (-not (Test-Path -LiteralPath $node -PathType Leaf)) {
-  throw "sync: managed Node.js not found: $node"
+$nvim = Join-Path $targetHome '.local\opt\nvim\bin\nvim.exe'
+if (-not (Test-Path -LiteralPath $nvim -PathType Leaf)) {
+  throw "sync: managed Neovim not found: $nvim"
 }
 
-Invoke-Step 'Running shared Node.js sync' {
-  & $node (Join-Path $targetHome '.local\share\lazyvim\sync.mjs')
+Invoke-Step 'Running Lua capability sync' {
+  & $nvim -l (Join-Path $targetHome '.local\share\lazyvim\run.lua') sync
 }

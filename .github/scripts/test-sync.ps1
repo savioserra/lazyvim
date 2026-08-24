@@ -13,16 +13,18 @@ $env:XDG_CONFIG_HOME = Join-Path $ScratchHome '.config'
 if ($IsWindows) {
   $env:LOCALAPPDATA = Join-Path $ScratchHome 'AppData/Local'
   & "$repoRoot\sync.ps1"
-  $node = Join-Path $ScratchHome '.local\opt\nvm-windows\nodejs\node.exe'
+  $nvim = Join-Path $ScratchHome '.local\opt\nvim\bin\nvim.exe'
 } else {
   $env:XDG_DATA_HOME = Join-Path $ScratchHome '.local/share'
   $env:XDG_STATE_HOME = Join-Path $ScratchHome '.local/state'
   $env:XDG_CACHE_HOME = Join-Path $ScratchHome '.cache'
   & bash "$repoRoot/sync"
-  $nodeVersion = (Get-Content (Join-Path $ScratchHome '.node-version') -Raw).Trim()
-  $node = Join-Path $ScratchHome ".local/opt/nvm/versions/node/v$nodeVersion/bin/node"
+  $nvim = Join-Path $ScratchHome '.local/opt/nvim/bin/nvim'
 }
 if ($LASTEXITCODE -ne 0) { throw "sync failed with exit code $LASTEXITCODE" }
 
-& $node (Join-Path $ScratchHome '.local/share/lazyvim/verify.mjs')
+& $nvim -l (Join-Path $repoRoot 'tests/capabilities.test.lua')
+if ($LASTEXITCODE -ne 0) { throw "capability composition tests failed with exit code $LASTEXITCODE" }
+
+& $nvim -l (Join-Path $ScratchHome '.local/share/lazyvim/run.lua') verify
 if ($LASTEXITCODE -ne 0) { throw "verification failed with exit code $LASTEXITCODE" }
