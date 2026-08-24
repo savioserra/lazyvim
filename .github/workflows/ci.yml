@@ -57,6 +57,7 @@ jobs:
           scratch="$RUNNER_TEMP/home"
           "$scratch/.local/bin/nvim" --version | head -1
           "$scratch/.local/bin/go" version
+          HOME="$scratch" bash -lc 'source "$HOME/.local/opt/nvm/nvm.sh"; nvm current; node --version; npm --version'
           "$scratch/.local/bin/rg" --version | head -1
           "$scratch/.local/bin/fd" --version
           "$scratch/.local/bin/fzf" --version

@@ -1,0 +1,10 @@
+#!/usr/bin/env sh
+set -eu
+marker='# chezmoi: load managed nvm'
+tmp="$(mktemp)"
+trap 'rm -f "$tmp"' EXIT HUP INT TERM
+cat >"$tmp"
+cat "$tmp"
+if ! grep -Fqx "$marker" "$tmp"; then
+  printf '\n%s\n%s\n' "$marker" '[ -r "$HOME/.config/shell/nvm.sh" ] && . "$HOME/.config/shell/nvm.sh"'
+fi

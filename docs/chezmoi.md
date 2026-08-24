@@ -47,6 +47,7 @@ Declares every pinned host-tool download. Full table in [tools.md](tools.md). Me
 | `20-linux-fontcache.sh` | after, onchange | Linux only | `fc-cache -f` after font files land |
 | `10-windows-path.ps1` | after, onchange | Windows only | Adds managed tools, nvm-windows, and its active Node to user `PATH`; sets `XDG_CONFIG_HOME`, `NVM_HOME`, and `NVM_SYMLINK` |
 | `15-windows-node.ps1` | after, onchange | Windows only | Configures nvm-windows, installs Node.js 24, and selects it as the active default |
+| `15-unix-node.sh` | after, onchange | Linux/macOS | Selects checksum-pinned Node.js 24 as nvm-sh's default; managed profile fragments load nvm in Bash/Zsh |
 | `20-windows-fonts.ps1` | after, onchange | Windows only | Registers each installed font under `HKCU:\...\CurrentVersion\Fonts` (per-user font install needs registry entries, not just files on disk) |
 
 ## Root-level layer

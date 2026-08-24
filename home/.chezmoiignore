@@ -6,6 +6,11 @@ actually matches against, not the source filename. */ -}}
 .config/tmux/**
 .local/bin/nvim
 .local/bin/go
+.profile
+.bashrc
+.zshrc
+.config/shell/nvm.sh
+.chezmoiscripts/15-unix-node.sh
 .chezmoiscripts/20-linux-fontcache.sh
 .chezmoiscripts/30-tmux-plugins.sh
 {{- else }}

@@ -23,6 +23,7 @@ script adds the equivalent directories once.
 {{- $fontURL := "" -}}{{- $fontSha := "" -}}{{- $fontKind := "tar.xz" -}}
 {{- $goURL := "" -}}{{- $goSha := "" -}}
 {{- $nvmWindowsURL := "" -}}{{- $nvmWindowsSha := "" -}}
+{{- $nodeURL := "" -}}{{- $nodeSha := "" -}}
 {{- $ext := "" -}}
 
 {{- if eq .chezmoi.os "linux" -}}
@@ -46,6 +47,8 @@ script adds the equivalent directories once.
   {{- $fontSha = "0227b220360a6f819b9ead92343e8112b34733054782561af50cfba1e8afab63" -}}
   {{- $goURL = "https://go.dev/dl/go1.27.0.linux-amd64.tar.gz" -}}
   {{- $goSha = "675c26c449cbb18fc24b74650de1eabbae6e16f64326fd85a283fb3b58280685" -}}
+  {{- $nodeURL = "https://nodejs.org/dist/v24.19.0/node-v24.19.0-linux-x64.tar.xz" -}}
+  {{- $nodeSha = "14b342e71204f811bde6153be8e04b62aef63c236fef92b55f9c83154b409647" -}}
 {{- else if eq .chezmoi.os "darwin" -}}
   {{- if eq .chezmoi.arch "arm64" -}}
     {{- $rgURL = "https://github.com/BurntSushi/ripgrep/releases/download/15.2.0/ripgrep-15.2.0-aarch64-apple-darwin.tar.gz" -}}
@@ -66,6 +69,8 @@ script adds the equivalent directories once.
     {{- $nvimSha = "51ab83afa66d663627c2ab1be43209b0f4e81360d4598b53efaa4d8195f24c89" -}}
     {{- $goURL = "https://go.dev/dl/go1.27.0.darwin-arm64.tar.gz" -}}
     {{- $goSha = "90493b3bbd5e10f91d12153198bf1994fd756399b4fec93b49b0c6e2acdeeb3e" -}}
+    {{- $nodeURL = "https://nodejs.org/dist/v24.19.0/node-v24.19.0-darwin-arm64.tar.xz" -}}
+    {{- $nodeSha = "3f1cf157479c1480352083105e13faf9d008ede98e7e157746b6df940d197b94" -}}
   {{- else -}}
     {{- $rgURL = "https://github.com/BurntSushi/ripgrep/releases/download/15.2.0/ripgrep-15.2.0-x86_64-apple-darwin.tar.gz" -}}
     {{- $rgPath = "ripgrep-15.2.0-x86_64-apple-darwin/rg" -}}
@@ -85,6 +90,8 @@ script adds the equivalent directories once.
     {{- $nvimSha = "03fe16f8dd9f1e9eaf52d5e294913a39917b9e2faea30d7fb0fb385fbd36fe59" -}}
     {{- $goURL = "https://go.dev/dl/go1.27.0.darwin-amd64.tar.gz" -}}
     {{- $goSha = "d3314e25496e4381d71a5c51d2907e7af655d199f6780b549f015bd85fef4986" -}}
+    {{- $nodeURL = "https://nodejs.org/dist/v24.19.0/node-v24.19.0-darwin-x64.tar.xz" -}}
+    {{- $nodeSha = "d35e95230f46f6f0751df497c56622c6735e05d5e1fb1630996a005b9d328fe4" -}}
   {{- end -}}
   {{- $fontURL = "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.5.0/JetBrainsMono.tar.xz" -}}
   {{- $fontSha = "0227b220360a6f819b9ead92343e8112b34733054782561af50cfba1e8afab63" -}}
@@ -209,6 +216,21 @@ script adds the equivalent directories once.
     url = {{ $nvmWindowsURL | quote }}
     [".local/opt/nvm-windows".checksum]
         sha256 = {{ $nvmWindowsSha | quote }}
+{{- else }}
+
+[".local/opt/nvm"]
+    type = "archive"
+    url = "https://github.com/nvm-sh/nvm/archive/refs/tags/v0.40.4.tar.gz"
+    stripComponents = 1
+    [".local/opt/nvm".checksum]
+        sha256 = "5949b50e4640f2be2263f963952673d7f1a8745a83f05365e99f032fe78307fd"
+
+[".local/opt/nvm/versions/node/v24.19.0"]
+    type = "archive"
+    url = {{ $nodeURL | quote }}
+    stripComponents = 1
+    [".local/opt/nvm/versions/node/v24.19.0".checksum]
+        sha256 = {{ $nodeSha | quote }}
 {{- end }}
 
 {{- if eq .chezmoi.os "windows" }}
