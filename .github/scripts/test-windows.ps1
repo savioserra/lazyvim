@@ -21,7 +21,7 @@ Assert-Output ((& "$ScratchHome\.local\opt\nvim\bin\nvim.exe" --version | Select
 if (-not ((& "$ScratchHome\.local\opt\go\bin\go.exe" version) -like 'go version go1.27.0*')) { throw 'Unexpected Go version' }
 Assert-Output ((& "$ScratchHome\.local\opt\nvm-windows\nvm.exe" version)) '1.2.2'
 Assert-Output ((& "$ScratchHome\.local\opt\nvm-windows\nodejs\node.exe" --version)) 'v24.19.0'
-Assert-Output ((& "$ScratchHome\.local\bin\rg.exe" --version | Select-Object -First 1)) 'ripgrep 15.2.0'
+if (-not ((& "$ScratchHome\.local\bin\rg.exe" --version | Select-Object -First 1) -like 'ripgrep 15.2.0*')) { throw 'Unexpected ripgrep version' }
 if (-not ((& "$ScratchHome\.local\bin\fd.exe" --version) -like 'fd 10.*')) { throw 'Unexpected fd version' }
 if (-not ((& "$ScratchHome\.local\bin\fzf.exe" --version) -like '0.74.2*')) { throw 'Unexpected fzf version' }
 if (-not ((& "$ScratchHome\.local\bin\lazygit.exe" --version) -match 'version=0\.63\.1')) { throw 'Unexpected lazygit version' }

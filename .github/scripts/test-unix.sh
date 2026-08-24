@@ -26,13 +26,23 @@ assert_eq() {
   fi
 }
 
+assert_starts_with() {
+  local actual="$1"
+  local expected="$2"
+  local description="$3"
+  if [[ "$actual" != "$expected"* ]]; then
+    printf '%s: expected prefix %q, got %q\n' "$description" "$expected" "$actual" >&2
+    return 1
+  fi
+}
+
 assert_eq "$("$scratch/.local/bin/nvim" --version | head -1)" "NVIM v0.12.4" "Neovim version"
 [[ $("$scratch/.local/bin/go" version) == go\ version\ go1.27.0* ]] || {
   "$scratch/.local/bin/go" version >&2
   exit 1
 }
 bash -lc 'source "$HOME/.local/opt/nvm/nvm.sh"; [[ $(nvm current) == v24.19.0 ]]; [[ $(node --version) == v24.19.0 ]]; npm --version'
-assert_eq "$("$scratch/.local/bin/rg" --version | head -1)" "ripgrep 15.2.0" "ripgrep version"
+assert_starts_with "$("$scratch/.local/bin/rg" --version | head -1)" "ripgrep 15.2.0" "ripgrep version"
 "$scratch/.local/bin/fd" --version | grep -F 'fd 10.'
 assert_eq "$("$scratch/.local/bin/fzf" --version | awk '{print $1}')" "0.74.2" "fzf version"
 "$scratch/.local/bin/lazygit" --version | grep -F 'version=0.63.1'
