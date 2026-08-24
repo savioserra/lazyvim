@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { captureCommandOutput } from "./lib/commands.mjs";
 import { targetHome } from "./lib/paths.mjs";
@@ -93,8 +94,41 @@ function verifyNeovimDependencies() {
   }
 }
 
+function verifyTypescriptLspAttachment() {
+  const temporaryDirectory = fs.mkdtempSync(
+    path.join(os.tmpdir(), "lazyvim-typescript-lsp-"),
+  );
+  const javascriptFile = path.join(temporaryDirectory, "attachment-test.js");
+  fs.writeFileSync(javascriptFile, "const answer = 42;\n");
+  const escapedFile = javascriptFile
+    .replaceAll("\\", "/")
+    .replaceAll("'", "''");
+  const lua = [
+    `vim.cmd("edit " .. vim.fn.fnameescape('${escapedFile}'))`,
+    "local attached = vim.wait(15000, function()",
+    "  for _, client in ipairs(vim.lsp.get_clients({ bufnr = 0 })) do",
+    "    if client.name == 'typescript-tools' then return true end",
+    "  end",
+    "  return false",
+    "end, 100)",
+    "if not attached then error('typescript-tools did not attach to JavaScript') end",
+  ].join("; ");
+
+  try {
+    captureCommandOutput(managedNeovimExecutable, [
+      "--headless",
+      "-c",
+      `lua ${lua}`,
+      "+qa",
+    ]);
+  } finally {
+    fs.rmSync(temporaryDirectory, { recursive: true, force: true });
+  }
+}
+
 verifyManagedToolVersions();
 verifyNeovimDependencies();
+verifyTypescriptLspAttachment();
 verifyHostIntegration();
 
 console.log(`Verified complete ${platformName} environment.`);
