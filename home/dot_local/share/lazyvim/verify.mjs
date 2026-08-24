@@ -1,15 +1,15 @@
 import fs from "node:fs";
 import path from "node:path";
 import { captureCommandOutput } from "./lib/commands.mjs";
-import { windowsFontDirectory } from "./lib/fonts.mjs";
+import { targetHome } from "./lib/paths.mjs";
 import {
   managedNeovimExecutable,
   managedNodeExecutable,
   managedToolExecutable,
-  targetHome,
-} from "./lib/paths.mjs";
-import { platform } from "./lib/platform.mjs";
-import { verifyTmuxConfiguration } from "./lib/tmux.mjs";
+  neovimDataDirectory,
+  platformName,
+  verifyHostIntegration,
+} from "./lib/platforms/runtime.mjs";
 import { versions } from "./lib/versions.mjs";
 
 function requireCondition(condition, failureMessage) {
@@ -30,11 +30,8 @@ function verifyManagedToolVersions() {
     )[0] === `NVIM v${versions.neovim}`,
     "Unexpected Neovim version",
   );
-  const goExecutable = platform.isWindows
-    ? path.join(targetHome, ".local", "opt", "go", "bin", "go.exe")
-    : managedToolExecutable("go");
   requireOutputPrefix(
-    captureCommandOutput(goExecutable, ["version"]),
+    captureCommandOutput(managedToolExecutable("go"), ["version"]),
     `go version go${versions.go}`,
     "Go version",
   );
@@ -74,18 +71,12 @@ function verifyManagedToolVersions() {
 
 function verifyNeovimDependencies() {
   const configDirectory = path.join(targetHome, ".config", "nvim");
-  const dataDirectory = platform.isWindows
-    ? path.join(
-        process.env.LOCALAPPDATA || path.join(targetHome, "AppData", "Local"),
-        "nvim-data",
-      )
-    : path.join(targetHome, ".local", "share", "nvim");
   const pluginLock = JSON.parse(
     fs.readFileSync(path.join(configDirectory, "lazy-lock.json"), "utf8"),
   );
   for (const pluginName of Object.keys(pluginLock)) {
     requireCondition(
-      fs.existsSync(path.join(dataDirectory, "lazy", pluginName)),
+      fs.existsSync(path.join(neovimDataDirectory, "lazy", pluginName)),
       `Missing Neovim plugin: ${pluginName}`,
     );
   }
@@ -94,44 +85,16 @@ function verifyNeovimDependencies() {
   );
   for (const packageName of Object.keys(masonLock)) {
     requireCondition(
-      fs.existsSync(path.join(dataDirectory, "mason", "packages", packageName)),
+      fs.existsSync(
+        path.join(neovimDataDirectory, "mason", "packages", packageName),
+      ),
       `Missing Mason package: ${packageName}`,
     );
   }
 }
 
-function verifyWindowsIntegration() {
-  requireCondition(
-    captureCommandOutput(
-      path.join(targetHome, ".local", "opt", "nvm-windows", "nvm.exe"),
-      ["version"],
-    ) === versions.nvmWindows,
-    "Unexpected nvm-windows version",
-  );
-  const fontDirectory = windowsFontDirectory();
-  const installedFonts = fs
-    .readdirSync(fontDirectory)
-    .filter((name) => name.endsWith(".ttf"));
-  requireCondition(
-    installedFonts.length > 0,
-    "No JetBrainsMono Nerd Font files were installed",
-  );
-  const fontRegistry = captureCommandOutput("reg.exe", [
-    "query",
-    "HKCU\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Fonts",
-  ]);
-  const registeredFonts = fontRegistry
-    .split(/\r?\n/)
-    .filter((line) => line.toLowerCase().includes(fontDirectory.toLowerCase()));
-  requireCondition(
-    registeredFonts.length === installedFonts.length,
-    `Expected ${installedFonts.length} registered fonts, got ${registeredFonts.length}`,
-  );
-}
-
 verifyManagedToolVersions();
 verifyNeovimDependencies();
-if (platform.isWindows) verifyWindowsIntegration();
-else verifyTmuxConfiguration();
+verifyHostIntegration();
 
-console.log(`Verified complete ${platform.name} environment.`);
+console.log(`Verified complete ${platformName} environment.`);

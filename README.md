@@ -138,10 +138,13 @@ Updating a pinned tmux plugin: change its commit in `home/dot_local/share/lazyvi
 │   │   ├── verify.mjs                     # end-to-end verification
 │   │   └── lib/
 │   │       ├── commands.mjs               # child-process execution
-│   │       ├── environment.mjs            # nvm and Windows environment setup
-│   │       ├── fonts.mjs                  # font cache and Windows registration
 │   │       ├── paths.mjs                  # managed installation paths
-│   │       ├── platform.mjs               # operating-system detection
+│   │       ├── platforms/
+│   │       │   ├── runtime.mjs            # selects the current platform contract
+│   │       │   ├── linux.mjs              # Linux implementation
+│   │       │   ├── macos.mjs              # macOS implementation
+│   │       │   ├── windows.mjs            # Windows implementation
+│   │       │   └── unix.mjs               # shared Linux/macOS implementation
 │   │       ├── tmux.mjs                   # pinned plugins and verification
 │   │       └── versions.mjs               # expected tool versions
 │   └── dot_tmux.conf                     # tmux configuration

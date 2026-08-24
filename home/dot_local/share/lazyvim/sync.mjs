@@ -1,15 +1,14 @@
 import { executeCommand } from "./lib/commands.mjs";
-import { managedNeovimExecutable, targetHome } from "./lib/paths.mjs";
-import { platform } from "./lib/platform.mjs";
+import { targetHome } from "./lib/paths.mjs";
+import {
+  configureRuntimeEnvironment,
+  managedNeovimExecutable,
+} from "./lib/platforms/runtime.mjs";
 
 process.env.HOME = targetHome;
 process.env.USERPROFILE = targetHome;
 process.env.XDG_CONFIG_HOME = `${targetHome}/.config`;
-if (!platform.isWindows) {
-  process.env.XDG_DATA_HOME ||= `${targetHome}/.local/share`;
-  process.env.XDG_STATE_HOME ||= `${targetHome}/.local/state`;
-  process.env.XDG_CACHE_HOME ||= `${targetHome}/.cache`;
-}
+configureRuntimeEnvironment();
 
 const operations = [
   ["Restoring Neovim plugins", "lazy-restore"],
