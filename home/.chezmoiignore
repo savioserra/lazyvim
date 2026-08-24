@@ -10,6 +10,7 @@ actually matches against, not the source filename. */ -}}
 .chezmoiscripts/30-tmux-plugins.sh
 {{- else }}
 .chezmoiscripts/10-windows-path.ps1
+.chezmoiscripts/15-windows-node.ps1
 .chezmoiscripts/20-windows-fonts.ps1
 {{- end }}
 {{- if eq .chezmoi.os "darwin" }}

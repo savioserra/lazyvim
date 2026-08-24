@@ -36,8 +36,12 @@ $env:XDG_CONFIG_HOME = Join-Path $HOME '.config'
 $managedPaths = @(
   (Join-Path $HOME '.local\bin'),
   (Join-Path $HOME '.local\opt\nvim\bin'),
-  (Join-Path $HOME '.local\opt\go\bin')
+  (Join-Path $HOME '.local\opt\go\bin'),
+  (Join-Path $HOME '.local\opt\nvm-windows'),
+  (Join-Path $HOME '.local\opt\nvm-windows\nodejs')
 )
+$env:NVM_HOME = Join-Path $HOME '.local\opt\nvm-windows'
+$env:NVM_SYMLINK = Join-Path $env:NVM_HOME 'nodejs'
 $env:PATH = ($managedPaths + $env:PATH) -join [IO.Path]::PathSeparator
 
 # A terminal opened before chezmoi's Windows PATH script ran will not see the

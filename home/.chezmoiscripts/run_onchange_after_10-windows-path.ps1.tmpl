@@ -7,7 +7,9 @@ $ErrorActionPreference = "Stop"
 $paths = @(
   (Join-Path $env:USERPROFILE ".local\bin"),
   (Join-Path $env:USERPROFILE ".local\opt\nvim\bin"),
-  (Join-Path $env:USERPROFILE ".local\opt\go\bin")
+  (Join-Path $env:USERPROFILE ".local\opt\go\bin"),
+  (Join-Path $env:USERPROFILE ".local\opt\nvm-windows"),
+  (Join-Path $env:USERPROFILE ".local\opt\nvm-windows\nodejs")
 )
 
 $current = [Environment]::GetEnvironmentVariable('Path', 'User')
@@ -36,6 +38,16 @@ if ([Environment]::GetEnvironmentVariable('XDG_CONFIG_HOME', 'User') -ne $xdgCon
   [Environment]::SetEnvironmentVariable('XDG_CONFIG_HOME', $xdgConfigHome, 'User')
   Write-Host "Set user XDG_CONFIG_HOME: $xdgConfigHome"
   $changed = $true
+}
+
+$nvmHome = Join-Path $env:USERPROFILE '.local\opt\nvm-windows'
+$nvmSymlink = Join-Path $nvmHome 'nodejs'
+foreach ($variable in @{ NVM_HOME = $nvmHome; NVM_SYMLINK = $nvmSymlink }.GetEnumerator()) {
+  if ([Environment]::GetEnvironmentVariable($variable.Key, 'User') -ne $variable.Value) {
+    [Environment]::SetEnvironmentVariable($variable.Key, $variable.Value, 'User')
+    Write-Host "Set user $($variable.Key): $($variable.Value)"
+    $changed = $true
+  }
 }
 
 if ($changed) {

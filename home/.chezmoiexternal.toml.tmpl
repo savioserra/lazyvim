@@ -22,6 +22,7 @@ script adds the equivalent directories once.
 {{- $nvimURL := "" -}}{{- $nvimSha := "" -}}
 {{- $fontURL := "" -}}{{- $fontSha := "" -}}{{- $fontKind := "tar.xz" -}}
 {{- $goURL := "" -}}{{- $goSha := "" -}}
+{{- $nvmWindowsURL := "" -}}{{- $nvmWindowsSha := "" -}}
 {{- $ext := "" -}}
 
 {{- if eq .chezmoi.os "linux" -}}
@@ -92,6 +93,8 @@ script adds the equivalent directories once.
   {{- $fontKind = "zip" -}}
   {{- $fontURL = "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.5.0/JetBrainsMono.zip" -}}
   {{- $fontSha = "9577de1ae84ec523df16fc69bac5338b89497a5b4fb91489e2dcb79dc06ac2b5" -}}
+  {{- $nvmWindowsURL = "https://github.com/coreybutler/nvm-windows/releases/download/1.2.2/nvm-noinstall.zip" -}}
+  {{- $nvmWindowsSha = "74232ea51c060ecd44ecf2cebee314ed9e3f6da56e1f9484d8d46c4e8bb6ae0e" -}}
   {{- if eq .chezmoi.arch "arm64" -}}
     {{- $rgURL = "https://github.com/BurntSushi/ripgrep/releases/download/15.2.0/ripgrep-15.2.0-aarch64-pc-windows-msvc.zip" -}}
     {{- $rgPath = "ripgrep-15.2.0-aarch64-pc-windows-msvc/rg.exe" -}}
@@ -198,6 +201,15 @@ script adds the equivalent directories once.
     stripComponents = 1
     [".local/opt/go".checksum]
         sha256 = {{ $goSha | quote }}
+
+{{- if eq .chezmoi.os "windows" }}
+
+[".local/opt/nvm-windows"]
+    type = "archive"
+    url = {{ $nvmWindowsURL | quote }}
+    [".local/opt/nvm-windows".checksum]
+        sha256 = {{ $nvmWindowsSha | quote }}
+{{- end }}
 
 {{- if eq .chezmoi.os "windows" }}
 

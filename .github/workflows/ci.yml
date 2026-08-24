@@ -97,6 +97,8 @@ jobs:
           $scratch = Join-Path $env:RUNNER_TEMP "home"
           & "$scratch\.local\opt\nvim\bin\nvim.exe" --version | Select-Object -First 1
           & "$scratch\.local\opt\go\bin\go.exe" version
+          & "$scratch\.local\opt\nvm-windows\nvm.exe" version
+          & "$scratch\.local\opt\nvm-windows\nodejs\node.exe" --version
           & "$scratch\.local\bin\rg.exe" --version | Select-Object -First 1
           & "$scratch\.local\bin\fd.exe" --version
           & "$scratch\.local\bin\fzf.exe" --version

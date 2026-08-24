@@ -6,7 +6,8 @@ A chezmoi-managed Neovim and tmux environment for Linux, macOS, and Windows. Con
 
 | Layer | Source of truth |
 | --- | --- |
-| Neovim, Go, ripgrep, fd, fzf, lazygit, tree-sitter CLI, font | `home/.chezmoiexternal.toml.tmpl` (chezmoi's native `archive`/`archive-file` externals, checksum-verified) |
+| Neovim, Go, ripgrep, fd, fzf, lazygit, tree-sitter CLI, font, nvm-windows | `home/.chezmoiexternal.toml.tmpl` (chezmoi's native `archive`/`archive-file` externals, checksum-verified) |
+| Node.js 24 (Windows) | Installed and selected through nvm-windows by `home/.chezmoiscripts/run_onchange_after_15-windows-node.ps1.tmpl` |
 | chezmoi itself | Installed independently (see Install below) — chezmoi can't provision itself |
 | LazyVim and Neovim plugins | `home/dot_config/nvim/lazy-lock.json`, restored by lazy.nvim itself (`:Lazy restore`) |
 | LSP servers, formatters, linters, and debuggers | `home/dot_config/nvim/mason-lock.json`, restored by [mason-lock.nvim](https://github.com/zapling/mason-lock.nvim) (`:MasonLockRestore`) |
@@ -61,7 +62,7 @@ winget install --id twpayne.chezmoi --version 2.72.0 --exact
 chezmoi init --apply savioserra/lazyvim --ssh
 ```
 
-`.chezmoiroot` in the repo points chezmoi at the `home/` subdirectory as the actual source state. This deploys Neovim/tmux configuration, downloads and checksum-verifies Neovim/Go/ripgrep/fd/fzf/lazygit/tree-sitter/the Nerd Font into `~/.local/bin` and `~/.local/opt`, installs the pinned tmux plugins, and (on Windows) adds those directories to your user `PATH`. On Linux/macOS, `~/.local/bin` is expected to already be on `PATH` (add it to your shell rc if it isn't).
+`.chezmoiroot` in the repo points chezmoi at the `home/` subdirectory as the actual source state. This deploys Neovim/tmux configuration, downloads and checksum-verifies Neovim/Go/ripgrep/fd/fzf/lazygit/tree-sitter/the Nerd Font into `~/.local/bin` and `~/.local/opt`, installs the pinned tmux plugins, and (on Windows) installs nvm-windows with Node.js 24 and adds those directories to your user `PATH`. On Linux/macOS, `~/.local/bin` is expected to already be on `PATH` (add it to your shell rc if it isn't).
 
 Once applied, open Neovim once to let lazy.nvim and Mason install everything locked in `lazy-lock.json`/`mason-lock.json`:
 
