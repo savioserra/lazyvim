@@ -28,6 +28,10 @@ if (-not ((& "$ScratchHome\.local\bin\lazygit.exe" --version) -match 'version=0\
 if (-not ((& "$ScratchHome\.local\bin\tree-sitter.exe" --version) -match '0\.26\.11')) { throw 'Unexpected tree-sitter version' }
 
 $fontDir = Join-Path $ScratchHome 'AppData\Local\Microsoft\Windows\Fonts\JetBrainsMonoNerdFont'
+$fontFiles = @(Get-ChildItem -LiteralPath $fontDir -Filter '*.ttf' -File)
+if ($fontFiles.Count -eq 0) { throw 'No JetBrainsMono Nerd Font files were installed' }
 $fontEntries = (Get-ItemProperty 'HKCU:\Software\Microsoft\Windows NT\CurrentVersion\Fonts').PSObject.Properties |
   Where-Object { $_.Name -match '^JetBrainsMonoNerdFont' -and $_.Value -like "$fontDir*" }
-if ($fontEntries.Count -ne 96) { throw "Expected 96 registered fonts, got $($fontEntries.Count)" }
+if ($fontEntries.Count -ne $fontFiles.Count) {
+  throw "Expected $($fontFiles.Count) registered fonts, got $($fontEntries.Count)"
+}
