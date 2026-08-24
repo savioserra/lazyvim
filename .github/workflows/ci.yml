@@ -111,6 +111,7 @@ jobs:
           set -euo pipefail
           bash -n sync
           shellcheck sync
+          pwsh -NoProfile -Command '$errors = $null; [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path ./sync.ps1), [ref]$null, [ref]$errors) > $null; if ($errors.Count) { $errors | ForEach-Object { Write-Error $_ }; exit 1 }'
           version="$(cat home/.chezmoiversion)"
           grep -F -- "-t v${version}" README.md
           grep -F -- "--version ${version}" README.md

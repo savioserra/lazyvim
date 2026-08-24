@@ -79,11 +79,16 @@ From the repository root, pull the latest state, re-apply it, and restore every 
 ./sync
 ```
 
-The Bash script supplies its own repository path to chezmoi, so it works both from chezmoi's normal source directory and from a regular Git clone. It uses blocking Lazy and Tree-sitter operations and separate Neovim processes rather than fixed sleeps, which can quit Neovim during an install.
+```powershell
+# Windows
+.\sync.ps1
+```
+
+Both scripts supply their own repository path to chezmoi, so they work from chezmoi's normal source directory or a regular Git clone. They use blocking Lazy and Tree-sitter operations and separate Neovim processes rather than fixed sleeps, which can quit Neovim during an install. The PowerShell script also finds chezmoi's managed `nvim.exe` directly when the current terminal has not picked up the newly changed user `PATH` yet.
 
 ## Workflow
 
-Use chezmoi directly for individual source-state operations; `./sync` is the convenience wrapper for the complete update and restore sequence:
+Use chezmoi directly for individual source-state operations; `./sync` on Unix or `.\sync.ps1` on Windows is the convenience wrapper for the complete update and restore sequence:
 
 ```bash
 chezmoi diff              # preview what would change
@@ -134,7 +139,7 @@ Updating a pinned tmux plugin: change its commit in `home/.chezmoiscripts/run_on
 
 ## CI/CD
 
-GitHub Actions runs Linux, Apple Silicon macOS, Intel macOS, and Windows scratch-home applies on every push and pull request. The lint job validates the Bash sync script and JSON lockfiles.
+GitHub Actions runs Linux, Apple Silicon macOS, Intel macOS, and Windows scratch-home applies on every push and pull request. The lint job validates both sync scripts and the JSON lockfiles.
 
 Pushing a semantic `vMAJOR.MINOR.PATCH` tag runs the complete CI matrix first, then publishes `.tar.gz` and `.zip` source archives plus `SHA256SUMS` to a generated GitHub release.
 

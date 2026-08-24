@@ -1,6 +1,6 @@
 # Repository map
 
-chezmoi-managed Neovim + tmux configuration for Linux, macOS, Windows. No build step or compiled wrapper CLI; `sync` is a small Bash orchestration script.
+chezmoi-managed Neovim + tmux configuration for Linux, macOS, Windows. No build step or compiled wrapper CLI; `sync` and `sync.ps1` are small native orchestration scripts.
 
 ## Layout
 
