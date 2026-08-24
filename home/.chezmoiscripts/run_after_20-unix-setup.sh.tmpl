@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+
+exec "$HOME/.local/opt/nvm/versions/node/v{{ include "dot_node-version" | trim }}/bin/node" \
+  "$HOME/.local/share/lazyvim/setup.mjs"

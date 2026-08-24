@@ -1,19 +1,19 @@
 # LazyVim
 
-A chezmoi-managed Neovim and tmux environment for Linux, macOS, and Windows. Configuration deployment, host-tool provisioning, and lock restoration are owned entirely by chezmoi and by each tool's own native mechanism (lazy.nvim, mason.nvim, nvim-treesitter, TPM) — no custom CLI or build step required.
+A chezmoi-managed Neovim and tmux environment for Linux, macOS, and Windows. Chezmoi owns deployment and host-tool provisioning; dependency-free Node.js modules share setup, synchronization, and verification logic across every platform.
 
 ## Reproducibility boundary
 
 | Layer | Source of truth |
 | --- | --- |
 | Neovim, Go, ripgrep, fd, fzf, lazygit, tree-sitter CLI, font, nvm-windows | `home/.chezmoiexternal.toml.tmpl` (chezmoi's native `archive`/`archive-file` externals, checksum-verified) |
-| Node.js 24 | Windows: installed and selected through nvm-windows; Linux/macOS: checksum-pinned under nvm-sh and selected as its default |
+| Node.js 24 | Version in `home/dot_node-version`; checksum-pinned archives placed under nvm-windows/nvm-sh and selected as their default |
 | chezmoi itself | Installed independently (see Install below) — chezmoi can't provision itself |
 | LazyVim and Neovim plugins | `home/dot_config/nvim/lazy-lock.json`, restored by lazy.nvim itself (`:Lazy restore`) |
 | LSP servers, formatters, linters, and debuggers | `home/dot_config/nvim/mason-lock.json`, restored by [mason-lock.nvim](https://github.com/zapling/mason-lock.nvim) (`:MasonLockRestore`) |
 | Tree-sitter parsers | nvim-treesitter's own `ensure_installed`/auto-install, following the locked plugin commit |
 | Neovim configuration | `home/dot_config/nvim/` |
-| tmux extensions | Pinned to exact commits and installed by `home/.chezmoiscripts/run_onchange_after_30-tmux-plugins.sh.tmpl` (TPM loads them; TPM's own `#<ref>` pinning only accepts branches/tags, not raw commit SHAs, so this script owns pinning directly via git) |
+| Cross-platform setup and tmux extensions | `home/dot_local/share/lazyvim/setup.mjs`; plugin commits live once in `lib/constants.mjs` |
 | tmux configuration and tmux2k theme | `home/dot_tmux.conf` and `home/dot_config/tmux/themes/tmux2k.conf` |
 
 Chezmoi applies Neovim to `~/.config/nvim` and tmux to `~/.tmux.conf`. Native Windows ignores tmux (see `home/.chezmoiignore`). Generated plugins, tools, logs, caches, sessions, and editor history remain outside Git.
@@ -30,7 +30,7 @@ WSL is treated as Linux.
 
 ### Prerequisites
 
-Linux and macOS need tmux 3.2+ and Bash 5.2+ for the managed tmux2k status bar, plus `git` (used directly by the tmux-plugin-pinning script).
+Linux and macOS need tmux 3.2+ and Bash 5.2+ for the managed tmux2k status bar, plus `git` (used by the shared setup module to pin tmux plugins).
 
 Ubuntu/Zorin:
 
@@ -85,7 +85,7 @@ From the repository root, pull the latest state, re-apply it, and restore every 
 .\sync.ps1
 ```
 
-Both scripts supply their own repository path to chezmoi, so they work from chezmoi's normal source directory or a regular Git clone. They use blocking Lazy and Tree-sitter operations and separate Neovim processes rather than fixed sleeps, which can quit Neovim during an install. The PowerShell script also finds chezmoi's managed `nvim.exe` directly and uses the deployed XDG config when the current terminal has not picked up the newly changed user environment yet.
+Both launchers supply their own repository path to chezmoi and then invoke the same deployed `sync.mjs` with the pinned managed Node.js 24 binary. The shared module uses blocking Lazy, Mason, and Tree-sitter operations in separate Neovim processes rather than fixed sleeps.
 
 ## Workflow
 
@@ -118,20 +118,21 @@ Restoring locked state individually (rarely needed — lazy.nvim/mason.nvim/tree
 
 Updating a pinned host tool: change its version, URL, and checksum together in `home/.chezmoiexternal.toml.tmpl`, then `chezmoi apply`.
 
-Updating a pinned tmux plugin: change its commit in `home/.chezmoiscripts/run_onchange_after_30-tmux-plugins.sh.tmpl`, then `chezmoi apply`.
+Updating a pinned tmux plugin: change its commit in `home/dot_local/share/lazyvim/lib/constants.mjs`, then `chezmoi apply`.
 
 ## Repository layout
 
 ```text
 .
-├── sync                               # complete Bash update/restore workflow
+├── sync / sync.ps1                    # minimal platform bootstrap launchers
 ├── home/                              # chezmoi source state (.chezmoiroot)
 │   ├── .chezmoiexternal.toml.tmpl        # pinned host-tool downloads (see docs/tools.md)
-│   ├── .chezmoiscripts/                  # run_onchange_ scripts: tmux plugin pinning, Windows PATH/fonts, Linux fontcache
+│   ├── .chezmoiscripts/                  # minimal managed-Node launchers/bootstrap
 │   ├── .chezmoiignore                    # platform-conditional exclusions
 │   ├── dot_config/nvim/                  # Neovim configuration
 │   ├── dot_config/tmux/themes/           # tmux2k theme
 │   ├── dot_local/bin/symlink_nvim.tmpl   # ~/.local/bin/nvim -> ~/.local/opt/nvim/bin/nvim (Unix)
+│   ├── dot_local/share/lazyvim/           # shared Node setup/sync/verification modules
 │   └── dot_tmux.conf                     # tmux configuration
 └── .github/workflows/
     ├── ci.yml                         # validates and applies on every push/PR
@@ -140,7 +141,7 @@ Updating a pinned tmux plugin: change its commit in `home/.chezmoiscripts/run_on
 
 ## CI/CD
 
-GitHub Actions runs the complete sync from an empty scratch home on Linux, Apple Silicon macOS, Intel macOS, and Windows on every push and pull request. Reusable platform test drivers verify the provisioned tool versions, Neovim plugin/Mason/Tree-sitter restoration, Unix tmux startup and pinned plugins, and Windows font registration. The lint job validates the production and CI scripts plus the JSON lockfiles.
+GitHub Actions runs the complete sync from an empty scratch home on Linux, Apple Silicon macOS, Intel macOS, and Windows on every push and pull request. One CI launcher and one shared Node verification module check tool versions, Neovim plugin/Mason/Tree-sitter restoration, Unix tmux startup and pinned plugins, and Windows font registration.
 
 Pushing a semantic `vMAJOR.MINOR.PATCH` tag runs the complete CI matrix first, then publishes `.tar.gz` and `.zip` source archives plus `SHA256SUMS` to a generated GitHub release.
 
@@ -148,5 +149,5 @@ Reference documentation (structure, pinned tools, per-area config maps): [docs/i
 
 ## Design notes
 
-- TPM's `'user/repo#<ref>'` pinning syntax only accepts branches and tags — it clones via `git clone -b <ref> --single-branch`, which rejects a raw commit SHA. Exact-commit pinning for tmux plugins is therefore done directly with `git clone`/`git checkout` in `run_onchange_after_30-tmux-plugins.sh.tmpl` rather than through TPM's own install path.
+- TPM's `'user/repo#<ref>'` pinning syntax only accepts branches and tags. Exact-commit pinning is therefore implemented once in the shared Node setup module rather than through TPM's install path.
 - Host tool updates remain intentional: change version, URL, and checksum together in `.chezmoiexternal.toml.tmpl`.

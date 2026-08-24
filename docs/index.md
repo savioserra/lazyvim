@@ -1,22 +1,23 @@
 # Repository map
 
-chezmoi-managed Neovim + tmux configuration for Linux, macOS, Windows. No build step or compiled wrapper CLI; `sync` and `sync.ps1` are small native orchestration scripts.
+chezmoi-managed Neovim + tmux configuration for Linux, macOS, Windows. Dependency-free Node.js modules provide shared orchestration; `sync` and `sync.ps1` only bootstrap them.
 
 ## Layout
 
 ```
 .
 ├── README.md                    human install/workflow doc
-├── sync                         Bash update/apply/restore workflow
+├── sync / sync.ps1              minimal native bootstrap launchers
 ├── docs/                        this directory
 ├── .github/workflows/ci.yml     applies into a scratch HOME per platform
 ├── .github/workflows/release.yml publishes checksummed archives for v* tags
 └── home/                        chezmoi source state (.chezmoiroot = "home")
     ├── .chezmoiversion            pinned chezmoi version
     ├── .chezmoiexternal.toml.tmpl  pinned host-tool downloads — see tools.md
-    ├── .chezmoiscripts/            run_onchange_ scripts — see chezmoi.md
+    ├── .chezmoiscripts/            managed Node launchers/bootstrap — see chezmoi.md
     ├── .chezmoiignore              platform-conditional exclusions
     ├── dot_local/bin/               -> ~/.local/bin
+    ├── dot_local/share/lazyvim/     shared setup/sync/verification modules
     ├── dot_tmux.conf                -> ~/.tmux.conf — see tmux.md
     ├── dot_config/tmux/themes/      -> ~/.config/tmux/themes/ — see tmux.md
     └── dot_config/nvim/              -> ~/.config/nvim/ — see nvim.md

@@ -1,0 +1,9 @@
+{{- /* Windows only: see .chezmoiignore, which excludes this script elsewhere. */ -}}
+$ErrorActionPreference = 'Stop'
+$nodeVersion = '{{ include "dot_node-version" | trim }}'
+$node = Join-Path $env:USERPROFILE ".local\opt\nvm-windows\v$nodeVersion\node.exe"
+$setup = Join-Path $env:USERPROFILE '.local\share\lazyvim\setup.mjs'
+& $node $setup
+if ($LASTEXITCODE -ne 0) {
+  throw "Shared Node setup failed with exit code $LASTEXITCODE"
+}

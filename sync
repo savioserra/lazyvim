@@ -22,13 +22,6 @@ run_step() {
   "$@"
 }
 
-run_nvim_operation() {
-  local operation="$1"
-  nvim --headless \
-    -c "lua local ok, err = xpcall(function() require('config.sync').run('${operation}') end, debug.traceback); if not ok then io.stderr:write(err .. '\\n'); vim.cmd('cquit 1') end" \
-    +qa
-}
-
 require_command chezmoi
 
 if [[ "${CHEZMOI_SYNC_APPLY_ONLY:-0}" == 1 ]]; then
@@ -39,18 +32,12 @@ else
     chezmoi --source "$repo_root" --destination "$target_home" update --force
 fi
 
-require_command nvim
+node_version="$(<"$target_home/.node-version")"
+node="$target_home/.local/opt/nvm/versions/node/v${node_version}/bin/node"
+if [[ ! -x "$node" ]]; then
+  printf 'sync: managed Node.js not found: %s\n' "$node" >&2
+  exit 127
+fi
 
-run_step "Restoring Neovim plugins" \
-  run_nvim_operation lazy-restore
-
-run_step "Removing inactive Neovim plugins" \
-  run_nvim_operation lazy-clean
-
-run_step "Restoring Mason packages" \
-  run_nvim_operation mason
-
-run_step "Updating Tree-sitter parsers" \
-  run_nvim_operation treesitter
-
-printf '\nSync complete.\n'
+run_step "Running shared Node.js sync" \
+  "$node" "$target_home/.local/share/lazyvim/sync.mjs"

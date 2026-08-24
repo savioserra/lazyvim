@@ -1,9 +1,0 @@
-#!/bin/sh
-# Refresh the font cache after JetBrainsMono Nerd Font lands under
-# .local/share/fonts (see .chezmoiexternal.toml.tmpl). Only Linux uses
-# fontconfig; macOS's Font Book picks up ~/Library/Fonts on its own.
-set -eu
-
-if command -v fc-cache >/dev/null 2>&1; then
-  fc-cache -f "$HOME/.local/share/fonts" >/dev/null
-fi

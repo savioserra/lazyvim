@@ -48,10 +48,9 @@ jobs:
           echo "$install_dir" >> "$GITHUB_PATH"
 
       - name: Test complete Unix sync
-        shell: bash
+        shell: pwsh
         run: |
-          set -euo pipefail
-          bash .github/scripts/test-unix.sh "$RUNNER_TEMP/home"
+          ./.github/scripts/test-sync.ps1 -ScratchHome (Join-Path $env:RUNNER_TEMP "home")
 
   windows:
     runs-on: windows-latest
@@ -71,8 +70,7 @@ jobs:
       - name: Test complete Windows sync
         shell: pwsh
         run: |
-          $scratch = Join-Path $env:RUNNER_TEMP "home"
-          .\.github\scripts\test-windows.ps1 -ScratchHome $scratch
+          ./.github/scripts/test-sync.ps1 -ScratchHome (Join-Path $env:RUNNER_TEMP "home")
 
   lint:
     runs-on: ubuntu-24.04
@@ -82,9 +80,10 @@ jobs:
       - name: Validate scripts and JSON lockfiles
         run: |
           set -euo pipefail
-          bash -n sync .github/scripts/test-unix.sh
-          shellcheck sync .github/scripts/test-unix.sh
-          pwsh -NoProfile -Command '$failed = $false; "sync.ps1", ".github/scripts/test-windows.ps1" | ForEach-Object { $errors = $null; [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $_), [ref]$null, [ref]$errors) > $null; if ($errors.Count) { $failed = $true; $errors | ForEach-Object { Write-Error $_ } } }; if ($failed) { exit 1 }'
+          bash -n sync
+          shellcheck sync
+          pwsh -NoProfile -Command '$failed = $false; "sync.ps1", ".github/scripts/test-sync.ps1" | ForEach-Object { $errors = $null; [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $_), [ref]$null, [ref]$errors) > $null; if ($errors.Count) { $failed = $true; $errors | ForEach-Object { Write-Error $_ } } }; if ($failed) { exit 1 }'
+          find home/dot_local/share/lazyvim -name '*.mjs' -print0 | xargs -0 -n1 node --check
           version="$(cat home/.chezmoiversion)"
           grep -F -- "-t v${version}" README.md
           grep -F -- "--version ${version}" README.md

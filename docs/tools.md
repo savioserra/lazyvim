@@ -8,7 +8,7 @@ All declared in `home/.chezmoiexternal.toml.tmpl`. Update version, URL, and chec
 | Go | 1.27.0 | go.dev | `.local/opt/go` (tree, `archive`) | linux-x86_64, darwin-arm64, darwin-x86_64, windows-arm64, windows-x86_64 |
 | nvm-windows | 1.2.2 | github.com/coreybutler/nvm-windows | `.local/opt/nvm-windows` (tree, `archive`) | Windows ARM64 and x64 |
 | nvm-sh | 0.40.4 | github.com/nvm-sh/nvm | `.local/opt/nvm` (tree, `archive`) | Linux x86_64, macOS ARM64 and x64 |
-| Node.js | 24.19.0 | nodejs.org | Windows: `.local/opt/nvm-windows/v24.19.0`; Unix: `.local/opt/nvm/versions/node/v24.19.0` | all 5 |
+| Node.js | `home/dot_node-version` (currently 24.19.0) | nodejs.org | Windows: `.local/opt/nvm-windows/v<version>`; Unix: `.local/opt/nvm/versions/node/v<version>` | all 5 |
 | ripgrep | 15.2.0 | github.com/BurntSushi/ripgrep | `.local/bin/rg` | all 5 |
 | fd | 10.4.2 (darwin-x86_64: 10.3.0 — no newer Intel macOS build published) | github.com/sharkdp/fd | `.local/bin/fd` | all 5 |
 | fzf | 0.74.2 | github.com/junegunn/fzf | `.local/bin/fzf` | all 5 |
@@ -22,7 +22,7 @@ All declared in `home/.chezmoiexternal.toml.tmpl`. Update version, URL, and chec
 | Tool | Why | Where it's handled |
 | --- | --- | --- |
 | chezmoi itself | Can't provision itself (bootstrapping) | Manual, README.md Install section |
-| tmux, TPM-installed plugins | tmux/TPM aren't host-tool binaries in the same sense | `home/.chezmoiscripts/run_onchange_after_30-tmux-plugins.sh.tmpl`, `home/dot_tmux.conf` |
+| tmux, TPM-installed plugins | tmux/TPM aren't host-tool binaries in the same sense | `home/dot_local/share/lazyvim/setup.mjs`, `home/dot_tmux.conf` |
 | Tailscale | Needs a root-level system daemon (`tailscaled` via systemd/launchd/Windows service), not a `.local/bin` binary | Not automated; install manually via the OS package manager if needed |
 | 1Password CLI (`op`) | Desktop app CLI-integration needs the official `1password-cli` package; a manually downloaded binary at `.local/bin` shadows it on `PATH` | Not automated; install `1password-cli` via the OS package manager |
 | Mason-installed LSP servers/formatters/linters | Neovim-internal package manager, not a host binary | `zapling/mason-lock.nvim`, `home/dot_config/nvim/mason-lock.json` — see nvim.md |

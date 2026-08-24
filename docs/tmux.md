@@ -17,7 +17,7 @@ Sources `~/.config/tmux/themes/tmux2k.conf` for status-bar presentation; runs `~
 
 ## Plugins and pinned commits
 
-TPM's `'user/repo#<ref>'` syntax only accepts branches/tags, not raw SHAs (`git clone -b <ref> --single-branch`). Pinning is done directly in `home/.chezmoiscripts/run_onchange_after_30-tmux-plugins.sh.tmpl` instead; `dot_tmux.conf`'s `@plugin` lines stay bare `user/repo`.
+TPM's `'user/repo#<ref>'` syntax only accepts branches/tags, not raw SHAs. Pinning is done by `home/dot_local/share/lazyvim/setup.mjs`, with the source-of-truth list in `lib/constants.mjs`; `dot_tmux.conf`'s `@plugin` lines stay bare `user/repo`.
 
 | Plugin | Commit |
 | --- | --- |
@@ -27,7 +27,7 @@ TPM's `'user/repo#<ref>'` syntax only accepts branches/tags, not raw SHAs (`git 
 | christoomey/vim-tmux-navigator | `e41c431a0c7b7388ae7ba341f01a0d217eb3a432` |
 | tmux-plugins/tmux-resurrect | `cff343cf9e81983d3da0c8562b01616f12e8d548` |
 
-Fixing drift on an already-cloned plugin at the wrong commit: re-run the script (`chezmoi apply` re-runs it on content change) or delete `~/.tmux/plugins/<name>` and re-apply.
+Fixing drift on an already-cloned plugin at the wrong commit: run `chezmoi apply`; the shared setup module checks out every pinned commit on every apply.
 
 `tmux-fingers` is intentionally not managed: its bootstrap downloads the latest executable without a checksum, and upstream does not publish an Intel macOS executable. That conflicts with this repository's pinned, cross-platform dependency model.
 
