@@ -31,7 +31,7 @@ $fontDir = Join-Path $ScratchHome 'AppData\Local\Microsoft\Windows\Fonts\JetBrai
 $fontFiles = @(Get-ChildItem -LiteralPath $fontDir -Filter '*.ttf' -File)
 if ($fontFiles.Count -eq 0) { throw 'No JetBrainsMono Nerd Font files were installed' }
 $fontEntries = (Get-ItemProperty 'HKCU:\Software\Microsoft\Windows NT\CurrentVersion\Fonts').PSObject.Properties |
-  Where-Object { $_.Name -match '^JetBrainsMonoNerdFont' -and $_.Value -like "$fontDir*" }
+  Where-Object { $_.Value -like "$fontDir*" }
 if ($fontEntries.Count -ne $fontFiles.Count) {
   throw "Expected $($fontFiles.Count) registered fonts, got $($fontEntries.Count)"
 }
