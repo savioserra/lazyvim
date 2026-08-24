@@ -13,7 +13,7 @@ A chezmoi-managed Neovim and tmux environment for Linux, macOS, and Windows. Che
 | LSP servers, formatters, linters, and debuggers | `home/dot_config/nvim/mason-lock.json`, restored by [mason-lock.nvim](https://github.com/zapling/mason-lock.nvim) (`:MasonLockRestore`) |
 | Tree-sitter parsers | nvim-treesitter's own `ensure_installed`/auto-install, following the locked plugin commit |
 | Neovim configuration | `home/dot_config/nvim/` |
-| Cross-platform setup and tmux extensions | `home/dot_local/share/lazyvim/setup.mjs`; plugin commits live once in `lib/constants.mjs` |
+| Cross-platform setup and tmux extensions | `home/dot_local/share/lazyvim/setup.mjs`; plugin commits live once in `lib/tmux.mjs` |
 | tmux configuration and tmux2k theme | `home/dot_tmux.conf` and `home/dot_config/tmux/themes/tmux2k.conf` |
 
 Chezmoi applies Neovim to `~/.config/nvim` and tmux to `~/.tmux.conf`. Native Windows ignores tmux (see `home/.chezmoiignore`). Generated plugins, tools, logs, caches, sessions, and editor history remain outside Git.
@@ -118,7 +118,7 @@ Restoring locked state individually (rarely needed — lazy.nvim/mason.nvim/tree
 
 Updating a pinned host tool: change its version, URL, and checksum together in `home/.chezmoiexternal.toml.tmpl`, then `chezmoi apply`.
 
-Updating a pinned tmux plugin: change its commit in `home/dot_local/share/lazyvim/lib/constants.mjs`, then `chezmoi apply`.
+Updating a pinned tmux plugin: change its commit in `home/dot_local/share/lazyvim/lib/tmux.mjs`, then `chezmoi apply`.
 
 ## Repository layout
 
@@ -132,7 +132,18 @@ Updating a pinned tmux plugin: change its commit in `home/dot_local/share/lazyvi
 │   ├── dot_config/nvim/                  # Neovim configuration
 │   ├── dot_config/tmux/themes/           # tmux2k theme
 │   ├── dot_local/bin/symlink_nvim.tmpl   # ~/.local/bin/nvim -> ~/.local/opt/nvim/bin/nvim (Unix)
-│   ├── dot_local/share/lazyvim/           # shared Node setup/sync/verification modules
+│   ├── dot_local/share/lazyvim/
+│   │   ├── setup.mjs                      # setup orchestration
+│   │   ├── sync.mjs                       # Neovim dependency synchronization
+│   │   ├── verify.mjs                     # end-to-end verification
+│   │   └── lib/
+│   │       ├── commands.mjs               # child-process execution
+│   │       ├── environment.mjs            # nvm and Windows environment setup
+│   │       ├── fonts.mjs                  # font cache and Windows registration
+│   │       ├── paths.mjs                  # managed installation paths
+│   │       ├── platform.mjs               # operating-system detection
+│   │       ├── tmux.mjs                   # pinned plugins and verification
+│   │       └── versions.mjs               # expected tool versions
 │   └── dot_tmux.conf                     # tmux configuration
 └── .github/workflows/
     ├── ci.yml                         # validates and applies on every push/PR

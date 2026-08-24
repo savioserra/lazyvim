@@ -1,13 +1,14 @@
-import { run } from "./lib/process.mjs";
-import { home, isWindows, managedNvim } from "./lib/paths.mjs";
+import { executeCommand } from "./lib/commands.mjs";
+import { managedNeovimExecutable, targetHome } from "./lib/paths.mjs";
+import { platform } from "./lib/platform.mjs";
 
-process.env.HOME = home;
-process.env.USERPROFILE = home;
-process.env.XDG_CONFIG_HOME = `${home}/.config`;
-if (!isWindows) {
-  process.env.XDG_DATA_HOME ||= `${home}/.local/share`;
-  process.env.XDG_STATE_HOME ||= `${home}/.local/state`;
-  process.env.XDG_CACHE_HOME ||= `${home}/.cache`;
+process.env.HOME = targetHome;
+process.env.USERPROFILE = targetHome;
+process.env.XDG_CONFIG_HOME = `${targetHome}/.config`;
+if (!platform.isWindows) {
+  process.env.XDG_DATA_HOME ||= `${targetHome}/.local/share`;
+  process.env.XDG_STATE_HOME ||= `${targetHome}/.local/state`;
+  process.env.XDG_CACHE_HOME ||= `${targetHome}/.cache`;
 }
 
 const operations = [
@@ -20,7 +21,12 @@ const operations = [
 for (const [description, operation] of operations) {
   console.log(`\n==> ${description}`);
   const lua = `local ok, err = xpcall(function() require('config.sync').run('${operation}') end, debug.traceback); if not ok then io.stderr:write(err .. '\\n'); vim.cmd('cquit 1') end`;
-  run(managedNvim, ["--headless", "-c", `lua ${lua}`, "+qa"]);
+  executeCommand(managedNeovimExecutable, [
+    "--headless",
+    "-c",
+    `lua ${lua}`,
+    "+qa",
+  ]);
 }
 
 console.log("\nSync complete.");

@@ -1,30 +1,33 @@
 import path from "node:path";
-import { NODE_VERSION } from "./constants.mjs";
+import { platform } from "./platform.mjs";
+import { versions } from "./versions.mjs";
 
-export const isWindows = process.platform === "win32";
-export const isLinux = process.platform === "linux";
-export const home =
+export const targetHome =
   process.env.CHEZMOI_DESTDIR || process.env.HOME || process.env.USERPROFILE;
+if (!targetHome)
+  throw new Error("Unable to determine the target home directory");
 
-if (!home) throw new Error("Unable to determine the target home directory");
-
-export const local = path.join(home, ".local");
-export const managedNode = isWindows
-  ? path.join(local, "opt", "nvm-windows", "nodejs", "node.exe")
+export const localDirectory = path.join(targetHome, ".local");
+export const managedNodeExecutable = platform.isWindows
+  ? path.join(localDirectory, "opt", "nvm-windows", "nodejs", "node.exe")
   : path.join(
-      local,
+      localDirectory,
       "opt",
       "nvm",
       "versions",
       "node",
-      `v${NODE_VERSION}`,
+      `v${versions.node}`,
       "bin",
       "node",
     );
-export const managedNvim = isWindows
-  ? path.join(local, "opt", "nvim", "bin", "nvim.exe")
-  : path.join(local, "bin", "nvim");
+export const managedNeovimExecutable = platform.isWindows
+  ? path.join(localDirectory, "opt", "nvim", "bin", "nvim.exe")
+  : path.join(localDirectory, "bin", "nvim");
 
-export function tool(name) {
-  return path.join(local, "bin", `${name}${isWindows ? ".exe" : ""}`);
+export function managedToolExecutable(name) {
+  return path.join(
+    localDirectory,
+    "bin",
+    `${name}${platform.isWindows ? ".exe" : ""}`,
+  );
 }
