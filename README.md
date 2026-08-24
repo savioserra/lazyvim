@@ -6,14 +6,14 @@ A chezmoi-managed Neovim and tmux environment for Linux, macOS, and Windows. Che
 
 | Layer | Source of truth |
 | --- | --- |
-| Neovim, Go, ripgrep, fd, fzf, lazygit, tree-sitter CLI, font, nvm-windows | `home/.chezmoiexternal.toml.tmpl` (chezmoi's native `archive`/`archive-file` externals, checksum-verified) |
+| Neovim, Go, ripgrep, fd, fzf, lazygit, tree-sitter CLI, font, nvm-windows | capability manifests in `home/.chezmoiexternals/` (chezmoi archives, checksum-verified) |
 | Node.js 24 | Version in `home/dot_node-version`; checksum-pinned archives placed under nvm-windows/nvm-sh and selected as their default |
 | chezmoi itself | Installed independently (see Install below) — chezmoi can't provision itself |
 | LazyVim and Neovim plugins | `home/dot_config/nvim/lazy-lock.json`, restored by lazy.nvim itself (`:Lazy restore`) |
 | LSP servers, formatters, linters, and debuggers | `home/dot_config/nvim/mason-lock.json`, restored by [mason-lock.nvim](https://github.com/zapling/mason-lock.nvim) (`:MasonLockRestore`) |
 | Tree-sitter parsers | nvim-treesitter's own `ensure_installed`/auto-install, following the locked plugin commit |
 | Neovim configuration | `home/dot_config/nvim/` |
-| Cross-platform setup and tmux extensions | `home/dot_local/share/lazyvim/setup.mjs`; plugin commits live once in `lib/tmux.mjs` |
+| Capability setup and enhancements | `home/dot_local/share/lazyvim/capabilities/`; architecture in `docs/capabilities.md` |
 | tmux configuration and tmux2k theme | `home/dot_tmux.conf` and `home/dot_config/tmux/themes/tmux2k.conf` |
 
 Chezmoi applies Neovim to `~/.config/nvim` and tmux to `~/.tmux.conf`. Native Windows ignores tmux (see `home/.chezmoiignore`). Generated plugins, tools, logs, caches, sessions, and editor history remain outside Git.
@@ -116,7 +116,7 @@ Restoring locked state individually (rarely needed — lazy.nvim/mason.nvim/tree
 :TSUpdate                " Tree-sitter parsers
 ```
 
-Updating a pinned host tool: change its version, URL, and checksum together in `home/.chezmoiexternal.toml.tmpl`, then `chezmoi apply`.
+Updating a pinned host tool: change its version, URL, and checksum together in its `home/.chezmoiexternals/` capability manifest, then `chezmoi apply`.
 
 Updating a pinned tmux plugin: change its commit in `home/dot_local/share/lazyvim/lib/tmux.mjs`, then `chezmoi apply`.
 
@@ -126,16 +126,17 @@ Updating a pinned tmux plugin: change its commit in `home/dot_local/share/lazyvi
 .
 ├── sync / sync.ps1                    # minimal platform bootstrap launchers
 ├── home/                              # chezmoi source state (.chezmoiroot)
-│   ├── .chezmoiexternal.toml.tmpl        # pinned host-tool downloads (see docs/tools.md)
+│   ├── .chezmoiexternals/                # pinned downloads, split by capability
 │   ├── .chezmoiscripts/                  # minimal managed-Node launchers/bootstrap
 │   ├── .chezmoiignore                    # platform-conditional exclusions
 │   ├── dot_config/nvim/                  # Neovim configuration
+│   │   └── lua/capabilities/             # language enhancements imported by lazy.nvim
 │   ├── dot_config/tmux/themes/           # tmux2k theme
 │   ├── dot_local/bin/symlink_nvim.tmpl   # ~/.local/bin/nvim -> ~/.local/opt/nvim/bin/nvim (Unix)
 │   ├── dot_local/share/lazyvim/
-│   │   ├── setup.mjs                      # setup orchestration
-│   │   ├── sync.mjs                       # Neovim dependency synchronization
-│   │   ├── verify.mjs                     # end-to-end verification
+│   │   ├── run.mjs                        # capability lifecycle entry point
+│   │   ├── setup.mjs / sync.mjs / verify.mjs # compatibility entry points
+│   │   ├── capabilities/                  # capability registry and implementations
 │   │   └── lib/
 │   │       ├── commands.mjs               # child-process execution
 │   │       ├── paths.mjs                  # managed installation paths
@@ -155,7 +156,7 @@ Updating a pinned tmux plugin: change its commit in `home/dot_local/share/lazyvi
 
 ## CI/CD
 
-GitHub Actions runs the complete sync from an empty scratch home on Linux, Apple Silicon macOS, Intel macOS, and Windows on every push and pull request. One CI launcher and one shared Node verification module check tool versions, Neovim plugin/Mason/Tree-sitter restoration, Unix tmux startup and pinned plugins, and Windows font registration.
+The GitHub Actions workflow is configured to run the complete capability lifecycle from an empty scratch home on Linux, Apple Silicon macOS, Intel macOS, and Windows. It is currently disabled at the account level because CI credits are exhausted. The same lifecycle runner is used locally and in CI.
 
 Pushing a semantic `vMAJOR.MINOR.PATCH` tag runs the complete CI matrix first, then publishes `.tar.gz` and `.zip` source archives plus `SHA256SUMS` to a generated GitHub release.
 
@@ -164,4 +165,4 @@ Reference documentation (structure, pinned tools, per-area config maps): [docs/i
 ## Design notes
 
 - TPM's `'user/repo#<ref>'` pinning syntax only accepts branches and tags. Exact-commit pinning is therefore implemented once in the shared Node setup module rather than through TPM's install path.
-- Host tool updates remain intentional: change version, URL, and checksum together in `.chezmoiexternal.toml.tmpl`.
+- Host tool updates remain intentional: change version, URL, and checksum together in the owning `.chezmoiexternals/` manifest.

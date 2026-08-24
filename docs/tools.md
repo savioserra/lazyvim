@@ -1,6 +1,6 @@
 # Pinned host tools
 
-All declared in `home/.chezmoiexternal.toml.tmpl`. Update version, URL, and checksum together.
+Declared by capability in `home/.chezmoiexternals/`. Update version, URL, and checksum together.
 
 | Tool | Version | Source | Target | Platforms |
 | --- | --- | --- | --- | --- |

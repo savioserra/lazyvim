@@ -10,12 +10,14 @@ if (!implementationPath) {
 }
 
 export const {
-  configureHost,
+  configureFonts,
+  configureNodeHost,
   configureRuntimeEnvironment,
   managedNeovimExecutable,
   managedNodeExecutable,
   managedToolExecutable,
   neovimDataDirectory,
   platformName,
-  verifyHostIntegration,
+  verifyFonts,
+  verifyNodeHost,
 } = await import(implementationPath);

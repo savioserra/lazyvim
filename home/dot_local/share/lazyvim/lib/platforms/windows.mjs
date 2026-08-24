@@ -48,7 +48,7 @@ export function configureRuntimeEnvironment() {
   ].join(";");
 }
 
-export function configureHost() {
+export function configureNodeHost() {
   configureRuntimeEnvironment();
   fs.writeFileSync(
     path.join(nvmDirectory, "settings.txt"),
@@ -56,16 +56,22 @@ export function configureHost() {
   );
   executeCommand(path.join(nvmDirectory, "nvm.exe"), ["use", versions.node]);
   configureUserEnvironment();
+}
+
+export function configureFonts() {
   registerFonts();
 }
 
-export function verifyHostIntegration() {
+export function verifyNodeHost() {
   if (
     captureCommandOutput(path.join(nvmDirectory, "nvm.exe"), ["version"]) !==
     versions.nvmWindows
   ) {
     throw new Error("Unexpected nvm-windows version");
   }
+}
+
+export function verifyFonts() {
   const installedFonts = fs
     .readdirSync(fontDirectory)
     .filter((name) => name.endsWith(".ttf"));

@@ -1,14 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
 import { localDirectory, targetHome } from "../paths.mjs";
-import { synchronizeTmuxPlugins, verifyTmuxConfiguration } from "../tmux.mjs";
 import { versions } from "../versions.mjs";
 
-export function configureUnixHost() {
+export function configureNodeHost() {
   const aliasDirectory = path.join(localDirectory, "opt", "nvm", "alias");
   fs.mkdirSync(aliasDirectory, { recursive: true });
   fs.writeFileSync(path.join(aliasDirectory, "default"), `${versions.node}\n`);
-  synchronizeTmuxPlugins();
 }
 
 export function configureUnixRuntimeEnvironment() {
@@ -35,6 +33,16 @@ export function managedToolExecutable(name) {
   return path.join(localDirectory, "bin", name);
 }
 
-export function verifyUnixHostIntegration() {
-  verifyTmuxConfiguration();
+export function verifyNodeHost() {
+  const defaultAlias = fs
+    .readFileSync(
+      path.join(localDirectory, "opt", "nvm", "alias", "default"),
+      "utf8",
+    )
+    .trim();
+  if (defaultAlias !== versions.node) {
+    throw new Error(
+      `Expected nvm default ${versions.node}, got ${defaultAlias}`,
+    );
+  }
 }

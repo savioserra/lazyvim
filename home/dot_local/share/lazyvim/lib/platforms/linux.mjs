@@ -1,14 +1,14 @@
 import path from "node:path";
-import { executeCommand } from "../commands.mjs";
+import { captureCommandOutput, executeCommand } from "../commands.mjs";
 import { localDirectory } from "../paths.mjs";
 import {
-  configureUnixHost,
+  configureNodeHost,
   configureUnixRuntimeEnvironment,
   managedNeovimExecutable,
   managedNodeExecutable,
   managedToolExecutable,
   neovimDataDirectory,
-  verifyUnixHostIntegration,
+  verifyNodeHost,
 } from "./unix.mjs";
 
 export const platformName = "linux";
@@ -18,11 +18,11 @@ export {
   managedNodeExecutable,
   managedToolExecutable,
   neovimDataDirectory,
-  verifyUnixHostIntegration as verifyHostIntegration,
+  configureNodeHost,
+  verifyNodeHost,
 };
 
-export function configureHost() {
-  configureUnixHost();
+export function configureFonts() {
   try {
     executeCommand("fc-cache", [
       "-f",
@@ -30,5 +30,12 @@ export function configureHost() {
     ]);
   } catch (error) {
     if (error.code !== "ENOENT") throw error;
+  }
+}
+
+export function verifyFonts() {
+  const output = captureCommandOutput("fc-list", [":", "family"]);
+  if (!output.toLowerCase().includes("jetbrainsmono nerd font")) {
+    throw new Error("fontconfig cannot see JetBrainsMono Nerd Font");
   }
 }

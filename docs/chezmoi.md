@@ -9,7 +9,7 @@ Source root: `home/` (set via `.chezmoiroot` at repo root). All paths below are 
 | `dot_<name>` | `~/.<name>` |
 | `dot_local/bin/symlink_<name>[.tmpl]` | `~/.local/bin/<name>`, a symlink; file content = symlink target |
 | `.chezmoiscripts/run_<attrs>_<name>.<ext>[.tmpl]` | executed as a script; no corresponding file in `~`. This repo uses `after` and `onchange_after` attributes. |
-| `.chezmoiexternal.toml[.tmpl]` | declares downloaded targets (not represented as source files at all) |
+| `.chezmoiexternals/*.toml.tmpl` | declares downloaded targets by capability (not represented as source files) |
 | `.chezmoiignore[.tmpl]` | excludes target paths, templated per `.chezmoi.os`/`.chezmoi.arch` |
 
 Nested target paths require real nested source directories — `dot_local/bin/symlink_nvim.tmpl` produces `~/.local/bin/nvim`; a flat file named `symlink_dot_local_bin_nvim.tmpl` at the source root would instead produce `~/.local_bin_nvim`.
@@ -29,7 +29,7 @@ Current platform exclusions (`home/.chezmoiignore`):
 | Windows | `.tmux.conf`, `.config/tmux/**`, `.local/bin/nvim`, `.chezmoiscripts/20-unix-setup.sh` |
 | Not Windows | `.chezmoiscripts/20-windows-setup.ps1` |
 
-## `.chezmoiexternal.toml.tmpl`
+## `.chezmoiexternals/`
 
 Declares every pinned host-tool download. Full table in [tools.md](tools.md). Mechanics:
 
@@ -45,7 +45,7 @@ Declares every pinned host-tool download. Full table in [tools.md](tools.md). Me
 | `20-unix-setup.sh` | after, every apply | Linux/macOS | Minimal launcher for the shared Node setup module |
 | `20-windows-setup.ps1` | after, every apply | Windows only | Launches the shared setup module with checksum-pinned Node from nvm-windows' version directory |
 
-`~/.local/share/lazyvim/setup.mjs` owns the shared setup behavior: nvm default selection, tmux plugin pinning, Linux font-cache refresh, Windows user environment, and Windows font registration. It runs on every apply so changes to imported modules take effect without duplicating dependency hashes in chezmoi wrappers. Node's version has one machine-readable source of truth, `~/.node-version` (`home/dot_node-version`).
+`~/.local/share/lazyvim/run.mjs` executes setup, sync, and verification through the capability registry. Capabilities own behavior; platform adapters only implement host operations. The tiny chezmoi scripts invoke the `setup` lifecycle after externals are applied. Node's version has one machine-readable source of truth, `~/.node-version` (`home/dot_node-version`).
 
 ## Root-level layer
 
