@@ -32,7 +32,7 @@ require_command chezmoi
 require_command nvim
 
 run_step "Pulling and applying chezmoi source state" \
-  chezmoi --source "$repo_root" update
+  chezmoi --source "$repo_root" update --force
 
 run_step "Restoring Neovim plugins" \
   run_nvim_operation lazy-restore

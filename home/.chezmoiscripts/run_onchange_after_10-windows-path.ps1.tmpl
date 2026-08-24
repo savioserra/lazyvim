@@ -6,7 +6,8 @@ $ErrorActionPreference = "Stop"
 
 $paths = @(
   (Join-Path $env:USERPROFILE ".local\bin"),
-  (Join-Path $env:USERPROFILE ".local\opt\nvim\bin")
+  (Join-Path $env:USERPROFILE ".local\opt\nvim\bin"),
+  (Join-Path $env:USERPROFILE ".local\opt\go\bin")
 )
 
 $current = [Environment]::GetEnvironmentVariable('Path', 'User')
@@ -26,5 +27,17 @@ foreach ($p in $paths) {
 if ($changed) {
   [Environment]::SetEnvironmentVariable('Path', ($parts -join ';'), 'User')
   Write-Host "Added to user PATH: $($paths -join ', ')"
-  Write-Host "Open a new terminal for PATH changes to take effect."
+}
+
+# Neovim defaults to %LOCALAPPDATA%\nvim on Windows, while this cross-platform
+# source state deploys it to ~/.config/nvim.
+$xdgConfigHome = Join-Path $env:USERPROFILE '.config'
+if ([Environment]::GetEnvironmentVariable('XDG_CONFIG_HOME', 'User') -ne $xdgConfigHome) {
+  [Environment]::SetEnvironmentVariable('XDG_CONFIG_HOME', $xdgConfigHome, 'User')
+  Write-Host "Set user XDG_CONFIG_HOME: $xdgConfigHome"
+  $changed = $true
+}
+
+if ($changed) {
+  Write-Host 'Open a new terminal for environment changes to take effect.'
 }

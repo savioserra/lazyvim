@@ -28,6 +28,18 @@ function Invoke-Step {
 
 $chezmoi = Resolve-RequiredCommand chezmoi
 
+# Chezmoi deploys the shared Neovim configuration under ~/.config/nvim.
+# Native Windows otherwise looks under %LOCALAPPDATA%/nvim. Set this in the
+# current process as well as in chezmoi's persistent Windows environment script
+# so this sync works immediately after the first apply.
+$env:XDG_CONFIG_HOME = Join-Path $HOME '.config'
+$managedPaths = @(
+  (Join-Path $HOME '.local\bin'),
+  (Join-Path $HOME '.local\opt\nvim\bin'),
+  (Join-Path $HOME '.local\opt\go\bin')
+)
+$env:PATH = ($managedPaths + $env:PATH) -join [IO.Path]::PathSeparator
+
 # A terminal opened before chezmoi's Windows PATH script ran will not see the
 # updated user PATH. Resolve the managed Neovim directly in that case so the
 # very first sync works without restarting the terminal.
@@ -50,7 +62,7 @@ function Invoke-NvimOperation {
 }
 
 Invoke-Step 'Pulling and applying chezmoi source state' {
-  & $chezmoi --source $repoRoot update
+  & $chezmoi --source $repoRoot update --force
 }
 
 Invoke-Step 'Restoring Neovim plugins' {

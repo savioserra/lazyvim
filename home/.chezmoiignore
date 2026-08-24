@@ -5,6 +5,7 @@ actually matches against, not the source filename. */ -}}
 .tmux.conf
 .config/tmux/**
 .local/bin/nvim
+.local/bin/go
 .chezmoiscripts/20-linux-fontcache.sh
 .chezmoiscripts/30-tmux-plugins.sh
 {{- else }}

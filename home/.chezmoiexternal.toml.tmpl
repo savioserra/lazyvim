@@ -2,9 +2,9 @@
 Pinned host-tool provisioning. Update version, URL, and checksum together.
 
 Single-binary tools (rg/fd/fzf/lazygit/tree-sitter/rainfrog) land straight on PATH at
-.local/bin/<tool> via `archive-file`. Neovim is a whole runtime tree, so it's
-extracted with `archive` into .local/opt/nvim (exact = true drops old-version
-files on upgrade) and exposed via .local/bin/nvim -- a symlink on Unix
+.local/bin/<tool> via `archive-file`. Neovim and Go are whole runtime trees, so
+they are extracted with `archive` into .local/opt (exact = true drops old-version
+files on upgrade) and exposed via .local/bin symlinks on Unix
 (dot_local/bin/symlink_nvim.tmpl), or via PATH directly on Windows
 (run_onchange_after_10-windows-path.ps1.tmpl; Windows symlinks need Developer
 Mode/admin, so they aren't used there).
@@ -21,6 +21,7 @@ script adds the equivalent directories once.
 {{- $rainfrogURL := "" -}}{{- $rainfrogSha := "" -}}
 {{- $nvimURL := "" -}}{{- $nvimSha := "" -}}
 {{- $fontURL := "" -}}{{- $fontSha := "" -}}{{- $fontKind := "tar.xz" -}}
+{{- $goURL := "" -}}{{- $goSha := "" -}}
 {{- $ext := "" -}}
 
 {{- if eq .chezmoi.os "linux" -}}
@@ -42,6 +43,8 @@ script adds the equivalent directories once.
   {{- $nvimSha = "012bf3fcac5ade43914df3f174668bf64d05e049a4f032a388c027b1ebd78628" -}}
   {{- $fontURL = "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.5.0/JetBrainsMono.tar.xz" -}}
   {{- $fontSha = "0227b220360a6f819b9ead92343e8112b34733054782561af50cfba1e8afab63" -}}
+  {{- $goURL = "https://go.dev/dl/go1.27.0.linux-amd64.tar.gz" -}}
+  {{- $goSha = "675c26c449cbb18fc24b74650de1eabbae6e16f64326fd85a283fb3b58280685" -}}
 {{- else if eq .chezmoi.os "darwin" -}}
   {{- if eq .chezmoi.arch "arm64" -}}
     {{- $rgURL = "https://github.com/BurntSushi/ripgrep/releases/download/15.2.0/ripgrep-15.2.0-aarch64-apple-darwin.tar.gz" -}}
@@ -60,6 +63,8 @@ script adds the equivalent directories once.
     {{- $rainfrogSha = "29d1ddb19b4d2c3888c7abf61b0f6fe9c99e3df309418ca59e449fa11b0c1a9f" -}}
     {{- $nvimURL = "https://github.com/neovim/neovim/releases/download/v0.12.4/nvim-macos-arm64.tar.gz" -}}
     {{- $nvimSha = "51ab83afa66d663627c2ab1be43209b0f4e81360d4598b53efaa4d8195f24c89" -}}
+    {{- $goURL = "https://go.dev/dl/go1.27.0.darwin-arm64.tar.gz" -}}
+    {{- $goSha = "90493b3bbd5e10f91d12153198bf1994fd756399b4fec93b49b0c6e2acdeeb3e" -}}
   {{- else -}}
     {{- $rgURL = "https://github.com/BurntSushi/ripgrep/releases/download/15.2.0/ripgrep-15.2.0-x86_64-apple-darwin.tar.gz" -}}
     {{- $rgPath = "ripgrep-15.2.0-x86_64-apple-darwin/rg" -}}
@@ -77,6 +82,8 @@ script adds the equivalent directories once.
     {{- $rainfrogSha = "f7de36aa710608ba2c77831f21a57e24c5c500a7e87929fd221f86c97d2915e2" -}}
     {{- $nvimURL = "https://github.com/neovim/neovim/releases/download/v0.12.4/nvim-macos-x86_64.tar.gz" -}}
     {{- $nvimSha = "03fe16f8dd9f1e9eaf52d5e294913a39917b9e2faea30d7fb0fb385fbd36fe59" -}}
+    {{- $goURL = "https://go.dev/dl/go1.27.0.darwin-amd64.tar.gz" -}}
+    {{- $goSha = "d3314e25496e4381d71a5c51d2907e7af655d199f6780b549f015bd85fef4986" -}}
   {{- end -}}
   {{- $fontURL = "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.5.0/JetBrainsMono.tar.xz" -}}
   {{- $fontSha = "0227b220360a6f819b9ead92343e8112b34733054782561af50cfba1e8afab63" -}}
@@ -101,6 +108,8 @@ script adds the equivalent directories once.
     {{- /* rainfrog does not publish a windows-arm64 build. */ -}}
     {{- $nvimURL = "https://github.com/neovim/neovim/releases/download/v0.12.4/nvim-win-arm64.zip" -}}
     {{- $nvimSha = "49906085a3c473ee87a28319942c62216fb365a1a1a4f83dbc4ac41365f5e609" -}}
+    {{- $goURL = "https://go.dev/dl/go1.27.0.windows-arm64.zip" -}}
+    {{- $goSha = "6e0156b9788209931dd340fadc04171ce15063c17b51c92e7b86b51109626e90" -}}
   {{- else -}}
     {{- $rgURL = "https://github.com/BurntSushi/ripgrep/releases/download/15.2.0/ripgrep-15.2.0-x86_64-pc-windows-msvc.zip" -}}
     {{- $rgPath = "ripgrep-15.2.0-x86_64-pc-windows-msvc/rg.exe" -}}
@@ -118,6 +127,8 @@ script adds the equivalent directories once.
     {{- $rainfrogSha = "61083e41d8e257fe1fb401a25af04da7c8c93c3d64c3bbfcbff8949db2da79d2" -}}
     {{- $nvimURL = "https://github.com/neovim/neovim/releases/download/v0.12.4/nvim-win64.zip" -}}
     {{- $nvimSha = "9fc3572829ffd13debb6e32555da2c8cc02555568260a9fc4cf1f65bbcca319c" -}}
+    {{- $goURL = "https://go.dev/dl/go1.27.0.windows-amd64.zip" -}}
+    {{- $goSha = "f0c0a0d33ba94f4d2c5dbc887334ce678b21813504ddb3aafcb06e60a5a667c4" -}}
   {{- end -}}
 {{- end -}}
 
@@ -179,6 +190,14 @@ script adds the equivalent directories once.
     stripComponents = 1
     [".local/opt/nvim".checksum]
         sha256 = {{ $nvimSha | quote }}
+
+[".local/opt/go"]
+    type = "archive"
+    url = {{ $goURL | quote }}
+    exact = true
+    stripComponents = 1
+    [".local/opt/go".checksum]
+        sha256 = {{ $goSha | quote }}
 
 {{- if eq .chezmoi.os "windows" }}
 

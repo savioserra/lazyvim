@@ -45,7 +45,7 @@ Declares every pinned host-tool download. Full table in [tools.md](tools.md). Me
 | --- | --- | --- | --- |
 | `30-tmux-plugins.sh` | after, onchange | Unix | `git clone`/`checkout` every tmux plugin (incl. TPM) to its exact pinned commit — TPM's own `#<ref>` install syntax only accepts branches/tags, not raw SHAs |
 | `20-linux-fontcache.sh` | after, onchange | Linux only | `fc-cache -f` after font files land |
-| `10-windows-path.ps1` | after, onchange | Windows only | Adds `.local\bin` and `.local\opt\nvim\bin` to user `PATH` |
+| `10-windows-path.ps1` | after, onchange | Windows only | Adds `.local\bin` and `.local\opt\nvim\bin` to user `PATH`; sets `XDG_CONFIG_HOME` so Neovim loads `~/.config/nvim` |
 | `20-windows-fonts.ps1` | after, onchange | Windows only | Registers each installed font under `HKCU:\...\CurrentVersion\Fonts` (per-user font install needs registry entries, not just files on disk) |
 
 ## Root-level layer

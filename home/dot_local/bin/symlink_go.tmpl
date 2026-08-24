@@ -1,0 +1,5 @@
+{{- if eq .chezmoi.os "windows" -}}
+{{-   printf "../opt/go/bin/go.exe" -}}
+{{- else -}}
+{{-   printf "../opt/go/bin/go" -}}
+{{- end -}}

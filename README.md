@@ -6,7 +6,7 @@ A chezmoi-managed Neovim and tmux environment for Linux, macOS, and Windows. Con
 
 | Layer | Source of truth |
 | --- | --- |
-| Neovim, ripgrep, fd, fzf, lazygit, tree-sitter CLI, font | `home/.chezmoiexternal.toml.tmpl` (chezmoi's native `archive`/`archive-file` externals, checksum-verified) |
+| Neovim, Go, ripgrep, fd, fzf, lazygit, tree-sitter CLI, font | `home/.chezmoiexternal.toml.tmpl` (chezmoi's native `archive`/`archive-file` externals, checksum-verified) |
 | chezmoi itself | Installed independently (see Install below) — chezmoi can't provision itself |
 | LazyVim and Neovim plugins | `home/dot_config/nvim/lazy-lock.json`, restored by lazy.nvim itself (`:Lazy restore`) |
 | LSP servers, formatters, linters, and debuggers | `home/dot_config/nvim/mason-lock.json`, restored by [mason-lock.nvim](https://github.com/zapling/mason-lock.nvim) (`:MasonLockRestore`) |
@@ -61,7 +61,7 @@ winget install --id twpayne.chezmoi --version 2.72.0 --exact
 chezmoi init --apply savioserra/lazyvim --ssh
 ```
 
-`.chezmoiroot` in the repo points chezmoi at the `home/` subdirectory as the actual source state. This deploys Neovim/tmux configuration, downloads and checksum-verifies Neovim/ripgrep/fd/fzf/lazygit/tree-sitter/the Nerd Font into `~/.local/bin` and `~/.local/opt/nvim`, installs the pinned tmux plugins, and (on Windows) adds those directories to your user `PATH`. On Linux/macOS, `~/.local/bin` is expected to already be on `PATH` (add it to your shell rc if it isn't).
+`.chezmoiroot` in the repo points chezmoi at the `home/` subdirectory as the actual source state. This deploys Neovim/tmux configuration, downloads and checksum-verifies Neovim/Go/ripgrep/fd/fzf/lazygit/tree-sitter/the Nerd Font into `~/.local/bin` and `~/.local/opt`, installs the pinned tmux plugins, and (on Windows) adds those directories to your user `PATH`. On Linux/macOS, `~/.local/bin` is expected to already be on `PATH` (add it to your shell rc if it isn't).
 
 Once applied, open Neovim once to let lazy.nvim and Mason install everything locked in `lazy-lock.json`/`mason-lock.json`:
 
@@ -84,7 +84,7 @@ From the repository root, pull the latest state, re-apply it, and restore every 
 .\sync.ps1
 ```
 
-Both scripts supply their own repository path to chezmoi, so they work from chezmoi's normal source directory or a regular Git clone. They use blocking Lazy and Tree-sitter operations and separate Neovim processes rather than fixed sleeps, which can quit Neovim during an install. The PowerShell script also finds chezmoi's managed `nvim.exe` directly when the current terminal has not picked up the newly changed user `PATH` yet.
+Both scripts supply their own repository path to chezmoi, so they work from chezmoi's normal source directory or a regular Git clone. They use blocking Lazy and Tree-sitter operations and separate Neovim processes rather than fixed sleeps, which can quit Neovim during an install. The PowerShell script also finds chezmoi's managed `nvim.exe` directly and uses the deployed XDG config when the current terminal has not picked up the newly changed user environment yet.
 
 ## Workflow
 
