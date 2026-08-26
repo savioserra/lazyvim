@@ -10,7 +10,7 @@ actually matches against, not the source filename. */ -}}
 .bashrc
 .zshrc
 .config/shell/nvm.sh
-.chezmoiscripts/20-unix-setup.sh
+.chezmoiscripts/20-unix-apply.sh
 {{- else }}
-.chezmoiscripts/20-windows-setup.cmd
+.chezmoiscripts/20-windows-apply.cmd
 {{- end }}

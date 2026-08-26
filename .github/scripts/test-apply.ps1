@@ -7,23 +7,22 @@ $repoRoot = if ($env:GITHUB_WORKSPACE) { $env:GITHUB_WORKSPACE } else { (Resolve
 $env:HOME = $ScratchHome
 $env:USERPROFILE = $ScratchHome
 $env:CHEZMOI_DESTDIR = $ScratchHome
-$env:CHEZMOI_SYNC_APPLY_ONLY = '1'
 $env:XDG_CONFIG_HOME = Join-Path $ScratchHome '.config'
 
 if ($IsWindows) {
   $env:LOCALAPPDATA = Join-Path $ScratchHome 'AppData/Local'
-  & "$repoRoot\sync.ps1"
   $nvim = Join-Path $ScratchHome '.local\opt\nvim\bin\nvim.exe'
   $stylua = Join-Path $env:LOCALAPPDATA 'nvim-data\mason\bin\stylua.cmd'
 } else {
   $env:XDG_DATA_HOME = Join-Path $ScratchHome '.local/share'
   $env:XDG_STATE_HOME = Join-Path $ScratchHome '.local/state'
   $env:XDG_CACHE_HOME = Join-Path $ScratchHome '.cache'
-  & bash "$repoRoot/sync"
   $nvim = Join-Path $ScratchHome '.local/opt/nvim/bin/nvim'
   $stylua = Join-Path $env:XDG_DATA_HOME 'nvim/mason/bin/stylua'
 }
-if ($LASTEXITCODE -ne 0) { throw "sync failed with exit code $LASTEXITCODE" }
+
+& chezmoi --source $repoRoot --destination $ScratchHome apply --force
+if ($LASTEXITCODE -ne 0) { throw "chezmoi apply failed with exit code $LASTEXITCODE" }
 
 & $stylua --check --config-path (Join-Path $repoRoot '.stylua.toml') `
   (Join-Path $repoRoot 'home/dot_local/share/lazyvim') `

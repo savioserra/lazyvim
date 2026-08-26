@@ -47,10 +47,10 @@ jobs:
           "$install_dir/chezmoi" --version | grep -F "chezmoi version v${version}"
           echo "$install_dir" >> "$GITHUB_PATH"
 
-      - name: Test complete Unix sync
+      - name: Test complete Unix apply
         shell: pwsh
         run: |
-          ./.github/scripts/test-sync.ps1 -ScratchHome (Join-Path $env:RUNNER_TEMP "home")
+          ./.github/scripts/test-apply.ps1 -ScratchHome (Join-Path $env:RUNNER_TEMP "home")
 
   windows:
     runs-on: windows-latest
@@ -67,10 +67,10 @@ jobs:
             throw "Unexpected chezmoi version"
           }
 
-      - name: Test complete Windows sync
+      - name: Test complete Windows apply
         shell: pwsh
         run: |
-          ./.github/scripts/test-sync.ps1 -ScratchHome (Join-Path $env:RUNNER_TEMP "home")
+          ./.github/scripts/test-apply.ps1 -ScratchHome (Join-Path $env:RUNNER_TEMP "home")
 
   lint:
     runs-on: ubuntu-24.04
@@ -82,9 +82,9 @@ jobs:
       - name: Validate scripts and JSON lockfiles
         run: |
           set -euo pipefail
-          bash -n sync
-          shellcheck sync
-          pwsh -NoProfile -Command '$failed = $false; "sync.ps1", ".github/scripts/test-sync.ps1" | ForEach-Object { $errors = $null; [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $_), [ref]$null, [ref]$errors) > $null; if ($errors.Count) { $failed = $true; $errors | ForEach-Object { Write-Error $_ } } }; if ($failed) { exit 1 }'
+          sh -n home/.chezmoiscripts/run_after_20-unix-apply.sh.tmpl
+          shellcheck -s sh home/.chezmoiscripts/run_after_20-unix-apply.sh.tmpl
+          pwsh -NoProfile -Command '$errors = $null; [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path ".github/scripts/test-apply.ps1"), [ref]$null, [ref]$errors) > $null; if ($errors.Count) { $errors | ForEach-Object { Write-Error $_ }; exit 1 }'
           while IFS= read -r -d '' file; do LUA_AUDIT_FILE="$file" luajit -e 'assert(loadfile(os.getenv("LUA_AUDIT_FILE")))'; done < <(find home tests -name '*.lua' -print0)
           version="$(cat home/.chezmoiversion)"
           grep -F -- "-t v${version}" README.md

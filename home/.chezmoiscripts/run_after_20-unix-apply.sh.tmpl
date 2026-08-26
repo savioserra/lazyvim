@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eu
+
+nvim="$HOME/.local/opt/nvim/bin/nvim"
+runtime="$HOME/.local/share/lazyvim/run.lua"
+
+"$nvim" -l "$runtime" setup
+exec "$nvim" -l "$runtime" sync
