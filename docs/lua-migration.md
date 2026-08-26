@@ -1,13 +1,31 @@
-# Lua runtime migration
+# ADR: lifecycle runtime
 
-## Decision
+| Field | Value |
+| --- | --- |
+| Status | Accepted |
+| Runtime | Checksum-pinned Neovim |
+| Entry point | `nvim -l run.lua <setup|sync|verify>` |
+| User config loaded by parent | No |
+| Configured editor processes | Spawned by Neovim feature child dispatcher |
+| Bootstrap dependency | Chezmoi-installed Neovim |
+| Node role | Managed capability; not a runtime dependency |
 
-Pinned Neovim is the capability runtime. `nvim -l run.lua <lifecycle>` executes
-setup and verification without loading user configuration. The Neovim capability
-launches separate configured child instances for plugin synchronization and
-editor behavior tests.
+## Constraints
 
-Node remains a managed language capability, but it no longer controls setup.
+- The runtime must exist before post-apply scripts execute.
+- Setup must work before Node environment configuration.
+- One Lua implementation must run on all supported hosts.
+- Editor behavior checks require configured Neovim child processes.
+
+## Execution sequence
+
+```text
+chezmoi externals
+  -> pinned Neovim
+  -> run.lua setup
+  -> run.lua sync
+  -> run.lua verify
+```
 
 ## Runtime layout
 
@@ -16,27 +34,24 @@ dot_local/share/lazyvim/
 ├── run.lua
 ├── versions.json
 └── lua/setup/
-    ├── registry.lua
-    ├── context.lua
+    ├── app.lua
     ├── capabilities/
+    ├── runtime/
+    ├── features/
+    ├── host/
     └── platforms/
 ```
 
-The capability contract remains `id`, `requires`, `supports`, `enhancements`,
-and optional `setup`, `sync`, and `verify` hooks. The registry validates and
-topologically orders the graph before executing a lifecycle.
+## Rejected runtime dependency
 
-## Bootstrap
+| Option | Reason |
+| --- | --- |
+| Managed Node | Circular bootstrap: Node setup would require Node |
+| System Lua | Not consistently present or versioned across hosts |
+| Per-platform orchestration scripts | Duplicates lifecycle and verification behavior |
 
-1. chezmoi applies checksum-pinned externals, including Neovim.
-2. The platform's tiny shell launcher invokes pinned Neovim with `-l run.lua setup`.
-3. `sync`/`sync.ps1` apply chezmoi and invoke `-l run.lua sync`.
-4. Local and CI verification invoke `-l run.lua verify`.
+## External references
 
-## Research basis
-
-- [Neovim `-l` startup mode](https://neovim.io/doc/user/starting/)
-- [Neovim Lua standard library and module loading](https://neovim.io/doc/user/lua/)
-- [Neovim Lua module guide](https://neovim.io/doc/user/lua-guide/)
-- [lazy.nvim imported specs](https://lazy.folke.io/spec)
+- [Neovim `-l`](https://neovim.io/doc/user/starting/)
+- [Neovim Lua modules](https://neovim.io/doc/user/lua/)
 - [lazy.nvim spec structure](https://lazy.folke.io/usage/structuring)

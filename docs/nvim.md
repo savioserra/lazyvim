@@ -1,54 +1,97 @@
-# Neovim config
+# Neovim reference
 
-Target: `~/.config/nvim`. Distribution: LazyVim, plugin manager: lazy.nvim.
+| Property | Value |
+| --- | --- |
+| Target | `~/.config/nvim` |
+| Distribution | LazyVim |
+| Plugin manager | lazy.nvim |
+| Managed source | `home/dot_config/nvim/` |
 
-## Entry points
+## Startup and composition
+
+| Order | Source |
+| --- | --- |
+| 1 | `LazyVim/LazyVim`, import `lazyvim.plugins` |
+| 2 | `lua/languages/profile.lua` → `lazyvim_extras` |
+| 3 | `lua/plugins/` |
+| 4 | Profile `plugin_module` entries |
 
 | File | Role |
 | --- | --- |
-| `init.lua` | Bootstraps `config.lazy`; sets `vim.g.root_spec` to prefer `.git` root in monorepos |
-| `lua/config/lazy.lua` | lazy.nvim setup (stock LazyVim bootstrap) |
-| `lua/config/options.lua` | Non-default options (see table below) |
-| `lua/config/keymaps.lua` | Custom keymaps (`<C-s>` save, `gl` go-to-line) |
-| `lua/config/autocmds.lua` | Custom autocmds (organize-imports-on-save, external-file reload) |
-| `lazyvim.json` | Base LazyVim extras; language extras are capability imports |
-| `lua/languages/extras/*.lua` | Language-owned LazyVim extras, imported before custom plugins as LazyVim requires |
-| `lua/languages/plugins/*.lua` | Language-owned custom plugin specs, imported after base `plugins/` |
-| `neoconf.json` | Per-project VS Code settings import config (`lua_ls` enabled) |
-| `stylua.toml` | Lua formatter config: 2-space indent, 120 column width |
+| `init.lua` | Load `config.lazy`; set monorepo root preference |
+| `lua/config/lazy.lua` | Bootstrap lazy.nvim; compose specs |
+| `lua/config/options.lua` | Options |
+| `lua/config/keymaps.lua` | Keymaps |
+| `lua/config/autocmds.lua` | Autocommands |
+| `lua/config/sync.lua` | Named blocking sync operations |
+| `lua/languages/profile.lua` | Language imports, prerequisites, verification cases |
+| `lua/languages/plugins/*.lua` | Profile-referenced custom specs |
+| `lazyvim.json` | Base LazyVim extras |
+| `neoconf.json` | Project settings import policy |
 
-## Non-default options (`lua/config/options.lua`)
+## Profile fields
 
-| Option | Value | Effect |
-| --- | --- | --- |
-| `lazyvim_eslint_auto_format` | `false` | Prettier is the sole JS/TS formatter |
-| `lazyvim_prettier_needs_config` | `true` | Prettier only runs where a project config exists |
-| `lazyvim_cmp` | `"blink.cmp"` | Completion engine |
-| `lazyvim_blink_main` | `false` | Uses blink.cmp's stable release, not `main` |
-| `winborder` | `"rounded"` | Float/window border style |
-| `showtabline` | `1` | Tabline only shows with >1 tab |
-| `cmdheight` | `0` | Cmdline row hidden — noice.nvim renders it as a popup instead |
+See [`capabilities.md`](capabilities.md#neovim-profile) for the schema.
 
-## `lua/plugins/*.lua`
+Rules:
+
+- Put every language-specific LazyVim import in the profile.
+- Put profile extras before base custom plugins.
+- Put profile custom modules after base custom plugins.
+- Declare required host capabilities with `requires`.
+- Add a real parser/LSP behavior case for supported languages.
+- Add an on-disk case for promised formatters.
+- Keep Mason requirements present in `mason-lock.json`.
+
+## Plugin ownership
 
 | File | Owns |
 | --- | --- |
-| `lsp.lua` | Base nvim-lspconfig servers only; language-specific configuration lives in `lua/languages/` |
-| `mason-lock.lua` | `zapling/mason-lock.nvim` — Mason lockfile plugin |
-| `theme.lua` | `jacoborus/tender.vim` colorscheme + `fix_tender_contrast()` highlight overrides |
-| `treesitter.lua` | Extra `ensure_installed` parsers: css, go, gomod, gosum, gowork, html, javascript, json, tsx, typescript |
-| `ui.lua` | snacks.nvim, lualine.nvim (custom sections), noice.nvim (cmdline-popup only), dropbar.nvim, tiny-inline-diagnostic.nvim |
-| `editor.lua` | vim-move, nvim-ts-autotag, vim-tmux-navigator, diffview.nvim |
-| `testing.lua` | neotest + neotest-jest (nearest Jest config resolution for monorepos) |
-| `debugging.lua` | nvim-dap + nvim-dap-view (replaces LazyVim's default dap-ui) |
+| `lsp.lua` | Base nvim-lspconfig servers |
+| `mason.lua` | Headless sync integration |
+| `mason-lock.lua` | Blocking exact Mason restore |
+| `theme.lua` | tender.vim and contrast overrides |
+| `treesitter.lua` | Parser set |
+| `ui.lua` | snacks, lualine, noice, dropbar, inline diagnostics |
+| `editor.lua` | Movement, tags, tmux navigation, diff view |
+| `testing.lua` | neotest and Jest adapter |
+| `debugging.lua` | nvim-dap and nvim-dap-view |
 
 ## Lockfiles
 
-| File | Package manager | Restore command | Notes |
-| --- | --- | --- | --- |
-| `lazy-lock.json` | lazy.nvim | `:Lazy restore` | Auto-installs missing plugins on startup; explicit restore only needed to fix drift |
-| `mason-lock.json` | mason-lock.nvim | `:MasonLockRestore` | `:MasonLock` snapshots current versions; restore verifies exact versions and removes packages absent from the lock |
+| State | File | Restore |
+| --- | --- | --- |
+| Plugins | `lazy-lock.json` | `:Lazy restore` |
+| Mason tools | `mason-lock.json` | `:MasonLockRestore` |
+| Tree-sitter parsers | Parser config + locked plugin | `:TSUpdate` |
 
-Tree-sitter parsers have no lockfile — `nvim-treesitter`'s `ensure_installed`/auto-install follows the locked plugin commit; `:TSUpdate` to force.
+Mason restore requirements:
 
-`plenary.nvim` is retained despite its upstream maintenance wind-down because both `typescript-tools.nvim` and LazyVim's DAP extra still import it directly. Remove it only after those active dependents migrate.
+- install exact locked versions;
+- remove packages absent from the lock;
+- suppress lock rewrites during restore;
+- terminate timed-out operations;
+- verify final installed versions.
+
+## Headless sync
+
+| Item | Value |
+| --- | --- |
+| Mode flag | `LAZYVIM_HEADLESS_SYNC=1` |
+| Dispatcher | `setup/features/nvim/child.lua` |
+| Operations | `lazy-restore`, `lazy-clean`, `mason`, `treesitter` |
+
+Keep mode-specific behavior at `plugins/mason.lua` and the child integration
+boundary. Do not import capability-runtime modules from normal editor specs.
+
+## Notable options
+
+| Option/global | Value |
+| --- | --- |
+| `lazyvim_eslint_auto_format` | `false` |
+| `lazyvim_prettier_needs_config` | `true` |
+| `lazyvim_cmp` | `blink.cmp` |
+| `lazyvim_blink_main` | `false` |
+| `winborder` | `rounded` |
+| `showtabline` | `1` |
+| `cmdheight` | `0` |

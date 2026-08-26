@@ -1,105 +1,130 @@
-# Capability architecture
+# Capability and runtime reference
 
-The repository is composed from user-visible capabilities. Operating systems are
-adapters, not the top-level architecture.
+## Dependency direction
 
-## Contract
+```text
+run.lua
+  -> setup.app
+      -> capabilities/catalog -> capability data
+      -> runtime/graph + runtime/runner
+      -> features/catalog -> feature handlers -> host/platform primitives
 
-Every Lua capability returns a definition with:
+runtime      -X-> capabilities/features
+capabilities -X-> runtime/features
+```
 
-- `id`: stable capability name.
-- `requires`: capabilities that must run first.
-- `supports(context)`: whether the current platform supports it.
-- lifecycle hooks: `setup`, `sync`, and `verify`.
-- `enhancements`: contributions to another capability.
+`setup.app` is the composition root.
 
-The registry validates definitions, rejects missing dependencies and cycles,
-filters unsupported capabilities, applies enhancements, and executes each
-lifecycle in dependency order. A hook receives only the shared runtime context
-and its composed enhancements.
+## Module boundaries
 
-Platform modules implement host operations used by capabilities. They never
-choose which capabilities exist. For example, the tmux capability declares that
-it is unsupported on Windows; the Windows adapter does not contain a tmux no-op.
+| Path | Contract |
+| --- | --- |
+| `setup/capabilities/*.lua` | Data: `id`, `requires`, `supported_hosts` |
+| `setup/capabilities/catalog.lua` | Ordered capability inventory |
+| `setup/runtime/contract.lua` | Generic policy validation |
+| `setup/runtime/graph.lua` | Host selection, dependency validation, topological ordering |
+| `setup/runtime/runner.lua` | `setup`, `sync`, `verify` dispatch |
+| `setup/features/catalog.lua` | Capability ID to handler mapping |
+| `setup/features/<name>/` | Feature lifecycle implementation |
+| `setup/host/` | Reusable host primitives |
+| `setup/platforms/` | Runtime-wide host detection, paths, base environment |
+| `setup/app.lua` | Catalog composition and profile-derived dependencies |
 
-## Graph
+## Capability graph
 
 ```text
 foundation
 ├── fonts
-├── node
-├── nvim
-│   ├── enhanced by language.lua
-│   ├── enhanced by language.go ───────── requires node
-│   ├── enhanced by language.typescript ─ requires node
-│   └── enhanced by language.web
-└── tmux (Linux/macOS only)
+├── node ───────────────┐
+├── go ─────────────────┤ Neovim profile prerequisites
+├── nvim <──────────────┘
+└── tmux [linux,darwin]
 ```
 
-An enhancement is data plus behavior. A language contribution can add LazyVim
-specs, Mason packages, Tree-sitter parsers, LSP attachment cases, formatter
-cases, or other Neovim behavior without adding language-specific branches to
-the Neovim capability.
+| Capability | Setup | Sync | Verify | Host support |
+| --- | --- | --- | --- | --- |
+| `foundation` | — | — | CLI versions | All |
+| `fonts` | Host registration/cache | — | Host visibility | All |
+| `node` | NVM default/environment | — | NVM and Node version | All |
+| `go` | — | — | Go version | All |
+| `nvim` | — | Locks and parsers | Startup, locks, profile behavior | All |
+| `tmux` | Plugin checkout | — | Commits, server, theme | Linux/macOS |
 
-## Ownership
+## Graph validation
+
+`runtime/graph.lua` rejects:
+
+- duplicate IDs;
+- unknown dependencies;
+- dependency cycles;
+- enabled capabilities that depend on unsupported capabilities;
+- invalid capability fields.
+
+`runtime/runner.lua` rejects:
+
+- missing handler tables;
+- unknown lifecycle names;
+- non-function lifecycle handlers.
+
+## Lifecycle phases
+
+| Phase | Input state | Responsibility |
+| --- | --- | --- |
+| Chezmoi apply | Repository source | Render files; install checksum-pinned externals |
+| `setup` | Applied target home | Configure host state not represented by archives |
+| `sync` | Configured applications | Restore mutable plugin/package/parser state |
+| `verify` | Complete target home | Assert versions and observable behavior |
+
+Entry point:
 
 ```text
-dot_local/share/lazyvim/
-├── run.lua                   lifecycle entry point
-├── versions.json             shared by provisioning and verification
-└── lua/setup/
-    ├── registry.lua
-    ├── capabilities/
-    │   ├── foundation.lua
-    │   ├── fonts.lua
-    │   ├── node.lua
-    │   ├── nvim.lua
-    │   └── tmux.lua
-    ├── enhancements/          language setup and behavior-test metadata
-    │   ├── go.lua
-    │   ├── typescript.lua
-    │   └── ...
-    └── platforms/            same contract, per-OS implementations
-
-dot_config/nvim/lua/
-├── plugins/                  base Neovim capability
-└── languages/
-    ├── extras/               LazyVim extras, imported before custom plugins
-    └── plugins/              language-specific custom specs, imported last
+nvim -l ~/.local/share/lazyvim/run.lua setup|sync|verify
 ```
 
-Provisioning follows the same ownership boundary: capability-specific files in
-`.chezmoiexternals/` declare downloads, while platform selection remains inside
-those templates. Shared versions have one source of truth.
+## Neovim profile
 
-## Behavioral verification
+Source: `home/dot_config/nvim/lua/languages/profile.lua`.
 
-Verification belongs to the capability that promises the behavior:
+| Field | Type | Purpose |
+| --- | --- | --- |
+| `id` | string | Stable contribution ID |
+| `requires` | string[] | Host capabilities inserted before `nvim` |
+| `lazyvim_extras` | string[] | Imports placed before custom plugin specs |
+| `plugin_module` | string | Custom spec imported after base plugins |
+| `mason_packages` | string[] | Packages required in `mason-lock.json` |
+| `language_cases` | case[] | Parser and LSP attachment verification |
+| `formatter_cases` | case[] | On-disk formatter verification |
 
-- Node resolves through the configured environment and runs the pinned version.
-- tmux starts, loads its theme, and runs pinned plugins.
-- Neovim starts and restores its locked state without the LazyVim import-order warning.
-- Each language enhancement opens a real fixture, parses it, and attaches the
-  expected LSP. Formatter enhancements must transform a fixture on disk.
-- Font verification checks registration/cache visibility, not only archive extraction.
+Consumers:
 
-Directory existence is diagnostic evidence only; it is never sufficient proof
-that a capability works.
+| Consumer | Use |
+| --- | --- |
+| `lua/config/lazy.lua` | Build ordered lazy.nvim specs |
+| `setup/features/nvim/profile.lua` | Validate profile and derive prerequisites |
+| `setup/features/nvim/init.lua` | Verify locks and behavior |
+| `setup/features/nvim/child.lua` | Execute named configured-editor operations |
 
-## Runtime migration
+## Feature backend rule
 
-The lifecycle uses the pinned Neovim binary as its cross-platform Lua runtime,
-so orchestration does not depend on Node being configured first. See
-[lua-migration.md](lua-migration.md) for the decision, bootstrap sequence, and
-official documentation used to validate it.
+Use feature-local backends for feature-specific host behavior:
 
-## Research basis
+```text
+features/fonts/linux.lua
+features/fonts/darwin.lua
+features/fonts/win32.lua
+features/node/unix.lua
+features/node/windows.lua
+```
 
-- [chezmoi special files](https://www.chezmoi.io/reference/special-files/)
-- [chezmoi external manifests](https://www.chezmoi.io/reference/special-files/chezmoiexternal-format/)
-- [chezmoi templates](https://www.chezmoi.io/user-guide/templating/)
-- [lazy.nvim plugin spec](https://lazy.folke.io/spec)
-- [LazyVim plugin composition](https://www.lazyvim.org/configuration/plugins)
-- [Neovim LSP activation](https://neovim.io/doc/user/lsp/)
-- [Neovim command-line Lua execution](https://neovim.io/doc/user/starting/)
-- [Neovim Lua modules](https://neovim.io/doc/user/lua/)
+Use `host/` only for reusable primitives. Use `platforms/` only for runtime-wide
+paths, detection, and base environment.
+
+## Verification requirements
+
+- Verify executable versions through the configured environment.
+- Verify tmux with an isolated server/socket.
+- Verify fonts through host registration or cache visibility.
+- Verify Neovim imports by successful startup.
+- Verify languages with real files, parsers, and attached LSP clients.
+- Verify formatters by comparing on-disk output.
+- Treat directory existence as supporting evidence, not final proof.

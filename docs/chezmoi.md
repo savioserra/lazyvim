@@ -1,52 +1,127 @@
-# chezmoi mechanics
+# Chezmoi reference
 
-Source root: `home/` (set via `.chezmoiroot` at repo root). All paths below are relative to `home/` unless noted.
+Source root: `home/` via repository `.chezmoiroot`.
 
-## Naming conventions in use
+## Apply model
 
-| Source prefix/pattern | Target |
+Chezmoi commands are the public workflow:
+
+| Command | Source behavior | Lifecycle behavior |
+| --- | --- | --- |
+| `chezmoi init --apply <repo>` | Initialize and apply | Run setup, then sync |
+| `chezmoi update` | Pull and apply | Run setup, then sync |
+| `chezmoi apply` | Apply current source | Run setup, then sync |
+| `chezmoi --source <checkout> apply` | Apply explicit checkout | Run setup, then sync |
+
+Execution order:
+
+```text
+render source
+  -> install/update externals
+  -> apply managed files
+  -> run_after_20-<host>-apply
+       -> run.lua setup
+       -> run.lua sync
+```
+
+`home/.chezmoiscripts/` owns lifecycle invocation. Do not add repository-level
+apply or sync wrappers.
+
+## Source naming
+
+| Source | Target/behavior |
 | --- | --- |
 | `dot_<name>` | `~/.<name>` |
-| `dot_local/bin/symlink_<name>[.tmpl]` | `~/.local/bin/<name>`, a symlink; file content = symlink target |
-| `.chezmoiscripts/run_<attrs>_<name>.<ext>[.tmpl]` | executed as a script; no corresponding file in `~`. This repo uses `after` and `onchange_after` attributes. |
-| `.chezmoiexternals/*.toml.tmpl` | declares downloaded targets by capability (not represented as source files) |
-| `.chezmoiignore[.tmpl]` | excludes target paths, templated per `.chezmoi.os`/`.chezmoi.arch` |
+| `executable_<name>` | Executable target |
+| `symlink_<name>[.tmpl]` | Symlink; contents are the target |
+| `.chezmoiscripts/run_<attrs>_<name>[.tmpl]` | Executed action; no target file |
+| `.chezmoiexternals/*.toml.tmpl` | Downloaded target declaration |
+| `.chezmoiignore` | Excluded rendered target paths |
+| `.chezmoiremove` | Targets removed during apply |
 
-Nested target paths require real nested source directories — `dot_local/bin/symlink_nvim.tmpl` produces `~/.local/bin/nvim`; a flat file named `symlink_dot_local_bin_nvim.tmpl` at the source root would instead produce `~/.local_bin_nvim`.
+Use actual nested source directories. Example:
 
-Removing a source entry does not delete its deployed target — `chezmoi apply` only adds/updates what it still manages. Deleting a managed file from the repo also requires manually removing the deployed copy from `~`, unless it's inside an `exact` directory (e.g. the `.local/opt/nvim`/font externals, which prune on their own).
+```text
+dot_local/bin/symlink_nvim.tmpl -> ~/.local/bin/nvim
+```
 
-## `.chezmoiignore` matching for scripts
+## Platform selectors
 
-A script's `.chezmoiignore` target name has its `run_`/`once_`/`onchange_`/`before_`/`after_` attributes and `.tmpl` suffix already stripped — match against what's left, not the source filename.
-
-Example: `.chezmoiscripts/run_after_20-unix-setup.sh.tmpl` → ignore pattern `.chezmoiscripts/20-unix-setup.sh`.
-
-Current platform exclusions (`home/.chezmoiignore`):
-
-| Excluded on | Paths |
+| Template value | Values used |
 | --- | --- |
-| Windows | `.tmux.conf`, `.config/tmux/**`, `.local/bin/nvim`, `.chezmoiscripts/20-unix-setup.sh` |
-| Not Windows | `.chezmoiscripts/20-windows-setup.cmd` |
+| `.chezmoi.os` | `linux`, `darwin`, `windows` |
+| `.chezmoi.arch` | `amd64`, `arm64` |
+| `.chezmoi.destDir` | Target home |
 
-## `.chezmoiexternals/`
+WSL uses the Linux branch.
 
-Declares every pinned host-tool download. Full table in [tools.md](tools.md). Mechanics:
+## Ignore rules
 
-- `type = "archive-file"` — extracts one named file from an archive to a target path. Used for every flat single-binary tool.
-- `type = "archive"` with `stripComponents = 1`, `exact = true` — extracts a whole tree (Neovim's runtime, fonts), dropping stale files across a version bump.
-- Templated on `.chezmoi.os` / `.chezmoi.arch`; branches with no available upstream build for a platform (e.g. Windows ARM64 for `rainfrog`) render an empty URL, and the corresponding `[...]` table is skipped via `{{ if ne $url "" }}`.
-- No `refreshPeriod` set anywhere — updates are explicit (edit version/URL/checksum, `chezmoi apply`), never automatic.
+Agent instruction files are repository-only:
 
-## `.chezmoiscripts/`
+```text
+AGENTS.md
+**/AGENTS.md
+```
 
-| Script (stripped name) | Phase | Platforms | Purpose |
-| --- | --- | --- | --- |
-| `20-unix-setup.sh` | after, every apply | Linux/macOS | Minimal launcher for the shared Lua setup lifecycle |
-| `20-windows-setup.cmd` | after, every apply | Windows only | Launches the shared setup module without depending on PowerShell script execution policy |
+Script ignore names use stripped target names. Remove `run_`, lifecycle
+attributes, and `.tmpl` before matching.
 
-`~/.local/share/lazyvim/run.lua` executes setup, sync, and verification through the capability registry using the pinned Neovim runtime. Capabilities own behavior; platform adapters only implement host operations. The tiny chezmoi scripts invoke the `setup` lifecycle after externals are applied. Node's managed version has one machine-readable source of truth, `~/.node-version` (`home/dot_node-version`).
+```text
+source: .chezmoiscripts/run_after_20-unix-apply.sh.tmpl
+ignore: .chezmoiscripts/20-unix-apply.sh
+```
 
-## Root-level layer
+| Host | Excluded targets |
+| --- | --- |
+| Windows | tmux config, Unix shell config, Unix symlinks, Unix apply script |
+| Linux/macOS | Windows apply script |
 
-`.chezmoiroot` lives at the true repo root (read by `chezmoi init` before redirecting into `home/`). No `.chezmoi.toml.tmpl` exists yet — would also live at the true repo root if added.
+## External types
+
+| Type | Use | Required fields |
+| --- | --- | --- |
+| `archive-file` | One binary from an archive | `url`, `path`, checksum, `executable` |
+| `archive` | Complete application/tool tree | `url`, checksum, usually `stripComponents` |
+
+Rules:
+
+- Set `exact = true` for complete owned trees that must prune stale files.
+- Omit unavailable platform tables; do not render empty URLs.
+- Do not set `refreshPeriod`; updates are explicit.
+- Keep version, URL, checksum, and verification changes atomic.
+- Install into user-local targets only.
+
+Inventory: [`tools.md`](tools.md).
+
+## Post-apply scripts
+
+| Stripped name | Hosts | Ordered commands |
+| --- | --- | --- |
+| `20-unix-apply.sh` | Linux/macOS | `run.lua setup`; `run.lua sync` |
+| `20-windows-apply.cmd` | Windows | `run.lua setup`; `run.lua sync` |
+
+Script requirements:
+
+- use the pinned Neovim under the target home;
+- use the deployed `run.lua` under the target home;
+- stop before sync when setup fails;
+- return the sync exit code;
+- avoid shell-specific orchestration outside path resolution and failure handling.
+
+## Removal rules
+
+| Target kind | Removal mechanism |
+| --- | --- |
+| File/non-exact directory | Add target path to `home/.chezmoiremove` |
+| `exact = true` external tree | External apply prunes stale children |
+| Platform-obsolete target | Add `.chezmoiremove`; retain appropriate ignore condition |
+
+## Render checks
+
+```bash
+chezmoi --source "$PWD" --destination "$(mktemp -d)" apply --dry-run
+```
+
+Use `.github/scripts/test-apply.ps1` for an applied scratch-home test. The test
+calls chezmoi directly; post-apply scripts execute setup and sync.

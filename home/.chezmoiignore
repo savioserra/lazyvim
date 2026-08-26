@@ -1,3 +1,7 @@
+# Repository-only agent instructions.
+AGENTS.md
+**/AGENTS.md
+
 {{- /* Script paths below use their stripped target name (no run_/before_/
 after_/onchange_ attributes or .tmpl suffix) -- that's what .chezmoiignore
 actually matches against, not the source filename. */ -}}
