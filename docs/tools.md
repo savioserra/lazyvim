@@ -20,6 +20,7 @@
 | lazygit | 0.63.1 | github.com/jesseduffield/lazygit | `.local/bin/lazygit` | all 5 |
 | tree-sitter (CLI) | 0.26.11 | github.com/tree-sitter/tree-sitter | `.local/bin/tree-sitter` | all 5 |
 | rainfrog | 0.4.4 | github.com/achristmascarl/rainfrog | `.local/bin/rainfrog` | all except windows-arm64 (no upstream build) |
+| 1Password CLI | 2.39.0 | cache.agilebits.com | `.local/bin/op` | all 5; Windows ARM64 uses the x64 build |
 | JetBrainsMono Nerd Font | 3.5.0 | github.com/ryanoasis/nerd-fonts | Linux: `.local/share/fonts/JetBrainsMonoNerdFont`; darwin: `Library/Fonts/JetBrainsMonoNerdFont`; Windows: `AppData/Local/Microsoft/Windows/Fonts/JetBrainsMonoNerdFont` | all 5 |
 
 ## Not managed here
@@ -29,6 +30,6 @@
 | chezmoi itself | Can't provision itself (bootstrapping) | Manual, README.md Install section |
 | tmux, TPM-installed plugins | tmux/TPM aren't host-tool binaries in the same sense | `home/dot_local/share/lazyvim/lua/setup/features/tmux.lua`, `home/dot_tmux.conf` |
 | Tailscale | Needs a root-level system daemon (`tailscaled` via systemd/launchd/Windows service), not a `.local/bin` binary | Not automated; install manually via the OS package manager if needed |
-| 1Password CLI (`op`) | Desktop app CLI-integration needs the official `1password-cli` package; a manually downloaded binary at `.local/bin` shadows it on `PATH` | Not automated; install `1password-cli` via the OS package manager |
+| 1Password desktop app and account session | User application and interactive authentication are outside source state | Install the official app, enable CLI integration, and sign in interactively |
 | Mason-installed LSP servers/formatters/linters | Neovim-internal package manager, not a host binary | `zapling/mason-lock.nvim`, `home/dot_config/nvim/mason-lock.json` — see nvim.md |
 | lazy.nvim-installed Neovim plugins | Neovim-internal package manager | `home/dot_config/nvim/lazy-lock.json` — see nvim.md |

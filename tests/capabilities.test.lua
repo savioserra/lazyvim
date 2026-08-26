@@ -37,9 +37,11 @@ local windows = ids_for("win32")
 assert(not vim.list_contains(windows, "tmux"), "Windows must omit tmux")
 assert_contains(windows, "nvim")
 assert_contains(windows, "go")
+assert_contains(windows, "onepassword")
 
 local linux = ids_for("linux")
 assert_contains(linux, "tmux")
+assert_contains(linux, "onepassword")
 local foundation_index = vim.iter(linux):enumerate():find(function(_, id)
 	return id == "foundation"
 end)

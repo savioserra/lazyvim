@@ -37,6 +37,7 @@ foundation
 ├── fonts
 ├── node ───────────────┐
 ├── go ─────────────────┤ Neovim profile prerequisites
+├── onepassword
 ├── nvim <──────────────┘
 └── tmux [linux,darwin]
 ```
@@ -47,6 +48,7 @@ foundation
 | `fonts` | Host registration/cache | — | Host visibility | All |
 | `node` | NVM default/environment | — | NVM and Node version | All |
 | `go` | — | — | Go version | All |
+| `onepassword` | — | — | 1Password CLI version | All; Windows ARM64 uses x64 emulation |
 | `nvim` | — | Locks and parsers | Startup, locks, profile behavior | All |
 | `tmux` | Plugin checkout | — | Commits, server, theme | Linux/macOS |
 

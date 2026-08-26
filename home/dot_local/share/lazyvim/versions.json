@@ -8,6 +8,7 @@
   "neovim": "0.12.4",
   "nvm_sh": "0.40.4",
   "nvm_windows": "1.2.2",
+  "onepassword_cli": "2.39.0",
   "rainfrog": "0.4.4",
   "ripgrep": "15.2.0",
   "tree_sitter": "0.26.11"
