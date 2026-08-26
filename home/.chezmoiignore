@@ -12,5 +12,5 @@ actually matches against, not the source filename. */ -}}
 .config/shell/nvm.sh
 .chezmoiscripts/20-unix-setup.sh
 {{- else }}
-.chezmoiscripts/20-windows-setup.ps1
+.chezmoiscripts/20-windows-setup.cmd
 {{- end }}

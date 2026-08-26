@@ -1,0 +1,9 @@
+@echo off
+setlocal
+
+rem Windows only: see .chezmoiignore, which excludes this script elsewhere.
+set "NVIM=%USERPROFILE%\.local\opt\nvim\bin\nvim.exe"
+set "RUNTIME=%USERPROFILE%\.local\share\lazyvim\run.lua"
+
+"%NVIM%" -l "%RUNTIME%" setup
+exit /b %ERRORLEVEL%

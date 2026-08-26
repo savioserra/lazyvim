@@ -1,8 +1,0 @@
-{{- /* Windows only: see .chezmoiignore, which excludes this script elsewhere. */ -}}
-$ErrorActionPreference = 'Stop'
-$nvim = Join-Path $env:USERPROFILE '.local\opt\nvim\bin\nvim.exe'
-$runtime = Join-Path $env:USERPROFILE '.local\share\lazyvim\run.lua'
-& $nvim -l $runtime setup
-if ($LASTEXITCODE -ne 0) {
-  throw "Lua capability setup failed with exit code $LASTEXITCODE"
-}
