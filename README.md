@@ -60,7 +60,7 @@ sh -c "$(curl -fsLS https://get.chezmoi.io)" -- \
 
 ```powershell
 # Windows
-winget install --id twpayne.chezmoi --version 2.72.0 --exact
+choco install chezmoi --version=2.72.0 -y
 chezmoi init --apply savioserra/lazyvim
 ```
 
