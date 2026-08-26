@@ -40,12 +40,14 @@ assert_contains(windows, "go")
 assert_contains(windows, "secrets")
 assert_contains(windows, "pi")
 assert_contains(windows, "pi-skills")
+assert_contains(windows, "pi-subagents")
 
 local linux = ids_for("linux")
 assert_contains(linux, "tmux")
 assert_contains(linux, "secrets")
 assert_contains(linux, "pi")
 assert_contains(linux, "pi-skills")
+assert_contains(linux, "pi-subagents")
 local node_index = vim.iter(linux):enumerate():find(function(_, id)
 	return id == "node"
 end)
@@ -57,6 +59,11 @@ local pi_skills_index = vim.iter(linux):enumerate():find(function(_, id)
 	return id == "pi-skills"
 end)
 assert(pi_index < pi_skills_index, "pi must run before pi-skills")
+local pi_subagents_index = vim.iter(linux):enumerate():find(function(_, id)
+	return id == "pi-subagents"
+end)
+assert(pi_index < pi_subagents_index, "pi must run before pi-subagents")
+assert(pi_skills_index < pi_subagents_index, "pi-skills must run before pi-subagents")
 
 local foundation_index = vim.iter(linux):enumerate():find(function(_, id)
 	return id == "foundation"

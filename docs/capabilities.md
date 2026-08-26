@@ -38,6 +38,7 @@ foundation
 ├── node
 │   └── pi
 │       └── pi-skills
+│           └── pi-subagents
 ├── go
 ├── secrets
 ├── nvim [profile adds node and go prerequisites]
@@ -51,6 +52,7 @@ foundation
 | `node` | NVM default/environment | — | NVM and Node version | All |
 | `pi` | Exact global npm package | — | npm package and CLI version | All |
 | `pi-skills` | — | — | Managed skill files and Pi discovery | All |
+| `pi-subagents` | Exact Pi package and role skill policy | — | Package lock integrity, extension tools, bundled skill, role overrides | All |
 | `go` | — | — | Go version | All |
 | `secrets` | — | — | Managed 1Password CLI version; never account or vault state | All; Windows ARM64 uses x64 emulation |
 | `nvim` | — | Locks and parsers | Startup, locks, profile behavior | All |
@@ -123,6 +125,23 @@ Each skill requires valid `name` and `description` frontmatter. Add the skill to
 `setup/features/pi-skills.lua` so verification checks both the managed file and
 Pi's resource discovery. The `secrets` skill disables model invocation and is
 available only through explicit `/skill:secrets` use.
+
+## Pi subagents
+
+| Item | Value |
+| --- | --- |
+| Package | `pi-subagents@0.56.0` |
+| Source | npm package from `nicobailon/pi-subagents` |
+| Pi package target | `~/.pi/agent/npm/node_modules/pi-subagents` |
+| Package declaration | Preserved alongside user preferences in `~/.pi/agent/settings.json` |
+| Workstation policy | `worker` and `delegate` explicitly receive the managed `lazyvim` skill |
+
+The package is exact-version and registry-integrity verified before installation.
+Verification checks Pi discovery, the `subagent` and `subagent_wait` tools, the
+bundled `pi-subagents` skill, package-lock integrity, and role overrides. The
+`lazyvim` skill asks mutation-capable agents to use tmux only for suitable
+long-running, interactive, or observable work and to prefer this setup's managed
+tools and chezmoi lifecycle.
 
 ## Feature backend rule
 

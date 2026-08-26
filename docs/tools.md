@@ -22,6 +22,7 @@
 | rainfrog | 0.4.4 | github.com/achristmascarl/rainfrog | `.local/bin/rainfrog` | all except windows-arm64 (no upstream build) |
 | 1Password CLI | 2.39.0 | cache.agilebits.com | `.local/bin/op`; verified by the `secrets` capability | all 5; Windows ARM64 uses the x64 build |
 | pi coding agent | 0.84.3 | npm: `@earendil-works/pi-coding-agent` | Managed Node global prefix | all 5 |
+| pi-subagents | 0.56.0 | npm: `pi-subagents` (`nicobailon/pi-subagents`) | `.pi/agent/npm/node_modules/pi-subagents` | all 5 |
 | JetBrainsMono Nerd Font | 3.5.0 | github.com/ryanoasis/nerd-fonts | Linux: `.local/share/fonts/JetBrainsMonoNerdFont`; darwin: `Library/Fonts/JetBrainsMonoNerdFont`; Windows: `AppData/Local/Microsoft/Windows/Fonts/JetBrainsMonoNerdFont` | all 5 |
 
 ## Not managed here

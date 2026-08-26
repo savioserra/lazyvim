@@ -57,6 +57,7 @@ formats, runs runtime tests, and executes `run.lua verify`.
 | Host tool version | `versions.json`, owning external URL/checksum, `docs/tools.md` |
 | Node version | `home/dot_node-version`, Node external URL/checksum |
 | Global npm capability | Exact version, registry integrity, feature setup/verify, docs |
+| Pi extension package | Exact version, registry integrity, feature setup/verify, Pi discovery, docs |
 | Pi skill | `home/dot_pi/agent/skills/<name>/SKILL.md`, `pi-skills` verification, docs |
 | tmux plugin pin | `setup/features/tmux.lua`, `docs/tmux.md` |
 | Capability | declaration, capability catalog, feature handler, feature catalog, tests, docs |

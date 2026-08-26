@@ -4,6 +4,7 @@ return {
 	require("setup.capabilities.node"),
 	require("setup.capabilities.pi"),
 	require("setup.capabilities.pi-skills"),
+	require("setup.capabilities.pi-subagents"),
 	require("setup.capabilities.go"),
 	require("setup.capabilities.secrets"),
 	require("setup.capabilities.nvim"),

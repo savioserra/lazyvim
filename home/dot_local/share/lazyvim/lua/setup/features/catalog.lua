@@ -5,6 +5,7 @@ return function(profile)
 		node = require("setup.features.node"),
 		pi = require("setup.features.pi"),
 		["pi-skills"] = require("setup.features.pi-skills"),
+		["pi-subagents"] = require("setup.features.pi-subagents"),
 		go = require("setup.features.go"),
 		secrets = require("setup.features.secrets"),
 		nvim = require("setup.features.nvim")(profile),

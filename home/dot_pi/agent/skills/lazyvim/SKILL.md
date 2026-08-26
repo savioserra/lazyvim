@@ -23,6 +23,7 @@ description: Maintains this repository's cross-platform chezmoi-managed LazyVim 
 | Host-specific feature behavior | Feature-local backend |
 | Neovim language support | `home/dot_config/nvim/lua/languages/profile.lua` |
 | Pi skill | `home/dot_pi/agent/skills/<name>/SKILL.md` |
+| Pi extension package | Owning `setup/features/<name>/`; exact version and integrity in `versions.json` |
 | Secret reference or vault workflow | `/skill:secrets`; `LazyVIM` vault only |
 | Deployed target removal | `home/.chezmoiremove` |
 
@@ -37,7 +38,9 @@ description: Maintains this repository's cross-platform chezmoi-managed LazyVim 
 5. Use chezmoi commands as the public workflow; do not add apply or sync wrappers.
 6. Let post-apply scripts run `setup` followed by `sync`.
 7. Delegate secret-reference and 1Password work to `/skill:secrets`; never retrieve secret values directly.
-8. Commit or push only when requested.
+8. When tmux is available and work is long-running, interactive, or benefits from parallel observation, use a dedicated project window or pane so commands survive and remain inspectable. Do not introduce tmux for simple one-shot commands, assume an existing target, or require it on unsupported hosts.
+9. Prefer this repository's managed tools and documented chezmoi lifecycle over host-global alternatives.
+10. Commit or push only when requested.
 
 ## Checks
 

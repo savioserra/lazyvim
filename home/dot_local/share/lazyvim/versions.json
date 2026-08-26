@@ -11,6 +11,8 @@
   "onepassword_cli": "2.39.0",
   "pi_coding_agent": "0.84.3",
   "pi_coding_agent_integrity": "sha512-Yr2p9PubrbFZmYEPYI+C8KmZP9xlFuLDnAG64RtU0ZDgrdiXYWa+y7WGyJO5OlqPliOkVCMd9IzVszO3/t0D0w==",
+  "pi_subagents": "0.56.0",
+  "pi_subagents_integrity": "sha512-XBmKqvrj4mCVQ6/uXiPqCmzHxGfBB+jjwmfNR3El+IfhnaJwZ+W6evXYRI3lQEXe6Nf56xfzUXQExIzE8cT5BQ==",
   "rainfrog": "0.4.4",
   "ripgrep": "15.2.0",
   "tree_sitter": "0.26.11"
