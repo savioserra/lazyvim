@@ -14,7 +14,8 @@ Node remains a managed language capability, but it no longer controls setup.
 ```text
 dot_local/share/lazyvim/
 ├── run.lua
-└── lua/lazyvim_capabilities/
+├── versions.json
+└── lua/setup/
     ├── registry.lua
     ├── context.lua
     ├── capabilities/

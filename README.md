@@ -13,7 +13,9 @@ A chezmoi-managed Neovim and tmux environment for Linux, macOS, and Windows. Che
 | LSP servers, formatters, linters, and debuggers | `home/dot_config/nvim/mason-lock.json`, restored by [mason-lock.nvim](https://github.com/zapling/mason-lock.nvim) (`:MasonLockRestore`) |
 | Tree-sitter parsers | nvim-treesitter's own `ensure_installed`/auto-install, following the locked plugin commit |
 | Neovim configuration | `home/dot_config/nvim/` |
-| Capability setup and enhancements | `home/dot_local/share/lazyvim/capabilities/`; architecture in `docs/capabilities.md` |
+| Capability setup lifecycle | `home/dot_local/share/lazyvim/lua/setup/`; architecture in `docs/capabilities.md` |
+| Neovim language composition | `home/dot_config/nvim/lua/languages/` |
+| Shared host-tool versions | `home/dot_local/share/lazyvim/versions.json` (consumed by chezmoi templates and Lua verification) |
 | tmux configuration and tmux2k theme | `home/dot_tmux.conf` and `home/dot_config/tmux/themes/tmux2k.conf` |
 
 Chezmoi applies Neovim to `~/.config/nvim` and tmux to `~/.tmux.conf`. Native Windows ignores tmux (see `home/.chezmoiignore`). Generated plugins, tools, logs, caches, sessions, and editor history remain outside Git.
@@ -116,9 +118,9 @@ Restoring locked state individually (rarely needed — lazy.nvim/mason.nvim/tree
 :TSUpdate                " Tree-sitter parsers
 ```
 
-Updating a pinned host tool: change its version, URL, and checksum together in its `home/.chezmoiexternals/` capability manifest, then `chezmoi apply`.
+Updating a pinned host tool: change its version in `home/dot_local/share/lazyvim/versions.json` and the matching checksums in its `home/.chezmoiexternals/` capability manifest, then `chezmoi apply`.
 
-Updating a pinned tmux plugin: change its commit in `home/dot_local/share/lazyvim/lua/lazyvim_capabilities/capabilities/tmux.lua`, then `chezmoi apply`.
+Updating a pinned tmux plugin: change its commit in `home/dot_local/share/lazyvim/lua/setup/capabilities/tmux.lua`, then `chezmoi apply`.
 
 ## Repository layout
 
@@ -130,13 +132,15 @@ Updating a pinned tmux plugin: change its commit in `home/dot_local/share/lazyvi
 │   ├── .chezmoiscripts/                  # minimal pinned-Neovim lifecycle launchers
 │   ├── .chezmoiignore                    # platform-conditional exclusions
 │   ├── dot_config/nvim/                  # Neovim configuration
-│   │   └── lua/capabilities/             # language enhancements imported by lazy.nvim
+│   │   └── lua/languages/                # language extras and plugin specs imported by lazy.nvim
 │   ├── dot_config/tmux/themes/           # tmux2k theme
 │   ├── dot_local/bin/symlink_nvim.tmpl   # ~/.local/bin/nvim -> ~/.local/opt/nvim/bin/nvim (Unix)
 │   ├── dot_local/share/lazyvim/
 │   │   ├── run.lua                        # capability lifecycle entry point
-│   │   └── lua/lazyvim_capabilities/
+│   │   ├── versions.json                  # shared tool-version catalog
+│   │   └── lua/setup/
 │   │       ├── capabilities/              # capability implementations
+│   │       ├── enhancements/              # language setup and verification metadata
 │   │       ├── platforms/                 # same contract, per-OS implementations
 │   │       ├── registry.lua               # dependency ordering and composition
 │   │       └── commands.lua / paths.lua / versions.lua
@@ -157,4 +161,4 @@ Reference documentation (structure, pinned tools, per-area config maps): [docs/i
 ## Design notes
 
 - TPM's `'user/repo#<ref>'` pinning syntax only accepts branches and tags. Exact-commit pinning is therefore implemented once in the shared Lua tmux capability rather than through TPM's install path.
-- Host tool updates remain intentional: change version, URL, and checksum together in the owning `.chezmoiexternals/` manifest.
+- Host tool updates remain intentional: change the shared version catalog and matching checksums in the owning `.chezmoiexternals/` manifest together.

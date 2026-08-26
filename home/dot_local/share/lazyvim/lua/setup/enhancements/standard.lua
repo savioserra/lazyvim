@@ -1,11 +1,11 @@
-local define = require("lazyvim_capabilities.contract")
+local define = require("setup.contract")
 return define({
 	id = "language.standard",
 	requires = { "nvim" },
 	enhancements = {
 		nvim = {
 			{
-				extras_module = "capabilities.extras.standard",
+				extras_module = "languages.extras.standard",
 				lazyvim_extras = {
 					"lazyvim.plugins.extras.lang.docker",
 					"lazyvim.plugins.extras.lang.json",

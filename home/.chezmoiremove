@@ -2,6 +2,9 @@
 .local/share/lazyvim/setup.mjs
 .local/share/lazyvim/sync.mjs
 .local/share/lazyvim/verify.mjs
+.local/share/lazyvim/lua/lazyvim_capabilities
+.local/share/lazyvim/lua/setup/capabilities/languages
+.config/nvim/lua/capabilities
 .local/share/lazyvim/capabilities/contract.mjs
 .local/share/lazyvim/capabilities/context.mjs
 .local/share/lazyvim/capabilities/fonts.mjs

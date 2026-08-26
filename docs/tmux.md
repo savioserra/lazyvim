@@ -17,7 +17,7 @@ Sources `~/.config/tmux/themes/tmux2k.conf` for status-bar presentation; runs `~
 
 ## Plugins and pinned commits
 
-TPM's `'user/repo#<ref>'` syntax only accepts branches/tags, not raw SHAs. Pinning is done by the shared Lua tmux capability in `home/dot_local/share/lazyvim/lua/lazyvim_capabilities/capabilities/tmux.lua`; `dot_tmux.conf`'s `@plugin` lines stay bare `user/repo`.
+TPM's `'user/repo#<ref>'` syntax only accepts branches/tags, not raw SHAs. Pinning is done by the shared Lua tmux capability in `home/dot_local/share/lazyvim/lua/setup/capabilities/tmux.lua`; `dot_tmux.conf`'s `@plugin` lines stay bare `user/repo`.
 
 | Plugin | Commit |
 | --- | --- |

@@ -77,18 +77,20 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-      - name: Install Lua syntax checker
-        run: sudo apt-get update && sudo apt-get install -y lua5.4
+      - name: Install LuaJIT syntax checker
+        run: sudo apt-get update && sudo apt-get install -y luajit
       - name: Validate scripts and JSON lockfiles
         run: |
           set -euo pipefail
           bash -n sync
           shellcheck sync
           pwsh -NoProfile -Command '$failed = $false; "sync.ps1", ".github/scripts/test-sync.ps1" | ForEach-Object { $errors = $null; [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $_), [ref]$null, [ref]$errors) > $null; if ($errors.Count) { $failed = $true; $errors | ForEach-Object { Write-Error $_ } } }; if ($failed) { exit 1 }'
-          find home/dot_local/share/lazyvim tests -name '*.lua' -print0 | xargs -0 -n1 luac -p
+          while IFS= read -r -d '' file; do LUA_AUDIT_FILE="$file" luajit -e 'assert(loadfile(os.getenv("LUA_AUDIT_FILE")))'; done < <(find home tests -name '*.lua' -print0)
           version="$(cat home/.chezmoiversion)"
           grep -F -- "-t v${version}" README.md
           grep -F -- "--version ${version}" README.md
           python3 -m json.tool home/dot_config/nvim/lazy-lock.json > /dev/null
           python3 -m json.tool home/dot_config/nvim/mason-lock.json > /dev/null
           python3 -m json.tool home/dot_config/nvim/lazyvim.json > /dev/null
+          python3 -m json.tool home/dot_local/share/lazyvim/versions.json > /dev/null
+          python3 -m json.tool .luarc.json > /dev/null

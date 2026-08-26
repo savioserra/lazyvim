@@ -1,5 +1,5 @@
-local commands = require("lazyvim_capabilities.commands")
-local define = require("lazyvim_capabilities.contract")
+local commands = require("setup.commands")
+local define = require("setup.contract")
 return define({
 	id = "language.node",
 	requires = { "foundation" },

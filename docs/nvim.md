@@ -12,8 +12,8 @@ Target: `~/.config/nvim`. Distribution: LazyVim, plugin manager: lazy.nvim.
 | `lua/config/keymaps.lua` | Custom keymaps (`<C-s>` save, `gl` go-to-line) |
 | `lua/config/autocmds.lua` | Custom autocmds (organize-imports-on-save, external-file reload) |
 | `lazyvim.json` | Base LazyVim extras; language extras are capability imports |
-| `lua/capabilities/extras/*.lua` | Capability-owned LazyVim extras, imported before custom plugins as LazyVim requires |
-| `lua/capabilities/plugins/*.lua` | Capability-owned custom plugin specs, imported after base `plugins/` |
+| `lua/languages/extras/*.lua` | Language-owned LazyVim extras, imported before custom plugins as LazyVim requires |
+| `lua/languages/plugins/*.lua` | Language-owned custom plugin specs, imported after base `plugins/` |
 | `neoconf.json` | Per-project VS Code settings import config (`lua_ls` enabled) |
 | `stylua.toml` | Lua formatter config: 2-space indent, 120 column width |
 
@@ -33,7 +33,7 @@ Target: `~/.config/nvim`. Distribution: LazyVim, plugin manager: lazy.nvim.
 
 | File | Owns |
 | --- | --- |
-| `lsp.lua` | Base nvim-lspconfig servers only; language-specific configuration lives in `lua/capabilities/` |
+| `lsp.lua` | Base nvim-lspconfig servers only; language-specific configuration lives in `lua/languages/` |
 | `mason-lock.lua` | `zapling/mason-lock.nvim` — Mason lockfile plugin |
 | `theme.lua` | `jacoborus/tender.vim` colorscheme + `fix_tender_contrast()` highlight overrides |
 | `treesitter.lua` | Extra `ensure_installed` parsers: css, go, gomod, gosum, gowork, html, javascript, json, tsx, typescript |

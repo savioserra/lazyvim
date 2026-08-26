@@ -1,6 +1,6 @@
-local commands = require("lazyvim_capabilities.commands")
-local paths = require("lazyvim_capabilities.paths")
-local versions = require("lazyvim_capabilities.versions")
+local commands = require("setup.commands")
+local paths = require("setup.paths")
+local versions = require("setup.versions")
 
 local M = { name = "win32" }
 local nvm_dir = paths.join(paths.local_dir, "opt", "nvm-windows")
@@ -14,7 +14,13 @@ local font_dir = paths.join(
 )
 M.node = paths.join(active_node_dir, "node.exe")
 M.nvim = paths.join(paths.local_dir, "opt", "nvim", "bin", "nvim.exe")
-M.nvim_data = paths.join(vim.env.LOCALAPPDATA or paths.join(paths.home, "AppData", "Local"), "nvim-data")
+
+function M.nvim_data()
+	if vim.env.XDG_DATA_HOME and vim.env.XDG_DATA_HOME ~= "" then
+		return paths.join(vim.env.XDG_DATA_HOME, "nvim")
+	end
+	return paths.join(vim.env.LOCALAPPDATA or paths.join(paths.home, "AppData", "Local"), "nvim-data")
+end
 
 function M.tool(name)
 	if name == "go" then
@@ -46,6 +52,38 @@ local function write_user_environment(name, value, expandable)
 	)
 end
 
+local function path_key(path)
+	return path:gsub("\\", "/"):gsub("/+$", ""):lower()
+end
+
+---@param current string
+---@param required string[]
+---@return string
+function M.merge_path(current, required)
+	local managed = {}
+	for _, entry in ipairs(required) do
+		managed[path_key(entry)] = true
+	end
+
+	local result, seen = {}, {}
+	local function add(entry)
+		local key = path_key(entry)
+		if key ~= "" and not seen[key] then
+			seen[key] = true
+			table.insert(result, entry)
+		end
+	end
+	for _, entry in ipairs(required) do
+		add(entry)
+	end
+	for _, entry in ipairs(vim.split(current, ";", { trimempty = true })) do
+		if not managed[path_key(entry)] then
+			add(entry)
+		end
+	end
+	return table.concat(result, ";")
+end
+
 function M.configure_runtime()
 	vim.env.NVM_HOME = nvm_dir
 	vim.env.NVM_SYMLINK = active_node_dir
@@ -65,7 +103,10 @@ function M.configure_node()
 		paths.join(nvm_dir, "settings.txt"),
 		("root: %s\r\npath: %s\r\narch: 64\r\nproxy: none\r\n"):format(nvm_dir, active_node_dir)
 	)
-	commands.execute(paths.join(nvm_dir, "nvm.exe"), { "use", versions.node })
+	local active_ok, active_version = pcall(commands.capture, M.node, { "--version" })
+	if not active_ok or active_version ~= "v" .. versions.node then
+		commands.execute(paths.join(nvm_dir, "nvm.exe"), { "use", versions.node }, { timeout = 30000 })
+	end
 	local required = {
 		paths.join(paths.local_dir, "bin"),
 		vim.fs.dirname(M.nvim),
@@ -73,20 +114,7 @@ function M.configure_node()
 		nvm_dir,
 		active_node_dir,
 	}
-	local entries = vim.split(read_user_environment("Path"), ";", { trimempty = true })
-	for _, required_entry in ipairs(required) do
-		local present = false
-		for _, entry in ipairs(entries) do
-			if entry:lower() == required_entry:lower() then
-				present = true
-				break
-			end
-		end
-		if not present then
-			table.insert(entries, required_entry)
-		end
-	end
-	write_user_environment("Path", table.concat(entries, ";"), true)
+	write_user_environment("Path", M.merge_path(read_user_environment("Path"), required), true)
 	write_user_environment("XDG_CONFIG_HOME", paths.join(paths.home, ".config"))
 	write_user_environment("NVM_HOME", nvm_dir)
 	write_user_environment("NVM_SYMLINK", active_node_dir)
@@ -97,12 +125,17 @@ function M.verify_node()
 		commands.capture(paths.join(nvm_dir, "nvm.exe"), { "version" }) == versions.nvm_windows,
 		"Unexpected nvm-windows version"
 	)
+	local persisted_path = read_user_environment("Path")
+	local resolved =
+		vim.split(commands.capture("where.exe", { "node.exe" }, { env = { PATH = persisted_path } }), "\n")[1]
+	assert(
+		path_key(resolved) == path_key(M.node),
+		("Persisted user PATH resolves %s instead of %s"):format(resolved, M.node)
+	)
 end
 
 function M.configure_fonts()
-	if not paths.exists(font_dir) then
-		return
-	end
+	assert(paths.exists(font_dir), "JetBrainsMono Nerd Font directory is missing: " .. font_dir)
 	local script = ([[
 $fontDirectory = '%s'
 $registryPath = 'HKCU:\Software\Microsoft\Windows NT\CurrentVersion\Fonts'

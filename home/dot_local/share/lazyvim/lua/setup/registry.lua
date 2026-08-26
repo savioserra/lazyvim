@@ -1,22 +1,16 @@
-local definitions = {
-	require("lazyvim_capabilities.capabilities.foundation"),
-	require("lazyvim_capabilities.capabilities.fonts"),
-	require("lazyvim_capabilities.capabilities.node"),
-	require("lazyvim_capabilities.capabilities.nvim"),
-	require("lazyvim_capabilities.capabilities.tmux"),
-	require("lazyvim_capabilities.capabilities.languages.go"),
-	require("lazyvim_capabilities.capabilities.languages.typescript"),
-	require("lazyvim_capabilities.capabilities.languages.standard"),
-}
-
 local M = {}
 
-function M.create(context)
+---@param context CapabilityContext
+---@param definitions? Capability[]
+function M.create(context, definitions)
+	definitions = definitions or require("setup.catalog")
 	local capabilities, enabled = {}, {}
 	for _, capability in ipairs(definitions) do
 		assert(not capabilities[capability.id], "duplicate capability: " .. capability.id)
 		capabilities[capability.id] = capability
-		if capability.supports(context) then
+		local supported = capability.supports(context)
+		assert(type(supported) == "boolean", capability.id .. ".supports must return a boolean")
+		if supported then
 			enabled[capability.id] = true
 		end
 	end

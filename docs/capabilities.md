@@ -46,23 +46,24 @@ the Neovim capability.
 ```text
 dot_local/share/lazyvim/
 ├── run.lua                   lifecycle entry point
-└── lua/lazyvim_capabilities/
+├── versions.json             shared by provisioning and verification
+└── lua/setup/
     ├── registry.lua
     ├── capabilities/
     │   ├── foundation.lua
     │   ├── fonts.lua
     │   ├── node.lua
     │   ├── nvim.lua
-    │   ├── tmux.lua
-    │   └── languages/
-    │       ├── go.lua
-    │       ├── typescript.lua
-    │       └── ...
+    │   └── tmux.lua
+    ├── enhancements/          language setup and behavior-test metadata
+    │   ├── go.lua
+    │   ├── typescript.lua
+    │   └── ...
     └── platforms/            same contract, per-OS implementations
 
 dot_config/nvim/lua/
 ├── plugins/                  base Neovim capability
-└── capabilities/
+└── languages/
     ├── extras/               LazyVim extras, imported before custom plugins
     └── plugins/              language-specific custom specs, imported last
 ```

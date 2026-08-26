@@ -1,4 +1,4 @@
-local define = require("lazyvim_capabilities.contract")
+local define = require("setup.contract")
 return define({
 	id = "fonts",
 	requires = { "foundation" },

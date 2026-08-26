@@ -1,5 +1,5 @@
-local commands = require("lazyvim_capabilities.commands")
-local define = require("lazyvim_capabilities.contract")
+local commands = require("setup.commands")
+local define = require("setup.contract")
 
 local function run_lua(executable, lua, inherit_output)
 	local args = { "--headless", "-c", "lua " .. lua, "+qa" }
@@ -10,7 +10,7 @@ local function run_lua(executable, lua, inherit_output)
 	end
 end
 
-local function decode(path, context)
+local function read_json(path, context)
 	return vim.json.decode(context.paths.read(path))
 end
 
@@ -31,17 +31,17 @@ local function verify_locked_state(context)
 
 	local config = context.paths.join(context.paths.home, ".config", "nvim")
 	for _, lock in ipairs({
-		{ "lazy-lock.json", context.paths.join(context.platform.nvim_data, "lazy") },
-		{ "mason-lock.json", context.paths.join(context.platform.nvim_data, "mason", "packages") },
+		{ "lazy-lock.json", context.paths.join(context.platform.nvim_data(), "lazy") },
+		{ "mason-lock.json", context.paths.join(context.platform.nvim_data(), "mason", "packages") },
 	}) do
-		for name in pairs(decode(context.paths.join(config, lock[1]), context)) do
+		for name in pairs(read_json(context.paths.join(config, lock[1]), context)) do
 			assert(context.paths.exists(context.paths.join(lock[2], name)), "Missing " .. lock[1] .. " entry: " .. name)
 		end
 	end
 end
 
 local function verify_enhancements(context)
-	local mason_lock = decode(context.paths.join(context.paths.home, ".config", "nvim", "mason-lock.json"), context)
+	local mason_lock = read_json(context.paths.join(context.paths.home, ".config", "nvim", "mason-lock.json"), context)
 	for _, enhancement in ipairs(context.enhancements) do
 		for _, package_name in ipairs(enhancement.mason_packages or {}) do
 			assert(mason_lock[package_name], "Neovim enhancement requires unlocked Mason package " .. package_name)
@@ -71,32 +71,34 @@ local function verify_enhancements(context)
 	end
 end
 
-local function verify_language(context, directory, test)
-	local source = context.paths.join(directory, test.filename)
-	context.paths.write(source, test.contents)
+local function verify_language(context, directory, behavior_case)
+	local source = context.paths.join(directory, behavior_case.filename)
+	context.paths.write(source, behavior_case.contents)
 	run_lua(
 		context.platform.nvim,
 		table.concat({
 			("vim.cmd('edit ' .. vim.fn.fnameescape(%q))"):format(source),
 			"local parser_ok, parser = pcall(vim.treesitter.get_parser, 0)",
 			("if not parser_ok then error(%q .. tostring(parser)) end"):format(
-				test.language .. " parser unavailable: "
+				behavior_case.language .. " parser unavailable: "
 			),
 			"parser:parse()",
 			"local attached = vim.wait(15000, function() for _, client in ipairs(vim.lsp.get_clients({ bufnr = 0 })) do",
-			("if client.name == %q then return true end"):format(test.client),
+			("if client.name == %q then return true end"):format(behavior_case.client),
 			"end return false end, 100)",
-			("if not attached then error(%q) end"):format(test.client .. " did not attach to " .. test.language),
+			("if not attached then error(%q) end"):format(
+				behavior_case.client .. " did not attach to " .. behavior_case.language
+			),
 		}, "; ")
 	)
 end
 
-local function verify_formatter(context, directory, test)
-	for name, contents in pairs(test.project_files or {}) do
+local function verify_formatter(context, directory, behavior_case)
+	for name, contents in pairs(behavior_case.project_files or {}) do
 		context.paths.write(context.paths.join(directory, name), contents)
 	end
-	local source = context.paths.join(directory, test.filename)
-	context.paths.write(source, test.contents)
+	local source = context.paths.join(directory, behavior_case.filename)
+	context.paths.write(source, behavior_case.contents)
 	run_lua(
 		context.platform.nvim,
 		table.concat({
@@ -105,7 +107,10 @@ local function verify_formatter(context, directory, test)
 			"vim.cmd('write')",
 		}, "; ")
 	)
-	assert(context.paths.read(source) == test.expected, test.language .. " formatter did not produce expected output")
+	assert(
+		context.paths.read(source) == behavior_case.expected,
+		behavior_case.language .. " formatter did not produce expected output"
+	)
 end
 
 return define({
@@ -132,11 +137,11 @@ return define({
 		vim.fn.mkdir(temporary, "p")
 		local ok, failure = pcall(function()
 			for _, enhancement in ipairs(context.enhancements) do
-				for _, test in ipairs(enhancement.language_cases or {}) do
-					verify_language(context, temporary, test)
+				for _, behavior_case in ipairs(enhancement.language_cases or {}) do
+					verify_language(context, temporary, behavior_case)
 				end
-				for _, test in ipairs(enhancement.formatter_cases or {}) do
-					verify_formatter(context, temporary, test)
+				for _, behavior_case in ipairs(enhancement.formatter_cases or {}) do
+					verify_formatter(context, temporary, behavior_case)
 				end
 			end
 		end)

@@ -1,12 +1,12 @@
-local define = require("lazyvim_capabilities.contract")
+local define = require("setup.contract")
 return define({
 	id = "language.typescript",
 	requires = { "language.node", "nvim" },
 	enhancements = {
 		nvim = {
 			{
-				extras_module = "capabilities.extras.typescript",
-				plugin_module = "capabilities.plugins.typescript",
+				extras_module = "languages.extras.typescript",
+				plugin_module = "languages.plugins.typescript",
 				lazyvim_extras = {
 					"lazyvim.plugins.extras.lang.typescript",
 					"lazyvim.plugins.extras.linting.eslint",
