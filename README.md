@@ -49,19 +49,19 @@ brew install tmux git
 
 ## Bootstrap
 
-One command installs chezmoi (it can't provision itself, so this is the exception) and immediately applies this repository — chezmoi's official installer forwards everything after `--` to the freshly installed binary. This repo is **private**, so `--ssh` is required (a working SSH key for GitHub must already be set up) — the bare `user/repo` shorthand defaults to anonymous HTTPS and fails to clone:
+One command installs chezmoi (it can't provision itself, so this is the exception) and immediately applies this repository — chezmoi's official installer forwards everything after `--` to the freshly installed binary. The repository is public, so the bare `user/repo` shorthand clones over HTTPS:
 
 ```bash
 # Linux/macOS
 sh -c "$(curl -fsLS https://get.chezmoi.io)" -- \
   -b "$HOME/.local/bin" -t v2.72.0 -- \
-  init --apply savioserra/lazyvim --ssh
+  init --apply savioserra/lazyvim
 ```
 
 ```powershell
 # Windows
 winget install --id twpayne.chezmoi --version 2.72.0 --exact
-chezmoi init --apply savioserra/lazyvim --ssh
+chezmoi init --apply savioserra/lazyvim
 ```
 
 `.chezmoiroot` in the repo points chezmoi at the `home/` subdirectory as the actual source state. This deploys Neovim/tmux configuration, downloads and checksum-verifies Neovim/Go/Node.js/ripgrep/fd/fzf/lazygit/tree-sitter/the Nerd Font into `~/.local/bin` and `~/.local/opt`, installs the pinned tmux plugins, configures nvm with Node.js 24 as its default on every platform, and updates the Windows user environment. On Linux/macOS, `~/.local/bin` is expected to already be on `PATH` (add it to your shell rc if it isn't).
