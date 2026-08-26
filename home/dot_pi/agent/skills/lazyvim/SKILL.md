@@ -1,5 +1,5 @@
 ---
-name: manage-lazyvim-workstation
+name: lazyvim
 description: Maintains this repository's cross-platform chezmoi-managed LazyVim workstation, capabilities, host tools, Neovim profile, tmux setup, and Pi resources. Use when changing, testing, applying, or releasing this setup.
 ---
 
@@ -23,6 +23,7 @@ description: Maintains this repository's cross-platform chezmoi-managed LazyVim 
 | Host-specific feature behavior | Feature-local backend |
 | Neovim language support | `home/dot_config/nvim/lua/languages/profile.lua` |
 | Pi skill | `home/dot_pi/agent/skills/<name>/SKILL.md` |
+| Secret reference or vault workflow | `/skill:secrets`; `LazyVIM` vault only |
 | Deployed target removal | `home/.chezmoiremove` |
 
 `setup.app` is the composition root. Capability declarations contain data only. Runtime modules must not import capabilities or features.
@@ -35,7 +36,7 @@ description: Maintains this repository's cross-platform chezmoi-managed LazyVim 
 4. Keep lifecycle handlers idempotent.
 5. Use chezmoi commands as the public workflow; do not add apply or sync wrappers.
 6. Let post-apply scripts run `setup` followed by `sync`.
-7. Use the existing psmux Linux VPS pane for remote Linux work when the user requests it; do not open a separate SSH path.
+7. Delegate secret-reference and 1Password work to `/skill:secrets`; never retrieve secret values directly.
 8. Commit or push only when requested.
 
 ## Checks

@@ -25,6 +25,7 @@
 | [`capabilities.md`](capabilities.md) | Dependency direction, contracts, lifecycle phases |
 | [`chezmoi.md`](chezmoi.md) | Source naming, externals, ignores, removals, scripts |
 | [`tools.md`](tools.md) | Managed tool inventory and platform coverage |
+| [`secrets.md`](secrets.md) | 1Password boundary, vault scope, Pi skill policy |
 | [`nvim.md`](nvim.md) | Editor entry points, profile, plugins, locks |
 | [`tmux.md`](tmux.md) | Settings, plugin pins, theme |
 | [`lua-migration.md`](lua-migration.md) | Runtime decision record |

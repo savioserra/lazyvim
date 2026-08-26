@@ -14,6 +14,7 @@ macOS, and Windows.
 | Capability boundaries | `docs/capabilities.md` |
 | Neovim | `docs/nvim.md` |
 | tmux | `docs/tmux.md` |
+| Secrets | `docs/secrets.md` |
 | Managed tools | `docs/tools.md` |
 
 Use the nearest `AGENTS.md` for scoped rules.

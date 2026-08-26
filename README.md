@@ -80,7 +80,7 @@ No repository-level sync wrapper is required.
 | Shared host versions | `home/dot_local/share/lazyvim/versions.json` |
 | Node version | `home/dot_node-version` |
 | Global pi package | `versions.json` and `setup/features/pi.lua` |
-| Global Pi skills | `home/dot_pi/agent/skills/` |
+| Global Pi skills | `home/dot_pi/agent/skills/`; secret operations require explicit `/skill:secrets` invocation |
 | Neovim plugins | `home/dot_config/nvim/lazy-lock.json` |
 | Mason packages | `home/dot_config/nvim/mason-lock.json` |
 | Tree-sitter parsers | `lua/plugins/treesitter.lua` and locked nvim-treesitter commit |
@@ -120,6 +120,7 @@ See `AGENTS.md` for implementation constraints and required checks.
     ├── dot_config/nvim/              Neovim configuration and locks
     ├── dot_config/tmux/              tmux theme
     ├── dot_local/share/lazyvim/      lifecycle runtime
+    ├── dot_pi/agent/skills/          global Pi skills
     └── dot_tmux.conf                 tmux configuration
 ```
 
@@ -131,6 +132,7 @@ See `AGENTS.md` for implementation constraints and required checks.
 | Chezmoi apply and scripts | [`docs/chezmoi.md`](docs/chezmoi.md) |
 | Capability/runtime boundaries | [`docs/capabilities.md`](docs/capabilities.md) |
 | Managed tools | [`docs/tools.md`](docs/tools.md) |
+| Secrets and 1Password | [`docs/secrets.md`](docs/secrets.md) |
 | Neovim | [`docs/nvim.md`](docs/nvim.md) |
 | tmux | [`docs/tmux.md`](docs/tmux.md) |
 | Runtime decision | [`docs/lua-migration.md`](docs/lua-migration.md) |

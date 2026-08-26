@@ -36,3 +36,6 @@
 .local/share/lazyvim/lua/setup/registry.lua
 .local/share/lazyvim/lua/setup/enhancements
 .config/nvim/lua/languages/extras
+.local/share/lazyvim/lua/setup/capabilities/onepassword.lua
+.local/share/lazyvim/lua/setup/features/onepassword.lua
+.pi/agent/skills/manage-lazyvim-workstation

@@ -39,7 +39,7 @@ foundation
 │   └── pi
 │       └── pi-skills
 ├── go
-├── onepassword
+├── secrets
 ├── nvim [profile adds node and go prerequisites]
 └── tmux [linux,darwin]
 ```
@@ -52,7 +52,7 @@ foundation
 | `pi` | Exact global npm package | — | npm package and CLI version | All |
 | `pi-skills` | — | — | Managed skill files and Pi discovery | All |
 | `go` | — | — | Go version | All |
-| `onepassword` | — | — | 1Password CLI version | All; Windows ARM64 uses x64 emulation |
+| `secrets` | — | — | Managed 1Password CLI version; never account or vault state | All; Windows ARM64 uses x64 emulation |
 | `nvim` | — | Locks and parsers | Startup, locks, profile behavior | All |
 | `tmux` | Plugin checkout | — | Commits, server, theme | Linux/macOS |
 
@@ -121,7 +121,8 @@ Consumers:
 
 Each skill requires valid `name` and `description` frontmatter. Add the skill to
 `setup/features/pi-skills.lua` so verification checks both the managed file and
-Pi's resource discovery.
+Pi's resource discovery. The `secrets` skill disables model invocation and is
+available only through explicit `/skill:secrets` use.
 
 ## Feature backend rule
 

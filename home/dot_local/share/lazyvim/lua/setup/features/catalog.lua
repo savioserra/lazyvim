@@ -6,7 +6,7 @@ return function(profile)
 		pi = require("setup.features.pi"),
 		["pi-skills"] = require("setup.features.pi-skills"),
 		go = require("setup.features.go"),
-		onepassword = require("setup.features.onepassword"),
+		secrets = require("setup.features.secrets"),
 		nvim = require("setup.features.nvim")(profile),
 		tmux = require("setup.features.tmux"),
 	}

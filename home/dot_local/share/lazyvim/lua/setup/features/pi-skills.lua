@@ -3,8 +3,12 @@ local managed_node = require("setup.features.node.managed")
 
 local skills = {
 	{
-		directory = "manage-lazyvim-workstation",
-		name = "manage-lazyvim-workstation",
+		directory = "lazyvim",
+		name = "lazyvim",
+	},
+	{
+		directory = "secrets",
+		name = "secrets",
 	},
 }
 

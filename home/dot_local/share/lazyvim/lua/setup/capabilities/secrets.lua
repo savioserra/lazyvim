@@ -1,4 +1,4 @@
 return {
-	id = "onepassword",
+	id = "secrets",
 	requires = { "foundation" },
 }
