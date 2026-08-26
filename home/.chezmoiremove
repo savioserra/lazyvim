@@ -31,3 +31,8 @@
 .local/share/lazyvim/lib/platforms/runtime.mjs
 .local/share/lazyvim/lib/platforms/unix.mjs
 .local/share/lazyvim/lib/platforms/windows.mjs
+.local/share/lazyvim/lua/setup/catalog.lua
+.local/share/lazyvim/lua/setup/contract.lua
+.local/share/lazyvim/lua/setup/registry.lua
+.local/share/lazyvim/lua/setup/enhancements
+.config/nvim/lua/languages/extras

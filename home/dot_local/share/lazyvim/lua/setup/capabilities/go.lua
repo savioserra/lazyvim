@@ -1,4 +1,4 @@
 return {
-	id = "fonts",
+	id = "go",
 	requires = { "foundation" },
 }

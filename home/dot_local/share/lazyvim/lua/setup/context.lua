@@ -1,12 +1,11 @@
 local M = {}
 
----@class CapabilityContext
+---@class RuntimeContext
 ---@field paths table
 ---@field platform table
 ---@field versions table
----@field enhancements? CapabilityEnhancement[]
 
----@return CapabilityContext
+---@return RuntimeContext
 function M.create()
 	local paths = require("setup.paths")
 	vim.env.HOME = paths.home
