@@ -25,7 +25,7 @@ end
 function operations.language(request)
 	vim.cmd("edit " .. vim.fn.fnameescape(request.source))
 	local parser_ok, parser = pcall(vim.treesitter.get_parser, 0)
-	if not parser_ok then
+	if not parser_ok or parser == nil then
 		error(request.case.language .. " parser unavailable: " .. tostring(parser))
 	end
 	parser:parse()

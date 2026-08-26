@@ -37,7 +37,12 @@ local operations = {
 			end
 		end
 
-		local updated = require("nvim-treesitter").update(nil, { summary = true }):wait(300000)
+		local plugin = assert(require("lazy.core.config").plugins["nvim-treesitter"])
+		local opts = require("lazy.core.plugin").values(plugin, "opts", false)
+		local treesitter = require("nvim-treesitter")
+		local installed = treesitter.install(opts.ensure_installed or {}, { summary = true }):wait(300000)
+		assert(installed, "Tree-sitter parser install failed")
+		local updated = treesitter.update(nil, { summary = true }):wait(300000)
 		assert(updated, "Tree-sitter parser update failed")
 	end,
 }
