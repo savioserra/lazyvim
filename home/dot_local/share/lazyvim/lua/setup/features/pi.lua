@@ -1,0 +1,57 @@
+local commands = require("setup.commands")
+
+local package_name = "@earendil-works/pi-coding-agent"
+
+local function executables(context)
+	if context.platform.name == "win32" then
+		local bin = context.paths.join(context.paths.local_dir, "opt", "nvm-windows", "nodejs")
+		return context.paths.join(bin, "npm.cmd"), context.paths.join(bin, "pi.cmd")
+	end
+	local bin = context.paths.join(
+		context.paths.local_dir,
+		"opt",
+		"nvm",
+		"versions",
+		"node",
+		"v" .. context.versions.node,
+		"bin"
+	)
+	return context.paths.join(bin, "npm"), context.paths.join(bin, "pi")
+end
+
+local function installed_version(context, npm)
+	local ok, root = pcall(commands.capture, npm, { "root", "--global" })
+	if not ok then
+		return nil
+	end
+	local manifest = context.paths.join(root, "@earendil-works", "pi-coding-agent", "package.json")
+	local read_ok, contents = pcall(context.paths.read, manifest)
+	if not read_ok then
+		return nil
+	end
+	return vim.json.decode(contents).version
+end
+
+return {
+	setup = function(context)
+		local npm = executables(context)
+		local expected = context.versions.pi_coding_agent
+		if installed_version(context, npm) == expected then
+			return
+		end
+		local specification = package_name .. "@" .. expected
+		local integrity = commands.capture(npm, { "view", specification, "dist.integrity" })
+		assert(
+			integrity == context.versions.pi_coding_agent_integrity,
+			"Unexpected pi package integrity: " .. integrity
+		)
+		commands.execute(npm, { "install", "--global", specification, "--no-audit", "--no-fund" })
+	end,
+	verify = function(context)
+		local npm, pi = executables(context)
+		local expected = context.versions.pi_coding_agent
+		assert(installed_version(context, npm) == expected, "Unexpected globally installed pi package version")
+		local actual = commands.capture(pi, { "--version" })
+		assert(actual == expected, ("Expected pi %s, got %s"):format(expected, actual))
+	end,
+}

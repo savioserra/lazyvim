@@ -38,10 +38,20 @@ assert(not vim.list_contains(windows, "tmux"), "Windows must omit tmux")
 assert_contains(windows, "nvim")
 assert_contains(windows, "go")
 assert_contains(windows, "onepassword")
+assert_contains(windows, "pi")
 
 local linux = ids_for("linux")
 assert_contains(linux, "tmux")
 assert_contains(linux, "onepassword")
+assert_contains(linux, "pi")
+local node_index = vim.iter(linux):enumerate():find(function(_, id)
+	return id == "node"
+end)
+local pi_index = vim.iter(linux):enumerate():find(function(_, id)
+	return id == "pi"
+end)
+assert(node_index < pi_index, "node must run before pi")
+
 local foundation_index = vim.iter(linux):enumerate():find(function(_, id)
 	return id == "foundation"
 end)

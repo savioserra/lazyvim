@@ -35,10 +35,11 @@ capabilities -X-> runtime/features
 ```text
 foundation
 ├── fonts
-├── node ───────────────┐
-├── go ─────────────────┤ Neovim profile prerequisites
+├── node
+│   └── pi
+├── go
 ├── onepassword
-├── nvim <──────────────┘
+├── nvim [profile adds node and go prerequisites]
 └── tmux [linux,darwin]
 ```
 
@@ -47,6 +48,7 @@ foundation
 | `foundation` | — | — | CLI versions | All |
 | `fonts` | Host registration/cache | — | Host visibility | All |
 | `node` | NVM default/environment | — | NVM and Node version | All |
+| `pi` | Exact global npm package | — | npm package and CLI version | All |
 | `go` | — | — | Go version | All |
 | `onepassword` | — | — | 1Password CLI version | All; Windows ARM64 uses x64 emulation |
 | `nvim` | — | Locks and parsers | Startup, locks, profile behavior | All |
