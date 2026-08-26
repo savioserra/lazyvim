@@ -80,6 +80,7 @@ No repository-level sync wrapper is required.
 | Shared host versions | `home/dot_local/share/lazyvim/versions.json` |
 | Node version | `home/dot_node-version` |
 | Global pi package | `versions.json` and `setup/features/pi.lua` |
+| Global Pi skills | `home/dot_pi/agent/skills/` |
 | Neovim plugins | `home/dot_config/nvim/lazy-lock.json` |
 | Mason packages | `home/dot_config/nvim/mason-lock.json` |
 | Tree-sitter parsers | `lua/plugins/treesitter.lua` and locked nvim-treesitter commit |
@@ -98,6 +99,7 @@ System prerequisites such as tmux and Git are not provisioned by this repository
 | Host tool | Version catalog, owning external URL/checksum, `docs/tools.md` |
 | Node | `.node-version`, Node external URL/checksum |
 | pi coding agent | Version/integrity catalog and `setup/features/pi.lua` |
+| Pi skill | `home/dot_pi/agent/skills/<name>/SKILL.md`, capability inventory, discovery verification |
 | Neovim plugin | Plugin spec and `lazy-lock.json` |
 | Mason package | Neovim/profile config and `mason-lock.json` |
 | tmux plugin | `setup/features/tmux.lua`, `docs/tmux.md` |

@@ -14,6 +14,7 @@
 | `home/.chezmoiexternals/` | Pinned host downloads |
 | `home/.chezmoiscripts/` | Primary post-apply lifecycle entry points |
 | `home/dot_local/share/lazyvim/` | Lua runtime, policy, features, versions |
+| `home/dot_pi/agent/skills/` | Managed global Pi skills |
 | `home/dot_config/nvim/` | Neovim config and locks |
 | `home/dot_config/tmux/`, `home/dot_tmux.conf` | tmux config |
 

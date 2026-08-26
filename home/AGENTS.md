@@ -20,6 +20,7 @@ Scope: `home/**`.
 | `.chezmoiexternals/` | Download inventory |
 | `.chezmoiscripts/` | Public post-apply lifecycle entry points |
 | `dot_local/share/lazyvim/` | Lifecycle runtime and features |
+| `dot_pi/agent/skills/` | Global Pi skills |
 | `dot_config/nvim/` | Managed Neovim application configuration |
 | `dot_config/tmux/`, `dot_tmux.conf` | Managed tmux configuration |
 | `.chezmoiignore` | Target/platform exclusions |

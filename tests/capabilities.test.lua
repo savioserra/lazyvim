@@ -39,11 +39,13 @@ assert_contains(windows, "nvim")
 assert_contains(windows, "go")
 assert_contains(windows, "onepassword")
 assert_contains(windows, "pi")
+assert_contains(windows, "pi-skills")
 
 local linux = ids_for("linux")
 assert_contains(linux, "tmux")
 assert_contains(linux, "onepassword")
 assert_contains(linux, "pi")
+assert_contains(linux, "pi-skills")
 local node_index = vim.iter(linux):enumerate():find(function(_, id)
 	return id == "node"
 end)
@@ -51,6 +53,10 @@ local pi_index = vim.iter(linux):enumerate():find(function(_, id)
 	return id == "pi"
 end)
 assert(node_index < pi_index, "node must run before pi")
+local pi_skills_index = vim.iter(linux):enumerate():find(function(_, id)
+	return id == "pi-skills"
+end)
+assert(pi_index < pi_skills_index, "pi must run before pi-skills")
 
 local foundation_index = vim.iter(linux):enumerate():find(function(_, id)
 	return id == "foundation"

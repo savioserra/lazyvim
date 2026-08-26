@@ -37,6 +37,7 @@ foundation
 ├── fonts
 ├── node
 │   └── pi
+│       └── pi-skills
 ├── go
 ├── onepassword
 ├── nvim [profile adds node and go prerequisites]
@@ -49,6 +50,7 @@ foundation
 | `fonts` | Host registration/cache | — | Host visibility | All |
 | `node` | NVM default/environment | — | NVM and Node version | All |
 | `pi` | Exact global npm package | — | npm package and CLI version | All |
+| `pi-skills` | — | — | Managed skill files and Pi discovery | All |
 | `go` | — | — | Go version | All |
 | `onepassword` | — | — | 1Password CLI version | All; Windows ARM64 uses x64 emulation |
 | `nvim` | — | Locks and parsers | Startup, locks, profile behavior | All |
@@ -107,6 +109,19 @@ Consumers:
 | `setup/features/nvim/profile.lua` | Validate profile and derive prerequisites |
 | `setup/features/nvim/init.lua` | Verify locks and behavior |
 | `setup/features/nvim/child.lua` | Execute named configured-editor operations |
+
+## Pi skills
+
+| Item | Value |
+| --- | --- |
+| Source | `home/dot_pi/agent/skills/<name>/SKILL.md` |
+| Target | `~/.pi/agent/skills/<name>/SKILL.md` |
+| Owner capability | `pi-skills` |
+| Discovery | Pi `DefaultResourceLoader` using the managed agent directory |
+
+Each skill requires valid `name` and `description` frontmatter. Add the skill to
+`setup/features/pi-skills.lua` so verification checks both the managed file and
+Pi's resource discovery.
 
 ## Feature backend rule
 
