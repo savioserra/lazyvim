@@ -139,6 +139,7 @@ function M.configure_fonts()
 	local script = ([[
 $fontDirectory = '%s'
 $registryPath = 'HKCU:\Software\Microsoft\Windows NT\CurrentVersion\Fonts'
+New-Item -Path $registryPath -Force | Out-Null
 Get-ItemProperty -LiteralPath $registryPath | ForEach-Object { $_.PSObject.Properties } | Where-Object { $_.Name -like 'JetBrainsMono*' -or ($_.Value -is [string] -and $_.Value.StartsWith($fontDirectory, [StringComparison]::OrdinalIgnoreCase)) } | ForEach-Object { Remove-ItemProperty -LiteralPath $registryPath -Name $_.Name -ErrorAction SilentlyContinue }
 Get-ChildItem -LiteralPath $fontDirectory -Filter '*.ttf' | ForEach-Object { New-ItemProperty -LiteralPath $registryPath -Name ($_.BaseName + ' (TrueType)') -Value $_.FullName -PropertyType String -Force | Out-Null }
 Add-Type @'
