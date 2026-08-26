@@ -2,8 +2,10 @@
 setlocal
 
 rem Windows only: see .chezmoiignore, which excludes this script elsewhere.
-set "NVIM=%USERPROFILE%\.local\opt\nvim\bin\nvim.exe"
-set "RUNTIME=%USERPROFILE%\.local\share\lazyvim\run.lua"
+rem Render absolute chezmoi paths instead of relying on USERPROFILE, which can be
+rem missing or stale in some SSH/non-interactive Windows sessions.
+set "NVIM={{ .chezmoi.homeDir }}\.local\opt\nvim\bin\nvim.exe"
+set "RUNTIME={{ .chezmoi.homeDir }}\.local\share\lazyvim\run.lua"
 
 "%NVIM%" -l "%RUNTIME%" setup
 exit /b %ERRORLEVEL%
