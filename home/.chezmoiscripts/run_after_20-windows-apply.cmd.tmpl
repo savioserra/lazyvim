@@ -3,7 +3,7 @@ setlocal
 
 rem Render destination paths; USERPROFILE may be stale in non-interactive sessions.
 set "NVIM={{ .chezmoi.destDir }}\.local\opt\nvim\bin\nvim.exe"
-set "RUNTIME={{ .chezmoi.destDir }}\.local\share\lazyvim\run.lua"
+set "RUNTIME={{ .chezmoi.destDir }}\.local\share\workstation\apps\cli\run.lua"
 
 "%NVIM%" -l "%RUNTIME%" setup
 if errorlevel 1 exit /b %ERRORLEVEL%

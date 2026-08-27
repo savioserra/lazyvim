@@ -1,9 +1,9 @@
 ---
 name: lazyvim
-description: Maintains this repository's cross-platform chezmoi-managed LazyVim workstation, capabilities, host tools, Neovim profile, tmux setup, and Pi resources. Use when changing, testing, applying, or releasing this setup.
+description: Maintains this repository's cross-platform chezmoi-managed workstation monorepo, host packages, Neovim profile, tmux setup, and Pi resources. Use when changing, testing, applying, or releasing this setup.
 ---
 
-# Manage LazyVim Workstation
+# Manage Workstation Monorepo
 
 ## Start
 
@@ -16,25 +16,26 @@ description: Maintains this repository's cross-platform chezmoi-managed LazyVim 
 
 | Change | Owner |
 | --- | --- |
-| Downloaded host tool | `home/.chezmoiexternals/` and `versions.json` |
-| Capability policy | `setup/capabilities/` |
-| Setup, sync, or verification behavior | `setup/features/` |
-| Generic ordering and dispatch | `setup/runtime/` |
-| Host-specific feature behavior | Feature-local backend |
+| Downloaded host tool | `home/.chezmoiexternals/` and `workstation/versions.json` |
+| Combined capability and lifecycle behavior | `packages/<name>/` |
+| Package ordering and registration | `workstation/catalog.lua` |
+| Generic validation, graph, materialization, dispatch | `workstation/core/` |
+| Host-specific package behavior | Package-local backend |
 | Neovim language support | `home/dot_config/nvim/lua/languages/profile.lua` |
 | Pi skill | `home/dot_pi/agent/skills/<name>/SKILL.md` |
-| Pi extension package | Owning `setup/features/<name>/`; exact version and integrity in `versions.json` |
+| Source-managed Pi extension | `home/dot_pi/agent/extensions/<name>/`; owning workstation package verifies discovery and reload contract |
+| Registry Pi extension package | Owning workstation package; exact version and integrity in `versions.json` |
 | Secret reference or vault workflow | `/skill:secrets`; `LazyVIM` vault only |
 | Deployed target removal | `home/.chezmoiremove` |
 
-`setup.app` is the composition root. Capability declarations contain data only. Runtime modules must not import capabilities or features.
+`workstation.app` is the composition root. Each package is registered once and returns one combined contribution. Core modules must not import the catalog, packages, or Neovim.
 
 ## Workflow
 
 1. Edit repository source state, not deployed targets.
 2. Keep version, URL, checksum or registry integrity, verification, and tool documentation in one change.
-3. Add capabilities to both catalogs and add dependency-order tests.
-4. Keep lifecycle handlers idempotent.
+3. Add a package once to `workstation/catalog.lua` and add dependency-order tests.
+4. Keep lifecycle handlers idempotent and package-local.
 5. Use chezmoi commands as the public workflow; do not add apply or sync wrappers.
 6. Let post-apply scripts run `setup` followed by `sync`.
 7. Delegate secret-reference and 1Password work to `/skill:secrets`; never retrieve secret values directly.
@@ -48,9 +49,11 @@ Run all available checks relevant to the change:
 
 ```bash
 nvim -l tests/capabilities.test.lua
-stylua --check --config-path .stylua.toml home/dot_local/share/lazyvim home/dot_config/nvim tests
+npm ci --omit=dev --ignore-scripts --prefix home/dot_pi/agent/extensions/tmux-subagents
+find tests/tmux-subagents -name '*.test.ts' -print0 | xargs -0 node --test
+stylua --check --config-path .stylua.toml home/dot_local/share/workstation home/dot_config/nvim tests
 git diff --check
 chezmoi --source "$PWD" --destination "$(mktemp -d)" apply --dry-run
 ```
 
-For provisioning or host-specific changes, run a full scratch-home apply and `run.lua verify` on each affected host. Confirm the working tree is clean after commits.
+For provisioning or host-specific changes, run a full scratch-home apply and the workstation CLI `verify` lifecycle on each affected host. Confirm the working tree is clean after commits.

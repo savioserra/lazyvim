@@ -1,4 +1,0 @@
-return {
-	id = "fonts",
-	requires = { "foundation" },
-}
