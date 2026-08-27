@@ -10,6 +10,9 @@ actually matches against, not the source filename. */ -}}
 .config/tmux/**
 .local/bin/nvim
 .local/bin/go
+.local/bin/workstation-tmux-subagents
+.pi/agent/extensions/tmux-subagents/**
+.pi/agent/skills/tmux-subagents/**
 .profile
 .bashrc
 .zshrc

@@ -1,0 +1,11 @@
+{
+  "name": "workstation-tmux-subagents",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "dependencies": {
+    "terminal-kit": "3.1.4",
+    "xstate": "5.32.6"
+  }
+}

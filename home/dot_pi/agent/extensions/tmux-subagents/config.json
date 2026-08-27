@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "extensionVersion": "0.2.0",
+  "enabled": false,
+  "compatiblePiSubagentsVersion": "0.56.0",
+  "rpcTimeoutMs": 3000,
+  "ticketTtlMs": 300000,
+  "projectionIntervalMs": 1000,
+  "runtime": {
+    "enabled": true,
+    "xstateVersion": "5.32.6",
+    "terminalKitVersion": "3.1.4",
+    "actorProtocolVersion": 1
+  }
+}

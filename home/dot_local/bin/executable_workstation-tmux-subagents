@@ -1,0 +1,57 @@
+#!/bin/sh
+set -eu
+
+extension="$HOME/.pi/agent/extensions/tmux-subagents"
+node_path="${1:-}"
+renderer="${2:-}"
+ticket="${3:-}"
+manifest="$extension/package.json"
+lockfile="$extension/package-lock.json"
+blocked() { printf 'tmux-subagents renderer blocked: %s\n' "$1" >&2; exit 69; }
+canonical() { (CDPATH= cd -- "$(dirname -- "$1")" && printf '%s/%s\n' "$(pwd -P)" "$(basename -- "$1")"); }
+
+[ "$(uname -s)" != "MINGW" ] || blocked "tmux is unsupported on Windows"
+[ -n "$node_path" ] && [ -n "$renderer" ] && [ -n "$ticket" ] || blocked "expected attested node, renderer, and ticket paths"
+case "$ticket" in /*/generations/*/tickets/*.json) ;; *) blocked "ticket path is outside a private generation" ;; esac
+[ "$renderer" = "$extension/renderer/main.mjs" ] || blocked "renderer path is not the managed canonical path"
+node_path=$(canonical "$node_path")
+renderer=$(canonical "$renderer")
+ticket_parent=$(canonical "$(dirname -- "$ticket")")
+# The extension-created foreground command may begin before its exact pane ticket is finalized.
+attempt=0
+while [ ! -f "$ticket" ] && [ "$attempt" -lt 50 ]; do attempt=$((attempt + 1)); sleep 0.1; done
+[ -f "$ticket" ] && [ ! -L "$ticket" ] || blocked "ticket is missing or a symlink"
+[ "$ticket_parent/$(basename -- "$ticket")" = "$ticket" ] || blocked "ticket path is not canonical"
+[ -f "$node_path" ] && [ -x "$node_path" ] && [ ! -L "$node_path" ] || blocked "attested Node executable is not a regular executable"
+[ -x "$renderer" ] && [ ! -L "$renderer" ] || blocked "managed Terminal Kit renderer is missing"
+[ -f "$manifest" ] && [ ! -L "$manifest" ] || blocked "renderer package manifest is missing"
+[ -f "$lockfile" ] && [ ! -L "$lockfile" ] || blocked "renderer lockfile is missing"
+find "$ticket" -perm -077 -print | grep -q . && blocked "ticket permissions are not owner-only"
+{ find "$ticket_parent" -prune -perm -077 -print; find "$(dirname -- "$ticket_parent")" -prune -perm -077 -print; } | grep -q . && blocked "ticket generation directories are not owner-only"
+find "$renderer" "$manifest" "$lockfile" -perm -022 -print | grep -q . && blocked "runtime source or metadata is group/world writable"
+find "$node_path" -perm -002 -print | grep -q . && blocked "attested Node executable is world writable"
+if command -v stat >/dev/null 2>&1; then
+  owner=$(stat -c %u "$node_path" 2>/dev/null || stat -f %u "$node_path")
+  group=$(stat -c %g "$node_path" 2>/dev/null || stat -f %g "$node_path")
+  [ "$owner" = "$(id -u)" ] || blocked "attested Node executable has foreign ownership"
+  if find "$node_path" -perm -020 -print | grep -q .; then [ "$group" = "$(id -g)" ] || blocked "attested Node executable is writable by another group"; fi
+fi
+
+"$node_path" --input-type=module - "$extension" <<'JS' || exit 69
+import { readFileSync, lstatSync, readdirSync } from "node:fs";
+import path from "node:path";
+const root = process.argv[2];
+const fail = (message) => { console.error(`tmux-subagents renderer blocked: ${message}`); process.exit(69); };
+const packageJson = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
+const lock = JSON.parse(readFileSync(path.join(root, "package-lock.json"), "utf8"));
+for (const [name, expected] of [["xstate", "5.32.6"], ["terminal-kit", "3.1.4"]]) {
+  if (packageJson.dependencies?.[name] !== expected || lock.packages?.[`node_modules/${name}`]?.version !== expected) fail(`${name} lock mismatch`);
+  const installed = JSON.parse(readFileSync(path.join(root, "node_modules", name, "package.json"), "utf8"));
+  if (installed.version !== expected) fail(`${name} ${expected} is not installed`);
+}
+const visit = (directory) => { for (const entry of readdirSync(directory, { withFileTypes: true })) { const file = path.join(directory, entry.name); const stat = lstatSync(file); if (stat.isSymbolicLink()) fail(`dependency symlink ${file}`); if (entry.isDirectory()) visit(file); else if (file.endsWith(".node")) fail(`native module ${file}`); } };
+visit(path.join(root, "node_modules"));
+JS
+
+umask 077
+exec "$node_path" "$renderer" "$ticket"

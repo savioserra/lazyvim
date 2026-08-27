@@ -13,7 +13,12 @@
   "pi_coding_agent_integrity": "sha512-Yr2p9PubrbFZmYEPYI+C8KmZP9xlFuLDnAG64RtU0ZDgrdiXYWa+y7WGyJO5OlqPliOkVCMd9IzVszO3/t0D0w==",
   "pi_subagents": "0.56.0",
   "pi_subagents_integrity": "sha512-XBmKqvrj4mCVQ6/uXiPqCmzHxGfBB+jjwmfNR3El+IfhnaJwZ+W6evXYRI3lQEXe6Nf56xfzUXQExIzE8cT5BQ==",
+  "pi_tmux_subagents": "0.2.0",
   "rainfrog": "0.4.4",
   "ripgrep": "15.2.0",
-  "tree_sitter": "0.26.11"
+  "terminal_kit": "3.1.4",
+  "terminal_kit_integrity": "sha512-0BfyIa7pY69E+UgV0P655uNk2rjp2eWTA0uZCTMlGzyrgcrH7kO6yZDGdHqB2vNF5uEjQ5+6ZilHfGtzrhLQNg==",
+  "tree_sitter": "0.26.11",
+  "xstate": "5.32.6",
+  "xstate_integrity": "sha512-WfA8WNrh6r9osuGwVm+aIPM4jmMW2LKHV1Yv9thYpOtL4HVF/kobh95K/O8v2jDCpDmP2EoY+6uvuqHXCZ6ZLw=="
 }

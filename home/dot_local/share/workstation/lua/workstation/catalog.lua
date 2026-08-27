@@ -9,4 +9,5 @@ return {
 	require("packages.secrets"),
 	require("packages.nvim"),
 	require("packages.tmux"),
+	require("packages.pi-tmux-subagents"),
 }
