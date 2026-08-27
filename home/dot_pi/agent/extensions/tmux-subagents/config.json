@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "extensionVersion": "0.2.0",
-  "enabled": false,
+  "enabled": true,
   "compatiblePiSubagentsVersion": "0.56.0",
   "rpcTimeoutMs": 3000,
   "ticketTtlMs": 300000,

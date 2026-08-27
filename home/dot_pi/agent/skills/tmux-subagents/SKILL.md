@@ -37,7 +37,7 @@ All controls follow `Terminal Kit process → authenticated sequenced IPC → XS
 
 ## Apply and reload boundary
 
-The checked-in extension gate is disabled. After tests and independent review:
+The reviewed extension gate is enabled for dogfooding but remains inert until its managed activation digest exists. After tests and independent review:
 
 1. Run `chezmoi apply`; never edit deployed targets directly.
 2. Run `/tmux-subagents reload` and let it return.

@@ -23,8 +23,8 @@ export interface ExtensionDependencies {
 const extensionRoot = path.dirname(fileURLToPath(import.meta.url));
 function object(value: unknown, label: string): Record<string, unknown> { if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be an object`); return value as Record<string, unknown>; }
 
-export async function loadConfig(): Promise<ExtensionConfig> {
-  const configPath = path.join(extensionRoot, "config.json");
+export async function loadConfig(managedRoot: string = extensionRoot): Promise<ExtensionConfig> {
+  const configPath = path.join(managedRoot, "config.json");
   const contents = await readFile(configPath, "utf8");
   const input = object(JSON.parse(contents), "tmux-subagents canonical managed config"); const runtime = object(input.runtime, "tmux-subagents runtime config");
   if (input.schemaVersion !== CONFIG_SCHEMA_VERSION || typeof input.extensionVersion !== "string" || typeof input.enabled !== "boolean" || typeof input.compatiblePiSubagentsVersion !== "string" ||
@@ -34,7 +34,7 @@ export async function loadConfig(): Promise<ExtensionConfig> {
   }
   const config = input as unknown as ExtensionConfig;
   if (config.enabled) {
-    const activationPath = path.join(extensionRoot, "activation.json");
+    const activationPath = path.join(managedRoot, "activation.json");
     const metadata = await lstat(activationPath);
     if (!metadata.isFile() || metadata.isSymbolicLink() || (typeof process.getuid === "function" && metadata.uid !== process.getuid()) || (metadata.mode & 0o022) !== 0 || await realpath(activationPath) !== activationPath) throw new Error("tmux-subagents activation attestation is unsafe");
     const activation = object(JSON.parse(await readFile(activationPath, "utf8")), "tmux-subagents apply activation attestation");

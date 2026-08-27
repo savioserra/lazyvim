@@ -27,7 +27,7 @@
 
 ## Tmux subagent renderer dependencies
 
-The source-managed extension pins `xstate@5.32.6` and `terminal-kit@3.1.4` with exact registry integrities in both `home/dot_local/share/workstation/versions.json` and the extension `package-lock.json`. The owning workstation package installs production dependencies with `npm ci --omit=dev --ignore-scripts --no-audit --no-fund`; no native module or target-host compiler is permitted. The feature gate remains disabled until tests, review, apply, and `/reload` are completed as separate steps.
+The source-managed extension pins `xstate@5.32.6` and `terminal-kit@3.1.4` with exact registry integrities in both `home/dot_local/share/workstation/versions.json` and the extension `package-lock.json`. The owning workstation package installs production dependencies with `npm ci --omit=dev --ignore-scripts --no-audit --no-fund`; no native module or target-host compiler is permitted. The reviewed feature gate is enabled for dogfooding, but it remains inert until chezmoi apply writes its matching activation attestation and `/reload` completes as a separate step.
 
 ## Not managed here
 

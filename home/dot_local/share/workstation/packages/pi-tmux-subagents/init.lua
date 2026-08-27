@@ -54,7 +54,7 @@ return function()
 			local config = read_json(context, context.paths.join(root, "config.json"))
 			assert(config.schemaVersion == 1, "tmux-subagents config schema is incompatible")
 			assert(config.extensionVersion == context.versions.pi_tmux_subagents, "unexpected tmux-subagents version")
-			assert(config.enabled == false, "tmux-subagents must remain disabled until its post-reload gate")
+			assert(config.enabled == true, "tmux-subagents reviewed activation gate is not enabled")
 			assert(
 				config.compatiblePiSubagentsVersion == context.versions.pi_subagents,
 				"tmux-subagents targets the wrong pi-subagents version"

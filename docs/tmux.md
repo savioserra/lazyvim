@@ -89,7 +89,7 @@ The source-managed `tmux-subagents` Pi extension is an XState v5 actor system. `
 | Controls | Selection, refresh, acknowledged steer, confirmed interrupt/stop, and confirmed exact-identity resume use RPC only |
 | Data | Sanitized 32 KiB projections and 64 KiB sequenced IPC frames; no arbitrary transcript paths |
 
-Commands are `/tmux-subagents doctor`, `prepare`, `open`, `focus`, `close`, `refresh`, `reload`, and `smoke`. The checked-in extension remains disabled until an explicit reviewed apply/reload boundary. Production reads only the canonical managed config and requires its apply-produced SHA-256 activation attestation; no config-path environment override is accepted. XState 5.32.6 and Terminal Kit 3.1.4 are installed from the exact local lock with lifecycle scripts disabled.
+Commands are `/tmux-subagents doctor`, `prepare`, `open`, `focus`, `close`, `refresh`, `reload`, and `smoke`. The reviewed gate is enabled for dogfooding, but production remains blocked until the explicit chezmoi apply/reload boundary writes a matching SHA-256 activation attestation for the canonical managed config; no config-path environment override is accepted. XState 5.32.6 and Terminal Kit 3.1.4 are installed from the exact local lock with lifecycle scripts disabled.
 
 `index.ts` is only Pi registration and composition. `actors/system.ts` is the documented host-lifecycle seam because Pi supplies session callbacks and its event bus outside XState; it constructs the root actor and injects RPC, tmux, store, and IPC adapters. Domain and protocol modules never import that seam, and actor machines never import Pi's extension API.
 
