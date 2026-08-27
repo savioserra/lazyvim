@@ -1,0 +1,517 @@
+syntax = "proto3";
+
+package workstation.subagents.v1;
+
+option go_package = "github.com/savioserra/lazyvim/services/subagents/api/subagents/v1;subagentsv1";
+
+message Envelope {
+  uint32 protocol_major = 1;
+  uint32 protocol_minor = 2;
+  string session_id = 3;
+  string generation_id = 4;
+  string request_id = 5;
+  int64 deadline_unix_millis = 6;
+  uint64 sequence = 7;
+  string caller_identity = 8;
+  string agent_handle = 9;
+  bytes session_credential = 10;
+  uint64 agent_fence = 11;
+
+  oneof payload {
+    HealthRequest health_request = 20;
+    HealthResponse health_response = 21;
+    AttachRequest attach_request = 22;
+    AttachResponse attach_response = 23;
+    ReattachRequest reattach_request = 24;
+    AuthorityRequest authority_request = 25;
+    AuthorityResponse authority_response = 26;
+    ProtocolError protocol_error = 27;
+    AuthorityHint authority_hint = 28;
+    ListAgentsRequest list_agents_request = 29;
+    ListAgentsResponse list_agents_response = 30;
+    ResolveAgentRequest resolve_agent_request = 31;
+    ResolveAgentResponse resolve_agent_response = 32;
+    DetachAgentRequest detach_agent_request = 33;
+    SubscribeAgentRequest subscribe_agent_request = 34;
+    AgentOperationResponse agent_operation_response = 35;
+    UnsubscribeAgentRequest unsubscribe_agent_request = 36;
+    BridgeConnectRequest bridge_connect_request = 37;
+    BridgeConnectResponse bridge_connect_response = 38;
+    ActorMessageRequest actor_message_request = 39;
+    ActorMessageResponse actor_message_response = 40;
+    BridgePollRequest bridge_poll_request = 41;
+    BridgePollResponse bridge_poll_response = 42;
+    BridgeLifecycleRequest bridge_lifecycle_request = 43;
+    BridgeLifecycleResponse bridge_lifecycle_response = 44;
+    BridgeDeliveryAckRequest bridge_delivery_ack_request = 45;
+    BridgeDeliveryAckResponse bridge_delivery_ack_response = 46;
+    ActorControlRequest actor_control_request = 47;
+    BridgeReplaceRequest bridge_replace_request = 48;
+    HostedAdminRequest hosted_admin_request = 49;
+    HostedAdminResponse hosted_admin_response = 50;
+    ClientSessionRequest client_session_request = 51;
+    ClientSessionResponse client_session_response = 52;
+    PromptTaskRequest prompt_task_request = 53;
+    PromptTaskResponse prompt_task_response = 54;
+    TaskLifecycleRequest task_lifecycle_request = 55;
+    TaskLifecycleResponse task_lifecycle_response = 56;
+    BridgePushFrame bridge_push_frame = 57;
+    BridgeHeartbeatRequest bridge_heartbeat_request = 58;
+    BridgeHeartbeatResponse bridge_heartbeat_response = 59;
+  }
+}
+
+message BridgeHeartbeatRequest {
+  string agent_id = 1;
+  string runtime_id = 2;
+  uint64 incarnation = 3;
+}
+
+message BridgeHeartbeatResponse {
+  bool accepted = 1;
+  string reason = 2;
+}
+
+message HealthRequest {}
+
+message HealthResponse {
+  bool live = 1;
+  bool ready = 2;
+  string status = 3;
+}
+
+message ListAgentsRequest {}
+
+message ListAgentsResponse {
+  repeated AgentReference agents = 1;
+}
+
+message AgentReference {
+  reserved 3, 6;
+  string agent_id = 1;
+  uint64 lifecycle_revision = 2;
+  string retention_policy = 4;
+  string recovery_policy = 5;
+  PhaseOneAuthorityBinding authority_binding = 7;
+  HostedPiRuntimeBinding hosted_pi_runtime = 8;
+  string role = 9;
+  string display_name = 10;
+}
+
+message PhaseOneAuthorityBinding {
+  enum Kind {
+    KIND_UNSPECIFIED = 0;
+    KIND_OBSERVED_UPSTREAM = 1;
+    KIND_HOSTED_OWNED = 2;
+  }
+
+  Kind kind = 1;
+  string observed_upstream_run_id = 2;
+  string hosted_runtime_id = 3;
+}
+
+message HostedPiRuntimeBinding {
+  enum State {
+    STATE_UNSPECIFIED = 0;
+    STATE_INACTIVE = 1;
+    STATE_STARTING = 2;
+    STATE_READY = 3;
+    STATE_DEGRADED = 4;
+    STATE_STOPPING = 5;
+    STATE_STOPPED = 6;
+  }
+  enum Lifetime {
+    LIFETIME_UNSPECIFIED = 0;
+    LIFETIME_GLOBAL_AGENT = 1;
+  }
+  enum TmuxOwnership {
+    TMUX_OWNERSHIP_UNSPECIFIED = 0;
+    TMUX_OWNERSHIP_EXACT_SESSION = 1;
+  }
+  enum ControlBoundary {
+    CONTROL_BOUNDARY_UNSPECIFIED = 0;
+    CONTROL_BOUNDARY_HOSTED_PI_BRIDGE_DOCUMENTED_API_ONLY = 1;
+  }
+  enum VisualizationBoundary {
+    VISUALIZATION_BOUNDARY_UNSPECIFIED = 0;
+    VISUALIZATION_BOUNDARY_STANDARD_TMUX_ATTACH = 1;
+  }
+
+  State state = 1;
+  Lifetime lifetime = 2;
+  TmuxOwnership tmux_ownership = 3;
+  ControlBoundary control_boundary = 4;
+  VisualizationBoundary visualization_boundary = 5;
+  string runtime_id = 6;
+  uint64 incarnation = 7;
+  string tmux_session = 8;
+  string tmux_window = 9;
+  string tmux_pane = 10;
+  int64 pane_pid = 11;
+  string process_start_token = 12;
+  string tty = 13;
+  string pi_session_directory = 14;
+  string pi_session_name = 15;
+  bool bridge_ready = 16;
+  string tmux_session_id = 17;
+  string tmux_window_id = 18;
+  int64 tmux_server_pid = 19;
+  string tmux_server_start_token = 20;
+  bool ownership_indeterminate = 21;
+  bool cleanup_pending = 22;
+  string aggregate_id = 23;
+  string display_name = 24;
+  string role = 25;
+}
+
+message ResolveAgentRequest {
+  string agent_id = 1;
+}
+
+message ResolveAgentResponse {
+  AgentReference agent = 1;
+  repeated AgentReference candidates = 2;
+  bool ambiguous = 3;
+}
+
+message AttachRequest {
+  string agent_id = 1;
+  repeated string requested_capabilities = 2;
+}
+
+message ReattachRequest {
+  string agent_id = 1;
+  uint64 previous_fence = 2;
+}
+
+message DetachAgentRequest {
+  string agent_id = 1;
+}
+
+message SubscribeAgentRequest {
+  string agent_id = 1;
+  uint64 after_revision = 2;
+}
+
+message UnsubscribeAgentRequest {
+  string agent_id = 1;
+}
+
+message BridgeConnectRequest {
+  string agent_id = 1;
+  string runtime_id = 2;
+  uint64 incarnation = 3;
+  string pi_session_id = 4;
+  // Reconnect replay starts strictly after the client's last durable ACK.
+  uint64 last_acked_sequence = 5;
+}
+
+message BridgeConnectResponse {
+  bool accepted = 1;
+  string agent_handle = 2;
+  uint64 fence = 3;
+  string reason = 4;
+}
+
+message ActorMessageRequest {
+  enum Mode {
+    MODE_UNSPECIFIED = 0;
+    MODE_TELL = 1;
+    MODE_ASK = 2;
+  }
+  reserved 2, 4;
+  Mode mode = 1;
+  string target = 3;
+  bytes bounded_payload = 5;
+  string dedupe_id = 6;
+  uint32 hop_limit = 7;
+  string chain_id = 8;
+  uint64 source_mutation_sequence = 9;
+}
+
+message ActorControlRequest {
+  enum Intent {
+    INTENT_UNSPECIFIED = 0;
+    INTENT_ABORT = 1;
+    INTENT_SHUTDOWN = 2;
+  }
+  Intent intent = 1;
+  string target = 2;
+  string dedupe_id = 3;
+  uint32 hop_limit = 4;
+  string chain_id = 5;
+  uint64 source_mutation_sequence = 6;
+}
+
+message ActorMessageResponse {
+  bool accepted = 1;
+  bool completed = 2;
+  bytes bounded_result = 3;
+  string reason = 4;
+  CommunicationPeer source = 5;
+  CommunicationPeer target = 6;
+  string kind = 7;
+}
+
+message CommunicationPeer {
+  string stable_id = 1;
+  string display_name = 2;
+  string role = 3;
+}
+
+message BridgePollRequest {
+  uint64 after_sequence = 1;
+  uint32 max_items = 2;
+  string agent_id = 3;
+}
+
+message BridgeEvent {
+  uint64 sequence = 1;
+  string agent_id = 2;
+  uint64 revision = 3;
+  string operation = 4;
+}
+
+message BridgeDelivery {
+  enum Kind {
+    KIND_UNSPECIFIED = 0;
+    KIND_NOTIFICATION = 1;
+    KIND_ABORT = 2;
+    KIND_SHUTDOWN = 3;
+    KIND_PROMPT = 4;
+  }
+  enum Policy {
+    POLICY_UNSPECIFIED = 0;
+    POLICY_IDLE_IMMEDIATE_ELSE_STEER = 1;
+    POLICY_IDLE_IMMEDIATE_ELSE_FOLLOW_UP = 2;
+  }
+  uint64 sequence = 1;
+  string source_agent_id = 2;
+  string target_agent_id = 3;
+  string request_id = 4;
+  int64 deadline_unix_millis = 5;
+  string dedupe_id = 6;
+  uint32 hop_limit = 7;
+  bytes bounded_payload = 8;
+  Policy policy = 9;
+  Kind kind = 10;
+  string chain_id = 11;
+  CommunicationPeer source = 12;
+  CommunicationPeer target = 13;
+}
+
+message BridgePollResponse {
+  repeated BridgeEvent events = 1;
+  repeated BridgeDelivery deliveries = 2;
+  // Cursor of the last item emitted in this page, not the queue high-water mark.
+  uint64 latest_sequence = 3;
+  bool more = 4;
+}
+
+message BridgePushFrame {
+  string agent_id = 1;
+  repeated BridgeEvent events = 2;
+  repeated BridgeDelivery deliveries = 3;
+  uint64 latest_sequence = 4;
+  string reason = 5;
+}
+
+message BridgeDeliveryAckRequest {
+  string agent_id = 1;
+  uint64 sequence = 2;
+  string dedupe_id = 3;
+  bool delivered = 4;
+  string reason = 5;
+  bytes bounded_result = 6;
+}
+message BridgeDeliveryAckResponse {
+  bool accepted = 1;
+  string reason = 2;
+}
+
+message BridgeReplaceRequest {
+  string agent_id = 1;
+  string runtime_id = 2;
+  uint64 incarnation = 3;
+  string previous_pi_session_id = 4;
+  string new_pi_session_id = 5;
+}
+
+message BridgeLifecycleRequest {
+  enum Event {
+    EVENT_UNSPECIFIED = 0;
+    EVENT_SESSION_START = 1;
+    EVENT_READY = 2;
+    EVENT_SESSION_SHUTDOWN = 3;
+    EVENT_AGENT_START = 4;
+    EVENT_AGENT_SETTLED = 5;
+  }
+  string agent_id = 1;
+  string runtime_id = 2;
+  uint64 incarnation = 3;
+  Event event = 4;
+}
+
+message BridgeLifecycleResponse {
+  bool accepted = 1;
+  string reason = 2;
+}
+
+message HostedAdminRequest {
+  enum Operation {
+    OPERATION_UNSPECIFIED = 0;
+    OPERATION_START = 1;
+    OPERATION_STATUS = 2;
+    OPERATION_STOP = 3;
+  }
+  Operation operation = 1;
+  string agent_id = 2;
+  string project_directory = 3;
+  bool trust_project = 4;
+  string display_name = 5;
+  string role = 6;
+}
+message HostedAdminResponse {
+  bool accepted = 1;
+  string agent_id = 2;
+  HostedPiRuntimeBinding runtime = 3;
+  string attach_target = 4;
+  string reason = 5;
+}
+
+message ClientSessionRequest {
+  enum Operation {
+    OPERATION_UNSPECIFIED = 0;
+    OPERATION_OPEN = 1;
+    OPERATION_CLOSE = 2;
+  }
+  Operation operation = 1;
+}
+message ClientSessionResponse {
+  bool accepted = 1;
+  string session_id = 2;
+  string generation_id = 3;
+  string caller_identity = 4;
+  bytes session_credential = 5;
+  int64 expires_unix_millis = 6;
+  string reason = 7;
+}
+message PromptTaskRequest {
+  string target = 1;
+  bytes bounded_prompt = 2;
+  string dedupe_id = 3;
+  string chain_id = 4;
+  uint32 hop_limit = 5;
+  uint64 source_mutation_sequence = 6;
+}
+message PromptTaskResponse {
+  bool accepted = 1;
+  bool completed = 2;
+  bytes bounded_answer = 3;
+  string reason = 4;
+}
+message TaskLifecycleRequest {
+  enum Operation {
+    OPERATION_UNSPECIFIED = 0;
+    OPERATION_START = 1;
+    OPERATION_STATUS = 2;
+    OPERATION_WAIT = 3;
+  }
+  Operation operation = 1;
+  string lifecycle_id = 2;
+  string target = 3;
+  bytes bounded_prompt = 4;
+  string dedupe_id = 5;
+  string chain_id = 6;
+  uint32 hop_limit = 7;
+  uint64 source_mutation_sequence = 8;
+  uint32 wait_millis = 9;
+}
+message TaskLifecycleResponse {
+  enum State {
+    STATE_UNSPECIFIED = 0;
+    STATE_ACCEPTED = 1;
+    STATE_MODEL_RUNNING = 2;
+    STATE_COMPLETED = 3;
+    STATE_FAILED = 4;
+    STATE_TIMEOUT = 5;
+    STATE_ACTOR_LOST = 6;
+  }
+  bool accepted = 1;
+  string lifecycle_id = 2;
+  State state = 3;
+  bool terminal = 4;
+  bytes bounded_answer = 5;
+  string reason = 6;
+}
+
+message AgentOperationResponse {
+  bool completed = 1;
+  uint64 revision = 2;
+  string reason = 3;
+}
+
+message AttachResponse {
+  enum Status {
+    STATUS_UNSPECIFIED = 0;
+    STATUS_COMPLETED = 1;
+    STATUS_REJECTED = 2;
+    STATUS_FAILED = 3;
+  }
+
+  Status status = 1;
+  string agent_handle = 2;
+  uint64 fence = 3;
+  string reason = 4;
+}
+
+enum AuthorityOperation {
+  AUTHORITY_OPERATION_UNSPECIFIED = 0;
+  AUTHORITY_OPERATION_PING = 1;
+  AUTHORITY_OPERATION_STATUS = 2;
+  AUTHORITY_OPERATION_STEER = 3;
+  AUTHORITY_OPERATION_INTERRUPT = 4;
+  AUTHORITY_OPERATION_STOP = 5;
+  AUTHORITY_OPERATION_RESUME = 6;
+}
+
+message AuthorityRequest {
+  AuthorityOperation operation = 1;
+  string run_id = 2;
+  string child_id = 3;
+  bytes bounded_input = 4;
+}
+
+message AuthorityResponse {
+  enum Status {
+    STATUS_UNSPECIFIED = 0;
+    STATUS_REJECTED = 1;
+    STATUS_ACCEPTED = 2;
+    STATUS_COMPLETED = 3;
+    STATUS_FAILED = 4;
+  }
+
+  Status status = 1;
+  bytes bounded_result = 2;
+  string reason = 3;
+}
+
+message AuthorityHint {
+  string event = 1;
+}
+
+message ProtocolError {
+  enum Code {
+    CODE_UNSPECIFIED = 0;
+    CODE_INVALID_REQUEST = 1;
+    CODE_UNSUPPORTED_VERSION = 2;
+    CODE_OVERLOADED = 3;
+    CODE_DEADLINE_EXCEEDED = 4;
+    CODE_SESSION_MISMATCH = 5;
+    CODE_STALE_FENCE = 6;
+    CODE_INTERNAL = 7;
+  }
+
+  Code code = 1;
+  string message = 2;
+}

@@ -17,6 +17,10 @@ export interface ProjectionNode {
   label: string;
   state: RunState;
   currentTool?: string;
+  role?: string;
+  accessMode?: string;
+  productivePhase?: string;
+  fullscreenTranscript?: boolean;
   updatedAt?: number;
   children?: ProjectionNode[];
 }
@@ -67,6 +71,13 @@ function decodeNode(value: unknown, depth: number, omitted: Projection["omitted"
   };
   const currentTool = sanitizeText(activity?.currentTool);
   if (currentTool) node.currentTool = currentTool;
+  const role = sanitizeText(input.role, "", 64);
+  if (role) node.role = role;
+  const accessMode = sanitizeText(input.accessMode ?? input.access_mode, "", 32);
+  if (accessMode) node.accessMode = accessMode;
+  const productivePhase = sanitizeText(input.productivePhase ?? input.productive_phase, "", 32);
+  if (productivePhase) node.productivePhase = productivePhase;
+  if (input.fullscreenTranscript === true || input.fullscreen_transcript === true) node.fullscreenTranscript = true;
   const updatedAt = safeTime(input.updatedAt) ?? safeTime(activity?.lastActivityAt);
   if (updatedAt !== undefined) node.updatedAt = updatedAt;
   if (Array.isArray(input.children)) {
@@ -115,8 +126,10 @@ export function decodeAsyncSnapshot(value: unknown, now = Date.now()): Projectio
 
 function renderNode(node: ProjectionNode, depth: number, lines: string[]): void {
   const marker = node.state === "running" ? "●" : node.state === "complete" ? "✓" : node.state === "failed" ? "✗" : "○";
+  const role = node.role ? ` · ${node.role}` : "";
+  const access = node.accessMode ? ` · ${node.accessMode}` : "";
   const tool = node.currentTool ? ` · ${node.currentTool}` : "";
-  lines.push(`${"  ".repeat(depth)}${marker} ${node.label} · ${node.state}${tool}`);
+  lines.push(`${"  ".repeat(depth)}${marker} ${node.label}${role}${access} · ${node.state}${tool}`);
   for (const child of node.children ?? []) renderNode(child, depth + 1, lines);
 }
 

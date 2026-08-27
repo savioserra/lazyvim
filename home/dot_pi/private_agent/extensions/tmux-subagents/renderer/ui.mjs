@@ -1,6 +1,23 @@
 import terminalKit from "terminal-kit";
 const terminal = terminalKit.terminal;
 
+const PRODUCTIVE_PHASES = new Set(["idle", "working", "waiting", "reviewing", "testing", "correcting", "failed", "degraded", "waiting for decision"]);
+export function productivePhase(node) {
+  const explicit = typeof node?.productivePhase === "string" ? node.productivePhase : typeof node?.productive_phase === "string" ? node.productive_phase : "";
+  if (PRODUCTIVE_PHASES.has(explicit)) return explicit;
+  if (node?.state === "running") return "working";
+  if (node?.state === "failed" || node?.state === "rejected") return "failed";
+  if (node?.state === "paused" || node?.state === "queued") return "waiting";
+  if (node?.state === "complete" || node?.state === "stopped") return "idle";
+  return "waiting";
+}
+export function transcriptHint(node) { return node?.fullscreenTranscript === true || node?.fullscreen_transcript === true ? "transcript: wheel · PgUp/PgDn" : ""; }
+export function rendererRowText(row, width) {
+  const node = row.node ?? {}; const marker = ["working", "idle"].includes(productivePhase(node)) && node.state !== "queued" ? "●" : "○";
+  const role = node.role ? ` · ${String(node.role)}` : ""; const access = node.accessMode || node.access_mode ? ` · ${String(node.accessMode ?? node.access_mode)}` : "";
+  return `${"  ".repeat(row.depth ?? 0)}${marker} ${node.label ?? "Actor"}${role}${access} · ${productivePhase(node)}`.slice(0, Math.max(1, width - 3));
+}
+
 export class RendererUi {
   constructor(send, exit) { this.send = send; this.exit = exit; this.selected = 0; this.delivery = "connecting"; this.supervisors = {}; this.prompting = false; }
   rows() {
@@ -22,12 +39,13 @@ export class RendererUi {
     terminal.dim(); terminal.noFormat(`supervisors: ${(Object.entries(this.supervisors).map(([key, value]) => `${key}:${value}`).join(" ") || "healthy").slice(0, width - 14)}\n\n`); terminal.styleReset();
     if (!rows.length) terminal("No current-session runs. Press r to refresh.\n");
     for (let index = 0; index < Math.min(rows.length, height - 8); index++) {
-      const row = rows[index]; const marker = row.node.state === "running" ? "●" : row.node.state === "complete" ? "✓" : row.node.state === "failed" ? "✗" : "○";
-      const text = `${"  ".repeat(row.depth)}${marker} ${row.node.label} · ${row.node.state}${row.node.currentTool ? ` · ${row.node.currentTool}` : ""}`.slice(0, width - 3);
+      const row = rows[index];
+      const text = rendererRowText(row, width);
       if (index === this.selected) { terminal.inverse(); terminal.noFormat(` ${text.padEnd(width - 2)} `); terminal.styleReset(); terminal("\n"); }
       else terminal.noFormat(` ${text}\n`);
     }
-    terminal.moveTo(1, height - 2); terminal.dim("arrows select/parent/child  r refresh  s steer  i interrupt  x stop  u resume"); terminal.moveTo(1, height - 1); terminal.dim("q detach (run continues)");
+    const hint = transcriptHint(rows[this.selected]?.node);
+    terminal.moveTo(1, height - 2); terminal.dim(`arrows select/parent/child  r refresh  s steer  i interrupt  x stop  u resume${hint ? `  ${hint}` : ""}`); terminal.moveTo(1, height - 1); terminal.dim("q detach (run continues)");
   }
   dispatch(intent) { try { this.send(intent); this.delivery = `${intent.kind} sent; awaiting acknowledgement`; } catch (error) { this.delivery = error.message; } this.render(); }
   prompt(label, callback) { if (this.prompting) return; this.prompting = true; terminal.moveTo(1, Math.max(1, terminal.height - 3)); terminal.eraseLine(); terminal.bold(`${label}: `); terminal.inputField({ maxLength: 4000, cancelable: true }, (error, input) => { this.prompting = false; if (!error && typeof input === "string" && input.trim()) callback(input.trim()); else this.render(); }); }

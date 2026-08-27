@@ -1,0 +1,17 @@
+schema_version = 1
+
+[service]
+enabled = false
+
+[hosted_pi]
+enabled = false
+
+[remoting]
+enabled = false
+node_identity = ""
+bind_host = "127.0.0.1"
+port = 0
+allowed_cidrs = ["127.0.0.0/8", "::1/128"]
+address_families = ["ipv4", "ipv6"]
+mtls_identity = "spiffe://example/node-a"
+peers = []
