@@ -3,7 +3,7 @@ import { chmod, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { PrivateViewStore } from "../../../home/dot_pi/agent/extensions/tmux-subagents/adapters/store.ts";
+import { PrivateViewStore } from "../../../home/dot_pi/private_agent/extensions/tmux-subagents/adapters/store.ts";
 
 const posixOnly = { skip: process.platform === "win32" };
 

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ASYNC_SNAPSHOT_KIND, RPC_REPLY_PREFIX, RPC_REQUEST_EVENT } from "../../../home/dot_pi/agent/extensions/tmux-subagents/domain/constants.ts";
-import { decodeCompatiblePing, SubagentsRpcClient, type EventBus } from "../../../home/dot_pi/agent/extensions/tmux-subagents/adapters/pi-subagents-rpc.ts";
+import { ASYNC_SNAPSHOT_KIND, RPC_REPLY_PREFIX, RPC_REQUEST_EVENT } from "../../../home/dot_pi/private_agent/extensions/tmux-subagents/domain/constants.ts";
+import { decodeCompatiblePing, SubagentsRpcClient, type EventBus } from "../../../home/dot_pi/private_agent/extensions/tmux-subagents/adapters/pi-subagents-rpc.ts";
 
 class FakeEvents implements EventBus {
 	listeners = new Map<string, Set<(payload: unknown) => void | Promise<void>>>();

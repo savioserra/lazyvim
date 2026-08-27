@@ -81,9 +81,9 @@ No repository-level sync wrapper is required.
 | Shared host versions | `home/dot_local/share/workstation/versions.json` |
 | Node version | `home/dot_node-version` |
 | Global pi package | `versions.json` and `packages/pi/init.lua` |
-| Global Pi skills | `home/dot_pi/agent/skills/`; secret operations require explicit `/skill:secrets` invocation |
+| Global Pi skills | `home/dot_pi/private_agent/skills/`; secret operations require explicit `/skill:secrets` invocation |
 | Registry Pi extension packages | Exact versions and integrity in `versions.json`; lifecycle under `packages/pi-subagents/` |
-| Source-managed Pi extensions | `home/dot_pi/agent/extensions/`; owning workstation package verifies discovery and compatibility |
+| Source-managed Pi extensions | `home/dot_pi/private_agent/extensions/`; owning workstation package verifies discovery and compatibility |
 | Tmux subagent TUI | XState actor system plus exact Terminal Kit lock; disabled until reviewed apply/reload |
 | Neovim plugins | `home/dot_config/nvim/lazy-lock.json` |
 | Mason packages | `home/dot_config/nvim/mason-lock.json` |
@@ -105,7 +105,7 @@ System prerequisites such as tmux and Git are not provisioned by this repository
 | Node | `.node-version`, Node external URL/checksum |
 | pi coding agent | Version/integrity catalog and `packages/pi/init.lua` |
 | Pi extension package | Exact version/integrity, package lifecycle verification, `docs/capabilities.md` |
-| Pi skill | `home/dot_pi/agent/skills/<name>/SKILL.md`, capability inventory, discovery verification |
+| Pi skill | `home/dot_pi/private_agent/skills/<name>/SKILL.md`, capability inventory, discovery verification |
 | Neovim plugin | Plugin spec and `lazy-lock.json` |
 | Mason package | Neovim/profile config and `mason-lock.json` |
 | tmux plugin | `packages/tmux/init.lua`, `docs/tmux.md` |
@@ -149,4 +149,4 @@ See `AGENTS.md` for implementation constraints and required checks.
 - `.github/workflows/ci.yml`: Linux, macOS arm64/x86_64, Windows.
 - `.github/scripts/test-apply.ps1`: scratch-home apply, lifecycle scripts, format, tests, verify.
 - `.github/workflows/release.yml`: `vMAJOR.MINOR.PATCH` source archives and SHA-256 sums.
-- `home/dot_pi/agent/extensions/tmux-subagents/`: supervised XState actors, adapters, authenticated IPC, and the separate Terminal Kit renderer; enablement remains an explicit apply/reload gate.
+- `home/dot_pi/private_agent/extensions/tmux-subagents/`: supervised XState actors, adapters, authenticated IPC, and the separate Terminal Kit renderer; enablement remains an explicit apply/reload gate.

@@ -98,7 +98,7 @@ Commands are `/tmux-subagents doctor`, `prepare`, `open`, `focus`, `close`, `ref
 Before enabling:
 
 ```bash
-npm ci --omit=dev --ignore-scripts --prefix home/dot_pi/agent/extensions/tmux-subagents
+npm ci --omit=dev --ignore-scripts --prefix home/dot_pi/private_agent/extensions/tmux-subagents
 find tests/tmux-subagents -name '*.test.ts' -print0 | xargs -0 node --test
 chezmoi --source "$PWD" --destination "$(mktemp -d)" apply --dry-run
 ```

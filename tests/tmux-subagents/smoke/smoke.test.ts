@@ -3,9 +3,9 @@ import { chmod, cp, mkdir, mkdtemp } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { detachCreatedThroughTopology, runSmoke } from "../../../home/dot_pi/agent/extensions/tmux-subagents/smoke/index.ts";
-import { createProductionSupervisorActor } from "../../../home/dot_pi/agent/extensions/tmux-subagents/actors/supervisors/production.ts";
-import type { ViewBinding } from "../../../home/dot_pi/agent/extensions/tmux-subagents/adapters/store.ts";
+import { detachCreatedThroughTopology, runSmoke } from "../../../home/dot_pi/private_agent/extensions/tmux-subagents/smoke/index.ts";
+import { createProductionSupervisorActor } from "../../../home/dot_pi/private_agent/extensions/tmux-subagents/actors/supervisors/production.ts";
+import type { ViewBinding } from "../../../home/dot_pi/private_agent/extensions/tmux-subagents/adapters/store.ts";
 
 const attestation = { root: "/runtime", rendererPath: "/runtime/renderer.mjs", nodePath: process.execPath, xstateVersion: "5.32.6", terminalKitVersion: "3.1.4" };
 
@@ -15,7 +15,7 @@ test("real smoke lifecycle refuses to run without a stable terminal managed run"
 
 test("real smoke runs an isolated Terminal Kit claim/render lifecycle without changing authority", { skip: process.platform === "win32" }, async () => {
 	const home = await mkdtemp(path.join(os.tmpdir(), "tmux-smoke-home-"));
-	const source = path.resolve("home/dot_pi/agent/extensions/tmux-subagents"); const extension = path.join(home, ".pi/agent/extensions/tmux-subagents");
+	const source = path.resolve("home/dot_pi/private_agent/extensions/tmux-subagents"); const extension = path.join(home, ".pi/agent/extensions/tmux-subagents");
 	await mkdir(path.join(home, ".local/bin"), { recursive: true }); await mkdir(path.join(extension, "renderer"), { recursive: true });
 	await cp(path.resolve("home/dot_local/bin/executable_workstation-tmux-subagents"), path.join(home, ".local/bin/workstation-tmux-subagents"));
 	await cp(path.join(source, "renderer/executable_main.mjs"), path.join(extension, "renderer/main.mjs"));

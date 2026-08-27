@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ASYNC_SNAPSHOT_KIND, MAX_PROJECTION_BYTES } from "../../../home/dot_pi/agent/extensions/tmux-subagents/domain/constants.ts";
-import { decodeAsyncSnapshot, renderProjectionText, sanitizeText, scopeProjection } from "../../../home/dot_pi/agent/extensions/tmux-subagents/domain/projection.ts";
+import { ASYNC_SNAPSHOT_KIND, MAX_PROJECTION_BYTES } from "../../../home/dot_pi/private_agent/extensions/tmux-subagents/domain/constants.ts";
+import { decodeAsyncSnapshot, renderProjectionText, sanitizeText, scopeProjection } from "../../../home/dot_pi/private_agent/extensions/tmux-subagents/domain/projection.ts";
 
 function snapshot(runs: unknown[]) {
 	return {

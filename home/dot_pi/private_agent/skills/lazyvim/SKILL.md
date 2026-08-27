@@ -22,8 +22,8 @@ description: Maintains this repository's cross-platform chezmoi-managed workstat
 | Generic validation, graph, materialization, dispatch | `workstation/core/` |
 | Host-specific package behavior | Package-local backend |
 | Neovim language support | `home/dot_config/nvim/lua/languages/profile.lua` |
-| Pi skill | `home/dot_pi/agent/skills/<name>/SKILL.md` |
-| Source-managed Pi extension | `home/dot_pi/agent/extensions/<name>/`; owning workstation package verifies discovery and reload contract |
+| Pi skill | `home/dot_pi/private_agent/skills/<name>/SKILL.md` |
+| Source-managed Pi extension | `home/dot_pi/private_agent/extensions/<name>/`; owning workstation package verifies discovery and reload contract |
 | Registry Pi extension package | Owning workstation package; exact version and integrity in `versions.json` |
 | Secret reference or vault workflow | `/skill:secrets`; `LazyVIM` vault only |
 | Deployed target removal | `home/.chezmoiremove` |
@@ -49,7 +49,7 @@ Run all available checks relevant to the change:
 
 ```bash
 nvim -l tests/capabilities.test.lua
-npm ci --omit=dev --ignore-scripts --prefix home/dot_pi/agent/extensions/tmux-subagents
+npm ci --omit=dev --ignore-scripts --prefix home/dot_pi/private_agent/extensions/tmux-subagents
 find tests/tmux-subagents -name '*.test.ts' -print0 | xargs -0 node --test
 stylua --check --config-path .stylua.toml home/dot_local/share/workstation home/dot_config/nvim tests
 git diff --check

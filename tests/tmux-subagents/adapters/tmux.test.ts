@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { socketFromTmuxEnvironment, TmuxController, type CommandExecutor } from "../../../home/dot_pi/agent/extensions/tmux-subagents/adapters/tmux.ts";
-import type { ViewBinding } from "../../../home/dot_pi/agent/extensions/tmux-subagents/adapters/store.ts";
+import { socketFromTmuxEnvironment, TmuxController, type CommandExecutor } from "../../../home/dot_pi/private_agent/extensions/tmux-subagents/adapters/tmux.ts";
+import type { ViewBinding } from "../../../home/dot_pi/private_agent/extensions/tmux-subagents/adapters/store.ts";
 
 const identity = { socketPath: "/tmp/tmux-1000/default", paneId: "%2", panePid: 123, paneTty: "/dev/pts/2", sessionId: "$1" };
 

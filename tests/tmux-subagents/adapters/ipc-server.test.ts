@@ -4,8 +4,8 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { RendererIpcServer, secureReapSocket } from "../../../home/dot_pi/agent/extensions/tmux-subagents/adapters/ipc-server.ts";
-import type { ActorEvent } from "../../../home/dot_pi/agent/extensions/tmux-subagents/protocol/actor-events.ts";
+import { RendererIpcServer, secureReapSocket } from "../../../home/dot_pi/private_agent/extensions/tmux-subagents/adapters/ipc-server.ts";
+import type { ActorEvent } from "../../../home/dot_pi/private_agent/extensions/tmux-subagents/protocol/actor-events.ts";
 
 async function fixture() {
 	const base = path.join(os.tmpdir(), `ipc-${crypto.randomUUID()}`);

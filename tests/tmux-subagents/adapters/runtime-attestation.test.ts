@@ -3,7 +3,7 @@ import { chmod, mkdir, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { attestRuntime, type RuntimeConfig } from "../../../home/dot_pi/agent/extensions/tmux-subagents/adapters/runtime-attestation.ts";
+import { attestRuntime, type RuntimeConfig } from "../../../home/dot_pi/private_agent/extensions/tmux-subagents/adapters/runtime-attestation.ts";
 
 const config: RuntimeConfig = { enabled: true, xstateVersion: "5.32.6", terminalKitVersion: "3.1.4", actorProtocolVersion: 1 };
 const posixOnly = { skip: process.platform === "win32" };

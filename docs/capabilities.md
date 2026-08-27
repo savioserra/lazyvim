@@ -118,7 +118,7 @@ The `packages.nvim` factory loads and validates the sole language profile source
 
 ## Pi resources
 
-`pi-skills` verifies managed files under `home/dot_pi/agent/skills/` and Pi discovery. `pi-subagents` owns its exact package installation, lock integrity, extension discovery, bundled skill, and `lazyvim` role-skill assignment. `pi-tmux-subagents` owns the source-managed XState actor extension, exact local npm lock, Terminal Kit renderer process, companion skill, launcher, and Pi discovery checks. Package-specific JavaScript verifiers remain inside their owning package directories.
+`pi-skills` verifies managed files under `home/dot_pi/private_agent/skills/` and Pi discovery. `pi-subagents` owns its exact package installation, lock integrity, extension discovery, bundled skill, and `lazyvim` role-skill assignment. `pi-tmux-subagents` owns the source-managed XState actor extension, exact local npm lock, Terminal Kit renderer process, companion skill, launcher, and Pi discovery checks. Package-specific JavaScript verifiers remain inside their owning package directories.
 
 ## Tmux subagent observer
 

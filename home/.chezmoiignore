@@ -1,6 +1,7 @@
 # Repository-only agent instructions.
 AGENTS.md
 **/AGENTS.md
+.pi/agent/extensions/tmux-subagents/node_modules/**
 
 {{- /* Script paths below use their stripped target name (no run_/before_/
 after_/onchange_ attributes or .tmpl suffix) -- that's what .chezmoiignore

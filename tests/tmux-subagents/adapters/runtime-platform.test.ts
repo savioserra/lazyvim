@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { attestRuntime, type RuntimeConfig } from "../../../home/dot_pi/agent/extensions/tmux-subagents/adapters/runtime-attestation.ts";
+import { attestRuntime, type RuntimeConfig } from "../../../home/dot_pi/private_agent/extensions/tmux-subagents/adapters/runtime-attestation.ts";
 
 const config: RuntimeConfig = { enabled: true, xstateVersion: "5.32.6", terminalKitVersion: "3.1.4", actorProtocolVersion: 1 };
 const unusedRoot = "runtime-path-must-not-be-read";

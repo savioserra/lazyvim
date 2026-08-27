@@ -15,8 +15,8 @@
 | `home/.chezmoiexternals/` | Pinned host downloads |
 | `home/.chezmoiscripts/` | Primary post-apply lifecycle entry points |
 | `home/dot_local/share/workstation/` | Package monorepo, lifecycle CLI, core, and versions |
-| `home/dot_pi/agent/skills/` | Managed global Pi skills |
-| `home/dot_pi/agent/extensions/` | Source-managed Pi extensions |
+| `home/dot_pi/private_agent/skills/` | Managed global Pi skills |
+| `home/dot_pi/private_agent/extensions/` | Source-managed Pi extensions |
 | `home/dot_config/nvim/` | Neovim config and locks |
 | `home/dot_config/tmux/`, `home/dot_tmux.conf` | tmux config |
 

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createAgentMirrorActor, createRootActor } from "../../../home/dot_pi/agent/extensions/tmux-subagents/actors/root.ts";
-import type { Projection } from "../../../home/dot_pi/agent/extensions/tmux-subagents/domain/projection.ts";
+import { createAgentMirrorActor, createRootActor } from "../../../home/dot_pi/private_agent/extensions/tmux-subagents/actors/root.ts";
+import type { Projection } from "../../../home/dot_pi/private_agent/extensions/tmux-subagents/domain/projection.ts";
 
 const projection: Projection = {
 	schemaVersion: 1, generatedAt: 1, source: "pi-subagents-rpc",

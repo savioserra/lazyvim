@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { callbackChildLogic, createSupervisorActor, durableSupervisorSnapshot, promiseChildLogic, type FailureReceipt, type RestartPolicy, type SupervisorStrategy } from "../../../home/dot_pi/agent/extensions/tmux-subagents/actors/supervisors/supervisor.ts";
-import { createProductionSupervisorActor } from "../../../home/dot_pi/agent/extensions/tmux-subagents/actors/supervisors/production.ts";
+import { callbackChildLogic, createSupervisorActor, durableSupervisorSnapshot, promiseChildLogic, type FailureReceipt, type RestartPolicy, type SupervisorStrategy } from "../../../home/dot_pi/private_agent/extensions/tmux-subagents/actors/supervisors/supervisor.ts";
+import { createProductionSupervisorActor } from "../../../home/dot_pi/private_agent/extensions/tmux-subagents/actors/supervisors/production.ts";
 
 async function until(predicate: () => boolean) { for (let attempt = 0; attempt < 200; attempt++) { if (predicate()) return; await new Promise((resolve) => setTimeout(resolve, 2)); } throw new Error("timed out"); }
 

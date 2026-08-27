@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import test from "node:test";
-import { TmuxController } from "../../../home/dot_pi/agent/extensions/tmux-subagents/adapters/tmux.ts";
+import { TmuxController } from "../../../home/dot_pi/private_agent/extensions/tmux-subagents/adapters/tmux.ts";
 
 const run = promisify(execFile);
 

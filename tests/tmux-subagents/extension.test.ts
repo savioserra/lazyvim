@@ -4,8 +4,8 @@ import { readdir } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { createTmuxSubagentsExtension, type ExtensionConfig } from "../../home/dot_pi/agent/extensions/tmux-subagents/index.ts";
-import { ASYNC_SNAPSHOT_KIND, RPC_REPLY_PREFIX, RPC_REQUEST_EVENT } from "../../home/dot_pi/agent/extensions/tmux-subagents/domain/constants.ts";
+import { createTmuxSubagentsExtension, type ExtensionConfig } from "../../home/dot_pi/private_agent/extensions/tmux-subagents/index.ts";
+import { ASYNC_SNAPSHOT_KIND, RPC_REPLY_PREFIX, RPC_REQUEST_EVENT } from "../../home/dot_pi/private_agent/extensions/tmux-subagents/domain/constants.ts";
 
 const config: ExtensionConfig = { schemaVersion: 1, extensionVersion: "0.2.0", enabled: true, compatiblePiSubagentsVersion: "0.56.0", rpcTimeoutMs: 500, ticketTtlMs: 1000, projectionIntervalMs: 250, runtime: { enabled: true, xstateVersion: "5.32.6", terminalKitVersion: "3.1.4", actorProtocolVersion: 1 } };
 

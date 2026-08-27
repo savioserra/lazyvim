@@ -4,11 +4,11 @@ import { chmod, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { loadConfig } from "../../home/dot_pi/agent/extensions/tmux-subagents/index.ts";
+import { loadConfig } from "../../home/dot_pi/private_agent/extensions/tmux-subagents/index.ts";
 
 test("production config ignores arbitrary environment overrides and requires its managed activation digest", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "tmux-subagents-config-"));
-  const contents = await readFile("home/dot_pi/agent/extensions/tmux-subagents/config.json", "utf8");
+  const contents = await readFile("home/dot_pi/private_agent/extensions/tmux-subagents/config.json", "utf8");
   await writeFile(path.join(root, "config.json"), contents, { mode: 0o600 });
   await writeFile(path.join(root, "activation.json"), `${JSON.stringify({ schemaVersion: 1, configSha256: createHash("sha256").update(contents).digest("hex") })}\n`, { mode: 0o600 });
   await chmod(path.join(root, "activation.json"), 0o600);

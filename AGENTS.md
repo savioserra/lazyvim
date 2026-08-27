@@ -40,7 +40,7 @@ Run checks relevant to the change. Before completion, run all available fast che
 
 ```bash
 nvim -l tests/capabilities.test.lua
-npm ci --omit=dev --ignore-scripts --prefix home/dot_pi/agent/extensions/tmux-subagents
+npm ci --omit=dev --ignore-scripts --prefix home/dot_pi/private_agent/extensions/tmux-subagents
 find tests/tmux-subagents -name '*.test.ts' -print0 | xargs -0 node --test
 stylua --check --config-path .stylua.toml home/dot_local/share/workstation home/dot_config/nvim tests
 git diff --check
@@ -62,7 +62,7 @@ formats, runs runtime tests, and executes `run.lua verify`.
 | Node version | `home/dot_node-version`, Node external URL/checksum |
 | Global npm capability | Exact version, registry integrity, feature setup/verify, docs |
 | Pi extension package | Exact version or source-managed extension contract, setup/verify, Pi discovery, docs |
-| Pi skill | `home/dot_pi/agent/skills/<name>/SKILL.md`, `pi-skills` verification, docs |
+| Pi skill | `home/dot_pi/private_agent/skills/<name>/SKILL.md`, `pi-skills` verification, docs |
 | Standalone TUI bundle | Exact source versions/checksums, reproducible bundle CI, licenses/SBOM, external only after release hashes exist |
 | tmux plugin pin | `packages/tmux/init.lua`, `docs/tmux.md` |
 | Workstation package | combined contribution, package catalog, tests, docs |
