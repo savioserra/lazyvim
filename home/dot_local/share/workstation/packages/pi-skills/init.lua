@@ -13,7 +13,7 @@ local skills = {
 }
 
 local module_path = debug.getinfo(1, "S").source:gsub("^@", "")
-local verifier = vim.fs.joinpath(vim.fs.dirname(vim.fs.normalize(module_path)), "pi-skills", "verify.mjs")
+local verifier = vim.fs.joinpath(vim.fs.dirname(vim.fs.normalize(module_path)), "verify.mjs")
 
 return function()
 	return {

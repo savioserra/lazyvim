@@ -70,6 +70,9 @@ for _, name in ipairs({
 		"top-level package contribution is missing: " .. name
 	)
 end
+for _, name in ipairs({ "pi-skills", "pi-subagents", "pi-tmux-subagents" }) do
+	assert(vim.uv.fs_stat(vim.fs.joinpath(root, "packages", name, "verify.mjs")), "package verifier is missing: " .. name)
+end
 assert(#catalog == 11, "expected eleven explicitly registered packages")
 assert(#packages.contributions == #catalog, "catalog and materialized package counts differ")
 assert(
