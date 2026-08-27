@@ -78,7 +78,7 @@ Mason restore requirements:
 | Item | Value |
 | --- | --- |
 | Mode flag | `LAZYVIM_HEADLESS_SYNC=1` |
-| Dispatcher | `setup/features/nvim/child.lua` |
+| Dispatcher | `packages/nvim/child.lua` |
 | Operations | `lazy-restore`, `lazy-clean`, `mason`, `treesitter` |
 
 Keep mode-specific behavior at `plugins/mason.lua` and the child integration

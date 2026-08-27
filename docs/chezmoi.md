@@ -20,8 +20,8 @@ render source
   -> install/update externals
   -> apply managed files
   -> run_after_20-<host>-apply
-       -> run.lua setup
-       -> run.lua sync
+       -> workstation/apps/cli/run.lua setup
+       -> workstation/apps/cli/run.lua sync
 ```
 
 `home/.chezmoiscripts/` owns lifecycle invocation. Do not add repository-level
@@ -74,7 +74,7 @@ ignore: .chezmoiscripts/20-unix-apply.sh
 
 | Host | Excluded targets |
 | --- | --- |
-| Windows | tmux config, Unix shell config, Unix symlinks, Unix apply script |
+| Windows | tmux config, Unix shell config, Unix symlinks, tmux-subagents launcher/extension/skill/application, Unix apply script |
 | Linux/macOS | Windows apply script |
 
 ## External types
@@ -91,6 +91,7 @@ Rules:
 - Do not set `refreshPeriod`; updates are explicit.
 - Keep version, URL, checksum, and verification changes atomic.
 - Install into user-local targets only.
+- Do not add an external for a locally built TUI bundle until immutable release URLs and final archive checksums exist; build-workflow artifacts alone are not a deployment source.
 
 Inventory: [`tools.md`](tools.md).
 
@@ -98,13 +99,13 @@ Inventory: [`tools.md`](tools.md).
 
 | Stripped name | Hosts | Ordered commands |
 | --- | --- | --- |
-| `20-unix-apply.sh` | Linux/macOS | `run.lua setup`; `run.lua sync` |
-| `20-windows-apply.cmd` | Windows | `run.lua setup`; `run.lua sync` |
+| `20-unix-apply.sh` | Linux/macOS | Workstation CLI `setup`; then `sync` |
+| `20-windows-apply.cmd` | Windows | Workstation CLI `setup`; then `sync` |
 
 Script requirements:
 
 - use the pinned Neovim under the target home;
-- use the deployed `run.lua` under the target home;
+- use the deployed `.local/share/workstation/apps/cli/run.lua` under the target home;
 - stop before sync when setup fails;
 - return the sync exit code;
 - avoid shell-specific orchestration outside path resolution and failure handling.

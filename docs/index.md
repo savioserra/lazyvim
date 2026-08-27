@@ -7,14 +7,16 @@
 | `README.md` | Install, apply, update commands |
 | `AGENTS.md` | Repository-wide implementation rules |
 | `tests/capabilities.test.lua` | Fast graph, profile, runner, adapter tests |
+| `tests/tmux-subagents/` | Mirrored actor, OTP supervisor, RPC, projection, IPC, renderer, ticket, and isolated tmux tests |
 | `.github/scripts/test-apply.ps1` | Scratch-home end-to-end apply test |
 | `.github/workflows/ci.yml` | Platform matrix and lint |
 | `.github/workflows/release.yml` | Tagged source archives |
 | `home/` | Chezmoi source root |
 | `home/.chezmoiexternals/` | Pinned host downloads |
 | `home/.chezmoiscripts/` | Primary post-apply lifecycle entry points |
-| `home/dot_local/share/lazyvim/` | Lua runtime, policy, features, versions |
+| `home/dot_local/share/workstation/` | Package monorepo, lifecycle CLI, core, and versions |
 | `home/dot_pi/agent/skills/` | Managed global Pi skills |
+| `home/dot_pi/agent/extensions/` | Source-managed Pi extensions |
 | `home/dot_config/nvim/` | Neovim config and locks |
 | `home/dot_config/tmux/`, `home/dot_tmux.conf` | tmux config |
 
@@ -32,13 +34,14 @@
 
 ## Invariants
 
-- Pinned Neovim is the lifecycle runtime.
+- Pinned Neovim is the temporary Phase 1 Lua launcher; Neovim is a lifecycle package.
 - Chezmoi owns deployed files and archive downloads.
 - Downloads require SHA-256 checksums.
 - Managed tools install under user-local targets only.
-- Capability declarations contain policy only.
-- Generic runtime modules contain no domain behavior.
+- Each package contributes capability metadata and lifecycle behavior through one registered record.
+- Generic core modules contain no domain behavior and import no packages.
 - Neovim language composition has one profile source.
+- `pi-subagents` remains authoritative; tmux panes consume bounded observer projections only.
 - Removed non-`exact` targets are listed in `.chezmoiremove`.
 - The retired Go CLI structure (`go.mod`, `cmd/`, `internal/`) must not return.
 

@@ -1,14 +1,19 @@
-local root = vim.fs.joinpath(vim.fn.getcwd(), "home", "dot_local", "share", "lazyvim")
+local repository = vim.fn.getcwd()
+local root = vim.fs.joinpath(repository, "home", "dot_local", "share", "workstation")
 package.path = table.concat({
+	vim.fs.joinpath(root, "?.lua"),
+	vim.fs.joinpath(root, "?", "init.lua"),
 	vim.fs.joinpath(root, "lua", "?.lua"),
 	vim.fs.joinpath(root, "lua", "?", "init.lua"),
 	package.path,
 }, ";")
 
-local commands = require("setup.commands")
-local define = require("setup.runtime.contract")
-local graph = require("setup.runtime.graph")
-local profile_module = require("setup.features.nvim.profile")
+local commands = require("workstation.commands")
+local contract = require("workstation.core.contract")
+local graph = require("workstation.core.graph")
+local materialize = require("workstation.core.materialize")
+local profile_module = require("packages.nvim.profile")
+local runner_module = require("workstation.core.runner")
 
 local function assert_contains(values, expected)
 	assert(vim.list_contains(values, expected), ("expected %s in [%s]"):format(expected, table.concat(values, ", ")))
@@ -24,77 +29,156 @@ local function assert_fails(pattern, callback)
 end
 
 local function capability(id, requires, options)
-	return define(vim.tbl_extend("force", { id = id, requires = requires or {} }, options or {}))
+	return contract(vim.tbl_extend("force", { id = id, requires = requires or {} }, options or {}))
+end
+
+local profile_path = vim.fs.joinpath(repository, "home", "dot_config", "nvim", "lua", "languages", "profile.lua")
+local profile = profile_module.validate(assert(loadfile(profile_path))())
+local catalog = require("workstation.catalog")
+local packages = materialize.from_catalog(catalog, { nvim_profile = profile })
+local application = require("workstation.app")
+assert(type(application.create) == "function", "workstation composition root did not load")
+
+for _, name in ipairs({ "contract", "materialize", "graph", "runner" }) do
+	local source = vim.fn.readfile(vim.fs.joinpath(root, "lua", "workstation", "core", name .. ".lua"))
+	local contents = table.concat(source, "\n")
+	assert(not contents:find('require("packages.', 1, true), "core imports a package: " .. name)
+	assert(not contents:find("workstation.packages", 1, true), "core imports a legacy package namespace: " .. name)
+	assert(not contents:find("workstation.catalog", 1, true), "core imports the catalog: " .. name)
+	assert(not contents:find("vim.", 1, true), "core depends on the Neovim API: " .. name)
+end
+
+assert(
+	vim.uv.fs_stat(vim.fs.joinpath(root, "lua", "workstation", "packages")) == nil,
+	"legacy package contribution directory still exists"
+)
+for _, name in ipairs({
+	"foundation",
+	"fonts",
+	"node",
+	"pi",
+	"pi-skills",
+	"pi-subagents",
+	"go",
+	"secrets",
+	"nvim",
+	"tmux",
+	"pi-tmux-subagents",
+}) do
+	assert(
+		vim.uv.fs_stat(vim.fs.joinpath(root, "packages", name, "init.lua")),
+		"top-level package contribution is missing: " .. name
+	)
+end
+assert(#catalog == 11, "expected eleven explicitly registered packages")
+assert(#packages.contributions == #catalog, "catalog and materialized package counts differ")
+assert(
+	vim.uv.fs_stat(vim.fs.joinpath(root, "lua", "setup", "capabilities")) == nil,
+	"legacy capability catalog still exists"
+)
+assert(vim.uv.fs_stat(vim.fs.joinpath(root, "lua", "setup", "features")) == nil, "legacy feature catalog still exists")
+for _, contribution in ipairs(packages.contributions) do
+	assert(packages.handlers[contribution.id], "package is missing split lifecycle handlers: " .. contribution.id)
 end
 
 local function ids_for(host, specifications)
 	return vim.tbl_map(function(item)
 		return item.id
-	end, graph.resolve(specifications or require("setup.capabilities.catalog"), host).ordered)
+	end, graph.resolve(specifications or packages.specifications, host).ordered)
 end
 
 local windows = ids_for("win32")
 assert(not vim.list_contains(windows, "tmux"), "Windows must omit tmux")
-assert_contains(windows, "nvim")
-assert_contains(windows, "go")
-assert_contains(windows, "secrets")
-assert_contains(windows, "pi")
-assert_contains(windows, "pi-skills")
-assert_contains(windows, "pi-subagents")
+for _, id in ipairs({ "nvim", "go", "secrets", "pi", "pi-skills", "pi-subagents" }) do
+	assert_contains(windows, id)
+end
 
 local linux = ids_for("linux")
-assert_contains(linux, "tmux")
-assert_contains(linux, "secrets")
-assert_contains(linux, "pi")
-assert_contains(linux, "pi-skills")
-assert_contains(linux, "pi-subagents")
-local node_index = vim.iter(linux):enumerate():find(function(_, id)
-	return id == "node"
-end)
-local pi_index = vim.iter(linux):enumerate():find(function(_, id)
-	return id == "pi"
-end)
-assert(node_index < pi_index, "node must run before pi")
-local pi_skills_index = vim.iter(linux):enumerate():find(function(_, id)
-	return id == "pi-skills"
-end)
-assert(pi_index < pi_skills_index, "pi must run before pi-skills")
-local pi_subagents_index = vim.iter(linux):enumerate():find(function(_, id)
-	return id == "pi-subagents"
-end)
-assert(pi_index < pi_subagents_index, "pi must run before pi-subagents")
-assert(pi_skills_index < pi_subagents_index, "pi-skills must run before pi-subagents")
+for _, id in ipairs({ "tmux", "secrets", "pi", "pi-skills", "pi-subagents" }) do
+	assert_contains(linux, id)
+end
+local expected_linux = {
+	"foundation",
+	"fonts",
+	"node",
+	"pi",
+	"pi-skills",
+	"pi-subagents",
+	"go",
+	"secrets",
+	"nvim",
+	"tmux",
+	"pi-tmux-subagents",
+}
+assert(vim.deep_equal(linux, expected_linux), "Linux package graph order changed")
+assert(vim.deep_equal(ids_for("darwin"), expected_linux), "macOS package graph order differs from Linux")
+local expected_windows = {
+	"foundation",
+	"fonts",
+	"node",
+	"pi",
+	"pi-skills",
+	"pi-subagents",
+	"go",
+	"secrets",
+	"nvim",
+}
+assert(vim.deep_equal(windows, expected_windows), "Windows graph changed")
 
-local foundation_index = vim.iter(linux):enumerate():find(function(_, id)
-	return id == "foundation"
-end)
-local secrets_index = vim.iter(linux):enumerate():find(function(_, id)
-	return id == "secrets"
-end)
-assert(foundation_index < secrets_index, "foundation must run before secrets")
-local tmux_index = vim.iter(linux):enumerate():find(function(_, id)
-	return id == "tmux"
-end)
-assert(foundation_index < tmux_index, "foundation must run before tmux")
+local function index_of(values, expected)
+	return assert(
+		vim.iter(values):enumerate():find(function(_, id)
+			return id == expected
+		end),
+		"missing package " .. expected
+	)
+end
+assert(index_of(linux, "node") < index_of(linux, "pi"), "node must run before pi")
+assert(index_of(linux, "pi") < index_of(linux, "pi-skills"), "pi must run before pi-skills")
+assert(index_of(linux, "pi") < index_of(linux, "pi-subagents"), "pi must run before pi-subagents")
+assert(index_of(linux, "pi-skills") < index_of(linux, "pi-subagents"), "pi-skills must run before pi-subagents")
+assert(index_of(linux, "foundation") < index_of(linux, "secrets"), "foundation must run before secrets")
+assert(index_of(linux, "foundation") < index_of(linux, "tmux"), "foundation must run before tmux")
+assert(
+	index_of(linux, "pi-subagents") < index_of(linux, "pi-tmux-subagents"),
+	"pi-subagents must run before its tmux observer"
+)
+assert(index_of(linux, "tmux") < index_of(linux, "pi-tmux-subagents"), "tmux must run before its Pi observer")
+assert(not vim.list_contains(windows, "pi-tmux-subagents"), "Windows must omit the tmux Pi observer")
 
-local profile_path = vim.fs.joinpath(vim.fn.getcwd(), "home", "dot_config", "nvim", "lua", "languages", "profile.lua")
-local profile = profile_module.validate(assert(loadfile(profile_path))())
 local prerequisites = profile_module.required_capabilities(profile)
 assert_contains(prerequisites, "node")
 assert_contains(prerequisites, "go")
-
-local application = require("setup.app")
-local composed = ids_for("linux", application.specifications_for(profile))
-local nvim_index = vim.iter(composed):enumerate():find(function(_, id)
-	return id == "nvim"
-end)
 for _, prerequisite in ipairs({ "foundation", "node", "go" }) do
-	local index = vim.iter(composed):enumerate():find(function(_, id)
-		return id == prerequisite
-	end)
-	assert(index < nvim_index, prerequisite .. " must run before the composed Neovim capability")
+	assert(index_of(linux, prerequisite) < index_of(linux, "nvim"), prerequisite .. " must run before Neovim")
 end
 
+assert_fails("duplicate package identity", function()
+	materialize.from_catalog({
+		function()
+			return { id = "same" }
+		end,
+		function()
+			return { id = "same" }
+		end,
+	})
+end)
+assert_fails("requires a non-empty string id", function()
+	materialize.from_catalog({
+		function()
+			return { verify = function() end }
+		end,
+	})
+end)
+assert_fails("catalog entry 1 must be a factory", function()
+	materialize.from_catalog({ { id = "not-a-factory" } })
+end)
+assert_fails("invalid lifecycle handler setup", function()
+	contract({ id = "invalid", setup = "not-a-function" })
+end)
+assert_fails("unknown contribution field", function()
+	contract({ id = "invalid", handlers = {} })
+end)
 assert_fails("duplicate capability", function()
 	graph.resolve({ capability("same"), capability("same") }, "test")
 end)
@@ -124,7 +208,7 @@ end)
 
 local lifecycle_order = {}
 local test_graph = graph.resolve({ capability("first"), capability("second", { "first" }) }, "test")
-local runner = require("setup.runtime.runner").new(test_graph, {
+local runner = runner_module.new(test_graph, {
 	first = {
 		verify = function()
 			table.insert(lifecycle_order, "first")
@@ -138,16 +222,22 @@ local runner = require("setup.runtime.runner").new(test_graph, {
 }, {})
 runner:run("verify")
 assert(vim.deep_equal(lifecycle_order, { "first", "second" }), "runner ignored dependency order")
+assert_fails("missing lifecycle handlers for package first", function()
+	runner_module.new(test_graph, { second = {} }, {})
+end)
+assert_fails("unknown lifecycle", function()
+	runner:run("deploy")
+end)
 
-package.loaded["setup.platforms.linux"] = nil
-package.loaded["setup.platforms.macos"] = nil
-local linux_adapter = require("setup.platforms.linux")
-local macos_adapter = require("setup.platforms.macos")
+package.loaded["workstation.platforms.linux"] = nil
+package.loaded["workstation.platforms.macos"] = nil
+local linux_adapter = require("workstation.platforms.linux")
+local macos_adapter = require("workstation.platforms.macos")
 assert(not rawequal(linux_adapter, macos_adapter), "platform adapters must be independent tables")
 assert(linux_adapter.name == "linux", "loading macOS must not mutate Linux")
 assert(macos_adapter.name == "darwin", "macOS adapter has the wrong name")
 
-local windows_environment = require("setup.host.windows_environment")
+local windows_environment = require("workstation.host.windows_environment")
 local required = { "C:/managed/bin", "C:/managed/node" }
 local merged = windows_environment.merge_path(
 	"C:\\legacy\\node;C:\\managed\\bin;C:/managed/bin/;C:\\Windows;C:\\managed\\node",
@@ -185,4 +275,4 @@ assert(
 )
 vim.env.XDG_DATA_HOME = original_xdg_data_home
 
-print("capability runtime tests passed")
+print("workstation package runtime tests passed")

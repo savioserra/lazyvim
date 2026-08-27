@@ -1,7 +1,8 @@
 # LazyVim workstation
 
 Chezmoi source state for a pinned Neovim and tmux environment on Linux, macOS,
-and Windows.
+and Windows. Host lifecycle behavior is organized as a workstation package monorepo;
+Neovim is one package and remains the temporary Phase 1 Lua launcher.
 
 ## Support
 
@@ -60,8 +61,8 @@ chezmoi --source "$PWD" apply
 Chezmoi `run_after` scripts are the lifecycle entry points. Every apply runs:
 
 ```text
-run.lua setup
-run.lua sync
+workstation/apps/cli/run.lua setup
+workstation/apps/cli/run.lua sync
 ```
 
 No repository-level sync wrapper is required.
@@ -77,18 +78,21 @@ No repository-level sync wrapper is required.
 | State | Source of truth |
 | --- | --- |
 | Host downloads | `home/.chezmoiexternals/*.toml.tmpl` |
-| Shared host versions | `home/dot_local/share/lazyvim/versions.json` |
+| Shared host versions | `home/dot_local/share/workstation/versions.json` |
 | Node version | `home/dot_node-version` |
-| Global pi package | `versions.json` and `setup/features/pi.lua` |
+| Global pi package | `versions.json` and `packages/pi/init.lua` |
 | Global Pi skills | `home/dot_pi/agent/skills/`; secret operations require explicit `/skill:secrets` invocation |
-| Pi extension packages | Exact versions and integrity in `versions.json`; lifecycle under `setup/features/pi-subagents/` |
+| Registry Pi extension packages | Exact versions and integrity in `versions.json`; lifecycle under `packages/pi-subagents/` |
+| Source-managed Pi extensions | `home/dot_pi/agent/extensions/`; owning workstation package verifies discovery and compatibility |
+| Tmux subagent TUI | XState actor system plus exact Terminal Kit lock; disabled until reviewed apply/reload |
 | Neovim plugins | `home/dot_config/nvim/lazy-lock.json` |
 | Mason packages | `home/dot_config/nvim/mason-lock.json` |
 | Tree-sitter parsers | `lua/plugins/treesitter.lua` and locked nvim-treesitter commit |
 | Neovim language composition | `home/dot_config/nvim/lua/languages/profile.lua` |
-| Capability policy | `home/dot_local/share/lazyvim/lua/setup/capabilities/` |
-| Lifecycle implementation | `home/dot_local/share/lazyvim/lua/setup/features/` |
-| tmux plugin commits | `home/dot_local/share/lazyvim/lua/setup/features/tmux.lua` |
+| Workstation package contributions | `home/dot_local/share/workstation/packages/` |
+| Package ordering | `home/dot_local/share/workstation/lua/workstation/catalog.lua` |
+| Generic lifecycle core | `home/dot_local/share/workstation/lua/workstation/core/` |
+| tmux plugin commits | `home/dot_local/share/packages/tmux/init.lua` |
 
 Chezmoi itself is installed independently and pinned by `home/.chezmoiversion`.
 System prerequisites such as tmux and Git are not provisioned by this repository.
@@ -99,12 +103,12 @@ System prerequisites such as tmux and Git are not provisioned by this repository
 | --- | --- |
 | Host tool | Version catalog, owning external URL/checksum, `docs/tools.md` |
 | Node | `.node-version`, Node external URL/checksum |
-| pi coding agent | Version/integrity catalog and `setup/features/pi.lua` |
+| pi coding agent | Version/integrity catalog and `packages/pi/init.lua` |
 | Pi extension package | Exact version/integrity, package lifecycle verification, `docs/capabilities.md` |
 | Pi skill | `home/dot_pi/agent/skills/<name>/SKILL.md`, capability inventory, discovery verification |
 | Neovim plugin | Plugin spec and `lazy-lock.json` |
 | Mason package | Neovim/profile config and `mason-lock.json` |
-| tmux plugin | `setup/features/tmux.lua`, `docs/tmux.md` |
+| tmux plugin | `packages/tmux/init.lua`, `docs/tmux.md` |
 
 See `AGENTS.md` for implementation constraints and required checks.
 
@@ -121,7 +125,8 @@ See `AGENTS.md` for implementation constraints and required checks.
     ├── .chezmoiscripts/              primary post-apply lifecycle entry points
     ├── dot_config/nvim/              Neovim configuration and locks
     ├── dot_config/tmux/              tmux theme
-    ├── dot_local/share/lazyvim/      lifecycle runtime
+    ├── dot_local/share/workstation/  lifecycle package monorepo and tmux actor capability
+    ├── dot_pi/agent/extensions/      source-managed Pi extensions
     ├── dot_pi/agent/skills/          global Pi skills
     └── dot_tmux.conf                 tmux configuration
 ```
@@ -144,3 +149,4 @@ See `AGENTS.md` for implementation constraints and required checks.
 - `.github/workflows/ci.yml`: Linux, macOS arm64/x86_64, Windows.
 - `.github/scripts/test-apply.ps1`: scratch-home apply, lifecycle scripts, format, tests, verify.
 - `.github/workflows/release.yml`: `vMAJOR.MINOR.PATCH` source archives and SHA-256 sums.
+- `home/dot_pi/agent/extensions/tmux-subagents/`: supervised XState actors, adapters, authenticated IPC, and the separate Terminal Kit renderer; enablement remains an explicit apply/reload gate.

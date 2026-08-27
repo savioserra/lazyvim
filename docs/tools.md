@@ -3,7 +3,7 @@
 | Property | Value |
 | --- | --- |
 | Download declarations | `home/.chezmoiexternals/*.toml.tmpl` |
-| Shared versions | `home/dot_local/share/lazyvim/versions.json` |
+| Shared versions | `home/dot_local/share/workstation/versions.json` |
 | Node version | `home/dot_node-version` |
 | Update unit | Version, URL, SHA-256 checksum, verification, this table |
 
@@ -25,12 +25,16 @@
 | pi-subagents | 0.56.0 | npm: `pi-subagents` (`nicobailon/pi-subagents`) | `.pi/agent/npm/node_modules/pi-subagents` | all 5 |
 | JetBrainsMono Nerd Font | 3.5.0 | github.com/ryanoasis/nerd-fonts | Linux: `.local/share/fonts/JetBrainsMonoNerdFont`; darwin: `Library/Fonts/JetBrainsMonoNerdFont`; Windows: `AppData/Local/Microsoft/Windows/Fonts/JetBrainsMonoNerdFont` | all 5 |
 
+## Tmux subagent renderer dependencies
+
+The source-managed extension pins `xstate@5.32.6` and `terminal-kit@3.1.4` with exact registry integrities in both `home/dot_local/share/workstation/versions.json` and the extension `package-lock.json`. The owning workstation package installs production dependencies with `npm ci --omit=dev --ignore-scripts --no-audit --no-fund`; no native module or target-host compiler is permitted. The feature gate remains disabled until tests, review, apply, and `/reload` are completed as separate steps.
+
 ## Not managed here
 
 | Tool | Why | Where it's handled |
 | --- | --- | --- |
 | chezmoi itself | Can't provision itself (bootstrapping) | Manual, README.md Install section |
-| tmux, TPM-installed plugins | tmux/TPM aren't host-tool binaries in the same sense | `home/dot_local/share/lazyvim/lua/setup/features/tmux.lua`, `home/dot_tmux.conf` |
+| tmux, TPM-installed plugins | tmux/TPM aren't host-tool binaries in the same sense | `home/dot_local/share/packages/tmux/init.lua`, `home/dot_tmux.conf` |
 | Tailscale | Needs a root-level system daemon (`tailscaled` via systemd/launchd/Windows service), not a `.local/bin` binary | Not automated; install manually via the OS package manager if needed |
 | 1Password desktop app and account session | User application and interactive authentication are outside source state | Install the official app, enable CLI integration, and sign in interactively |
 | Mason-installed LSP servers/formatters/linters | Neovim-internal package manager, not a host binary | `zapling/mason-lock.nvim`, `home/dot_config/nvim/mason-lock.json` — see nvim.md |

@@ -79,11 +79,15 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Install LuaJIT syntax checker
         run: sudo apt-get update && sudo apt-get install -y luajit
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: home/dot_node-version
       - name: Validate scripts and JSON lockfiles
         run: |
           set -euo pipefail
           sh -n home/.chezmoiscripts/run_after_20-unix-apply.sh.tmpl
-          shellcheck -s sh home/.chezmoiscripts/run_after_20-unix-apply.sh.tmpl
+          sh -n home/dot_local/bin/executable_workstation-tmux-subagents
+          shellcheck -s sh home/.chezmoiscripts/run_after_20-unix-apply.sh.tmpl home/dot_local/bin/executable_workstation-tmux-subagents
           pwsh -NoProfile -Command '$errors = $null; [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path ".github/scripts/test-apply.ps1"), [ref]$null, [ref]$errors) > $null; if ($errors.Count) { $errors | ForEach-Object { Write-Error $_ }; exit 1 }'
           while IFS= read -r -d '' file; do LUA_AUDIT_FILE="$file" luajit -e 'assert(loadfile(os.getenv("LUA_AUDIT_FILE")))'; done < <(find home tests -name '*.lua' -print0)
           version="$(cat home/.chezmoiversion)"
@@ -92,5 +96,8 @@ jobs:
           python3 -m json.tool home/dot_config/nvim/lazy-lock.json > /dev/null
           python3 -m json.tool home/dot_config/nvim/mason-lock.json > /dev/null
           python3 -m json.tool home/dot_config/nvim/lazyvim.json > /dev/null
-          python3 -m json.tool home/dot_local/share/lazyvim/versions.json > /dev/null
+          python3 -m json.tool home/dot_local/share/workstation/versions.json > /dev/null
+          python3 -m json.tool home/dot_pi/agent/extensions/tmux-subagents/config.json > /dev/null
           python3 -m json.tool .luarc.json > /dev/null
+          npm ci --omit=dev --ignore-scripts --no-audit --no-fund --prefix home/dot_pi/agent/extensions/tmux-subagents
+          find tests/tmux-subagents -name '*.test.ts' -print0 | xargs -0 node --test

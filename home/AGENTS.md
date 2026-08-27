@@ -19,13 +19,14 @@ Scope: `home/**`.
 | --- | --- |
 | `.chezmoiexternals/` | Download inventory |
 | `.chezmoiscripts/` | Public post-apply lifecycle entry points |
-| `dot_local/share/lazyvim/` | Lifecycle runtime and features |
+| `dot_local/share/workstation/` | Package-based workstation lifecycle application |
 | `dot_pi/agent/skills/` | Global Pi skills |
+| `dot_pi/agent/extensions/` | Source-managed Pi extensions; executable ownership, reload cleanup, discovery |
 | `dot_config/nvim/` | Managed Neovim application configuration |
 | `dot_config/tmux/`, `dot_tmux.conf` | Managed tmux configuration |
 | `.chezmoiignore` | Target/platform exclusions |
 | `.chezmoiremove` | Explicit stale-target removal |
 
-Chezmoi scripts locate pinned Neovim and invoke `run.lua setup` followed by
-`run.lua sync`. Keep all lifecycle implementation in Lua; do not add external
-apply/sync wrappers.
+Chezmoi scripts locate pinned Neovim and invoke the workstation CLI's `run.lua setup`
+followed by `run.lua sync`. Keep lifecycle implementation in the deployed workstation
+packages; do not add external apply/sync wrappers.
