@@ -40,7 +40,7 @@ func (s *Service) acceptWebSocketLoop() {
 		if err != nil {
 			return
 		}
-		stream := websocket.NetConn(r.Context(), conn, websocket.MessageBinary)
+		stream := websocket.NetConn(context.Background(), conn, websocket.MessageBinary)
 		s.acceptStreamConnection(stream)
 	})
 	server.Handler = handler
