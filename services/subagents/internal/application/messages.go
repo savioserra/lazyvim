@@ -356,6 +356,69 @@ type AgentRoute struct {
 	Reason       string
 }
 
+type PublicNode struct {
+	Identity string
+	Host     string
+	Port     int
+	Stale    bool
+}
+type PublicAgentPlacement struct{ NodeIdentity string }
+type CreatePublicAgent struct {
+	SessionID, GenerationID, Caller string
+	Credential                      []byte
+	AgentID, Role, DisplayName      string
+	Placement                       PublicAgentPlacement
+	Private                         bool
+}
+type PublicAgentRecord struct {
+	AgentID, ActorName, HomeNode, Host, Role, DisplayName string
+	Port                                                  int
+	Revision                                              uint64
+	Private                                               bool
+}
+type PublicAgentCreateResult struct {
+	Created bool
+	Record  PublicAgentRecord
+	PID     *actor.PID
+	Reason  string
+}
+type LookupPublicAgent struct {
+	SessionID, GenerationID, Caller string
+	Credential                      []byte
+	AgentID                         string
+}
+type PublicAgentLookupResult struct {
+	Found  bool
+	Record PublicAgentRecord
+	Reason string
+}
+type RoutePublicAgent struct {
+	SessionID, GenerationID, Caller string
+	Credential                      []byte
+	AgentID                         string
+	Capabilities                    []string
+}
+type PublicAgentRouteResult struct {
+	Allowed bool
+	PID     *actor.PID
+	Record  PublicAgentRecord
+	Reason  string
+}
+type PublicAgentTell struct {
+	DedupeID string
+	Payload  []byte
+}
+type PublicAgentAsk struct {
+	DedupeID string
+	Payload  []byte
+}
+type PublicAgentReply struct {
+	Accepted, Completed bool
+	AgentID             string
+	Payload             []byte
+	Reason              string
+}
+
 type AgentProjectionEvent struct {
 	AgentID         string
 	Revision        uint64

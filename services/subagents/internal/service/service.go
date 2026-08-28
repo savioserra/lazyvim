@@ -82,6 +82,7 @@ type Service struct {
 	hostedSupervisor   *actor.PID
 	workflowRegistry   *actor.PID
 	taskCoordinator    *actor.PID
+	publicDirectory    *actor.PID
 	bridgeWatcher      *actor.PID
 	listener           net.Listener
 
@@ -202,6 +203,18 @@ func StartConfigured(ctx context.Context, socketPath string, hosted HostedAdminC
 
 type registryTestDelay time.Duration
 
+func publicNodeMap(runtime *remoting.Runtime) map[string]application.PublicNode {
+	result := make(map[string]application.PublicNode, len(runtime.PublicNodes))
+	for identity, node := range runtime.PublicNodes {
+		host := node.Host
+		if len(node.Addresses) > 0 {
+			host = node.Addresses[0].String()
+		}
+		result[identity] = application.PublicNode{Identity: identity, Host: host, Port: runtime.Remote.BindPort()}
+	}
+	return result
+}
+
 func startWithListener(ctx context.Context, listener net.Listener, options ...any) (*Service, error) {
 	var hosted HostedAdminConfig
 	var socketPath string
@@ -231,7 +244,7 @@ func startWithListener(ctx context.Context, listener net.Listener, options ...an
 			return nil, errors.New("generate cluster guardian incarnation")
 		}
 		guardianName = fmt.Sprintf("service-guardian-%x-%x", digest[:6], incarnation[:])
-		actorPlane.Cluster.WithKinds(&actors.ServiceGuardian{})
+		actorPlane.Cluster.WithKinds(&actors.ServiceGuardian{}, &actors.PublicAgentActor{})
 		actorOptions = append(actorOptions, actor.WithRemote(actorPlane.Remote), actor.WithCluster(actorPlane.Cluster), actor.WithoutRelocation())
 	}
 	system, err := actor.NewActorSystem("workstation-subagents", actorOptions...)
@@ -275,6 +288,14 @@ func startWithListener(ctx context.Context, listener net.Listener, options ...an
 	if err != nil {
 		return fail(err)
 	}
+	var publicDirectory *actor.PID
+	if actorPlane != nil {
+		publicNodes := publicNodeMap(actorPlane)
+		publicDirectory, err = guardian.SpawnChild(ctx, "public-agent-directory", actors.NewPublicAgentDirectoryActor(actorPlane.NodeIdentity, publicNodes), actor.WithMailbox(actor.NewNonBlockingBoundedMailbox(512)), actor.WithPassivationStrategy(passivation.NewLongLivedStrategy()))
+		if err != nil {
+			return fail(err)
+		}
+	}
 	persistenceSupervisor, err := guardian.SpawnChild(ctx, "persistence-supervisor", &actors.PersistenceSupervisor{}, actor.WithMailbox(actor.NewNonBlockingBoundedMailbox(256)), actor.WithPassivationStrategy(passivation.NewLongLivedStrategy()))
 	if err != nil {
 		return fail(err)
@@ -292,7 +313,7 @@ func startWithListener(ctx context.Context, listener net.Listener, options ...an
 		}
 	}
 	service := &Service{
-		system: system, guardian: guardian, sessionRegistry: sessions, agentRegistry: agents, sessionCoordinator: coordinator, hostedSupervisor: hostedSupervisor, workflowRegistry: workflowRegistry, taskCoordinator: taskCoordinator, persistenceSupervisor: persistenceSupervisor, listener: listener,
+		system: system, guardian: guardian, sessionRegistry: sessions, agentRegistry: agents, sessionCoordinator: coordinator, hostedSupervisor: hostedSupervisor, workflowRegistry: workflowRegistry, taskCoordinator: taskCoordinator, publicDirectory: publicDirectory, persistenceSupervisor: persistenceSupervisor, listener: listener,
 		connectionSlots: make(chan struct{}, maxConnections), activeConnections: make(map[net.Conn]struct{}), requestResults: make(map[string]requestRecord), hostedRuntimes: make(map[string]*actor.PID), hostedRegistrations: make(map[string]hostedRegistration), hostedTerminal: make(map[string]application.HostedPiRuntimeBinding), hostedStartupFailure: make(map[string]string), hostedCleanup: make(map[string]hostedRegistration), hostedProjects: make(map[string]string), registrationPlaceholders: make(map[string]*registrationPlaceholder), registrationCleanups: make(map[string]*registrationCleanup), hostedAdmin: hosted, socketPath: socketPath, hostedOperationCancels: make(map[uint64]context.CancelFunc), hostedAgentLocks: make(map[string]*sync.Mutex), registrationTimeout: requestTimeout, durableStore: durableStore, persistencePID: persistencePID, hostedIndeterminate: make(map[string]application.HostedPiRuntimeBinding), taskLifecycles: make(map[string]*taskLifecycle), clientSessions: make(map[string]*actor.PID), pushSessions: make(map[*bridgePushSession]*actor.PID),
 	}
 	bridgeWatcher, err := guardian.SpawnChild(ctx, "bridge-session-watcher", &bridgeSessionWatcher{service: service}, actor.WithMailbox(actor.NewNonBlockingBoundedMailbox(256)), actor.WithPassivationStrategy(passivation.NewLongLivedStrategy()))

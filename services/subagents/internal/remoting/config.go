@@ -2,6 +2,7 @@ package remoting
 
 import (
 	"errors"
+	"net/netip"
 	"time"
 
 	"github.com/savioserra/lazyvim/services/subagents/internal/config"
@@ -15,6 +16,7 @@ type Runtime struct {
 	NodeIdentity string
 	Remote       *remote.Config
 	Cluster      *actor.ClusterConfig
+	PublicNodes  map[string]config.ResolvedPeer
 }
 
 // NewValidatedConfig constructs a Tailscale-bound, mutually authenticated
@@ -39,7 +41,9 @@ func NewValidatedConfig(cfg config.RemotingConfig, resolver config.Resolver, loc
 	if err != nil {
 		return nil, resolved, err
 	}
-	remoteConfig := remote.NewConfig(resolved.BindAddress.String(), resolved.Port, remote.WithTLS(tlsInfo))
+	remoteOptions := []remote.Option{remote.WithTLS(tlsInfo)}
+	remoteOptions = append(remoteOptions, PublicAgentSerializers()...)
+	remoteConfig := remote.NewConfig(resolved.BindAddress.String(), resolved.Port, remoteOptions...)
 	if err := remoteConfig.Validate(); err != nil {
 		_ = provider.Close()
 		return nil, resolved, err
@@ -57,5 +61,10 @@ func NewValidatedConfig(cfg config.RemotingConfig, resolver config.Resolver, loc
 		WithWriteTimeout(5 * time.Second).
 		WithReadTimeout(5 * time.Second).
 		WithBootstrapTimeout(30 * time.Second)
-	return &Runtime{NodeIdentity: resolved.NodeIdentity, Remote: remoteConfig, Cluster: clusterConfig}, resolved, nil
+	nodes := make(map[string]config.ResolvedPeer, len(resolved.Peers)+1)
+	nodes[resolved.NodeIdentity] = config.ResolvedPeer{NodeIdentity: resolved.NodeIdentity, Host: resolved.BindAddress.String(), Addresses: []netip.Addr{resolved.BindAddress}, MTLSIdentity: resolved.MTLSIdentity}
+	for _, peer := range resolved.Peers {
+		nodes[peer.NodeIdentity] = peer
+	}
+	return &Runtime{NodeIdentity: resolved.NodeIdentity, Remote: remoteConfig, Cluster: clusterConfig, PublicNodes: nodes}, resolved, nil
 }
