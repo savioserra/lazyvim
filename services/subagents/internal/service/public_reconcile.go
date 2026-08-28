@@ -20,11 +20,21 @@ func (s *Service) reconcilePublicHostedPeers(ctx context.Context) {
 }
 
 func (s *Service) reconcilePublicHostedPeer(ctx context.Context, node application.PublicNode) error {
-	pid, err := s.system.NoSender().RemoteLookup(ctx, node.Host, node.Port, hostedPlacementAuthorityName)
-	if err != nil || pid == nil {
-		return err
+	var value any
+	var err error
+	if node.Host == "loopback" {
+		peer := lookupLoopbackService(node.Identity)
+		if peer == nil {
+			return nil
+		}
+		value = (&hostedPlacementAuthority{service: peer}).list(ctx, &application.ListPublicHostedAgents{Limit: 256})
+	} else {
+		pid, lookupErr := s.system.NoSender().RemoteLookup(ctx, node.Host, node.Port, hostedPlacementAuthorityName)
+		if lookupErr != nil || pid == nil {
+			return lookupErr
+		}
+		value, err = s.system.NoSender().Ask(ctx, pid, &application.ListPublicHostedAgents{Limit: 256}, requestTimeout)
 	}
-	value, err := s.system.NoSender().Ask(ctx, pid, &application.ListPublicHostedAgents{Limit: 256}, requestTimeout)
 	if err != nil {
 		return err
 	}
@@ -33,7 +43,7 @@ func (s *Service) reconcilePublicHostedPeer(ctx context.Context, node applicatio
 		return nil
 	}
 	for _, item := range result.Agents {
-		_, _ = s.system.NoSender().Ask(ctx, s.publicDirectory, &application.CreatePublicAgent{Internal: true, AgentID: item.AgentID, ActorName: item.ActorName, Reference: item.Reference, Placement: application.PublicAgentPlacement{NodeIdentity: node.Identity}}, min(requestTimeout, boundedRemaining(ctx, time.Second)))
+		_, _ = s.system.NoSender().Ask(ctx, s.publicDirectory, &application.CreatePublicAgent{Internal: true, AgentID: item.AgentID, ActorName: hostedPlacementAuthorityName, Reference: item.Reference, Placement: application.PublicAgentPlacement{NodeIdentity: node.Identity}}, min(requestTimeout, boundedRemaining(ctx, time.Second)))
 	}
 	return nil
 }

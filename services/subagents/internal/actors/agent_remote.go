@@ -32,7 +32,7 @@ func (a *AgentActor) remoteAttach(ctx *actor.ReceiveContext, message *applicatio
 	a.attachments[key] = attachment{principal: local.Principal, handle: local.IssuedHandle, fence: a.fence, capabilities: capabilities}
 	a.revision++
 	result := application.AttachResult{Completed: true, Handle: local.IssuedHandle, Fence: a.fence}
-	if a.beginDurablePersist(ctx, &pendingDurableReceipt{old: old, attach: &result}) {
+	if a.beginDurablePersist(ctx, &pendingDurableReceipt{sender: ctx.Sender(), old: old, attach: &result}) {
 		return
 	}
 	respondAttach(ctx, nil, &result)

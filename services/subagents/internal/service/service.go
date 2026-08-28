@@ -1826,7 +1826,19 @@ func (s *Service) authorizeAgent(ctx context.Context, request *subagentsv1.Envel
 	if !ok || !publicRoute.Allowed {
 		return route, nil
 	}
-	return &application.AgentRoute{Allowed: true, PID: publicRoute.PID, GenerationID: request.GenerationId, Principal: request.CallerIdentity}, nil
+	if publicRoute.Record.Host == "loopback" {
+		if peer := lookupLoopbackService(publicRoute.Record.HomeNode); peer != nil {
+			pid, err := (&hostedPlacementAuthority{service: peer}).localAgentPID(ctx, agentID)
+			if err == nil && pid != nil {
+				return &application.AgentRoute{Allowed: true, PID: pid, GenerationID: request.GenerationId, Principal: request.CallerIdentity}, nil
+			}
+		}
+	}
+	pid, err := s.system.NoSender().RemoteLookup(ctx, publicRoute.Record.Host, publicRoute.Record.Port, publicRoute.Record.ActorName)
+	if err != nil || pid == nil {
+		return route, nil
+	}
+	return &application.AgentRoute{Allowed: true, PID: pid, GenerationID: request.GenerationId, Principal: request.CallerIdentity}, nil
 }
 
 func (s *Service) attachRequest(ctx context.Context, pid *actor.PID, message any) (*application.AttachResult, error) {

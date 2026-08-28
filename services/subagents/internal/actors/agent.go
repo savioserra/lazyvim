@@ -836,7 +836,9 @@ func (a *AgentActor) completeDurableReceipt(ctx *actor.ReceiveContext, pending *
 		}
 		deliverOperationResult(pending.operation, result)
 	} else if pending.sender != nil {
-		if pending.intent != nil {
+		if pending.attach != nil {
+			_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), pending.sender, pending.attach)
+		} else if pending.intent != nil {
 			_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), pending.sender, pending.intent)
 		} else if pending.ack != nil {
 			_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), pending.sender, pending.ack)

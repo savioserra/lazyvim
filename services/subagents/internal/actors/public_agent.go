@@ -124,12 +124,7 @@ func (d *PublicAgentDirectoryActor) route(ctx *actor.ReceiveContext, message *ap
 		ctx.Response(&application.PublicAgentRouteResult{Reason: "home node unavailable"})
 		return
 	}
-	pid := ctx.RemoteLookup(record.Host, record.Port, record.ActorName)
-	if pid == nil {
-		ctx.Response(&application.PublicAgentRouteResult{Reason: "agent unavailable"})
-		return
-	}
-	ctx.Response(&application.PublicAgentRouteResult{Allowed: true, PID: pid, Record: record})
+	ctx.Response(&application.PublicAgentRouteResult{Allowed: true, Record: record})
 }
 
 func (d *PublicAgentDirectoryActor) authorizedAll(sessionID, generationID, caller string, credential []byte, capabilities []string) bool {

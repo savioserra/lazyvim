@@ -37,6 +37,10 @@ func (a *hostedPlacementAuthority) Receive(ctx *actor.ReceiveContext) {
 		ctx.Response(a.place(ctx.Context(), message))
 	case *application.ListPublicHostedAgents:
 		ctx.Response(a.list(ctx.Context(), message))
+	case *application.RemoteAttachAgent:
+		ctx.Response(a.remoteAttach(ctx.Context(), message))
+	case *application.RemoteBridgeIntent:
+		ctx.Response(a.remoteBridgeIntent(ctx.Context(), message))
 	default:
 		ctx.Unhandled()
 	}
@@ -68,6 +72,9 @@ func (a *hostedPlacementAuthority) placeOnce(ctx context.Context, message *appli
 	command := &subagentsv1.HostedAdminRequest{Operation: subagentsv1.HostedAdminRequest_OPERATION_START, AgentId: message.AgentID, ProjectDirectory: message.ProjectDirectory, TrustProject: message.TrustProject, DisplayName: message.DisplayName, Role: message.Role}
 	binding, err := a.service.startHostedAgent(ctx, command)
 	if err != nil && !errors.Is(err, application.ErrHostedOwnershipIndeterminate) {
+		if existing := a.resolveExisting(ctx, message.AgentID, binding); existing.Accepted {
+			return existing
+		}
 		return &application.RemoteHostedPlacementResult{AgentID: message.AgentID, Reason: err.Error()}
 	}
 	value, err := a.service.system.NoSender().Ask(ctx, a.service.agentRegistry, &application.ResolveAgentControl{AgentID: message.AgentID}, min(requestTimeout, boundedRemaining(ctx, time.Second)))

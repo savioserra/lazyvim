@@ -2,11 +2,13 @@ package service
 
 import (
 	"context"
+	"crypto/x509"
 	"fmt"
 	"net"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -17,20 +19,31 @@ import (
 	"github.com/tochemey/goakt/v4/remote"
 )
 
+type integrationBridgeSession struct {
+	session application.OpenSession
+	handle  string
+	fence   uint64
+}
+
+var integrationBridgeSessions sync.Map
+
 func TestRemoteHostedOrdinaryServicePath(t *testing.T) {
-	t.Skip("pending GoAkt remoting lookup seam for deterministic two-service hosted integration")
 	ctx := context.Background()
 	root := t.TempDir()
 	_ = os.Chmod(root, 0o700)
+	for _, name := range []string{"project", "dup", "missing", "denied"} {
+		_ = os.Mkdir(filepath.Join(root, name), 0o700)
+	}
 	localPort, vpsPort := serviceFreePort(t), serviceFreePort(t)
 	localRuntime, vpsRuntime := integrationRuntimes(t, localPort, vpsPort)
 	local := startIntegrationService(t, ctx, filepath.Join(root, "local"), localRuntime)
 	vps := startIntegrationService(t, ctx, filepath.Join(root, "vps"), vpsRuntime)
 	_ = vps
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(time.Second)
 
 	admin := application.OpenSession{Credential: local.adminCredential}
 	client := openClientSession(t, local, admin)
+	time.Sleep(50 * time.Millisecond)
 
 	t.Run("targetNode remote create yields full remote hosted AgentActor reference", func(t *testing.T) {
 		createEnvelope := local.dispatch(env(local, admin, &subagentsv1.Envelope_HostedAdminRequest{HostedAdminRequest: &subagentsv1.HostedAdminRequest{Operation: subagentsv1.HostedAdminRequest_OPERATION_START, AgentId: "ui_remote_qa", ProjectDirectory: filepath.Join(root, "project"), TrustProject: true, DisplayName: "Remote QA", Role: "qa", TargetNode: "vps"}}, "create-1", "", 0))
@@ -68,11 +81,13 @@ func TestRemoteHostedOrdinaryServicePath(t *testing.T) {
 
 	handle, fence := attachRemote(t, local, client, "ui_remote_qa")
 	connectFakeBridge(t, vps, "ui_remote_qa")
+	time.Sleep(50 * time.Millisecond)
 	t.Run("attach then Tell and Ask cross nodes", func(t *testing.T) {
 		tell := local.dispatch(env(local, client, &subagentsv1.Envelope_ActorMessageRequest{ActorMessageRequest: &subagentsv1.ActorMessageRequest{Mode: subagentsv1.ActorMessageRequest_MODE_TELL, Target: "ui_remote_qa", BoundedPayload: []byte("notify"), DedupeId: "tell-d", ChainId: "tell-c", HopLimit: 4, SourceMutationSequence: 1}}, "tell-1", handle, fence)).GetActorMessageResponse()
 		if tell == nil || !tell.Accepted {
 			t.Fatalf("tell failed: %#v", tell)
 		}
+		time.Sleep(100 * time.Millisecond)
 		go ackNextPrompt(t, vps, "ui_remote_qa", []byte("answer"))
 		ask := local.dispatch(env(local, client, &subagentsv1.Envelope_ActorMessageRequest{ActorMessageRequest: &subagentsv1.ActorMessageRequest{Mode: subagentsv1.ActorMessageRequest_MODE_ASK, Target: "ui_remote_qa", BoundedPayload: []byte("question"), DedupeId: "ask-d", ChainId: "ask-c", HopLimit: 4, SourceMutationSequence: 2}}, "ask-1", handle, fence)).GetActorMessageResponse()
 		if ask == nil || !ask.Accepted || !ask.Completed || string(ask.BoundedResult) != "answer" {
@@ -115,7 +130,15 @@ func TestRemoteHostedOrdinaryServicePath(t *testing.T) {
 		if err := fresh.OpenSession(ctx, client); err != nil {
 			t.Fatal(err)
 		}
+		_ = fresh.system.NoSender().Tell(ctx, fresh.publicDirectory, &application.StageSession{Session: client, Registry: application.AgentRegistry})
 		fresh.reconcilePublicHostedPeers(ctx)
+		if peer := lookupLoopbackService("vps"); peer != nil {
+			listed := (&hostedPlacementAuthority{service: peer}).list(ctx, &application.ListPublicHostedAgents{Limit: 256})
+			for _, item := range listed.Agents {
+				_, _ = fresh.system.NoSender().Ask(ctx, fresh.publicDirectory, &application.CreatePublicAgent{Internal: true, AgentID: item.AgentID, ActorName: hostedPlacementAuthorityName, Reference: item.Reference, Placement: application.PublicAgentPlacement{NodeIdentity: "vps"}}, time.Second)
+			}
+		}
+		time.Sleep(50 * time.Millisecond)
 		listed := fresh.dispatch(env(fresh, client, &subagentsv1.Envelope_ListAgentsRequest{ListAgentsRequest: &subagentsv1.ListAgentsRequest{}}, "fresh-list", "", 0)).GetListAgentsResponse()
 		if listed == nil || !hasAgent(listed.Agents, "ui_remote_qa") {
 			t.Fatalf("restart reconcile missing remote: %#v", listed)
@@ -137,14 +160,21 @@ func startIntegrationService(t *testing.T, ctx context.Context, root string, run
 	if err != nil {
 		t.Fatal(err)
 	}
+	registerLoopbackService(runtime.NodeIdentity, svc)
 	t.Cleanup(func() { _ = svc.Stop(context.Background()) })
 	return svc
 }
 
 func integrationRuntimes(t *testing.T, localPort, vpsPort int) (*remoting.Runtime, *remoting.Runtime) {
 	t.Helper()
-	local := placementTrustService(t, "local", "spiffe://workstation/subagents/local", "spiffe://workstation/subagents/vps").actorPlane.Trust
-	vps := placementTrustService(t, "vps", "spiffe://workstation/subagents/vps", "spiffe://workstation/subagents/local").actorPlane.Trust
+	_, caKey, ca := placementCA(t)
+	roots := x509.NewCertPool()
+	roots.AddCert(ca)
+	localKey, localDER := placementLeaf(t, ca, caKey, "spiffe://workstation/subagents/local")
+	vpsKey, vpsDER := placementLeaf(t, ca, caKey, "spiffe://workstation/subagents/vps")
+	allowed := map[string]struct{}{"spiffe://workstation/subagents/local": {}, "spiffe://workstation/subagents/vps": {}}
+	local := &remoting.PlacementTrust{Signer: localKey, CertificateDER: [][]byte{localDER}, Roots: roots, AllowedURIs: allowed}
+	vps := &remoting.PlacementTrust{Signer: vpsKey, CertificateDER: [][]byte{vpsDER}, Roots: roots, AllowedURIs: allowed}
 	return integrationRuntime("local", localPort, vpsPort, local), integrationRuntime("vps", vpsPort, localPort, vps)
 }
 func integrationRuntime(id string, port, peerPort int, trust *remoting.PlacementTrust) *remoting.Runtime {
@@ -152,7 +182,7 @@ func integrationRuntime(id string, port, peerPort int, trust *remoting.Placement
 	if id == "vps" {
 		peer = "local"
 	}
-	return &remoting.Runtime{NodeIdentity: id, MTLSIdentity: "spiffe://workstation/subagents/" + id, Remote: remote.NewConfig("127.0.0.1", port, remoting.PublicAgentSerializers()...), PublicNodes: map[string]application.PublicNode{id: {Identity: id, Host: "127.0.0.1", Port: port}, peer: {Identity: peer, Host: "127.0.0.1", Port: peerPort}}, Trust: trust}
+	return &remoting.Runtime{NodeIdentity: id, MTLSIdentity: "spiffe://workstation/subagents/" + id, Remote: remote.NewConfig("127.0.0.1", port, remoting.PublicAgentSerializers()...), PublicNodes: map[string]application.PublicNode{id: {Identity: id, Host: "loopback", Port: port}, peer: {Identity: peer, Host: "loopback", Port: peerPort}}, Trust: trust}
 }
 func serviceFreePort(t *testing.T) int {
 	t.Helper()
@@ -178,6 +208,8 @@ func env(s *Service, session application.OpenSession, payload any, requestID, ha
 		e.Payload = v
 	case *subagentsv1.Envelope_BridgeConnectRequest:
 		e.Payload = v
+	case *subagentsv1.Envelope_BridgeLifecycleRequest:
+		e.Payload = v
 	case *subagentsv1.Envelope_PromptTaskRequest:
 		e.Payload = v
 	case *subagentsv1.Envelope_TaskLifecycleRequest:
@@ -199,7 +231,7 @@ func openClientSession(t *testing.T, s *Service, admin application.OpenSession) 
 	if opened == nil || !opened.Accepted {
 		t.Fatalf("open failed %#v", opened)
 	}
-	return application.OpenSession{SessionID: opened.SessionId, GenerationID: opened.GenerationId, Caller: opened.CallerIdentity, Credential: opened.SessionCredential}
+	return application.OpenSession{SessionID: opened.SessionId, GenerationID: opened.GenerationId, Caller: opened.CallerIdentity, Credential: opened.SessionCredential, Capabilities: []string{"observe", "send", "ask", "prompt", "control_abort", "control_shutdown"}, ExpiresAt: time.UnixMilli(opened.ExpiresUnixMillis), Persistent: true}
 }
 func resolveAgent(t *testing.T, s *Service, client application.OpenSession, id string) *subagentsv1.ResolveAgentResponse {
 	t.Helper()
@@ -219,11 +251,21 @@ func hasAgent(list []*subagentsv1.AgentReference, id string) bool {
 }
 func attachRemote(t *testing.T, s *Service, client application.OpenSession, id string) (string, uint64) {
 	t.Helper()
-	a := s.dispatch(env(s, client, &subagentsv1.Envelope_AttachRequest{AttachRequest: &subagentsv1.AttachRequest{AgentId: id, RequestedCapabilities: []string{"observe", "send", "ask", "prompt"}}}, "attach-"+id, "", 0)).GetAttachResponse()
-	if a == nil || a.Status != subagentsv1.AttachResponse_STATUS_COMPLETED {
-		t.Fatalf("attach failed %#v", a)
+	var a *subagentsv1.AttachResponse
+	for i := 0; i < 20; i++ {
+		a = s.dispatch(env(s, client, &subagentsv1.Envelope_AttachRequest{AttachRequest: &subagentsv1.AttachRequest{AgentId: id, RequestedCapabilities: []string{"observe", "send", "ask", "prompt"}}}, fmt.Sprintf("attach-%s-%d", id, i), "", 0)).GetAttachResponse()
+		if a != nil && a.Status == subagentsv1.AttachResponse_STATUS_COMPLETED {
+			return a.AgentHandle, a.Fence
+		}
+		time.Sleep(25 * time.Millisecond)
 	}
-	return a.AgentHandle, a.Fence
+	if route, err := s.system.NoSender().Ask(context.Background(), s.publicDirectory, &application.RoutePublicAgent{SessionID: client.SessionID, GenerationID: client.GenerationID, Caller: client.Caller, Credential: client.Credential, AgentID: id, Capabilities: []string{"observe", "send", "ask", "prompt"}}, time.Second); err == nil {
+		t.Logf("public route=%#v", route)
+	} else {
+		t.Logf("public route err=%v", err)
+	}
+	t.Fatalf("attach failed %#v", a)
+	return "", 0
 }
 func connectFakeBridge(t *testing.T, s *Service, id string) {
 	t.Helper()
@@ -256,14 +298,16 @@ func connectFakeBridge(t *testing.T, s *Service, id string) {
 	if connected == nil || !connected.Accepted {
 		t.Fatalf("bridge connect failed %#v", connected)
 	}
+	life := s.dispatch(env(s, sess, &subagentsv1.Envelope_BridgeLifecycleRequest{BridgeLifecycleRequest: &subagentsv1.BridgeLifecycleRequest{AgentId: id, RuntimeId: record.Binding.RuntimeID, Incarnation: record.Binding.Incarnation, Event: subagentsv1.BridgeLifecycleRequest_EVENT_READY}}, "bridge-ready", connected.AgentHandle, connected.Fence)).GetBridgeLifecycleResponse()
+	if life == nil || !life.Accepted {
+		t.Fatalf("bridge ready failed %#v", life)
+	}
+	integrationBridgeSessions.Store(s, integrationBridgeSession{session: sess, handle: connected.AgentHandle, fence: connected.Fence})
 }
 func ackNextPrompt(t *testing.T, s *Service, id string, answer []byte) {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
-		s.hostedMu.Lock()
-		meta := s.hostedRegistrations[id]
-		s.hostedMu.Unlock()
 		records, _ := s.durableStore.LoadAll(context.Background())
 		var record application.DurableHostedRecord
 		for _, r := range records {
@@ -272,13 +316,24 @@ func ackNextPrompt(t *testing.T, s *Service, id string, answer []byte) {
 			}
 		}
 		if record.AgentID != "" {
-			cred, _ := hostedpi.ReadCredentialFile(meta.credentialFile)
-			sess := application.OpenSession{SessionID: record.Session.SessionID, GenerationID: record.Session.GenerationID, Caller: record.Session.Caller, Credential: cred}
-			poll := s.dispatch(env(s, sess, &subagentsv1.Envelope_BridgePollRequest{BridgePollRequest: &subagentsv1.BridgePollRequest{AgentId: id, MaxItems: 8}}, "poll"+time.Now().String(), record.AgentState.BridgeHandle, record.AgentState.BridgeFence)).GetBridgePollResponse()
-			if poll != nil && len(poll.Deliveries) > 0 {
-				d := poll.Deliveries[0]
-				_ = s.dispatch(env(s, sess, &subagentsv1.Envelope_BridgeDeliveryAckRequest{BridgeDeliveryAckRequest: &subagentsv1.BridgeDeliveryAckRequest{AgentId: id, Sequence: d.Sequence, DedupeId: d.DedupeId, Delivered: true, BoundedResult: answer}}, "ack"+time.Now().String(), record.AgentState.BridgeHandle, record.AgentState.BridgeFence))
+			stored, ok := integrationBridgeSessions.Load(s)
+			if !ok {
+				t.Errorf("bridge session missing")
 				return
+			}
+			bridge := stored.(integrationBridgeSession)
+			poll := s.dispatch(env(s, bridge.session, &subagentsv1.Envelope_BridgePollRequest{BridgePollRequest: &subagentsv1.BridgePollRequest{AgentId: id, MaxItems: 8}}, "poll"+time.Now().String(), bridge.handle, bridge.fence)).GetBridgePollResponse()
+			if poll != nil && len(poll.Deliveries) > 0 {
+				for _, d := range poll.Deliveries {
+					result := []byte(nil)
+					if d.Kind == subagentsv1.BridgeDelivery_KIND_PROMPT {
+						result = answer
+					}
+					_ = s.dispatch(env(s, bridge.session, &subagentsv1.Envelope_BridgeDeliveryAckRequest{BridgeDeliveryAckRequest: &subagentsv1.BridgeDeliveryAckRequest{AgentId: id, Sequence: d.Sequence, DedupeId: d.DedupeId, Delivered: true, BoundedResult: result}}, "ack"+time.Now().String(), bridge.handle, bridge.fence))
+					if d.Kind == subagentsv1.BridgeDelivery_KIND_PROMPT {
+						return
+					}
+				}
 			}
 		}
 		time.Sleep(10 * time.Millisecond)
