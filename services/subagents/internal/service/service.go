@@ -225,7 +225,11 @@ func startWithListener(ctx context.Context, listener net.Listener, options ...an
 			return nil, errors.New("remoting runtime is incomplete")
 		}
 		digest := sha256.Sum256([]byte(actorPlane.NodeIdentity))
-		guardianName = fmt.Sprintf("service-guardian-%x", digest[:6])
+		var incarnation [6]byte
+		if _, err := rand.Read(incarnation[:]); err != nil {
+			return nil, errors.New("generate cluster guardian incarnation")
+		}
+		guardianName = fmt.Sprintf("service-guardian-%x-%x", digest[:6], incarnation[:])
 		actorPlane.Cluster.WithKinds(&actors.ServiceGuardian{})
 		actorOptions = append(actorOptions, actor.WithRemote(actorPlane.Remote), actor.WithCluster(actorPlane.Cluster), actor.WithoutRelocation())
 	}
@@ -1438,9 +1442,11 @@ func (s *Service) dispatch(request *subagentsv1.Envelope) *subagentsv1.Envelope 
 			}
 		}
 		if !result.Accepted {
+			reason := hostedStartupFailureClass(result.Reason)
 			s.hostedMu.Lock()
-			s.hostedStartupFailure[payload.BridgeConnectRequest.AgentId] = hostedStartupFailureClass(result.Reason)
+			s.hostedStartupFailure[payload.BridgeConnectRequest.AgentId] = reason
 			s.hostedMu.Unlock()
+			fmt.Fprintln(os.Stderr, "hosted bridge connect rejected:", reason)
 		}
 		response.Payload = &subagentsv1.Envelope_BridgeConnectResponse{BridgeConnectResponse: &subagentsv1.BridgeConnectResponse{Accepted: result.Accepted, AgentHandle: result.Handle, Fence: result.Fence, Reason: result.Reason}}
 	case *subagentsv1.Envelope_BridgeReplaceRequest:

@@ -2,9 +2,19 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { buildActorControl, buildActorMessage, buildDeliveryAck, communicationKey, communicationLine, CommunicationTimeline, completeHostedEnvironment, ExactMutationSequencer, PromptTaskCoordinator, deliveryAction, destroyOnFramingFailure, drainPages, executeTypedDelivery, invokeTypedDeliveryForAck, parseTargetMessage, registerHostedHandlers, requireExplicitModelTarget } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/handlers.ts";
 import { incomingNote, incomingRequestText, outgoingExchange, renderCommunicationCard, compactToolCall, compactToolResult, modelResultContent } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/communication-ui.ts";
-import { actorMessageModelResult } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/index.ts";
+import { actorMessageModelResult, connectBridgeWithRetry } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/index.ts";
 
 const complete = { WS_SUBAGENTS_SOCKET: "/run/user/1000/socket", WS_SUBAGENTS_CREDENTIAL_FILE: "/state/credential", WS_SUBAGENTS_SESSION_ID: "session", WS_SUBAGENTS_GENERATION_ID: "generation", WS_SUBAGENTS_CALLER: "hosted:agent", WS_SUBAGENTS_AGENT_ID: "agent", WS_SUBAGENTS_RUNTIME_ID: "runtime", WS_SUBAGENTS_INCARNATION: "1" };
+
+test("bridge startup passes the dynamically imported connect schema explicitly", async () => {
+  const schema = { typeName: "test.BridgeConnectRequest" };
+  let observed;
+  const client = { request: async (_case, passed) => { observed = passed; return { payload: { case: "bridgeConnectResponse", value: { accepted: true, agentHandle: "handle", fence: 1n } } }; } };
+  const binding = { agentId: "agent", runtimeId: "runtime", incarnation: 1n };
+  const response = await connectBridgeWithRetry(client, binding, "pi-session", 0n, schema, 1, async () => {});
+  assert.equal(observed, schema);
+  assert.equal(response.payload.value.accepted, true);
+});
 
 test("extension registration requires the complete hosted environment", () => {
   assert.equal(completeHostedEnvironment({}), false);
