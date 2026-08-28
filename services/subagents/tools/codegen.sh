@@ -42,6 +42,15 @@ mkdir -p "$tmp/output/api/subagents/v1"
   --es_out="$tmp/output" --es_opt=target=ts,import_extension=js \
   "$root/api/subagents/v1/subagents.proto"
 
+# protoc-gen-es currently emits an extra trailing blank line. Keep generated
+# artifacts compatible with the repository whitespace gate deterministically.
+python3 - "$tmp/output/api/subagents/v1/subagents_pb.ts" <<'PY'
+from pathlib import Path
+import sys
+path = Path(sys.argv[1])
+path.write_text(path.read_text().rstrip() + "\n")
+PY
+
 for generated in subagents.pb.go subagents_pb.ts; do
   expected="$root/api/subagents/v1/$generated"
   actual="$tmp/output/api/subagents/v1/$generated"

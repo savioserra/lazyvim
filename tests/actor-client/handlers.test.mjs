@@ -12,9 +12,12 @@ test("actor-client public views use display metadata and suppress raw runtime in
   for (const forbidden of ["raw-runtime","tmux","panePid","123","hosted-raw","attachTarget","sessionId","handle","fence"]) assert.doesNotMatch(encoded,new RegExp(forbidden,"i"));
 });
 
-test("actor-client pending lifecycle status uses authoritative display name", () => {
-  assert.equal(actorClientPendingStatus({ displayName: "Code Reviewer" }), "◌ Waiting for Code Reviewer…");
-  assert.doesNotMatch(actorClientPendingStatus({ displayName: "Code Reviewer" }), /actor42|agentId|raw|Waiting for actor/);
+test("actor-client pending lifecycle status requires authoritative display metadata", () => {
+  assert.equal(actorClientPendingStatus({ displayName: "Code Reviewer", authoritative: true }), "◌ Waiting for Code Reviewer…");
+  assert.doesNotMatch(actorClientPendingStatus({ displayName: "Code Reviewer", authoritative: true }), /actor42|agentId|raw|Waiting for actor|selected recipient/);
+  assert.throws(() => actorClientPendingStatus({ displayName: "selected recipient", authoritative: false }), /authoritative actor display metadata/);
+  assert.throws(() => actorClientPendingStatus({ displayName: "Code Reviewer", authoritative: false }), /authoritative actor display metadata/);
+  assert.throws(() => actorClientPendingStatus({ displayName: "actor", authoritative: true }), /authoritative actor display metadata/);
 });
 
 test("actor-client lifecycle conversation publishes one coherent final exchange across status, wait, and replay", () => {

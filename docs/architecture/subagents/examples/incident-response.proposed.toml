@@ -1,0 +1,241 @@
+# PROPOSED/not implemented workflow-template dogfood example.
+# This is documentation-only TOML for schema pressure testing; the daemon does not load it.
+schema_version = 1
+template_id = "example.incident-response"
+template_version = 1
+display_name = "Incident response with bounded remediation units"
+runnable = false
+status = "PROPOSED/not implemented"
+
+[inputs.incident_intent]
+type = "string"
+required = true
+
+[inputs.affected_project]
+type = "path"
+required = true
+
+[inputs.operator_channel]
+type = "string"
+required = true
+
+[workflow]
+owner = "WorkflowActor"
+materialization = "side_effect_free_until_authorized"
+producer_authority = "trusted_registered_domain_producers_only"
+decision_authority = "operator"
+urgency = "time_sensitive"
+
+[[producers]]
+key = "triage_producer"
+producer_kind = "trusted_registered_domain_producer"
+domain = "incident_triage"
+role_policy = "dynamic_runtime_label"
+capabilities = ["read", "ask_operator", "produce_evidence"]
+reuse_policy = "retain_or_passivate"
+
+[[producers]]
+key = "diagnostic_pool"
+producer_kind = "trusted_registered_domain_producer_pool"
+domain = "diagnostics"
+role_policy = "dynamic_runtime_label"
+capabilities = ["read", "test", "produce_evidence"]
+reuse_policy = "retain_or_passivate"
+
+[[producers]]
+key = "remediation_pool"
+producer_kind = "trusted_registered_domain_producer_pool"
+domain = "remediation"
+role_policy = "dynamic_runtime_label"
+capabilities = ["read", "write", "test", "produce_evidence"]
+reuse_policy = "retain_or_passivate"
+
+[[producers]]
+key = "recovery_validator"
+producer_kind = "trusted_registered_domain_producer"
+domain = "recovery_validation"
+role_policy = "dynamic_runtime_label"
+capabilities = ["read", "test", "produce_evidence"]
+reuse_policy = "retain_or_passivate"
+
+[[producers]]
+key = "postmortem_producer"
+producer_kind = "trusted_registered_domain_producer"
+domain = "postmortem"
+role_policy = "dynamic_runtime_label"
+capabilities = ["read", "write_artifact", "produce_evidence"]
+reuse_policy = "retain_or_passivate"
+
+[[worktrees]]
+key = "incident_readonly"
+project_directory = "${input.affected_project}"
+writer_slots = 0
+allocation = "existing_readonly"
+trust_project = false
+
+[[worktrees]]
+key = "remediation_candidate"
+project_directory = "${input.affected_project}"
+writer_slots = 1
+allocation = "dynamic_isolated_per_work_unit"
+trust_project = false
+
+[[resource_bounds]]
+key = "incident_default"
+max_parallel_units = 4
+max_runtime = "4h"
+max_delivery_hop_limit = 3
+max_outstanding_decisions = 2
+
+[[stages]]
+key = "triage"
+stage_kind = "triage"
+producers = ["triage_producer"]
+requires = []
+decision_gate = "incident_severity_operator_decision"
+outputs = ["severity_record", "initial_hypotheses"]
+resource_bounds = "incident_default"
+
+[[stages]]
+key = "containment_decision"
+stage_kind = "containment_decision"
+producers = ["triage_producer"]
+requires = ["triage"]
+decision_gate = "containment_operator_decision"
+outputs = ["containment_plan"]
+resource_bounds = "incident_default"
+
+[[stages]]
+key = "materialize_response_units"
+stage_kind = "dynamic_work_unit_materialization"
+producers = ["diagnostic_pool", "remediation_pool"]
+requires = ["containment_decision"]
+work_unit_template = "bounded_incident_unit"
+decision_gate = "response_plan_operator_decision"
+outputs = ["authorized_response_unit_plan"]
+resource_bounds = "incident_default"
+
+[[stages]]
+key = "parallel_diagnostics"
+stage_kind = "diagnostics"
+producers = ["diagnostic_pool"]
+requires = ["materialize_response_units"]
+work_unit_template = "bounded_incident_unit"
+outputs = ["diagnostic_evidence"]
+resource_bounds = "incident_default"
+
+[[stages]]
+key = "parallel_remediation"
+stage_kind = "remediation"
+producers = ["remediation_pool"]
+requires = ["parallel_diagnostics"]
+work_unit_template = "bounded_incident_unit"
+outputs = ["candidate_remediations", "compensation_records"]
+resource_bounds = "incident_default"
+
+[[stages]]
+key = "validation_and_recovery"
+stage_kind = "validation_recovery"
+producers = ["recovery_validator"]
+requires = ["parallel_remediation"]
+decision_gate = "recovery_operator_decision"
+outputs = ["recovery_evidence"]
+resource_bounds = "incident_default"
+
+[[stages]]
+key = "postmortem"
+stage_kind = "postmortem"
+producers = ["postmortem_producer"]
+requires = ["validation_and_recovery"]
+outputs = ["postmortem_artifact", "followup_actions"]
+resource_bounds = "incident_default"
+
+[[work_unit_templates]]
+key = "bounded_incident_unit"
+proposed_by = "diagnostic_pool"
+materialized_by = "WorkflowActor"
+authorization = "requires_operator_decision"
+parallelism = "allowed_when_resource_bounds_and_worktree_writer_slots_hold"
+worktree = "remediation_candidate"
+writer_slots_required = 1
+max_open_units = 4
+required_evidence = ["diagnostic_evidence", "validation_output", "compensation_record"]
+
+[[decision_gates]]
+key = "incident_severity_operator_decision"
+decision_kind = "operator"
+requires_stages = ["triage"]
+options = ["major", "minor", "false_positive", "cancel"]
+default_on_timeout = "pause_and_escalate"
+urgency = "urgent"
+
+[[decision_gates]]
+key = "containment_operator_decision"
+decision_kind = "operator"
+requires_stages = ["containment_decision"]
+options = ["contain", "monitor_only", "cancel"]
+default_on_timeout = "pause_and_escalate"
+urgency = "urgent"
+
+[[decision_gates]]
+key = "response_plan_operator_decision"
+decision_kind = "operator"
+requires_stages = ["materialize_response_units"]
+options = ["approve", "revise", "cancel"]
+default_on_timeout = "pause_and_escalate"
+urgency = "urgent"
+
+[[decision_gates]]
+key = "recovery_operator_decision"
+decision_kind = "operator"
+requires_stages = ["validation_and_recovery"]
+options = ["recover", "retry_bounded", "rollback", "cancel"]
+default_on_timeout = "pause_and_escalate"
+urgency = "urgent"
+
+[[evidence_gates]]
+key = "incident_evidence_trace"
+requires_stages = ["triage", "parallel_diagnostics", "parallel_remediation", "validation_and_recovery"]
+evidence_kinds = ["severity_record", "diagnostic_evidence", "candidate_remediations", "recovery_evidence"]
+
+[[artifact_gates]]
+key = "postmortem_ready"
+requires_stages = ["postmortem"]
+artifact_kinds = ["postmortem_artifact", "followup_actions"]
+requires_evidence = ["incident_evidence_trace", "compensation_records"]
+
+[[acceptance.gates]]
+key = "incident_closed"
+requires_stages = ["postmortem"]
+requires_evidence = ["incident_evidence_trace"]
+requires_artifacts = ["postmortem_ready"]
+requires_decisions = ["recovery_operator_decision"]
+
+[supervision]
+max_correction_rounds = 1
+retry_policy = "bounded_by_stage_and_resource_bounds"
+terminal_on_retry_exhaustion = true
+passivate_if_idle = true
+idle_passivation_after = "15m"
+
+[compensation]
+strategy = "record_and_authorize_before_reversal"
+requires_operator_decision = true
+max_compensation_attempts = 2
+
+[cleanup]
+incremental = true
+workflow_owned_ephemeral_actor_policy = "stop_exactly_owned_only"
+global_reusable_actor_policy = "retain_or_passivate_only"
+worktree_policy = "remove_only_workflow_owned_isolated_after_evidence_capture"
+credential_policy = "revoke_workflow_scoped_leases"
+
+[[cleanup.steps]]
+key = "after_each_response_unit"
+when = "work_unit_terminal"
+actions = ["capture_evidence", "capture_compensation_record", "release_worktree_lease"]
+
+[[cleanup.steps]]
+key = "after_incident_terminal"
+when = "acceptance_terminal"
+actions = ["capture_postmortem_manifest", "revoke_workflow_scoped_leases", "passivate_reusable_actors", "remove_workflow_owned_ephemeral_actors"]

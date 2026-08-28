@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { buildActorControl, buildActorMessage, buildDeliveryAck, communicationKey, communicationLine, CommunicationTimeline, completeHostedEnvironment, ExactMutationSequencer, PromptTaskCoordinator, deliveryAction, destroyOnFramingFailure, drainPages, executeTypedDelivery, invokeTypedDeliveryForAck, parseTargetMessage, registerHostedHandlers, requireExplicitModelTarget } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/handlers.ts";
-import { incomingNote, incomingRequestText, outgoingExchange, renderCommunicationCard, compactToolCall, compactToolResult } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/communication-ui.ts";
+import { incomingNote, incomingRequestText, outgoingExchange, renderCommunicationCard, compactToolCall, compactToolResult, modelResultContent } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/communication-ui.ts";
+import { actorMessageModelResult } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/index.ts";
 
 const complete = { WS_SUBAGENTS_SOCKET: "/run/user/1000/socket", WS_SUBAGENTS_CREDENTIAL_FILE: "/state/credential", WS_SUBAGENTS_SESSION_ID: "session", WS_SUBAGENTS_GENERATION_ID: "generation", WS_SUBAGENTS_CALLER: "hosted:agent", WS_SUBAGENTS_AGENT_ID: "agent", WS_SUBAGENTS_RUNTIME_ID: "runtime", WS_SUBAGENTS_INCARNATION: "1" };
 
@@ -166,6 +167,22 @@ test("communication view model renders direction, request replies, redaction, an
   assert.ok(colors.includes("blue") || colors.includes("toolTitle"));
   assert.match(tellLines, /↑ Sent to Beta Reviewer · code reviewer/);
   assert.match(tellLines, /✓ delivered/);
+});
+
+test("actor_send and actor_ask model results expose exact stable correlation only", () => {
+  const logical = { requestId: "request-1", value: { dedupeId: "dedupe-1", chainId: "chain-1", sourceMutationSequence: 7n } };
+  const details = actorMessageModelResult(logical, { accepted: true, completed: true, boundedResult: new TextEncoder().encode("answer"), reason: "", source: { stableId: "source-actor", displayName: "session-secret", role: "MANAGER" }, target: { stableId: "target-actor", displayName: "handle-secret", role: "WORKER" }, kind: "ask" });
+  assert.equal(details.requestId, "request-1");
+  assert.equal(details.dedupeId, "dedupe-1");
+  assert.equal(details.chainId, "chain-1");
+  assert.equal(details.sourceMutationSequence, "7");
+  assert.equal(details.source, "source-actor");
+  assert.equal(details.target, "target-actor");
+  assert.equal(details.kind, "ask");
+  const visible = modelResultContent("actor_ask", details);
+  for (const required of ["requestId=request-1", "dedupeId=dedupe-1", "chainId=chain-1", "sourceMutationSequence=7", "source=source-actor", "target=target-actor", "kind=ask"]) assert.match(visible, new RegExp(required));
+  assert.doesNotMatch(visible, /session-secret|handle-secret/);
+  assert.throws(() => actorMessageModelResult({ requestId: "bad\nrequest", value: { dedupeId: "dedupe", chainId: "chain", sourceMutationSequence: 1n } }, { boundedResult: new Uint8Array(), kind: "tell" }), /requestId/);
 });
 
 test("actor tool rendering is compact and does not expose raw protocol fields", () => {

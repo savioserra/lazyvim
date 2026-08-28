@@ -218,7 +218,7 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
     if (inherited && inherited.hopLimit < 1) throw new Error("inherited prompt hop budget exhausted");
     return mutations.run(mutationScopeKey(fence,current.incarnation),
       (sequence)=>({requestId:randomUUID(),value:buildActorMessage(mode,destination,text,randomUUID(),inherited?.chainId ?? randomUUID(),sequence,inherited?.hopLimit ?? 8)}),
-      async (logical)=>{const started=Date.now();const active=requiredClient(client);const response=await active.request("actorMessageRequest",ActorMessageRequestSchema,logical.value,fence,logical.requestId,mode===ActorMessageRequest_Mode.ASK?ASK_TIMEOUT_MS:SHORT_REQUEST_TIMEOUT_MS);if(response.payload.case!=="actorMessageResponse"){active.invalidate(new Error("unexpected actor message response"));throw new Error("unexpected actor message response")};const value=response.payload.value;const targetView=peerView(value.target);const sourceView=peerView(value.source);const result={accepted:value.accepted,completed:value.completed,result:safeText(value.boundedResult),reason:value.reason,sourceDisplayName:sourceView.displayName,sourceRole:sourceView.role,targetDisplayName:targetView.displayName,targetRole:targetView.role,kind:value.kind};appendCommunicationView(outgoingExchange({key:`request:${logical.requestId}`,target:value.target,body:text,reply:mode===ActorMessageRequest_Mode.ASK?result.result:undefined,accepted:value.accepted,completed:value.completed,mode:mode===ActorMessageRequest_Mode.ASK?"ask":"tell",reason:value.reason,durationMillis:Date.now()-started}));return result},
+      async (logical)=>{const started=Date.now();const active=requiredClient(client);const response=await active.request("actorMessageRequest",ActorMessageRequestSchema,logical.value,fence,logical.requestId,mode===ActorMessageRequest_Mode.ASK?ASK_TIMEOUT_MS:SHORT_REQUEST_TIMEOUT_MS);if(response.payload.case!=="actorMessageResponse"){active.invalidate(new Error("unexpected actor message response"));throw new Error("unexpected actor message response")};const result=actorMessageModelResult(logical,response.payload.value);appendCommunicationView(outgoingExchange({key:`request:${logical.requestId}`,target:response.payload.value.target,body:text,reply:mode===ActorMessageRequest_Mode.ASK?result.result:undefined,accepted:response.payload.value.accepted,completed:response.payload.value.completed,mode:mode===ActorMessageRequest_Mode.ASK?"ask":"tell",reason:response.payload.value.reason,durationMillis:Date.now()-started}));return result},
 
       async()=>reconnect(requiredContext(extensionContext)));
   };
@@ -468,9 +468,45 @@ async function validatePrivateSocket(path: string) {
 function delay(milliseconds: number) { return new Promise<void>((resolve) => setTimeout(resolve, milliseconds)); }
 function maxBigInt(a: bigint, b: bigint) { return a > b ? a : b; }
 function deliveryKindName(kind: number) { return kind === 1 ? "Tell" : kind === 2 ? "Abort" : kind === 3 ? "Shutdown" : kind === 4 ? "Prompt" : "Unknown"; }
-function actorModeName(mode: ActorMessageRequest_Mode) { return mode === ActorMessageRequest_Mode.ASK ? "Ask" : "Tell"; }
 function boundedPublic(value: string, max = 80) { const clean = value.replace(/[\r\n\t\x00]/g, " "); return clean.length > max ? `${clean.slice(0, Math.max(0, max - 1))}…` : clean; }
 function safeText(bytes: Uint8Array): string { if (bytes.byteLength > MAX_TEXT) throw new Error("daemon payload exceeds bridge bound"); return textDecoder.decode(bytes); }
+
+export function actorMessageModelResult(logical: { requestId: string; value: { dedupeId: string; chainId: string; sourceMutationSequence: bigint } }, value: any) {
+  const requestId = requiredIdentifier(logical.requestId, "requestId");
+  const dedupeId = requiredIdentifier(logical.value.dedupeId, "dedupeId");
+  const chainId = requiredIdentifier(logical.value.chainId, "chainId");
+  if (logical.value.sourceMutationSequence <= 0n) throw new Error("sourceMutationSequence is not a stable bounded identifier");
+  const kind = requiredIdentifier(String(value.kind ?? ""), "kind");
+  const source = peerView(value.source);
+  const target = peerView(value.target);
+  const sourceStableId = stablePeerId(value.source);
+  const targetStableId = stablePeerId(value.target);
+  return {
+    accepted: Boolean(value.accepted),
+    completed: Boolean(value.completed),
+    result: safeText(value.boundedResult ?? new Uint8Array()),
+    reason: String(value.reason ?? ""),
+    requestId,
+    dedupeId,
+    chainId,
+    sourceMutationSequence: logical.value.sourceMutationSequence.toString(),
+    source: sourceStableId,
+    target: targetStableId,
+    kind,
+    sourceStableId,
+    sourceDisplayName: source.displayName,
+    sourceRole: source.role,
+    targetStableId,
+    targetDisplayName: target.displayName,
+    targetRole: target.role,
+  };
+}
+
+function stablePeerId(peer: any): string { return requiredIdentifier(String(peer?.stableId ?? peer?.stable_id ?? ""), "peer"); }
+function requiredIdentifier(value: string, label: string): string {
+  if (value && /^[\x20-\x7e]{1,128}$/.test(value) && !/[\r\n\t\x00]/.test(value)) return value;
+  throw new Error(`${label} is not a stable bounded identifier`);
+}
 function requiredEnv(name: string): string { const value = process.env[name]; if (!value) throw new Error(`missing hosted bridge environment ${name}`); return value; }
 function requiredClient(value?: FramedClient): FramedClient { if (!value) throw new Error("hosted bridge is not ready"); return value; }
 function requiredBinding(value?: Binding): Binding { if (!value) throw new Error("hosted bridge is not bound"); return value; }

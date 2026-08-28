@@ -1,0 +1,207 @@
+# PROPOSED/not implemented workflow-template dogfood example.
+# This is documentation-only TOML for schema pressure testing; the daemon does not load it.
+schema_version = 1
+template_id = "example.academic-research"
+template_version = 1
+display_name = "Academic research synthesis with independent appraisal"
+runnable = false
+status = "PROPOSED/not implemented"
+
+[inputs.research_question]
+type = "string"
+required = true
+
+[inputs.output_directory]
+type = "path"
+required = true
+
+[inputs.ethics_constraints]
+type = "string"
+required = false
+
+[workflow]
+owner = "WorkflowActor"
+materialization = "side_effect_free_until_authorized"
+producer_authority = "trusted_registered_domain_producers_only"
+decision_authority = "user"
+
+[[producers]]
+key = "scope_validator"
+producer_kind = "trusted_registered_domain_producer"
+domain = "scope_and_ethics"
+role_policy = "dynamic_runtime_label"
+capabilities = ["read", "ask_user", "produce_evidence"]
+reuse_policy = "retain_or_passivate"
+
+[[producers]]
+key = "literature_pool"
+producer_kind = "trusted_registered_domain_producer_pool"
+domain = "literature_collection"
+role_policy = "dynamic_runtime_label"
+capabilities = ["read", "produce_artifact", "produce_evidence"]
+reuse_policy = "retain_or_passivate"
+
+[[producers]]
+key = "appraisal_pool"
+producer_kind = "trusted_registered_domain_producer_pool"
+domain = "evidence_appraisal"
+role_policy = "dynamic_runtime_label"
+capabilities = ["read", "produce_evidence"]
+reuse_policy = "retain_or_passivate"
+
+[[producers]]
+key = "synthesis_producer"
+producer_kind = "trusted_registered_domain_producer"
+domain = "analysis_synthesis"
+role_policy = "dynamic_runtime_label"
+capabilities = ["read", "write_artifact", "produce_evidence"]
+reuse_policy = "retain_or_passivate"
+
+[[producers]]
+key = "independent_review_producer"
+producer_kind = "trusted_registered_domain_producer"
+domain = "independent_review"
+role_policy = "dynamic_runtime_label"
+capabilities = ["read", "produce_evidence"]
+reuse_policy = "retain_or_passivate"
+
+[[worktrees]]
+key = "artifact_workspace"
+project_directory = "${input.output_directory}"
+writer_slots = 1
+allocation = "existing_or_isolated"
+trust_project = false
+
+[[stages]]
+key = "scope_and_ethics_validation"
+stage_kind = "validation"
+producers = ["scope_validator"]
+requires = []
+decision_gate = "scope_ethics_user_decision"
+outputs = ["scope_statement", "ethics_constraints_record"]
+
+[[stages]]
+key = "materialize_research_units"
+stage_kind = "dynamic_work_unit_materialization"
+producers = ["literature_pool", "appraisal_pool"]
+requires = ["scope_and_ethics_validation"]
+work_unit_template = "research_question_slice"
+decision_gate = "research_unit_plan_user_decision"
+outputs = ["authorized_research_unit_plan"]
+
+[[stages]]
+key = "collect_literature"
+stage_kind = "evidence_collection"
+producers = ["literature_pool"]
+requires = ["materialize_research_units"]
+work_unit_template = "research_question_slice"
+outputs = ["citation_inventory"]
+
+[[stages]]
+key = "appraise_evidence"
+stage_kind = "evidence_appraisal"
+producers = ["appraisal_pool"]
+requires = ["collect_literature"]
+work_unit_template = "research_question_slice"
+outputs = ["appraisal_matrix", "uncertainty_register"]
+
+[[stages]]
+key = "analysis_and_synthesis"
+stage_kind = "analysis_synthesis"
+producers = ["synthesis_producer"]
+requires = ["appraise_evidence"]
+outputs = ["draft_artifact", "citation_map"]
+
+[[stages]]
+key = "independent_review"
+stage_kind = "independent_review"
+producers = ["independent_review_producer"]
+requires = ["analysis_and_synthesis"]
+outputs = ["review_findings"]
+
+[[stages]]
+key = "final_artifact"
+stage_kind = "artifact_acceptance"
+producers = ["synthesis_producer"]
+requires = ["independent_review"]
+decision_gate = "final_artifact_user_decision"
+outputs = ["final_research_artifact", "limitations_section"]
+
+[[work_unit_templates]]
+key = "research_question_slice"
+proposed_by = "literature_pool"
+materialized_by = "WorkflowActor"
+authorization = "requires_user_decision"
+parallelism = "allowed_for_independent_search_strata"
+worktree = "artifact_workspace"
+writer_slots_required = 0
+max_open_units = 6
+required_evidence = ["citation_records", "source_quality_notes", "uncertainty_notes"]
+
+[[decision_gates]]
+key = "scope_ethics_user_decision"
+decision_kind = "user"
+requires_stages = ["scope_and_ethics_validation"]
+options = ["approve", "narrow_scope", "cancel"]
+default_on_timeout = "pause"
+
+[[decision_gates]]
+key = "research_unit_plan_user_decision"
+decision_kind = "user"
+requires_stages = ["materialize_research_units"]
+options = ["approve", "revise", "cancel"]
+default_on_timeout = "pause"
+
+[[decision_gates]]
+key = "final_artifact_user_decision"
+decision_kind = "user"
+requires_stages = ["independent_review"]
+options = ["accept", "request_revision", "cancel"]
+default_on_timeout = "pause"
+
+[[evidence_gates]]
+key = "citation_coverage"
+requires_stages = ["collect_literature"]
+evidence_kinds = ["citation_inventory", "search_strategy", "exclusion_reasons"]
+
+[[evidence_gates]]
+key = "appraisal_traceability"
+requires_stages = ["appraise_evidence", "analysis_and_synthesis"]
+evidence_kinds = ["appraisal_matrix", "citation_map", "uncertainty_register"]
+
+[[artifact_gates]]
+key = "research_artifact_ready"
+requires_stages = ["final_artifact"]
+artifact_kinds = ["final_research_artifact", "limitations_section", "citation_map"]
+requires_evidence = ["citation_coverage", "appraisal_traceability", "review_findings"]
+
+[[acceptance.gates]]
+key = "research_done"
+requires_stages = ["final_artifact"]
+requires_evidence = ["citation_coverage", "appraisal_traceability"]
+requires_artifacts = ["research_artifact_ready"]
+requires_decisions = ["final_artifact_user_decision"]
+
+[supervision]
+max_correction_rounds = 2
+retry_policy = "bounded_by_stage"
+terminal_on_retry_exhaustion = true
+passivate_if_idle = true
+idle_passivation_after = "30m"
+
+[cleanup]
+incremental = true
+workflow_owned_ephemeral_actor_policy = "stop_exactly_owned_only"
+global_reusable_actor_policy = "retain_or_passivate_only"
+worktree_policy = "preserve_requested_output_directory_remove_only_workflow_owned_scratch"
+credential_policy = "revoke_workflow_scoped_leases"
+
+[[cleanup.steps]]
+key = "after_each_research_unit"
+when = "work_unit_terminal"
+actions = ["capture_citations", "capture_uncertainty", "release_unit_lease"]
+
+[[cleanup.steps]]
+key = "after_final_artifact"
+when = "acceptance_terminal"
+actions = ["capture_artifact_manifest", "passivate_reusable_actors", "remove_workflow_owned_ephemeral_actors"]

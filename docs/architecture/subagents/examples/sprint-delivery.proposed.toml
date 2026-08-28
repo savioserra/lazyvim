@@ -1,0 +1,199 @@
+# PROPOSED/not implemented workflow-template dogfood example.
+# This is documentation-only TOML for schema pressure testing; the daemon does not load it.
+schema_version = 1
+template_id = "example.sprint-delivery"
+template_version = 1
+display_name = "Sprint delivery with dynamic work units"
+runnable = false
+status = "PROPOSED/not implemented"
+
+[inputs.feature_intent]
+type = "string"
+required = true
+
+[inputs.target_repository]
+type = "path"
+required = true
+
+[inputs.acceptance_context]
+type = "string"
+required = false
+
+[workflow]
+owner = "WorkflowActor"
+materialization = "side_effect_free_until_authorized"
+producer_authority = "trusted_registered_domain_producers_only"
+decision_authority = "user"
+
+[[producers]]
+key = "requirements_producer"
+producer_kind = "trusted_registered_domain_producer"
+domain = "requirements"
+role_policy = "dynamic_runtime_label"
+capabilities = ["read", "ask_user", "produce_evidence"]
+reuse_policy = "retain_or_passivate"
+
+[[producers]]
+key = "specification_producer"
+producer_kind = "trusted_registered_domain_producer"
+domain = "specification"
+role_policy = "dynamic_runtime_label"
+capabilities = ["read", "produce_artifact", "produce_evidence"]
+reuse_policy = "retain_or_passivate"
+
+[[producers]]
+key = "implementation_pool"
+producer_kind = "trusted_registered_domain_producer_pool"
+domain = "implementation"
+role_policy = "dynamic_runtime_label"
+capabilities = ["read", "write", "test", "produce_evidence"]
+reuse_policy = "retain_or_passivate"
+
+[[producers]]
+key = "review_producer"
+producer_kind = "trusted_registered_domain_producer"
+domain = "review"
+role_policy = "dynamic_runtime_label"
+capabilities = ["read", "test", "produce_evidence"]
+reuse_policy = "retain_or_passivate"
+
+[[worktrees]]
+key = "integration"
+project_directory = "${input.target_repository}"
+writer_slots = 1
+allocation = "existing_or_isolated"
+trust_project = false
+
+[[worktrees]]
+key = "unit_candidate"
+project_directory = "${input.target_repository}"
+writer_slots = 1
+allocation = "dynamic_isolated_per_work_unit"
+trust_project = false
+
+[[stages]]
+key = "capture_requirements"
+stage_kind = "requirements"
+producers = ["requirements_producer"]
+requires = []
+outputs = ["requirements_brief"]
+
+[[stages]]
+key = "validate_requirements"
+stage_kind = "validation"
+producers = ["requirements_producer"]
+requires = ["capture_requirements"]
+decision_gate = "requirements_user_decision"
+outputs = ["validated_requirements"]
+
+[[stages]]
+key = "write_specification"
+stage_kind = "specification"
+producers = ["specification_producer"]
+requires = ["validate_requirements"]
+outputs = ["implementation_specification"]
+
+[[stages]]
+key = "materialize_work_units"
+stage_kind = "dynamic_work_unit_materialization"
+producers = ["implementation_pool"]
+requires = ["write_specification"]
+work_unit_template = "parallel_safe_feature_slice"
+decision_gate = "work_unit_plan_user_decision"
+outputs = ["authorized_work_unit_plan"]
+
+[[stages]]
+key = "implement_units"
+stage_kind = "dynamic_implementation"
+producers = ["implementation_pool"]
+requires = ["materialize_work_units"]
+work_unit_template = "parallel_safe_feature_slice"
+outputs = ["candidate_changes", "unit_test_evidence"]
+
+[[stages]]
+key = "review_and_qa"
+stage_kind = "review_qa"
+producers = ["review_producer"]
+requires = ["implement_units"]
+outputs = ["review_findings", "qa_evidence"]
+
+[[stages]]
+key = "acceptance"
+stage_kind = "acceptance"
+producers = ["specification_producer", "review_producer"]
+requires = ["review_and_qa"]
+decision_gate = "acceptance_user_decision"
+outputs = ["acceptance_record"]
+
+[[work_unit_templates]]
+key = "parallel_safe_feature_slice"
+proposed_by = "implementation_pool"
+materialized_by = "WorkflowActor"
+authorization = "requires_user_decision"
+parallelism = "allowed_when_disjoint_worktree_and_paths"
+worktree = "unit_candidate"
+writer_slots_required = 1
+merge_target_worktree = "integration"
+max_open_units = 4
+required_evidence = ["changed_files", "tests", "validation_output"]
+
+[[decision_gates]]
+key = "requirements_user_decision"
+decision_kind = "user"
+requires_stages = ["capture_requirements"]
+options = ["approve", "revise", "cancel"]
+default_on_timeout = "pause"
+
+[[decision_gates]]
+key = "work_unit_plan_user_decision"
+decision_kind = "user"
+requires_stages = ["write_specification"]
+options = ["approve", "revise", "cancel"]
+default_on_timeout = "pause"
+
+[[decision_gates]]
+key = "acceptance_user_decision"
+decision_kind = "user"
+requires_stages = ["review_and_qa"]
+options = ["accept", "request_correction", "cancel"]
+default_on_timeout = "pause"
+
+[[evidence_gates]]
+key = "requirements_are_actionable"
+requires_stages = ["validate_requirements"]
+evidence_kinds = ["requirements_brief", "decision_record"]
+
+[[evidence_gates]]
+key = "implementation_validated"
+requires_stages = ["implement_units", "review_and_qa"]
+evidence_kinds = ["changed_files", "tests", "review_findings", "qa_evidence"]
+
+[[acceptance.gates]]
+key = "sprint_done"
+requires_stages = ["acceptance"]
+requires_evidence = ["requirements_are_actionable", "implementation_validated", "acceptance_record"]
+requires_decisions = ["acceptance_user_decision"]
+
+[supervision]
+max_correction_rounds = 2
+retry_policy = "bounded_by_stage"
+terminal_on_retry_exhaustion = true
+passivate_if_idle = true
+idle_passivation_after = "30m"
+
+[cleanup]
+incremental = true
+workflow_owned_ephemeral_actor_policy = "stop_exactly_owned_only"
+global_reusable_actor_policy = "retain_or_passivate_only"
+worktree_policy = "remove_only_workflow_owned_isolated_after_artifact_capture"
+credential_policy = "revoke_workflow_scoped_leases"
+
+[[cleanup.steps]]
+key = "after_each_unit"
+when = "work_unit_terminal"
+actions = ["capture_evidence", "release_worktree_lease", "remove_ephemeral_credentials"]
+
+[[cleanup.steps]]
+key = "after_workflow_idle"
+when = "workflow_idle"
+actions = ["passivate_reusable_actors", "remove_workflow_owned_ephemeral_actors"]
