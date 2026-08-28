@@ -29,11 +29,10 @@ func run() error {
 		return err
 	}
 	configPath := flag.String("config", paths.ConfigFile, "owner-private service configuration")
-	socketPath := flag.String("socket", paths.SocketFile, "owner-private Unix socket")
 	flag.Parse()
-	resolvedConfig, resolvedSocket, err := normalizeCLIPaths(*configPath, *socketPath, workstationsocket.NormalizePrivatePath)
+	resolvedConfig, err := workstationsocket.NormalizePrivatePath(*configPath)
 	if err != nil {
-		return err
+		return fmt.Errorf("resolve config path: %w", err)
 	}
 
 	cfg, err := config.Load(resolvedConfig)
@@ -57,7 +56,19 @@ func run() error {
 	ctx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopSignals()
 	hosted := service.HostedAdminConfig{Enabled: cfg.HostedPi.Enabled, TmuxBinary: cfg.HostedPi.TmuxBinary, PiBinary: cfg.HostedPi.PiBinary, BridgeExtension: cfg.HostedPi.BridgeExtension, ServerName: cfg.HostedPi.TmuxServerName, TmuxConfig: cfg.HostedPi.TmuxConfig, StateDirectory: cfg.HostedPi.StateDirectory, PiSessionDirectory: cfg.HostedPi.PiSessionDirectory, CredentialDirectory: cfg.HostedPi.CredentialDirectory, AdminCredentialFile: cfg.HostedPi.AdminCredentialFile, DefaultProjectDirectory: cfg.HostedPi.DefaultProjectDirectory, TrustProject: cfg.HostedPi.TrustProject}
-	daemon, err := service.StartConfigured(ctx, resolvedSocket, hosted, actorPlane)
+	actorHost := "127.0.0.1"
+	if actorPlane != nil && actorPlane.NodeIdentity != "" {
+		if node, ok := actorPlane.PublicNodes[actorPlane.NodeIdentity]; ok && node.Host != "" {
+			actorHost = node.Host
+		}
+	}
+	actorPort := cfg.Service.ActorEndpointPort
+	if actorPort == 0 {
+		actorPort = 17213
+	}
+	listenAddress := fmt.Sprintf("%s:%d", actorHost, actorPort)
+	hosted.ActorEndpoint = fmt.Sprintf("ws://%s/actors", listenAddress)
+	daemon, err := service.StartWebSocketConfigured(ctx, listenAddress, hosted, actorPlane)
 	if err != nil {
 		return err
 	}
@@ -65,16 +76,4 @@ func run() error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	return daemon.Stop(shutdownCtx)
-}
-
-func normalizeCLIPaths(configPath, socketPath string, normalize func(string) (string, error)) (string, string, error) {
-	resolvedConfig, err := normalize(configPath)
-	if err != nil {
-		return "", "", fmt.Errorf("resolve config path: %w", err)
-	}
-	resolvedSocket, err := normalize(socketPath)
-	if err != nil {
-		return "", "", fmt.Errorf("resolve socket path: %w", err)
-	}
-	return resolvedConfig, resolvedSocket, nil
 }

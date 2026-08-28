@@ -9,8 +9,10 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -48,7 +50,7 @@ const (
 
 type HostedAdminConfig struct {
 	Enabled                                                                                               bool
-	TmuxBinary, PiBinary, BridgeExtension, ServerName, TmuxConfig                                         string
+	TmuxBinary, PiBinary, BridgeExtension, ServerName, TmuxConfig, ActorEndpoint                          string
 	StateDirectory, PiSessionDirectory, CredentialDirectory, AdminCredentialFile, DefaultProjectDirectory string
 	TrustProject                                                                                          bool
 	RuntimeFactory                                                                                        func(hostedpi.Config) application.HostedPiRuntime
@@ -205,6 +207,13 @@ func StartConfigured(ctx context.Context, socketPath string, hosted HostedAdminC
 
 type registryTestDelay time.Duration
 
+func hostedActorEndpoint(config HostedAdminConfig) string {
+	if config.ActorEndpoint != "" {
+		return config.ActorEndpoint
+	}
+	return "ws://127.0.0.1:17213/actors"
+}
+
 func publicNodeMap(runtime *remoting.Runtime) map[string]application.PublicNode {
 	result := make(map[string]application.PublicNode, len(runtime.PublicNodes))
 	for identity, node := range runtime.PublicNodes {
@@ -218,6 +227,7 @@ func startWithListener(ctx context.Context, listener net.Listener, options ...an
 	var socketPath string
 	var registrationDelay time.Duration
 	var actorPlane *remoting.Runtime
+	useWebSocket := false
 	for _, option := range options {
 		switch value := option.(type) {
 		case HostedAdminConfig:
@@ -228,6 +238,8 @@ func startWithListener(ctx context.Context, listener net.Listener, options ...an
 			registrationDelay = time.Duration(value)
 		case *remoting.Runtime:
 			actorPlane = value
+		case websocketTransport:
+			useWebSocket = true
 		}
 	}
 	actorOptions := []actor.Option{actor.WithLogger(goaktlog.DiscardLogger), actor.WithPubSub(), actor.WithMessageRetention(5 * time.Minute)}
@@ -293,6 +305,18 @@ func startWithListener(ctx context.Context, listener net.Listener, options ...an
 	var publicDirectory *actor.PID
 	if actorPlane != nil {
 		publicNodes := publicNodeMap(actorPlane)
+		if hostedActorEndpoint(hosted) != "" {
+			if endpoint, err := url.Parse(hostedActorEndpoint(hosted)); err == nil {
+				if parsed, parseErr := strconv.Atoi(endpoint.Port()); parseErr == nil {
+					for identity, node := range publicNodes {
+						if node.ClientPort == 0 {
+							node.ClientPort = parsed
+							publicNodes[identity] = node
+						}
+					}
+				}
+			}
+		}
 		publicDirectory, err = guardian.SpawnChild(ctx, "public-agent-directory", actors.NewPublicAgentDirectoryActor(actorPlane.NodeIdentity, publicNodes), actor.WithMailbox(actor.NewNonBlockingBoundedMailbox(512)), actor.WithPassivationStrategy(passivation.NewLongLivedStrategy()))
 		if err != nil {
 			return fail(err)
@@ -319,7 +343,11 @@ func startWithListener(ctx context.Context, listener net.Listener, options ...an
 		connectionSlots: make(chan struct{}, maxConnections), activeConnections: make(map[net.Conn]struct{}), requestResults: make(map[string]requestRecord), hostedRuntimes: make(map[string]*actor.PID), hostedRegistrations: make(map[string]hostedRegistration), hostedTerminal: make(map[string]application.HostedPiRuntimeBinding), hostedStartupFailure: make(map[string]string), hostedCleanup: make(map[string]hostedRegistration), hostedProjects: make(map[string]string), registrationPlaceholders: make(map[string]*registrationPlaceholder), registrationCleanups: make(map[string]*registrationCleanup), hostedAdmin: hosted, socketPath: socketPath, hostedOperationCancels: make(map[uint64]context.CancelFunc), hostedAgentLocks: make(map[string]*sync.Mutex), registrationTimeout: requestTimeout, durableStore: durableStore, persistencePID: persistencePID, hostedIndeterminate: make(map[string]application.HostedPiRuntimeBinding), taskLifecycles: make(map[string]*taskLifecycle), clientSessions: make(map[string]*actor.PID), publicSessionGenerations: make(map[string]string), pushSessions: make(map[*bridgePushSession]*actor.PID),
 	}
 	if actorPlane != nil {
-		if _, err := system.Spawn(ctx, placementAuthorityName(actorPlane.NodeIdentity), &hostedPlacementAuthority{service: service}, actor.WithMailbox(actor.NewNonBlockingBoundedMailbox(64)), actor.WithPassivationStrategy(passivation.NewLongLivedStrategy())); err != nil {
+		if actorPlane.Cluster != nil {
+			if _, err := system.SpawnSingleton(ctx, placementAuthorityName(actorPlane.NodeIdentity), &hostedPlacementAuthority{service: service}, actor.WithSingletonRole(actorPlane.NodeIdentity)); err != nil {
+				return fail(err)
+			}
+		} else if _, err := system.Spawn(ctx, placementAuthorityName(actorPlane.NodeIdentity), &hostedPlacementAuthority{service: service}, actor.WithMailbox(actor.NewNonBlockingBoundedMailbox(64)), actor.WithPassivationStrategy(passivation.NewLongLivedStrategy()), actor.WithRelocationDisabled()); err != nil {
 			return fail(err)
 		}
 		go service.reconcilePublicHostedPeers(context.Background())
@@ -351,7 +379,11 @@ func startWithListener(ctx context.Context, listener net.Listener, options ...an
 		}
 	}
 	service.connections.Add(1)
-	go service.acceptLoop()
+	if useWebSocket {
+		go service.acceptWebSocketLoop()
+	} else {
+		go service.acceptLoop()
+	}
 	return service, nil
 }
 
@@ -392,7 +424,7 @@ func (s *Service) reconcileDurableHosted(ctx context.Context) error {
 				return fmt.Errorf("durable hosted %s ownership record: %w", record.AgentID, err)
 			}
 		}
-		runtimeConfig := hostedpi.Config{TmuxBinary: s.hostedAdmin.TmuxBinary, PiBinary: s.hostedAdmin.PiBinary, BridgeExtension: s.hostedAdmin.BridgeExtension, DaemonSocket: s.socketPath, CredentialFile: record.Session.CredentialFile, ServerName: s.hostedAdmin.ServerName, TmuxConfig: s.hostedAdmin.TmuxConfig, ProjectDirectory: record.RuntimeConfig.ProjectDirectory, StateDirectory: s.hostedAdmin.StateDirectory, SessionID: record.Session.SessionID, GenerationID: record.Session.GenerationID, CallerIdentity: record.Session.Caller, TrustProject: record.RuntimeConfig.TrustProject}
+		runtimeConfig := hostedpi.Config{TmuxBinary: s.hostedAdmin.TmuxBinary, PiBinary: s.hostedAdmin.PiBinary, BridgeExtension: s.hostedAdmin.BridgeExtension, DaemonEndpoint: hostedActorEndpoint(s.hostedAdmin), CredentialFile: record.Session.CredentialFile, ServerName: s.hostedAdmin.ServerName, TmuxConfig: s.hostedAdmin.TmuxConfig, ProjectDirectory: record.RuntimeConfig.ProjectDirectory, StateDirectory: s.hostedAdmin.StateDirectory, SessionID: record.Session.SessionID, GenerationID: record.Session.GenerationID, CallerIdentity: record.Session.Caller, TrustProject: record.RuntimeConfig.TrustProject}
 		runtime := &hostedpi.Runtime{Config: runtimeConfig}
 		process, adoptErr := runtime.Adopt(ctx, record.LaunchSpec, binding)
 		if errors.Is(adoptErr, hostedpi.ErrRuntimeAbsent) {
@@ -980,26 +1012,7 @@ func (s *Service) acceptLoop() {
 			return
 		}
 		temporaryFailures = 0
-		select {
-		case s.connectionSlots <- struct{}{}:
-			s.connectionMu.Lock()
-			if s.stopping.Load() {
-				s.connectionMu.Unlock()
-				<-s.connectionSlots
-				_ = connection.Close()
-				return
-			}
-			s.activeConnections[connection] = struct{}{}
-			s.connections.Add(1)
-			s.connectionMu.Unlock()
-			go func() {
-				defer s.connections.Done()
-				defer func() { <-s.connectionSlots }()
-				s.handleConnection(connection)
-			}()
-		default:
-			_ = connection.Close()
-		}
+		s.acceptStreamConnection(connection)
 	}
 }
 
@@ -2471,7 +2484,7 @@ func (s *Service) startHostedAgent(ctx context.Context, command *subagentsv1.Hos
 		return application.HostedPiRuntimeBinding{}, err
 	}
 	spec := application.HostedPiLaunchSpec{AgentID: command.AgentId, RuntimeID: runtimeID, Incarnation: 1, TmuxSession: "ws-pi-" + suffix, TmuxWindow: "pi", PiSessionDirectory: filepath.Join(s.hostedAdmin.PiSessionDirectory, suffix), PiSessionName: "hosted-" + suffix}
-	runtimeConfig := hostedpi.Config{TmuxBinary: s.hostedAdmin.TmuxBinary, PiBinary: s.hostedAdmin.PiBinary, BridgeExtension: s.hostedAdmin.BridgeExtension, DaemonSocket: s.socketPath, CredentialFile: credentialFile, ServerName: s.hostedAdmin.ServerName, TmuxConfig: s.hostedAdmin.TmuxConfig, ProjectDirectory: project, StateDirectory: s.hostedAdmin.StateDirectory, SessionID: sessionID, GenerationID: generationID, CallerIdentity: session.Caller, TrustProject: command.TrustProject && s.hostedAdmin.TrustProject}
+	runtimeConfig := hostedpi.Config{TmuxBinary: s.hostedAdmin.TmuxBinary, PiBinary: s.hostedAdmin.PiBinary, BridgeExtension: s.hostedAdmin.BridgeExtension, DaemonEndpoint: hostedActorEndpoint(s.hostedAdmin), CredentialFile: credentialFile, ServerName: s.hostedAdmin.ServerName, TmuxConfig: s.hostedAdmin.TmuxConfig, ProjectDirectory: project, StateDirectory: s.hostedAdmin.StateDirectory, SessionID: sessionID, GenerationID: generationID, CallerIdentity: session.Caller, TrustProject: command.TrustProject && s.hostedAdmin.TrustProject}
 	var runtime application.HostedPiRuntime = &hostedpi.Runtime{Config: runtimeConfig}
 	if s.hostedAdmin.RuntimeFactory != nil {
 		runtime = s.hostedAdmin.RuntimeFactory(runtimeConfig)

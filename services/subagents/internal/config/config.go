@@ -28,7 +28,8 @@ type Config struct {
 }
 
 type ServiceConfig struct {
-	Enabled bool `toml:"enabled"`
+	Enabled           bool `toml:"enabled"`
+	ActorEndpointPort int  `toml:"actor_endpoint_port"`
 }
 
 type HostedPiConfig struct {
@@ -186,8 +187,11 @@ func ResolveRemoting(cfg RemotingConfig, resolver Resolver, localSource LocalAdd
 	if resolver == nil || localSource == nil {
 		return ResolvedRemoting{}, errors.New("resolver and local address source are required")
 	}
-	if cfg.Mode != "cluster" || cfg.NetworkTrust != "tailscale" {
-		return ResolvedRemoting{}, errors.New("enabled remoting requires mode=cluster and network_trust=tailscale")
+	if cfg.Mode != "cluster" {
+		return ResolvedRemoting{}, errors.New("enabled remoting requires mode=cluster")
+	}
+	if strings.TrimSpace(cfg.NetworkTrust) == "" {
+		return ResolvedRemoting{}, errors.New("enabled remoting requires an explicit network_trust label")
 	}
 	if err := logicalIdentity("cluster_name", cfg.ClusterName); err != nil {
 		return ResolvedRemoting{}, err
@@ -223,8 +227,8 @@ func ResolveRemoting(cfg RemotingConfig, resolver Resolver, localSource LocalAdd
 	if err != nil {
 		return ResolvedRemoting{}, err
 	}
-	if len(families) != 1 || !families["ipv4"] || len(cidrs) != 1 || cidrs[0] != netip.MustParsePrefix("100.64.0.0/10") {
-		return ResolvedRemoting{}, errors.New("tailscale remoting requires address_families=[ipv4] and allowed_cidrs=[100.64.0.0/10]")
+	if len(families) != 1 || !families["ipv4"] || len(cidrs) == 0 {
+		return ResolvedRemoting{}, errors.New("trusted-network remoting requires address_families=[ipv4] and at least one allowed CIDR")
 	}
 	local, err := localSource.LocalAddresses()
 	if err != nil {
@@ -304,10 +308,10 @@ func ResolveRemoting(cfg RemotingConfig, resolver Resolver, localSource LocalAdd
 
 func magicDNSHost(host, suffix string) error {
 	if suffix == "" || suffix != strings.TrimSpace(suffix) || !strings.HasPrefix(suffix, ".") || strings.HasSuffix(suffix, ".") {
-		return errors.New("magicdns_suffix must be a trim-equal suffix beginning with '.'")
+		return errors.New("dns suffix must be a trim-equal suffix beginning with '.'")
 	}
 	if host == "" || host != strings.TrimSpace(host) || strings.HasSuffix(host, ".") || !strings.HasSuffix(host, suffix) || len(host) <= len(suffix) {
-		return errors.New("host must be a full MagicDNS name beneath magicdns_suffix")
+		return errors.New("host must be a full DNS name beneath the configured suffix")
 	}
 	return nil
 }

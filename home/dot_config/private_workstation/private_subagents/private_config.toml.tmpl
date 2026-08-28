@@ -3,8 +3,9 @@ schema_version = 2
 
 [service]
 # The owner user service is managed and active after chezmoi apply. The daemon
-# listens only on the owner-private canonical Unix socket.
+# exposes the workstation actor endpoint on the node's advertised host.
 enabled = true
+actor_endpoint_port = 17213
 
 [hosted_pi]
 # Hosted actor creation is explicitly enabled for the owner-local actor tools.
@@ -45,9 +46,9 @@ trust_project = true
 {{- $clusterHost = "mac.taila7392b.ts.net" }}
 {{- end }}
 [remoting]
-# Tailscale ACL/device identity is the network boundary. URI-SAN mTLS is an
-# independent allowlist. The three GoAkt listeners bind only the resolved local
-# Tailscale IPv4 address; port is the advertised actor endpoint.
+# The private node network is the reachability boundary. URI-SAN mTLS is an
+# independent allowlist. The GoAkt and workstation listeners bind only the
+# resolved local advertised address.
 enabled = {{ ne $clusterNode "" }}
 mode = "cluster"
 network_trust = "tailscale"

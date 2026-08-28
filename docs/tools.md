@@ -24,16 +24,11 @@ Supported deployment policy is Linux, WSL-as-Linux, and macOS. Native-Windows en
 | rainfrog | 0.4.4 | github.com/achristmascarl/rainfrog | `.local/bin/rainfrog` | all except windows-arm64 (no upstream build) |
 | 1Password CLI | 2.39.0 | cache.agilebits.com | `.local/bin/op`; verified by the `secrets` capability | all 5; Windows ARM64 uses the x64 build |
 | pi coding agent | 0.84.3 | npm: `@earendil-works/pi-coding-agent` | Managed Node global prefix | all 5 |
-| pi-subagents | 0.56.0 | npm: `pi-subagents` (`nicobailon/pi-subagents`) | `.pi/agent/npm/node_modules/pi-subagents` | all 5 |
 | JetBrainsMono Nerd Font | 3.5.0 | github.com/ryanoasis/nerd-fonts | Linux: `.local/share/fonts/JetBrainsMonoNerdFont`; darwin: `Library/Fonts/JetBrainsMonoNerdFont`; Windows: `AppData/Local/Microsoft/Windows/Fonts/JetBrainsMonoNerdFont` | all 5 |
 
 ## GoAkt service source dependency
 
 The sole nested service module under `services/subagents/` uses the managed Go 1.27.0 toolchain and exactly pins `github.com/tochemey/goakt/v4` v4.5.2. Its reproducible schema check uses SHA-256-pinned protoc 33.5 archives, module-locked protoc-gen-go 1.36.12, lockfile-pinned protoc-gen-es 2.11.0, and lockfile-pinned `tsx` to execute the generated descriptor. Chezmoi setup builds the reviewed daemon and clientctl into `~/.local/bin` with `go build -mod=readonly` and activates only the owner user service. The source-managed hosted bridge and actor client pin `@bufbuild/protobuf@2.11.0` and exact registry integrity in local locks. See [`subagents.md`](subagents.md).
-
-## Tmux subagent renderer dependencies
-
-The source-managed extension pins `xstate@5.32.6` and `terminal-kit@3.1.4` with exact registry integrities in both `home/dot_local/share/workstation/versions.json` and the extension `package-lock.json`. The owning workstation package installs production dependencies with `npm ci --omit=dev --ignore-scripts --no-audit --no-fund`; no native module or target-host compiler is permitted. The reviewed feature gate is enabled for clienting, but it remains inert until chezmoi apply writes its matching activation attestation and `/reload` completes as a separate step.
 
 ## Not managed here
 
@@ -41,7 +36,6 @@ The source-managed extension pins `xstate@5.32.6` and `terminal-kit@3.1.4` with 
 | --- | --- | --- |
 | chezmoi itself | Can't provision itself (bootstrapping) | Manual, README.md Install section |
 | tmux, TPM-installed plugins | tmux/TPM aren't host-tool binaries in the same sense | `home/dot_local/share/packages/tmux/init.lua`, `home/dot_tmux.conf` |
-| Tailscale | Needs a root-level system daemon (`tailscaled` via systemd/launchd/Windows service), not a `.local/bin` binary | Not automated; install manually via the OS package manager if needed |
 | 1Password desktop app and account session | User application and interactive authentication are outside source state | Install the official app, enable CLI integration, and sign in interactively |
 | Mason-installed LSP servers/formatters/linters | Neovim-internal package manager, not a host binary | `zapling/mason-lock.nvim`, `home/dot_config/nvim/mason-lock.json` — see nvim.md |
 | lazy.nvim-installed Neovim plugins | Neovim-internal package manager | `home/dot_config/nvim/lazy-lock.json` — see nvim.md |

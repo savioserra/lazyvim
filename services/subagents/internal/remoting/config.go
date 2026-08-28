@@ -67,6 +67,7 @@ func NewValidatedConfig(cfg config.RemotingConfig, resolver config.Resolver, loc
 		WithDiscovery(provider).
 		WithDiscoveryPort(resolved.DiscoveryPort).
 		WithPeersPort(resolved.PeersPort).
+		WithRoles(resolved.NodeIdentity).
 		// One discovered peer is enough to bootstrap; write quorum two prevents
 		// either isolated node from accepting cluster-registry mutations.
 		WithMinimumPeersQuorum(1).

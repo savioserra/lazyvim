@@ -5,7 +5,7 @@
 
 ## Context
 
-Pi tools need list/resolve/send/ask/subscribe behavior without learning transport PIDs. Local UDS clients and future GoAkt peers have different protocols and trust boundaries. Reusable agents also require clear persistence and diagnostic guarantees before hosted execution can become authoritative.
+Pi tools need list/resolve/send/ask/subscribe behavior without learning transport PIDs. Workstation WebSocket clients and GoAkt peers have different protocols and trust boundaries. Reusable agents also require clear persistence and diagnostic guarantees before hosted execution can become authoritative.
 
 ## Decision
 
@@ -13,7 +13,7 @@ The approved visual and interaction contract for actor communication is the [Act
 
 ### Pi-to-actor path
 
-Pi calls the repository-managed hosted bridge extension over an owner-private UDS. The bridge binds exactly one runtime ID/incarnation and Pi session to one authenticated AgentActor handle/fence. The registry validates the current session instance, generation, credential, caller, capability, deadline, and target before resolving the actor with `ActorOf`. The gateway then uses direct GoAkt Tell/Ask semantics. An omitted public target is normalized by the bridge to its hosting AgentActor.
+Pi calls the repository-managed hosted bridge extension over the authenticated workstation WebSocket endpoint. The bridge binds exactly one runtime ID/incarnation and Pi session to one authenticated AgentActor handle/fence. The registry validates the current session instance, generation, credential, caller, capability, deadline, and target before resolving the actor with `ActorOf`. The gateway then uses direct GoAkt Tell/Ask semantics. An omitted public target is normalized by the bridge to its hosting AgentActor.
 
 Public targets are stable logical agent IDs or opaque capability handles, never raw PIDs. The registry maps a logical agent to its durable home node; public routing checks session credential/capability before any actor lookup, excludes private actors from public discovery, rejects stale home nodes, and then uses GoAkt remote lookup/Tell/Ask against the recorded endpoint. Typed remote hosted placement uses an optional logical target node on the canonical hosted-admin protobuf request. The local daemon authenticates the admin request, routes a typed actor-plane placement command carrying bounded operation ID, deadline, dedupe identity, local leaf certificate chain, and a signature over a canonical versioned placement envelope; the remote authority verifies the chain against its configured CA, exact allowlisted peer URI SAN, intended target node, signature, deadline, and replay/collision ledger before side effects, with no admin credential to the target node's local authority, and that authority relies on the equally-trusted mTLS peer boundary before starting the existing hosted AgentActor aggregate with its local hosted Pi runtime and bridge; no SSH, shell, tmux transport, terminal scraping, dependency-free echo actor, or actor relocation is involved. Requests carry a typed payload, request ID, absolute deadline, required capability, mutation operation identity, hop limit, and dedupe identity. Hop limits prevent bridge/routing loops. Node-local authorities expose a typed public hosted-agent list from their local registry so peers can reconcile public home-node records on startup and resolve/list misses without persisting host/port in the client API. Ask responses are typed success/failure values. Pi TUI commands and model/tool calls receive ordinary typed tool responses; the bridge does not synthesize terminal input.
 
@@ -23,13 +23,13 @@ Bridge connections use the same bounded envelope sequence, response replay, dead
 
 ### Two protocol planes
 
-The length-framed protobuf UDS API is the application plane for Pi/TypeScript and local clients. GoAkt remoting is the actor plane for ActorOf, Tell/Ask, PubSub dissemination, DeathWatch, supervision support, and optional reliable delivery. Neither plane tunnels or re-encodes the other. Protobuf never exposes GoAkt implementation values.
+The length-framed protobuf WebSocket API is the application plane for Pi/TypeScript and workstation clients. GoAkt remoting is the actor plane for ActorOf, Tell/Ask, PubSub dissemination, DeathWatch, supervision support, and optional reliable delivery. Neither plane tunnels or re-encodes the other. Protobuf never exposes GoAkt implementation values.
 
 ### Peer configuration
 
-Schema v2 supports an explicit three-node GoAkt cluster over Tailscale. The custom advertised actor port, discovery/gossip port, and peers/registry port are distinct fixed listeners bound only to the concrete local Tailscale IPv4 address. A repository-owned discovery provider re-resolves configured MagicDNS peers during bootstrap and quorum-loss rejoin. DNS supplies candidate addresses only: DNS names are neither logical node identity nor mTLS identity.
+Schema v2 supports an explicit owner-controlled GoAkt cluster over a configured trusted network. The custom advertised actor port, discovery/gossip port, peers/registry port, and workstation application endpoint are distinct fixed listeners bound only to the concrete local advertised address. A repository-owned discovery provider re-resolves configured peers during bootstrap and quorum-loss rejoin. DNS supplies candidate addresses only: DNS names are neither logical node identity nor mTLS identity.
 
-Tailscale ACL/device identity is the network trust boundary. Independent TLS 1.3 mutual authentication requires an exact allowlist of peer URI SAN identities and owner-private, no-follow certificate material. GoAkt v4.5.2 cannot bind one certificate identity to one source IP; the accepted deployment treats all allowlisted service nodes as equally trusted actor-plane peers. Automatic actor relocation remains disabled, and DNS changes never migrate durable home-node authority.
+The operator-provided private network is the reachability boundary. Independent TLS 1.3 mutual authentication requires an exact allowlist of peer URI SAN identities and owner-private, no-follow certificate material. GoAkt v4.5.2 cannot bind one certificate identity to one source address; the accepted deployment treats all allowlisted service nodes as equally trusted actor-plane peers. Automatic actor relocation remains disabled, and DNS changes never migrate durable home-node authority.
 
 ### Persistence and diagnostics
 
@@ -50,4 +50,4 @@ Clients can move between local or authenticated remote agents without API PID co
 - Expiry uses the same acknowledged cleanup coordinator as explicit close.
 - Cleanup plans remain until both registries and every affected live AgentActor acknowledge or DeathWatch proves termination; an AgentActor with a projection retains its acknowledgement until projection unsubscribe and termination are proven.
 - Global AgentActors survive session and view cleanup.
-- Managed configuration keeps remoting disabled until host-specific Tailscale ACLs and URI-SAN mTLS files are provisioned. Enabled schema-v2 configuration installs `WithRemote`, `WithCluster`, and `WithoutRelocation` only after strict Tailscale DNS/address and certificate validation.
+- Managed configuration keeps remoting disabled until host-specific trusted-network reachability and URI-SAN mTLS files are provisioned. Enabled schema-v2 configuration installs `WithRemote`, `WithCluster`, and `WithoutRelocation` only after strict DNS/address and certificate validation.

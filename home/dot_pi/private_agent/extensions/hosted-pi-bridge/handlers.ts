@@ -1,6 +1,6 @@
 import { modelResultContent, naturalResultSummary, renderToolCall, renderToolResult } from "./communication-ui.ts";
 
-export const HOSTED_ENVIRONMENT = ["WS_SUBAGENTS_SOCKET", "WS_SUBAGENTS_CREDENTIAL_FILE", "WS_SUBAGENTS_SESSION_ID", "WS_SUBAGENTS_GENERATION_ID", "WS_SUBAGENTS_CALLER", "WS_SUBAGENTS_AGENT_ID", "WS_SUBAGENTS_RUNTIME_ID", "WS_SUBAGENTS_INCARNATION"] as const;
+export const HOSTED_ENVIRONMENT = ["WS_SUBAGENTS_ENDPOINT", "WS_SUBAGENTS_CREDENTIAL_FILE", "WS_SUBAGENTS_SESSION_ID", "WS_SUBAGENTS_GENERATION_ID", "WS_SUBAGENTS_CALLER", "WS_SUBAGENTS_AGENT_ID", "WS_SUBAGENTS_RUNTIME_ID", "WS_SUBAGENTS_INCARNATION"] as const;
 
 export function completeHostedEnvironment(environment: NodeJS.ProcessEnv): boolean {
   const values = HOSTED_ENVIRONMENT.map((name) => environment[name]);

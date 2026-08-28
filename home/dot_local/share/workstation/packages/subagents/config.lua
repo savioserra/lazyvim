@@ -173,9 +173,9 @@ function M.verify_managed_active(contents)
 	)
 	if remoting_enabled == "true" then
 		assert(remoting_values.mode == '"cluster"', "managed remoting mode must be cluster")
-		assert(remoting_values.network_trust == '"tailscale"', "managed remoting network trust must be tailscale")
-		assert(remoting_values.allowed_cidrs == '["100.64.0.0/10"]', "managed remoting CIDR must be Tailscale IPv4")
-		assert(remoting_values.address_families == '["ipv4"]', "managed remoting must use IPv4")
+		assert(remoting_values.network_trust ~= nil, "managed remoting network trust must be explicit")
+		assert(remoting_values.allowed_cidrs ~= nil, "managed remoting CIDR allowlist must be explicit")
+		assert(remoting_values.address_families == '["ipv4"]', "managed remoting address family must be explicit IPv4")
 		assert(peer_tables == 2, "managed cluster nodes must configure exactly two peers")
 	else
 		assert(remoting_enabled == "false", "managed remoting enabled flag must be explicit")

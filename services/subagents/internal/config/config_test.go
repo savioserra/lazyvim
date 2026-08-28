@@ -69,7 +69,7 @@ func TestResolveRemotingFailsClosedForAmbiguousNonlocalFamilyAndPoisonedDNS(t *t
 		{"ambiguous bind", func(*config.RemotingConfig) {}, resolver{"bind.taila.ts.net": {addr("100.64.0.4"), addr("100.64.0.6")}, "peer.taila.ts.net": {addr("100.64.0.5")}}, locals{addr("100.64.0.4"), addr("100.64.0.6")}, "exactly one"},
 		{"nonlocal bind", func(*config.RemotingConfig) {}, resolver{"bind.taila.ts.net": {addr("100.64.0.4")}, "peer.taila.ts.net": {addr("100.64.0.5")}}, locals{addr("100.64.0.9")}, "not assigned locally"},
 		{"poisoned peer", func(*config.RemotingConfig) {}, resolver{"bind.taila.ts.net": {addr("100.64.0.4")}, "peer.taila.ts.net": {addr("100.64.0.5"), addr("203.0.113.9")}}, locals{addr("100.64.0.4")}, "outside allowed CIDRs"},
-		{"disallowed family", func(c *config.RemotingConfig) { c.AllowedCIDRs = append(c.AllowedCIDRs, "2001:db8::/32") }, resolver{"bind.taila.ts.net": {addr("100.64.0.4")}, "peer.taila.ts.net": {addr("2001:db8::5")}}, locals{addr("100.64.0.4")}, "tailscale remoting requires"},
+		{"disallowed family", func(c *config.RemotingConfig) { c.AllowedCIDRs = []string{"100.64.0.0/10"} }, resolver{"bind.taila.ts.net": {addr("100.64.0.4")}, "peer.taila.ts.net": {addr("2001:db8::5")}}, locals{addr("100.64.0.4")}, "disallowed ipv6"},
 		{"wildcard", func(*config.RemotingConfig) {}, resolver{"bind.taila.ts.net": {addr("0.0.0.0")}, "peer.taila.ts.net": {addr("100.64.0.5")}}, locals{addr("0.0.0.0")}, "non-concrete"},
 	}
 	for _, test := range tests {

@@ -5,7 +5,6 @@
   <key>ProgramArguments</key><array>
     <string>{{ .chezmoi.homeDir }}/.local/bin/workstation-subagents</string>
     <string>--config</string><string>{{ .chezmoi.homeDir }}/.config/workstation/subagents/config.toml</string>
-    <string>--socket</string><string>{{ .chezmoi.homeDir }}/.local/state/workstation/runtime/ws-subagents/control.sock</string>
   </array>
   <key>EnvironmentVariables</key><dict>
     <key>HOME</key><string>{{ .chezmoi.homeDir }}</string>

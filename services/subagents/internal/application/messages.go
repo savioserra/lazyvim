@@ -357,10 +357,11 @@ type AgentRoute struct {
 }
 
 type PublicNode struct {
-	Identity string
-	Host     string
-	Port     int
-	Stale    bool
+	Identity   string
+	Host       string
+	Port       int
+	ClientPort int
+	Stale      bool
 }
 type PublicAgentPlacement struct{ NodeIdentity string }
 type CreatePublicAgent struct {

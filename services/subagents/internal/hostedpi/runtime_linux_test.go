@@ -32,7 +32,7 @@ func buildSleepingPi(t *testing.T, directory string) string {
 }
 
 func TestHostedPiLaunchArgsUseFullscreenTUIBeforeSessionOptions(t *testing.T) {
-	config := Config{TmuxBinary: "/tmux", PiBinary: "/pi", BridgeExtension: "/bridge.ts", DaemonSocket: "/daemon.sock", CredentialFile: "/credential.json", ServerName: "server", TmuxConfig: "/tmux.conf", ProjectDirectory: "/project", SessionID: "session", GenerationID: "generation", CallerIdentity: "hosted:agent", TrustProject: true}
+	config := Config{TmuxBinary: "/tmux", PiBinary: "/pi", BridgeExtension: "/bridge.ts", DaemonEndpoint: "ws://127.0.0.1:17213/actors", CredentialFile: "/credential.json", ServerName: "server", TmuxConfig: "/tmux.conf", ProjectDirectory: "/project", SessionID: "session", GenerationID: "generation", CallerIdentity: "hosted:agent", TrustProject: true}
 	spec := application.HostedPiLaunchSpec{AgentID: "agent", RuntimeID: "runtime", Incarnation: 1, TmuxSession: "tmux-session", TmuxWindow: "pi", PiSessionDirectory: "/pi-sessions", PiSessionName: "pi-session"}
 	args := hostedPiLaunchArgs(config, spec)
 
@@ -74,7 +74,7 @@ func TestRuntimeUsesStableTmuxIDsAndRefusesForeignNameReplacement(t *testing.T) 
 		t.Fatal(err)
 	}
 	pi := buildSleepingPi(t, root)
-	runtime := &Runtime{Config: Config{TmuxBinary: tmux, PiBinary: pi, BridgeExtension: filepath.Join(root, "bridge.ts"), DaemonSocket: filepath.Join(root, "daemon.sock"), CredentialFile: filepath.Join(root, "credential.json"), ServerName: server, TmuxConfig: configPath, ProjectDirectory: root, StateDirectory: filepath.Join(root, "state"), SessionID: "session", GenerationID: "generation", CallerIdentity: "hosted:agent", TrustProject: true}}
+	runtime := &Runtime{Config: Config{TmuxBinary: tmux, PiBinary: pi, BridgeExtension: filepath.Join(root, "bridge.ts"), DaemonEndpoint: filepath.Join(root, "daemon.sock"), CredentialFile: filepath.Join(root, "credential.json"), ServerName: server, TmuxConfig: configPath, ProjectDirectory: root, StateDirectory: filepath.Join(root, "state"), SessionID: "session", GenerationID: "generation", CallerIdentity: "hosted:agent", TrustProject: true}}
 	runtime.beforeAtomicKill = func(reason string) {
 		if reason != "stop" {
 			return
@@ -131,7 +131,7 @@ func TestRuntimeStartupCriticalSectionOutlivesCallerCancellation(t *testing.T) {
 	_ = os.WriteFile(configPath, []byte("set -g status off\n"), 0o600)
 	pi := buildSleepingPi(t, root)
 	proxy := buildDelayedTmuxProxy(t, root, tmux, 150*time.Millisecond)
-	runtime := &Runtime{Config: Config{TmuxBinary: proxy, PiBinary: pi, BridgeExtension: filepath.Join(root, "bridge.ts"), DaemonSocket: filepath.Join(root, "daemon.sock"), CredentialFile: filepath.Join(root, "credential.json"), ServerName: server, TmuxConfig: configPath, ProjectDirectory: root, StateDirectory: filepath.Join(root, "state"), SessionID: "session", GenerationID: "generation", CallerIdentity: "hosted:agent", TrustProject: true}}
+	runtime := &Runtime{Config: Config{TmuxBinary: proxy, PiBinary: pi, BridgeExtension: filepath.Join(root, "bridge.ts"), DaemonEndpoint: filepath.Join(root, "daemon.sock"), CredentialFile: filepath.Join(root, "credential.json"), ServerName: server, TmuxConfig: configPath, ProjectDirectory: root, StateDirectory: filepath.Join(root, "state"), SessionID: "session", GenerationID: "generation", CallerIdentity: "hosted:agent", TrustProject: true}}
 	spec := application.HostedPiLaunchSpec{AgentID: "agent", RuntimeID: "cancel-runtime", Incarnation: 1, TmuxSession: "cancel-name", TmuxWindow: "pi", PiSessionDirectory: filepath.Join(root, "sessions"), PiSessionName: "pi-session"}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
@@ -172,7 +172,7 @@ func TestAdoptRequiresExactMarkersAndLeavesForeignIdentityUntouched(t *testing.T
 	configPath := filepath.Join(root, "tmux.conf")
 	_ = os.WriteFile(configPath, []byte("set -g status off\n"), 0o600)
 	pi := buildSleepingPi(t, root)
-	runtime := &Runtime{Config: Config{TmuxBinary: tmux, PiBinary: pi, BridgeExtension: filepath.Join(root, "bridge.ts"), DaemonSocket: filepath.Join(root, "daemon.sock"), CredentialFile: filepath.Join(root, "credential.json"), ServerName: server, TmuxConfig: configPath, ProjectDirectory: root, StateDirectory: filepath.Join(root, "state"), SessionID: "session", GenerationID: "generation", CallerIdentity: "hosted:agent", TrustProject: true}}
+	runtime := &Runtime{Config: Config{TmuxBinary: tmux, PiBinary: pi, BridgeExtension: filepath.Join(root, "bridge.ts"), DaemonEndpoint: filepath.Join(root, "daemon.sock"), CredentialFile: filepath.Join(root, "credential.json"), ServerName: server, TmuxConfig: configPath, ProjectDirectory: root, StateDirectory: filepath.Join(root, "state"), SessionID: "session", GenerationID: "generation", CallerIdentity: "hosted:agent", TrustProject: true}}
 	spec := application.HostedPiLaunchSpec{AgentID: "agent", RuntimeID: "runtime", Incarnation: 1, TmuxSession: "stable-adopt", TmuxWindow: "pi", PiSessionDirectory: filepath.Join(root, "sessions"), PiSessionName: "pi-session"}
 	process, err := runtime.Start(context.Background(), spec)
 	if err != nil {
@@ -216,7 +216,7 @@ func TestStartupRollbackAtomicPredicatePreservesRaceWindowReplacement(t *testing
 		t.Fatal(err)
 	}
 	pi := buildSleepingPi(t, root)
-	runtime := &Runtime{Config: Config{TmuxBinary: tmux, PiBinary: pi, BridgeExtension: filepath.Join(root, "bridge.ts"), DaemonSocket: filepath.Join(root, "daemon.sock"), CredentialFile: filepath.Join(root, "credential.json"), ServerName: server, TmuxConfig: configPath, ProjectDirectory: root, StateDirectory: filepath.Join(root, "state"), SessionID: "session", GenerationID: "generation", CallerIdentity: "hosted:agent", TrustProject: true}}
+	runtime := &Runtime{Config: Config{TmuxBinary: tmux, PiBinary: pi, BridgeExtension: filepath.Join(root, "bridge.ts"), DaemonEndpoint: filepath.Join(root, "daemon.sock"), CredentialFile: filepath.Join(root, "credential.json"), ServerName: server, TmuxConfig: configPath, ProjectDirectory: root, StateDirectory: filepath.Join(root, "state"), SessionID: "session", GenerationID: "generation", CallerIdentity: "hosted:agent", TrustProject: true}}
 	runtime.writeRecord = func(string, any) error { return errors.New("forced record failure") }
 	runtime.beforeAtomicKill = func(reason string) {
 		if reason != "startup-rollback" {
@@ -264,7 +264,7 @@ func TestSuccessfulTmuxWithMalformedIdentityRemainsReservedAndIndeterminate(t *t
 	_ = os.WriteFile(configPath, []byte("set -g pane-base-index 1\n"), 0o600)
 	pi := buildSleepingPi(t, root)
 	proxy := buildMalformedTmuxProxy(t, root, tmux)
-	config := Config{TmuxBinary: proxy, PiBinary: pi, BridgeExtension: filepath.Join(root, "bridge.ts"), DaemonSocket: filepath.Join(root, "daemon.sock"), CredentialFile: filepath.Join(root, "credential.json"), ServerName: server, TmuxConfig: configPath, ProjectDirectory: root, StateDirectory: filepath.Join(root, "state"), SessionID: "session", GenerationID: "generation", CallerIdentity: "hosted:agent", TrustProject: true}
+	config := Config{TmuxBinary: proxy, PiBinary: pi, BridgeExtension: filepath.Join(root, "bridge.ts"), DaemonEndpoint: filepath.Join(root, "daemon.sock"), CredentialFile: filepath.Join(root, "credential.json"), ServerName: server, TmuxConfig: configPath, ProjectDirectory: root, StateDirectory: filepath.Join(root, "state"), SessionID: "session", GenerationID: "generation", CallerIdentity: "hosted:agent", TrustProject: true}
 	spec := application.HostedPiLaunchSpec{AgentID: "agent", RuntimeID: "malformed-runtime", Incarnation: 1, TmuxSession: "malformed-name", TmuxWindow: "pi", PiSessionDirectory: filepath.Join(root, "sessions"), PiSessionName: "pi"}
 	if _, err := (&Runtime{Config: config}).Start(context.Background(), spec); !errors.Is(err, application.ErrHostedOwnershipIndeterminate) {
 		t.Fatalf("malformed successful creation was not indeterminate: %v", err)
@@ -301,7 +301,7 @@ func TestPublishedRecordFailureRollsBackExactlyOrRetainsReservation(t *testing.T
 			server, configPath := fmt.Sprintf("ws-hosted-published-%t", removalFailure), filepath.Join(root, "tmux.conf")
 			_ = os.WriteFile(configPath, []byte("set -g pane-base-index 1\n"), 0o600)
 			pi := buildSleepingPi(t, root)
-			config := Config{TmuxBinary: tmux, PiBinary: pi, BridgeExtension: filepath.Join(root, "bridge.ts"), DaemonSocket: filepath.Join(root, "daemon.sock"), CredentialFile: filepath.Join(root, "credential.json"), ServerName: server, TmuxConfig: configPath, ProjectDirectory: root, StateDirectory: filepath.Join(root, "state"), SessionID: "session", GenerationID: "generation", CallerIdentity: "hosted:agent", TrustProject: true}
+			config := Config{TmuxBinary: tmux, PiBinary: pi, BridgeExtension: filepath.Join(root, "bridge.ts"), DaemonEndpoint: filepath.Join(root, "daemon.sock"), CredentialFile: filepath.Join(root, "credential.json"), ServerName: server, TmuxConfig: configPath, ProjectDirectory: root, StateDirectory: filepath.Join(root, "state"), SessionID: "session", GenerationID: "generation", CallerIdentity: "hosted:agent", TrustProject: true}
 			spec := application.HostedPiLaunchSpec{AgentID: "agent", RuntimeID: "published-runtime", Incarnation: 1, TmuxSession: "published-name", TmuxWindow: "pi", PiSessionDirectory: filepath.Join(root, "sessions"), PiSessionName: "pi"}
 			runtime := &Runtime{Config: config}
 			runtime.writeRecord = func(path string, value any) error {
@@ -388,7 +388,7 @@ func TestRuntimeSecureDirectoryCreationDoesNotMutateThroughSymlink(t *testing.T)
 	if err := os.Symlink(target, link); err != nil {
 		t.Fatal(err)
 	}
-	runtime := &Runtime{Config: Config{TmuxBinary: "/does/not/run", PiBinary: "/pi", BridgeExtension: "/bridge", DaemonSocket: "/socket", CredentialFile: "/credential", ProjectDirectory: root, StateDirectory: filepath.Join(link, "state"), SessionID: "session", GenerationID: "generation", CallerIdentity: "hosted:agent"}}
+	runtime := &Runtime{Config: Config{TmuxBinary: "/does/not/run", PiBinary: "/pi", BridgeExtension: "/bridge", DaemonEndpoint: "ws://127.0.0.1:17213/actors", CredentialFile: "/credential", ProjectDirectory: root, StateDirectory: filepath.Join(link, "state"), SessionID: "session", GenerationID: "generation", CallerIdentity: "hosted:agent"}}
 	spec := application.HostedPiLaunchSpec{AgentID: "agent", RuntimeID: "runtime", Incarnation: 1, TmuxSession: "session", TmuxWindow: "pi", PiSessionDirectory: filepath.Join(root, "sessions"), PiSessionName: "pi"}
 	if _, err := runtime.Start(context.Background(), spec); err == nil {
 		t.Fatal("symlinked state path was accepted")
@@ -404,7 +404,7 @@ func TestRuntimeStartHonorsHangingTmuxCancellation(t *testing.T) {
 		t.Fatal(err)
 	}
 	hanging := buildSleepingPi(t, root)
-	runtime := &Runtime{Config: Config{TmuxBinary: hanging, PiBinary: "/pi", BridgeExtension: "/bridge", DaemonSocket: "/socket", CredentialFile: "/credential", ProjectDirectory: root, StateDirectory: filepath.Join(root, "state"), SessionID: "session", GenerationID: "generation", CallerIdentity: "hosted:agent"}}
+	runtime := &Runtime{Config: Config{TmuxBinary: hanging, PiBinary: "/pi", BridgeExtension: "/bridge", DaemonEndpoint: "ws://127.0.0.1:17213/actors", CredentialFile: "/credential", ProjectDirectory: root, StateDirectory: filepath.Join(root, "state"), SessionID: "session", GenerationID: "generation", CallerIdentity: "hosted:agent"}}
 	spec := application.HostedPiLaunchSpec{AgentID: "agent", RuntimeID: "runtime", Incarnation: 1, TmuxSession: "session", TmuxWindow: "pi", PiSessionDirectory: filepath.Join(root, "sessions"), PiSessionName: "pi"}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
 	defer cancel()

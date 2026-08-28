@@ -166,7 +166,7 @@ export function naturalResultSummary(name: string, details: any): string {
 
 export function modelResultContent(name: string, details: any): string {
   const summary = naturalResultSummary(name, details);
-  if (/actor_client_send|actor_send|actor_client_ask|actor_ask/.test(name) && details) {
+  if (/actor_send|actor_ask/.test(name) && details) {
     const parts = [`${summary}.`];
     for (const field of ["requestId", "dedupeId", "chainId", "sourceMutationSequence", "kind", "source", "target"] as const) {
       if (details[field] !== undefined && details[field] !== "") parts.push(`${field}=${safePreview(String(details[field]), 128)}`);
@@ -184,7 +184,7 @@ export function modelResultContent(name: string, details: any): string {
     if (details.terminal !== undefined) parts.push(`terminal=${details.terminal ? "true" : "false"}`);
     if (details.answer) parts.push(`answer=${safePreview(details.answer, MAX_TOOL_PREVIEW)}`);
     if (details.reason) parts.push(`reason=${safePreview(details.reason, 120)}`);
-    if (details.terminal === false) parts.push(`next=actor_client_prompt_wait with this lifecycleId`);
+    if (details.terminal === false) parts.push(`next=actor_prompt_wait with this lifecycleId`);
     return parts.join(" ");
   }
   return summary;

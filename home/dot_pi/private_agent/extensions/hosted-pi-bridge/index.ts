@@ -3,8 +3,6 @@ import { Text } from "@earendil-works/pi-tui";
 import { create, fromBinary, toBinary, type DescMessage } from "@bufbuild/protobuf";
 import { randomUUID } from "node:crypto";
 import { readFile, lstat } from "node:fs/promises";
-import { connect, type Socket } from "node:net";
-import { isAbsolute, dirname } from "node:path";
 import { Type } from "typebox";
 type Envelope = any;
 let EnvelopeSchema: DescMessage;
@@ -22,7 +20,7 @@ type CredentialFile = { credential_b64: string };
 type CommunicationEntry = { key: string; line?: string; view?: CommunicationView };
 type DeliveryMarker = { dedupeId: string; sequence: string; kind?: number | string };
 type Binding = {
-  socket: string;
+  endpoint: string;
   sessionId: string;
   generationId: string;
   caller: string;
@@ -34,7 +32,7 @@ type Binding = {
 type TargetFence = { handle: string; fence: bigint };
 
 class FramedClient {
-  private socket?: Socket;
+  private socket?: WebSocket;
   private sequence = 0n;
   private pendingWrite = Promise.resolve();
   private buffer = Buffer.alloc(0);
@@ -49,26 +47,27 @@ class FramedClient {
   }
 
   async open(): Promise<void> {
-    await validatePrivateSocket(this.binding.socket);
-    this.socket = await new Promise<Socket>((resolve, reject) => {
-      const socket = connect(this.binding.socket);
-      const timer = setTimeout(() => socket.destroy(new Error("daemon connection deadline expired")), SHORT_REQUEST_TIMEOUT_MS);
-      socket.once("connect", () => { clearTimeout(timer); resolve(socket); });
-      socket.once("error", (error) => { clearTimeout(timer); reject(error); });
+    validateActorEndpoint(this.binding.endpoint);
+    this.socket = await new Promise<WebSocket>((resolve, reject) => {
+      const socket = new WebSocket(this.binding.endpoint);
+      socket.binaryType = "arraybuffer";
+      const timer = setTimeout(() => { socket.close(); reject(new Error("daemon websocket deadline expired")); }, SHORT_REQUEST_TIMEOUT_MS);
+      socket.addEventListener("open", () => { clearTimeout(timer); resolve(socket); }, { once: true });
+      socket.addEventListener("error", () => { clearTimeout(timer); reject(new Error("daemon websocket error")); }, { once: true });
     });
-    this.socket.on("data", (chunk) => this.onData(chunk));
-    this.socket.once("close", () => this.rejectAll(new Error("daemon connection closed")));
-    this.socket.once("error", (error) => this.rejectAll(error));
+    this.socket.addEventListener("message", (event) => { void this.onMessage(event); });
+    this.socket.addEventListener("close", () => this.rejectAll(new Error("daemon connection closed")), { once: true });
+    this.socket.addEventListener("error", () => this.rejectAll(new Error("daemon websocket error")), { once: true });
   }
 
   async close(): Promise<void> {
     const socket = this.socket;
     this.socket = undefined;
     if (!socket) return;
-    socket.end();
+    socket.close();
     await new Promise<void>((resolve) => {
-      socket.once("close", () => resolve());
-      setTimeout(() => { socket.destroy(); resolve(); }, 250).unref();
+      const timer = setTimeout(resolve, 250);
+      socket.addEventListener("close", () => { clearTimeout(timer); resolve(); }, { once: true });
     });
   }
 
@@ -79,7 +78,7 @@ class FramedClient {
   }
 
   isOpen(): boolean { return this.socket !== undefined; }
-  invalidate(error: Error): void { const socket=this.socket;this.socket=undefined;this.rejectAll(error);socket?.destroy(error); }
+  invalidate(error: Error): void { const socket=this.socket;this.socket=undefined;this.rejectAll(error);socket?.close(); }
 
   private requestNow<T>(payloadCase: string, schema: DescMessage, value: T, target?: TargetFence, requestId?: string, timeoutMillis = REQUEST_TIMEOUT_MS): Promise<Envelope> {
     const socket = this.socket;
@@ -107,11 +106,14 @@ class FramedClient {
     return new Promise<Envelope>((resolve, reject) => {
       const timer = setTimeout(() => { this.pendingResponses.delete(envelope.requestId); reject(new Error("daemon response deadline expired")); this.invalidate(new Error("daemon response deadline expired")); }, timeoutMillis);
       this.pendingResponses.set(envelope.requestId, { sequence: envelope.sequence, resolve, reject, timer });
-      socket.write(frame, (error) => {
-        if (!error) return;
-        clearTimeout(timer); this.pendingResponses.delete(envelope.requestId); reject(error); this.invalidate(error);
-      });
+      socket.send(frame);
     });
+  }
+
+  private async onMessage(event: MessageEvent): Promise<void> {
+    const chunk = event.data instanceof ArrayBuffer ? Buffer.from(event.data) : event.data instanceof Blob ? Buffer.from(await event.data.arrayBuffer()) : Buffer.isBuffer(event.data) ? event.data : undefined;
+    if (!chunk) { this.rejectAll(new Error("daemon websocket payload is not binary")); return; }
+    this.onData(chunk);
   }
 
   private onData(chunk: Buffer) {
@@ -446,22 +448,23 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
 
 
 async function loadBinding(): Promise<Binding> {
-  const socket = requiredEnv("WS_SUBAGENTS_SOCKET");
+  const endpoint = requiredEnv("WS_SUBAGENTS_ENDPOINT");
+  validateActorEndpoint(endpoint);
   const credentialPath = requiredEnv("WS_SUBAGENTS_CREDENTIAL_FILE");
   const stat = await lstat(credentialPath);
   if (!stat.isFile() || (stat.mode & 0o777) !== 0o600 || (typeof process.getuid === "function" && stat.uid !== process.getuid())) throw new Error("hosted bridge credential file is not owner-private");
   const parsed = JSON.parse(await readFile(credentialPath, "utf8")) as CredentialFile;
   const credential = Uint8Array.from(Buffer.from(parsed.credential_b64, "base64"));
   if (credential.byteLength !== 32) throw new Error("hosted bridge credential has invalid length");
-  return { socket, credential, sessionId: requiredEnv("WS_SUBAGENTS_SESSION_ID"), generationId: requiredEnv("WS_SUBAGENTS_GENERATION_ID"), caller: requiredEnv("WS_SUBAGENTS_CALLER"), agentId: requiredEnv("WS_SUBAGENTS_AGENT_ID"), runtimeId: requiredEnv("WS_SUBAGENTS_RUNTIME_ID"), incarnation: BigInt(requiredEnv("WS_SUBAGENTS_INCARNATION")) };
+  return { endpoint, credential, sessionId: requiredEnv("WS_SUBAGENTS_SESSION_ID"), generationId: requiredEnv("WS_SUBAGENTS_GENERATION_ID"), caller: requiredEnv("WS_SUBAGENTS_CALLER"), agentId: requiredEnv("WS_SUBAGENTS_AGENT_ID"), runtimeId: requiredEnv("WS_SUBAGENTS_RUNTIME_ID"), incarnation: BigInt(requiredEnv("WS_SUBAGENTS_INCARNATION")) };
 }
 
-async function validatePrivateSocket(path: string) {
-  if (!isAbsolute(path)) throw new Error("hosted bridge socket path must be absolute");
-  const [socket, parent] = await Promise.all([lstat(path), lstat(dirname(path))]);
-  const uid = typeof process.getuid === "function" ? process.getuid() : undefined;
-  if (!socket.isSocket() || (socket.mode & 0o777) !== 0o600 || (uid !== undefined && socket.uid !== uid)) throw new Error("hosted bridge daemon socket is not owner-private");
-  if (!parent.isDirectory() || (parent.mode & 0o077) !== 0 || (uid !== undefined && parent.uid !== uid)) throw new Error("hosted bridge socket directory is not owner-private");
+function validateActorEndpoint(endpoint: string) {
+  let url: URL;
+  try { url = new URL(endpoint); } catch { throw new Error("hosted bridge endpoint must be a websocket URL"); }
+  if (url.protocol !== "ws:" && url.protocol !== "wss:") throw new Error("hosted bridge endpoint must use ws or wss");
+  if (url.pathname !== "/actors") throw new Error("hosted bridge endpoint path must be /actors");
+  if (!url.hostname || !url.port) throw new Error("hosted bridge endpoint host and port are required");
 }
 
 export async function connectBridgeWithRetry(client: Pick<FramedClient, "request">, binding: Binding, piSessionId: string, lastAckedSequence: bigint, bridgeConnectSchema: DescMessage, attempts = 30, wait = delay) {

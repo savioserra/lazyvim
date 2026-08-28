@@ -132,7 +132,7 @@ enabled=true
 [remoting]
 enabled=true
 ]]
-), "managed enabled remoting must require the complete Tailscale cluster boundary")
+), "managed enabled remoting must require the complete trusted-network cluster boundary")
 assert_fails("[hosted_pi].enabled must be true", function()
 	subagents_config.verify_managed_active([[
 [service]

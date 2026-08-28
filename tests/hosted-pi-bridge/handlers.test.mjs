@@ -4,7 +4,7 @@ import { buildActorControl, buildActorMessage, buildDeliveryAck, communicationKe
 import { incomingNote, incomingRequestText, outgoingExchange, renderCommunicationCard, compactToolCall, compactToolResult, modelResultContent } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/communication-ui.ts";
 import { actorMessageModelResult, connectBridgeWithRetry } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/index.ts";
 
-const complete = { WS_SUBAGENTS_SOCKET: "/run/user/1000/socket", WS_SUBAGENTS_CREDENTIAL_FILE: "/state/credential", WS_SUBAGENTS_SESSION_ID: "session", WS_SUBAGENTS_GENERATION_ID: "generation", WS_SUBAGENTS_CALLER: "hosted:agent", WS_SUBAGENTS_AGENT_ID: "agent", WS_SUBAGENTS_RUNTIME_ID: "runtime", WS_SUBAGENTS_INCARNATION: "1" };
+const complete = { WS_SUBAGENTS_ENDPOINT: "ws://127.0.0.1:17213/actors", WS_SUBAGENTS_CREDENTIAL_FILE: "/state/credential", WS_SUBAGENTS_SESSION_ID: "session", WS_SUBAGENTS_GENERATION_ID: "generation", WS_SUBAGENTS_CALLER: "hosted:agent", WS_SUBAGENTS_AGENT_ID: "agent", WS_SUBAGENTS_RUNTIME_ID: "runtime", WS_SUBAGENTS_INCARNATION: "1" };
 
 test("bridge startup passes the dynamically imported connect schema explicitly", async () => {
   const schema = { typeName: "test.BridgeConnectRequest" };

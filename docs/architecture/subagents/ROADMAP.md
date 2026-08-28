@@ -6,7 +6,7 @@ This file is the canonical delivery roadmap. ADRs in this directory define archi
 
 | Phase | State | Exit gate |
 |---|---|---|
-| 0. GoAkt foundation | Approved | Global actors, protobuf UDS, fencing, lifecycle, security tests |
+| 0. GoAkt foundation | Approved | Global actors, protobuf WebSocket application plane, fencing, lifecycle, security tests |
 | 1. Hosted Pi runtime | Approved | Full Pi TUI in exactly owned tmux; dynamic actor lifecycle; bridge commands/tools |
 | 2. Self-hosting client MVP | Live, managed | Normal Pi creates dynamic actors, sends a real prompt, receives the correlated model answer, and delegates a repository task through the owned system |
 | 3. Actor-native push stabilization | Current | Hosted bridges use authenticated daemon push frames from watched BridgeSessionActors, reconnect replay starts from last delivery ACK, and periodic polling is compatibility-only |
@@ -14,7 +14,7 @@ This file is the canonical delivery roadmap. ADRs in this directory define archi
 | 5. Authority cutover | Deferred | Owned execution parity proven; disable third-party authority without dual writers; retain bounded rollback window |
 | 6. Legacy removal | Deferred | Remove `pi-subagents`, old XState/Terminal Kit observer, superseded tests/docs/packages |
 | 7. Managed deployment | Live | Reviewed binary provisioning and active systemd-user/LaunchAgent transition; Linux/WSL/macOS validation |
-| 8. Tailscale remoting and clustering | In progress | Three-node MagicDNS bootstrap, custom actor/discovery/peers ports, exact Tailscale-only binds, URI-SAN mTLS, quorum 2, no relocation, and physical VPS/macOS evidence |
+| 8. Trusted-network remoting and clustering | In progress | Multi-node DNS bootstrap, custom actor/discovery/peers/application ports, exact advertised-address binds, URI-SAN mTLS, quorum 2, no relocation, and physical multi-host evidence |
 
 ## Client MVP definition
 

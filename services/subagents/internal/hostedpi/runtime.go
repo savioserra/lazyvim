@@ -32,10 +32,10 @@ var (
 )
 
 type Config struct {
-	TmuxBinary, PiBinary, BridgeExtension, DaemonSocket, CredentialFile string
-	ServerName, TmuxConfig, ProjectDirectory, StateDirectory            string
-	SessionID, GenerationID, CallerIdentity                             string
-	TrustProject                                                        bool
+	TmuxBinary, PiBinary, BridgeExtension, DaemonEndpoint, CredentialFile string
+	ServerName, TmuxConfig, ProjectDirectory, StateDirectory              string
+	SessionID, GenerationID, CallerIdentity                               string
+	TrustProject                                                          bool
 }
 
 type Runtime struct {
@@ -179,7 +179,7 @@ func hostedPiLaunchArgs(config Config, spec application.HostedPiLaunchSpec) []st
 	args := tmuxPrefix(config)
 	args = append(args, "new-session", "-d", "-P", "-F", "#{session_id}\t#{window_id}\t#{pane_id}\t#{pid}", "-s", spec.TmuxSession, "-n", spec.TmuxWindow,
 		"-e", "PATH="+filepath.Dir(config.PiBinary)+string(os.PathListSeparator)+os.Getenv("PATH"),
-		"-e", "WS_SUBAGENTS_SOCKET="+config.DaemonSocket,
+		"-e", "WS_SUBAGENTS_ENDPOINT="+config.DaemonEndpoint,
 		"-e", "WS_SUBAGENTS_CREDENTIAL_FILE="+config.CredentialFile,
 		"-e", "WS_SUBAGENTS_SESSION_ID="+config.SessionID,
 		"-e", "WS_SUBAGENTS_GENERATION_ID="+config.GenerationID,
@@ -427,7 +427,7 @@ func tmuxPrefix(config Config) []string {
 }
 
 func validate(config Config, spec application.HostedPiLaunchSpec) error {
-	for name, value := range map[string]string{"tmux binary": config.TmuxBinary, "Pi binary": config.PiBinary, "bridge extension": config.BridgeExtension, "daemon socket": config.DaemonSocket, "credential file": config.CredentialFile, "project directory": config.ProjectDirectory, "state directory": config.StateDirectory, "agent id": spec.AgentID, "runtime id": spec.RuntimeID, "tmux session": spec.TmuxSession, "tmux window": spec.TmuxWindow, "Pi session directory": spec.PiSessionDirectory, "Pi session name": spec.PiSessionName} {
+	for name, value := range map[string]string{"tmux binary": config.TmuxBinary, "Pi binary": config.PiBinary, "bridge extension": config.BridgeExtension, "daemon endpoint": config.DaemonEndpoint, "credential file": config.CredentialFile, "project directory": config.ProjectDirectory, "state directory": config.StateDirectory, "agent id": spec.AgentID, "runtime id": spec.RuntimeID, "tmux session": spec.TmuxSession, "tmux window": spec.TmuxWindow, "Pi session directory": spec.PiSessionDirectory, "Pi session name": spec.PiSessionName} {
 		if value == "" || value != strings.TrimSpace(value) || strings.ContainsAny(value, "\x00\r\n") {
 			return fmt.Errorf("%s is required and must be trim-equal", name)
 		}
