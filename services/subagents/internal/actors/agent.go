@@ -435,7 +435,7 @@ func (a *AgentActor) subscriptionAck(ctx *actor.ReceiveContext, message *project
 }
 
 func (a *AgentActor) bridgeConnect(ctx *actor.ReceiveContext, message *application.BridgeConnect) {
-	if message == nil || a.runtimePID == nil || message.AgentID != a.id || message.RuntimeID != a.hostedPiRuntime.RuntimeID || message.Incarnation != a.hostedPiRuntime.Incarnation || message.PiSessionID == "" {
+	if message == nil || message.AgentID != a.id || message.RuntimeID != a.hostedPiRuntime.RuntimeID || message.Incarnation != a.hostedPiRuntime.Incarnation || message.PiSessionID == "" {
 		respondBridge(ctx, message.Result, &application.BridgeResult{Reason: "hosted bridge binding rejected"})
 		return
 	}

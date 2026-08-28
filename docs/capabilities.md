@@ -58,7 +58,7 @@ foundation
 │       └── pi-skills
 │           └── pi-subagents
 ├── go
-│   └── subagents [also requires pi; inactive daemon/hosted config and hosted bridge]
+│   └── subagents [also requires pi; active owner daemon, actor client, and hosted bridge]
 ├── secrets
 ├── nvim [package factory adds profile prerequisites]
 └── tmux [linux,darwin]
@@ -74,7 +74,7 @@ foundation
 | `pi-skills` | — | — | Managed skill files and Pi discovery | All |
 | `pi-subagents` | Exact Pi package and role skill policy | — | Lock integrity, extension tools, skill, role overrides | All |
 | `go` | — | — | Go version | Linux/WSL/macOS policy; legacy Windows removal inventory remains |
-| `subagents` | Exact hosted-bridge protobuf runtime | — | Owner-private inactive config, inert bridge discovery, lock integrity | Linux/WSL/macOS |
+| `subagents` | Exact actor extension runtimes, daemon/client build, owner service activation | — | Owner-private active config, binary paths, extension discovery, lock integrity | Linux/WSL/macOS |
 | `secrets` | — | — | Managed 1Password CLI version; never account or vault state | All; Windows ARM64 uses x64 emulation |
 | `nvim` | — | Locks and parsers | Startup, locks, profile behavior | All |
 | `tmux` | Plugin checkout | — | Commits, server, theme | Linux/macOS |
@@ -82,11 +82,11 @@ foundation
 
 ## GoAkt subagents boundary
 
-`packages/subagents/` owns the safely inactive deployed configuration and the source-managed hosted bridge dependency. Setup installs only exact `@bufbuild/protobuf@2.11.0` from the bridge lock; it does not start a daemon or runtime. The daemon source stays outside HOME under the sole nested module `services/subagents/`. The credential-free managed TOML requires both service and hosted Pi disabled and renders as `~/.config/workstation/subagents/config.toml` under 0700 directories with mode 0600.
+`packages/subagents/` owns the active owner-private deployed configuration, source-managed actor client, hosted bridge dependencies, daemon/client builds, and user-service activation. Setup installs exact npm dependencies from local locks, builds `workstation-subagents` and `workstation-subagents-clientctl` from the sole nested module `services/subagents/`, and enables/starts the owner systemd-user service or LaunchAgent. The managed TOML requires service and hosted Pi enabled, remoting disabled, and renders as `~/.config/workstation/subagents/config.toml` under 0700 directories with mode 0600.
 
 The long-lived service has one global `ServiceGuardian`. Its `AgentRegistryActor` owns stable reusable AgentActors independently of the sibling `SessionRegistryActor`. Client sessions are ephemeral access/subscription contexts; cleanup leaves AgentActors and hosted runtimes intact. Explicit hosted-owned agents own one `HostedPiRuntimeActor` child with asynchronous typed effects, lifecycle states, and DeathWatch. The concrete runtime records and revalidates exact tmux session/window/pane/PID/start-token/TTY identity and writes bounded atomic owner-private XDG operational records. Startup securely adopts only exact live owned tmux/Pi identity, restores fenced mutation/delivery state, and fails closed for foreign or indeterminate records. Existing observed-upstream agents and XState authority remain unchanged.
 
-The application protocol is bounded, sequenced protobuf-framed UDS traffic for local clients and the hosted bridge and remains separate from optional GoAkt TCP remoting. Remoting configuration validates vendor-neutral bind/peer addresses, logical and mTLS identities, address families, CIDRs, and an uninterpreted SSH target; DNS is never identity. GoAkt v4.5.2 native TLS does not expose the accepted-connection boundary needed to bind inbound CIDR policy to authenticated certificate identity. Enabled remoting therefore fails closed after validation, `remote.NewConfig` is not constructed, and production contains no `actor.WithRemote`.
+The application protocol is bounded, sequenced protobuf-framed UDS traffic for local clients and the hosted bridge and remains separate from optional GoAkt TCP remoting. Schema-v2 remoting validates a concrete local Tailscale IPv4 bind, MagicDNS peers, three distinct fixed cluster ports, logical identities, and owner-private URI-SAN mTLS material; DNS is never identity. Tailscale ACL/device identity is the network boundary and mTLS independently restricts the actor plane. Validated enabled configuration installs `actor.WithRemote`, `actor.WithCluster`, and `actor.WithoutRelocation`; managed configuration remains disabled until host certificates and physical three-node validation exist.
 
 See [`subagents.md`](subagents.md) for paths, platform inventory, fixtures, and commands.
 
@@ -130,7 +130,7 @@ The `packages.nvim` factory loads and validates the sole language profile source
 
 ## Pi resources
 
-`pi-skills` verifies managed files under `home/dot_pi/private_agent/skills/` and Pi discovery. `pi-subagents` owns its exact package installation, lock integrity, extension discovery, bundled skill, and `lazyvim` role-skill assignment. `subagents` owns the globally discoverable but environment-gated `hosted-pi-bridge`, its generated protobuf copy, exact dependency lock, and inert discovery check. `pi-tmux-subagents` continues to own the existing source-managed XState observer and renderer. Package-specific JavaScript verifiers remain inside their owning package directories.
+`pi-skills` verifies managed files under `home/dot_pi/private_agent/skills/` and Pi discovery. `pi-subagents` owns its exact package installation, lock integrity, extension discovery, bundled skill, and `lazyvim` role-skill assignment. `subagents` owns the globally discoverable env-free `actor-client`, hosted-only `hosted-pi-bridge`, generated protobuf copies, exact dependency locks, and discovery checks. `pi-tmux-subagents` continues to own the existing source-managed XState observer and renderer. Package-specific JavaScript verifiers remain inside their owning package directories.
 
 ## Tmux subagent observer
 

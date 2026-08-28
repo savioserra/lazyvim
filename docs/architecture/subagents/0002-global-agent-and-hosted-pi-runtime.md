@@ -22,7 +22,7 @@ Authority is selected once per AgentActor:
 1. **Observed upstream:** `pi-subagents` continues to own its execution, worktrees, controls, receipts, recovery, and XState projections. No hosted runtime starts.
 2. **Hosted owned:** an explicitly registered new logical agent owns its Pi runtime through the hosted bridge. It is never simultaneously bound to an upstream run.
 
-The repository-managed daemon and `[hosted_pi]` configuration both remain disabled. If separately enabled after review, an owner-private bootstrap credential authenticates bounded START/STATUS/STOP; START creates the session credential/runtime config and returns only nonsecret identity and attach metadata. Merely discovering the global bridge extension is inert; only the exact runtime environment opts it into API registration and connection behavior. There is no automatic authority migration or dual-writer period.
+The repository-managed daemon and `[hosted_pi]` configuration are enabled by the reviewed owner policy. An owner-private bootstrap credential authenticates bounded START/STATUS/STOP; START creates the session credential/runtime config and returns only nonsecret identity metadata. Merely discovering the hosted bridge extension in an ordinary Pi is inert; only the exact hosted runtime environment opts it into API registration and connection behavior. There is no automatic authority migration or dual-writer period.
 
 ## Persistence boundary
 

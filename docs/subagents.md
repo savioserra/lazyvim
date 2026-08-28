@@ -12,7 +12,7 @@ Canonical delivery plan and accepted decisions:
 
 ## Scope and authority
 
-The daemon remains a source/test capability and does not replace the current `pi-subagents` or XState tmux observer. Existing upstream runs keep their execution, children, worktrees, recovery, receipts, controls, and projections. A separately typed hosted-owned AgentActor can run its own Pi TUI through the owner-private, admin-credential-authenticated bootstrap operation when explicitly enabled, while both `[service].enabled` and `[hosted_pi].enabled` remain false in managed configuration. Nothing under `services/` is installed or started automatically.
+The daemon is an owner-local managed capability for ordinary globally discovered Pi. Existing upstream `pi-subagents` runs keep their execution, children, worktrees, recovery, receipts, controls, and projections. Separately typed hosted-owned AgentActors run their own Pi TUI through the owner-private, admin-credential-authenticated bootstrap operation enabled by the managed configuration. Chezmoi setup builds the reviewed daemon/client executables into `~/.local/bin` from the nested source module and enables/starts only the owner user service; it does not use root, OS package managers, launcher scripts, tmux client transport, polling, or unpinned downloads.
 
 ```text
 ServiceGuardian (global, one ActorSystem)
@@ -46,7 +46,7 @@ The runtime launches one persistent full Pi TUI with argv-only tmux/Pi arguments
 
 When the separately reviewed `[hosted_pi].enabled` gate is true, daemon startup creates an owner-private admin credential file named by configuration. A caller possessing that credential can invoke bounded START/STATUS/STOP: START creates a fresh runtime-scoped authenticated session and 0600 bridge credential file, derives the runtime IDs and tmux names, registers/starts the owned agent, and returns only stable nonsecret runtime/attach metadata; STATUS and STOP require the same admin credential. The hosted session has no wall-clock extension race: it remains valid only for that runtime generation and is explicitly revoked with credential removal during exact STOP/stale cleanup. Operations serialize per agent. Registration is an ordered Tell/result protocol rather than an ambiguous Ask. Before every mutating registration Tell, the service publishes a reconciliation placeholder holding the original typed outcome and compensation channels. Timeout enqueues ordered idempotent compensation but returns without abandoning either channel. The persistent watcher can wait beyond caller deadlines, atomically replaces the placeholder with exact agent/runtime PID cleanup state, then acknowledges tracking so the registry may release its retained compensation outcome. Service shutdown waits placeholders before cleanup and cannot stop ActorSystem while external runtime identity is unresolved. Definitive failed starts cancel and unregister before credential removal so START can retry, while indeterminate compensation is published as tracked degraded ownership. Exact STOP unregisters and atomically retires the live PID before fallible session/credential cleanup; `cleanup_pending` terminal metadata makes duplicate STOP and daemon shutdown retry only those idempotent steps without messaging a dead PID. The managed source keeps this gate false and contains no credential value.
 
-The catalog contribution installs only the bridge's exact `@bufbuild/protobuf@2.11.0` production dependency and verifies inert Pi discovery. The managed config requires both `[service].enabled = false` and `[hosted_pi].enabled = false`. Lifecycle verification intentionally parses only the managed TOML subset: bare single-component tables and keys with one-line booleans, decimal integers, basic strings, or basic-string arrays. It rejects duplicate tables/keys, quoted or dotted keys, multiline/literal strings, inline tables, and every other TOML construct; it is not a general TOML parser. Chezmoi manages an inactive systemd user unit on Linux/WSL and inactive LaunchAgent plist on macOS. Package lifecycle installs neither daemon binary nor service state and never loads, enables, or starts these assets; activation remains a separate reviewed deployment step. Repository defaults keep both gates false.
+The catalog contribution installs exact production dependencies for the hosted bridge and actor client, builds `workstation-subagents` plus `workstation-subagents-clientctl` with `go build -mod=readonly`, and activates the owner service. The managed config requires `[service].enabled = true`, `[hosted_pi].enabled = true`, and `[remoting].enabled = false`. Lifecycle verification intentionally parses only the managed TOML subset: bare single-component tables and keys with one-line booleans, decimal integers, basic strings, or basic-string arrays. It rejects duplicate tables/keys, quoted or dotted keys, multiline/literal strings, inline tables, and every other TOML construct; it is not a general TOML parser. Chezmoi manages an active systemd user unit on Linux/WSL and active RunAtLoad LaunchAgent plist on macOS.
 
 ## Unix socket contract
 
@@ -54,53 +54,53 @@ The daemon supports Linux, WSL-as-Linux, and macOS Unix sockets. It normalizes X
 
 Health, list, resolve, attach/reattach/detach, send, ask, typed abort/shutdown control, subscribe/unsubscribe, bridge lifecycle, delivery acknowledgement, owner-private server-push frames, bounded compatibility polling, and the separately admin-authenticated hosted bootstrap/status/stop operation share one bounded protobuf envelope. Every request carries caller/session identity, immutable generation, credential, request ID, absolute deadline, connection sequence, and fence as applicable. Actor-message mode is validated and mapped to `send` or `ask` server-side; source identity is derived from the authenticated hosted principal, while the current target handle/fence is mandatory. Typed abort and shutdown use distinct `control_abort` and `control_shutdown` capabilities and cannot be selected by ordinary bytes. Each connection enforces bounded sequence advance and a 256-response replay window; same-sequence payload collisions and out-of-window replay fail closed. Resolution accepts exact IDs and unique prefixes; ambiguity returns sorted candidates rather than choosing.
 
-The bridge registers `/actor-list`, `/actor-resolve`, `/actor-send`, `/actor-ask`, `/actor-abort`, `/actor-shutdown`, `/actor-subscribe`, and `/actor-unsubscribe` plus equivalent underscore-named model tools. Human commands may omit a target for self; every target-bearing model tool requires an explicit target. It reports `session_start`, readiness, and `session_shutdown`, continuously reads the authenticated UDS stream, demultiplexes replies from unsolicited push deliveries/lifecycle transitions, and explicitly acknowledges each typed delivery. Ordinary deliveries are notification-only and never start a model turn; only typed, separately authorized controls call documented `ctx.abort()` or `ctx.shutdown()`. `ask` means delivery acknowledgement, not an LLM answer. Every message/control mutation carries a positive source mutation sequence scoped server-side to the exact authenticated source tuple `(session, generation, principal, target fence, hosted incarnation)` and must advance by exactly one after an admitted result. Authorization precedes replay handling. Each source scope owns its immutable high-water, bounded 1024-result cache, dedupe map, active chains, and ask waiters: retained exact retry returns its result (or reattaches the current pending waiter), collision fails, and old/evicted sequence never reexecutes. Different sources may use the same sequence/dedupe/chain IDs without interference. Pending entries reference their source scope in the global delivery queue, survive another source's mutation or fence rotation, and remain until ACK/deadline even after source revocation; revocation denies future replay first. At most 256 deliveries remain outstanding globally. Same-source reconnect preserves scope; explicit fenced replacement creates only that source's new scope. Notification and typed-control chains retire after ACK/expiry, while in-use chains reject reuse; high-volume completion remains bounded by source high-water/results. The bridge pins the nonempty Pi session ID and reconnects the same ID without fence rotation. Pi serializes mutations per target handle/fence/incarnation and durably retains at most one unresolved complete logical request (source sequence, request/dedupe/chain IDs, target, payload/control) in memory until a determinate response. Foreground retry exhaustion cannot replace it: a later command first boundedly reconciles that exact immutable request, then allocates the next sequence. Pre-write, write, response-loss, timeout, malformed/correlation, and disconnect failures destroy the connection; reconnect exhaustion is per invocation with cooldown and never terminally latched. Only admitted results advance local high-water. Old unresolved scope may retire on fence change only after explicit old-authorization revocation proof. Connect, lifecycle readiness, push replay, and bounded compatibility poll renew a fenced one-second readiness lease; lease expiry rejects new delivery even while Pi remains alive, and same-session reconnect restores a previously declared-ready lease from the client's last delivery ACK. BridgeSessionActor push uses an ACK-gated delivery cursor: enqueueing a push frame does not retire unacknowledged deliveries, so reconnect may redeliver duplicates until the typed ACK commits. Event polling requires an active TopicActor-acknowledged subscription; nonzero replay cursors are rejected. The extension is globally discoverable but registers nothing unless every hosted environment field is present and structurally valid.
+The hosted bridge registers `/actor-list`, `/actor-resolve`, `/actor-send`, `/actor-ask`, `/actor-abort`, `/actor-shutdown`, `/actor-subscribe`, and `/actor-unsubscribe` plus equivalent underscore-named model tools only inside an authenticated hosted runtime. Human commands may omit a target for self; every target-bearing model tool requires an explicit target. It reports `session_start`, readiness, and `session_shutdown`, continuously reads the authenticated UDS stream, demultiplexes replies from unsolicited push deliveries/lifecycle transitions, and explicitly acknowledges each typed delivery. Ordinary deliveries are notification-only and never start a model turn; only typed, separately authorized controls call documented `ctx.abort()` or `ctx.shutdown()`. `ask` means delivery acknowledgement, not an LLM answer. Every message/control mutation carries a positive source mutation sequence scoped server-side to the exact authenticated source tuple `(session, generation, principal, target fence, hosted incarnation)` and must advance by exactly one after an admitted result. Authorization precedes replay handling. Each source scope owns its immutable high-water, bounded 1024-result cache, dedupe map, active chains, and ask waiters: retained exact retry returns its result (or reattaches the current pending waiter), collision fails, and old/evicted sequence never reexecutes. Different sources may use the same sequence/dedupe/chain IDs without interference. Pending entries reference their source scope in the global delivery queue, survive another source's mutation or fence rotation, and remain until ACK/deadline even after source revocation; revocation denies future replay first. At most 256 deliveries remain outstanding globally. Same-source reconnect preserves scope; explicit fenced replacement creates only that source's new scope. Notification and typed-control chains retire after ACK/expiry, while in-use chains reject reuse; high-volume completion remains bounded by source high-water/results. The bridge pins the nonempty Pi session ID and reconnects the same ID without fence rotation. Pi serializes mutations per target handle/fence/incarnation and durably retains at most one unresolved complete logical request (source sequence, request/dedupe/chain IDs, target, payload/control) in memory until a determinate response. Foreground retry exhaustion cannot replace it: a later command first boundedly reconciles that exact immutable request, then allocates the next sequence. Pre-write, write, response-loss, timeout, malformed/correlation, and disconnect failures destroy the connection; reconnect exhaustion is per invocation with cooldown and never terminally latched. Only admitted results advance local high-water. Old unresolved scope may retire on fence change only after explicit old-authorization revocation proof. Connect, lifecycle readiness, push replay, and bounded compatibility poll renew a fenced one-second readiness lease; lease expiry rejects new delivery even while Pi remains alive, and same-session reconnect restores a previously declared-ready lease from the client's last delivery ACK. BridgeSessionActor push uses an ACK-gated delivery cursor: enqueueing a push frame does not retire unacknowledged deliveries, so reconnect may redeliver duplicates until the typed ACK commits. Event polling requires an active TopicActor-acknowledged subscription; nonzero replay cursors are rejected.
 
-## Source-only client lane
-
-The repository-owned client lane is isolated under `/tmp/ws-subagents-client-<uid>` and uses a dedicated tmux server. It does not apply chezmoi state or load a managed service:
-
-```bash
-services/subagents/tools/source-client.sh up
-services/subagents/tools/source-client.sh client
-# In the source-loaded Pi:
-/actor-client-create worker-1 -- /absolute/existing/worktree
-/actor-client-ask worker-1 -- Implement the next focused task and report the result.
-```
-
-Attach to an actor with the exact command returned by `/actor-client-attach worker-1`; its shape is `tmux -L ws-subagents-client-<uid> attach-session -t '<stable-target>'`. Actor IDs are dynamic. A writable worktree may have only one actor owner at a time. `source-client.sh worktree-add /trusted/repository NAME` creates an isolated detached worktree using argv-only Git invocation; otherwise callers must supply an existing absolute non-symlink directory. The regular client bootstrap credential is returned only in memory over the private UDS, expires after 30 minutes, and is explicitly closed on Pi shutdown. Client commands/tools use the `actor-client-*` / `actor_client_*` namespaces and do not replace `pi-subagents` authority.
+The ordinary globally discovered actor client extension registers `/actor-list`, `/actor-resolve`, `/actor-send`, `/actor-ask`, `/actor-create`, `/actor-abort`, `/actor-shutdown`, `/actor-subscribe`, and `/actor-unsubscribe` plus typed `actor_*` model tools with no client-specific environment. On `session_start` it discovers the canonical owner-private socket candidates (`$XDG_RUNTIME_DIR/ws-subagents/control.sock`, the managed macOS state-runtime socket, then the short private temp fallback) and the canonical admin credential under `~/.local/state/workstation/subagents/admin/credential.json`, validates regular/socket type, UID, no symlink via `lstat`, and exact 0600/0700 permissions, then waits boundedly for readiness. Reconnects are bounded per invocation and never reveal socket paths or credential material in model output.
 
 Task prompts are distinct typed deliveries. The hosted bridge visibly notifies `source → target kind`, prompts before forwarding, injects them with documented `pi.sendUserMessage`, correlates the bounded assistant answer from `agent_end`, and acknowledges exactly that delivery. One task prompt is admitted per target at a time; chain and hop provenance is inherited by model-initiated actor tools. No terminal input or scraping is used.
 
-Source-only Linux end-to-end verification after rebuild confirmed the visible four-pane topology: hosted Pi fullscreen transcript scrolling was active in every hosted inner pane and in the visible project-manager pane, Pi fullscreen PageUp/PageDown transcript bindings remained the default because no keybinding override exists, and cross-actor Ask completed successfully. This is implementation evidence for hosted Pi fullscreen transcript scrolling only; `[actors.panel].mouse_scroll` remains a proposed workflow-template preference.
+## Tailscale MagicDNS remoting and clustering
 
-## Generic optional remoting model
+GoAkt's TCP actor plane remains separate from the TypeScript/protobuf UDS application plane. Schema-v2 remoting is disabled by default and may be enabled only for the three owner-controlled service nodes after Tailscale ACLs and owner-private URI-SAN mTLS material are provisioned. `port` is the advertised custom actor endpoint; GoAkt clustering additionally requires distinct discovery/gossip and peers/registry ports.
 
-GoAkt remoting is separate custom TCP transport; it is never used for the TypeScript application protocol. Remoting remains disabled by default. Configuration uses generic logical identity, bind host, fixed port, peer host, mTLS identity, CIDR/address-family policy, and optional SSH target. DNS provides candidate addresses only and is never accepted as logical or mTLS identity.
-
-Example only (replace every value for the deployment):
+Example only (certificate paths are references, never repository content):
 
 ```toml
+schema_version = 2
+
 [remoting]
 enabled = true
-node_identity = "observer-node-a"
-bind_host = "node-a.internal.example"
-port = 7210
-allowed_cidrs = ["192.0.2.0/24"]
+mode = "cluster"
+network_trust = "tailscale"
+cluster_name = "workstation-subagents"
+node_identity = "aurora"
+bind_host = "aurora.example-tailnet.ts.net"
+magicdns_suffix = ".example-tailnet.ts.net"
+port = 17210
+discovery_port = 17211
+peers_port = 17212
+allowed_cidrs = ["100.64.0.0/10"]
 address_families = ["ipv4"]
-mtls_identity = "spiffe://example.invalid/workstation/node-a"
+mtls_identity = "spiffe://workstation/subagents/aurora"
 ca_file = "/owner/private/remoting/ca.pem"
-cert_file = "/owner/private/remoting/node.pem"
-key_file = "/owner/private/remoting/node.key"
+cert_file = "/owner/private/remoting/aurora.pem"
+key_file = "/owner/private/remoting/aurora.key"
 
 [[remoting.peers]]
-node_identity = "observer-node-b"
-host = "node-b.internal.example"
-mtls_identity = "spiffe://example.invalid/workstation/node-b"
-ssh_target = "operator@relay.internal.example"
+node_identity = "vps"
+host = "vps.example-tailnet.ts.net"
+mtls_identity = "spiffe://workstation/subagents/vps"
+
+[[remoting.peers]]
+node_identity = "mac"
+host = "mac.example-tailnet.ts.net"
+mtls_identity = "spiffe://workstation/subagents/mac"
 ```
 
-The validator requires the bind host to resolve to exactly one concrete address that is both allowlisted and assigned locally. Every peer answer must satisfy the selected families and CIDRs; mixed allowed/poisoned answers fail as a unit. `0.0.0.0` is rejected. Logical and mTLS identities must be explicit and unique. `ssh_target` remains one uninterpreted value and no SSH command starts. GoAkt v4.5.2 exposes native TLS configuration, but not an accepted-connection hook that can enforce this design's required inbound CIDR-to-certificate-identity binding. Therefore `remoting.enabled = true` fails daemon startup after policy resolution, `remote.NewConfig` is not constructed, and production contains no `actor.WithRemote`. Remoting stays unavailable until that authorization boundary is enforceable without a bypass.
+The validator requires exactly two peers, the exact Tailscale IPv4 range, a full host beneath the declared MagicDNS suffix, one concrete locally assigned bind answer, three distinct unprivileged ports, unique logical/mTLS identities, and 0600 certificate files beneath a descriptor-walked owner-private 0700 directory. Mixed valid/poisoned DNS answers fail as a unit. The discovery provider resolves every peer again on each bootstrap/rejoin request. TLS 1.3 verifies complete chains and exactly one allowlisted URI SAN in both directions.
+
+Tailscale ACL/device identity is the approved network boundary; mTLS is an independent actor-plane allowlist. GoAkt v4.5.2 cannot bind one URI SAN to one source IP, so every configured peer is equally trusted. The initial topology lists three nodes, keeps two replicas, requires both replicas for writes, and allows reads from one; a node needs at least one peer to bootstrap. An isolated node therefore cannot accept cluster-registry writes. Automatic actor relocation is disabled: DNS changes and node loss cannot migrate a hosted actor's durable home authority. Managed configuration remains off until certificates and physical VPS/macOS validation are complete.
 
 ## Code generation and compatibility
 
@@ -121,6 +121,13 @@ go vet ./...
 npm test
 RUN_REAL_HOSTED_PI_SMOKE=1 go test ./internal/service -run '^TestRealInstalledPiHostedBridgeIsolatedTmuxSmoke$' -count=1 -v
 ```
+
+Scratch apply / env-free normal-Pi E2E strategy:
+
+1. Use a disposable HOME/destination and a disposable user-service boundary (container or VM preferred so service activation cannot affect the operator session), then run `chezmoi --source <repo> --destination <scratch-home> apply` from the repository checkout.
+2. Assert `~/.local/bin/workstation-subagents` and `~/.local/bin/workstation-subagents-clientctl` are 0700 owner binaries, the managed config is 0600 under 0700 directories, the systemd-user unit or LaunchAgent is enabled/started, and the daemon socket/admin credential are owner-private with no symlink components.
+3. Start a fresh ordinary global `pi` with only HOME/XDG standard variables (no client-specific actor environment and no `-e` launcher), then verify `/actor-list` and the `actor_list` tool are present.
+4. Run `/actor-create e2e-worker -- <absolute scratch worktree> -- E2E Worker -- reviewer`, `/actor-ask e2e-worker -- Reply exactly E2E_OK`, and confirm the correlated answer is `E2E_OK` with no secret/socket/credential path output. Restart Pi and repeat `/actor-list` and one `/actor-send` to prove bounded reconnect/readiness.
 
 ## Platform lifecycle
 

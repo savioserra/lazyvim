@@ -33,7 +33,7 @@ Application projection fanout follows GoAkt ordering and at-least-once boundarie
 
 ## Invariants
 
-- Production enables PubSub; remoting stays inactive, and hosted Pi starts only for an explicit hosted-owned registration while repository configuration remains disabled.
+- Production enables PubSub; remoting stays inactive, and hosted Pi starts only for an explicit hosted-owned registration under the managed owner service.
 - Authorization completes before ActorOf lookup or Tell/Ask routing.
 - No protobuf field contains a GoAkt PID, actor path, serializer, remoting envelope, or system event.
 - No actor blocks in `Receive` on `Ask`, filesystem, network, subprocess, or tmux work.

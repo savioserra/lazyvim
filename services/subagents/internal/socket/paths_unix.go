@@ -95,6 +95,18 @@ func normalizePrivatePathAt(workingDirectory, path string) (string, error) {
 }
 
 func EnsurePrivateDir(path string) error {
+	return ensurePrivateDir(path, privatePathValidator(os.Getuid()))
+}
+
+// EnsureOwnedPrivateDir permits a writable ancestor only when that ancestor is
+// owned by the current uid. Descriptor-relative traversal keeps subsequent
+// creation and opens bound to the validated inode while the final directory
+// remains owner-private 0700.
+func EnsureOwnedPrivateDir(path string) error {
+	return ensurePrivateDir(path, ownedPrivatePathValidator(os.Getuid()))
+}
+
+func ensurePrivateDir(path string, validator securepath.DirValidator) error {
 	path, err := NormalizePrivatePath(path)
 	if err != nil {
 		return err
@@ -106,7 +118,7 @@ func EnsurePrivateDir(path string) error {
 		if err := validatePrivateDirectoryInfo(info, os.Getuid()); err != nil {
 			return err
 		}
-		file, err := securepath.OpenDir(path, privatePathValidator(os.Getuid()))
+		file, err := securepath.OpenDir(path, validator)
 		if file != nil {
 			_ = file.Close()
 		}
@@ -114,7 +126,7 @@ func EnsurePrivateDir(path string) error {
 	} else if !errors.Is(statErr, os.ErrNotExist) {
 		return statErr
 	}
-	file, err := securepath.EnsureDir(path, 0o700, privatePathValidator(os.Getuid()))
+	file, err := securepath.EnsureDir(path, 0o700, validator)
 	if file != nil {
 		_ = file.Close()
 	}
@@ -161,6 +173,24 @@ func privatePathValidator(uid int) securepath.DirValidator {
 		return nil
 	}
 }
+
+func ownedPrivatePathValidator(uid int) securepath.DirValidator {
+	return func(path string, info os.FileInfo, final bool) error {
+		if final {
+			return validatePrivateDirectoryInfo(info, uid)
+		}
+		owner := ownerUID(info)
+		if owner != 0 && owner != uint32(uid) {
+			return fmt.Errorf("private ancestor %s has foreign ownership", path)
+		}
+		mode := info.Mode().Perm()
+		if mode&0o022 != 0 && info.Mode()&os.ModeSticky == 0 && owner != uint32(uid) {
+			return fmt.Errorf("foreign private ancestor %s is writable without the sticky bit (mode %04o)", path, mode)
+		}
+		return nil
+	}
+}
+
 func validatePrivateDirectoryInfo(info os.FileInfo, uid int) error {
 	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
 		return errors.New("path must be a non-symlink directory")

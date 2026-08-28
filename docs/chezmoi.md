@@ -105,6 +105,7 @@ Script requirements:
 
 - use the pinned Neovim under the target home;
 - use the deployed `.local/share/workstation/apps/cli/run.lua` under the target home;
+- export the source checkout path so managed build steps can compile the nested subagents service module;
 - stop before sync when setup fails;
 - return the sync exit code;
 - avoid shell-specific orchestration outside path resolution and failure handling.

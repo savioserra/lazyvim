@@ -57,8 +57,8 @@ func privateValidator(path string, info os.FileInfo, final bool) error {
 	if stat.Uid != 0 && stat.Uid != uint32(os.Getuid()) {
 		return fmt.Errorf("durable state ancestor %s is foreign", path)
 	}
-	if info.Mode().Perm()&0o022 != 0 && info.Mode()&os.ModeSticky == 0 {
-		return fmt.Errorf("durable state ancestor %s is writable without sticky bit", path)
+	if info.Mode().Perm()&0o022 != 0 && info.Mode()&os.ModeSticky == 0 && stat.Uid != uint32(os.Getuid()) {
+		return fmt.Errorf("foreign durable state ancestor %s is writable without sticky bit", path)
 	}
 	return nil
 }

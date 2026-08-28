@@ -1,38 +1,88 @@
 # Credentials and private keys never belong in this repository-managed file.
-schema_version = 1
+schema_version = 2
 
 [service]
-# The milestone-1 spike is safely inactive after apply. Running it requires an
-# explicit local override and does not install or start a service manager unit.
-enabled = false
+# The owner user service is managed and active after chezmoi apply. The daemon
+# listens only on the owner-private canonical Unix socket.
+enabled = true
 
 [hosted_pi]
-# Hosted execution and its authenticated admin/bootstrap API remain disabled.
-enabled = false
-tmux_binary = ""
-pi_binary = ""
-bridge_extension = ""
-tmux_server_name = ""
-tmux_config = ""
-state_directory = ""
-pi_session_directory = ""
-credential_directory = ""
-admin_credential_file = ""
-default_project_directory = ""
-trust_project = false
+# Hosted actor creation is explicitly enabled for the owner-local actor tools.
+enabled = true
+{{- $tmuxBinary := output "sh" "-c" "command -v tmux" | trim }}
+{{- if eq $tmuxBinary "/snap/bin/tmux" }}
+tmux_binary = "/snap/tmux/current/usr/local/bin/tmux"
+{{- else }}
+tmux_binary = "{{ $tmuxBinary }}"
+{{- end }}
+pi_binary = "{{ .chezmoi.homeDir }}/.local/opt/nvm/versions/node/v24.19.0/bin/pi"
+bridge_extension = "{{ .chezmoi.homeDir }}/.pi/agent/extensions/hosted-pi-bridge/index.ts"
+tmux_server_name = "workstation-subagents"
+tmux_config = "{{ .chezmoi.homeDir }}/.tmux.conf"
+state_directory = "{{ .chezmoi.homeDir }}/.local/state/workstation/subagents/hosted"
+pi_session_directory = "{{ .chezmoi.homeDir }}/.local/state/workstation/subagents/pi-sessions"
+credential_directory = "{{ .chezmoi.homeDir }}/.local/state/workstation/subagents/credentials"
+{{- if eq .chezmoi.os "linux" }}
+admin_credential_file = "/run/user/{{ .chezmoi.uid }}/ws-subagents/admin/credential.json"
+{{- else }}
+admin_credential_file = "{{ .chezmoi.homeDir }}/.local/state/workstation/subagents/admin/credential.json"
+{{- end }}
+default_project_directory = "{{ .chezmoi.homeDir }}"
+# Hosted creation is an authenticated owner action; approve only the exact
+# project path carried by that typed request.
+trust_project = true
 
+{{- $clusterNode := "" }}
+{{- $clusterHost := "" }}
+{{- if eq .chezmoi.hostname "aurora" }}
+{{- $clusterNode = "aurora" }}
+{{- $clusterHost = "aurora.taila7392b.ts.net" }}
+{{- else if or (eq .chezmoi.hostname "savioserra") (eq .chezmoi.hostname "srv1379823") }}
+{{- $clusterNode = "vps" }}
+{{- $clusterHost = "vps.taila7392b.ts.net" }}
+{{- else if eq .chezmoi.os "darwin" }}
+{{- $clusterNode = "mac" }}
+{{- $clusterHost = "mac.taila7392b.ts.net" }}
+{{- end }}
 [remoting]
-# GoAkt v4.5.2 cannot enforce the required inbound CIDR-to-mTLS identity
-# binding. Any enabled value fails daemon startup; production installs no
-# remoting transport.
-enabled = false
-node_identity = ""
-bind_host = ""
-port = 0
-allowed_cidrs = []
-address_families = []
-mtls_identity = ""
-ca_file = ""
-cert_file = ""
-key_file = ""
-peers = []
+# Tailscale ACL/device identity is the network boundary. URI-SAN mTLS is an
+# independent allowlist. The three GoAkt listeners bind only the resolved local
+# Tailscale IPv4 address; port is the advertised actor endpoint.
+enabled = {{ ne $clusterNode "" }}
+mode = "cluster"
+network_trust = "tailscale"
+cluster_name = "workstation-subagents"
+node_identity = "{{ $clusterNode }}"
+bind_host = "{{ $clusterHost }}"
+magicdns_suffix = ".taila7392b.ts.net"
+port = 17210
+discovery_port = 17211
+peers_port = 17212
+allowed_cidrs = ["100.64.0.0/10"]
+address_families = ["ipv4"]
+mtls_identity = "spiffe://workstation/subagents/{{ $clusterNode }}"
+ca_file = "{{ .chezmoi.homeDir }}/.local/state/workstation/subagents/remoting/ca.pem"
+cert_file = "{{ .chezmoi.homeDir }}/.local/state/workstation/subagents/remoting/node.pem"
+key_file = "{{ .chezmoi.homeDir }}/.local/state/workstation/subagents/remoting/node.key"
+{{- if ne $clusterNode "aurora" }}
+
+[[remoting.peers]]
+node_identity = "aurora"
+host = "aurora.taila7392b.ts.net"
+mtls_identity = "spiffe://workstation/subagents/aurora"
+{{- end }}
+{{- if ne $clusterNode "vps" }}
+
+[[remoting.peers]]
+node_identity = "vps"
+host = "vps.taila7392b.ts.net"
+mtls_identity = "spiffe://workstation/subagents/vps"
+ssh_target = "root@vps"
+{{- end }}
+{{- if ne $clusterNode "mac" }}
+
+[[remoting.peers]]
+node_identity = "mac"
+host = "mac.taila7392b.ts.net"
+mtls_identity = "spiffe://workstation/subagents/mac"
+{{- end }}

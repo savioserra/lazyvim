@@ -124,7 +124,7 @@ func TestDeterministicHostedBridgeGatewayAndClientIndependence(t *testing.T) {
 		}
 	}
 	regularCredential := []byte(strings.Repeat("c", 32))
-	clientSession := application.OpenSession{SessionID: "regular-client", GenerationID: "regular-generation", Caller: "client:regular", Credential: regularCredential, Capabilities: []string{"observe", "send", "ask", "prompt"}, ExpiresAt: time.Now().Add(time.Hour)}
+	clientSession := application.OpenSession{SessionID: "regular-client", GenerationID: "regular-generation", Caller: "client:regular", Credential: regularCredential, Capabilities: []string{"observe", "send", "ask", "prompt", "control_abort", "control_shutdown"}, ExpiresAt: time.Now().Add(time.Hour)}
 	if err := daemon.OpenSession(context.Background(), clientSession); err != nil {
 		t.Fatal(err)
 	}
@@ -135,12 +135,14 @@ func TestDeterministicHostedBridgeGatewayAndClientIndependence(t *testing.T) {
 			envelope.Payload = value
 		case *subagentsv1.Envelope_ActorMessageRequest:
 			envelope.Payload = value
+		case *subagentsv1.Envelope_ActorControlRequest:
+			envelope.Payload = value
 		default:
 			t.Fatalf("unsupported regular-client test payload %T", payload)
 		}
 		return envelope
 	}
-	clientAttach := request(t, path, clientBase(&subagentsv1.Envelope_AttachRequest{AttachRequest: &subagentsv1.AttachRequest{AgentId: "agent-one", RequestedCapabilities: []string{"observe", "send"}}}, "regular-attach")).GetAttachResponse()
+	clientAttach := request(t, path, clientBase(&subagentsv1.Envelope_AttachRequest{AttachRequest: &subagentsv1.AttachRequest{AgentId: "agent-one", RequestedCapabilities: []string{"observe", "send", "control_abort", "control_shutdown"}}}, "regular-attach")).GetAttachResponse()
 	if clientAttach.AgentHandle == "" || clientAttach.Fence == 0 {
 		t.Fatalf("regular client attach failed: %#v", clientAttach)
 	}
@@ -163,6 +165,34 @@ func TestDeterministicHostedBridgeGatewayAndClientIndependence(t *testing.T) {
 	regularAck := request(t, path, fencedBase(&subagentsv1.Envelope_BridgeDeliveryAckRequest{BridgeDeliveryAckRequest: &subagentsv1.BridgeDeliveryAckRequest{AgentId: "agent-one", Sequence: regularDelivery.Sequence, DedupeId: regularDelivery.DedupeId, Delivered: true}}))
 	if !regularAck.GetBridgeDeliveryAckResponse().Accepted {
 		t.Fatalf("regular client Tell ack rejected: %#v", regularAck)
+	}
+	regularAbort := clientBase(&subagentsv1.Envelope_ActorControlRequest{ActorControlRequest: &subagentsv1.ActorControlRequest{Intent: subagentsv1.ActorControlRequest_INTENT_ABORT, Target: "agent-one", DedupeId: "regular-client-abort", HopLimit: 2, ChainId: "regular-control-chain", SourceMutationSequence: 2}}, "regular-abort")
+	regularAbort.AgentHandle, regularAbort.AgentFence = clientAttach.AgentHandle, clientAttach.Fence
+	abortResponse := request(t, path, regularAbort).GetActorMessageResponse()
+	if !abortResponse.Accepted || abortResponse.Kind != "Abort" {
+		t.Fatalf("regular client typed abort was not admitted directly: %#v", abortResponse)
+	}
+	regularShutdown := clientBase(&subagentsv1.Envelope_ActorControlRequest{ActorControlRequest: &subagentsv1.ActorControlRequest{Intent: subagentsv1.ActorControlRequest_INTENT_SHUTDOWN, Target: "agent-one", DedupeId: "regular-client-shutdown", HopLimit: 2, ChainId: "regular-shutdown-chain", SourceMutationSequence: 3}}, "regular-shutdown")
+	regularShutdown.AgentHandle, regularShutdown.AgentFence = clientAttach.AgentHandle, clientAttach.Fence
+	shutdownResponse := request(t, path, regularShutdown).GetActorMessageResponse()
+	if !shutdownResponse.Accepted || shutdownResponse.Kind != "Shutdown" {
+		t.Fatalf("regular client typed shutdown was not admitted directly: %#v", shutdownResponse)
+	}
+	for _, dedupeID := range []string{"regular-client-abort", "regular-client-shutdown"} {
+		poll := request(t, path, fencedBase(&subagentsv1.Envelope_BridgePollRequest{BridgePollRequest: &subagentsv1.BridgePollRequest{AgentId: "agent-one", MaxItems: 64}})).GetBridgePollResponse()
+		var controlDelivery *subagentsv1.BridgeDelivery
+		for _, delivery := range poll.Deliveries {
+			if delivery.DedupeId == dedupeID {
+				controlDelivery = delivery
+			}
+		}
+		if controlDelivery == nil {
+			t.Fatalf("direct regular client control delivery %s was not retained", dedupeID)
+		}
+		ack := request(t, path, fencedBase(&subagentsv1.Envelope_BridgeDeliveryAckRequest{BridgeDeliveryAckRequest: &subagentsv1.BridgeDeliveryAckRequest{AgentId: "agent-one", Sequence: controlDelivery.Sequence, DedupeId: controlDelivery.DedupeId, Delivered: true}}))
+		if !ack.GetBridgeDeliveryAckResponse().Accepted {
+			t.Fatalf("direct regular client control ack rejected: %#v", ack)
+		}
 	}
 	for name, envelope := range map[string]*subagentsv1.Envelope{
 		"unknown-mode": fencedBase(&subagentsv1.Envelope_ActorMessageRequest{ActorMessageRequest: &subagentsv1.ActorMessageRequest{Mode: 99, Target: "agent-one", BoundedPayload: []byte("bad"), DedupeId: "bad-mode", HopLimit: 8, ChainId: "bad-mode-chain"}}),

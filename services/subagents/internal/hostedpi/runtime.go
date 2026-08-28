@@ -187,7 +187,7 @@ func hostedPiLaunchArgs(config Config, spec application.HostedPiLaunchSpec) []st
 		"-e", "WS_SUBAGENTS_RUNTIME_ID="+spec.RuntimeID,
 		"-e", fmt.Sprintf("WS_SUBAGENTS_INCARNATION=%d", spec.Incarnation),
 		"-c", config.ProjectDirectory,
-		config.PiBinary, "--tui-mode", "fullscreen", "--session-dir", spec.PiSessionDirectory, "--name", spec.PiSessionName, "-e", config.BridgeExtension)
+		config.PiBinary, "--no-extensions", "--tui-mode", "fullscreen", "--session-dir", spec.PiSessionDirectory, "--name", spec.PiSessionName, "-e", config.BridgeExtension)
 	if config.TrustProject {
 		args = append(args, "--approve")
 	} else {
@@ -449,8 +449,8 @@ func privateDirectory(path string) error {
 		if uid != 0 && uid != uint32(os.Getuid()) {
 			return fmt.Errorf("hosted Pi ancestor %s has foreign ownership", current)
 		}
-		if mode&0o022 != 0 && info.Mode()&os.ModeSticky == 0 {
-			return fmt.Errorf("hosted Pi ancestor %s is writable without sticky bit", current)
+		if mode&0o022 != 0 && info.Mode()&os.ModeSticky == 0 && uid != uint32(os.Getuid()) {
+			return fmt.Errorf("foreign hosted Pi ancestor %s is writable without sticky bit", current)
 		}
 		return nil
 	})

@@ -27,7 +27,9 @@ The length-framed protobuf UDS API is the application plane for Pi/TypeScript an
 
 ### Peer configuration
 
-Peer configuration is vendor and transport neutral: logical node identity, bind/peer addresses, fixed port, address-family/CIDR policy, SSH target as one opaque argv value, and explicit mTLS identity. DNS supplies candidate addresses only. DNS names are not logical node identity and are not mTLS identity. SSH and mTLS are deployment transports, not domain concepts.
+Schema v2 supports an explicit three-node GoAkt cluster over Tailscale. The custom advertised actor port, discovery/gossip port, and peers/registry port are distinct fixed listeners bound only to the concrete local Tailscale IPv4 address. A repository-owned discovery provider re-resolves configured MagicDNS peers during bootstrap and quorum-loss rejoin. DNS supplies candidate addresses only: DNS names are neither logical node identity nor mTLS identity.
+
+Tailscale ACL/device identity is the network trust boundary. Independent TLS 1.3 mutual authentication requires an exact allowlist of peer URI SAN identities and owner-private, no-follow certificate material. GoAkt v4.5.2 cannot bind one certificate identity to one source IP; the accepted deployment treats all allowlisted service nodes as equally trusted actor-plane peers. Automatic actor relocation remains disabled, and DNS changes never migrate durable home-node authority.
 
 ### Persistence and diagnostics
 
@@ -48,4 +50,4 @@ Clients can move between local or authenticated remote agents without API PID co
 - Expiry uses the same acknowledged cleanup coordinator as explicit close.
 - Cleanup plans remain until both registries and every affected live AgentActor acknowledge or DeathWatch proves termination; an AgentActor with a projection retains its acknowledgement until projection unsubscribe and termination are proven.
 - Global AgentActors survive session and view cleanup.
-- Remoting remains separately disabled by managed configuration. GoAkt v4.5.2 native TLS cannot enforce the required inbound CIDR-to-certificate-identity binding, so enabled configuration fails closed and production does not install `WithRemote`.
+- Managed configuration keeps remoting disabled until host-specific Tailscale ACLs and URI-SAN mTLS files are provisioned. Enabled schema-v2 configuration installs `WithRemote`, `WithCluster`, and `WithoutRelocation` only after strict Tailscale DNS/address and certificate validation.

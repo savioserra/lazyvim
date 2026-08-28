@@ -18,7 +18,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-const SchemaVersion = 1
+const SchemaVersion = 2
 
 type Config struct {
 	SchemaVersion int            `toml:"schema_version"`
@@ -48,9 +48,15 @@ type HostedPiConfig struct {
 
 type RemotingConfig struct {
 	Enabled         bool         `toml:"enabled"`
+	Mode            string       `toml:"mode"`
+	NetworkTrust    string       `toml:"network_trust"`
+	ClusterName     string       `toml:"cluster_name"`
 	NodeIdentity    string       `toml:"node_identity"`
 	BindHost        string       `toml:"bind_host"`
+	MagicDNSSuffix  string       `toml:"magicdns_suffix"`
 	Port            int          `toml:"port"`
+	DiscoveryPort   int          `toml:"discovery_port"`
+	PeersPort       int          `toml:"peers_port"`
 	AllowedCIDRs    []string     `toml:"allowed_cidrs"`
 	AddressFamilies []string     `toml:"address_families"`
 	MTLSIdentity    string       `toml:"mtls_identity"`
@@ -69,9 +75,12 @@ type PeerConfig struct {
 
 type ResolvedRemoting struct {
 	Enabled                   bool
+	ClusterName               string
 	NodeIdentity              string
 	BindAddress               netip.Addr
-	Port                      int
+	MagicDNSSuffix            string
+	Port, DiscoveryPort       int
+	PeersPort                 int
 	MTLSIdentity              string
 	CAFile, CertFile, KeyFile string
 	Peers                     []ResolvedPeer
@@ -177,6 +186,12 @@ func ResolveRemoting(cfg RemotingConfig, resolver Resolver, localSource LocalAdd
 	if resolver == nil || localSource == nil {
 		return ResolvedRemoting{}, errors.New("resolver and local address source are required")
 	}
+	if cfg.Mode != "cluster" || cfg.NetworkTrust != "tailscale" {
+		return ResolvedRemoting{}, errors.New("enabled remoting requires mode=cluster and network_trust=tailscale")
+	}
+	if err := logicalIdentity("cluster_name", cfg.ClusterName); err != nil {
+		return ResolvedRemoting{}, err
+	}
 	if err := logicalIdentity("node_identity", cfg.NodeIdentity); err != nil {
 		return ResolvedRemoting{}, err
 	}
@@ -188,11 +203,17 @@ func ResolveRemoting(cfg RemotingConfig, resolver Resolver, localSource LocalAdd
 			return ResolvedRemoting{}, fmt.Errorf("%s must be a clean absolute path", name)
 		}
 	}
-	if strings.TrimSpace(cfg.BindHost) == "" {
-		return ResolvedRemoting{}, errors.New("bind_host is required")
+	if err := magicDNSHost(cfg.BindHost, cfg.MagicDNSSuffix); err != nil {
+		return ResolvedRemoting{}, fmt.Errorf("bind_host: %w", err)
 	}
-	if cfg.Port < 1 || cfg.Port > 65535 {
-		return ResolvedRemoting{}, errors.New("port must be fixed in the range 1..65535")
+	ports := []int{cfg.Port, cfg.DiscoveryPort, cfg.PeersPort}
+	for _, port := range ports {
+		if port < 1024 || port > 65535 {
+			return ResolvedRemoting{}, errors.New("remoting ports must be fixed in the range 1024..65535")
+		}
+	}
+	if cfg.Port == cfg.DiscoveryPort || cfg.Port == cfg.PeersPort || cfg.DiscoveryPort == cfg.PeersPort {
+		return ResolvedRemoting{}, errors.New("port, discovery_port, and peers_port must be distinct")
 	}
 	families, err := parseFamilies(cfg.AddressFamilies)
 	if err != nil {
@@ -201,6 +222,9 @@ func ResolveRemoting(cfg RemotingConfig, resolver Resolver, localSource LocalAdd
 	cidrs, err := parseCIDRs(cfg.AllowedCIDRs)
 	if err != nil {
 		return ResolvedRemoting{}, err
+	}
+	if len(families) != 1 || !families["ipv4"] || len(cidrs) != 1 || cidrs[0] != netip.MustParsePrefix("100.64.0.0/10") {
+		return ResolvedRemoting{}, errors.New("tailscale remoting requires address_families=[ipv4] and allowed_cidrs=[100.64.0.0/10]")
 	}
 	local, err := localSource.LocalAddresses()
 	if err != nil {
@@ -243,8 +267,8 @@ func ResolveRemoting(cfg RemotingConfig, resolver Resolver, localSource LocalAdd
 			return ResolvedRemoting{}, fmt.Errorf("peer %d: duplicate mtls_identity", i)
 		}
 		seenIdentities[peer.MTLSIdentity] = struct{}{}
-		if strings.TrimSpace(peer.Host) == "" {
-			return ResolvedRemoting{}, fmt.Errorf("peer %d: host is required", i)
+		if err := magicDNSHost(peer.Host, cfg.MagicDNSSuffix); err != nil {
+			return ResolvedRemoting{}, fmt.Errorf("peer %d: %w", i, err)
 		}
 		if err := sshTarget(peer.SSHTarget); err != nil {
 			return ResolvedRemoting{}, fmt.Errorf("peer %d: %w", i, err)
@@ -262,13 +286,30 @@ func ResolveRemoting(cfg RemotingConfig, resolver Resolver, localSource LocalAdd
 		})
 	}
 	return ResolvedRemoting{
-		Enabled:      true,
-		NodeIdentity: cfg.NodeIdentity,
-		BindAddress:  bind,
-		Port:         cfg.Port,
-		MTLSIdentity: cfg.MTLSIdentity, CAFile: cfg.CAFile, CertFile: cfg.CertFile, KeyFile: cfg.KeyFile,
-		Peers: peers,
+		Enabled:        true,
+		ClusterName:    cfg.ClusterName,
+		NodeIdentity:   cfg.NodeIdentity,
+		BindAddress:    bind,
+		MagicDNSSuffix: cfg.MagicDNSSuffix,
+		Port:           cfg.Port,
+		DiscoveryPort:  cfg.DiscoveryPort,
+		PeersPort:      cfg.PeersPort,
+		MTLSIdentity:   cfg.MTLSIdentity,
+		CAFile:         cfg.CAFile,
+		CertFile:       cfg.CertFile,
+		KeyFile:        cfg.KeyFile,
+		Peers:          peers,
 	}, nil
+}
+
+func magicDNSHost(host, suffix string) error {
+	if suffix == "" || suffix != strings.TrimSpace(suffix) || !strings.HasPrefix(suffix, ".") || strings.HasSuffix(suffix, ".") {
+		return errors.New("magicdns_suffix must be a trim-equal suffix beginning with '.'")
+	}
+	if host == "" || host != strings.TrimSpace(host) || strings.HasSuffix(host, ".") || !strings.HasSuffix(host, suffix) || len(host) <= len(suffix) {
+		return errors.New("host must be a full MagicDNS name beneath magicdns_suffix")
+	}
+	return nil
 }
 
 func sshTarget(value string) error {

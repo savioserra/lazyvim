@@ -250,7 +250,7 @@ history_limit = 50000 # PROPOSED/not implemented
 mouse_scroll = true # PROPOSED/not implemented
 ```
 
-`[actors.panel]` fields express requested visibility preferences only; they do not authorize tmux access and do not permit templates or actors to inject tmux format strings. `history_limit` is only a proposed panel preference and cannot substitute for the implemented hosted Pi `--tui-mode fullscreen` transcript scrolling mechanism. `mouse_scroll` remains a proposed template preference and is distinct from the hosted Pi fullscreen scrolling mechanism, which has source-only Linux end-to-end verification after rebuild. Style tokens are centrally controlled by the runtime-owned visualization adapter described in [ADR 0004](0004-supervisor-hierarchy-and-owned-workflows.md#runtime-owned-tmux-panel-projection). The model never executes tmux commands.
+`[actors.panel]` fields express requested visibility preferences only; they do not authorize tmux access and do not permit templates or actors to inject tmux format strings. `history_limit` is only a proposed panel preference and cannot substitute for the implemented hosted Pi `--tui-mode fullscreen` transcript scrolling mechanism. `mouse_scroll` remains a proposed template preference and is distinct from the hosted Pi fullscreen scrolling mechanism, which has Linux end-to-end verification after rebuild. Style tokens are centrally controlled by the runtime-owned visualization adapter described in [ADR 0004](0004-supervisor-hierarchy-and-owned-workflows.md#runtime-owned-tmux-panel-projection). The model never executes tmux commands.
 
 ## Materialization
 

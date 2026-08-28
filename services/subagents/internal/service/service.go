@@ -22,6 +22,7 @@ import (
 	"github.com/savioserra/lazyvim/services/subagents/internal/application"
 	"github.com/savioserra/lazyvim/services/subagents/internal/hostedpi"
 	"github.com/savioserra/lazyvim/services/subagents/internal/protocol"
+	"github.com/savioserra/lazyvim/services/subagents/internal/remoting"
 	"github.com/savioserra/lazyvim/services/subagents/internal/securepath"
 	workstationsocket "github.com/savioserra/lazyvim/services/subagents/internal/socket"
 	durablestate "github.com/savioserra/lazyvim/services/subagents/internal/state"
@@ -103,6 +104,7 @@ type Service struct {
 	hostedRuntimes           map[string]*actor.PID
 	hostedRegistrations      map[string]hostedRegistration
 	hostedTerminal           map[string]application.HostedPiRuntimeBinding
+	hostedStartupFailure     map[string]string
 	hostedCleanup            map[string]hostedRegistration
 	hostedProjects           map[string]string
 	registrationPlaceholders map[string]*registrationPlaceholder
@@ -173,7 +175,7 @@ func Start(ctx context.Context, socketPath string) (*Service, error) {
 	return StartConfigured(ctx, socketPath, HostedAdminConfig{})
 }
 
-func StartConfigured(ctx context.Context, socketPath string, hosted HostedAdminConfig) (*Service, error) {
+func StartConfigured(ctx context.Context, socketPath string, hosted HostedAdminConfig, runtime ...*remoting.Runtime) (*Service, error) {
 	if err := validateHostedAdminConfig(hosted); err != nil {
 		return nil, err
 	}
@@ -181,7 +183,15 @@ func StartConfigured(ctx context.Context, socketPath string, hosted HostedAdminC
 	if err != nil {
 		return nil, err
 	}
-	service, err := startWithListener(ctx, listener, hosted, socketPath)
+	options := []any{hosted, socketPath}
+	if len(runtime) > 1 {
+		_ = listener.Close()
+		return nil, errors.New("only one remoting runtime may be configured")
+	}
+	if len(runtime) == 1 && runtime[0] != nil {
+		options = append(options, runtime[0])
+	}
+	service, err := startWithListener(ctx, listener, options...)
 	if err != nil {
 		_ = listener.Close()
 		return nil, err
@@ -195,6 +205,7 @@ func startWithListener(ctx context.Context, listener net.Listener, options ...an
 	var hosted HostedAdminConfig
 	var socketPath string
 	var registrationDelay time.Duration
+	var actorPlane *remoting.Runtime
 	for _, option := range options {
 		switch value := option.(type) {
 		case HostedAdminConfig:
@@ -203,9 +214,21 @@ func startWithListener(ctx context.Context, listener net.Listener, options ...an
 			socketPath = value
 		case registryTestDelay:
 			registrationDelay = time.Duration(value)
+		case *remoting.Runtime:
+			actorPlane = value
 		}
 	}
 	actorOptions := []actor.Option{actor.WithPubSub(), actor.WithMessageRetention(5 * time.Minute)}
+	guardianName := "service-guardian"
+	if actorPlane != nil {
+		if actorPlane.Remote == nil || actorPlane.Cluster == nil || actorPlane.NodeIdentity == "" {
+			return nil, errors.New("remoting runtime is incomplete")
+		}
+		digest := sha256.Sum256([]byte(actorPlane.NodeIdentity))
+		guardianName = fmt.Sprintf("service-guardian-%x", digest[:6])
+		actorPlane.Cluster.WithKinds(&actors.ServiceGuardian{})
+		actorOptions = append(actorOptions, actor.WithRemote(actorPlane.Remote), actor.WithCluster(actorPlane.Cluster), actor.WithoutRelocation())
+	}
 	system, err := actor.NewActorSystem("workstation-subagents", actorOptions...)
 	if err != nil {
 		return nil, err
@@ -219,7 +242,7 @@ func startWithListener(ctx context.Context, listener net.Listener, options ...an
 		_ = system.Stop(stopCtx)
 		return nil, err
 	}
-	guardian, err := system.Spawn(ctx, "service-guardian", &actors.ServiceGuardian{}, actor.WithPassivationStrategy(passivation.NewLongLivedStrategy()))
+	guardian, err := system.Spawn(ctx, guardianName, &actors.ServiceGuardian{}, actor.WithPassivationStrategy(passivation.NewLongLivedStrategy()))
 	if err != nil {
 		return fail(err)
 	}
@@ -265,7 +288,7 @@ func startWithListener(ctx context.Context, listener net.Listener, options ...an
 	}
 	service := &Service{
 		system: system, guardian: guardian, sessionRegistry: sessions, agentRegistry: agents, sessionCoordinator: coordinator, hostedSupervisor: hostedSupervisor, workflowRegistry: workflowRegistry, taskCoordinator: taskCoordinator, persistenceSupervisor: persistenceSupervisor, listener: listener,
-		connectionSlots: make(chan struct{}, maxConnections), activeConnections: make(map[net.Conn]struct{}), requestResults: make(map[string]requestRecord), hostedRuntimes: make(map[string]*actor.PID), hostedRegistrations: make(map[string]hostedRegistration), hostedTerminal: make(map[string]application.HostedPiRuntimeBinding), hostedCleanup: make(map[string]hostedRegistration), hostedProjects: make(map[string]string), registrationPlaceholders: make(map[string]*registrationPlaceholder), registrationCleanups: make(map[string]*registrationCleanup), hostedAdmin: hosted, socketPath: socketPath, hostedOperationCancels: make(map[uint64]context.CancelFunc), hostedAgentLocks: make(map[string]*sync.Mutex), registrationTimeout: requestTimeout, durableStore: durableStore, persistencePID: persistencePID, hostedIndeterminate: make(map[string]application.HostedPiRuntimeBinding), taskLifecycles: make(map[string]*taskLifecycle), clientSessions: make(map[string]*actor.PID), pushSessions: make(map[*bridgePushSession]*actor.PID),
+		connectionSlots: make(chan struct{}, maxConnections), activeConnections: make(map[net.Conn]struct{}), requestResults: make(map[string]requestRecord), hostedRuntimes: make(map[string]*actor.PID), hostedRegistrations: make(map[string]hostedRegistration), hostedTerminal: make(map[string]application.HostedPiRuntimeBinding), hostedStartupFailure: make(map[string]string), hostedCleanup: make(map[string]hostedRegistration), hostedProjects: make(map[string]string), registrationPlaceholders: make(map[string]*registrationPlaceholder), registrationCleanups: make(map[string]*registrationCleanup), hostedAdmin: hosted, socketPath: socketPath, hostedOperationCancels: make(map[uint64]context.CancelFunc), hostedAgentLocks: make(map[string]*sync.Mutex), registrationTimeout: requestTimeout, durableStore: durableStore, persistencePID: persistencePID, hostedIndeterminate: make(map[string]application.HostedPiRuntimeBinding), taskLifecycles: make(map[string]*taskLifecycle), clientSessions: make(map[string]*actor.PID), pushSessions: make(map[*bridgePushSession]*actor.PID),
 	}
 	bridgeWatcher, err := guardian.SpawnChild(ctx, "bridge-session-watcher", &bridgeSessionWatcher{service: service}, actor.WithMailbox(actor.NewNonBlockingBoundedMailbox(256)), actor.WithPassivationStrategy(passivation.NewLongLivedStrategy()))
 	if err != nil {
@@ -1388,6 +1411,9 @@ func (s *Service) dispatch(request *subagentsv1.Envelope) *subagentsv1.Envelope 
 	case *subagentsv1.Envelope_BridgeConnectRequest:
 		route, err := s.authorizeAgent(ctx, request, payload.BridgeConnectRequest.AgentId, []string{"hosted_bridge", "observe"})
 		if err != nil || !route.Allowed {
+			s.hostedMu.Lock()
+			s.hostedStartupFailure[payload.BridgeConnectRequest.AgentId] = "hosted bridge authorization denied"
+			s.hostedMu.Unlock()
 			response.Payload = &subagentsv1.Envelope_BridgeConnectResponse{BridgeConnectResponse: &subagentsv1.BridgeConnectResponse{Reason: "hosted bridge authorization denied"}}
 			return response
 		}
@@ -1410,6 +1436,11 @@ func (s *Service) dispatch(request *subagentsv1.Envelope) *subagentsv1.Envelope 
 			if err != nil {
 				return internalError(response)
 			}
+		}
+		if !result.Accepted {
+			s.hostedMu.Lock()
+			s.hostedStartupFailure[payload.BridgeConnectRequest.AgentId] = hostedStartupFailureClass(result.Reason)
+			s.hostedMu.Unlock()
 		}
 		response.Payload = &subagentsv1.Envelope_BridgeConnectResponse{BridgeConnectResponse: &subagentsv1.BridgeConnectResponse{Accepted: result.Accepted, AgentHandle: result.Handle, Fence: result.Fence, Reason: result.Reason}}
 	case *subagentsv1.Envelope_BridgeReplaceRequest:
@@ -1441,6 +1472,8 @@ func (s *Service) dispatch(request *subagentsv1.Envelope) *subagentsv1.Envelope 
 		}
 		if result.Accepted {
 			s.pushBridgeUpdate(payload.BridgeLifecycleRequest.AgentId, "bridge lifecycle")
+		} else {
+			fmt.Fprintln(os.Stderr, "hosted bridge lifecycle rejected:", hostedStartupFailureClass(result.Reason))
 		}
 		response.Payload = &subagentsv1.Envelope_BridgeLifecycleResponse{BridgeLifecycleResponse: &subagentsv1.BridgeLifecycleResponse{Accepted: result.Accepted, Reason: result.Reason}}
 	case *subagentsv1.Envelope_BridgeHeartbeatRequest:
@@ -1451,6 +1484,9 @@ func (s *Service) dispatch(request *subagentsv1.Envelope) *subagentsv1.Envelope 
 		result, err := s.bridgeRequest(ctx, route.PID, &application.BridgeHeartbeat{SessionID: request.SessionId, GenerationID: route.GenerationID, Principal: route.Principal, AgentID: payload.BridgeHeartbeatRequest.AgentId, Handle: request.AgentHandle, Fence: request.AgentFence, RuntimeID: payload.BridgeHeartbeatRequest.RuntimeId, Incarnation: payload.BridgeHeartbeatRequest.Incarnation})
 		if err != nil {
 			return internalError(response)
+		}
+		if !result.Accepted {
+			fmt.Fprintln(os.Stderr, "hosted bridge heartbeat rejected:", hostedStartupFailureClass(result.Reason))
 		}
 		response.Payload = &subagentsv1.Envelope_BridgeHeartbeatResponse{BridgeHeartbeatResponse: &subagentsv1.BridgeHeartbeatResponse{Accepted: result.Accepted, Reason: result.Reason}}
 	case *subagentsv1.Envelope_TaskLifecycleRequest:
@@ -1532,6 +1568,9 @@ func (s *Service) dispatch(request *subagentsv1.Envelope) *subagentsv1.Envelope 
 	case *subagentsv1.Envelope_ActorControlRequest:
 		capability, validIntent := actorControlCapability(payload.ActorControlRequest.Intent)
 		source, validSource := authenticatedHostedSource(request.CallerIdentity)
+		if !validSource {
+			source, validSource = authenticatedClientSource(request.CallerIdentity)
+		}
 		if !validIntent || !validSource {
 			return errorResponse(request, subagentsv1.ProtocolError_CODE_INVALID_REQUEST, "actor control intent or authenticated source is invalid")
 		}
@@ -1910,7 +1949,7 @@ func (s *Service) clientSessionResponse(ctx context.Context, request *subagentsv
 			return internalError(response)
 		}
 		expires := time.Now().Add(clientSessionTTL)
-		session := application.OpenSession{SessionID: "client-session-" + random, GenerationID: "client-generation-" + random, Caller: "client:" + random, Credential: credential, Capabilities: []string{"observe", "send", "ask", "prompt"}, ExpiresAt: expires}
+		session := application.OpenSession{SessionID: "client-session-" + random, GenerationID: "client-generation-" + random, Caller: "client:" + random, Credential: credential, Capabilities: []string{"observe", "send", "ask", "prompt", "control_abort", "control_shutdown"}, ExpiresAt: expires}
 		if err := s.OpenSession(ctx, session); err != nil {
 			response.Payload = &subagentsv1.Envelope_ClientSessionResponse{ClientSessionResponse: &subagentsv1.ClientSessionResponse{Reason: redactedLifecycleReason("client open", err)}}
 			return response
@@ -2324,6 +2363,7 @@ func (s *Service) startHostedAgent(ctx context.Context, command *subagentsv1.Hos
 	s.hostedRegistrations[command.AgentId] = metadata
 	projectPublished = true
 	delete(s.hostedTerminal, command.AgentId)
+	delete(s.hostedStartupFailure, command.AgentId)
 	s.hostedMu.Unlock()
 	for {
 		binding, err := s.hostedStatus(ctx, command.AgentId)
@@ -2341,6 +2381,13 @@ func (s *Service) startHostedAgent(ctx context.Context, command *subagentsv1.Hos
 			defer cancel()
 			if err := s.rollbackHostedRegistration(cleanupCtx, command.AgentId, result.AgentPID, metadata); err != nil {
 				return binding, fmt.Errorf("rollback definitive hosted start failure: %w", err)
+			}
+			s.hostedMu.Lock()
+			failure := s.hostedStartupFailure[command.AgentId]
+			delete(s.hostedStartupFailure, command.AgentId)
+			s.hostedMu.Unlock()
+			if failure != "" {
+				return binding, fmt.Errorf("hosted runtime start failed and was rolled back: %s", failure)
 			}
 			return binding, errors.New("hosted runtime start failed and was rolled back")
 		}
@@ -2794,6 +2841,17 @@ func actorControlCapability(intent subagentsv1.ActorControlRequest_Intent) (stri
 		return "", false
 	}
 }
+func hostedStartupFailureClass(reason string) string {
+	switch reason {
+	case "hosted bridge authorization denied", "hosted bridge binding rejected", "hosted bridge replacement requires an explicit fenced transition", "durable persistence is busy":
+		return reason
+	case "hosted bridge attachment required":
+		return "hosted bridge attachment failed"
+	default:
+		return "hosted bridge startup rejected"
+	}
+}
+
 func authenticatedHostedSource(principal string) (string, bool) {
 	const prefix = "hosted:"
 	if !strings.HasPrefix(principal, prefix) || len(principal) == len(prefix) {

@@ -3,6 +3,7 @@ set -eu
 
 nvim="$HOME/.local/opt/nvim/bin/nvim"
 runtime="$HOME/.local/share/workstation/apps/cli/run.lua"
+export CHEZMOI_WORKING_TREE={{ .chezmoi.workingTree | quote }}
 
 "$nvim" -l "$runtime" setup
 exec "$nvim" -l "$runtime" sync

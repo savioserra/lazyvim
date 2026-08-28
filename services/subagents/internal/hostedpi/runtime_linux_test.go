@@ -40,7 +40,7 @@ func TestHostedPiLaunchArgsUseFullscreenTUIBeforeSessionOptions(t *testing.T) {
 	if piIndex < 0 {
 		t.Fatalf("Pi binary missing from launch args: %#v", args)
 	}
-	want := []string{"/pi", "--tui-mode", "fullscreen", "--session-dir", "/pi-sessions", "--name", "pi-session", "-e", "/bridge.ts", "--approve"}
+	want := []string{"/pi", "--no-extensions", "--tui-mode", "fullscreen", "--session-dir", "/pi-sessions", "--name", "pi-session", "-e", "/bridge.ts", "--approve"}
 	if got := args[piIndex:]; !equalStrings(got, want) {
 		t.Fatalf("Pi launch suffix mismatch\n got: %#v\nwant: %#v", got, want)
 	}

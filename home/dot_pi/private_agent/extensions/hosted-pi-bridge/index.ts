@@ -281,8 +281,7 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
     await client.open();
     piSessionId = ctx.sessionManager.getSessionId();
     if (!piSessionId) throw new Error("hosted Pi session identity is empty");
-    const response = await client.request("bridgeConnectRequest", BridgeConnectRequestSchema, { agentId: binding.agentId, runtimeId: binding.runtimeId, incarnation: binding.incarnation, piSessionId, lastAckedSequence });
-    if (response.payload.case !== "bridgeConnectResponse" || !response.payload.value.accepted) throw new Error("hosted bridge binding rejected");
+    const response = await connectBridgeWithRetry(client, binding, piSessionId, lastAckedSequence);
     selfFence = { handle: response.payload.value.agentHandle, fence: response.payload.value.fence };
     fences.set(binding.agentId, selfFence);
     for (const frame of pendingPushFrames.splice(0)) schedulePush(ctx, frame);
@@ -463,6 +462,18 @@ async function validatePrivateSocket(path: string) {
   const uid = typeof process.getuid === "function" ? process.getuid() : undefined;
   if (!socket.isSocket() || (socket.mode & 0o777) !== 0o600 || (uid !== undefined && socket.uid !== uid)) throw new Error("hosted bridge daemon socket is not owner-private");
   if (!parent.isDirectory() || (parent.mode & 0o077) !== 0 || (uid !== undefined && parent.uid !== uid)) throw new Error("hosted bridge socket directory is not owner-private");
+}
+
+async function connectBridgeWithRetry(client: FramedClient, binding: Binding, piSessionId: string, lastAckedSequence: bigint) {
+  let reason = "hosted bridge binding rejected";
+  for (let attempt = 0; attempt < 30; attempt++) {
+    const response = await client.request("bridgeConnectRequest", BridgeConnectRequestSchema, { agentId: binding.agentId, runtimeId: binding.runtimeId, incarnation: binding.incarnation, piSessionId, lastAckedSequence });
+    if (response.payload.case !== "bridgeConnectResponse") throw new Error("unexpected hosted bridge connect response");
+    if (response.payload.value.accepted) return response;
+    reason = boundedPublic(response.payload.value.reason || reason, 120);
+    if (attempt < 29) await delay(100);
+  }
+  throw new Error(`hosted bridge binding rejected: ${reason}`);
 }
 
 function delay(milliseconds: number) { return new Promise<void>((resolve) => setTimeout(resolve, milliseconds)); }

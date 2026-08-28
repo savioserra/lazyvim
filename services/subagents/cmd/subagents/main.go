@@ -43,13 +43,13 @@ func run() error {
 	if !cfg.Service.Enabled {
 		return errors.New("service is inactive; set service.enabled explicitly in private configuration")
 	}
-	if err := workstationsocket.EnsurePrivateDir(paths.StateDir); err != nil {
+	if err := workstationsocket.EnsureOwnedPrivateDir(paths.StateDir); err != nil {
 		return fmt.Errorf("prepare XDG state directory: %w", err)
 	}
-	// GoAkt v4.5.2 native TLS cannot bind an authenticated peer identity to
-	// the configured inbound CIDR policy. Validation therefore fails closed
-	// when remoting is enabled and never installs actor.WithRemote.
-	_, _, err = remoting.NewValidatedConfig(cfg.Remoting, config.NewNetworkResolver(), config.InterfaceAddressSource{})
+	// The actor plane binds only the concrete local Tailscale address. MagicDNS
+	// supplies bootstrap addresses; Tailscale ACL identity and URI-SAN mTLS are
+	// independent, conjunctive trust boundaries.
+	actorPlane, _, err := remoting.NewValidatedConfig(cfg.Remoting, config.NewNetworkResolver(), config.InterfaceAddressSource{})
 	if err != nil {
 		return fmt.Errorf("validate remoting: %w", err)
 	}
@@ -57,7 +57,7 @@ func run() error {
 	ctx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopSignals()
 	hosted := service.HostedAdminConfig{Enabled: cfg.HostedPi.Enabled, TmuxBinary: cfg.HostedPi.TmuxBinary, PiBinary: cfg.HostedPi.PiBinary, BridgeExtension: cfg.HostedPi.BridgeExtension, ServerName: cfg.HostedPi.TmuxServerName, TmuxConfig: cfg.HostedPi.TmuxConfig, StateDirectory: cfg.HostedPi.StateDirectory, PiSessionDirectory: cfg.HostedPi.PiSessionDirectory, CredentialDirectory: cfg.HostedPi.CredentialDirectory, AdminCredentialFile: cfg.HostedPi.AdminCredentialFile, DefaultProjectDirectory: cfg.HostedPi.DefaultProjectDirectory, TrustProject: cfg.HostedPi.TrustProject}
-	daemon, err := service.StartConfigured(ctx, resolvedSocket, hosted)
+	daemon, err := service.StartConfigured(ctx, resolvedSocket, hosted, actorPlane)
 	if err != nil {
 		return err
 	}

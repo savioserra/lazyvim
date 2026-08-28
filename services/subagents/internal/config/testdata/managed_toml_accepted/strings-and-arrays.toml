@@ -1,10 +1,10 @@
-schema_version = 1
+schema_version = 2
 
 [service]
-enabled = false
+enabled = true
 
 [hosted_pi]
-enabled = false
+enabled = true
 
 [remoting]
 enabled = false

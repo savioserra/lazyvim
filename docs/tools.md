@@ -29,7 +29,7 @@ Supported deployment policy is Linux, WSL-as-Linux, and macOS. Native-Windows en
 
 ## GoAkt service source dependency
 
-The sole nested service module under `services/subagents/` uses the managed Go 1.27.0 toolchain and exactly pins `github.com/tochemey/goakt/v4` v4.5.2. Its reproducible schema check uses SHA-256-pinned protoc 33.5 archives, module-locked protoc-gen-go 1.36.12, lockfile-pinned protoc-gen-es 2.11.0, and lockfile-pinned `tsx` to execute the generated descriptor. No service binary, service manager, generator, or runtime compiler dependency is deployed into HOME. The source-managed hosted bridge pins `@bufbuild/protobuf@2.11.0` and exact registry integrity in its local lock; the `subagents` package installs that production dependency without enabling the daemon or hosted execution. See [`subagents.md`](subagents.md).
+The sole nested service module under `services/subagents/` uses the managed Go 1.27.0 toolchain and exactly pins `github.com/tochemey/goakt/v4` v4.5.2. Its reproducible schema check uses SHA-256-pinned protoc 33.5 archives, module-locked protoc-gen-go 1.36.12, lockfile-pinned protoc-gen-es 2.11.0, and lockfile-pinned `tsx` to execute the generated descriptor. Chezmoi setup builds the reviewed daemon and clientctl into `~/.local/bin` with `go build -mod=readonly` and activates only the owner user service. The source-managed hosted bridge and actor client pin `@bufbuild/protobuf@2.11.0` and exact registry integrity in local locks. See [`subagents.md`](subagents.md).
 
 ## Tmux subagent renderer dependencies
 

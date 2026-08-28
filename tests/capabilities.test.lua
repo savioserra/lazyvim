@@ -90,39 +90,55 @@ for _, asset in ipairs({
 end
 local subagents_package = assert(vim.fn.readfile(vim.fs.joinpath(root, "packages", "subagents", "init.lua")))
 local subagents_package_source = table.concat(subagents_package, "\n")
-for _, forbidden in ipairs({ "systemctl", "launchctl", "kickstart", "enable.*--now" }) do
+for _, required in ipairs({ "systemctl", "launchctl", "kickstart", "enable" }) do
 	assert(
-		not subagents_package_source:find(forbidden),
-		"subagents lifecycle must never activate service assets: " .. forbidden
+		subagents_package_source:find(required),
+		"subagents lifecycle must activate reviewed service assets: " .. required
 	)
 end
 local subagents_config = require("packages.subagents.config")
-subagents_config.verify_inactive([[
+subagents_config.verify_managed_active([[
 [service]
-enabled = false
+enabled = true
 
 [hosted_pi]
-enabled = false
+enabled = true
 
 [remoting]
 enabled = false
 ]])
-assert(not pcall(
-	subagents_config.verify_inactive,
-	[[[service]
-enabled=false
+subagents_config.verify_managed_active([=[
+[service]
+enabled = true
 [hosted_pi]
-enabled=false
+enabled = true
+[remoting]
+enabled = true
+mode = "cluster"
+network_trust = "tailscale"
+allowed_cidrs = ["100.64.0.0/10"]
+address_families = ["ipv4"]
+[[remoting.peers]]
+node_identity = "vps"
+[[remoting.peers]]
+node_identity = "mac"
+]=])
+assert(not pcall(
+	subagents_config.verify_managed_active,
+	[[[service]
+enabled=true
+[hosted_pi]
+enabled=true
 [remoting]
 enabled=true
 ]]
-), "managed remoting gate must remain false")
-assert_fails("[hosted_pi].enabled must be false", function()
-	subagents_config.verify_inactive([[
+), "managed enabled remoting must require the complete Tailscale cluster boundary")
+assert_fails("[hosted_pi].enabled must be true", function()
+	subagents_config.verify_managed_active([[
 [service]
-enabled = false
-[hosted_pi]
 enabled = true
+[hosted_pi]
+enabled = false
 ]])
 end)
 local managed_toml_corpus =
@@ -130,37 +146,58 @@ local managed_toml_corpus =
 local managed_toml_files = vim.fn.glob(vim.fs.joinpath(managed_toml_corpus, "*.toml"), false, true)
 assert(#managed_toml_files > 0, "managed TOML acceptance corpus is empty")
 for _, path in ipairs(managed_toml_files) do
-	subagents_config.verify_inactive(table.concat(vim.fn.readfile(path), "\n"))
+	subagents_config.verify_managed_active(table.concat(vim.fn.readfile(path), "\n"))
 end
-assert_fails("[service].enabled must be false", function()
-	subagents_config.verify_inactive([[
+assert_fails("[service].enabled must be true", function()
+	subagents_config.verify_managed_active([[
 [service]
+enabled = false
+
+[hosted_pi]
 enabled = true
 
 [remoting]
 enabled = false
 ]])
 end)
-assert_fails("[service].enabled must be false", function()
-	subagents_config.verify_inactive([[
+assert_fails("[service].enabled must be true", function()
+	subagents_config.verify_managed_active([[
 # [service]
-# enabled = false
+# enabled = true
+
+[hosted_pi]
+enabled = true
 
 [remoting]
 enabled = false
 ]])
 end)
-assert_fails("[service].enabled must be false", function()
-	subagents_config.verify_inactive([[
+assert_fails("[service].enabled must be true", function()
+	subagents_config.verify_managed_active([[
+[hosted_pi]
+enabled = true
+
+[remoting]
+enabled = false
+]])
+end)
+assert_fails("[hosted_pi].enabled must be true", function()
+	subagents_config.verify_managed_active([[
+[service]
+enabled = true
+
+[hosted_pi]
+enabled = false
+
 [remoting]
 enabled = false
 ]])
 end)
 assert_fails("multiline TOML strings are unsupported", function()
-	subagents_config.verify_inactive([=[
+	subagents_config.verify_managed_active([=[
 note = """
 [service]
-enabled = false
+enabled = true
 """
 [service]
 "enabled" = true
@@ -194,7 +231,7 @@ for _, adversarial in ipairs({
 	"[service]\nenabled = false\n[remoting]\npeers = [1]\n",
 }) do
 	assert_fails("", function()
-		subagents_config.verify_inactive(adversarial)
+		subagents_config.verify_managed_active(adversarial)
 	end)
 end
 local subagents_metadata = require("packages.subagents.metadata")

@@ -39,21 +39,21 @@ func secureTempDir(t *testing.T) string {
 
 func validConfig() config.RemotingConfig {
 	return config.RemotingConfig{
-		Enabled: true, NodeIdentity: "node-a", BindHost: "bind.example", Port: 7210,
-		AllowedCIDRs: []string{"10.20.0.0/16"}, AddressFamilies: []string{"ipv4"}, MTLSIdentity: "spiffe://example/node-a", CAFile: "/private/ca.pem", CertFile: "/private/node.pem", KeyFile: "/private/node.key",
-		Peers: []config.PeerConfig{{NodeIdentity: "node-b", Host: "peer.example", MTLSIdentity: "spiffe://example/node-b", SSHTarget: "operator@relay.example --literal-one-argv"}},
+		Enabled: true, Mode: "cluster", NetworkTrust: "tailscale", ClusterName: "workstation-subagents", NodeIdentity: "node-a", BindHost: "bind.taila.ts.net", MagicDNSSuffix: ".taila.ts.net", Port: 7210, DiscoveryPort: 7211, PeersPort: 7212,
+		AllowedCIDRs: []string{"100.64.0.0/10"}, AddressFamilies: []string{"ipv4"}, MTLSIdentity: "spiffe://example/node-a", CAFile: "/private/ca.pem", CertFile: "/private/node.pem", KeyFile: "/private/node.key",
+		Peers: []config.PeerConfig{{NodeIdentity: "node-b", Host: "peer.taila.ts.net", MTLSIdentity: "spiffe://example/node-b", SSHTarget: "operator@relay.example --literal-one-argv"}},
 	}
 }
 
 func TestResolveRemotingRequiresOneAllowedLocalBindAddress(t *testing.T) {
 	cfg := validConfig()
 	resolved, err := config.ResolveRemoting(cfg, resolver{
-		"bind.example": {addr("10.20.0.4")}, "peer.example": {addr("10.20.0.5")},
-	}, locals{addr("127.0.0.1"), addr("10.20.0.4")})
+		"bind.taila.ts.net": {addr("100.64.0.4")}, "peer.taila.ts.net": {addr("100.64.0.5")},
+	}, locals{addr("127.0.0.1"), addr("100.64.0.4")})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resolved.BindAddress.String() != "10.20.0.4" || resolved.Peers[0].SSHTarget != cfg.Peers[0].SSHTarget {
+	if resolved.BindAddress.String() != "100.64.0.4" || resolved.Peers[0].SSHTarget != cfg.Peers[0].SSHTarget {
 		t.Fatalf("unexpected resolution: %#v", resolved)
 	}
 }
@@ -66,11 +66,11 @@ func TestResolveRemotingFailsClosedForAmbiguousNonlocalFamilyAndPoisonedDNS(t *t
 		locals   locals
 		want     string
 	}{
-		{"ambiguous bind", func(*config.RemotingConfig) {}, resolver{"bind.example": {addr("10.20.0.4"), addr("10.20.0.6")}, "peer.example": {addr("10.20.0.5")}}, locals{addr("10.20.0.4"), addr("10.20.0.6")}, "exactly one"},
-		{"nonlocal bind", func(*config.RemotingConfig) {}, resolver{"bind.example": {addr("10.20.0.4")}, "peer.example": {addr("10.20.0.5")}}, locals{addr("10.20.0.9")}, "not assigned locally"},
-		{"poisoned peer", func(*config.RemotingConfig) {}, resolver{"bind.example": {addr("10.20.0.4")}, "peer.example": {addr("10.20.0.5"), addr("203.0.113.9")}}, locals{addr("10.20.0.4")}, "outside allowed CIDRs"},
-		{"disallowed family", func(c *config.RemotingConfig) { c.AllowedCIDRs = append(c.AllowedCIDRs, "2001:db8::/32") }, resolver{"bind.example": {addr("10.20.0.4")}, "peer.example": {addr("2001:db8::5")}}, locals{addr("10.20.0.4")}, "disallowed ipv6"},
-		{"wildcard", func(*config.RemotingConfig) {}, resolver{"bind.example": {addr("0.0.0.0")}, "peer.example": {addr("10.20.0.5")}}, locals{addr("0.0.0.0")}, "non-concrete"},
+		{"ambiguous bind", func(*config.RemotingConfig) {}, resolver{"bind.taila.ts.net": {addr("100.64.0.4"), addr("100.64.0.6")}, "peer.taila.ts.net": {addr("100.64.0.5")}}, locals{addr("100.64.0.4"), addr("100.64.0.6")}, "exactly one"},
+		{"nonlocal bind", func(*config.RemotingConfig) {}, resolver{"bind.taila.ts.net": {addr("100.64.0.4")}, "peer.taila.ts.net": {addr("100.64.0.5")}}, locals{addr("100.64.0.9")}, "not assigned locally"},
+		{"poisoned peer", func(*config.RemotingConfig) {}, resolver{"bind.taila.ts.net": {addr("100.64.0.4")}, "peer.taila.ts.net": {addr("100.64.0.5"), addr("203.0.113.9")}}, locals{addr("100.64.0.4")}, "outside allowed CIDRs"},
+		{"disallowed family", func(c *config.RemotingConfig) { c.AllowedCIDRs = append(c.AllowedCIDRs, "2001:db8::/32") }, resolver{"bind.taila.ts.net": {addr("100.64.0.4")}, "peer.taila.ts.net": {addr("2001:db8::5")}}, locals{addr("100.64.0.4")}, "tailscale remoting requires"},
+		{"wildcard", func(*config.RemotingConfig) {}, resolver{"bind.taila.ts.net": {addr("0.0.0.0")}, "peer.taila.ts.net": {addr("100.64.0.5")}}, locals{addr("0.0.0.0")}, "non-concrete"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -136,8 +136,11 @@ func TestLoadUsesOwnerPrivateOpenatDescriptorPolicy(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := filepath.Join(root, "config.toml")
-	valid := []byte("schema_version = 1\n[service]\nenabled = false\n[remoting]\nenabled = false\n")
+	valid := []byte("schema_version = 2\n[service]\nenabled = false\n[remoting]\nenabled = false\n")
 	if err := os.WriteFile(path, valid, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(path, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := config.Load(path); err == nil {
@@ -211,7 +214,7 @@ func TestLoadRejectsWritableNonStickyIntermediateDirectory(t *testing.T) {
 				t.Fatal(err)
 			}
 			path := filepath.Join(parent, "config.toml")
-			if err := os.WriteFile(path, []byte("schema_version = 1\n[service]\nenabled = false\n"), 0o600); err != nil {
+			if err := os.WriteFile(path, []byte("schema_version = 2\n[service]\nenabled = false\n"), 0o600); err != nil {
 				t.Fatal(err)
 			}
 			if _, err := config.Load(path); err == nil || !strings.Contains(err.Error(), "writable without the sticky bit") {
@@ -234,7 +237,7 @@ func TestLoadAllowsStickyWritableIntermediateDirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := filepath.Join(parent, "config.toml")
-	if err := os.WriteFile(path, []byte("schema_version = 1\n[service]\nenabled = false\n"), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte("schema_version = 2\n[service]\nenabled = false\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := config.Load(path); err != nil {
@@ -247,7 +250,7 @@ func TestResolveRemotingRejectsUnsafeSSHTargets(t *testing.T) {
 		t.Run(strings.ReplaceAll(target, " ", "space"), func(t *testing.T) {
 			cfg := validConfig()
 			cfg.Peers[0].SSHTarget = target
-			_, err := config.ResolveRemoting(cfg, resolver{"bind.example": {addr("10.20.0.4")}, "peer.example": {addr("10.20.0.5")}}, locals{addr("10.20.0.4")})
+			_, err := config.ResolveRemoting(cfg, resolver{"bind.taila.ts.net": {addr("100.64.0.4")}, "peer.taila.ts.net": {addr("100.64.0.5")}}, locals{addr("100.64.0.4")})
 			if err == nil || !strings.Contains(err.Error(), "ssh_target") {
 				t.Fatalf("unsafe target %q accepted: %v", target, err)
 			}
@@ -255,7 +258,7 @@ func TestResolveRemotingRejectsUnsafeSSHTargets(t *testing.T) {
 	}
 	cfg := validConfig()
 	cfg.Peers[0].SSHTarget = ""
-	if _, err := config.ResolveRemoting(cfg, resolver{"bind.example": {addr("10.20.0.4")}, "peer.example": {addr("10.20.0.5")}}, locals{addr("10.20.0.4")}); err != nil {
+	if _, err := config.ResolveRemoting(cfg, resolver{"bind.taila.ts.net": {addr("100.64.0.4")}, "peer.taila.ts.net": {addr("100.64.0.5")}}, locals{addr("100.64.0.4")}); err != nil {
 		t.Fatalf("unset ssh_target rejected: %v", err)
 	}
 }

@@ -8,13 +8,13 @@ This file is the canonical delivery roadmap. ADRs in this directory define archi
 |---|---|---|
 | 0. GoAkt foundation | Approved | Global actors, protobuf UDS, fencing, lifecycle, security tests |
 | 1. Hosted Pi runtime | Approved | Full Pi TUI in exactly owned tmux; dynamic actor lifecycle; bridge commands/tools |
-| 2. Self-hosting client MVP | Live, source-only | Normal Pi creates dynamic actors, sends a real prompt, receives the correlated model answer, and delegates a repository task through the owned system |
+| 2. Self-hosting client MVP | Live, managed | Normal Pi creates dynamic actors, sends a real prompt, receives the correlated model answer, and delegates a repository task through the owned system |
 | 3. Actor-native push stabilization | Current | Hosted bridges use authenticated daemon push frames from watched BridgeSessionActors, reconnect replay starts from last delivery ACK, and periodic polling is compatibility-only |
 | 4. Client stabilization | Next | Reproduce/fix same-name restart; use isolated worktrees; complete several real tasks through owned TaskCoordinator/Workflow actors |
 | 5. Authority cutover | Deferred | Owned execution parity proven; disable third-party authority without dual writers; retain bounded rollback window |
 | 6. Legacy removal | Deferred | Remove `pi-subagents`, old XState/Terminal Kit observer, superseded tests/docs/packages |
-| 7. Managed deployment | Deferred | Reviewed binary provisioning and inactive-to-active systemd-user/LaunchAgent transition; Linux/WSL/macOS validation |
-| 8. Remoting | Blocked | Approved transport must bind inbound address policy to authenticated mTLS identity; GoAkt v4.5.2 cannot currently enforce this boundary |
+| 7. Managed deployment | Live | Reviewed binary provisioning and active systemd-user/LaunchAgent transition; Linux/WSL/macOS validation |
+| 8. Tailscale remoting and clustering | In progress | Three-node MagicDNS bootstrap, custom actor/discovery/peers ports, exact Tailscale-only binds, URI-SAN mTLS, quorum 2, no relocation, and physical VPS/macOS evidence |
 
 ## Client MVP definition
 
@@ -30,7 +30,7 @@ The gate requires:
 6. A writing actor uses an explicitly assigned worktree with one writer per worktree.
 7. The actor survives requester disconnect and can be reattached.
 
-Current source-only entry point: `services/subagents/tools/source-client.sh client`.
+Current managed entry point: restart an ordinary globally discovered `pi`; the `actor_*` model tools and `/actor-*` commands discover the owner-private managed service automatically.
 
 ## Next three deliverables
 
@@ -50,7 +50,7 @@ The CLI connects through the same typed authenticated daemon protocol and is rep
 
 Dashboard scope:
 
-- Realtime actors, hosted runtimes, work queues, current tasks, tests/checks, failures, lifecycle events, dead letters, and tmux attach targets.
+- Realtime actors, hosted runtimes, work queues, current tasks, tests/checks, failures, lifecycle events, and dead letters.
 - Commands for list, status, create, attach, send, ask, subscribe, and stop.
 - Multiple dashboard clients with reconnect and fencing.
 - Read-only default; explicit capabilities are required for mutation.
