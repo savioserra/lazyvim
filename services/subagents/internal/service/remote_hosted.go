@@ -29,7 +29,7 @@ func (s *Service) remoteHostedAdminResponse(ctx context.Context, request *subage
 		response.Payload = protocolError(subagentsv1.ProtocolError_CODE_INVALID_REQUEST, "remote hosted placement authority unavailable")
 		return response
 	}
-	value, err := s.system.NoSender().Ask(ctx, pid, &application.RemoteHostedPlacement{AdminCredential: request.SessionCredential, AgentID: command.AgentId, ProjectDirectory: command.ProjectDirectory, TrustProject: command.TrustProject, DisplayName: command.DisplayName, Role: command.Role}, requestTimeout)
+	value, err := s.system.NoSender().Ask(ctx, pid, &application.RemoteHostedPlacement{OperationID: request.RequestId, AgentID: command.AgentId, ProjectDirectory: command.ProjectDirectory, TrustProject: command.TrustProject, DisplayName: command.DisplayName, Role: command.Role}, requestTimeout)
 	if err != nil {
 		response.Payload = protocolError(subagentsv1.ProtocolError_CODE_INTERNAL, fmt.Sprintf("remote hosted placement failed: %v", err))
 		return response

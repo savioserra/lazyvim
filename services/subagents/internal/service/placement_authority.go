@@ -25,8 +25,8 @@ func (a *hostedPlacementAuthority) Receive(ctx *actor.ReceiveContext) {
 }
 
 func (a *hostedPlacementAuthority) place(ctx context.Context, message *application.RemoteHostedPlacement) *application.RemoteHostedPlacementResult {
-	if message == nil || !a.service.authorizedAdmin(message.AdminCredential) {
-		return &application.RemoteHostedPlacementResult{Reason: "placement authorization denied"}
+	if message == nil || message.OperationID == "" {
+		return &application.RemoteHostedPlacementResult{Reason: "placement operation identity is required"}
 	}
 	command := &subagentsv1.HostedAdminRequest{Operation: subagentsv1.HostedAdminRequest_OPERATION_START, AgentId: message.AgentID, ProjectDirectory: message.ProjectDirectory, TrustProject: message.TrustProject, DisplayName: message.DisplayName, Role: message.Role}
 	binding, err := a.service.startHostedAgent(ctx, command)

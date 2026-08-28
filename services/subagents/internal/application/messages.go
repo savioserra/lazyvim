@@ -417,7 +417,7 @@ type PublicAgentAsk struct {
 	Payload  []byte
 }
 type RemoteHostedPlacement struct {
-	AdminCredential                              []byte
+	OperationID                                  string
 	AgentID, ProjectDirectory, DisplayName, Role string
 	TrustProject                                 bool
 }
