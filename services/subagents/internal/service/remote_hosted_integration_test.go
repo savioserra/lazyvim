@@ -87,16 +87,16 @@ func TestRemoteHostedOrdinaryServicePath(t *testing.T) {
 		if tell == nil || !tell.Accepted {
 			t.Fatalf("tell failed: %#v", tell)
 		}
-		time.Sleep(500 * time.Millisecond)
+		waitRemoteDeterminate(t, local, client, "ui_remote_qa")
 		go ackNextPrompt(t, vps, "ui_remote_qa", []byte("answer"))
-		ask := local.dispatch(env(local, client, &subagentsv1.Envelope_ActorMessageRequest{ActorMessageRequest: &subagentsv1.ActorMessageRequest{Mode: subagentsv1.ActorMessageRequest_MODE_ASK, Target: "ui_remote_qa", BoundedPayload: []byte("question"), DedupeId: "ask-d", ChainId: "ask-c", HopLimit: 4, SourceMutationSequence: 2}}, "ask-1", handle, fence)).GetActorMessageResponse()
-		if ask == nil || !ask.Accepted || !ask.Completed || string(ask.BoundedResult) != "answer" {
+		ask := askUntilDeterminate(t, local, client, handle, fence, &subagentsv1.ActorMessageRequest{Mode: subagentsv1.ActorMessageRequest_MODE_ASK, Target: "ui_remote_qa", BoundedPayload: []byte("question"), DedupeId: "ask-d", ChainId: "ask-c", HopLimit: 4, SourceMutationSequence: 2})
+		if !ask.Accepted || !ask.Completed || string(ask.BoundedResult) != "answer" {
 			t.Fatalf("ask failed: %#v", ask)
 		}
 	})
 
 	t.Run("typed prompt lifecycle reaches remote bridge correlation boundary", func(t *testing.T) {
-		time.Sleep(500 * time.Millisecond)
+		waitRemoteDeterminate(t, local, client, "ui_remote_qa")
 		go ackNextPrompt(t, vps, "ui_remote_qa", []byte("life-answer"))
 		started := local.dispatch(env(local, client, &subagentsv1.Envelope_TaskLifecycleRequest{TaskLifecycleRequest: &subagentsv1.TaskLifecycleRequest{Operation: subagentsv1.TaskLifecycleRequest_OPERATION_START, LifecycleId: "life-1", Target: "ui_remote_qa", BoundedPrompt: []byte("do work"), DedupeId: "life-d", ChainId: "life-c", HopLimit: 4, SourceMutationSequence: 3}}, "life-req", handle, fence)).GetTaskLifecycleResponse()
 		if started == nil || !started.Accepted || started.LifecycleId != "life-1" {
@@ -260,6 +260,37 @@ func attachRemote(t *testing.T, s *Service, client application.OpenSession, id s
 	t.Fatalf("attach failed %#v", a)
 	return "", 0
 }
+func waitRemoteDeterminate(t *testing.T, s *Service, client application.OpenSession, id string) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		status := s.dispatch(env(s, client, &subagentsv1.Envelope_ListAgentsRequest{ListAgentsRequest: &subagentsv1.ListAgentsRequest{}}, "status"+time.Now().String(), "", 0)).GetListAgentsResponse()
+		if status != nil && hasAgent(status.Agents, id) {
+			time.Sleep(25 * time.Millisecond)
+			return
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	t.Fatalf("remote actor never became determinate")
+}
+
+func askUntilDeterminate(t *testing.T, s *Service, client application.OpenSession, handle string, fence uint64, logical *subagentsv1.ActorMessageRequest) *subagentsv1.ActorMessageResponse {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	attempt := 0
+	for time.Now().Before(deadline) {
+		attempt++
+		response := s.dispatch(env(s, client, &subagentsv1.Envelope_ActorMessageRequest{ActorMessageRequest: logical}, fmt.Sprintf("ask-retry-%d", attempt), handle, fence)).GetActorMessageResponse()
+		if response != nil && response.Reason == "durable persistence is busy" && !response.Accepted {
+			time.Sleep(25 * time.Millisecond)
+			continue
+		}
+		return response
+	}
+	t.Fatalf("ask remained indeterminate")
+	return nil
+}
+
 func connectFakeBridge(t *testing.T, s *Service, id string) {
 	t.Helper()
 	s.hostedMu.Lock()
