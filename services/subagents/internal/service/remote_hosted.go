@@ -29,7 +29,7 @@ func (s *Service) remoteHostedAdminResponse(ctx context.Context, request *subage
 		response.Payload = protocolError(subagentsv1.ProtocolError_CODE_INTERNAL, "remote hosted placement signing failed")
 		return response
 	}
-	pid, err := s.system.NoSender().RemoteLookup(ctx, node.Host, node.Port, hostedPlacementAuthorityName)
+	pid, err := s.system.NoSender().RemoteLookup(ctx, node.Host, node.Port, placementAuthorityName(node.Identity))
 	if err != nil || pid == nil {
 		response.Payload = protocolError(subagentsv1.ProtocolError_CODE_INVALID_REQUEST, "remote hosted placement authority unavailable")
 		return response
@@ -60,7 +60,7 @@ func (s *Service) recordRemotePublicAgent(ctx context.Context, request *subagent
 	if s.publicDirectory == nil {
 		return errors.New("public directory unavailable")
 	}
-	value, err := s.system.NoSender().Ask(ctx, s.publicDirectory, &application.CreatePublicAgent{SessionID: request.SessionId, GenerationID: request.GenerationId, Caller: request.CallerIdentity, Credential: request.SessionCredential, AgentID: command.AgentId, Role: command.Role, DisplayName: command.DisplayName, ActorName: hostedPlacementAuthorityName, Reference: placed.Reference, Placement: application.PublicAgentPlacement{NodeIdentity: node.Identity}, Internal: true}, requestTimeout)
+	value, err := s.system.NoSender().Ask(ctx, s.publicDirectory, &application.CreatePublicAgent{SessionID: request.SessionId, GenerationID: request.GenerationId, Caller: request.CallerIdentity, Credential: request.SessionCredential, AgentID: command.AgentId, Role: command.Role, DisplayName: command.DisplayName, ActorName: placementAuthorityName(node.Identity), Reference: placed.Reference, Placement: application.PublicAgentPlacement{NodeIdentity: node.Identity}, Internal: true}, requestTimeout)
 	if err != nil {
 		return err
 	}

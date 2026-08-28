@@ -16,6 +16,20 @@ import (
 	"github.com/savioserra/lazyvim/services/subagents/internal/remoting"
 )
 
+func TestPlacementAuthorityNamesAreNodeScoped(t *testing.T) {
+	local := placementAuthorityName("aurora")
+	remote := placementAuthorityName("vps")
+	if local == remote {
+		t.Fatal("different nodes must not share a clustered actor name")
+	}
+	if local != placementAuthorityName("aurora") {
+		t.Fatal("placement authority name must be deterministic")
+	}
+	if len(local) > 64 {
+		t.Fatalf("placement authority name is unexpectedly long: %d", len(local))
+	}
+}
+
 func TestHostedPlacementAuthorityRejectsInvalidReplayCollisionBeforeEffects(t *testing.T) {
 	authority := &hostedPlacementAuthority{service: placementTrustService(t, "vps", "spiffe://workstation/subagents/local", "spiffe://workstation/subagents/vps"), replays: map[string]placementReplay{}, order: []string{}}
 	expired := authority.place(context.Background(), signedPlacement(t, authority.service, "vps", "op", "d", time.Now().Add(-time.Second), "a"))

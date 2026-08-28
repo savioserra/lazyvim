@@ -20,7 +20,7 @@ func (s *Service) reconcilePublicHostedPeers(ctx context.Context) {
 }
 
 func (s *Service) reconcilePublicHostedPeer(ctx context.Context, node application.PublicNode) error {
-	pid, err := s.system.NoSender().RemoteLookup(ctx, node.Host, node.Port, hostedPlacementAuthorityName)
+	pid, err := s.system.NoSender().RemoteLookup(ctx, node.Host, node.Port, placementAuthorityName(node.Identity))
 	if err != nil || pid == nil {
 		return err
 	}
@@ -33,7 +33,7 @@ func (s *Service) reconcilePublicHostedPeer(ctx context.Context, node applicatio
 		return nil
 	}
 	for _, item := range result.Agents {
-		_, _ = s.system.NoSender().Ask(ctx, s.publicDirectory, &application.CreatePublicAgent{Internal: true, AgentID: item.AgentID, ActorName: hostedPlacementAuthorityName, Reference: item.Reference, Placement: application.PublicAgentPlacement{NodeIdentity: node.Identity}}, min(requestTimeout, boundedRemaining(ctx, time.Second)))
+		_, _ = s.system.NoSender().Ask(ctx, s.publicDirectory, &application.CreatePublicAgent{Internal: true, AgentID: item.AgentID, ActorName: placementAuthorityName(node.Identity), Reference: item.Reference, Placement: application.PublicAgentPlacement{NodeIdentity: node.Identity}}, min(requestTimeout, boundedRemaining(ctx, time.Second)))
 	}
 	return nil
 }
