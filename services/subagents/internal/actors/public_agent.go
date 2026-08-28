@@ -2,9 +2,7 @@ package actors
 
 import (
 	"context"
-	"crypto/sha256"
 	"crypto/subtle"
-	"encoding/hex"
 	"strings"
 	"time"
 
@@ -12,32 +10,8 @@ import (
 	"github.com/tochemey/goakt/v4/actor"
 )
 
-// PublicAgentActor is the only remotely placeable public AgentActor kind. It is
-// actor-plane only: it never owns hosted runtimes and never exposes UDS state.
-type PublicAgentActor struct {
-	AgentID     string
-	Role        string
-	DisplayName string
-}
-
-func NewPublicAgentActor(agentID, role, displayName string) *PublicAgentActor {
-	return &PublicAgentActor{AgentID: boundedPublicID(agentID), Role: boundedDisplayMetadata(role, 64), DisplayName: boundedDisplayMetadata(displayName, 80)}
-}
-func (*PublicAgentActor) PreStart(*actor.Context) error { return nil }
-func (*PublicAgentActor) PostStop(*actor.Context) error { return nil }
-func (a *PublicAgentActor) Receive(ctx *actor.ReceiveContext) {
-	switch message := ctx.Message().(type) {
-	case *application.PublicAgentTell:
-		ctx.Response(&application.PublicAgentReply{Accepted: true, Completed: true, AgentID: a.AgentID, Payload: append([]byte(nil), message.Payload...)})
-	case *application.PublicAgentAsk:
-		ctx.Response(&application.PublicAgentReply{Accepted: true, Completed: true, AgentID: a.AgentID, Payload: append([]byte(nil), message.Payload...)})
-	default:
-		ctx.Unhandled()
-	}
-}
-
 // PublicAgentDirectoryActor authorizes before lookup/routing and keeps only a
-// bounded, public projection. Private registrations are deliberately excluded.
+// bounded public projection of remotely homed full AgentActor aggregates.
 type PublicAgentDirectoryActor struct {
 	localNode string
 	nodes     map[string]application.PublicNode
@@ -65,7 +39,19 @@ func (d *PublicAgentDirectoryActor) Receive(ctx *actor.ReceiveContext) {
 		}
 		d.ack(ctx, message.Acknowledge, &application.SessionCommitAck{SessionID: message.SessionID, GenerationID: message.GenerationID, Registry: application.AgentRegistry})
 	case *application.CreatePublicAgent:
-		d.create(ctx, message)
+		d.upsert(ctx, message)
+	case *application.ListAgents:
+		if !d.authorized(message.SessionID, message.GenerationID, message.Caller, message.Credential, "observe") {
+			ctx.Response(&application.AgentList{})
+			return
+		}
+		agents := make([]application.AgentReference, 0, len(d.agents))
+		for _, record := range d.agents {
+			if !record.Private {
+				agents = append(agents, record.Reference)
+			}
+		}
+		ctx.Response(&application.AgentList{Agents: agents})
 	case *application.LookupPublicAgent:
 		if !d.authorized(message.SessionID, message.GenerationID, message.Caller, message.Credential, "observe") {
 			ctx.Response(&application.PublicAgentLookupResult{Reason: "session authorization denied"})
@@ -96,13 +82,12 @@ func (d *PublicAgentDirectoryActor) stage(message application.OpenSession) bool 
 	return true
 }
 
-func (d *PublicAgentDirectoryActor) create(ctx *actor.ReceiveContext, message *application.CreatePublicAgent) {
-	if !d.authorized(message.SessionID, message.GenerationID, message.Caller, message.Credential, "admin") {
+func (d *PublicAgentDirectoryActor) upsert(ctx *actor.ReceiveContext, message *application.CreatePublicAgent) {
+	if !message.Internal && !d.authorized(message.SessionID, message.GenerationID, message.Caller, message.Credential, "admin") {
 		ctx.Response(&application.PublicAgentCreateResult{Reason: "session authorization denied"})
 		return
 	}
-	agentID := boundedPublicID(message.AgentID)
-	if agentID == "" || message.Private {
+	if message.Private || boundedPublicID(message.AgentID) == "" || message.Placement.NodeIdentity == "" || message.Placement.NodeIdentity == d.localNode {
 		ctx.Response(&application.PublicAgentCreateResult{Reason: "invalid public agent"})
 		return
 	}
@@ -111,19 +96,17 @@ func (d *PublicAgentDirectoryActor) create(ctx *actor.ReceiveContext, message *a
 		ctx.Response(&application.PublicAgentCreateResult{Reason: "placement node unavailable"})
 		return
 	}
-	if current, exists := d.agents[agentID]; exists {
-		ctx.Response(&application.PublicAgentCreateResult{Created: false, Record: current, Reason: "already registered"})
-		return
+	record := messageRecord(message, node)
+	d.agents[message.AgentID] = record
+	ctx.Response(&application.PublicAgentCreateResult{Created: true, Record: record})
+}
+
+func messageRecord(message *application.CreatePublicAgent, node application.PublicNode) application.PublicAgentRecord {
+	reference := message.Reference
+	if reference.AgentID == "" {
+		reference = application.AgentReference{AgentID: message.AgentID, LifecycleRevision: 1, Role: boundedDisplayMetadata(message.Role, 64), DisplayName: boundedDisplayMetadata(message.DisplayName, 80)}
 	}
-	name := PublicAgentActorName(agentID)
-	pid, err := ctx.ActorSystem().Spawn(ctx.Context(), name, NewPublicAgentActor(agentID, message.Role, message.DisplayName), actor.WithHostAndPort(node.Host, node.Port), actor.WithRelocationDisabled())
-	if err != nil {
-		ctx.Response(&application.PublicAgentCreateResult{Reason: err.Error()})
-		return
-	}
-	record := application.PublicAgentRecord{AgentID: agentID, ActorName: name, HomeNode: node.Identity, Host: node.Host, Port: node.Port, Role: boundedDisplayMetadata(message.Role, 64), DisplayName: boundedDisplayMetadata(message.DisplayName, 80), Revision: 1}
-	d.agents[agentID] = record
-	ctx.Response(&application.PublicAgentCreateResult{Created: true, Record: record, PID: pid})
+	return application.PublicAgentRecord{AgentID: message.AgentID, ActorName: message.ActorName, HomeNode: node.Identity, Host: node.Host, Port: node.Port, Role: reference.Role, DisplayName: reference.DisplayName, Revision: reference.LifecycleRevision, Reference: reference}
 }
 
 func (d *PublicAgentDirectoryActor) route(ctx *actor.ReceiveContext, message *application.RoutePublicAgent) {
@@ -174,10 +157,6 @@ func (*PublicAgentDirectoryActor) ack(ctx *actor.ReceiveContext, target *actor.P
 	}
 }
 
-func PublicAgentActorName(agentID string) string {
-	digest := sha256.Sum256([]byte("public-agent\x00" + agentID))
-	return "public-agent-" + hex.EncodeToString(digest[:8])
-}
 func boundedPublicID(value string) string {
 	value = strings.TrimSpace(value)
 	if len(value) > 128 {

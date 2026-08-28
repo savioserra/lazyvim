@@ -367,14 +367,18 @@ type CreatePublicAgent struct {
 	SessionID, GenerationID, Caller string
 	Credential                      []byte
 	AgentID, Role, DisplayName      string
+	ActorName                       string
+	Reference                       AgentReference
 	Placement                       PublicAgentPlacement
 	Private                         bool
+	Internal                        bool
 }
 type PublicAgentRecord struct {
 	AgentID, ActorName, HomeNode, Host, Role, DisplayName string
 	Port                                                  int
 	Revision                                              uint64
 	Private                                               bool
+	Reference                                             AgentReference
 }
 type PublicAgentCreateResult struct {
 	Created bool
@@ -412,11 +416,30 @@ type PublicAgentAsk struct {
 	DedupeID string
 	Payload  []byte
 }
-type PublicAgentReply struct {
-	Accepted, Completed bool
-	AgentID             string
-	Payload             []byte
-	Reason              string
+type RemoteHostedPlacement struct {
+	AdminCredential                              []byte
+	AgentID, ProjectDirectory, DisplayName, Role string
+	TrustProject                                 bool
+}
+type RemoteHostedPlacementResult struct {
+	Accepted           bool
+	AgentID, ActorName string
+	Reference          AgentReference
+	Runtime            HostedPiRuntimeBinding
+	Reason             string
+}
+type RemoteAttachAgent struct {
+	SessionID, GenerationID, Principal, AgentID string
+	RequestedCapabilities                       []string
+	IssuedHandle                                string
+}
+type RemoteBridgeIntent struct {
+	SessionID, GenerationID, Principal, Handle, SourceAgentID, TargetAgentID, RequestID, RequiredCapability, DedupeID, ChainID string
+	Fence, SourceMutationSequence                                                                                              uint64
+	Deadline                                                                                                                   time.Time
+	HopLimit                                                                                                                   uint32
+	Mode                                                                                                                       BridgeMessageMode
+	Payload                                                                                                                    []byte
 }
 
 type AgentProjectionEvent struct {

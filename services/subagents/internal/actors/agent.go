@@ -186,6 +186,8 @@ func (*AgentActor) PreStart(*actor.Context) error { return nil }
 func (*AgentActor) PostStop(*actor.Context) error { return nil }
 func (a *AgentActor) Receive(ctx *actor.ReceiveContext) {
 	switch message := ctx.Message().(type) {
+	case *application.RemoteAttachAgent:
+		a.remoteAttach(ctx, message)
 	case *application.AttachAgent:
 		if a.isRevoked(message.SessionID, message.GenerationID) {
 			respondAttach(ctx, message.Result, &application.AttachResult{Reason: "session generation revoked"})
@@ -317,6 +319,8 @@ func (a *AgentActor) Receive(ctx *actor.ReceiveContext) {
 		a.bridgeHeartbeat(ctx, message)
 	case *application.HostedPiBridgeLeaseExpired:
 		a.bridgeLeaseExpired(ctx, message)
+	case *application.RemoteBridgeIntent:
+		a.bridgeIntent(ctx, &application.BridgeIntent{SessionID: message.SessionID, GenerationID: message.GenerationID, Principal: message.Principal, Handle: message.Handle, SourceAgentID: message.SourceAgentID, TargetAgentID: message.TargetAgentID, RequestID: message.RequestID, RequiredCapability: message.RequiredCapability, DedupeID: message.DedupeID, ChainID: message.ChainID, Fence: message.Fence, SourceMutationSequence: message.SourceMutationSequence, Deadline: message.Deadline, HopLimit: message.HopLimit, Mode: message.Mode, Payload: message.Payload})
 	case *application.BridgeIntent:
 		a.bridgeIntent(ctx, message)
 	case *application.BridgeControl:

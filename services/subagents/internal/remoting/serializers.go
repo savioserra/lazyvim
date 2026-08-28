@@ -6,13 +6,18 @@ import (
 )
 
 // PublicAgentSerializers returns the deterministic, explicitly registered set
-// of non-protobuf actor-plane messages that may cross nodes. Keep this list
-// append-only unless a wire type is intentionally retired in an ADR.
+// of non-protobuf actor-plane messages that may cross nodes. Keep append-only.
 func PublicAgentSerializers() []remote.Option {
 	cbor := remote.NewCBORSerializer()
 	return []remote.Option{
-		remote.WithSerializers(new(application.PublicAgentTell), cbor),
-		remote.WithSerializers(new(application.PublicAgentAsk), cbor),
-		remote.WithSerializers(new(application.PublicAgentReply), cbor),
+		remote.WithSerializers(new(application.RemoteHostedPlacement), cbor),
+		remote.WithSerializers(new(application.RemoteHostedPlacementResult), cbor),
+		remote.WithSerializers(new(application.RemoteAttachAgent), cbor),
+		remote.WithSerializers(new(application.AttachResult), cbor),
+		remote.WithSerializers(new(application.RemoteBridgeIntent), cbor),
+		remote.WithSerializers(new(application.BridgeIntentResult), cbor),
+		remote.WithSerializers(new(application.AgentReference), cbor),
+		remote.WithSerializers(new(application.AuthorityBinding), cbor),
+		remote.WithSerializers(new(application.HostedPiRuntimeBinding), cbor),
 	}
 }

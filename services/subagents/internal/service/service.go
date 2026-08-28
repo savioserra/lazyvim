@@ -85,6 +85,7 @@ type Service struct {
 	publicDirectory    *actor.PID
 	bridgeWatcher      *actor.PID
 	listener           net.Listener
+	actorPlane         *remoting.Runtime
 
 	connections       sync.WaitGroup
 	connectionSlots   chan struct{}
@@ -133,6 +134,7 @@ type Service struct {
 	taskLifecycleOrder       []string
 	clientSessionMu          sync.Mutex
 	clientSessions           map[string]*actor.PID
+	publicSessionGenerations map[string]string
 
 	pushMu       sync.Mutex
 	pushSessions map[*bridgePushSession]*actor.PID
@@ -244,7 +246,7 @@ func startWithListener(ctx context.Context, listener net.Listener, options ...an
 			return nil, errors.New("generate cluster guardian incarnation")
 		}
 		guardianName = fmt.Sprintf("service-guardian-%x-%x", digest[:6], incarnation[:])
-		actorPlane.Cluster.WithKinds(&actors.ServiceGuardian{}, &actors.PublicAgentActor{})
+		actorPlane.Cluster.WithKinds(&actors.ServiceGuardian{}, &actors.AgentActor{})
 		actorOptions = append(actorOptions, actor.WithRemote(actorPlane.Remote), actor.WithCluster(actorPlane.Cluster), actor.WithoutRelocation())
 	}
 	system, err := actor.NewActorSystem("workstation-subagents", actorOptions...)
@@ -313,8 +315,13 @@ func startWithListener(ctx context.Context, listener net.Listener, options ...an
 		}
 	}
 	service := &Service{
-		system: system, guardian: guardian, sessionRegistry: sessions, agentRegistry: agents, sessionCoordinator: coordinator, hostedSupervisor: hostedSupervisor, workflowRegistry: workflowRegistry, taskCoordinator: taskCoordinator, publicDirectory: publicDirectory, persistenceSupervisor: persistenceSupervisor, listener: listener,
-		connectionSlots: make(chan struct{}, maxConnections), activeConnections: make(map[net.Conn]struct{}), requestResults: make(map[string]requestRecord), hostedRuntimes: make(map[string]*actor.PID), hostedRegistrations: make(map[string]hostedRegistration), hostedTerminal: make(map[string]application.HostedPiRuntimeBinding), hostedStartupFailure: make(map[string]string), hostedCleanup: make(map[string]hostedRegistration), hostedProjects: make(map[string]string), registrationPlaceholders: make(map[string]*registrationPlaceholder), registrationCleanups: make(map[string]*registrationCleanup), hostedAdmin: hosted, socketPath: socketPath, hostedOperationCancels: make(map[uint64]context.CancelFunc), hostedAgentLocks: make(map[string]*sync.Mutex), registrationTimeout: requestTimeout, durableStore: durableStore, persistencePID: persistencePID, hostedIndeterminate: make(map[string]application.HostedPiRuntimeBinding), taskLifecycles: make(map[string]*taskLifecycle), clientSessions: make(map[string]*actor.PID), pushSessions: make(map[*bridgePushSession]*actor.PID),
+		system: system, guardian: guardian, sessionRegistry: sessions, agentRegistry: agents, sessionCoordinator: coordinator, hostedSupervisor: hostedSupervisor, workflowRegistry: workflowRegistry, taskCoordinator: taskCoordinator, publicDirectory: publicDirectory, persistenceSupervisor: persistenceSupervisor, listener: listener, actorPlane: actorPlane,
+		connectionSlots: make(chan struct{}, maxConnections), activeConnections: make(map[net.Conn]struct{}), requestResults: make(map[string]requestRecord), hostedRuntimes: make(map[string]*actor.PID), hostedRegistrations: make(map[string]hostedRegistration), hostedTerminal: make(map[string]application.HostedPiRuntimeBinding), hostedStartupFailure: make(map[string]string), hostedCleanup: make(map[string]hostedRegistration), hostedProjects: make(map[string]string), registrationPlaceholders: make(map[string]*registrationPlaceholder), registrationCleanups: make(map[string]*registrationCleanup), hostedAdmin: hosted, socketPath: socketPath, hostedOperationCancels: make(map[uint64]context.CancelFunc), hostedAgentLocks: make(map[string]*sync.Mutex), registrationTimeout: requestTimeout, durableStore: durableStore, persistencePID: persistencePID, hostedIndeterminate: make(map[string]application.HostedPiRuntimeBinding), taskLifecycles: make(map[string]*taskLifecycle), clientSessions: make(map[string]*actor.PID), publicSessionGenerations: make(map[string]string), pushSessions: make(map[*bridgePushSession]*actor.PID),
+	}
+	if actorPlane != nil {
+		if _, err := guardian.SpawnChild(ctx, hostedPlacementAuthorityName, &hostedPlacementAuthority{service: service}, actor.WithMailbox(actor.NewNonBlockingBoundedMailbox(64)), actor.WithPassivationStrategy(passivation.NewLongLivedStrategy())); err != nil {
+			return fail(err)
+		}
 	}
 	bridgeWatcher, err := guardian.SpawnChild(ctx, "bridge-session-watcher", &bridgeSessionWatcher{service: service}, actor.WithMailbox(actor.NewNonBlockingBoundedMailbox(256)), actor.WithPassivationStrategy(passivation.NewLongLivedStrategy()))
 	if err != nil {
@@ -500,6 +507,12 @@ func (s *Service) OpenSession(ctx context.Context, session application.OpenSessi
 		if !result.Allowed {
 			return errors.New("session registration rejected")
 		}
+		if s.publicDirectory != nil {
+			s.clientSessionMu.Lock()
+			s.publicSessionGenerations[session.SessionID] = session.GenerationID
+			s.clientSessionMu.Unlock()
+			_ = s.system.NoSender().Tell(ctx, s.publicDirectory, &application.StageSession{Session: session, Registry: application.AgentRegistry})
+		}
 		return nil
 	case <-ctx.Done():
 		return ctx.Err()
@@ -519,6 +532,13 @@ func (s *Service) CloseSession(ctx context.Context, sessionID string) error {
 	case result := <-results:
 		if !result.Completed {
 			return errors.New("session cleanup did not complete")
+		}
+		if s.publicDirectory != nil {
+			s.clientSessionMu.Lock()
+			generation := s.publicSessionGenerations[sessionID]
+			delete(s.publicSessionGenerations, sessionID)
+			s.clientSessionMu.Unlock()
+			_ = s.system.NoSender().Tell(ctx, s.publicDirectory, &application.CommitSessionClose{SessionID: sessionID, GenerationID: generation, Registry: application.AgentRegistry})
 		}
 		return nil
 	case <-ctx.Done():
@@ -1339,6 +1359,16 @@ func (s *Service) dispatch(request *subagentsv1.Envelope) *subagentsv1.Envelope 
 		for _, item := range list.Agents {
 			agents = append(agents, protoPublicAgentReference(item))
 		}
+		if s.publicDirectory != nil {
+			remote, err := s.system.NoSender().Ask(ctx, s.publicDirectory, message, requestTimeout)
+			if err == nil {
+				if publicList, ok := remote.(*application.AgentList); ok {
+					for _, item := range publicList.Agents {
+						agents = append(agents, protoPublicAgentReference(item))
+					}
+				}
+			}
+		}
 		response.Payload = &subagentsv1.Envelope_ListAgentsResponse{ListAgentsResponse: &subagentsv1.ListAgentsResponse{Agents: agents}}
 	case *subagentsv1.Envelope_ResolveAgentRequest:
 		message := &application.ResolveAgent{SessionID: request.SessionId, GenerationID: request.GenerationId, Caller: request.CallerIdentity, Credential: request.SessionCredential, AgentID: payload.ResolveAgentRequest.AgentId}
@@ -1349,6 +1379,15 @@ func (s *Service) dispatch(request *subagentsv1.Envelope) *subagentsv1.Envelope 
 		resolved, ok := value.(*application.ResolveAgentResult)
 		if !ok {
 			return internalError(response)
+		}
+		if !resolved.Found && s.publicDirectory != nil {
+			remote, err := s.system.NoSender().Ask(ctx, s.publicDirectory, &application.LookupPublicAgent{SessionID: request.SessionId, GenerationID: request.GenerationId, Caller: request.CallerIdentity, Credential: request.SessionCredential, AgentID: payload.ResolveAgentRequest.AgentId}, requestTimeout)
+			if err == nil {
+				if found, ok := remote.(*application.PublicAgentLookupResult); ok && found.Found {
+					response.Payload = &subagentsv1.Envelope_ResolveAgentResponse{ResolveAgentResponse: &subagentsv1.ResolveAgentResponse{Agent: protoPublicAgentReference(found.Record.Reference)}}
+					return response
+				}
+			}
 		}
 		if !resolved.Found {
 			candidates := make([]*subagentsv1.AgentReference, 0, len(resolved.Candidates))
@@ -1531,14 +1570,26 @@ func (s *Service) dispatch(request *subagentsv1.Envelope) *subagentsv1.Envelope 
 		receipt := make(chan application.BridgeIntentResult, 1)
 		completion := make(chan application.BridgeIntentResult, 1)
 		intent := &application.BridgeIntent{SessionID: request.SessionId, GenerationID: route.GenerationID, Principal: route.Principal, Handle: request.AgentHandle, Fence: request.AgentFence, SourceAgentID: source, TargetAgentID: payload.PromptTaskRequest.Target, RequestID: request.RequestId, RequiredCapability: "prompt", DedupeID: payload.PromptTaskRequest.DedupeId, ChainID: payload.PromptTaskRequest.ChainId, Deadline: time.UnixMilli(request.DeadlineUnixMillis), HopLimit: payload.PromptTaskRequest.HopLimit, SourceMutationSequence: payload.PromptTaskRequest.SourceMutationSequence, Mode: application.BridgeMessagePrompt, Payload: append([]byte(nil), payload.PromptTaskRequest.BoundedPrompt...), Receipt: receipt, Completion: completion}
-		if err := s.system.NoSender().Tell(ctx, route.PID, intent); err != nil {
-			return internalError(response)
-		}
 		var result application.BridgeIntentResult
-		select {
-		case result = <-receipt:
-		case <-ctx.Done():
-			return errorResponse(request, subagentsv1.ProtocolError_CODE_DEADLINE_EXCEEDED, "task prompt admission deadline expired")
+		if route.PID.IsRemote() {
+			reply, err := s.system.NoSender().Ask(ctx, route.PID, remoteBridgeIntent(intent), requestTimeout)
+			if err != nil {
+				return internalError(response)
+			}
+			value, ok := reply.(*application.BridgeIntentResult)
+			if !ok {
+				return internalError(response)
+			}
+			result = *value
+		} else {
+			if err := s.system.NoSender().Tell(ctx, route.PID, intent); err != nil {
+				return internalError(response)
+			}
+			select {
+			case result = <-receipt:
+			case <-ctx.Done():
+				return errorResponse(request, subagentsv1.ProtocolError_CODE_DEADLINE_EXCEEDED, "task prompt admission deadline expired")
+			}
 		}
 		if result.Accepted {
 			s.pushBridgeUpdate(payload.PromptTaskRequest.Target, "prompt delivery admitted")
@@ -1571,15 +1622,27 @@ func (s *Service) dispatch(request *subagentsv1.Envelope) *subagentsv1.Envelope 
 		if intent.Mode == application.BridgeMessageAsk {
 			intent.Completion = completion
 		}
-		if err := s.system.NoSender().Tell(ctx, route.PID, intent); err != nil {
-			return internalError(response)
-		}
 		var result *application.BridgeIntentResult
-		select {
-		case completed := <-receipt:
-			result = &completed
-		case <-ctx.Done():
-			return errorResponse(request, subagentsv1.ProtocolError_CODE_DEADLINE_EXCEEDED, "durable actor mutation deadline expired")
+		if route.PID.IsRemote() {
+			reply, err := s.system.NoSender().Ask(ctx, route.PID, remoteBridgeIntent(intent), requestTimeout)
+			if err != nil {
+				return internalError(response)
+			}
+			value, ok := reply.(*application.BridgeIntentResult)
+			if !ok {
+				return internalError(response)
+			}
+			result = value
+		} else {
+			if err := s.system.NoSender().Tell(ctx, route.PID, intent); err != nil {
+				return internalError(response)
+			}
+			select {
+			case completed := <-receipt:
+				result = &completed
+			case <-ctx.Done():
+				return errorResponse(request, subagentsv1.ProtocolError_CODE_DEADLINE_EXCEEDED, "durable actor mutation deadline expired")
+			}
 		}
 		if result.Accepted {
 			s.pushBridgeUpdate(payload.ActorMessageRequest.Target, "actor delivery admitted")
@@ -1749,13 +1812,35 @@ func (s *Service) authorizeAgent(ctx context.Context, request *subagentsv1.Envel
 	if !ok {
 		return nil, errors.New("unexpected agent authorization response")
 	}
-	return route, nil
+	if route.Allowed || s.publicDirectory == nil {
+		return route, nil
+	}
+	remote, err := s.system.NoSender().Ask(ctx, s.publicDirectory, &application.RoutePublicAgent{SessionID: request.SessionId, GenerationID: request.GenerationId, Caller: request.CallerIdentity, Credential: request.SessionCredential, AgentID: agentID, Capabilities: capabilities}, requestTimeout)
+	if err != nil {
+		return nil, err
+	}
+	publicRoute, ok := remote.(*application.PublicAgentRouteResult)
+	if !ok || !publicRoute.Allowed {
+		return route, nil
+	}
+	return &application.AgentRoute{Allowed: true, PID: publicRoute.PID, GenerationID: request.GenerationId, Principal: request.CallerIdentity}, nil
 }
 
 func (s *Service) attachRequest(ctx context.Context, pid *actor.PID, message any) (*application.AttachResult, error) {
 	results := make(chan application.AttachResult, 1)
 	switch value := message.(type) {
 	case *application.AttachAgent:
+		if pid.IsRemote() {
+			reply, err := s.system.NoSender().Ask(ctx, pid, &application.RemoteAttachAgent{SessionID: value.SessionID, GenerationID: value.GenerationID, Principal: value.Principal, AgentID: value.AgentID, RequestedCapabilities: value.RequestedCapabilities, IssuedHandle: value.IssuedHandle}, requestTimeout)
+			if err != nil {
+				return nil, err
+			}
+			result, ok := reply.(*application.AttachResult)
+			if !ok {
+				return nil, errors.New("unexpected remote attach response")
+			}
+			return result, nil
+		}
 		value.Result = results
 	case *application.ReattachAgent:
 		value.Result = results
@@ -1799,8 +1884,21 @@ func (s *Service) bridgeRequest(ctx context.Context, pid *actor.PID, message any
 
 func (s *Service) attachResponse(ctx context.Context, response *subagentsv1.Envelope, pid *actor.PID, message any) *subagentsv1.Envelope {
 	results := make(chan application.AttachResult, 1)
+	var result *application.AttachResult
 	switch value := message.(type) {
 	case *application.AttachAgent:
+		if pid.IsRemote() {
+			reply, err := s.system.NoSender().Ask(ctx, pid, &application.RemoteAttachAgent{SessionID: value.SessionID, GenerationID: value.GenerationID, Principal: value.Principal, AgentID: value.AgentID, RequestedCapabilities: value.RequestedCapabilities, IssuedHandle: value.IssuedHandle}, requestTimeout)
+			if err != nil {
+				return internalError(response)
+			}
+			var ok bool
+			result, ok = reply.(*application.AttachResult)
+			if !ok {
+				return internalError(response)
+			}
+			goto done
+		}
 		value.Result = results
 	case *application.ReattachAgent:
 		value.Result = results
@@ -1810,13 +1908,13 @@ func (s *Service) attachResponse(ctx context.Context, response *subagentsv1.Enve
 	if err := s.system.NoSender().Tell(ctx, pid, message); err != nil {
 		return internalError(response)
 	}
-	var result *application.AttachResult
 	select {
 	case value := <-results:
 		result = &value
 	case <-ctx.Done():
 		return internalError(response)
 	}
+done:
 	status := subagentsv1.AttachResponse_STATUS_COMPLETED
 	if !result.Completed {
 		status = subagentsv1.AttachResponse_STATUS_REJECTED
@@ -2221,6 +2319,9 @@ func (s *Service) hostedAdminResponse(ctx context.Context, request *subagentsv1.
 	if command == nil || !validAgentID(command.AgentId) {
 		response.Payload = protocolError(subagentsv1.ProtocolError_CODE_INVALID_REQUEST, "hosted admin agent_id is invalid")
 		return response
+	}
+	if command.TargetNode != "" && (s.actorPlane == nil || command.TargetNode != s.actorPlane.NodeIdentity) {
+		return s.remoteHostedAdminResponse(ctx, request, command)
 	}
 	operationCtx, finish, err := s.beginHostedOperation(ctx)
 	if err != nil {

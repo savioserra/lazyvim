@@ -4057,8 +4057,11 @@ type HostedAdminRequest struct {
 	TrustProject     bool                         `protobuf:"varint,4,opt,name=trust_project,json=trustProject,proto3" json:"trust_project,omitempty"`
 	DisplayName      string                       `protobuf:"bytes,5,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
 	Role             string                       `protobuf:"bytes,6,opt,name=role,proto3" json:"role,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// Optional logical remoting node for typed actor-plane hosted creation.
+	// Empty preserves local hosted placement.
+	TargetNode    string `protobuf:"bytes,7,opt,name=target_node,json=targetNode,proto3" json:"target_node,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *HostedAdminRequest) Reset() {
@@ -4129,6 +4132,13 @@ func (x *HostedAdminRequest) GetDisplayName() string {
 func (x *HostedAdminRequest) GetRole() string {
 	if x != nil {
 		return x.Role
+	}
+	return ""
+}
+
+func (x *HostedAdminRequest) GetTargetNode() string {
+	if x != nil {
+		return x.TargetNode
 	}
 	return ""
 }
@@ -5337,14 +5347,16 @@ const file_api_subagents_v1_subagents_proto_rawDesc = "" +
 	"\x13EVENT_AGENT_SETTLED\x10\x05\"M\n" +
 	"\x17BridgeLifecycleResponse\x12\x1a\n" +
 	"\baccepted\x18\x01 \x01(\bR\baccepted\x12\x16\n" +
-	"\x06reason\x18\x02 \x01(\tR\x06reason\"\xf5\x02\n" +
+	"\x06reason\x18\x02 \x01(\tR\x06reason\"\x96\x03\n" +
 	"\x12HostedAdminRequest\x12T\n" +
 	"\toperation\x18\x01 \x01(\x0e26.workstation.subagents.v1.HostedAdminRequest.OperationR\toperation\x12\x19\n" +
 	"\bagent_id\x18\x02 \x01(\tR\aagentId\x12+\n" +
 	"\x11project_directory\x18\x03 \x01(\tR\x10projectDirectory\x12#\n" +
 	"\rtrust_project\x18\x04 \x01(\bR\ftrustProject\x12!\n" +
 	"\fdisplay_name\x18\x05 \x01(\tR\vdisplayName\x12\x12\n" +
-	"\x04role\x18\x06 \x01(\tR\x04role\"e\n" +
+	"\x04role\x18\x06 \x01(\tR\x04role\x12\x1f\n" +
+	"\vtarget_node\x18\a \x01(\tR\n" +
+	"targetNode\"e\n" +
 	"\tOperation\x12\x19\n" +
 	"\x15OPERATION_UNSPECIFIED\x10\x00\x12\x13\n" +
 	"\x0fOPERATION_START\x10\x01\x12\x14\n" +

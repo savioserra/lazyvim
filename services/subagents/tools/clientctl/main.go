@@ -25,13 +25,14 @@ func main() {
 }
 
 func run() error {
-	var socket, credentialFile, operation, agentID, project string
+	var socket, credentialFile, operation, agentID, project, targetNode string
 	var trust bool
 	flag.StringVar(&socket, "socket", "", "client daemon Unix socket")
 	flag.StringVar(&credentialFile, "credential", "", "client admin credential file")
 	flag.StringVar(&operation, "operation", "status", "start, status, or stop")
 	flag.StringVar(&agentID, "agent", "client", "logical hosted agent ID")
 	flag.StringVar(&project, "project", "", "hosted Pi project directory")
+	flag.StringVar(&targetNode, "target-node", "", "optional logical remoting node for hosted creation")
 	flag.BoolVar(&trust, "trust-project", false, "allow Pi project-local resources")
 	flag.Parse()
 	if socket == "" || credentialFile == "" || agentID == "" {
@@ -67,7 +68,7 @@ func run() error {
 		Sequence:           1,
 		SessionCredential:  credential,
 		Payload: &subagentsv1.Envelope_HostedAdminRequest{HostedAdminRequest: &subagentsv1.HostedAdminRequest{
-			Operation: op, AgentId: agentID, ProjectDirectory: project, TrustProject: trust,
+			Operation: op, AgentId: agentID, ProjectDirectory: project, TrustProject: trust, TargetNode: targetNode,
 		}},
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)

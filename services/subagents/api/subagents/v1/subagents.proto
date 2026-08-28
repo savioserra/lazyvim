@@ -370,6 +370,9 @@ message HostedAdminRequest {
   bool trust_project = 4;
   string display_name = 5;
   string role = 6;
+  // Optional logical remoting node for typed actor-plane hosted creation.
+  // Empty preserves local hosted placement.
+  string target_node = 7;
 }
 message HostedAdminResponse {
   bool accepted = 1;
