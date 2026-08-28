@@ -3,6 +3,7 @@ package actors
 import (
 	"context"
 	"crypto/subtle"
+	"strconv"
 	"strings"
 	"time"
 
@@ -10,13 +11,25 @@ import (
 	"github.com/tochemey/goakt/v4/actor"
 )
 
+const (
+	publicAgentDirectoryTopic        = "subagents.public.agents"
+	publicAgentDirectoryRequestTopic = "subagents.public.agents.requests"
+)
+
 // PublicAgentDirectoryActor authorizes before lookup/routing and keeps only a
 // bounded public projection of remotely homed full AgentActor aggregates.
+type publicAgentEventWatermark struct {
+	epoch    uint64
+	sequence uint64
+}
+
 type PublicAgentDirectoryActor struct {
-	localNode string
-	nodes     map[string]application.PublicNode
-	sessions  map[string]sessionRecord
-	agents    map[string]application.PublicAgentRecord
+	localNode       string
+	nodes           map[string]application.PublicNode
+	sessions        map[string]sessionRecord
+	agents          map[string]application.PublicAgentRecord
+	highWater       map[string]publicAgentEventWatermark
+	requestSequence uint64
 }
 
 func NewPublicAgentDirectoryActor(localNode string, nodes map[string]application.PublicNode) *PublicAgentDirectoryActor {
@@ -24,12 +37,17 @@ func NewPublicAgentDirectoryActor(localNode string, nodes map[string]application
 	for id, node := range nodes {
 		copy[id] = node
 	}
-	return &PublicAgentDirectoryActor{localNode: localNode, nodes: copy, sessions: make(map[string]sessionRecord), agents: make(map[string]application.PublicAgentRecord)}
+	return &PublicAgentDirectoryActor{localNode: localNode, nodes: copy, sessions: make(map[string]sessionRecord), agents: make(map[string]application.PublicAgentRecord), highWater: make(map[string]publicAgentEventWatermark)}
 }
 func (*PublicAgentDirectoryActor) PreStart(*actor.Context) error { return nil }
 func (*PublicAgentDirectoryActor) PostStop(*actor.Context) error { return nil }
 func (d *PublicAgentDirectoryActor) Receive(ctx *actor.ReceiveContext) {
 	switch message := ctx.Message().(type) {
+	case *actor.PostStart:
+		if topic := ctx.ActorSystem().TopicActor(); topic != nil {
+			_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), topic, actor.NewSubscribe(publicAgentDirectoryTopic))
+			d.publishSnapshotRequest(ctx, &application.PublicAgentSnapshotRequest{NodeIdentity: d.localNode})
+		}
 	case *application.StageSession:
 		accepted := message.Registry == application.AgentRegistry && d.stage(message.Session)
 		d.ack(ctx, message.Acknowledge, &application.SessionStageAck{SessionID: message.Session.SessionID, GenerationID: message.Session.GenerationID, Registry: application.AgentRegistry, Accepted: accepted})
@@ -40,6 +58,11 @@ func (d *PublicAgentDirectoryActor) Receive(ctx *actor.ReceiveContext) {
 		d.ack(ctx, message.Acknowledge, &application.SessionCommitAck{SessionID: message.SessionID, GenerationID: message.GenerationID, Registry: application.AgentRegistry})
 	case *application.CreatePublicAgent:
 		d.upsert(ctx, message)
+	case *application.PublicAgentDirectoryEvent:
+		d.applyEvent(message)
+	case *application.PublicAgentSnapshotRequest:
+		d.publishSnapshotRequest(ctx, message)
+	case *actor.SubscribeAck:
 	case *application.ListAgents:
 		if !d.authorized(message.SessionID, message.GenerationID, message.Caller, message.Credential, "observe") {
 			ctx.Response(&application.AgentList{})
@@ -67,6 +90,18 @@ func (d *PublicAgentDirectoryActor) Receive(ctx *actor.ReceiveContext) {
 		d.route(ctx, message)
 	default:
 		ctx.Unhandled()
+	}
+}
+
+func (d *PublicAgentDirectoryActor) publishSnapshotRequest(ctx *actor.ReceiveContext, request *application.PublicAgentSnapshotRequest) {
+	if topic := ctx.ActorSystem().TopicActor(); topic != nil {
+		node := d.localNode
+		if request != nil && strings.TrimSpace(request.NodeIdentity) != "" {
+			node = strings.TrimSpace(request.NodeIdentity)
+		}
+		d.requestSequence++
+		id := node + ":snapshot-request:" + strconv.FormatUint(d.requestSequence, 10)
+		_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), topic, actor.NewPublish(id, publicAgentDirectoryRequestTopic, &application.PublicAgentSnapshotRequest{NodeIdentity: node}))
 	}
 }
 
@@ -107,6 +142,42 @@ func messageRecord(message *application.CreatePublicAgent, node application.Publ
 		reference = application.AgentReference{AgentID: message.AgentID, LifecycleRevision: 1, Role: boundedDisplayMetadata(message.Role, 64), DisplayName: boundedDisplayMetadata(message.DisplayName, 80)}
 	}
 	return application.PublicAgentRecord{AgentID: message.AgentID, ActorName: message.ActorName, HomeNode: node.Identity, Host: node.Host, Port: node.Port, Role: reference.Role, DisplayName: reference.DisplayName, Revision: reference.LifecycleRevision, Reference: reference}
+}
+
+func (d *PublicAgentDirectoryActor) applyEvent(event *application.PublicAgentDirectoryEvent) {
+	if event == nil || event.NodeIdentity == "" || event.NodeIdentity == d.localNode || boundedPublicID(event.AgentID) == "" {
+		return
+	}
+	node, ok := d.nodes[event.NodeIdentity]
+	if !ok || node.Stale || node.Host == "" || node.Port <= 0 {
+		return
+	}
+	current, exists := d.agents[event.AgentID]
+	expectedActorName := application.HostedPlacementAuthorityName(event.NodeIdentity)
+	if event.ActorName != "" && event.ActorName != expectedActorName {
+		return
+	}
+	highWaterKey := event.NodeIdentity + "\x00" + event.AgentID
+	if event.Sequence != 0 {
+		watermark := d.highWater[highWaterKey]
+		if event.Epoch < watermark.epoch || event.Epoch == watermark.epoch && event.Sequence <= watermark.sequence {
+			return
+		}
+		d.highWater[highWaterKey] = publicAgentEventWatermark{epoch: event.Epoch, sequence: event.Sequence}
+	}
+	if event.Operation == "remove" {
+		if exists && current.HomeNode == event.NodeIdentity {
+			delete(d.agents, event.AgentID)
+		}
+		return
+	}
+	if event.Operation != "upsert" || event.Reference.AgentID == "" || event.Reference.AuthorityBinding.Kind != application.AuthorityBindingHostedOwned {
+		return
+	}
+	if exists && current.HomeNode == event.NodeIdentity && current.Revision > event.Reference.LifecycleRevision {
+		return
+	}
+	d.agents[event.AgentID] = application.PublicAgentRecord{AgentID: event.AgentID, ActorName: expectedActorName, HomeNode: node.Identity, Host: node.Host, Port: node.Port, Role: event.Reference.Role, DisplayName: event.Reference.DisplayName, Revision: event.Reference.LifecycleRevision, Reference: event.Reference}
 }
 
 func (d *PublicAgentDirectoryActor) route(ctx *actor.ReceiveContext, message *application.RoutePublicAgent) {

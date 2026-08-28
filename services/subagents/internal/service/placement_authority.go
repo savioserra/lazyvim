@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"errors"
-	"fmt"
 	"time"
 
 	subagentsv1 "github.com/savioserra/lazyvim/services/subagents/api/subagents/v1"
@@ -12,11 +11,8 @@ import (
 	"github.com/tochemey/goakt/v4/actor"
 )
 
-const hostedPlacementAuthorityNamePrefix = "hosted-placement-authority-v2-"
-
 func placementAuthorityName(nodeIdentity string) string {
-	digest := sha256.Sum256([]byte(nodeIdentity))
-	return hostedPlacementAuthorityNamePrefix + fmt.Sprintf("%x", digest[:8])
+	return application.HostedPlacementAuthorityName(nodeIdentity)
 }
 
 type placementReplay struct {

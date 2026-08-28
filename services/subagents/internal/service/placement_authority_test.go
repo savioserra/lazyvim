@@ -20,7 +20,7 @@ func TestPlacementAuthorityNamesAreNodeScoped(t *testing.T) {
 	local := placementAuthorityName("aurora")
 	remote := placementAuthorityName("vps")
 	if local == remote {
-		t.Fatal("different nodes must not share a clustered actor name")
+		t.Fatal("different nodes must not share a placement authority actor name")
 	}
 	if local != placementAuthorityName("aurora") {
 		t.Fatal("placement authority name must be deterministic")

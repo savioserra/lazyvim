@@ -1,6 +1,9 @@
 package application
 
 import (
+	"crypto/sha256"
+	"fmt"
+
 	"context"
 	"errors"
 	"time"
@@ -308,6 +311,37 @@ type AgentControlPID struct {
 type RetryAgentReconciliation struct {
 	AgentID string
 	Attempt uint8
+}
+
+const HostedPlacementAuthorityNamePrefix = "hosted-placement-authority-v3-"
+
+func HostedPlacementAuthorityName(nodeIdentity string) string {
+	digest := sha256.Sum256([]byte(nodeIdentity))
+	return HostedPlacementAuthorityNamePrefix + fmt.Sprintf("%x", digest[:8])
+}
+
+type ConfigurePublicAgentEvents struct {
+	NodeIdentity       string
+	PlacementAuthority string
+	Epoch              uint64
+}
+
+type PublishPublicAgentSnapshot struct{}
+
+type PublishPublicAgentSnapshotTick struct{}
+
+type PublicAgentSnapshotRequest struct {
+	NodeIdentity string
+}
+
+type PublicAgentDirectoryEvent struct {
+	Operation    string
+	NodeIdentity string
+	AgentID      string
+	ActorName    string
+	Epoch        uint64
+	Sequence     uint64
+	Reference    AgentReference
 }
 
 type ListAgents struct {

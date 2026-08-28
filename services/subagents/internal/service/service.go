@@ -343,14 +343,13 @@ func startWithListener(ctx context.Context, listener net.Listener, options ...an
 		connectionSlots: make(chan struct{}, maxConnections), activeConnections: make(map[net.Conn]struct{}), requestResults: make(map[string]requestRecord), hostedRuntimes: make(map[string]*actor.PID), hostedRegistrations: make(map[string]hostedRegistration), hostedTerminal: make(map[string]application.HostedPiRuntimeBinding), hostedStartupFailure: make(map[string]string), hostedCleanup: make(map[string]hostedRegistration), hostedProjects: make(map[string]string), registrationPlaceholders: make(map[string]*registrationPlaceholder), registrationCleanups: make(map[string]*registrationCleanup), hostedAdmin: hosted, socketPath: socketPath, hostedOperationCancels: make(map[uint64]context.CancelFunc), hostedAgentLocks: make(map[string]*sync.Mutex), registrationTimeout: requestTimeout, durableStore: durableStore, persistencePID: persistencePID, hostedIndeterminate: make(map[string]application.HostedPiRuntimeBinding), taskLifecycles: make(map[string]*taskLifecycle), clientSessions: make(map[string]*actor.PID), publicSessionGenerations: make(map[string]string), pushSessions: make(map[*bridgePushSession]*actor.PID),
 	}
 	if actorPlane != nil {
-		if actorPlane.Cluster != nil {
-			if _, err := system.SpawnSingleton(ctx, placementAuthorityName(actorPlane.NodeIdentity), &hostedPlacementAuthority{service: service}, actor.WithSingletonRole(actorPlane.NodeIdentity)); err != nil {
-				return fail(err)
-			}
-		} else if _, err := system.Spawn(ctx, placementAuthorityName(actorPlane.NodeIdentity), &hostedPlacementAuthority{service: service}, actor.WithMailbox(actor.NewNonBlockingBoundedMailbox(64)), actor.WithPassivationStrategy(passivation.NewLongLivedStrategy()), actor.WithRelocationDisabled()); err != nil {
+		placementAuthority := placementAuthorityName(actorPlane.NodeIdentity)
+		_ = system.NoSender().Tell(ctx, agents, &application.ConfigurePublicAgentEvents{NodeIdentity: actorPlane.NodeIdentity, PlacementAuthority: placementAuthority, Epoch: uint64(time.Now().UnixNano())})
+		if _, err := system.Spawn(ctx, placementAuthority, &hostedPlacementAuthority{service: service}, actor.WithMailbox(actor.NewNonBlockingBoundedMailbox(64)), actor.WithPassivationStrategy(passivation.NewLongLivedStrategy()), actor.WithRelocationDisabled()); err != nil {
 			return fail(err)
 		}
-		go service.reconcilePublicHostedPeers(context.Background())
+		service.connections.Add(1)
+		go service.observeClusterEvents()
 	}
 	bridgeWatcher, err := guardian.SpawnChild(ctx, "bridge-session-watcher", &bridgeSessionWatcher{service: service}, actor.WithMailbox(actor.NewNonBlockingBoundedMailbox(256)), actor.WithPassivationStrategy(passivation.NewLongLivedStrategy()))
 	if err != nil {
@@ -378,6 +377,11 @@ func startWithListener(ctx context.Context, listener net.Listener, options ...an
 			return fail(fmt.Errorf("reconcile durable hosted state: %w", err))
 		}
 	}
+	_ = system.NoSender().Tell(ctx, agents, &application.PublishPublicAgentSnapshot{})
+	if actorPlane != nil && publicDirectory != nil {
+		_ = system.ScheduleOnce(context.Background(), &application.PublicAgentSnapshotRequest{NodeIdentity: actorPlane.NodeIdentity}, publicDirectory, 250*time.Millisecond)
+		_ = system.ScheduleOnce(context.Background(), &application.PublicAgentSnapshotRequest{NodeIdentity: actorPlane.NodeIdentity}, publicDirectory, time.Second)
+	}
 	service.connections.Add(1)
 	if useWebSocket {
 		go service.acceptWebSocketLoop()
@@ -385,6 +389,26 @@ func startWithListener(ctx context.Context, listener net.Listener, options ...an
 		go service.acceptLoop()
 	}
 	return service, nil
+}
+
+func (s *Service) observeClusterEvents() {
+	defer s.connections.Done()
+	subscriber, err := s.system.Subscribe()
+	if err != nil {
+		s.admissionMu.Lock()
+		s.admissionErr = errors.Join(s.admissionErr, fmt.Errorf("subscribe cluster events: %w", err))
+		s.admissionMu.Unlock()
+		return
+	}
+	defer func() { _ = s.system.Unsubscribe(subscriber) }()
+	for !s.stopping.Load() {
+		for event := range subscriber.Iterator() {
+			if _, ok := event.Payload().(*actor.NodeJoined); ok {
+				_ = s.system.NoSender().Tell(context.Background(), s.agentRegistry, &application.PublishPublicAgentSnapshot{})
+			}
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 }
 
 func (s *Service) reconcileDurableHosted(ctx context.Context) error {

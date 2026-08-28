@@ -125,6 +125,9 @@ func TestRemoteHostedOrdinaryServicePath(t *testing.T) {
 	})
 
 	t.Run("origin service restart reconciles remote record", func(t *testing.T) {
+		if local.actorPlane == nil || local.actorPlane.Cluster == nil {
+			t.Skip("cluster PubSub availability replay requires GoAkt cluster membership")
+		}
 		_ = local.Stop(context.Background())
 		fresh := startIntegrationService(t, ctx, filepath.Join(root, "fresh"), localRuntime)
 		fresh.adminCredential = local.adminCredential
@@ -132,11 +135,17 @@ func TestRemoteHostedOrdinaryServicePath(t *testing.T) {
 			t.Fatal(err)
 		}
 		_ = fresh.system.NoSender().Tell(ctx, fresh.publicDirectory, &application.StageSession{Session: client, Registry: application.AgentRegistry})
-		fresh.reconcilePublicHostedPeers(ctx)
-		time.Sleep(50 * time.Millisecond)
-		listed := fresh.dispatch(env(fresh, client, &subagentsv1.Envelope_ListAgentsRequest{ListAgentsRequest: &subagentsv1.ListAgentsRequest{}}, "fresh-list", "", 0)).GetListAgentsResponse()
+		deadline := time.Now().Add(3 * time.Second)
+		for time.Now().Before(deadline) {
+			listed := fresh.dispatch(env(fresh, client, &subagentsv1.Envelope_ListAgentsRequest{ListAgentsRequest: &subagentsv1.ListAgentsRequest{}}, "fresh-list", "", 0)).GetListAgentsResponse()
+			if listed != nil && hasAgent(listed.Agents, "ui_remote_qa") {
+				return
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+		listed := fresh.dispatch(env(fresh, client, &subagentsv1.Envelope_ListAgentsRequest{ListAgentsRequest: &subagentsv1.ListAgentsRequest{}}, "fresh-list-final", "", 0)).GetListAgentsResponse()
 		if listed == nil || !hasAgent(listed.Agents, "ui_remote_qa") {
-			t.Fatalf("restart reconcile missing remote: %#v", listed)
+			t.Fatalf("topic snapshot after restart missing remote: %#v", listed)
 		}
 	})
 }

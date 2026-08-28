@@ -22,7 +22,7 @@ func (p *topicProbeActor) Receive(ctx *actor.ReceiveContext) {
 	switch message := ctx.Message().(type) {
 	case *actor.PostStart:
 		ctx.Tell(ctx.ActorSystem().TopicActor(), actor.NewSubscribe(p.topic))
-	case *actor.SubscribeAck, *application.AgentProjectionEvent:
+	case *actor.SubscribeAck, *application.AgentProjectionEvent, *application.PublicAgentDirectoryEvent:
 		p.messages <- message
 	default:
 		ctx.Unhandled()
@@ -84,5 +84,78 @@ func TestAgentProjectionUsesRealGoAktPubSubAndMessageIDRetention(t *testing.T) {
 	case duplicate := <-messages:
 		t.Fatalf("deduplicated command republished: %#v", duplicate)
 	case <-time.After(50 * time.Millisecond):
+	}
+}
+
+func TestAgentRegistryPublishesHostedAvailabilityEvents(t *testing.T) {
+	ctx := context.Background()
+	system, err := actor.NewActorSystem("registry-public-events-test", actor.WithPubSub(), actor.WithMessageRetention(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := system.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		stopCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = system.Stop(stopCtx)
+	})
+	messages := make(chan any, 8)
+	_, err = system.Spawn(ctx, "public-events-probe", &topicProbeActor{topic: "subagents.public.agents", messages: messages})
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-messages:
+	case <-time.After(time.Second):
+		t.Fatal("TopicActor did not acknowledge public event subscription")
+	}
+	registry, err := system.Spawn(ctx, "agent-registry", actors.NewAgentRegistryActor())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := system.NoSender().Tell(ctx, registry, &application.ConfigurePublicAgentEvents{NodeIdentity: "vps", PlacementAuthority: application.HostedPlacementAuthorityName("vps"), Epoch: 1}); err != nil {
+		t.Fatal(err)
+	}
+	runtime := &registryRuntime{proc: &registryProcess{wait: make(chan struct{})}}
+	result := make(chan application.RegisterAgentResult, 1)
+	if err := system.NoSender().Tell(ctx, registry, &application.CoordinateAgentRegistration{OperationID: "register-public", Registration: hostedRegistration("public-hosted", runtime), Result: result}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case registered := <-result:
+		if !registered.Created {
+			t.Fatalf("hosted registration failed: %#v", registered)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("hosted registration timed out")
+	}
+	upsert := waitPublicEvent(t, messages, "upsert")
+	if upsert.NodeIdentity != "vps" || upsert.AgentID != "public-hosted" || upsert.ActorName != application.HostedPlacementAuthorityName("vps") || upsert.Epoch != 1 || upsert.Sequence == 0 || upsert.Reference.AuthorityBinding.Kind != application.AuthorityBindingHostedOwned {
+		t.Fatalf("unexpected upsert event: %#v", upsert)
+	}
+	unregistered := make(chan application.UnregisterAgentResult, 1)
+	if err := system.NoSender().Tell(ctx, registry, &application.UnregisterAgent{AgentID: "public-hosted", Result: unregistered}); err != nil {
+		t.Fatal(err)
+	}
+	remove := waitPublicEvent(t, messages, "remove")
+	if remove.NodeIdentity != "vps" || remove.AgentID != "public-hosted" || remove.Sequence <= upsert.Sequence {
+		t.Fatalf("unexpected remove event: %#v", remove)
+	}
+}
+
+func waitPublicEvent(t *testing.T, messages <-chan any, operation string) *application.PublicAgentDirectoryEvent {
+	t.Helper()
+	deadline := time.After(time.Second)
+	for {
+		select {
+		case message := <-messages:
+			if event, ok := message.(*application.PublicAgentDirectoryEvent); ok && event.Operation == operation {
+				return event
+			}
+		case <-deadline:
+			t.Fatalf("timed out waiting for %s public event", operation)
+		}
 	}
 }

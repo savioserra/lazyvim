@@ -15,6 +15,8 @@ func PublicAgentSerializers() []remote.Option {
 		remote.WithSerializers(new(application.ListPublicHostedAgents), cbor),
 		remote.WithSerializers(new(application.ListPublicHostedAgentsResult), cbor),
 		remote.WithSerializers(new(application.PublicHostedAgent), cbor),
+		remote.WithSerializers(new(application.PublicAgentSnapshotRequest), cbor),
+		remote.WithSerializers(new(application.PublicAgentDirectoryEvent), cbor),
 		remote.WithSerializers(new(application.RemoteAttachAgent), cbor),
 		remote.WithSerializers(new(application.AttachResult), cbor),
 		remote.WithSerializers(new(application.RemoteBridgeIntent), cbor),

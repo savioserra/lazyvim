@@ -6,6 +6,7 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -48,6 +49,10 @@ type AgentRegistryActor struct {
 	registrations     map[string]*pendingRegistration
 	compensated       map[string]application.UnregisterAgentResult
 	registrationDelay time.Duration
+	publicNode        string
+	publicAuthority   string
+	publicEpoch       uint64
+	publicSequence    uint64
 }
 
 func NewAgentRegistryActor(registrationDelay ...time.Duration) *AgentRegistryActor {
@@ -61,6 +66,10 @@ func (*AgentRegistryActor) PreStart(*actor.Context) error { return nil }
 func (*AgentRegistryActor) PostStop(*actor.Context) error { return nil }
 func (a *AgentRegistryActor) Receive(ctx *actor.ReceiveContext) {
 	switch message := ctx.Message().(type) {
+	case *actor.PostStart:
+		if topic := ctx.ActorSystem().TopicActor(); topic != nil {
+			_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), topic, actor.NewSubscribe(publicAgentDirectoryRequestTopic))
+		}
 	case *application.StageSession:
 		accepted := message.Registry == application.AgentRegistry && a.stage(message.Session)
 		a.ack(ctx, message.Acknowledge, &application.SessionStageAck{SessionID: message.Session.SessionID, GenerationID: message.Session.GenerationID, Registry: application.AgentRegistry, Accepted: accepted})
@@ -71,6 +80,23 @@ func (a *AgentRegistryActor) Receive(ctx *actor.ReceiveContext) {
 			delete(a.sessions, message.SessionID)
 		}
 		a.ack(ctx, message.Acknowledge, &application.SessionCommitAck{SessionID: message.SessionID, GenerationID: message.GenerationID, Registry: application.AgentRegistry})
+	case *application.ConfigurePublicAgentEvents:
+		a.publicNode = strings.TrimSpace(message.NodeIdentity)
+		a.publicAuthority = strings.TrimSpace(message.PlacementAuthority)
+		a.publicEpoch = message.Epoch
+		a.publicSequence = 0
+		a.publishPublicAgentSnapshot(ctx)
+		a.schedulePublicAgentSnapshot(ctx)
+	case *application.PublishPublicAgentSnapshot:
+		a.publishPublicAgentSnapshot(ctx)
+	case *application.PublishPublicAgentSnapshotTick:
+		a.publishPublicAgentSnapshot(ctx)
+		a.schedulePublicAgentSnapshot(ctx)
+	case *application.PublicAgentSnapshotRequest:
+		if strings.TrimSpace(message.NodeIdentity) != a.publicNode {
+			a.publishPublicAgentSnapshot(ctx)
+		}
+	case *actor.SubscribeAck:
 	case *application.CoordinateAgentRegistration:
 		a.coordinateRegistration(ctx, message)
 	case *application.CompleteAgentRegistration:
@@ -154,6 +180,7 @@ func (a *AgentRegistryActor) Receive(ctx *actor.ReceiveContext) {
 			item.reference.HostedPiRuntime = message.Binding
 			item.reference.LifecycleRevision++
 			a.agents[message.AgentID] = item
+			a.publishPublicAgentUpsert(ctx, message.AgentID, item)
 		}
 	case *actor.Terminated:
 		name := message.ActorPath().Name()
@@ -167,6 +194,7 @@ func (a *AgentRegistryActor) Receive(ctx *actor.ReceiveContext) {
 				item.reference.HostedPiRuntime.BridgeReady = false
 				item.reference.LifecycleRevision++
 				a.agents[id] = item
+				a.publishPublicAgentUpsert(ctx, id, item)
 			}
 		}
 	default:
@@ -260,6 +288,7 @@ func (a *AgentRegistryActor) beginRegistrationCompensation(ctx *actor.ReceiveCon
 		ctx.UnWatch(item.runtimePID)
 	}
 	delete(a.agents, agentID)
+	a.publishPublicAgentRemove(ctx, agentID, item)
 	// Registry retirement and exact PID publication are immediate. Service-owned
 	// asynchronous cleanup may take arbitrarily longer without losing identity.
 	outcome := application.UnregisterAgentResult{Completed: true, RuntimePID: result.RuntimePID, AgentPID: result.AgentPID}
@@ -321,6 +350,11 @@ func (a *AgentRegistryActor) register(ctx *actor.ReceiveContext, message *applic
 	role := aggregateRole(message.AgentID, message.Role)
 	displayName := aggregateDisplayName(message.AgentID, message.DisplayName)
 	a.agents[message.AgentID] = registeredAgent{actorName: name, registrationOperationID: operationID, agentPID: pid, reference: application.AgentReference{AgentID: message.AgentID, LifecycleRevision: 1, Role: role, DisplayName: displayName, RetentionPolicy: message.Retention, RecoveryPolicy: message.Recovery, AuthorityBinding: message.AuthorityBinding, HostedPiRuntime: message.HostedPiRuntime}, allowed: allowed, recipe: recipe}
+	defer func() {
+		if item, exists := a.agents[message.AgentID]; exists {
+			a.publishPublicAgentUpsert(ctx, message.AgentID, item)
+		}
+	}()
 	var hostedRuntimePID *actor.PID
 	if message.PhaseTwoOwned {
 		runtimeName := hostedRuntimeActorName(message)
@@ -358,6 +392,7 @@ func (a *AgentRegistryActor) reconcileAgentTermination(ctx *actor.ReceiveContext
 		item.runtimePID = nil
 		item.reference.LifecycleRevision++
 		a.agents[agentID] = item
+		a.publishPublicAgentUpsert(ctx, agentID, item)
 		return
 	}
 	pid := ctx.Spawn(item.actorName, NewAgentActor(&item.recipe, ctx.Self()), actor.WithMailbox(actor.NewNonBlockingBoundedMailbox(1024)), actor.WithPassivationStrategy(passivation.NewLongLivedStrategy()), actor.WithSupervisor(supervisor.NewSupervisor(supervisor.WithAnyErrorDirective(supervisor.RestartDirective))))
@@ -371,6 +406,7 @@ func (a *AgentRegistryActor) reconcileAgentTermination(ctx *actor.ReceiveContext
 		item.runtimePID = nil
 		item.reference.LifecycleRevision++
 		a.agents[agentID] = item
+		a.publishPublicAgentUpsert(ctx, agentID, item)
 		return
 	}
 	item.restarts = append(window, now)
@@ -394,6 +430,51 @@ func (a *AgentRegistryActor) reconcileAgentTermination(ctx *actor.ReceiveContext
 	}
 	item.reference.LifecycleRevision++
 	a.agents[agentID] = item
+	a.publishPublicAgentUpsert(ctx, agentID, item)
+}
+
+func (a *AgentRegistryActor) publishPublicAgentSnapshot(ctx *actor.ReceiveContext) {
+	if a.publicNode == "" {
+		return
+	}
+	for agentID, item := range a.agents {
+		a.publishPublicAgentUpsert(ctx, agentID, item)
+	}
+}
+
+func (a *AgentRegistryActor) schedulePublicAgentSnapshot(ctx *actor.ReceiveContext) {
+	if a.publicNode != "" {
+		_ = ctx.ActorSystem().ScheduleOnce(context.WithoutCancel(ctx.Context()), &application.PublishPublicAgentSnapshotTick{}, ctx.Self(), time.Second)
+	}
+}
+
+func (a *AgentRegistryActor) publishPublicAgentUpsert(ctx *actor.ReceiveContext, agentID string, item registeredAgent) {
+	if a.publicNode == "" || item.reference.AuthorityBinding.Kind != application.AuthorityBindingHostedOwned {
+		return
+	}
+	if a.publicAuthority == "" {
+		return
+	}
+	a.publishPublicAgentEvent(ctx, &application.PublicAgentDirectoryEvent{Operation: "upsert", NodeIdentity: a.publicNode, AgentID: agentID, ActorName: a.publicAuthority, Reference: item.reference})
+}
+
+func (a *AgentRegistryActor) publishPublicAgentRemove(ctx *actor.ReceiveContext, agentID string, item registeredAgent) {
+	if a.publicNode == "" {
+		return
+	}
+	reference := item.reference
+	reference.LifecycleRevision++
+	a.publishPublicAgentEvent(ctx, &application.PublicAgentDirectoryEvent{Operation: "remove", NodeIdentity: a.publicNode, AgentID: agentID, Reference: reference})
+}
+
+func (a *AgentRegistryActor) publishPublicAgentEvent(ctx *actor.ReceiveContext, event *application.PublicAgentDirectoryEvent) {
+	if topic := ctx.ActorSystem().TopicActor(); topic != nil {
+		a.publicSequence++
+		event.Epoch = a.publicEpoch
+		event.Sequence = a.publicSequence
+		id := event.NodeIdentity + ":" + event.AgentID + ":" + strconv.FormatUint(event.Epoch, 10) + ":" + strconv.FormatUint(event.Sequence, 10)
+		_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), topic, actor.NewPublish(id, publicAgentDirectoryTopic, event))
+	}
 }
 
 func hostedRuntimeActorName(message *application.RegisterAgent) string {
@@ -432,6 +513,7 @@ func (a *AgentRegistryActor) unregister(ctx *actor.ReceiveContext, message *appl
 	pid, err := ctx.ActorSystem().ActorOf(ctx.Context(), item.actorName)
 	if err != nil {
 		delete(a.agents, message.AgentID)
+		a.publishPublicAgentRemove(ctx, message.AgentID, item)
 		deliverUnregisterResult(message.Result, application.UnregisterAgentResult{Completed: true})
 		return
 	}
@@ -440,6 +522,7 @@ func (a *AgentRegistryActor) unregister(ctx *actor.ReceiveContext, message *appl
 		ctx.UnWatch(item.runtimePID)
 	}
 	delete(a.agents, message.AgentID)
+	a.publishPublicAgentRemove(ctx, message.AgentID, item)
 	result, runtimePID := message.Result, item.runtimePID
 	go func() {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
