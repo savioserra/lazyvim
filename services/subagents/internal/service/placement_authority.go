@@ -9,10 +9,32 @@ import (
 	subagentsv1 "github.com/savioserra/lazyvim/services/subagents/api/subagents/v1"
 	"github.com/savioserra/lazyvim/services/subagents/internal/application"
 	"github.com/tochemey/goakt/v4/actor"
+	goakterrors "github.com/tochemey/goakt/v4/errors"
+	"github.com/tochemey/goakt/v4/passivation"
 )
 
 func placementAuthorityName(nodeIdentity string) string {
 	return application.HostedPlacementAuthorityName(nodeIdentity)
+}
+
+func spawnPlacementAuthorityWithRetry(ctx context.Context, system actor.ActorSystem, name string, authority *hostedPlacementAuthority) (*actor.PID, error) {
+	deadline := time.Now().Add(45 * time.Second)
+	var last error
+	for attempt := 0; ; attempt++ {
+		pid, err := system.Spawn(ctx, name, authority, actor.WithMailbox(actor.NewNonBlockingBoundedMailbox(64)), actor.WithPassivationStrategy(passivation.NewLongLivedStrategy()), actor.WithRelocationDisabled())
+		if err == nil {
+			return pid, nil
+		}
+		last = err
+		if !errors.Is(err, goakterrors.ErrActorAlreadyExists) || time.Now().After(deadline) {
+			return nil, last
+		}
+		select {
+		case <-ctx.Done():
+			return nil, errors.Join(ctx.Err(), last)
+		case <-time.After(time.Duration(min(1000, 100*(attempt+1))) * time.Millisecond):
+		}
+	}
 }
 
 type placementReplay struct {

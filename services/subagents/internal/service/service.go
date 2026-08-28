@@ -345,7 +345,7 @@ func startWithListener(ctx context.Context, listener net.Listener, options ...an
 	if actorPlane != nil {
 		placementAuthority := placementAuthorityName(actorPlane.NodeIdentity)
 		_ = system.NoSender().Tell(ctx, agents, &application.ConfigurePublicAgentEvents{NodeIdentity: actorPlane.NodeIdentity, PlacementAuthority: placementAuthority, Epoch: uint64(time.Now().UnixNano())})
-		if _, err := system.Spawn(ctx, placementAuthority, &hostedPlacementAuthority{service: service}, actor.WithMailbox(actor.NewNonBlockingBoundedMailbox(64)), actor.WithPassivationStrategy(passivation.NewLongLivedStrategy()), actor.WithRelocationDisabled()); err != nil {
+		if _, err := spawnPlacementAuthorityWithRetry(ctx, system, placementAuthority, &hostedPlacementAuthority{service: service}); err != nil {
 			return fail(err)
 		}
 		service.connections.Add(1)
