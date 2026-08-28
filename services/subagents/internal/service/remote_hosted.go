@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	subagentsv1 "github.com/savioserra/lazyvim/services/subagents/api/subagents/v1"
 	"github.com/savioserra/lazyvim/services/subagents/internal/application"
@@ -34,7 +35,7 @@ func (s *Service) remoteHostedAdminResponse(ctx context.Context, request *subage
 		response.Payload = protocolError(subagentsv1.ProtocolError_CODE_INVALID_REQUEST, "remote hosted placement authority unavailable")
 		return response
 	}
-	value, err := s.system.NoSender().Ask(ctx, pid, placement, requestTimeout)
+	value, err := s.system.NoSender().Ask(ctx, pid, placement, min(25*time.Second, boundedRemaining(ctx, 25*time.Second)))
 	if err != nil {
 		response.Payload = protocolError(subagentsv1.ProtocolError_CODE_INTERNAL, fmt.Sprintf("remote hosted placement failed: %v", err))
 		return response
