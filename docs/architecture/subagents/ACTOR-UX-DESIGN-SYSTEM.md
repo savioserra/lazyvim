@@ -183,6 +183,7 @@ Actors
 ## 7. Replay and persistence
 
 - Each communication has one stable dedupe key.
+- Client-side interaction state should be reduced by an explicit XState client actor. It owns view-local connection, pending request, replay cursor, and render-snapshot state while daemon actors remain authoritative for durable lifecycle, authorization, routing, and productive progress.
 - Reconnect/replay must not append duplicate visible cards.
 - Incoming request prompt injection and its visual representation count as one conversation item, not two.
 - Persist only bounded, sanitized conversation presentation data permitted by session policy.

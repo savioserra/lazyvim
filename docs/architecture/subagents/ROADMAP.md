@@ -42,6 +42,18 @@ Current managed entry point: restart an ordinary globally discovered `pi`; the `
 
 [The draft workflow-template specification](WORKFLOW-TEMPLATE-SPEC.md) inventories current canonical fields separately from proposed strict TOML vocabulary, with non-runnable dogfood examples under [`examples/`](examples/). Implementation must validate and materialize a versioned template into an actor-owned workflow run without agent guesswork, pin the resolved version/digest, and fail without side effects when validation or authorization fails.
 
+## Future ticket: XState client actor model
+
+Replace ad-hoc client-side UI state with an explicit XState client actor for each attached Pi/TUI client. The client actor should exchange typed daemon messages, reduce subscription/list/status/ask/send lifecycle events into a deterministic local projection, own reconnect cursors and pending request UI state, and expose one bounded render snapshot to Pi. Daemon-side `AgentActor`, `WorkflowActor`, `BridgeSessionActor`, and session registries remain authoritative for security and durable state; the XState client actor is a cleaner client reducer/orchestrator, not a second authority or transport-specific cache.
+
+Implementation notes:
+
+- Model daemon connection, authentication, subscriptions, requests, reconnect, replay, and terminal failures as explicit XState states/events.
+- Preserve typed protocol identities, fences, lifecycle IDs, and delivery ACK cursors in actor context.
+- Keep human rendering derived from the XState snapshot while model-visible tool content remains complete and machine-actionable.
+- Use the same actor abstraction for slash commands, model tools, and future dashboards so UI clients share one reducer contract.
+- Do not scrape terminal state or infer productive progress in the client actor; consume daemon actor/workflow projections only.
+
 ## Future ticket: actor-backed daemon CLI dashboard
 
 After the self-hosting MVP stabilizes, add a Go daemon CLI in the nested `services/subagents` module using Cobra and a Go TUI framework selected by a later ADR.
