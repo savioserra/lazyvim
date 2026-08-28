@@ -58,13 +58,11 @@ func WriteEnvelope(writer io.Writer, envelope *subagentsv1.Envelope) error {
 	if len(payload) == 0 || len(payload) > MaxFrameSize {
 		return ErrFrameTooLarge
 	}
-	var prefix [4]byte
-	binary.BigEndian.PutUint32(prefix[:], uint32(len(payload)))
-	if err := writeFull(writer, prefix[:]); err != nil {
-		return fmt.Errorf("write frame prefix: %w", err)
-	}
-	if err := writeFull(writer, payload); err != nil {
-		return fmt.Errorf("write frame payload: %w", err)
+	frame := make([]byte, 4+len(payload))
+	binary.BigEndian.PutUint32(frame[:4], uint32(len(payload)))
+	copy(frame[4:], payload)
+	if err := writeFull(writer, frame); err != nil {
+		return fmt.Errorf("write frame: %w", err)
 	}
 	return nil
 }
