@@ -3,7 +3,7 @@ import { create, fromBinary, toBinary, type DescMessage } from "@bufbuild/protob
 import { randomUUID } from "node:crypto";
 import { lstat, readFile } from "node:fs/promises";
 import { connect, type Socket } from "node:net";
-import { dirname, isAbsolute, join } from "node:path";
+import { dirname, isAbsolute, join, normalize } from "node:path";
 import { Type } from "typebox";
 type Envelope = any;
 let EnvelopeSchema: DescMessage;
@@ -108,7 +108,7 @@ export default async function wsActorClient(pi: ExtensionAPI) {
   const lifecycleConversation = new ActorClientLifecycleConversation(conversation);
 
   const createActor=async(agentId:string,projectDirectory:string,displayName?:string,role?:string,nodeIdentity?:string)=>{
-    validateAgentID(agentId);await validateProject(projectDirectory);if(displayName!==undefined)validateDisplayMetadata(displayName,"display name",80);if(role!==undefined)validateDisplayMetadata(role,"role",64);if(nodeIdentity!==undefined)validateNodeIdentity(nodeIdentity);
+    validateAgentID(agentId);if(nodeIdentity!==undefined){validateNodeIdentity(nodeIdentity);validateRemoteProject(projectDirectory);}else await validateProject(projectDirectory);if(displayName!==undefined)validateDisplayMetadata(displayName,"display name",80);if(role!==undefined)validateDisplayMetadata(role,"role",64);
     const response=await required(admin).request("hostedAdminRequest",HostedAdminRequestSchema,{operation:HostedAdminRequest_Operation.START,agentId,projectDirectory,trustProject:true,displayName:displayName?.trim()??"",role:role?.trim()??"",targetNode:nodeIdentity?.trim()??""},{timeout:30_000});
     if(response.payload.case!=="hostedAdminResponse")throw new Error("unexpected actor create response");
     return {accepted:response.payload.value.accepted,agentId:response.payload.value.agentId,reason:response.payload.value.reason};
@@ -149,7 +149,8 @@ async function loadCredential(path:string){await validatePrivateFile(path,"admin
 async function validatePrivateFile(path:string,label:string){if(!isAbsolute(path))throw new Error(`${label} path must be absolute`);await validateNoSymlinkAncestors(dirname(path),label);const stat=await lstat(path);const uid=typeof process.getuid==="function"?process.getuid():undefined;if(!stat.isFile()||(stat.mode&0o777)!==0o600||(uid!==undefined&&stat.uid!==uid))throw new Error(`${label} is not owner-private`);}
 async function validatePrivateSocket(path:string){if(!isAbsolute(path))throw new Error("client socket path must be absolute");await validateNoSymlinkAncestors(dirname(path),"client socket directory");const[socket,parent]=await Promise.all([lstat(path),lstat(dirname(path))]);const uid=typeof process.getuid==="function"?process.getuid():undefined;if(!socket.isSocket()||(socket.mode&0o777)!==0o600||(uid!==undefined&&socket.uid!==uid))throw new Error("client daemon socket is not owner-private");if(!parent.isDirectory()||(parent.mode&0o077)!==0||(uid!==undefined&&parent.uid!==uid))throw new Error("client socket directory is not owner-private");}
 async function validateNoSymlinkAncestors(path:string,label:string){const uid=typeof process.getuid==="function"?process.getuid():undefined;const parts=path.split("/").filter(Boolean);let current="";for(const part of parts){current+=`/${part}`;const stat=await lstat(current);if(stat.isSymbolicLink()||!stat.isDirectory())throw new Error(`${label} ancestor is unsafe`);if(uid!==undefined&&stat.uid!==uid&&stat.uid!==0)throw new Error(`${label} ancestor has foreign ownership`);if((stat.mode&0o022)!==0&&(stat.mode&0o1000)===0)throw new Error(`${label} ancestor is writable without sticky bit`);}}
-async function validateProject(path:string){if(!isAbsolute(path)||path!==path.trim()||/[\0\r\n]/.test(path))throw new Error("project must be a clean absolute path");const stat=await lstat(path);if(!stat.isDirectory())throw new Error("project must be an existing directory");}
+export function validateRemoteProject(path:string){if(!isAbsolute(path)||path!==path.trim()||normalize(path)!==path||(path.length>1&&path.endsWith("/"))||/[\0\r\n]/.test(path))throw new Error("remote project must be a clean absolute path");}
+async function validateProject(path:string){validateRemoteProject(path);const stat=await lstat(path);if(!stat.isDirectory())throw new Error("project must be an existing directory");}
 function validateAgentID(value:string){if(!/^[A-Za-z0-9_-]{1,64}$/.test(value))throw new Error("agent id is invalid");}
 function validateNodeIdentity(value:string){if(!/^[A-Za-z0-9_-]{1,64}$/.test(value))throw new Error("node identity is invalid");}
 function validateLifecycleID(value:string){if(!/^[A-Za-z0-9_.:-]{1,128}$/.test(value))throw new Error("task lifecycle id is invalid");}

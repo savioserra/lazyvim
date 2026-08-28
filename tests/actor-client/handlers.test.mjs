@@ -1,9 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { publicAgentView, registerClientHandlers } from "../../home/dot_pi/private_agent/extensions/actor-client/handlers.ts";
-import { ActorClientConversationLog, ActorClientLifecycleConversation, actorClientPendingStatus } from "../../home/dot_pi/private_agent/extensions/actor-client/index.ts";
+import { ActorClientConversationLog, ActorClientLifecycleConversation, actorClientPendingStatus, validateRemoteProject } from "../../home/dot_pi/private_agent/extensions/actor-client/index.ts";
 import { outgoingExchange, renderCommunicationCard } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/communication-ui.ts";
 const toolsafeRender = (view, theme) => renderCommunicationCard(view, theme).render(80).join("\n");
+
+test("remote project validation is syntax-only and does not require a local path", () => {
+  assert.doesNotThrow(() => validateRemoteProject("/root/lazyvim"));
+  for (const invalid of ["root/lazyvim", "/root/../tmp", "/root/lazyvim/", " /root/lazyvim", "/root/lazyvim\n"]) assert.throws(() => validateRemoteProject(invalid), /clean absolute path/);
+});
 
 test("actor-client public views use display metadata and suppress raw runtime internals", () => {
   const view = publicAgentView({agentId:"agent-42",displayName:"Release Reviewer",role:"Review Lead",hostedPiRuntime:{state:3,bridgeReady:true,cleanupPending:false,runtimeId:"raw-runtime",tmuxSessionId:"$1",tmuxSession:"raw",panePid:123,piSessionName:"hosted-raw"}});
