@@ -44,6 +44,10 @@ func TestHostedPiLaunchArgsUseFullscreenTUIBeforeSessionOptions(t *testing.T) {
 	if got := args[piIndex:]; !equalStrings(got, want) {
 		t.Fatalf("Pi launch suffix mismatch\n got: %#v\nwant: %#v", got, want)
 	}
+	pathIndex := indexOf(args, "PATH=/"+string(os.PathListSeparator)+os.Getenv("PATH"))
+	if pathIndex < 1 || args[pathIndex-1] != "-e" {
+		t.Fatalf("hosted tmux PATH must include the Pi binary directory: %#v", args)
+	}
 	if indexOf(args, "send-keys") >= 0 || indexOf(args, "respawn-pane") >= 0 {
 		t.Fatalf("launch args must keep tmux visualization-only and exact-owned: %#v", args)
 	}

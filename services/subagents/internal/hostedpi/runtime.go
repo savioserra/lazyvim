@@ -178,6 +178,7 @@ func (r *Runtime) Start(ctx context.Context, spec application.HostedPiLaunchSpec
 func hostedPiLaunchArgs(config Config, spec application.HostedPiLaunchSpec) []string {
 	args := tmuxPrefix(config)
 	args = append(args, "new-session", "-d", "-P", "-F", "#{session_id}\t#{window_id}\t#{pane_id}\t#{pid}", "-s", spec.TmuxSession, "-n", spec.TmuxWindow,
+		"-e", "PATH="+filepath.Dir(config.PiBinary)+string(os.PathListSeparator)+os.Getenv("PATH"),
 		"-e", "WS_SUBAGENTS_SOCKET="+config.DaemonSocket,
 		"-e", "WS_SUBAGENTS_CREDENTIAL_FILE="+config.CredentialFile,
 		"-e", "WS_SUBAGENTS_SESSION_ID="+config.SessionID,
