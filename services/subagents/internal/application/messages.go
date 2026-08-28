@@ -313,7 +313,7 @@ type RetryAgentReconciliation struct {
 	Attempt uint8
 }
 
-const HostedPlacementAuthorityNamePrefix = "hosted-placement-authority-v3-"
+const HostedPlacementAuthorityNamePrefix = "hosted-placement-authority-v4-"
 
 func HostedPlacementAuthorityName(nodeIdentity string) string {
 	digest := sha256.Sum256([]byte(nodeIdentity))
