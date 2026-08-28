@@ -1361,7 +1361,6 @@ func (s *Service) dispatch(request *subagentsv1.Envelope) *subagentsv1.Envelope 
 			agents = append(agents, protoPublicAgentReference(item))
 		}
 		if s.publicDirectory != nil {
-			s.reconcilePublicHostedPeers(ctx)
 			remote, err := s.system.NoSender().Ask(ctx, s.publicDirectory, message, requestTimeout)
 			if err == nil {
 				if publicList, ok := remote.(*application.AgentList); ok {
@@ -1383,7 +1382,6 @@ func (s *Service) dispatch(request *subagentsv1.Envelope) *subagentsv1.Envelope 
 			return internalError(response)
 		}
 		if !resolved.Found && s.publicDirectory != nil {
-			s.reconcilePublicHostedPeers(ctx)
 			remote, err := s.system.NoSender().Ask(ctx, s.publicDirectory, &application.LookupPublicAgent{SessionID: request.SessionId, GenerationID: request.GenerationId, Caller: request.CallerIdentity, Credential: request.SessionCredential, AgentID: payload.ResolveAgentRequest.AgentId}, requestTimeout)
 			if err == nil {
 				if found, ok := remote.(*application.PublicAgentLookupResult); ok && found.Found {
