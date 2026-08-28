@@ -8,6 +8,7 @@
 | `AGENTS.md` | Repository-wide implementation rules |
 | `tests/capabilities.test.lua` | Fast graph, profile, runner, adapter tests |
 | `tests/tmux-subagents/` | Mirrored actor, OTP supervisor, RPC, projection, IPC, renderer, ticket, and isolated tmux tests |
+| `services/subagents/` | Sole nested Go service module, canonical protobuf contract, direct GoAkt actors, and daemon spike tests |
 | `.github/scripts/test-apply.ps1` | Scratch-home end-to-end apply test |
 | `.github/workflows/ci.yml` | Platform matrix and lint |
 | `.github/workflows/release.yml` | Tagged source archives |
@@ -31,6 +32,8 @@
 | [`nvim.md`](nvim.md) | Editor entry points, profile, plugins, locks |
 | [`tmux.md`](tmux.md) | Settings, plugin pins, theme |
 | [`lua-migration.md`](lua-migration.md) | Runtime decision record |
+| [`subagents.md`](subagents.md) | GoAkt service boundary, protocol, security, platform inventory, test policy, and links to canonical subagents ADRs |
+| [`architecture/subagents/`](architecture/subagents/) | Accepted direct-GoAkt, global-agent/hosted-Pi, routing, transport, persistence, and diagnostics decisions |
 
 ## Invariants
 
@@ -43,7 +46,9 @@
 - Neovim language composition has one profile source.
 - `pi-subagents` remains authoritative; tmux panes consume bounded observer projections only.
 - Removed non-`exact` targets are listed in `.chezmoiremove`.
-- The retired Go CLI structure (`go.mod`, `cmd/`, `internal/`) must not return.
+- The retired root Go CLI structure must not return; the only approved nested module is `services/subagents/`.
+- Supported hosts are Linux, WSL-as-Linux, and macOS. Retained native-Windows files are removal inventory.
+- Reusable global AgentActors outlive ephemeral Pi sessions; session cleanup cannot stop agent work.
 
 ## Validation layers
 

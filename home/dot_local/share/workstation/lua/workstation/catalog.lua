@@ -6,6 +6,7 @@ return {
 	require("packages.pi-skills"),
 	require("packages.pi-subagents"),
 	require("packages.go"),
+	require("packages.subagents"),
 	require("packages.secrets"),
 	require("packages.nvim"),
 	require("packages.tmux"),

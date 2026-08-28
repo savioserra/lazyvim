@@ -80,13 +80,17 @@ export function decodeCompatiblePing(value: unknown): CompatiblePing {
   };
 }
 
+export interface RpcObservation { method: SubagentsRpcMethod; requestId: string; status: "start" | "success" | "failure"; error?: Error }
+
 export class SubagentsRpcClient {
   private readonly events: EventBus;
   private readonly timeoutMs: number;
+  private readonly observe?: (event: RpcObservation) => void;
 
-  constructor(events: EventBus, timeoutMs = 3000) {
+  constructor(events: EventBus, timeoutMs = 3000, observe?: (event: RpcObservation) => void) {
     this.events = events;
     this.timeoutMs = timeoutMs;
+    this.observe = observe;
   }
 
   request(method: SubagentsRpcMethod, params: Record<string, unknown> = {}): Promise<unknown> {
@@ -99,6 +103,7 @@ export class SubagentsRpcClient {
         settled = true;
         clearTimeout(timer);
         if (typeof unsubscribe === "function") unsubscribe();
+        this.observe?.({ method, requestId, status: error ? "failure" : "success", ...(error ? { error } : {}) });
         error ? reject(error) : resolve(value);
       };
       const unsubscribe = this.events.on(replyEvent, (reply) => {
@@ -110,6 +115,7 @@ export class SubagentsRpcClient {
       });
       const timer = setTimeout(() => finish(new Error(`pi-subagents RPC ${method} timed out`)), this.timeoutMs);
       timer.unref?.();
+      this.observe?.({ method, requestId, status: "start" });
       this.events.emit(RPC_REQUEST_EVENT, {
         version: RPC_PROTOCOL_VERSION,
         requestId,

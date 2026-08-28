@@ -1,5 +1,7 @@
+import { execFile } from "node:child_process";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { constants, lstat, mkdir, open, readdir, realpath, rename, rm, unlink } from "node:fs/promises";
+import { constants, link, lstat, mkdir, open, readFile, readdir, realpath, rename, rm, unlink } from "node:fs/promises";
+import { promisify } from "node:util";
 import path from "node:path";
 import { MAX_PROJECTION_BYTES, TICKET_SCHEMA_VERSION } from "../domain/constants.ts";
 import { renderProjectionText, type Projection } from "../domain/projection.ts";
@@ -59,6 +61,26 @@ function object(value: unknown, label: string): Record<string, unknown> {
 
 function currentUid(): number | undefined {
   return typeof process.getuid === "function" ? process.getuid() : undefined;
+}
+export type ProcessStartIdentity = { status: "known"; identity: string } | { status: "indeterminate"; reason: string };
+export interface PrivateViewStoreOptions {
+  processIdentity?: (pid: number) => Promise<ProcessStartIdentity>;
+  beforeLeaseTransition?: (transition: "release" | "remove-owned" | "remove-stale") => Promise<void>;
+}
+export function darwinProcessStartIdentity(output: string): string | undefined { const started = output.trim(); return started ? `darwin:${started}` : undefined; }
+const execFileAsync = promisify(execFile);
+async function defaultProcessStartIdentity(pid: number): Promise<ProcessStartIdentity> {
+  try {
+    if (process.platform === "darwin") {
+      const result = await execFileAsync("ps", ["-o", "lstart=", "-p", String(pid)], { encoding: "utf8", timeout: 1000 });
+      const identity = darwinProcessStartIdentity(result.stdout); return identity ? { status: "known", identity } : { status: "indeterminate", reason: "ps returned no process start time" };
+    }
+    if (process.platform === "linux") {
+      const stat = await readFile(`/proc/${pid}/stat`, "utf8"); const close = stat.lastIndexOf(")"); const fields = stat.slice(close + 2).trim().split(/\s+/); const identity = fields[19];
+      return identity ? { status: "known", identity: `linux:${identity}` } : { status: "indeterminate", reason: "procfs omitted process start time" };
+    }
+    return { status: "indeterminate", reason: `process start identity is unsupported on ${process.platform}` };
+  } catch (error) { return { status: "indeterminate", reason: `process start identity lookup failed: ${(error as NodeJS.ErrnoException).code ?? "unknown"}` }; }
 }
 
 async function assertOwned(file: string, directory: boolean): Promise<void> {
@@ -157,12 +179,16 @@ export class PrivateViewStore {
   readonly bindingsRoot: string;
   readonly receiptsRoot: string;
   readonly socketsRoot: string;
+  readonly leasePath: string;
   readonly ownerPiSessionId: string;
   readonly generation: string;
+  readonly leaseToken: string;
+  private leaseStartIdentity?: string;
+  private readonly options: PrivateViewStoreOptions;
 
-  constructor(root: string, ownerPiSessionId: string, generation: string) {
-    this.ownerPiSessionId = validIdentity(ownerPiSessionId, "Pi session id");
-    this.generation = validIdentity(generation, "generation");
+  constructor(root: string, ownerPiSessionId: string, generation: string, options: PrivateViewStoreOptions = {}) {
+    this.ownerPiSessionId = validIdentity(ownerPiSessionId, "Pi session id"); this.options = options;
+    this.generation = validIdentity(generation, "generation"); this.leaseToken = randomBytes(24).toString("base64url");
     this.baseRoot = path.resolve(root);
     this.sessionRoot = path.join(this.baseRoot, sessionKey(this.ownerPiSessionId));
     this.generationsRoot = path.join(this.sessionRoot, "generations");
@@ -172,6 +198,7 @@ export class PrivateViewStore {
     this.bindingsRoot = path.join(this.generationRoot, "bindings");
     this.receiptsRoot = path.join(this.generationRoot, "supervisor-receipts");
     this.socketsRoot = path.join(this.generationRoot, "sockets");
+    this.leasePath = path.join(this.generationRoot, "owner-lease.json");
   }
 
   private confined(file: string): string {
@@ -183,11 +210,70 @@ export class PrivateViewStore {
   }
 
   async initialize(): Promise<void> {
-    for (const directory of [this.baseRoot, this.sessionRoot, this.generationsRoot, this.generationRoot, this.ticketsRoot, this.projectionsRoot, this.bindingsRoot, this.receiptsRoot, this.socketsRoot]) {
-      await ensureDirectory(directory);
+    for (const directory of [this.baseRoot, this.sessionRoot, this.generationsRoot, this.generationRoot]) await ensureDirectory(directory);
+    const canonical = await realpath(this.generationRoot); if (canonical !== this.generationRoot) throw new Error("private generation root is not canonical");
+    if (this.leaseStartIdentity === undefined) {
+      const identity = await (this.options.processIdentity ?? defaultProcessStartIdentity)(process.pid);
+      if (identity.status === "known") this.leaseStartIdentity = identity.identity;
     }
-    const canonical = await realpath(this.generationRoot);
-    if (canonical !== this.generationRoot) throw new Error("private generation root is not canonical");
+    try {
+      const lease = object(JSON.parse(await secureRead(this.leasePath, 1024)), "generation lease");
+      if (lease.schemaVersion !== 1 || lease.generation !== this.generation || lease.pid !== process.pid || lease.ownerToken !== this.leaseToken || lease.processStartIdentity !== (this.leaseStartIdentity ?? null)) throw new Error("generation lease belongs to another live owner");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      await atomicWrite(this.leasePath, `${JSON.stringify({ schemaVersion: 1, generation: this.generation, pid: process.pid, ownerToken: this.leaseToken, processStartIdentity: this.leaseStartIdentity ?? null, startedAt: Date.now() })}\n`, 1024);
+    }
+    for (const directory of [this.ticketsRoot, this.projectionsRoot, this.bindingsRoot, this.receiptsRoot, this.socketsRoot]) await ensureDirectory(directory);
+  }
+
+  async reapLease(): Promise<{ status: "stale"; ownerToken: string; processStartIdentity: string | null } | { status: "active" | "indeterminate"; reason: string }> {
+    try {
+      const lease = object(JSON.parse(await secureRead(this.leasePath, 1024)), "generation lease");
+      if (lease.schemaVersion !== 1 || lease.generation !== this.generation || typeof lease.pid !== "number" || !Number.isSafeInteger(lease.pid) || lease.pid <= 0 || typeof lease.ownerToken !== "string" || !/^[A-Za-z0-9_-]{32}$/.test(lease.ownerToken) || (lease.processStartIdentity !== null && typeof lease.processStartIdentity !== "string")) return { status: "indeterminate", reason: "generation lease is incompatible" };
+      if (lease.released === true) return { ownerToken: lease.ownerToken, processStartIdentity: lease.processStartIdentity as string | null, status: "stale" };
+      let alive = true; try { process.kill(lease.pid, 0); } catch (error) { if ((error as NodeJS.ErrnoException).code === "ESRCH") alive = false; else return { status: "indeterminate", reason: "generation lease liveness is unknown" }; }
+      if (!alive) return { ownerToken: lease.ownerToken, processStartIdentity: lease.processStartIdentity as string | null, status: "stale" };
+      const currentStart = await (this.options.processIdentity ?? defaultProcessStartIdentity)(lease.pid); if (currentStart.status !== "known" || typeof lease.processStartIdentity !== "string") return { status: "indeterminate", reason: currentStart.status === "indeterminate" ? currentStart.reason : "lease process start identity is unavailable" };
+      if (currentStart.identity === lease.processStartIdentity) return { status: "active", reason: "generation owner is still active" };
+      return { ownerToken: lease.ownerToken, processStartIdentity: lease.processStartIdentity, status: "stale" };
+    } catch { return { status: "indeterminate", reason: "generation lease could not be securely read" }; }
+  }
+
+  private ownsLease(lease: Record<string, unknown>): boolean { return lease.schemaVersion === 1 && lease.generation === this.generation && lease.pid === process.pid && lease.ownerToken === this.leaseToken && lease.processStartIdentity === (this.leaseStartIdentity ?? null); }
+  private async assertCurrentOwnerIdentity(): Promise<void> {
+    if (!this.leaseStartIdentity) throw new Error("generation ownership is indeterminate without process start identity"); const current = await (this.options.processIdentity ?? defaultProcessStartIdentity)(process.pid);
+    if (current.status !== "known" || current.identity !== this.leaseStartIdentity) throw new Error("generation process start identity changed before destructive transition");
+  }
+
+  async releaseLease(): Promise<void> {
+    if (!this.leaseStartIdentity) throw new Error("generation lease release is indeterminate without process start identity");
+    const before = object(JSON.parse(await secureRead(this.leasePath, 1024)), "generation lease"); if (!this.ownsLease(before)) throw new Error("generation lease ownership changed before release");
+    await this.options.beforeLeaseTransition?.("release"); await this.assertCurrentOwnerIdentity();
+    const claim = path.join(this.generationRoot, `.owner-lease.release.${randomUUID()}`); await rename(this.leasePath, claim);
+    let claimed: Record<string, unknown>;
+    try { claimed = object(JSON.parse(await secureRead(claim, 1024)), "generation lease"); }
+    catch (error) { try { await link(claim, this.leasePath); await unlink(claim); } catch (restore) { throw new AggregateError([error, restore], "generation lease read failed and could not be restored without replacement"); } throw error; }
+    if (!this.ownsLease(claimed)) {
+      try { await link(claim, this.leasePath); await unlink(claim); } catch (restore) { throw new AggregateError([restore], "generation lease changed during release and could not be restored without replacing another owner"); }
+      throw new Error("generation lease ownership changed during release");
+    }
+    await this.assertCurrentOwnerIdentity(); const released = path.join(this.generationRoot, `.owner-lease.released.${randomUUID()}`);
+    await atomicWrite(released, `${JSON.stringify({ ...claimed, released: true })}\n`, 1024);
+    try { await link(released, this.leasePath); }
+    catch (error) { throw new AggregateError([error], "generation lease was replaced during release"); }
+    finally { await unlink(released).catch((error: NodeJS.ErrnoException) => { if (error.code !== "ENOENT") throw error; }); await unlink(claim).catch((error: NodeJS.ErrnoException) => { if (error.code !== "ENOENT") throw error; }); }
+  }
+
+  async removeStaleGeneration(ownerToken: string, startIdentity: string | null): Promise<void> {
+    const before = await this.reapLease(); if (before.status !== "stale" || before.ownerToken !== ownerToken || before.processStartIdentity !== startIdentity) throw new Error("generation lease changed or is not proven stale");
+    await this.options.beforeLeaseTransition?.("remove-stale"); await this.removeGenerationAfterRename(async (movedLease) => {
+      const lease = object(JSON.parse(await secureRead(movedLease, 1024)), "generation lease");
+      if (lease.ownerToken !== ownerToken || lease.processStartIdentity !== startIdentity) throw new Error("generation lease changed during stale removal");
+      if (lease.released !== true) {
+        let alive = true; try { process.kill(lease.pid as number, 0); } catch (error) { if ((error as NodeJS.ErrnoException).code === "ESRCH") alive = false; else throw error; }
+        if (alive) { const identity = await (this.options.processIdentity ?? defaultProcessStartIdentity)(lease.pid as number); if (identity.status !== "known" || identity.identity === lease.processStartIdentity) throw new Error("generation owner is active or indeterminate during stale removal"); }
+      }
+    });
   }
 
   async createTicket(input: { ticketId?: string; runId: string; childId?: string; created: boolean; expectedPane?: PaneIdentity; rendererSocketPath?: string; nodePath?: string; rendererPath?: string; ttlMs: number; now?: number }): Promise<ViewTicket> {
@@ -276,8 +362,14 @@ export class PrivateViewStore {
   }
 
   async writeSupervisorReceipt(receipt: { supervisorId: string; childId: string; decision: string; reason: string; at: number; restartAttempt: number }): Promise<void> {
-    const key = createHash("sha256").update(`${receipt.supervisorId}\0${receipt.childId}`).digest("hex").slice(0, 24);
-    await atomicWrite(this.confined(path.join(this.receiptsRoot, `${key}.json`)), `${JSON.stringify({ schemaVersion: 1, generation: this.generation, ...receipt })}\n`, 16 * 1024);
+    const decisions = new Set(["ignore", "restart", "circuit-open", "escalate"] as const);
+    if (typeof receipt.decision !== "string" || !decisions.has(receipt.decision as "ignore")) throw new Error("invalid supervisor receipt decision");
+    if (typeof receipt.supervisorId !== "string" || !receipt.supervisorId || receipt.supervisorId.length > 1024 || typeof receipt.childId !== "string" || !receipt.childId || receipt.childId.length > 1024 || typeof receipt.reason !== "string" || receipt.reason.length > 4096) throw new Error("invalid supervisor receipt text fields");
+    if (!Number.isSafeInteger(receipt.at) || receipt.at < 0 || !Number.isSafeInteger(receipt.restartAttempt) || receipt.restartAttempt < 0) throw new Error("invalid supervisor receipt counters");
+    const digest = (domain: string, value: string) => createHash("sha256").update(`tmux-subagents-supervisor-receipt:v1:${domain}\0${value}`).digest("hex").slice(0, 24);
+    const supervisorId = `supervisor:${digest("supervisor-id", receipt.supervisorId)}`; const childId = `child:${digest("child-id", receipt.childId)}`; const key = digest("record-key", `${supervisorId}\0${childId}`); const message = receipt.reason.toLowerCase();
+    const reasonCode = /timeout/.test(message) ? "TIMEOUT" : /auth|credential|nonce|token/.test(message) ? "AUTHENTICATION" : /circuit|backoff|restart|supervisor/.test(message) ? "SUPERVISION" : /owner|permission|symlink/.test(message) ? "OWNERSHIP" : "CHILD_FAILURE";
+    await atomicWrite(this.confined(path.join(this.receiptsRoot, `${key}.json`)), `${JSON.stringify({ schemaVersion: 1, generation: this.generation, supervisorId, childId, decision: receipt.decision, reasonCode, at: receipt.at, restartAttempt: receipt.restartAttempt })}\n`, 16 * 1024);
   }
 
   async removeBinding(bindingId: string): Promise<void> {
@@ -287,10 +379,10 @@ export class PrivateViewStore {
   }
 
   async removeTicket(ticket: ViewTicket, removeProjection = false): Promise<void> {
-    for (const file of [this.ticketPath(ticket.ticketId), ticket.claimPath]) await unlink(this.confined(file)).catch(() => {});
-    const entries = await readdir(this.ticketsRoot).catch(() => [] as string[]);
-    for (const entry of entries) if (entry.startsWith(`${ticket.ticketId}.consumed.`)) await unlink(this.confined(path.join(this.ticketsRoot, entry))).catch(() => {});
-    if (removeProjection) await unlink(this.confined(ticket.projectionPath)).catch(() => {});
+    for (const file of [this.ticketPath(ticket.ticketId), ticket.claimPath]) await unlink(this.confined(file)).catch((error: NodeJS.ErrnoException) => { if (error.code !== "ENOENT") throw error; });
+    const entries = await readdir(this.ticketsRoot).catch((error: NodeJS.ErrnoException) => { if (error.code === "ENOENT") return [] as string[]; throw error; });
+    for (const entry of entries) if (entry.startsWith(`${ticket.ticketId}.consumed.`)) await unlink(this.confined(path.join(this.ticketsRoot, entry))).catch((error: NodeJS.ErrnoException) => { if (error.code !== "ENOENT") throw error; });
+    if (removeProjection) await unlink(this.confined(ticket.projectionPath)).catch((error: NodeJS.ErrnoException) => { if (error.code !== "ENOENT") throw error; });
   }
 
   async allTickets(): Promise<ViewTicket[]> {
@@ -324,7 +416,7 @@ export class PrivateViewStore {
     for (const entry of entries) {
       if (entry === this.generation) continue;
       validIdentity(entry, "prior generation");
-      const store = new PrivateViewStore(this.baseRoot, this.ownerPiSessionId, entry);
+      const store = new PrivateViewStore(this.baseRoot, this.ownerPiSessionId, entry, { processIdentity: this.options.processIdentity });
       await assertOwned(store.generationRoot, true);
       stores.push(store);
     }
@@ -337,8 +429,16 @@ export class PrivateViewStore {
     return expired;
   }
 
-  async removeGeneration(): Promise<void> {
-    await assertOwned(this.generationRoot, true);
-    await rm(this.generationRoot, { recursive: true, force: true });
+  private async removeGenerationAfterRename(validate: (movedLease: string) => Promise<void>): Promise<void> {
+    await assertOwned(this.generationRoot, true); const movedRoot = path.join(this.generationsRoot, `.${this.generation}.removing.${randomUUID()}`); await rename(this.generationRoot, movedRoot);
+    try { await validate(path.join(movedRoot, "owner-lease.json")); }
+    catch (error) { try { await rename(movedRoot, this.generationRoot); } catch (restore) { throw new AggregateError([error, restore], "generation ownership race could not be restored"); } throw error; }
+    await rm(movedRoot, { recursive: true, force: false });
+  }
+
+  async removeOwnedGeneration(): Promise<void> {
+    if (!this.leaseStartIdentity) throw new Error("generation removal is indeterminate without process start identity");
+    const before = object(JSON.parse(await secureRead(this.leasePath, 1024)), "generation lease"); if (!this.ownsLease(before)) throw new Error("generation ownership changed before owned removal");
+    await this.options.beforeLeaseTransition?.("remove-owned"); await this.assertCurrentOwnerIdentity(); await this.removeGenerationAfterRename(async (movedLease) => { const lease = object(JSON.parse(await secureRead(movedLease, 1024)), "generation lease"); if (!this.ownsLease(lease)) throw new Error("generation ownership changed during owned removal"); await this.assertCurrentOwnerIdentity(); });
   }
 }

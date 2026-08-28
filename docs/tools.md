@@ -1,5 +1,7 @@
 # Tool inventory
 
+Supported deployment policy is Linux, WSL-as-Linux, and macOS. Native-Windows entries below are retained removal inventory during milestone 1 and do not constitute support.
+
 | Property | Value |
 | --- | --- |
 | Download declarations | `home/.chezmoiexternals/*.toml.tmpl` |
@@ -25,9 +27,13 @@
 | pi-subagents | 0.56.0 | npm: `pi-subagents` (`nicobailon/pi-subagents`) | `.pi/agent/npm/node_modules/pi-subagents` | all 5 |
 | JetBrainsMono Nerd Font | 3.5.0 | github.com/ryanoasis/nerd-fonts | Linux: `.local/share/fonts/JetBrainsMonoNerdFont`; darwin: `Library/Fonts/JetBrainsMonoNerdFont`; Windows: `AppData/Local/Microsoft/Windows/Fonts/JetBrainsMonoNerdFont` | all 5 |
 
+## GoAkt service source dependency
+
+The sole nested service module under `services/subagents/` uses the managed Go 1.27.0 toolchain and exactly pins `github.com/tochemey/goakt/v4` v4.5.2. Its reproducible schema check uses SHA-256-pinned protoc 33.5 archives, module-locked protoc-gen-go 1.36.12, lockfile-pinned protoc-gen-es 2.11.0, and lockfile-pinned `tsx` to execute the generated descriptor. No service binary, service manager, generator, or runtime compiler dependency is deployed into HOME. The source-managed hosted bridge pins `@bufbuild/protobuf@2.11.0` and exact registry integrity in its local lock; the `subagents` package installs that production dependency without enabling the daemon or hosted execution. See [`subagents.md`](subagents.md).
+
 ## Tmux subagent renderer dependencies
 
-The source-managed extension pins `xstate@5.32.6` and `terminal-kit@3.1.4` with exact registry integrities in both `home/dot_local/share/workstation/versions.json` and the extension `package-lock.json`. The owning workstation package installs production dependencies with `npm ci --omit=dev --ignore-scripts --no-audit --no-fund`; no native module or target-host compiler is permitted. The reviewed feature gate is enabled for dogfooding, but it remains inert until chezmoi apply writes its matching activation attestation and `/reload` completes as a separate step.
+The source-managed extension pins `xstate@5.32.6` and `terminal-kit@3.1.4` with exact registry integrities in both `home/dot_local/share/workstation/versions.json` and the extension `package-lock.json`. The owning workstation package installs production dependencies with `npm ci --omit=dev --ignore-scripts --no-audit --no-fund`; no native module or target-host compiler is permitted. The reviewed feature gate is enabled for clienting, but it remains inert until chezmoi apply writes its matching activation attestation and `/reload` completes as a separate step.
 
 ## Not managed here
 

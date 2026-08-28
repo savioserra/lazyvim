@@ -12,10 +12,10 @@ async function fixture() {
 	const generationRoot = path.join(base, "session", "generations", "generation");
 	await mkdir(generationRoot, { recursive: true, mode: 0o700 });
 	for (const directory of [base, path.join(base, "session"), path.join(base, "session", "generations"), generationRoot]) await (await import("node:fs/promises")).chmod(directory, 0o700);
-	const events: ActorEvent[] = [];
-	const server = new RendererIpcServer(generationRoot, "generation", (event) => events.push(event));
+	const events: ActorEvent[] = []; const observations: Array<{ kind: string }> = [];
+	const server = new RendererIpcServer(generationRoot, "generation", (event) => events.push(event), undefined, (event) => observations.push(event));
 	await server.start(); server.register({ ticketId: "ticket", generation: "generation", nonce: "secret", bindingId: "binding" });
-	return { server, events };
+	return { server, events, observations };
 }
 
 function client(socketPath: string) {
@@ -44,6 +44,12 @@ test("renderer IPC rotates reconnect credentials and permits one active connecti
 	const authenticated = [reconnect, replay].filter((candidate) => candidate.frames.some((frame) => frame.type === "authenticated")); const rejected = [reconnect, replay].filter((candidate) => candidate.frames.some((frame) => frame.type === "fatal"));
 	assert.equal(authenticated.length, 1); assert.equal(rejected.length, 1); assert.notEqual(authenticated[0].frames.find((frame) => frame.type === "authenticated").reconnectNonce, token1); assert.match(rejected[0].frames.at(-1).message, /authentication failed/); await until(() => first.socket.destroyed);
 	reconnect.socket.destroy(); replay.socket.destroy(); await server.stop();
+});
+
+test("renderer IPC routes bounded authentication failures to the production observer without failing the server", async () => {
+	const { server, observations } = await fixture(); const c = client(server.socketPath); await new Promise((resolve) => c.socket.once("connect", resolve));
+	write(c.socket, { version: 1, sequence: 1, type: "authenticate", ticketId: "ticket", generation: "generation", nonce: "wrong" }); await until(() => c.frames.some((frame) => frame.type === "fatal")); assert.equal(observations.at(-1)?.kind, "authentication");
+	const valid = client(server.socketPath); await new Promise((resolve) => valid.socket.once("connect", resolve)); write(valid.socket, { version: 1, sequence: 1, type: "authenticate", ticketId: "ticket", generation: "generation", nonce: "secret" }); await until(() => valid.frames.some((frame) => frame.type === "authenticated")); c.socket.destroy(); valid.socket.destroy(); await server.stop();
 });
 
 test("renderer IPC rejects unconfirmed privileged intents", async () => {

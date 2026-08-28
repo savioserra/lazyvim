@@ -1,4 +1,4 @@
-import { assign, createActor, sendTo, setup, spawnChild, stopChild } from "xstate";
+import { assign, createActor, sendTo, setup, spawnChild, stopChild, type InspectionEvent } from "xstate";
 import type { SubagentsRpcClient } from "../adapters/pi-subagents-rpc.ts";
 import type { ControlOutput } from "../actions/controls.ts";
 import type { Projection } from "../domain/projection.ts";
@@ -58,5 +58,5 @@ export const rootSupervisorMachine = setup({
   },
 });
 
-export function createRootActor(input: RootInput) { return createActor(rootSupervisorMachine, { id: stableSystemId("root", input.sessionId, input.generation), input }); }
+export function createRootActor(input: RootInput, inspect?: (event: InspectionEvent) => void) { return createActor(rootSupervisorMachine, { id: stableSystemId("root", input.sessionId, input.generation), input, ...(inspect ? { inspect } : {}) }); }
 export { createAgentMirrorActor } from "./agent-mirror.ts";

@@ -53,6 +53,8 @@ export async function secureReapSocket(socketPath: string): Promise<void> {
   await unlink(socketPath);
 }
 
+export interface IpcObservation { kind: "parse" | "authentication" | "rate-limit" | "timeout" | "socket"; error: Error; bindingId?: string }
+
 export class RendererIpcServer {
   readonly socketPath: string;
   private server?: Server;
@@ -65,12 +67,20 @@ export class RendererIpcServer {
   private readonly generation: string;
   private readonly emitEvent: (event: ActorEvent) => void;
   private readonly reportFailure: (error: Error) => void;
+  private readonly observeFailure: (event: IpcObservation) => void;
+  private observationTimes: number[] = [];
+  private stopping?: Promise<void>;
 
-  constructor(generationRoot: string, generation: string, emit: (event: ActorEvent) => void, reportFailure: (error: Error) => void = () => {}) {
+  constructor(generationRoot: string, generation: string, emit: (event: ActorEvent) => void, reportFailure: (error: Error) => void = () => {}, observeFailure: (event: IpcObservation) => void = () => {}) {
     this.socketPath = path.join(generationRoot, "sockets", "renderer.sock");
     this.generation = generation;
     this.emitEvent = emit;
     this.reportFailure = reportFailure;
+    this.observeFailure = observeFailure;
+  }
+
+  private observe(event: IpcObservation): void {
+    const now = Date.now(); this.observationTimes = this.observationTimes.filter((at) => now - at < 1000); if (this.observationTimes.length >= 10) return; this.observationTimes.push(now); this.observeFailure(event);
   }
 
   register(ticket: RendererTicketRegistration): void {
@@ -156,10 +166,10 @@ export class RendererIpcServer {
           const intent = assertRendererIntent(frame.intent);
           assertActorEvent({ type: "RENDER.INPUT", connectionId: connection.id, intent });
           this.emitEvent({ type: "RENDER.INPUT", connectionId: connection.id, intent });
-        } catch (error) { fail(error instanceof Error ? error.message : String(error)); }
+        } catch (error) { const failure = error instanceof Error ? error : new Error(String(error)); const kind = /authenticate|authentication/.test(failure.message) ? "authentication" : /rate exceeded/.test(failure.message) ? "rate-limit" : "parse"; this.observe({ kind, error: failure, ...(connection ? { bindingId: connection.bindingId } : {}) }); fail(failure.message); }
       }
     });
-    socket.on("timeout", () => socket.destroy(new Error("renderer IPC timeout")));
+    socket.on("timeout", () => { this.observe({ kind: "timeout", error: new Error("renderer IPC timeout"), ...(connection ? { bindingId: connection.bindingId } : {}) }); socket.destroy(new Error("renderer IPC timeout")); });
     socket.on("close", () => {
       if (!connection) return;
       this.connections.delete(connection.id);
@@ -168,7 +178,7 @@ export class RendererIpcServer {
       if (this.activeBindings.get(connection.bindingId) === connection.id) this.activeBindings.delete(connection.bindingId);
       this.emitEvent({ type: "RENDER.DISCONNECTED", connectionId: connection.id, bindingId: connection.bindingId, reason: "renderer socket closed" });
     });
-    socket.on("error", () => {});
+    socket.on("error", (error) => this.observe({ kind: "socket", error, ...(connection ? { bindingId: connection.bindingId } : {}) }));
   }
 
   bindingFor(connectionId: string): string | undefined { return this.connections.get(connectionId)?.bindingId; }
@@ -187,10 +197,13 @@ export class RendererIpcServer {
   }
 
   async stop(): Promise<void> {
-    for (const connection of this.connections.values()) connection.socket.destroy();
-    this.connections.clear(); this.activeBindings.clear(); this.tickets.clear(); this.sessions.clear(); this.latest.clear();
-    if (this.server) await new Promise<void>((resolve) => this.server!.close(() => resolve()));
-    this.server = undefined;
-    await secureReapSocket(this.socketPath);
+    if (this.stopping) return this.stopping;
+    this.stopping = (async () => {
+      for (const connection of this.connections.values()) connection.socket.destroy();
+      this.connections.clear(); this.activeBindings.clear(); this.tickets.clear(); this.sessions.clear(); this.latest.clear();
+      const server = this.server; this.server = undefined; if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
+      await secureReapSocket(this.socketPath);
+    })();
+    try { await this.stopping; } finally { this.stopping = undefined; }
   }
 }

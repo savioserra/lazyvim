@@ -49,11 +49,11 @@ dot_local/bin/symlink_nvim.tmpl -> ~/.local/bin/nvim
 
 | Template value | Values used |
 | --- | --- |
-| `.chezmoi.os` | `linux`, `darwin`, `windows` |
+| `.chezmoi.os` | Supported: `linux`, `darwin`; WSL renders as Linux |
 | `.chezmoi.arch` | `amd64`, `arm64` |
 | `.chezmoi.destDir` | Target home |
 
-WSL uses the Linux branch.
+WSL uses the Linux branch. Native Windows is unsupported; use WSL. See the retained removal inventory in [`subagents.md`](subagents.md).
 
 ## Ignore rules
 
@@ -74,8 +74,8 @@ ignore: .chezmoiscripts/20-unix-apply.sh
 
 | Host | Excluded targets |
 | --- | --- |
-| Windows | tmux config, Unix shell config, Unix symlinks, tmux-subagents launcher/extension/skill/application, Unix apply script |
-| Linux/macOS | Windows apply script |
+| Linux | macOS LaunchAgent asset |
+| macOS | Linux systemd user asset |
 
 ## External types
 
@@ -100,7 +100,6 @@ Inventory: [`tools.md`](tools.md).
 | Stripped name | Hosts | Ordered commands |
 | --- | --- | --- |
 | `20-unix-apply.sh` | Linux/macOS | Workstation CLI `setup`; then `sync` |
-| `20-windows-apply.cmd` | Windows | Workstation CLI `setup`; then `sync` |
 
 Script requirements:
 

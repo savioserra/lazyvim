@@ -34,7 +34,7 @@ interface PendingTopologyRequest {
 /** Owns production IPC, topology, projection, and every renderer pane lifecycle. */
 export function createProductionSupervisorActor(effects: ProductionEffects) {
   let supervisor: ReturnType<typeof createSupervisorActor>;
-  let stopped = false;
+  let stopped = false; let ipcCleanup = Promise.resolve(); const ipcStopFailures: Error[] = [];
   const pendingTopology = new Map<string, PendingTopologyRequest>();
   const topologyTimeoutMs = effects.topologyTimeoutMs ?? Math.max(10_000, effects.intervalMs * 4);
   const errorOf = (value: unknown) => value instanceof Error ? value : new Error(String(value));
@@ -50,9 +50,12 @@ export function createProductionSupervisorActor(effects: ProductionEffects) {
   };
   const fail = (childId: string, error: unknown) => supervisor.send({ type: "CHILD.FAILED", childId, reason: errorOf(error).message, abnormal: true });
   const ipcLogic = fromCallback(() => {
-    let childStopped = false;
-    void effects.startIpc().catch((error) => { if (!childStopped) fail("renderer-ipc", error); });
-    return () => { childStopped = true; void effects.stopIpc(); };
+    let childStopped = false; const started = ipcCleanup.then(() => effects.startIpc());
+    void started.catch((error) => { if (!childStopped) fail("renderer-ipc", error); });
+    return () => {
+      childStopped = true;
+      ipcCleanup = started.catch(() => undefined).then(() => effects.stopIpc()).catch((error) => { ipcStopFailures.push(errorOf(error)); });
+    };
   });
   const reconciliationLogic = fromCallback<ProductionEffectEvent>(({ receive }) => {
     let childStopped = false; let pending = Promise.resolve<unknown>(undefined);
@@ -134,9 +137,10 @@ export function createProductionSupervisorActor(effects: ProductionEffects) {
     removeRenderer(childId: string): void { supervisor.send({ type: "CHILD.REMOVE", childId }); },
     rendererState(childId: string) { return supervisor.childState(childId); },
     childState(childId: string) { return supervisor.childState(childId); },
-    stop() {
+    async stop(): Promise<void> {
       stopped = true; rejectTopologyPending(new Error("production supervisor stopped"));
-      supervisor.send({ type: "SUPERVISOR.STOP" }); supervisor.stop();
+      supervisor.send({ type: "SUPERVISOR.STOP" }); supervisor.stop(); await ipcCleanup;
+      if (ipcStopFailures.length) throw new AggregateError(ipcStopFailures.splice(0), "production IPC cleanup failed");
     },
     getSnapshot: () => supervisor.getSnapshot(),
   };

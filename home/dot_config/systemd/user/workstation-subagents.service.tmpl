@@ -1,0 +1,22 @@
+[Unit]
+Description=Workstation GoAkt subagents daemon
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=60s
+StartLimitBurst=5
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/workstation-subagents --config %h/.config/workstation/subagents/config.toml --socket %t/workstation/subagents/control.sock
+Restart=on-failure
+RestartSec=5s
+UMask=0077
+Environment=HOME=%h
+Environment=XDG_CONFIG_HOME=%h/.config
+Environment=XDG_STATE_HOME=%h/.local/state
+Environment=XDG_RUNTIME_DIR=%t
+NoNewPrivileges=true
+ProtectSystem=strict
+
+[Install]
+WantedBy=default.target

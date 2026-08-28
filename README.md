@@ -1,7 +1,7 @@
 # LazyVim workstation
 
-Chezmoi source state for a pinned Neovim and tmux environment on Linux, macOS,
-and Windows. Host lifecycle behavior is organized as a workstation package monorepo;
+Chezmoi source state for a pinned Neovim and tmux environment on Linux,
+WSL-as-Linux, and macOS. Native Windows is unsupported. Host lifecycle behavior is organized as a workstation package monorepo;
 Neovim is one package and remains the temporary Phase 1 Lua launcher.
 
 ## Support
@@ -10,7 +10,6 @@ Neovim is one package and remains the temporary Phase 1 Lua launcher.
 | --- | --- | --- |
 | Linux | x86_64 | WSL is Linux |
 | macOS | arm64, x86_64 | tmux and Git required |
-| Windows 10/11 | arm64, x86_64 | tmux excluded |
 
 Unix prerequisites:
 
@@ -32,12 +31,6 @@ Required tmux version: 3.2+. Required Bash version for tmux2k: 5.2+.
 sh -c "$(curl -fsLS https://get.chezmoi.io)" -- \
   -b "$HOME/.local/bin" -t v2.72.0 -- \
   init --apply savioserra/lazyvim
-```
-
-```powershell
-# Windows
-choco install chezmoi --version=2.72.0 -y
-chezmoi init --apply savioserra/lazyvim
 ```
 
 `init --apply` installs host tools, runs post-apply setup, and restores Neovim
@@ -84,7 +77,8 @@ No repository-level sync wrapper is required.
 | Global Pi skills | `home/dot_pi/private_agent/skills/`; secret operations require explicit `/skill:secrets` invocation |
 | Registry Pi extension packages | Exact versions and integrity in `versions.json`; lifecycle under `packages/pi-subagents/` |
 | Source-managed Pi extensions | `home/dot_pi/private_agent/extensions/`; owning workstation package verifies discovery and compatibility |
-| Tmux subagent TUI | XState actor system plus exact Terminal Kit lock; disabled until reviewed apply/reload |
+| Tmux subagent TUI | Existing authoritative `pi-subagents`/XState observer plus separately gated hosted-owned tmux runtime |
+| GoAkt subagents service | Nested `services/subagents/` module, inert hosted bridge, and private config with service/hosted execution disabled; no service is installed or started |
 | Neovim plugins | `home/dot_config/nvim/lazy-lock.json` |
 | Mason packages | `home/dot_config/nvim/mason-lock.json` |
 | Tree-sitter parsers | `lua/plugins/treesitter.lua` and locked nvim-treesitter commit |
@@ -126,8 +120,8 @@ See `AGENTS.md` for implementation constraints and required checks.
     ├── dot_config/nvim/              Neovim configuration and locks
     ├── dot_config/tmux/              tmux theme
     ├── dot_local/share/workstation/  lifecycle package monorepo and tmux actor capability
-    ├── dot_pi/agent/extensions/      source-managed Pi extensions
-    ├── dot_pi/agent/skills/          global Pi skills
+    ├── dot_pi/private_agent/extensions/      source-managed Pi extensions
+    ├── dot_pi/private_agent/skills/          global Pi skills
     └── dot_tmux.conf                 tmux configuration
 ```
 
@@ -146,7 +140,7 @@ See `AGENTS.md` for implementation constraints and required checks.
 
 ## CI and release
 
-- `.github/workflows/ci.yml`: Linux, macOS arm64/x86_64, Windows.
-- `.github/scripts/test-apply.ps1`: scratch-home apply, lifecycle scripts, format, tests, verify.
+- `.github/workflows/ci.yml`: supported Linux/macOS jobs; WSL follows Linux.
+- `.github/scripts/test-apply.sh`: extracted Linux/macOS scratch-apply validation. The retired PowerShell/native-Windows lifecycle is not supported.
 - `.github/workflows/release.yml`: `vMAJOR.MINOR.PATCH` source archives and SHA-256 sums.
 - `home/dot_pi/private_agent/extensions/tmux-subagents/`: supervised XState actors, adapters, authenticated IPC, and the separate Terminal Kit renderer; enablement remains an explicit apply/reload gate.

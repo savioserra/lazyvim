@@ -3,7 +3,8 @@
 ## Goal
 
 Maintain a reproducible chezmoi source state for Neovim and tmux on Linux,
-macOS, and Windows.
+WSL-as-Linux, and macOS. Native Windows is unsupported; retained Windows files
+are a milestone-scoped removal inventory until their useful behavior is extracted.
 
 ## Read first
 
@@ -33,6 +34,9 @@ Use the nearest `AGENTS.md` for scoped rules.
 - Keep `pi-subagents` authoritative for managed runs; tmux observer integrations may consume only documented RPC/events and bounded projections.
 - Adopt existing tmux panes only through cooperative foreground claims; never automate `send-keys` or `respawn-pane` into user panes.
 - Do not add Node as a bootstrap dependency; pinned Neovim is the lifecycle runtime until the standalone workstation runtime replaces it.
+- The sole permitted Go service module is `services/subagents/`; keep its daemon source, direct GoAkt actors, canonical protobuf API, generated boundary, and tests nested there.
+- Keep subagent configuration and domain names transport/vendor neutral. DNS supplies addresses only, never logical or mTLS identity.
+- Global reusable AgentActors outlive ephemeral Pi sessions. Session cleanup may remove only session credentials, subscriptions, and views.
 
 ## Required checks
 
@@ -44,15 +48,11 @@ npm ci --omit=dev --ignore-scripts --prefix home/dot_pi/private_agent/extensions
 find tests/tmux-subagents -name '*.test.ts' -print0 | xargs -0 node --test
 stylua --check --config-path .stylua.toml home/dot_local/share/workstation home/dot_config/nvim tests
 git diff --check
+(cd services/subagents && npm ci --ignore-scripts --no-audit --no-fund && ./tools/codegen.sh verify && go test -race ./... && go vet ./... && npm test)
 chezmoi --source "$PWD" --destination "$(mktemp -d)" apply --dry-run
 ```
 
-On Windows, use the managed StyLua command under
-`%LOCALAPPDATA%\nvim-data\mason\bin\stylua.cmd` when `stylua` is not on `PATH`.
-
-Full platform verification is performed by `.github/scripts/test-apply.ps1`.
-It calls chezmoi against a scratch home, lets post-apply scripts run setup/sync,
-formats, runs runtime tests, and executes `run.lua verify`.
+Full supported-platform verification runs on Linux/WSL and macOS. The Unix scratch-apply harness contains the extracted supported-host checks; the native-Windows PowerShell lifecycle has been retired.
 
 ## Change rules
 
@@ -72,7 +72,7 @@ formats, runs runtime tests, and executes `run.lua verify`.
 
 ## Do not
 
-- Recreate the retired Go CLI, `go.mod`, `internal/`, `cmd/`, or a Makefile.
+- Recreate the retired root Go CLI, root `go.mod`, root `internal/`, root `cmd/`, or any Makefile. The narrow `services/subagents/` module exception must not become a repository CLI.
 - Install managed tools with `sudo` or an OS package manager.
 - Add unpinned downloads.
 - Duplicate LazyVim language imports outside `languages/profile.lua`.

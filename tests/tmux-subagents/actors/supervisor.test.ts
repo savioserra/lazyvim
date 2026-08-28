@@ -50,8 +50,13 @@ test("restart intensity opens the local circuit and durable snapshot excludes ac
 test("production supervisor owns IPC, topology reconciliation, and projection publication effects", async () => {
   const effects: string[] = []; const receipts: FailureReceipt[] = [];
   const actor = createProductionSupervisorActor({ intervalMs: 5, startIpc: async () => { effects.push("ipc:start"); }, stopIpc: async () => { effects.push("ipc:stop"); }, reconcile: async () => { effects.push("reconcile"); }, publishProjection: async () => { effects.push("publish"); }, receipt: (receipt) => receipts.push(receipt) });
-  actor.start(); actor.send({ type: "PROJECTION.PUBLISH", projection: {} as any }); await actor.executeTopology(async () => { effects.push("topology:open"); return "pane"; }); await until(() => effects.includes("ipc:start") && effects.includes("reconcile") && effects.includes("publish")); actor.stop(); await until(() => effects.includes("ipc:stop"));
-  assert.ok(effects.includes("topology:open")); assert.deepEqual(receipts, []);
+  actor.start(); actor.send({ type: "PROJECTION.PUBLISH", projection: {} as any }); await actor.executeTopology(async () => { effects.push("topology:open"); return "pane"; }); await until(() => effects.includes("ipc:start") && effects.includes("reconcile") && effects.includes("publish")); await actor.stop();
+  assert.ok(effects.includes("ipc:stop")); assert.ok(effects.includes("topology:open")); assert.deepEqual(receipts, []);
+});
+
+test("production supervisor awaits and reports IPC stop failure", async () => {
+  let started = false; const actor = createProductionSupervisorActor({ intervalMs: 10_000, startIpc: async () => { started = true; }, stopIpc: async () => { throw new Error("IPC stop fault"); }, reconcile: async () => {}, publishProjection: async () => {} });
+  actor.start(); await until(() => started); await assert.rejects(actor.stop(), /production IPC cleanup failed/);
 });
 
 function production(topologyTimeoutMs = 250) {

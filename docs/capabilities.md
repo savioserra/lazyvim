@@ -58,6 +58,7 @@ foundation
 │       └── pi-skills
 │           └── pi-subagents
 ├── go
+│   └── subagents [also requires pi; inactive daemon/hosted config and hosted bridge]
 ├── secrets
 ├── nvim [package factory adds profile prerequisites]
 └── tmux [linux,darwin]
@@ -72,11 +73,22 @@ foundation
 | `pi` | Exact global npm package | — | npm package and CLI version | All |
 | `pi-skills` | — | — | Managed skill files and Pi discovery | All |
 | `pi-subagents` | Exact Pi package and role skill policy | — | Lock integrity, extension tools, skill, role overrides | All |
-| `go` | — | — | Go version | All |
+| `go` | — | — | Go version | Linux/WSL/macOS policy; legacy Windows removal inventory remains |
+| `subagents` | Exact hosted-bridge protobuf runtime | — | Owner-private inactive config, inert bridge discovery, lock integrity | Linux/WSL/macOS |
 | `secrets` | — | — | Managed 1Password CLI version; never account or vault state | All; Windows ARM64 uses x64 emulation |
 | `nvim` | — | Locks and parsers | Startup, locks, profile behavior | All |
 | `tmux` | Plugin checkout | — | Commits, server, theme | Linux/macOS |
 | `pi-tmux-subagents` | Locked XState/Terminal Kit install | — | Supervised actor extension, companion skill, exact RPC/dependency gate, launcher | Linux/macOS |
+
+## GoAkt subagents boundary
+
+`packages/subagents/` owns the safely inactive deployed configuration and the source-managed hosted bridge dependency. Setup installs only exact `@bufbuild/protobuf@2.11.0` from the bridge lock; it does not start a daemon or runtime. The daemon source stays outside HOME under the sole nested module `services/subagents/`. The credential-free managed TOML requires both service and hosted Pi disabled and renders as `~/.config/workstation/subagents/config.toml` under 0700 directories with mode 0600.
+
+The long-lived service has one global `ServiceGuardian`. Its `AgentRegistryActor` owns stable reusable AgentActors independently of the sibling `SessionRegistryActor`. Client sessions are ephemeral access/subscription contexts; cleanup leaves AgentActors and hosted runtimes intact. Explicit hosted-owned agents own one `HostedPiRuntimeActor` child with asynchronous typed effects, lifecycle states, and DeathWatch. The concrete runtime records and revalidates exact tmux session/window/pane/PID/start-token/TTY identity and writes bounded atomic owner-private XDG operational records. Startup securely adopts only exact live owned tmux/Pi identity, restores fenced mutation/delivery state, and fails closed for foreign or indeterminate records. Existing observed-upstream agents and XState authority remain unchanged.
+
+The application protocol is bounded, sequenced protobuf-framed UDS traffic for local clients and the hosted bridge and remains separate from optional GoAkt TCP remoting. Remoting configuration validates vendor-neutral bind/peer addresses, logical and mTLS identities, address families, CIDRs, and an uninterpreted SSH target; DNS is never identity. GoAkt v4.5.2 native TLS does not expose the accepted-connection boundary needed to bind inbound CIDR policy to authenticated certificate identity. Enabled remoting therefore fails closed after validation, `remote.NewConfig` is not constructed, and production contains no `actor.WithRemote`.
+
+See [`subagents.md`](subagents.md) for paths, platform inventory, fixtures, and commands.
 
 ## Validation
 
@@ -118,7 +130,7 @@ The `packages.nvim` factory loads and validates the sole language profile source
 
 ## Pi resources
 
-`pi-skills` verifies managed files under `home/dot_pi/private_agent/skills/` and Pi discovery. `pi-subagents` owns its exact package installation, lock integrity, extension discovery, bundled skill, and `lazyvim` role-skill assignment. `pi-tmux-subagents` owns the source-managed XState actor extension, exact local npm lock, Terminal Kit renderer process, companion skill, launcher, and Pi discovery checks. Package-specific JavaScript verifiers remain inside their owning package directories.
+`pi-skills` verifies managed files under `home/dot_pi/private_agent/skills/` and Pi discovery. `pi-subagents` owns its exact package installation, lock integrity, extension discovery, bundled skill, and `lazyvim` role-skill assignment. `subagents` owns the globally discoverable but environment-gated `hosted-pi-bridge`, its generated protobuf copy, exact dependency lock, and inert discovery check. `pi-tmux-subagents` continues to own the existing source-managed XState observer and renderer. Package-specific JavaScript verifiers remain inside their owning package directories.
 
 ## Tmux subagent observer
 
@@ -126,7 +138,7 @@ The `packages.nvim` factory loads and validates the sole language profile source
 
 Prepared panes cooperate by running the launcher in the foreground with the exact attested Node and renderer paths. Every owner-only generation directory contains a one-use ticket bound to the Pi session/generation, one visible managed run and optional child, rotating reconnect credential, expiry, generation-private socket, and bounded projection. Created-pane tickets additionally carry the exact expected tmux socket, stable pane ID, pane PID/TTY, and session ID; adopted-pane identity is recorded only from its cooperative claim. Symlinks, foreign ownership, path escapes, permission widening, duplicate claims, and stale generations fail closed. Focus and kill use one conditional tmux server command queue over the full tuple. Adopted panes are never sent keys, respawned, or killed. Closing or losing any pane affects the view only.
 
-The reviewed activation gate is enabled for dogfooding, but production still starts only after chezmoi writes the canonical config and its matching apply-produced activation digest. Setup installs `xstate@5.32.6` and `terminal-kit@3.1.4` from the exact local package lock using `npm ci --omit=dev --ignore-scripts`; verification checks lock integrity, installed manifests, regular ownership, and absence of native `.node` modules. The root actor owns authority refresh/control and run mirrors; the production-effects supervisor owns renderer IPC, serialized topology operations, projection publication, and one exact pane/authenticated-IPC lifecycle child per view with OTP-style restart intensity, backoff, and circuit-open receipts. Adopted view children are temporary observers and can never recreate or mutate their pane. Only documented `pi-subagents` RPC can change authoritative state. The standalone renderer uses rotating authentication, one active connection per binding, aggregate rate limits, and bounded sequenced NDJSON. Apply and `/reload` remain separate boundaries; fail-closed smoke proves acknowledged isolated steer, Terminal Kit rendering, real renderer-process restart, stale-generation rejection, created-pane absence after detach, exact foreign-pane tuple preservation, and unchanged real managed-run state.
+The reviewed activation gate is enabled for clienting, but production still starts only after chezmoi writes the canonical config and its matching apply-produced activation digest. Setup installs `xstate@5.32.6` and `terminal-kit@3.1.4` from the exact local package lock using `npm ci --omit=dev --ignore-scripts`; verification checks lock integrity, installed manifests, regular ownership, and absence of native `.node` modules. The root actor owns authority refresh/control and run mirrors; the production-effects supervisor owns renderer IPC, serialized topology operations, projection publication, and one exact pane/authenticated-IPC lifecycle child per view with OTP-style restart intensity, backoff, and circuit-open receipts. Adopted view children are temporary observers and can never recreate or mutate their pane. Only documented `pi-subagents` RPC can change authoritative state. The standalone renderer uses rotating authentication, one active connection per binding, aggregate rate limits, and bounded sequenced NDJSON. A supervised diagnostics actor durably records sanitized command receipts, smoke phases, RPC results, renderer/IPC/tmux exits, topology failures, generation lifecycle, and OTP receipts in an owner-private bounded/rotated journal; `/tmux-subagents diagnostics [count]` retrieves at most 50 records and never exposes prompts, output, control text, credentials, nonces, environment values, or arbitrary paths. Apply and `/reload` remain separate boundaries; fail-closed smoke proves acknowledged isolated steer, Terminal Kit rendering, real renderer-process restart, stale-generation rejection, created-pane absence after detach, exact foreign-pane tuple preservation, and unchanged real managed-run state.
 
 ## Package-local backend rule
 

@@ -1,6 +1,6 @@
 ---
 name: tmux-subagents
-description: Opens and controls supervised XState views for managed pi-subagents runs in tmux. Use for automatic windows, prepared-pane attachment, renderer controls, doctor, smoke, or rollback.
+description: Opens, diagnoses, and controls supervised XState views for managed pi-subagents runs in tmux. Use for automatic windows, prepared-pane attachment, renderer controls, diagnostics, doctor, smoke, or rollback.
 ---
 
 # Supervise managed subagent views in tmux
@@ -12,6 +12,11 @@ description: Opens and controls supervised XState views for managed pi-subagents
 1. Run `/tmux-subagents doctor`.
 2. Stop if exact `pi-subagents` RPC compatibility, `xstate@5.32.6`, or `terminal-kit@3.1.4` attestation fails.
 3. Use a current-session run ID. Do not copy transcript text merely to populate a pane.
+4. On any failure, copy the surfaced receipt ID and run `/tmux-subagents diagnostics 20`.
+
+## Diagnostics
+
+`/tmux-subagents diagnostics [count]` reads at most 50 recent sanitized records through the supervised observer actor. It reports generation, health, command receipts, exact smoke phase, RPC acknowledgement/failure, renderer/IPC/tmux exits, topology failures, and OTP restart/circuit receipts. Journals are owner-private, bounded, rotated NDJSON and never contain prompts, model output, control text, credentials, nonces, environment values, or arbitrary paths.
 
 ## Automatic owned topology
 
@@ -37,11 +42,11 @@ All controls follow `Terminal Kit process → authenticated sequenced IPC → XS
 
 ## Apply and reload boundary
 
-The reviewed extension gate is enabled for dogfooding but remains inert until its managed activation digest exists. After tests and independent review:
+The reviewed extension gate is enabled for validation but remains inert until its managed activation digest exists. After tests and independent review:
 
 1. Run `chezmoi apply`; never edit deployed targets directly.
 2. Run `/tmux-subagents reload` and let it return.
-3. Start one trivial current-session async run and wait for a terminal receipt.
+3. Start one trivial current-session async run and run smoke while the run remains visible in the authoritative RPC snapshot; a terminal run is preferred when retained.
 4. Run `/tmux-subagents smoke` from the new generation.
 5. Confirm exact dependency/RPC attestation, authenticated one-use IPC, Terminal Kit rendering, owned topology, and unchanged managed state.
 

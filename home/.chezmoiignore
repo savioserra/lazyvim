@@ -2,11 +2,17 @@
 AGENTS.md
 **/AGENTS.md
 .pi/agent/extensions/tmux-subagents/node_modules/**
+.pi/agent/extensions/actor-client/node_modules/**
+.pi/agent/extensions/hosted-pi-bridge/node_modules/**
 
 {{- /* Script paths below use their stripped target name (no run_/before_/
 after_/onchange_ attributes or .tmpl suffix) -- that's what .chezmoiignore
 actually matches against, not the source filename. */ -}}
-{{- if eq .chezmoi.os "windows" }}
+{{- if eq .chezmoi.os "linux" }}
+Library/LaunchAgents/com.workstation.subagents.plist
+{{- else if eq .chezmoi.os "darwin" }}
+.config/systemd/user/workstation-subagents.service
+{{- else if eq .chezmoi.os "windows" }}
 .tmux.conf
 .config/tmux/**
 .local/bin/nvim
@@ -19,6 +25,4 @@ actually matches against, not the source filename. */ -}}
 .zshrc
 .config/shell/nvm.sh
 .chezmoiscripts/20-unix-apply.sh
-{{- else }}
-.chezmoiscripts/20-windows-apply.cmd
 {{- end }}

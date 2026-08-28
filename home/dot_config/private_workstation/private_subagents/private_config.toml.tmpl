@@ -1,0 +1,38 @@
+# Credentials and private keys never belong in this repository-managed file.
+schema_version = 1
+
+[service]
+# The milestone-1 spike is safely inactive after apply. Running it requires an
+# explicit local override and does not install or start a service manager unit.
+enabled = false
+
+[hosted_pi]
+# Hosted execution and its authenticated admin/bootstrap API remain disabled.
+enabled = false
+tmux_binary = ""
+pi_binary = ""
+bridge_extension = ""
+tmux_server_name = ""
+tmux_config = ""
+state_directory = ""
+pi_session_directory = ""
+credential_directory = ""
+admin_credential_file = ""
+default_project_directory = ""
+trust_project = false
+
+[remoting]
+# GoAkt v4.5.2 cannot enforce the required inbound CIDR-to-mTLS identity
+# binding. Any enabled value fails daemon startup; production installs no
+# remoting transport.
+enabled = false
+node_identity = ""
+bind_host = ""
+port = 0
+allowed_cidrs = []
+address_families = []
+mtls_identity = ""
+ca_file = ""
+cert_file = ""
+key_file = ""
+peers = []

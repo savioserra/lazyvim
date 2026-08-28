@@ -36,6 +36,8 @@ Package factories must be side-effect free when loaded. Do not use filesystem au
 
 Pi observer packages must keep `pi-subagents` authoritative. A terminal renderer receives only bounded sanitized projections and sends typed intents through authenticated IPC; it must never directly own, stop, resume, or recover a managed run. Renderer dependencies require an exact local lock, ignored lifecycle scripts, no native modules, and no target-host compiler.
 
+`packages/subagents/` owns the inactive GoAkt service configuration boundary. Global AgentActors are independent of ephemeral Pi session actors: session shutdown removes access credentials, subscriptions, and views only, never a reusable AgentActor. The phase-1 `AuthorityBinding` remains a session-scoped observation of authoritative `pi-subagents`, not cross-session mutation authority.
+
 ## Lifecycle meanings
 
 | Lifecycle | Scope |
