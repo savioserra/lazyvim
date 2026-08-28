@@ -83,6 +83,19 @@ func (a *AgentRegistryActor) Receive(ctx *actor.ReceiveContext) {
 		delete(a.compensated, message.OperationID)
 	case *application.UnregisterAgent:
 		a.unregister(ctx, message)
+	case *application.ListPublicHostedAgents:
+		limit := int(message.Limit)
+		if limit <= 0 || limit > 256 {
+			limit = 256
+		}
+		agents := make([]application.PublicHostedAgent, 0, min(len(a.agents), limit))
+		for _, item := range a.agents {
+			if item.reference.AuthorityBinding.Kind == application.AuthorityBindingHostedOwned && len(agents) < limit {
+				agents = append(agents, application.PublicHostedAgent{AgentID: item.reference.AgentID, ActorName: item.actorName, Reference: item.reference})
+			}
+		}
+		slices.SortFunc(agents, func(left, right application.PublicHostedAgent) int { return cmpString(left.AgentID, right.AgentID) })
+		ctx.Response(&application.ListPublicHostedAgentsResult{Agents: agents})
 	case *application.ResolveAgentControl:
 		item, exists := a.agents[message.AgentID]
 		if !exists {

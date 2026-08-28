@@ -322,6 +322,7 @@ func startWithListener(ctx context.Context, listener net.Listener, options ...an
 		if _, err := guardian.SpawnChild(ctx, hostedPlacementAuthorityName, &hostedPlacementAuthority{service: service}, actor.WithMailbox(actor.NewNonBlockingBoundedMailbox(64)), actor.WithPassivationStrategy(passivation.NewLongLivedStrategy())); err != nil {
 			return fail(err)
 		}
+		go service.reconcilePublicHostedPeers(context.Background())
 	}
 	bridgeWatcher, err := guardian.SpawnChild(ctx, "bridge-session-watcher", &bridgeSessionWatcher{service: service}, actor.WithMailbox(actor.NewNonBlockingBoundedMailbox(256)), actor.WithPassivationStrategy(passivation.NewLongLivedStrategy()))
 	if err != nil {
@@ -1360,6 +1361,7 @@ func (s *Service) dispatch(request *subagentsv1.Envelope) *subagentsv1.Envelope 
 			agents = append(agents, protoPublicAgentReference(item))
 		}
 		if s.publicDirectory != nil {
+			s.reconcilePublicHostedPeers(ctx)
 			remote, err := s.system.NoSender().Ask(ctx, s.publicDirectory, message, requestTimeout)
 			if err == nil {
 				if publicList, ok := remote.(*application.AgentList); ok {
@@ -1381,6 +1383,7 @@ func (s *Service) dispatch(request *subagentsv1.Envelope) *subagentsv1.Envelope 
 			return internalError(response)
 		}
 		if !resolved.Found && s.publicDirectory != nil {
+			s.reconcilePublicHostedPeers(ctx)
 			remote, err := s.system.NoSender().Ask(ctx, s.publicDirectory, &application.LookupPublicAgent{SessionID: request.SessionId, GenerationID: request.GenerationId, Caller: request.CallerIdentity, Credential: request.SessionCredential, AgentID: payload.ResolveAgentRequest.AgentId}, requestTimeout)
 			if err == nil {
 				if found, ok := remote.(*application.PublicAgentLookupResult); ok && found.Found {

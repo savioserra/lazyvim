@@ -417,7 +417,8 @@ type PublicAgentAsk struct {
 	Payload  []byte
 }
 type RemoteHostedPlacement struct {
-	OperationID                                  string
+	OperationID, DedupeID                        string
+	DeadlineUnixMillis                           int64
 	AgentID, ProjectDirectory, DisplayName, Role string
 	TrustProject                                 bool
 }
@@ -433,6 +434,18 @@ type RemoteAttachAgent struct {
 	RequestedCapabilities                       []string
 	IssuedHandle                                string
 }
+type ListPublicHostedAgents struct {
+	Limit uint32
+}
+type ListPublicHostedAgentsResult struct {
+	Agents []PublicHostedAgent
+	Reason string
+}
+type PublicHostedAgent struct {
+	AgentID, ActorName string
+	Reference          AgentReference
+}
+
 type RemoteBridgeIntent struct {
 	SessionID, GenerationID, Principal, Handle, SourceAgentID, TargetAgentID, RequestID, RequiredCapability, DedupeID, ChainID string
 	Fence, SourceMutationSequence                                                                                              uint64
