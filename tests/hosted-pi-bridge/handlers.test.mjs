@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { buildActorControl, buildActorMessage, buildDeliveryAck, communicationKey, communicationLine, CommunicationTimeline, completeHostedEnvironment, ExactMutationSequencer, PromptTaskCoordinator, deliveryAction, destroyOnFramingFailure, drainPages, executeTypedDelivery, invokeTypedDeliveryForAck, parseTargetMessage, registerHostedHandlers, requireExplicitModelTarget } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/handlers.ts";
-import { incomingNote, incomingRequestText, outgoingExchange, renderCommunicationCard, compactToolCall, compactToolResult, modelResultContent } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/communication-ui.ts";
+import { incomingNote, incomingRequestText, outgoingExchange, renderCommunicationCard, renderToolResult, compactToolCall, compactToolResult, modelResultContent } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/communication-ui.ts";
 import { actorMessageModelResult, connectBridgeWithRetry } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/index.ts";
 
 const complete = { WS_SUBAGENTS_ENDPOINT: "ws://127.0.0.1:17213/actors", WS_SUBAGENTS_CREDENTIAL_FILE: "/state/credential", WS_SUBAGENTS_SESSION_ID: "session", WS_SUBAGENTS_GENERATION_ID: "generation", WS_SUBAGENTS_CALLER: "hosted:agent", WS_SUBAGENTS_AGENT_ID: "agent", WS_SUBAGENTS_RUNTIME_ID: "runtime", WS_SUBAGENTS_INCARNATION: "1" };
@@ -199,6 +199,23 @@ test("actor tool rendering is compact and does not expose raw protocol fields", 
   assert.equal(compactToolCall("actor_ask", { target: "beta", message: "Reply exactly BODY_ASK_CONTENT_OK" }), "Ask beta: Reply exactly BODY_ASK_CONTENT_OK");
   assert.equal(compactToolResult("actor_ask", { answer: "BODY_ASK_CONTENT_OK", sessionId: "raw-session", handle: "raw-handle" }), "Reply: BODY_ASK_CONTENT_OK");
   assert.doesNotMatch(compactToolResult("actor_status", { displayName: "Beta", role: "CODE REVIEWER", state: 3, runtimeId: "raw-runtime", fence: 1n }), /runtime|fence|raw/i);
+});
+
+test("actor model results include complete bounded answers while UI stays compact", () => {
+  const longAnswer = `first line\n${"x".repeat(700)}\nlast line`;
+  const details = { lifecycleId: "life", terminal: true, answer: longAnswer };
+  const visible = modelResultContent("actor_prompt_wait", details);
+  assert.match(visible, /fullAnswer:/);
+  assert.match(visible, /first line/);
+  assert.match(visible, /last line/);
+  assert.ok(visible.includes("x".repeat(700)));
+  assert.doesNotMatch(compactToolResult("actor_prompt_wait", details), /last line/);
+  const theme = { fg: (_name, text) => text, bg: (_name, text) => text, bold: (text) => text };
+  const collapsed = renderToolResult("actor_prompt_wait", { details }, { expanded: false }, theme).render(80).join("\n");
+  assert.doesNotMatch(collapsed, /last line/);
+  const expanded = renderToolResult("actor_prompt_wait", { details }, { expanded: true }, theme).render(80).join("\n");
+  assert.match(expanded, /first line/);
+  assert.match(expanded, /last line/);
 });
 
 test("typed delivery invokes documented context abort/shutdown and notification methods", async () => {

@@ -151,6 +151,7 @@ export function renderToolCall(name: string, args: any, theme: any) {
 
 export function renderToolResult(name: string, result: any, options: { isPartial?: boolean; expanded?: boolean }, theme: any) {
   if (options.isPartial) return new Text(theme.fg("warning", compactToolCall(name, result?.details ?? {})), 0, 0);
+  if (options.expanded && fullModelAnswer(result?.details) !== undefined) return renderFullAnswerResult(name, result.details, theme);
   if (result?.details?.communicationView) {
     if (options.expanded) return renderCommunicationCard(result.details.communicationView, theme);
     const peer = result.details.communicationView.peerDisplayName;
@@ -173,6 +174,8 @@ export function modelResultContent(name: string, details: any): string {
     }
     if (details.completed !== undefined) parts.push(`completed=${details.completed ? "true" : "false"}`);
     if (details.reason) parts.push(`reason=${safePreview(details.reason, 120)}`);
+    const answer = fullModelAnswer(details);
+    if (answer !== undefined) parts.push(`fullAnswer:\n${answer}`);
     return parts.join(" ");
   }
   if (/prompt_start|prompt_status|prompt_wait/.test(name) && details?.lifecycleId) {
@@ -182,12 +185,29 @@ export function modelResultContent(name: string, details: any): string {
     }
     if (details.state !== undefined) parts.push(`state=${safePreview(String(details.state), 32)}`);
     if (details.terminal !== undefined) parts.push(`terminal=${details.terminal ? "true" : "false"}`);
-    if (details.answer) parts.push(`answer=${safePreview(details.answer, MAX_TOOL_PREVIEW)}`);
     if (details.reason) parts.push(`reason=${safePreview(details.reason, 120)}`);
+    const answer = fullModelAnswer(details);
+    if (answer !== undefined) parts.push(`fullAnswer:\n${answer}`);
     if (details.terminal === false) parts.push(`next=actor_prompt_wait with this lifecycleId`);
     return parts.join(" ");
   }
   return summary;
+}
+
+function fullModelAnswer(details: any): string | undefined {
+  const value = details?.answer ?? details?.result;
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function renderFullAnswerResult(name: string, details: any, theme: any) {
+  const answer = fullModelAnswer(details) ?? "";
+  const header = theme.fg("success", compactToolResult(name, details));
+  const meta: string[] = [];
+  for (const field of ["lifecycleId", "requestId", "targetDisplayName", "target", "state", "terminal"] as const) {
+    if (details?.[field] !== undefined && details[field] !== "") meta.push(`${field}=${safePreview(String(details[field]), 128)}`);
+  }
+  const body = [header, ...meta.map((line) => theme.fg("dim", line)), "", answer].join("\n");
+  return new Text(body, 0, 0);
 }
 
 function actorStatusLine(actor: any): string {
