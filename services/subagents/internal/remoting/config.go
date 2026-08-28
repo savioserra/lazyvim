@@ -4,9 +4,9 @@ import (
 	"crypto"
 	"crypto/x509"
 	"errors"
-	"net/netip"
 	"time"
 
+	"github.com/savioserra/lazyvim/services/subagents/internal/application"
 	"github.com/savioserra/lazyvim/services/subagents/internal/config"
 	"github.com/tochemey/goakt/v4/actor"
 	"github.com/tochemey/goakt/v4/remote"
@@ -19,7 +19,7 @@ type Runtime struct {
 	MTLSIdentity string
 	Remote       *remote.Config
 	Cluster      *actor.ClusterConfig
-	PublicNodes  map[string]config.ResolvedPeer
+	PublicNodes  map[string]application.PublicNode
 	Trust        *PlacementTrust
 }
 
@@ -76,10 +76,14 @@ func NewValidatedConfig(cfg config.RemotingConfig, resolver config.Resolver, loc
 		WithWriteTimeout(5 * time.Second).
 		WithReadTimeout(5 * time.Second).
 		WithBootstrapTimeout(30 * time.Second)
-	nodes := make(map[string]config.ResolvedPeer, len(resolved.Peers)+1)
-	nodes[resolved.NodeIdentity] = config.ResolvedPeer{NodeIdentity: resolved.NodeIdentity, Host: resolved.BindAddress.String(), Addresses: []netip.Addr{resolved.BindAddress}, MTLSIdentity: resolved.MTLSIdentity}
+	nodes := make(map[string]application.PublicNode, len(resolved.Peers)+1)
+	nodes[resolved.NodeIdentity] = application.PublicNode{Identity: resolved.NodeIdentity, Host: resolved.BindAddress.String(), Port: resolved.Port}
 	for _, peer := range resolved.Peers {
-		nodes[peer.NodeIdentity] = peer
+		host := peer.Host
+		if len(peer.Addresses) > 0 {
+			host = peer.Addresses[0].String()
+		}
+		nodes[peer.NodeIdentity] = application.PublicNode{Identity: peer.NodeIdentity, Host: host, Port: resolved.Port}
 	}
 	return &Runtime{NodeIdentity: resolved.NodeIdentity, MTLSIdentity: resolved.MTLSIdentity, Remote: remoteConfig, Cluster: clusterConfig, PublicNodes: nodes, Trust: trust}, resolved, nil
 }

@@ -208,11 +208,7 @@ type registryTestDelay time.Duration
 func publicNodeMap(runtime *remoting.Runtime) map[string]application.PublicNode {
 	result := make(map[string]application.PublicNode, len(runtime.PublicNodes))
 	for identity, node := range runtime.PublicNodes {
-		host := node.Host
-		if len(node.Addresses) > 0 {
-			host = node.Addresses[0].String()
-		}
-		result[identity] = application.PublicNode{Identity: identity, Host: host, Port: runtime.Remote.BindPort()}
+		result[identity] = node
 	}
 	return result
 }
@@ -237,7 +233,7 @@ func startWithListener(ctx context.Context, listener net.Listener, options ...an
 	actorOptions := []actor.Option{actor.WithLogger(goaktlog.DiscardLogger), actor.WithPubSub(), actor.WithMessageRetention(5 * time.Minute)}
 	guardianName := "service-guardian"
 	if actorPlane != nil {
-		if actorPlane.Remote == nil || actorPlane.Cluster == nil || actorPlane.NodeIdentity == "" {
+		if actorPlane.Remote == nil || actorPlane.NodeIdentity == "" {
 			return nil, errors.New("remoting runtime is incomplete")
 		}
 		digest := sha256.Sum256([]byte(actorPlane.NodeIdentity))
@@ -246,8 +242,12 @@ func startWithListener(ctx context.Context, listener net.Listener, options ...an
 			return nil, errors.New("generate cluster guardian incarnation")
 		}
 		guardianName = fmt.Sprintf("service-guardian-%x-%x", digest[:6], incarnation[:])
-		actorPlane.Cluster.WithKinds(&actors.ServiceGuardian{}, &actors.AgentActor{})
-		actorOptions = append(actorOptions, actor.WithRemote(actorPlane.Remote), actor.WithCluster(actorPlane.Cluster), actor.WithoutRelocation())
+		if actorPlane.Cluster != nil {
+			actorPlane.Cluster.WithKinds(&actors.ServiceGuardian{}, &actors.AgentActor{})
+			actorOptions = append(actorOptions, actor.WithRemote(actorPlane.Remote), actor.WithCluster(actorPlane.Cluster), actor.WithoutRelocation())
+		} else {
+			actorOptions = append(actorOptions, actor.WithRemote(actorPlane.Remote), actor.WithoutRelocation())
+		}
 	}
 	system, err := actor.NewActorSystem("workstation-subagents", actorOptions...)
 	if err != nil {
@@ -319,7 +319,7 @@ func startWithListener(ctx context.Context, listener net.Listener, options ...an
 		connectionSlots: make(chan struct{}, maxConnections), activeConnections: make(map[net.Conn]struct{}), requestResults: make(map[string]requestRecord), hostedRuntimes: make(map[string]*actor.PID), hostedRegistrations: make(map[string]hostedRegistration), hostedTerminal: make(map[string]application.HostedPiRuntimeBinding), hostedStartupFailure: make(map[string]string), hostedCleanup: make(map[string]hostedRegistration), hostedProjects: make(map[string]string), registrationPlaceholders: make(map[string]*registrationPlaceholder), registrationCleanups: make(map[string]*registrationCleanup), hostedAdmin: hosted, socketPath: socketPath, hostedOperationCancels: make(map[uint64]context.CancelFunc), hostedAgentLocks: make(map[string]*sync.Mutex), registrationTimeout: requestTimeout, durableStore: durableStore, persistencePID: persistencePID, hostedIndeterminate: make(map[string]application.HostedPiRuntimeBinding), taskLifecycles: make(map[string]*taskLifecycle), clientSessions: make(map[string]*actor.PID), publicSessionGenerations: make(map[string]string), pushSessions: make(map[*bridgePushSession]*actor.PID),
 	}
 	if actorPlane != nil {
-		if _, err := guardian.SpawnChild(ctx, hostedPlacementAuthorityName, &hostedPlacementAuthority{service: service}, actor.WithMailbox(actor.NewNonBlockingBoundedMailbox(64)), actor.WithPassivationStrategy(passivation.NewLongLivedStrategy())); err != nil {
+		if _, err := system.Spawn(ctx, hostedPlacementAuthorityName, &hostedPlacementAuthority{service: service}, actor.WithMailbox(actor.NewNonBlockingBoundedMailbox(64)), actor.WithPassivationStrategy(passivation.NewLongLivedStrategy())); err != nil {
 			return fail(err)
 		}
 		go service.reconcilePublicHostedPeers(context.Background())
