@@ -87,7 +87,7 @@ func TestRemoteHostedOrdinaryServicePath(t *testing.T) {
 		if tell == nil || !tell.Accepted {
 			t.Fatalf("tell failed: %#v", tell)
 		}
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(500 * time.Millisecond)
 		go ackNextPrompt(t, vps, "ui_remote_qa", []byte("answer"))
 		ask := local.dispatch(env(local, client, &subagentsv1.Envelope_ActorMessageRequest{ActorMessageRequest: &subagentsv1.ActorMessageRequest{Mode: subagentsv1.ActorMessageRequest_MODE_ASK, Target: "ui_remote_qa", BoundedPayload: []byte("question"), DedupeId: "ask-d", ChainId: "ask-c", HopLimit: 4, SourceMutationSequence: 2}}, "ask-1", handle, fence)).GetActorMessageResponse()
 		if ask == nil || !ask.Accepted || !ask.Completed || string(ask.BoundedResult) != "answer" {
@@ -96,6 +96,7 @@ func TestRemoteHostedOrdinaryServicePath(t *testing.T) {
 	})
 
 	t.Run("typed prompt lifecycle reaches remote bridge correlation boundary", func(t *testing.T) {
+		time.Sleep(500 * time.Millisecond)
 		go ackNextPrompt(t, vps, "ui_remote_qa", []byte("life-answer"))
 		started := local.dispatch(env(local, client, &subagentsv1.Envelope_TaskLifecycleRequest{TaskLifecycleRequest: &subagentsv1.TaskLifecycleRequest{Operation: subagentsv1.TaskLifecycleRequest_OPERATION_START, LifecycleId: "life-1", Target: "ui_remote_qa", BoundedPrompt: []byte("do work"), DedupeId: "life-d", ChainId: "life-c", HopLimit: 4, SourceMutationSequence: 3}}, "life-req", handle, fence)).GetTaskLifecycleResponse()
 		if started == nil || !started.Accepted || started.LifecycleId != "life-1" {
@@ -132,12 +133,6 @@ func TestRemoteHostedOrdinaryServicePath(t *testing.T) {
 		}
 		_ = fresh.system.NoSender().Tell(ctx, fresh.publicDirectory, &application.StageSession{Session: client, Registry: application.AgentRegistry})
 		fresh.reconcilePublicHostedPeers(ctx)
-		if peer := lookupLoopbackService("vps"); peer != nil {
-			listed := (&hostedPlacementAuthority{service: peer}).list(ctx, &application.ListPublicHostedAgents{Limit: 256})
-			for _, item := range listed.Agents {
-				_, _ = fresh.system.NoSender().Ask(ctx, fresh.publicDirectory, &application.CreatePublicAgent{Internal: true, AgentID: item.AgentID, ActorName: hostedPlacementAuthorityName, Reference: item.Reference, Placement: application.PublicAgentPlacement{NodeIdentity: "vps"}}, time.Second)
-			}
-		}
 		time.Sleep(50 * time.Millisecond)
 		listed := fresh.dispatch(env(fresh, client, &subagentsv1.Envelope_ListAgentsRequest{ListAgentsRequest: &subagentsv1.ListAgentsRequest{}}, "fresh-list", "", 0)).GetListAgentsResponse()
 		if listed == nil || !hasAgent(listed.Agents, "ui_remote_qa") {
@@ -160,7 +155,6 @@ func startIntegrationService(t *testing.T, ctx context.Context, root string, run
 	if err != nil {
 		t.Fatal(err)
 	}
-	registerLoopbackService(runtime.NodeIdentity, svc)
 	t.Cleanup(func() { _ = svc.Stop(context.Background()) })
 	return svc
 }
@@ -182,7 +176,7 @@ func integrationRuntime(id string, port, peerPort int, trust *remoting.Placement
 	if id == "vps" {
 		peer = "local"
 	}
-	return &remoting.Runtime{NodeIdentity: id, MTLSIdentity: "spiffe://workstation/subagents/" + id, Remote: remote.NewConfig("127.0.0.1", port, remoting.PublicAgentSerializers()...), PublicNodes: map[string]application.PublicNode{id: {Identity: id, Host: "loopback", Port: port}, peer: {Identity: peer, Host: "loopback", Port: peerPort}}, Trust: trust}
+	return &remoting.Runtime{NodeIdentity: id, MTLSIdentity: "spiffe://workstation/subagents/" + id, Remote: remote.NewConfig("127.0.0.1", port, remoting.PublicAgentSerializers()...), PublicNodes: map[string]application.PublicNode{id: {Identity: id, Host: "127.0.0.1", Port: port}, peer: {Identity: peer, Host: "127.0.0.1", Port: peerPort}}, Trust: trust}
 }
 func serviceFreePort(t *testing.T) int {
 	t.Helper()
@@ -253,16 +247,15 @@ func attachRemote(t *testing.T, s *Service, client application.OpenSession, id s
 	t.Helper()
 	var a *subagentsv1.AttachResponse
 	for i := 0; i < 20; i++ {
-		a = s.dispatch(env(s, client, &subagentsv1.Envelope_AttachRequest{AttachRequest: &subagentsv1.AttachRequest{AgentId: id, RequestedCapabilities: []string{"observe", "send", "ask", "prompt"}}}, fmt.Sprintf("attach-%s-%d", id, i), "", 0)).GetAttachResponse()
+		attachEnv := s.dispatch(env(s, client, &subagentsv1.Envelope_AttachRequest{AttachRequest: &subagentsv1.AttachRequest{AgentId: id, RequestedCapabilities: []string{"observe", "send", "ask", "prompt"}}}, fmt.Sprintf("attach-%s-%d", id, i), "", 0))
+		if err := attachEnv.GetProtocolError(); err != nil {
+			t.Logf("attach protocol error: %s", err.Message)
+		}
+		a = attachEnv.GetAttachResponse()
 		if a != nil && a.Status == subagentsv1.AttachResponse_STATUS_COMPLETED {
 			return a.AgentHandle, a.Fence
 		}
 		time.Sleep(25 * time.Millisecond)
-	}
-	if route, err := s.system.NoSender().Ask(context.Background(), s.publicDirectory, &application.RoutePublicAgent{SessionID: client.SessionID, GenerationID: client.GenerationID, Caller: client.Caller, Credential: client.Credential, AgentID: id, Capabilities: []string{"observe", "send", "ask", "prompt"}}, time.Second); err == nil {
-		t.Logf("public route=%#v", route)
-	} else {
-		t.Logf("public route err=%v", err)
 	}
 	t.Fatalf("attach failed %#v", a)
 	return "", 0

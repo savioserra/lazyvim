@@ -13,15 +13,17 @@ func (a *hostedPlacementAuthority) remoteAttach(ctx context.Context, message *ap
 	if err != nil {
 		return &application.AttachResult{Reason: err.Error()}
 	}
-	value, err := a.service.system.NoSender().Ask(ctx, pid, message, requestTimeout)
-	if err != nil {
+	result := make(chan application.AttachResult, 1)
+	local := &application.AttachAgent{SessionID: message.SessionID, GenerationID: message.GenerationID, Principal: message.Principal, AgentID: message.AgentID, RequestedCapabilities: message.RequestedCapabilities, IssuedHandle: message.IssuedHandle, Result: result}
+	if err := a.service.system.NoSender().Tell(ctx, pid, local); err != nil {
 		return &application.AttachResult{Reason: err.Error()}
 	}
-	result, ok := value.(*application.AttachResult)
-	if !ok {
-		return &application.AttachResult{Reason: "unexpected attach response"}
+	select {
+	case value := <-result:
+		return &value
+	case <-ctx.Done():
+		return &application.AttachResult{Reason: ctx.Err().Error()}
 	}
-	return result
 }
 
 func (a *hostedPlacementAuthority) remoteBridgeIntent(ctx context.Context, message *application.RemoteBridgeIntent) *application.BridgeIntentResult {

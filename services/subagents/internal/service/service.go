@@ -1826,14 +1826,6 @@ func (s *Service) authorizeAgent(ctx context.Context, request *subagentsv1.Envel
 	if !ok || !publicRoute.Allowed {
 		return route, nil
 	}
-	if publicRoute.Record.Host == "loopback" {
-		if peer := lookupLoopbackService(publicRoute.Record.HomeNode); peer != nil {
-			pid, err := (&hostedPlacementAuthority{service: peer}).localAgentPID(ctx, agentID)
-			if err == nil && pid != nil {
-				return &application.AgentRoute{Allowed: true, PID: pid, GenerationID: request.GenerationId, Principal: request.CallerIdentity}, nil
-			}
-		}
-	}
 	pid, err := s.system.NoSender().RemoteLookup(ctx, publicRoute.Record.Host, publicRoute.Record.Port, publicRoute.Record.ActorName)
 	if err != nil || pid == nil {
 		return route, nil
@@ -2167,22 +2159,38 @@ func (s *Service) startTaskLifecycle(ctx context.Context, request *subagentsv1.E
 	runnerReceipt := make(chan application.BridgeIntentResult, 1)
 	completion := make(chan application.BridgeIntentResult, 1)
 	intent := &application.BridgeIntent{SessionID: request.SessionId, GenerationID: route.GenerationID, Principal: route.Principal, Handle: request.AgentHandle, Fence: request.AgentFence, SourceAgentID: source, TargetAgentID: command.Target, RequestID: request.RequestId, RequiredCapability: "prompt", DedupeID: command.DedupeId, ChainID: command.ChainId, Deadline: time.UnixMilli(request.DeadlineUnixMillis), HopLimit: command.HopLimit, SourceMutationSequence: command.SourceMutationSequence, Mode: application.BridgeMessagePrompt, Payload: append([]byte(nil), command.BoundedPrompt...), Receipt: receipt, Completion: completion}
-	if err := s.system.NoSender().Tell(ctx, route.PID, intent); err != nil {
-		s.finishTaskLifecycle(lifecycle, subagentsv1.TaskLifecycleResponse_STATE_ACTOR_LOST, nil, "actor lost before prompt delivery")
-		response.Payload = &subagentsv1.Envelope_TaskLifecycleResponse{TaskLifecycleResponse: s.protoTaskLifecycle(lifecycle)}
-		return response
+	if route.PID.IsRemote() {
+		go func() {
+			reply, err := s.system.NoSender().Ask(context.Background(), route.PID, remoteBridgeIntent(intent), time.Until(intent.Deadline))
+			if err != nil {
+				runnerReceipt <- application.BridgeIntentResult{Reason: err.Error()}
+				return
+			}
+			result, ok := reply.(*application.BridgeIntentResult)
+			if !ok {
+				runnerReceipt <- application.BridgeIntentResult{Reason: "unexpected remote lifecycle response"}
+				return
+			}
+			runnerReceipt <- *result
+		}()
+	} else {
+		if err := s.system.NoSender().Tell(ctx, route.PID, intent); err != nil {
+			s.finishTaskLifecycle(lifecycle, subagentsv1.TaskLifecycleResponse_STATE_ACTOR_LOST, nil, "actor lost before prompt delivery")
+			response.Payload = &subagentsv1.Envelope_TaskLifecycleResponse{TaskLifecycleResponse: s.protoTaskLifecycle(lifecycle)}
+			return response
+		}
+		go func() {
+			select {
+			case result := <-receipt:
+				if result.Accepted {
+					s.pushBridgeUpdate(command.Target, "task delivery admitted")
+				}
+				runnerReceipt <- result
+			case <-time.After(time.Until(intent.Deadline)):
+			}
+		}()
 	}
 	go s.runTaskLifecycle(lifecycle, runnerReceipt, completion, intent.Deadline)
-	go func() {
-		select {
-		case result := <-receipt:
-			if result.Accepted {
-				s.pushBridgeUpdate(command.Target, "task delivery admitted")
-			}
-			runnerReceipt <- result
-		case <-time.After(time.Until(intent.Deadline)):
-		}
-	}()
 	response.Payload = &subagentsv1.Envelope_TaskLifecycleResponse{TaskLifecycleResponse: s.protoTaskLifecycle(lifecycle)}
 	return response
 }

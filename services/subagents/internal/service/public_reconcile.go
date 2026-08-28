@@ -20,21 +20,11 @@ func (s *Service) reconcilePublicHostedPeers(ctx context.Context) {
 }
 
 func (s *Service) reconcilePublicHostedPeer(ctx context.Context, node application.PublicNode) error {
-	var value any
-	var err error
-	if node.Host == "loopback" {
-		peer := lookupLoopbackService(node.Identity)
-		if peer == nil {
-			return nil
-		}
-		value = (&hostedPlacementAuthority{service: peer}).list(ctx, &application.ListPublicHostedAgents{Limit: 256})
-	} else {
-		pid, lookupErr := s.system.NoSender().RemoteLookup(ctx, node.Host, node.Port, hostedPlacementAuthorityName)
-		if lookupErr != nil || pid == nil {
-			return lookupErr
-		}
-		value, err = s.system.NoSender().Ask(ctx, pid, &application.ListPublicHostedAgents{Limit: 256}, requestTimeout)
+	pid, err := s.system.NoSender().RemoteLookup(ctx, node.Host, node.Port, hostedPlacementAuthorityName)
+	if err != nil || pid == nil {
+		return err
 	}
+	value, err := s.system.NoSender().Ask(ctx, pid, &application.ListPublicHostedAgents{Limit: 256}, requestTimeout)
 	if err != nil {
 		return err
 	}
