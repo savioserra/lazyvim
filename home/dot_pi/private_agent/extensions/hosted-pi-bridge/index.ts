@@ -163,6 +163,7 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
   let piSessionId = "";
   let reconnecting: Promise<void> | undefined;
   let heartbeatTimer: NodeJS.Timeout | undefined;
+  let pollTimer: NodeJS.Timeout | undefined;
   let lastAckedSequence = 0n;
   const pendingPushFrames: Envelope[] = [];
   let pushTail = Promise.resolve();
@@ -292,6 +293,9 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
     await lifecycle(BridgeLifecycleRequest_Event.READY);
     heartbeatTimer = setInterval(() => { void heartbeat().catch(() => reconnect(ctx)); }, 400);
     heartbeatTimer.unref();
+    pollTimer = setInterval(() => { void poll(ctx).catch(() => reconnect(ctx)); }, 1000);
+    pollTimer.unref();
+    void poll(ctx).catch(() => reconnect(ctx));
     ctx.ui.setStatus("hosted-pi-bridge", "hosted bridge ready");
   });
 
@@ -301,7 +305,9 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
 
   pi.on("session_shutdown", async (_event, ctx) => {
     if (heartbeatTimer) clearInterval(heartbeatTimer);
+    if (pollTimer) clearInterval(pollTimer);
     heartbeatTimer = undefined;
+    pollTimer = undefined;
     try { await prompts.shutdown(); } catch { /* server timeout remains authoritative */ }
     try { await lifecycle(BridgeLifecycleRequest_Event.SESSION_SHUTDOWN); } catch { /* shutdown remains best effort */ }
     for (const [target, fence] of fences) {
@@ -435,6 +441,7 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
           selfFence = replacement; fences.set(current.agentId, replacement);
           await lifecycle(BridgeLifecycleRequest_Event.READY);
           await prompts.retryCompletion();
+          await poll(ctx);
           ctx.ui.setStatus("hosted-pi-bridge", "hosted bridge ready");
           return;
         } catch { await delay(Math.min(1000, 100 * 2 ** attempt)); }
