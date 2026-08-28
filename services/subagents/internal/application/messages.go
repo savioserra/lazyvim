@@ -417,10 +417,13 @@ type PublicAgentAsk struct {
 	Payload  []byte
 }
 type RemoteHostedPlacement struct {
-	OperationID, DedupeID                        string
-	DeadlineUnixMillis                           int64
-	AgentID, ProjectDirectory, DisplayName, Role string
-	TrustProject                                 bool
+	ProtocolVersion                               uint32
+	OperationID, DedupeID, SourceNode, TargetNode string
+	DeadlineUnixMillis                            int64
+	AgentID, ProjectDirectory, DisplayName, Role  string
+	TrustProject                                  bool
+	CertificateDER                                [][]byte
+	Signature                                     []byte
 }
 type RemoteHostedPlacementResult struct {
 	Accepted           bool

@@ -1,6 +1,8 @@
 package remoting
 
 import (
+	"crypto"
+	"crypto/x509"
 	"errors"
 	"net/netip"
 	"time"
@@ -14,9 +16,18 @@ import (
 // UDS plane remains independent and is never exposed through this bundle.
 type Runtime struct {
 	NodeIdentity string
+	MTLSIdentity string
 	Remote       *remote.Config
 	Cluster      *actor.ClusterConfig
 	PublicNodes  map[string]config.ResolvedPeer
+	Trust        *PlacementTrust
+}
+
+type PlacementTrust struct {
+	Signer         crypto.Signer
+	CertificateDER [][]byte
+	Roots          *x509.CertPool
+	AllowedURIs    map[string]struct{}
 }
 
 // NewValidatedConfig constructs a Tailscale-bound, mutually authenticated
@@ -34,6 +45,10 @@ func NewValidatedConfig(cfg config.RemotingConfig, resolver config.Resolver, loc
 		return nil, resolved, errors.New("tailscale cluster mode requires exactly two peers (three nodes total)")
 	}
 	tlsInfo, err := loadTLS(resolved)
+	if err != nil {
+		return nil, resolved, err
+	}
+	trust, err := loadPlacementTrust(resolved)
 	if err != nil {
 		return nil, resolved, err
 	}
@@ -66,5 +81,5 @@ func NewValidatedConfig(cfg config.RemotingConfig, resolver config.Resolver, loc
 	for _, peer := range resolved.Peers {
 		nodes[peer.NodeIdentity] = peer
 	}
-	return &Runtime{NodeIdentity: resolved.NodeIdentity, Remote: remoteConfig, Cluster: clusterConfig, PublicNodes: nodes}, resolved, nil
+	return &Runtime{NodeIdentity: resolved.NodeIdentity, MTLSIdentity: resolved.MTLSIdentity, Remote: remoteConfig, Cluster: clusterConfig, PublicNodes: nodes, Trust: trust}, resolved, nil
 }

@@ -1,6 +1,7 @@
 package remoting
 
 import (
+	"crypto"
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
@@ -90,6 +91,39 @@ func loadTLS(resolved config.ResolvedRemoting) (*goakttls.Info, error) {
 		},
 	}
 	return &goakttls.Info{ClientConfig: client, ServerConfig: server}, nil
+}
+
+func loadPlacementTrust(resolved config.ResolvedRemoting) (*PlacementTrust, error) {
+	caPEM, err := readPrivateTLSFile(resolved.CAFile)
+	if err != nil {
+		return nil, fmt.Errorf("load remoting CA: %w", err)
+	}
+	certPEM, err := readPrivateTLSFile(resolved.CertFile)
+	if err != nil {
+		return nil, fmt.Errorf("load remoting certificate: %w", err)
+	}
+	keyPEM, err := readPrivateTLSFile(resolved.KeyFile)
+	if err != nil {
+		return nil, fmt.Errorf("load remoting private key: %w", err)
+	}
+	certificate, err := tls.X509KeyPair(certPEM, keyPEM)
+	if err != nil {
+		return nil, fmt.Errorf("parse remoting key pair: %w", err)
+	}
+	signer, ok := certificate.PrivateKey.(crypto.Signer)
+	if !ok {
+		return nil, errors.New("remoting private key is not a crypto.Signer")
+	}
+	roots := x509.NewCertPool()
+	if !roots.AppendCertsFromPEM(caPEM) {
+		return nil, errors.New("remoting CA contains no certificates")
+	}
+	allowed := make(map[string]struct{}, len(resolved.Peers)+1)
+	allowed[resolved.MTLSIdentity] = struct{}{}
+	for _, peer := range resolved.Peers {
+		allowed[peer.MTLSIdentity] = struct{}{}
+	}
+	return &PlacementTrust{Signer: signer, CertificateDER: certificate.Certificate, Roots: roots, AllowedURIs: allowed}, nil
 }
 
 func exactURIIdentity(certificate *x509.Certificate, allowed map[string]struct{}) error {

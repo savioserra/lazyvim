@@ -43,8 +43,8 @@ func (a *hostedPlacementAuthority) Receive(ctx *actor.ReceiveContext) {
 }
 
 func (a *hostedPlacementAuthority) place(ctx context.Context, message *application.RemoteHostedPlacement) *application.RemoteHostedPlacementResult {
-	if message == nil || message.OperationID == "" || message.DedupeID == "" || message.DeadlineUnixMillis <= 0 || time.Now().After(time.UnixMilli(message.DeadlineUnixMillis)) {
-		return &application.RemoteHostedPlacementResult{Reason: "placement operation identity is invalid or expired"}
+	if err := a.verifyPlacement(message); err != nil {
+		return &application.RemoteHostedPlacementResult{Reason: err.Error()}
 	}
 	digest := remotePlacementDigest(message)
 	if replay, ok := a.replays[message.OperationID]; ok {
