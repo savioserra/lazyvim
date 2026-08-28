@@ -27,6 +27,7 @@ import (
 	workstationsocket "github.com/savioserra/lazyvim/services/subagents/internal/socket"
 	durablestate "github.com/savioserra/lazyvim/services/subagents/internal/state"
 	"github.com/tochemey/goakt/v4/actor"
+	goaktlog "github.com/tochemey/goakt/v4/log"
 	"github.com/tochemey/goakt/v4/passivation"
 	"github.com/tochemey/goakt/v4/supervisor"
 	"google.golang.org/protobuf/proto"
@@ -218,7 +219,7 @@ func startWithListener(ctx context.Context, listener net.Listener, options ...an
 			actorPlane = value
 		}
 	}
-	actorOptions := []actor.Option{actor.WithPubSub(), actor.WithMessageRetention(5 * time.Minute)}
+	actorOptions := []actor.Option{actor.WithLogger(goaktlog.DiscardLogger), actor.WithPubSub(), actor.WithMessageRetention(5 * time.Minute)}
 	guardianName := "service-guardian"
 	if actorPlane != nil {
 		if actorPlane.Remote == nil || actorPlane.Cluster == nil || actorPlane.NodeIdentity == "" {
