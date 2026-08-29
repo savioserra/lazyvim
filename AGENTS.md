@@ -37,6 +37,8 @@ Use the nearest `AGENTS.md` for scoped rules.
 - The sole permitted Go service module is `services/subagents/`; keep its daemon source, direct GoAkt actors, canonical protobuf API, generated boundary, and tests nested there.
 - Keep subagent configuration and domain names transport/vendor neutral. DNS supplies addresses only, never logical or mTLS identity.
 - Global reusable AgentActors outlive ephemeral Pi sessions. Session cleanup may remove only session credentials, subscriptions, and views.
+- Retain owned worker, reviewer, QA, and correction AgentActors across ordinary workflow phases so their Pi context, stable identity, and observer panes remain available. Enforce one active writer per cwd/worktree by workflow state and access mode, not by stopping actors; reuse the retained worker for corrections.
+- Treat `actor_stop`, abort, and shutdown as explicit management/diagnostic lifecycle controls only: operator-requested retirement, whole-mission teardown, exact-owner recovery, or unrecoverable failure. Never use them as ordinary task completion, worker-to-reviewer handoff, review exchange, QA transition, correction routing, or context cleanup. Ordinary workflow exchange uses typed actor messages.
 
 ## Required checks
 
