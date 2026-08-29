@@ -122,6 +122,18 @@ return function()
 					and paths.join(paths.home, "Library", "LaunchAgents", "com.workstation.subagents.plist")
 				or paths.join(paths.home, ".config", "systemd", "user", "workstation-subagents.service")
 			assert(paths.exists(asset), "active subagents service-manager asset is missing")
+			local service_asset = paths.read(asset)
+			if vim.fn.has("mac") == 1 then
+				assert(
+					service_asset:find("<key>AbandonProcessGroup</key><true/>", 1, true),
+					"LaunchAgent must preserve exactly owned hosted processes for adoption"
+				)
+			else
+				assert(
+					service_asset:find("KillMode=process", 1, true),
+					"systemd unit must preserve exactly owned hosted processes for adoption"
+				)
+			end
 			local daemon = paths.join(paths.home, ".local", "bin", "workstation-subagents")
 			local clientctl = paths.join(paths.home, ".local", "bin", "workstation-subagents-clientctl")
 			assert(paths.exists(daemon), "subagents daemon executable is missing")

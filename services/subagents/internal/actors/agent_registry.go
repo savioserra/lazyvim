@@ -53,6 +53,7 @@ type AgentRegistryActor struct {
 	publicAuthority   string
 	publicEpoch       uint64
 	publicSequence    uint64
+	publicResetSent   bool
 }
 
 func NewAgentRegistryActor(registrationDelay ...time.Duration) *AgentRegistryActor {
@@ -85,6 +86,7 @@ func (a *AgentRegistryActor) Receive(ctx *actor.ReceiveContext) {
 		a.publicAuthority = strings.TrimSpace(message.PlacementAuthority)
 		a.publicEpoch = message.Epoch
 		a.publicSequence = 0
+		a.publicResetSent = false
 		a.publishPublicAgentSnapshot(ctx)
 		a.schedulePublicAgentSnapshot(ctx)
 	case *application.PublishPublicAgentSnapshot:
@@ -436,6 +438,10 @@ func (a *AgentRegistryActor) reconcileAgentTermination(ctx *actor.ReceiveContext
 func (a *AgentRegistryActor) publishPublicAgentSnapshot(ctx *actor.ReceiveContext) {
 	if a.publicNode == "" {
 		return
+	}
+	if !a.publicResetSent {
+		a.publishPublicAgentEvent(ctx, &application.PublicAgentDirectoryEvent{Operation: "snapshot-reset", NodeIdentity: a.publicNode})
+		a.publicResetSent = true
 	}
 	for agentID, item := range a.agents {
 		a.publishPublicAgentUpsert(ctx, agentID, item)

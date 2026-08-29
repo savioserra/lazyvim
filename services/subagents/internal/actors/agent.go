@@ -301,6 +301,10 @@ func (a *AgentActor) Receive(ctx *actor.ReceiveContext) {
 			a.hostedPiRuntime.BridgeReady = false
 			a.revision++
 		}
+	case *application.HostedPiBridgeReadiness:
+		if a.runtimePID != nil {
+			_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), a.runtimePID, message)
+		}
 	case *application.HostedPiRuntimeStateChanged:
 		a.hostedPiRuntime = message.Binding
 		if a.durableRecord != nil {

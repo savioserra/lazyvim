@@ -13,6 +13,10 @@ ExecStartPre=/usr/bin/install -m 0600 %h/.config/workstation/subagents/config.to
 ExecStart=%h/.local/bin/workstation-subagents --config %t/ws-subagents/config.toml
 Restart=on-failure
 RestartSec=5s
+# Hosted tmux/Pi processes are exactly owned durable runtimes. Signal only the
+# daemon so its shutdown can quiesce projections and the replacement can adopt
+# those processes; explicit actor STOP performs exact destructive cleanup.
+KillMode=process
 UMask=0077
 Environment=HOME=%h
 Environment=XDG_CONFIG_HOME=%h/.config

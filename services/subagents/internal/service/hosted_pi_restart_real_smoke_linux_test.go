@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-func TestRealDaemonCrashRestartAdoptsHostedPiAndDurableDelivery(t *testing.T) {
+func TestRealDaemonManagedRestartAdoptsHostedPiAndDurableDelivery(t *testing.T) {
 	if os.Getenv("RUN_REAL_HOSTED_PI_SMOKE") != "1" {
 		t.Skip("set RUN_REAL_HOSTED_PI_SMOKE=1")
 	}
@@ -93,12 +93,15 @@ func TestRealDaemonCrashRestartAdoptsHostedPiAndDurableDelivery(t *testing.T) {
 	if loadErr != nil || len(records) != 1 || len(records[0].AgentState.BridgeDeliveries) != 1 {
 		t.Fatalf("accepted delivery was not durably pending before crash: %#v %v", records, loadErr)
 	}
-	crashCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	if err = daemon.crashWithoutRuntimeCleanup(crashCtx); err != nil {
+	restartCtx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	if err = daemon.Stop(restartCtx); err != nil {
 		cancel()
 		t.Fatal(err)
 	}
 	cancel()
+	if err = exec.Command(tmux, "-L", server, "has-session", "-t", attachTarget).Run(); err != nil {
+		t.Fatal("managed daemon stop destroyed the hosted session before adoption")
+	}
 	daemon2, err := StartConfigured(context.Background(), socket, cfg)
 	if err != nil {
 		t.Fatal(err)

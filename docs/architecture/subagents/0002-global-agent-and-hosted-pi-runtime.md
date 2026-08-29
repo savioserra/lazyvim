@@ -26,11 +26,11 @@ The repository-managed daemon and `[hosted_pi]` configuration are enabled by the
 
 ## Persistence boundary
 
-The hosted runtime writes one schema-versioned owner-private binding record beneath XDG state by atomic write and directory sync. It contains only the implemented exact runtime identity and process-start proof. An existing record fails startup closed, preventing blind duplication. Successful tmux creation with malformed output retains a partial record and reservation as ownership-indeterminate. A publication error after rename becomes definitive only when the held reservation proves the exact record, atomic exact tmux rollback succeeds, and record removal plus directory sync succeeds. This milestone does not claim automatic stale-record repair, daemon-crash adoption, durable agent command recovery, or full service-state recovery.
+The hosted runtime writes one schema-versioned owner-private binding record beneath XDG state by atomic write and directory sync. It contains exact runtime identity, process-start proof, and bounded operational recovery state. An existing record fails startup closed, preventing blind duplication. Successful tmux creation with malformed output retains a partial record and reservation as ownership-indeterminate. A publication error after rename becomes definitive only when the held reservation proves the exact record, atomic exact tmux rollback succeeds, and record removal plus directory sync succeeds. Managed daemon replacement persists bridge readiness as false, leaves the exactly owned tmux/Pi process alive, and adopts it only after revalidating every recorded token and marker. Explicit actor STOP remains the destructive cleanup path.
 
 ## Consequences
 
-Hosted agents can preserve a full interactive Pi session across client disconnects while existing upstream execution remains unchanged. Exact tmux ownership prevents cleanup from damaging unrelated sessions. A daemon restart may require operator reconciliation because the minimal binding record deliberately prevents duplication rather than claiming complete recovery.
+Hosted agents preserve a full interactive Pi session across client and managed daemon replacement while existing upstream execution remains unchanged. Exact tmux ownership prevents cleanup from damaging unrelated sessions. Proven absence is removed durably; foreign or indeterminate identity remains fail-closed for operator recovery.
 
 ## Invariants
 

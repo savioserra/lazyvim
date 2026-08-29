@@ -112,6 +112,7 @@ type Service struct {
 	hostedStartupFailure     map[string]string
 	hostedCleanup            map[string]hostedRegistration
 	hostedProjects           map[string]string
+	hostedStarting           map[string]int
 	registrationPlaceholders map[string]*registrationPlaceholder
 	registrationCleanups     map[string]*registrationCleanup
 	closeHostedSession       func(context.Context, string) error
@@ -340,7 +341,7 @@ func startWithListener(ctx context.Context, listener net.Listener, options ...an
 	}
 	service := &Service{
 		system: system, guardian: guardian, sessionRegistry: sessions, agentRegistry: agents, sessionCoordinator: coordinator, hostedSupervisor: hostedSupervisor, workflowRegistry: workflowRegistry, taskCoordinator: taskCoordinator, publicDirectory: publicDirectory, persistenceSupervisor: persistenceSupervisor, listener: listener, actorPlane: actorPlane,
-		connectionSlots: make(chan struct{}, maxConnections), activeConnections: make(map[net.Conn]struct{}), requestResults: make(map[string]requestRecord), hostedRuntimes: make(map[string]*actor.PID), hostedRegistrations: make(map[string]hostedRegistration), hostedTerminal: make(map[string]application.HostedPiRuntimeBinding), hostedStartupFailure: make(map[string]string), hostedCleanup: make(map[string]hostedRegistration), hostedProjects: make(map[string]string), registrationPlaceholders: make(map[string]*registrationPlaceholder), registrationCleanups: make(map[string]*registrationCleanup), hostedAdmin: hosted, socketPath: socketPath, hostedOperationCancels: make(map[uint64]context.CancelFunc), hostedAgentLocks: make(map[string]*sync.Mutex), registrationTimeout: requestTimeout, durableStore: durableStore, persistencePID: persistencePID, hostedIndeterminate: make(map[string]application.HostedPiRuntimeBinding), taskLifecycles: make(map[string]*taskLifecycle), clientSessions: make(map[string]*actor.PID), publicSessionGenerations: make(map[string]string), pushSessions: make(map[*bridgePushSession]*actor.PID),
+		connectionSlots: make(chan struct{}, maxConnections), activeConnections: make(map[net.Conn]struct{}), requestResults: make(map[string]requestRecord), hostedRuntimes: make(map[string]*actor.PID), hostedRegistrations: make(map[string]hostedRegistration), hostedTerminal: make(map[string]application.HostedPiRuntimeBinding), hostedStartupFailure: make(map[string]string), hostedCleanup: make(map[string]hostedRegistration), hostedProjects: make(map[string]string), hostedStarting: make(map[string]int), registrationPlaceholders: make(map[string]*registrationPlaceholder), registrationCleanups: make(map[string]*registrationCleanup), hostedAdmin: hosted, socketPath: socketPath, hostedOperationCancels: make(map[uint64]context.CancelFunc), hostedAgentLocks: make(map[string]*sync.Mutex), registrationTimeout: requestTimeout, durableStore: durableStore, persistencePID: persistencePID, hostedIndeterminate: make(map[string]application.HostedPiRuntimeBinding), taskLifecycles: make(map[string]*taskLifecycle), clientSessions: make(map[string]*actor.PID), publicSessionGenerations: make(map[string]string), pushSessions: make(map[*bridgePushSession]*actor.PID),
 	}
 	if actorPlane != nil {
 		placementAuthority := placementAuthorityName(actorPlane.NodeIdentity)
@@ -867,15 +868,24 @@ func (s *Service) stopRegistrationCleanups(ctx context.Context) error {
 	}
 }
 
-// Stop is retryable while exact runtime or registration cleanup remains
-// unproven. The listener stays closed, but the ActorSystem remains alive to
-// preserve tracked teardown authority until a later bounded attempt succeeds.
+// Stop is retryable while registration cleanup or projection quiescence remains
+// unproven. Exactly owned hosted tmux/Pi processes survive daemon shutdown so a
+// replacement daemon can revalidate and adopt them; explicit actor STOP remains
+// the only path that destroys a stable hosted runtime.
 func (s *Service) Stop(ctx context.Context) error {
 	s.stopMu.Lock()
 	defer s.stopMu.Unlock()
 	if s.stopped {
 		return s.stopResult
 	}
+	s.hostedMu.Lock()
+	preserve := make(map[string]struct{}, len(s.hostedRuntimes))
+	for id := range s.hostedRuntimes {
+		if s.hostedStarting[id] == 0 {
+			preserve[id] = struct{}{}
+		}
+	}
+	s.hostedMu.Unlock()
 	s.hostedOperationMu.Lock()
 	s.stopping.Store(true)
 	for _, cancel := range s.hostedOperationCancels {
@@ -910,7 +920,19 @@ func (s *Service) Stop(ctx context.Context) error {
 		s.stopResult = errors.Join(operationErr, registrationErr, closeErr)
 		return s.stopResult
 	}
-	hostedErr := s.stopHostedRuntimes(ctx)
+	s.hostedMu.Lock()
+	transient := make(map[string]struct{})
+	for id := range s.hostedRuntimes {
+		if _, stable := preserve[id]; !stable {
+			transient[id] = struct{}{}
+		}
+	}
+	s.hostedMu.Unlock()
+	if transientErr := s.stopHostedRuntimes(ctx, transient); transientErr != nil {
+		s.stopResult = errors.Join(operationErr, transientErr, closeErr)
+		return s.stopResult
+	}
+	hostedErr := s.quiesceHostedRuntimes(ctx)
 	if hostedErr != nil {
 		s.stopResult = errors.Join(operationErr, hostedErr, closeErr)
 		return s.stopResult
@@ -944,11 +966,58 @@ func (s *Service) Stop(ctx context.Context) error {
 	return s.stopResult
 }
 
-func (s *Service) stopHostedRuntimes(ctx context.Context) error {
+func (s *Service) quiesceHostedRuntimes(ctx context.Context) error {
 	s.hostedMu.Lock()
 	runtimes := make(map[string]*actor.PID, len(s.hostedRuntimes))
 	for id, pid := range s.hostedRuntimes {
 		runtimes[id] = pid
+	}
+	s.hostedMu.Unlock()
+	for _, pid := range runtimes {
+		if err := s.system.NoSender().Tell(ctx, pid, &application.HostedPiBridgeReadiness{Ready: false}); err != nil {
+			return err
+		}
+	}
+	for id, pid := range runtimes {
+		for {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			value, err := s.system.NoSender().Ask(ctx, pid, &application.HostedPiRuntimeStatus{}, requestTimeout)
+			if err != nil {
+				return fmt.Errorf("read hosted runtime %s quiescence state: %w", id, err)
+			}
+			binding, ok := value.(*application.HostedPiRuntimeBinding)
+			if !ok {
+				return fmt.Errorf("read hosted runtime %s quiescence state: unexpected response", id)
+			}
+			if !binding.BridgeReady {
+				barrier, err := s.durableBarrier(ctx, pid)
+				if err != nil {
+					return fmt.Errorf("persist hosted runtime %s quiescence: %w", id, err)
+				}
+				if !barrier.Completed {
+					return fmt.Errorf("persist hosted runtime %s quiescence: %s", id, barrier.Reason)
+				}
+				break
+			}
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(10 * time.Millisecond):
+			}
+		}
+	}
+	return nil
+}
+
+func (s *Service) stopHostedRuntimes(ctx context.Context, only map[string]struct{}) error {
+	s.hostedMu.Lock()
+	runtimes := make(map[string]*actor.PID, len(s.hostedRuntimes))
+	for id, pid := range s.hostedRuntimes {
+		if _, selected := only[id]; selected {
+			runtimes[id] = pid
+		}
 	}
 	s.hostedMu.Unlock()
 	for _, pid := range runtimes {
@@ -2404,6 +2473,21 @@ func (s *Service) hostedAdminResponse(ctx context.Context, request *subagentsv1.
 }
 
 func (s *Service) startHostedAgent(ctx context.Context, command *subagentsv1.HostedAdminRequest) (application.HostedPiRuntimeBinding, error) {
+	s.hostedMu.Lock()
+	s.hostedStarting[command.AgentId]++
+	s.hostedMu.Unlock()
+	defer func() {
+		s.hostedMu.Lock()
+		s.hostedStarting[command.AgentId]--
+		if s.hostedStarting[command.AgentId] == 0 {
+			delete(s.hostedStarting, command.AgentId)
+		}
+		s.hostedMu.Unlock()
+	}()
+	return s.startHostedAgentOnce(ctx, command)
+}
+
+func (s *Service) startHostedAgentOnce(ctx context.Context, command *subagentsv1.HostedAdminRequest) (application.HostedPiRuntimeBinding, error) {
 	s.hostedMu.Lock()
 	if degraded, exists := s.hostedIndeterminate[command.AgentId]; exists {
 		s.hostedMu.Unlock()

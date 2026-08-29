@@ -29,6 +29,7 @@ type PublicAgentDirectoryActor struct {
 	sessions        map[string]sessionRecord
 	agents          map[string]application.PublicAgentRecord
 	highWater       map[string]publicAgentEventWatermark
+	snapshotWater   map[string]publicAgentEventWatermark
 	requestSequence uint64
 }
 
@@ -37,7 +38,7 @@ func NewPublicAgentDirectoryActor(localNode string, nodes map[string]application
 	for id, node := range nodes {
 		copy[id] = node
 	}
-	return &PublicAgentDirectoryActor{localNode: localNode, nodes: copy, sessions: make(map[string]sessionRecord), agents: make(map[string]application.PublicAgentRecord), highWater: make(map[string]publicAgentEventWatermark)}
+	return &PublicAgentDirectoryActor{localNode: localNode, nodes: copy, sessions: make(map[string]sessionRecord), agents: make(map[string]application.PublicAgentRecord), highWater: make(map[string]publicAgentEventWatermark), snapshotWater: make(map[string]publicAgentEventWatermark)}
 }
 func (*PublicAgentDirectoryActor) PreStart(*actor.Context) error { return nil }
 func (*PublicAgentDirectoryActor) PostStop(*actor.Context) error { return nil }
@@ -145,11 +146,32 @@ func messageRecord(message *application.CreatePublicAgent, node application.Publ
 }
 
 func (d *PublicAgentDirectoryActor) applyEvent(event *application.PublicAgentDirectoryEvent) {
-	if event == nil || event.NodeIdentity == "" || event.NodeIdentity == d.localNode || boundedPublicID(event.AgentID) == "" {
+	if event == nil || event.NodeIdentity == "" || event.NodeIdentity == d.localNode {
 		return
 	}
 	node, ok := d.nodes[event.NodeIdentity]
 	if !ok || node.Stale || node.Host == "" || node.Port <= 0 {
+		return
+	}
+	if event.Operation == "snapshot-reset" {
+		watermark := d.snapshotWater[event.NodeIdentity]
+		if event.Epoch < watermark.epoch || event.Epoch == watermark.epoch && event.Sequence <= watermark.sequence {
+			return
+		}
+		d.snapshotWater[event.NodeIdentity] = publicAgentEventWatermark{epoch: event.Epoch, sequence: event.Sequence}
+		for agentID, record := range d.agents {
+			if record.HomeNode == event.NodeIdentity {
+				delete(d.agents, agentID)
+				delete(d.highWater, event.NodeIdentity+"\x00"+agentID)
+			}
+		}
+		return
+	}
+	if boundedPublicID(event.AgentID) == "" {
+		return
+	}
+	reset := d.snapshotWater[event.NodeIdentity]
+	if event.Epoch < reset.epoch || event.Epoch == reset.epoch && event.Sequence <= reset.sequence {
 		return
 	}
 	current, exists := d.agents[event.AgentID]

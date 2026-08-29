@@ -81,7 +81,17 @@ func TestPublicAgentDirectoryLearnsRemoteHostedAgentsFromTopicEvents(t *testing.
 		t.Fatal(err)
 	}
 	waitForPublicList(t, system, dir, credential, 1)
-	removed := &application.PublicAgentDirectoryEvent{Operation: "remove", NodeIdentity: "node-b", AgentID: "ui_remote_qa", ActorName: application.HostedPlacementAuthorityName("node-b"), Epoch: 1, Sequence: 2}
+	reset := &application.PublicAgentDirectoryEvent{Operation: "snapshot-reset", NodeIdentity: "node-b", Epoch: 2, Sequence: 1}
+	if err := system.NoSender().Tell(ctx, system.TopicActor(), actor.NewPublish("node-b:snapshot-reset:2", publicAgentDirectoryTopic, reset)); err != nil {
+		t.Fatal(err)
+	}
+	waitForPublicList(t, system, dir, credential, 0)
+	published.Epoch, published.Sequence = 2, 2
+	if err := system.NoSender().Tell(ctx, system.TopicActor(), actor.NewPublish("node-b:ui_remote_qa:2:2", publicAgentDirectoryTopic, published)); err != nil {
+		t.Fatal(err)
+	}
+	waitForPublicList(t, system, dir, credential, 1)
+	removed := &application.PublicAgentDirectoryEvent{Operation: "remove", NodeIdentity: "node-b", AgentID: "ui_remote_qa", ActorName: application.HostedPlacementAuthorityName("node-b"), Epoch: 2, Sequence: 3}
 	if err := system.NoSender().Tell(ctx, system.TopicActor(), actor.NewPublish("node-b:ui_remote_qa:2", publicAgentDirectoryTopic, removed)); err != nil {
 		t.Fatal(err)
 	}
