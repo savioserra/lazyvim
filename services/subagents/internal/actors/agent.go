@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/savioserra/lazyvim/services/subagents/internal/application"
@@ -23,6 +24,10 @@ const (
 	maxBridgeItems           = 256
 	maxRecentMutationResults = 1024
 	maxBridgePayloadBytes    = 16 * 1024
+	maxSourceOutboxItems     = 256
+	maxTargetTaskQueueItems  = 256
+	taskCreditLease          = 5 * time.Second
+	taskRetryDelay           = 50 * time.Millisecond
 )
 
 type projectionSubscribed struct{ sessionID, generationID string }
@@ -32,6 +37,13 @@ type projectionEvent struct {
 }
 type closeProjection struct{}
 type retryProjectionPubSub struct{}
+type retrySourceOutbox struct{}
+
+type taskCreditReservation struct {
+	credit  application.TaskCredit
+	source  string
+	replyTo *actor.PID
+}
 type retryProjectionClose struct{ sessionID, generationID string }
 type restoreDurableTimers struct{}
 
@@ -81,6 +93,14 @@ type pendingDurableReceipt struct {
 	intentCompletion            chan<- application.BridgeIntentResult
 	ack                         *application.BridgeDeliveryAckResult
 	ackCompletion               chan<- application.BridgeDeliveryAckResult
+	taskReplyTo                 *actor.PID
+	taskCompletion              *application.ActorTaskCompleted
+	taskCreditGrant             *application.TaskCreditGranted
+	taskAccepted                *application.ActorTaskAccepted
+	sourceCreditTarget          *actor.PID
+	sourceCreditItem            *application.DurableActorTaskOutboxItem
+	taskCompletionPublish       *application.ActorTaskCompleted
+	targetTaskCommitted         *application.TargetTaskCommitted
 	attach                      *application.AttachResult
 	attachCompletion            chan<- application.AttachResult
 	bridge                      *application.BridgeResult
@@ -136,28 +156,38 @@ type AgentActor struct {
 	projectionSubscriptionDelay time.Duration
 	projectionMailbox           func() actor.Mailbox
 
-	registryPID           *actor.PID
-	runtimePID            *actor.PID
-	runtimeFailure        string
-	bridgeSession         string
-	bridgeGeneration      string
-	bridgePrincipal       string
-	bridgeHandle          string
-	bridgePiSession       string
-	bridgeFence           uint64
-	bridgeLeaseToken      uint64
-	bridgeDeclaredReady   bool
-	bridgeSequence        uint64
-	bridgeEvents          []application.BridgeEvent
-	bridgeDeliveries      []application.BridgeDelivery
-	deliverySources       map[uint64]string
-	mutationScopes        map[string]*mutationScope
-	persistencePID        *actor.PID
-	persistenceSupervisor *actor.PID
-	durableRecord         *application.DurableHostedRecord
-	durableCorrelation    uint64
-	durablePending        *pendingDurableReceipt
-	durableFailed         error
+	registryPID            *actor.PID
+	runtimePID             *actor.PID
+	runtimeFailure         string
+	bridgeSession          string
+	bridgeGeneration       string
+	bridgePrincipal        string
+	bridgeHandle           string
+	bridgePiSession        string
+	bridgeFence            uint64
+	bridgeLeaseToken       uint64
+	bridgeDeclaredReady    bool
+	bridgeSequence         uint64
+	bridgeEvents           []application.BridgeEvent
+	bridgeDeliveries       []application.BridgeDelivery
+	deliverySources        map[uint64]string
+	taskSources            map[uint64]*actor.PID
+	sourceCreditTargets    map[string]*actor.PID
+	taskCompletions        map[string]application.ActorTaskCompleted
+	taskCompletionOrder    []string
+	sourceTaskHistory      map[string]application.ActorTaskCompleted
+	sourceTaskHistoryOrder []string
+	sourceOutbox           map[string]application.DurableActorTaskOutboxItem
+	sourceOutboxOrder      []string
+	taskCreditEpoch        uint64
+	taskCreditReservations map[string]taskCreditReservation
+	mutationScopes         map[string]*mutationScope
+	persistencePID         *actor.PID
+	persistenceSupervisor  *actor.PID
+	durableRecord          *application.DurableHostedRecord
+	durableCorrelation     uint64
+	durablePending         *pendingDurableReceipt
+	durableFailed          error
 }
 
 func NewAgentActor(registration *application.RegisterAgent, registry ...*actor.PID) *AgentActor {
@@ -168,7 +198,7 @@ func NewAgentActor(registration *application.RegisterAgent, registry ...*actor.P
 	metadataBinding := registration.HostedPiRuntime
 	metadataBinding.DisplayName = registration.DisplayName
 	metadataBinding.Role = registration.Role
-	value := &AgentActor{id: registration.AgentID, authorityBinding: registration.AuthorityBinding, hostedPiRuntime: metadataBinding, retention: registration.Retention, recovery: registration.Recovery, allowed: allowed, attachments: make(map[string]attachment), revoked: make(map[string]struct{}), revision: 1, commandResults: make(map[string]commandRecord), projections: make(map[string]*projectionLifecycle), deliverySources: make(map[uint64]string), mutationScopes: make(map[string]*mutationScope), persistencePID: registration.PersistencePID, persistenceSupervisor: registration.PersistenceSupervisor, durableRecord: registration.DurableRecord}
+	value := &AgentActor{id: registration.AgentID, authorityBinding: registration.AuthorityBinding, hostedPiRuntime: metadataBinding, retention: registration.Retention, recovery: registration.Recovery, allowed: allowed, attachments: make(map[string]attachment), revoked: make(map[string]struct{}), revision: 1, commandResults: make(map[string]commandRecord), projections: make(map[string]*projectionLifecycle), deliverySources: make(map[uint64]string), taskSources: make(map[uint64]*actor.PID), sourceCreditTargets: make(map[string]*actor.PID), taskCompletions: make(map[string]application.ActorTaskCompleted), sourceTaskHistory: make(map[string]application.ActorTaskCompleted), sourceOutbox: make(map[string]application.DurableActorTaskOutboxItem), taskCreditReservations: make(map[string]taskCreditReservation), mutationScopes: make(map[string]*mutationScope), persistencePID: registration.PersistencePID, persistenceSupervisor: registration.PersistenceSupervisor, durableRecord: registration.DurableRecord}
 	if registration.DurableRecord != nil {
 		value.restoreDurableState(registration.DurableRecord.AgentState)
 		if registration.AdoptedProcess != nil {
@@ -370,6 +400,24 @@ func (a *AgentActor) Receive(ctx *actor.ReceiveContext) {
 			}()
 		}
 		a.bridgeIntent(ctx, &application.BridgeIntent{SessionID: message.SessionID, GenerationID: message.GenerationID, Principal: message.Principal, Handle: message.Handle, SourceAgentID: message.SourceAgentID, TargetAgentID: message.TargetAgentID, RequestID: message.RequestID, RequiredCapability: message.RequiredCapability, DedupeID: message.DedupeID, ChainID: message.ChainID, Fence: message.Fence, SourceMutationSequence: message.SourceMutationSequence, Deadline: message.Deadline, HopLimit: message.HopLimit, Mode: message.Mode, Payload: message.Payload, Completion: completion})
+	case *application.SendActorTask:
+		a.sendActorTask(ctx, message)
+	case *application.RequestTaskCredit:
+		a.requestTaskCredit(ctx, message)
+	case *application.TaskCreditGranted:
+		a.taskCreditGranted(ctx, message)
+	case *application.TaskBackpressured:
+		a.taskBackpressured(ctx, message)
+	case *application.ActorTask:
+		a.actorTask(ctx, message)
+	case *application.ActorTaskAccepted:
+		a.actorTaskAccepted(ctx, message)
+	case *retrySourceOutbox:
+		a.retrySourceOutbox(ctx)
+	case *application.ActorTaskCompleted:
+		a.actorTaskCompleted(ctx, message)
+	case *application.DrainReceivedTaskCompletions:
+		a.drainTaskCompletions(message)
 	case *application.BridgeIntent:
 		a.bridgeIntent(ctx, message)
 	case *application.BridgeControl:
@@ -640,6 +688,25 @@ func (a *AgentActor) durableState() application.DurableAgentState {
 	for sequence, key := range a.deliverySources {
 		state.DeliverySources[sequence] = key
 	}
+	for _, key := range a.sourceOutboxOrder {
+		if item, ok := a.sourceOutbox[key]; ok {
+			state.SourceOutbox = append(state.SourceOutbox, item)
+		}
+	}
+	for _, key := range a.sourceTaskHistoryOrder {
+		if item, ok := a.sourceTaskHistory[key]; ok {
+			state.SourceTaskHistory = append(state.SourceTaskHistory, item)
+		}
+	}
+	for _, key := range a.taskCompletionOrder {
+		if item, ok := a.taskCompletions[key]; ok {
+			state.ReceivedTaskCompletions = append(state.ReceivedTaskCompletions, item)
+		}
+	}
+	state.TaskCreditEpoch = a.taskCreditEpoch
+	for source, reservation := range a.taskCreditReservations {
+		state.TaskCreditReservations = append(state.TaskCreditReservations, application.DurableTaskCreditReservation{Credit: reservation.credit, Source: source})
+	}
 	for key := range a.revoked {
 		state.Revoked = append(state.Revoked, key)
 	}
@@ -687,6 +754,34 @@ func (a *AgentActor) restoreDurableState(state application.DurableAgentState) {
 	for sequence, key := range state.DeliverySources {
 		a.deliverySources[sequence] = key
 	}
+	a.sourceOutbox = make(map[string]application.DurableActorTaskOutboxItem, len(state.SourceOutbox))
+	a.sourceOutboxOrder = nil
+	for _, item := range state.SourceOutbox {
+		a.sourceOutbox[item.TaskID] = item
+		a.sourceOutboxOrder = append(a.sourceOutboxOrder, item.TaskID)
+	}
+	a.sourceTaskHistory = make(map[string]application.ActorTaskCompleted, len(state.SourceTaskHistory))
+	a.sourceTaskHistoryOrder = nil
+	for _, item := range state.SourceTaskHistory {
+		key := actorTaskID(a.id, item.OriginalRequestID, item.DedupeID, item.ChainID, item.SourceMutationSequence)
+		a.sourceTaskHistory[key] = item
+		a.sourceTaskHistoryOrder = append(a.sourceTaskHistoryOrder, key)
+	}
+	a.taskCompletions = make(map[string]application.ActorTaskCompleted, len(state.ReceivedTaskCompletions))
+	a.taskCompletionOrder = nil
+	for _, item := range state.ReceivedTaskCompletions {
+		a.taskCompletions[item.CompletionKey] = item
+		a.taskCompletionOrder = append(a.taskCompletionOrder, item.CompletionKey)
+	}
+	a.taskCreditEpoch = state.TaskCreditEpoch
+	a.taskCreditReservations = make(map[string]taskCreditReservation, len(state.TaskCreditReservations))
+	for _, item := range state.TaskCreditReservations {
+		a.taskCreditReservations[item.Credit.CreditID] = taskCreditReservation{credit: item.Credit, source: item.Source}
+	}
+	// Source-target PID bindings are transient routing facts, not durable
+	// state: a rollback drops them so no later credit grant or acceptance can
+	// validate against a rolled-back outbox entry.
+	a.sourceCreditTargets = make(map[string]*actor.PID)
 	a.revoked = make(map[string]struct{}, len(state.Revoked))
 	for _, key := range state.Revoked {
 		a.revoked[key] = struct{}{}
@@ -747,6 +842,14 @@ func (a *AgentActor) beginDurablePersist(ctx *actor.ReceiveContext, receipt *pen
 	if a.durableRecord == nil || a.persistencePID == nil {
 		return false
 	}
+	// An in-flight receipt must never be overwritten: a second concurrent
+	// persistence attempt is rejected fail-closed after rolling back its own
+	// optimistic mutation.
+	if a.durablePending != nil {
+		a.restoreDurableState(receipt.old)
+		a.completeDurableReceipt(ctx, receipt, fmt.Errorf("durable persistence is busy"))
+		return true
+	}
 	if a.durableFailed != nil {
 		a.restoreDurableState(receipt.old)
 		a.completeDurableReceipt(ctx, receipt, a.durableFailed)
@@ -771,6 +874,23 @@ func (a *AgentActor) submitDurableState(ctx *actor.ReceiveContext, receipt *pend
 func (a *AgentActor) durablePersisted(ctx *actor.ReceiveContext, message *application.DurableHostedStatePersisted) {
 	pending := a.durablePending
 	if pending == nil || message.Correlation != pending.correlation {
+		// A persistence reply that does not match the single in-flight receipt
+		// means the persistence conversation is no longer provable: fail closed
+		// instead of silently dropping the mismatched correlation.
+		err := fmt.Errorf("unexpected durable persistence reply correlation %d", message.Correlation)
+		if pending != nil {
+			err = fmt.Errorf("durable persistence correlation %d does not match in-flight receipt %d", message.Correlation, pending.correlation)
+		}
+		a.durableFailed = errors.Join(a.durableFailed, err)
+		a.hostedPiRuntime.State = application.HostedPiRuntimeDegraded
+		a.hostedPiRuntime.BridgeReady = false
+		if a.persistenceSupervisor != nil {
+			_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), a.persistenceSupervisor, &application.QuarantineDurableHostedState{AgentID: a.id, Reason: "durable persistence correlation mismatch", Err: err})
+		}
+		if pending != nil {
+			a.durablePending = nil
+			a.completeDurableReceipt(ctx, pending, a.durableFailed)
+		}
 		return
 	}
 	if message.Err != nil && !pending.rollingBack {
@@ -857,8 +977,28 @@ func (a *AgentActor) completeDurableReceipt(ctx *actor.ReceiveContext, pending *
 		if pending.ack != nil {
 			pending.ack = &application.BridgeDeliveryAckResult{Reason: "durable acknowledgement persistence failed"}
 		}
-	} else if pending.askCompletion != nil && pending.askResult != nil {
-		deliverBridgeIntentResult(pending.askCompletion, *pending.askResult)
+	} else {
+		if pending.askCompletion != nil && pending.askResult != nil {
+			deliverBridgeIntentResult(pending.askCompletion, *pending.askResult)
+		}
+		if pending.taskReplyTo != nil && pending.taskCompletion != nil {
+			_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), pending.taskReplyTo, pending.taskCompletion)
+		}
+		if pending.sender != nil && pending.taskCreditGrant != nil {
+			_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), pending.sender, pending.taskCreditGrant)
+		}
+		if pending.sender != nil && pending.taskAccepted != nil {
+			_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), pending.sender, pending.taskAccepted)
+		}
+		if pending.sourceCreditTarget != nil && pending.sourceCreditItem != nil {
+			a.requestOutboxCredit(ctx, pending.sourceCreditTarget, *pending.sourceCreditItem)
+		}
+		if pending.taskCompletionPublish != nil {
+			a.publishTaskCompletion(ctx, pending.taskCompletionPublish)
+		}
+		if pending.targetTaskCommitted != nil {
+			a.publishTargetTaskCommitted(ctx, pending.targetTaskCommitted)
+		}
 	}
 	if pending.drop != nil {
 		if err == nil {
@@ -884,6 +1024,8 @@ func (a *AgentActor) completeDurableReceipt(ctx *actor.ReceiveContext, pending *
 			result.Reason = "durable state persistence failed: " + err.Error()
 		}
 		deliverOperationResult(pending.operation, result)
+	} else if pending.taskCreditGrant != nil || pending.taskAccepted != nil {
+		return
 	} else if pending.sender != nil {
 		if pending.attach != nil {
 			_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), pending.sender, pending.attach)
@@ -936,6 +1078,317 @@ func (a *AgentActor) durableBarrier(ctx *actor.ReceiveContext) {
 	}
 	if !a.beginDurablePersist(ctx, &pendingDurableReceipt{sender: ctx.Sender(), old: old}) {
 		ctx.Response(&application.OperationResult{Completed: true})
+	}
+}
+
+func (a *AgentActor) sendActorTask(ctx *actor.ReceiveContext, message *application.SendActorTask) {
+	if message == nil {
+		respondBridgeIntent(ctx, nil, &application.BridgeIntentResult{Reason: "invalid, expired, or stale actor task"})
+		return
+	}
+	if message.TargetPID == nil || message.RequestID == "" || message.DedupeID == "" || message.ChainID == "" || message.SourceMutationSequence == 0 || message.HopLimit == 0 || time.Now().After(message.Deadline) || len(message.Payload) == 0 || len(message.Payload) > maxBridgePayloadBytes {
+		respondBridgeIntent(ctx, message.Receipt, &application.BridgeIntentResult{Reason: "invalid, expired, or stale actor task"})
+		return
+	}
+	if a.durablePending != nil || a.durableFailed != nil {
+		respondBridgeIntent(ctx, message.Receipt, &application.BridgeIntentResult{Reason: "durable persistence is busy"})
+		return
+	}
+	taskID := actorTaskID(a.id, message.RequestID, message.DedupeID, message.ChainID, message.SourceMutationSequence)
+	if completion, ok := a.sourceTaskHistory[taskID]; ok {
+		result := completion.Terminal
+		respondBridgeIntent(ctx, message.Receipt, &result)
+		return
+	}
+	sequenceSuffix := fmt.Sprintf(":%d", message.SourceMutationSequence)
+	for key := range a.sourceTaskHistory {
+		if strings.HasPrefix(key, a.id+":") && strings.HasSuffix(key, sequenceSuffix) {
+			respondBridgeIntent(ctx, message.Receipt, &application.BridgeIntentResult{Reason: "source mutation sequence collision"})
+			return
+		}
+	}
+	for key := range a.sourceOutbox {
+		if key != taskID && strings.HasPrefix(key, a.id+":") && strings.HasSuffix(key, sequenceSuffix) {
+			respondBridgeIntent(ctx, message.Receipt, &application.BridgeIntentResult{Reason: "source mutation sequence collision"})
+			return
+		}
+	}
+	for _, completion := range a.taskCompletions {
+		if completion.OriginalRequestID == message.RequestID && completion.DedupeID == message.DedupeID && completion.ChainID == message.ChainID && completion.SourceMutationSequence == message.SourceMutationSequence {
+			result := completion.Terminal
+			respondBridgeIntent(ctx, message.Receipt, &result)
+			return
+		}
+	}
+	if message.TargetPeer.StableID == a.id {
+		if scope := a.mutationScopes[sourceMutationScopeKey("actor", "actor", a.id, 0, a.hostedPiRuntime.Incarnation)]; scope != nil {
+			if record, ok := scope.results[message.SourceMutationSequence]; ok && !record.pending && record.dedupeID == message.DedupeID && record.chainID == message.ChainID {
+				result := record.result
+				respondBridgeIntent(ctx, message.Receipt, &result)
+				return
+			}
+		}
+	}
+	if len(a.sourceOutbox) >= maxSourceOutboxItems {
+		respondBridgeIntent(ctx, message.Receipt, &application.BridgeIntentResult{Reason: "source actor task outbox is full"})
+		return
+	}
+	if _, exists := a.sourceOutbox[taskID]; exists {
+		respondBridgeIntent(ctx, message.Receipt, &application.BridgeIntentResult{Accepted: true, AwaitingAck: true, Reason: "stored_pending_credit"})
+		return
+	}
+	old := a.durableState()
+	item := application.DurableActorTaskOutboxItem{TaskID: taskID, Target: message.TargetPeer, RequestID: message.RequestID, DedupeID: message.DedupeID, ChainID: message.ChainID, RequiredCapability: message.RequiredCapability, SourceMutationSequence: message.SourceMutationSequence, Deadline: message.Deadline, HopLimit: message.HopLimit, Mode: message.Mode, Payload: append([]byte(nil), message.Payload...), PayloadDigest: sha256.Sum256(message.Payload), State: "pending_credit"}
+	a.sourceOutbox[taskID] = item
+	a.sourceOutboxOrder = append(a.sourceOutboxOrder, taskID)
+	a.sourceCreditTargets[taskID] = message.TargetPID
+	persisting := a.beginDurablePersist(ctx, &pendingDurableReceipt{old: old, intent: &application.BridgeIntentResult{Accepted: true, AwaitingAck: true, Reason: "stored_pending_credit"}, intentCompletion: message.Receipt, sourceCreditTarget: message.TargetPID, sourceCreditItem: &item})
+	if !persisting {
+		respondBridgeIntent(ctx, message.Receipt, &application.BridgeIntentResult{Accepted: true, AwaitingAck: true, Reason: "stored_pending_credit"})
+		a.requestOutboxCredit(ctx, message.TargetPID, item)
+	}
+}
+
+func (a *AgentActor) requestTaskCredit(ctx *actor.ReceiveContext, message *application.RequestTaskCredit) {
+	sender := ctx.Sender()
+	if message == nil || sender == nil || isNoSender(ctx, sender) || message.TaskID == "" || time.Now().After(message.Deadline) {
+		if sender != nil && !isNoSender(ctx, sender) && message != nil {
+			_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), sender, &application.TaskBackpressured{TaskID: message.TaskID, Reason: "invalid credit request", RetryAfter: taskRetryDelay})
+		}
+		return
+	}
+	if a.durablePending != nil || a.durableFailed != nil {
+		_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), sender, &application.TaskBackpressured{TaskID: message.TaskID, TargetEpoch: a.taskCreditEpoch, Reason: "durable persistence is busy", RetryAfter: taskRetryDelay})
+		return
+	}
+	a.expireTaskCredits()
+	available := maxTargetTaskQueueItems - len(a.bridgeDeliveries) - len(a.taskCreditReservations)
+	if available <= 0 {
+		_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), sender, &application.TaskBackpressured{TaskID: message.TaskID, TargetEpoch: a.taskCreditEpoch, Reason: "target task capacity is full", RetryAfter: taskRetryDelay})
+		return
+	}
+	old := a.durableState()
+	a.taskCreditEpoch++
+	credit := application.TaskCredit{TaskID: message.TaskID, CreditID: taskCreditID(a.id, message.TaskID, a.taskCreditEpoch), TargetEpoch: a.taskCreditEpoch, ExpiresAt: minTime(time.Now().Add(taskCreditLease), message.Deadline), PayloadDigest: message.PayloadDigest}
+	a.taskCreditReservations[credit.CreditID] = taskCreditReservation{credit: credit, source: sender.Name(), replyTo: sender}
+	granted := &application.TaskCreditGranted{Credit: credit}
+	if !a.beginDurablePersist(ctx, &pendingDurableReceipt{sender: sender, old: old, taskCreditGrant: granted}) {
+		_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), sender, granted)
+	}
+	_ = ctx.ActorSystem().ScheduleOnce(context.WithoutCancel(ctx.Context()), &application.TaskBackpressured{TaskID: credit.TaskID, TargetEpoch: credit.TargetEpoch, Reason: "credit expired"}, ctx.Self(), max(time.Until(credit.ExpiresAt), time.Millisecond))
+}
+
+func (a *AgentActor) taskCreditGranted(ctx *actor.ReceiveContext, message *application.TaskCreditGranted) {
+	if message == nil {
+		return
+	}
+	item, ok := a.sourceOutbox[message.Credit.TaskID]
+	if !ok || item.PayloadDigest != message.Credit.PayloadDigest || time.Now().After(message.Credit.ExpiresAt) || time.Now().After(item.Deadline) {
+		return
+	}
+	// Only the exact target agent this outbox entry requested credit from may
+	// hand the credit back; any other origin is fail-closed before effects.
+	expected, reserved := a.sourceCreditTargets[message.Credit.TaskID]
+	sender := ctx.Sender()
+	if !reserved || sender == nil || isNoSender(ctx, sender) || !sender.Equals(expected) {
+		return
+	}
+	item.Credit = message.Credit
+	item.State = "sent"
+	a.sourceOutbox[item.TaskID] = item
+	task := &application.ActorTask{Credit: message.Credit, SourcePeer: a.communicationPeer(), TargetPeer: item.Target, RequestID: item.RequestID, DedupeID: item.DedupeID, ChainID: item.ChainID, RequiredCapability: item.RequiredCapability, SourceMutationSequence: item.SourceMutationSequence, Deadline: item.Deadline, HopLimit: item.HopLimit, Mode: item.Mode, Payload: append([]byte(nil), item.Payload...)}
+	if sender := ctx.Sender(); sender != nil {
+		_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), sender, task)
+	}
+}
+
+func (a *AgentActor) taskBackpressured(ctx *actor.ReceiveContext, message *application.TaskBackpressured) {
+	if message == nil {
+		return
+	}
+	if item, ok := a.sourceOutbox[message.TaskID]; ok && time.Now().Before(item.Deadline) {
+		item.State = "pending_credit"
+		a.sourceOutbox[message.TaskID] = item
+	}
+}
+
+func (a *AgentActor) actorTask(ctx *actor.ReceiveContext, message *application.ActorTask) {
+	replyTo := ctx.Sender()
+	if message == nil || replyTo == nil || isNoSender(ctx, replyTo) {
+		return
+	}
+	reservation, ok := a.taskCreditReservations[message.Credit.CreditID]
+	if !ok || reservation.credit.TaskID != message.Credit.TaskID || reservation.credit.TargetEpoch != message.Credit.TargetEpoch || reservation.credit.PayloadDigest != sha256.Sum256(message.Payload) || time.Now().After(reservation.credit.ExpiresAt) || message.Credit.PayloadDigest != reservation.credit.PayloadDigest {
+		_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), replyTo, &application.ActorTaskAccepted{TaskID: message.Credit.TaskID, CreditID: message.Credit.CreditID, TargetAgentID: a.id, Reason: "invalid, expired, duplicate, or stale task credit"})
+		return
+	}
+	// The task may only spend a credit that this actor reserved for the exact
+	// requesting sender; forged or rebound origins are rejected fail-closed.
+	if reservation.replyTo == nil || !replyTo.Equals(reservation.replyTo) {
+		_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), replyTo, &application.ActorTaskAccepted{TaskID: message.Credit.TaskID, CreditID: message.Credit.CreditID, TargetAgentID: a.id, Reason: "task credit sender identity rejected"})
+		return
+	}
+	if a.durablePending != nil || a.durableFailed != nil {
+		_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), replyTo, &application.ActorTaskAccepted{TaskID: message.Credit.TaskID, CreditID: message.Credit.CreditID, TargetAgentID: a.id, Reason: "durable persistence is busy"})
+		return
+	}
+	old := a.durableState()
+	delete(a.taskCreditReservations, message.Credit.CreditID)
+	intent := &application.BridgeIntent{SessionID: "actor", GenerationID: "actor", Principal: message.SourcePeer.StableID, Handle: "actor", SourceAgentID: message.SourcePeer.StableID, TargetAgentID: a.id, RequestID: message.RequestID, RequiredCapability: message.RequiredCapability, DedupeID: message.DedupeID, ChainID: message.ChainID, SourceMutationSequence: message.SourceMutationSequence, Deadline: message.Deadline, HopLimit: message.HopLimit, Mode: message.Mode, Payload: append([]byte(nil), message.Payload...)}
+	if !a.acceptActorTaskWithCredit(ctx, intent, replyTo, message.SourcePeer, old) {
+		_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), replyTo, &application.ActorTaskAccepted{TaskID: message.Credit.TaskID, CreditID: message.Credit.CreditID, TargetAgentID: a.id, Reason: "actor task rejected"})
+	}
+}
+
+func (a *AgentActor) actorTaskAccepted(ctx *actor.ReceiveContext, message *application.ActorTaskAccepted) {
+	if message == nil || !message.Accepted {
+		return
+	}
+	item, ok := a.sourceOutbox[message.TaskID]
+	if !ok {
+		return
+	}
+	// A forged acceptance must not retire the outbox entry or publish a
+	// commit: only the exact reserved target agent may acknowledge it.
+	expected, reserved := a.sourceCreditTargets[message.TaskID]
+	sender := ctx.Sender()
+	if !reserved || sender == nil || isNoSender(ctx, sender) || !sender.Equals(expected) || message.TargetAgentID != item.Target.StableID {
+		return
+	}
+	if a.durablePending != nil || a.durableFailed != nil {
+		return
+	}
+	old := a.durableState()
+	delete(a.sourceOutbox, message.TaskID)
+	delete(a.sourceCreditTargets, message.TaskID)
+	a.sourceOutboxOrder = slices.DeleteFunc(a.sourceOutboxOrder, func(id string) bool { return id == message.TaskID })
+	committed := &application.TargetTaskCommitted{TaskID: message.TaskID, TargetAgentID: message.TargetAgentID}
+	if a.beginDurablePersist(ctx, &pendingDurableReceipt{old: old, targetTaskCommitted: committed}) {
+		return
+	}
+	a.publishTargetTaskCommitted(ctx, committed)
+}
+
+func (a *AgentActor) retrySourceOutbox(ctx *actor.ReceiveContext) {}
+
+func (a *AgentActor) requestOutboxCredit(ctx *actor.ReceiveContext, target *actor.PID, item application.DurableActorTaskOutboxItem) {
+	if target == nil || time.Now().After(item.Deadline) {
+		return
+	}
+	request := &application.RequestTaskCredit{TaskID: item.TaskID, RequestID: item.RequestID, DedupeID: item.DedupeID, ChainID: item.ChainID, Deadline: item.Deadline, PayloadDigest: item.PayloadDigest}
+	_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), target, request)
+}
+
+func (a *AgentActor) acceptActorTaskWithCredit(ctx *actor.ReceiveContext, message *application.BridgeIntent, replyTo *actor.PID, sourcePeer application.CommunicationPeer, oldDurable application.DurableAgentState) bool {
+	if message == nil || replyTo == nil || (message.Mode != application.BridgeMessageTell && message.Mode != application.BridgeMessageAsk && message.Mode != application.BridgeMessagePrompt) || message.SourceMutationSequence == 0 || message.TargetAgentID != a.id || message.SourceAgentID == "" || message.RequestID == "" || message.DedupeID == "" || message.ChainID == "" || message.HopLimit == 0 || time.Now().After(message.Deadline) || len(message.Payload) == 0 || len(message.Payload) > maxBridgePayloadBytes {
+		return false
+	}
+	key, scope := a.actorTaskScope(message.SourceAgentID)
+	digest := bridgeIntentDigest(message)
+	if result, _, handled := replayMutation(scope, message.SourceMutationSequence, digest); handled {
+		_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), replyTo, &application.ActorTaskAccepted{TaskID: actorTaskID(message.SourceAgentID, message.RequestID, message.DedupeID, message.ChainID, message.SourceMutationSequence), TargetAgentID: a.id, Accepted: result.Accepted, Reason: result.Reason})
+		return result.Accepted
+	}
+	if _, duplicate := scope.dedupe[message.DedupeID]; duplicate {
+		return false
+	}
+	if _, repeated := scope.chains[message.ChainID]; repeated {
+		return false
+	}
+	if a.bridgeSession == "" || !a.hostedPiRuntime.BridgeReady || len(a.bridgeDeliveries) >= maxTargetTaskQueueItems {
+		return false
+	}
+	kind, policy := application.BridgeDeliveryNotification, application.BridgeDeliveryIdleElseSteer
+	if message.Mode == application.BridgeMessageAsk || message.Mode == application.BridgeMessagePrompt {
+		for _, pending := range a.bridgeDeliveries {
+			if pending.Kind == application.BridgeDeliveryPrompt {
+				return false
+			}
+		}
+		kind, policy = application.BridgeDeliveryPrompt, application.BridgeDeliveryIdleElseFollowUp
+	}
+	a.bridgeSequence++
+	targetPeer := application.CommunicationPeer{StableID: a.id, DisplayName: aggregateDisplayName(a.id, a.hostedPiRuntime.DisplayName), Role: aggregateRole(a.id, a.hostedPiRuntime.Role)}
+	delivery := application.BridgeDelivery{Sequence: a.bridgeSequence, SourceAgentID: message.SourceAgentID, TargetAgentID: a.id, RequestID: message.RequestID, DedupeID: message.DedupeID, ChainID: message.ChainID, Source: sourcePeer, Target: targetPeer, Deadline: message.Deadline, HopLimit: message.HopLimit - 1, Payload: append([]byte(nil), message.Payload...), Policy: policy, Kind: kind}
+	a.bridgeDeliveries = append(a.bridgeDeliveries, delivery)
+	a.deliverySources[delivery.Sequence] = key
+	a.taskSources[delivery.Sequence] = replyTo
+	scope.dedupe[message.DedupeID] = bridgeDedupeRecord{sequence: delivery.Sequence, mutationSequence: message.SourceMutationSequence, chainID: message.ChainID}
+	scope.chains[message.ChainID] = struct{}{}
+	result := application.BridgeIntentResult{Accepted: true, AwaitingAck: message.Mode == application.BridgeMessageAsk || message.Mode == application.BridgeMessagePrompt}
+	recordMutation(scope, message.SourceMutationSequence, digest, result, true, message.DedupeID, message.ChainID)
+	accepted := &application.ActorTaskAccepted{TaskID: actorTaskID(message.SourceAgentID, message.RequestID, message.DedupeID, message.ChainID, message.SourceMutationSequence), TargetAgentID: a.id, Accepted: true}
+	if a.beginDurablePersist(ctx, &pendingDurableReceipt{sender: replyTo, old: oldDurable, timeoutScope: key, timeoutDedupe: message.DedupeID, timeout: time.Until(message.Deadline), taskAccepted: accepted}) {
+		return true
+	}
+	_ = ctx.ActorSystem().ScheduleOnce(context.WithoutCancel(ctx.Context()), &application.BridgeIntentTimeout{ScopeKey: key, DedupeID: message.DedupeID}, ctx.Self(), max(time.Until(message.Deadline), time.Millisecond))
+	_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), replyTo, accepted)
+	return true
+}
+
+func (a *AgentActor) actorTaskCompleted(ctx *actor.ReceiveContext, message *application.ActorTaskCompleted) {
+	if message == nil || message.CompletionKey == "" {
+		return
+	}
+	if _, exists := a.taskCompletions[message.CompletionKey]; exists {
+		return
+	}
+	if a.durablePending != nil || a.durableFailed != nil {
+		return
+	}
+	old := a.durableState()
+	copy := *message
+	copy.Terminal.Result = append([]byte(nil), message.Terminal.Result...)
+	a.taskCompletions[message.CompletionKey] = copy
+	a.taskCompletionOrder = append(a.taskCompletionOrder, message.CompletionKey)
+	historyKey := actorTaskID(a.id, message.OriginalRequestID, message.DedupeID, message.ChainID, message.SourceMutationSequence)
+	a.sourceTaskHistory[historyKey] = copy
+	a.sourceTaskHistoryOrder = append(a.sourceTaskHistoryOrder, historyKey)
+	for len(a.sourceTaskHistoryOrder) > maxCommandResults {
+		oldest := a.sourceTaskHistoryOrder[0]
+		a.sourceTaskHistoryOrder = a.sourceTaskHistoryOrder[1:]
+		delete(a.sourceTaskHistory, oldest)
+	}
+	for len(a.taskCompletionOrder) > maxCommandResults {
+		oldest := a.taskCompletionOrder[0]
+		a.taskCompletionOrder = a.taskCompletionOrder[1:]
+		delete(a.taskCompletions, oldest)
+	}
+	if a.beginDurablePersist(ctx, &pendingDurableReceipt{old: old, taskCompletionPublish: &copy}) {
+		return
+	}
+	a.publishTaskCompletion(ctx, &copy)
+}
+
+func (a *AgentActor) publishTargetTaskCommitted(ctx *actor.ReceiveContext, message *application.TargetTaskCommitted) {
+	if message == nil || message.TargetAgentID == "" {
+		return
+	}
+	if topic := ctx.ActorSystem().TopicActor(); topic != nil {
+		_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), topic, actor.NewPublish(message.TaskID, application.TargetTaskCommittedTopic, message))
+	}
+}
+
+func (a *AgentActor) publishTaskCompletion(ctx *actor.ReceiveContext, message *application.ActorTaskCompleted) {
+	if message == nil {
+		return
+	}
+	if topic := ctx.ActorSystem().TopicActor(); topic != nil {
+		_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), topic, actor.NewPublish(message.CompletionKey, application.ActorMessageReplyTopic, message))
+	}
+}
+
+func (a *AgentActor) drainTaskCompletions(message *application.DrainReceivedTaskCompletions) {
+	if message == nil || message.Result == nil {
+		return
+	}
+	items := make([]application.ActorTaskCompleted, 0, len(a.taskCompletionOrder))
+	for _, key := range a.taskCompletionOrder {
+		items = append(items, a.taskCompletions[key])
+	}
+	select {
+	case message.Result <- items:
+	default:
 	}
 }
 
@@ -1009,6 +1462,66 @@ func (a *AgentActor) bridgeIntent(ctx *actor.ReceiveContext, message *applicatio
 	respondBridgeIntent(ctx, message.Receipt, &result)
 }
 
+func (a *AgentActor) bridgeIntentFromActorTask(ctx *actor.ReceiveContext, message *application.BridgeIntent, replyTo *actor.PID, sourcePeer application.CommunicationPeer) {
+	if message == nil || replyTo == nil || (message.Mode != application.BridgeMessageTell && message.Mode != application.BridgeMessageAsk && message.Mode != application.BridgeMessagePrompt) || message.SourceMutationSequence == 0 || message.TargetAgentID != a.id || message.SourceAgentID == "" || message.RequestID == "" || message.DedupeID == "" || message.ChainID == "" || message.HopLimit == 0 || time.Now().After(message.Deadline) || len(message.Payload) == 0 || len(message.Payload) > maxBridgePayloadBytes {
+		respondBridgeIntent(ctx, message.Receipt, &application.BridgeIntentResult{Reason: "invalid, expired, or stale actor task"})
+		return
+	}
+	if a.durablePending != nil || a.durableFailed != nil {
+		respondBridgeIntent(ctx, message.Receipt, &application.BridgeIntentResult{Reason: "durable persistence is busy"})
+		return
+	}
+	key, scope := a.actorTaskScope(message.SourceAgentID)
+	digest := bridgeIntentDigest(message)
+	if result, _, handled := replayMutation(scope, message.SourceMutationSequence, digest); handled {
+		respondBridgeIntent(ctx, message.Receipt, result)
+		return
+	}
+	complete := func(result application.BridgeIntentResult) { respondBridgeIntent(ctx, message.Receipt, &result) }
+	if _, duplicate := scope.dedupe[message.DedupeID]; duplicate {
+		complete(application.BridgeIntentResult{Reason: "delivery dedupe identity repeated"})
+		return
+	}
+	if _, repeated := scope.chains[message.ChainID]; repeated {
+		complete(application.BridgeIntentResult{Reason: "delivery chain identity repeated"})
+		return
+	}
+	if a.bridgeSession == "" || !a.hostedPiRuntime.BridgeReady {
+		complete(application.BridgeIntentResult{Reason: "target hosted bridge is not ready"})
+		return
+	}
+	if len(a.bridgeDeliveries) >= maxBridgeItems {
+		complete(application.BridgeIntentResult{Reason: "target delivery backlog is full"})
+		return
+	}
+	kind, policy := application.BridgeDeliveryNotification, application.BridgeDeliveryIdleElseSteer
+	if message.Mode == application.BridgeMessageAsk || message.Mode == application.BridgeMessagePrompt {
+		for _, pending := range a.bridgeDeliveries {
+			if pending.Kind == application.BridgeDeliveryPrompt {
+				complete(application.BridgeIntentResult{Reason: "target already has a model task in progress"})
+				return
+			}
+		}
+		kind, policy = application.BridgeDeliveryPrompt, application.BridgeDeliveryIdleElseFollowUp
+	}
+	oldDurable := a.durableState()
+	a.bridgeSequence++
+	targetPeer := application.CommunicationPeer{StableID: a.id, DisplayName: aggregateDisplayName(a.id, a.hostedPiRuntime.DisplayName), Role: aggregateRole(a.id, a.hostedPiRuntime.Role)}
+	delivery := application.BridgeDelivery{Sequence: a.bridgeSequence, SourceAgentID: message.SourceAgentID, TargetAgentID: a.id, RequestID: message.RequestID, DedupeID: message.DedupeID, ChainID: message.ChainID, Source: sourcePeer, Target: targetPeer, Deadline: message.Deadline, HopLimit: message.HopLimit - 1, Payload: append([]byte(nil), message.Payload...), Policy: policy, Kind: kind}
+	a.bridgeDeliveries = append(a.bridgeDeliveries, delivery)
+	a.deliverySources[delivery.Sequence] = key
+	a.taskSources[delivery.Sequence] = replyTo
+	scope.dedupe[message.DedupeID] = bridgeDedupeRecord{sequence: delivery.Sequence, mutationSequence: message.SourceMutationSequence, chainID: message.ChainID}
+	scope.chains[message.ChainID] = struct{}{}
+	result := application.BridgeIntentResult{Accepted: true, AwaitingAck: message.Mode == application.BridgeMessageAsk || message.Mode == application.BridgeMessagePrompt}
+	recordMutation(scope, message.SourceMutationSequence, digest, result, true, message.DedupeID, message.ChainID)
+	if a.beginDurablePersist(ctx, &pendingDurableReceipt{sender: ctx.Sender(), old: oldDurable, intent: &result, intentCompletion: message.Receipt, timeoutScope: key, timeoutDedupe: message.DedupeID, timeout: time.Until(message.Deadline), removeAskOnFailure: false}) {
+		return
+	}
+	_ = ctx.ActorSystem().ScheduleOnce(context.WithoutCancel(ctx.Context()), &application.BridgeIntentTimeout{ScopeKey: key, DedupeID: message.DedupeID}, ctx.Self(), max(time.Until(message.Deadline), time.Millisecond))
+	respondBridgeIntent(ctx, message.Receipt, &result)
+}
+
 func (a *AgentActor) bridgeControl(ctx *actor.ReceiveContext, message *application.BridgeControl) {
 	capability, kind := "control_abort", application.BridgeDeliveryAbort
 	if message != nil && message.Intent == application.BridgeControlShutdown {
@@ -1026,7 +1539,10 @@ func (a *AgentActor) bridgeControl(ctx *actor.ReceiveContext, message *applicati
 		respondBridgeIntent(ctx, message.Completion, &application.BridgeIntentResult{Reason: "durable persistence is busy"})
 		return
 	}
-	key, scope := a.sourceMutationScope(message.SessionID, message.GenerationID, message.Principal, message.Fence)
+	key, scope := a.controlMutationScope(message.SessionID, message.GenerationID, message.Principal, message.Fence)
+	if scope.highWater == 0 && len(scope.results) == 0 && message.SourceMutationSequence > 1 {
+		scope.highWater = message.SourceMutationSequence - 1
+	}
 	digest := bridgeControlDigest(message)
 	if result, _, handled := replayMutation(scope, message.SourceMutationSequence, digest); handled {
 		respondBridgeIntent(ctx, message.Completion, result)
@@ -1070,6 +1586,51 @@ func publishActorReply(system actor.ActorSystem, self *actor.PID, message *appli
 	_ = self.Tell(context.Background(), system.TopicActor(), actor.NewPublish(id, message.ReplyTopic, reply))
 }
 
+func isNoSender(ctx *actor.ReceiveContext, sender *actor.PID) bool {
+	if sender == nil {
+		return false
+	}
+	return sender.Equals(ctx.ActorSystem().NoSender())
+}
+
+func actorTaskCompletionKey(target string, sequence uint64, source, requestID, dedupeID, chainID string, mutationSequence uint64) string {
+	return fmt.Sprintf("%s:%d:%s:%s:%s:%s:%d", target, sequence, source, requestID, dedupeID, chainID, mutationSequence)
+}
+
+func actorTaskID(source, requestID, dedupeID, chainID string, mutationSequence uint64) string {
+	return fmt.Sprintf("%s:%s:%s:%d", source, dedupeID, chainID, mutationSequence)
+}
+
+func taskCreditID(target, taskID string, epoch uint64) string {
+	digest := sha256.Sum256([]byte(fmt.Sprintf("%s:%s:%d", target, taskID, epoch)))
+	return hex.EncodeToString(digest[:16])
+}
+
+func minTime(left, right time.Time) time.Time {
+	if left.Before(right) {
+		return left
+	}
+	return right
+}
+
+func (a *AgentActor) communicationPeer() application.CommunicationPeer {
+	peer := application.CommunicationPeer{StableID: a.id, DisplayName: aggregateDisplayName(a.id, a.hostedPiRuntime.DisplayName), Role: aggregateRole(a.id, a.hostedPiRuntime.Role)}
+	if strings.HasPrefix(a.id, "client:") {
+		peer.DisplayName = "PROJECT MANAGER"
+		peer.Role = "PROJECT MANAGER"
+	}
+	return peer
+}
+
+func (a *AgentActor) expireTaskCredits() {
+	now := time.Now()
+	for id, reservation := range a.taskCreditReservations {
+		if now.After(reservation.credit.ExpiresAt) {
+			delete(a.taskCreditReservations, id)
+		}
+	}
+}
+
 func sourceMutationScopeKey(sessionID, generationID, principal string, fence, incarnation uint64) string {
 	return fmt.Sprintf("%d:%s%d:%s%d:%s:%d:%d", len(sessionID), sessionID, len(generationID), generationID, len(principal), principal, fence, incarnation)
 }
@@ -1078,6 +1639,25 @@ func (a *AgentActor) sourceMutationScope(sessionID, generationID, principal stri
 	scope := a.mutationScopes[key]
 	if scope == nil {
 		scope = &mutationScope{sessionID: sessionID, generationID: generationID, principal: principal, fence: fence, incarnation: a.hostedPiRuntime.Incarnation, results: make(map[uint64]mutationRecord), dedupe: make(map[string]bridgeDedupeRecord), chains: make(map[string]struct{}), asks: make(map[string]pendingBridgeAsk)}
+		a.mutationScopes[key] = scope
+	}
+	return key, scope
+}
+func (a *AgentActor) controlMutationScope(sessionID, generationID, principal string, fence uint64) (string, *mutationScope) {
+	key := sourceMutationScopeKey(sessionID+"#control", generationID, principal, fence, a.hostedPiRuntime.Incarnation)
+	scope := a.mutationScopes[key]
+	if scope == nil {
+		scope = &mutationScope{sessionID: sessionID + "#control", generationID: generationID, principal: principal, fence: fence, incarnation: a.hostedPiRuntime.Incarnation, results: make(map[uint64]mutationRecord), dedupe: make(map[string]bridgeDedupeRecord), chains: make(map[string]struct{}), asks: make(map[string]pendingBridgeAsk)}
+		a.mutationScopes[key] = scope
+	}
+	return key, scope
+}
+
+func (a *AgentActor) actorTaskScope(sourceAgentID string) (string, *mutationScope) {
+	key := sourceMutationScopeKey("actor", "actor", sourceAgentID, 0, a.hostedPiRuntime.Incarnation)
+	scope := a.mutationScopes[key]
+	if scope == nil {
+		scope = &mutationScope{sessionID: "actor", generationID: "actor", principal: sourceAgentID, incarnation: a.hostedPiRuntime.Incarnation, results: make(map[uint64]mutationRecord), dedupe: make(map[string]bridgeDedupeRecord), chains: make(map[string]struct{}), asks: make(map[string]pendingBridgeAsk)}
 		a.mutationScopes[key] = scope
 	}
 	return key, scope
@@ -1163,7 +1743,8 @@ func (a *AgentActor) bridgeDeliveryAck(ctx *actor.ReceiveContext, message *appli
 		respondBridgeAck(ctx, message.Completion, &application.BridgeDeliveryAckResult{Reason: "delivery acknowledgement identity rejected"})
 		return
 	}
-	deliveryKind := a.bridgeDeliveries[index].Kind
+	delivery := a.bridgeDeliveries[index]
+	deliveryKind := delivery.Kind
 	result := application.BridgeIntentResult{Accepted: true, Completed: message.Delivered, Reason: message.Reason}
 	if message.Delivered {
 		if deliveryKind == application.BridgeDeliveryPrompt {
@@ -1179,6 +1760,8 @@ func (a *AgentActor) bridgeDeliveryAck(ctx *actor.ReceiveContext, message *appli
 	oldDurable := a.durableState()
 	a.bridgeDeliveries = append(a.bridgeDeliveries[:index], a.bridgeDeliveries[index+1:]...)
 	delete(a.deliverySources, message.Sequence)
+	replyTo := a.taskSources[message.Sequence]
+	delete(a.taskSources, message.Sequence)
 	mutation := scope.results[record.mutationSequence]
 	mutation.pending, mutation.result = false, result
 	scope.results[record.mutationSequence] = mutation
@@ -1193,11 +1776,24 @@ func (a *AgentActor) bridgeDeliveryAck(ctx *actor.ReceiveContext, message *appli
 	}
 	a.pruneMutationScope(key, scope)
 	ack := application.BridgeDeliveryAckResult{Accepted: true}
-	if a.beginDurablePersist(ctx, &pendingDurableReceipt{sender: ctx.Sender(), old: oldDurable, ack: &ack, ackCompletion: message.Completion, askScope: key, askDedupe: message.DedupeID, askCompletion: askCompletion, askResult: &result}) {
+	var taskCompletion *application.ActorTaskCompleted
+	if replyTo != nil || scope.sessionID == "actor" {
+		taskCompletion = &application.ActorTaskCompleted{CompletionKey: actorTaskCompletionKey(a.id, message.Sequence, scope.principal, delivery.RequestID, message.DedupeID, delivery.ChainID, record.mutationSequence), OriginalRequestID: delivery.RequestID, DedupeID: message.DedupeID, ChainID: delivery.ChainID, SourceMutationSequence: record.mutationSequence, Terminal: result, Source: delivery.Source, Target: delivery.Target, Kind: deliveryKind}
+		historyKey := actorTaskID(scope.principal, taskCompletion.OriginalRequestID, taskCompletion.DedupeID, taskCompletion.ChainID, taskCompletion.SourceMutationSequence)
+		a.sourceTaskHistory[historyKey] = *taskCompletion
+		a.sourceTaskHistoryOrder = append(a.sourceTaskHistoryOrder, historyKey)
+		if replyTo == nil {
+			taskCompletion = nil
+		}
+	}
+	if a.beginDurablePersist(ctx, &pendingDurableReceipt{sender: ctx.Sender(), old: oldDurable, ack: &ack, ackCompletion: message.Completion, askScope: key, askDedupe: message.DedupeID, askCompletion: askCompletion, askResult: &result, taskReplyTo: replyTo, taskCompletion: taskCompletion}) {
 		return
 	}
 	if askCompletion != nil {
 		deliverBridgeIntentResult(askCompletion, result)
+	}
+	if replyTo != nil && taskCompletion != nil {
+		_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), replyTo, taskCompletion)
 	}
 	respondBridgeAck(ctx, message.Completion, &ack)
 }
@@ -1225,6 +1821,9 @@ func (a *AgentActor) pruneRevokedMutationScope(sessionID, generationID, principa
 }
 func (a *AgentActor) pruneMutationScope(key string, scope *mutationScope) {
 	if len(scope.dedupe) != 0 {
+		return
+	}
+	if strings.HasSuffix(scope.sessionID, "#control") {
 		return
 	}
 	attachment, active := a.attachments[generationKey(scope.sessionID, scope.generationID)]

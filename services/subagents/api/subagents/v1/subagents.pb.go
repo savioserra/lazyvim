@@ -1904,6 +1904,7 @@ func (*Envelope_ActorMessageReplyFrame) isEnvelope_Payload() {}
 
 type ActorMessageReplyFrame struct {
 	state                  protoimpl.MessageState `protogen:"open.v1"`
+	CompletionKey          string                 `protobuf:"bytes,12,opt,name=completion_key,json=completionKey,proto3" json:"completion_key,omitempty"`
 	OriginalRequestId      string                 `protobuf:"bytes,1,opt,name=original_request_id,json=originalRequestId,proto3" json:"original_request_id,omitempty"`
 	DedupeId               string                 `protobuf:"bytes,2,opt,name=dedupe_id,json=dedupeId,proto3" json:"dedupe_id,omitempty"`
 	ChainId                string                 `protobuf:"bytes,3,opt,name=chain_id,json=chainId,proto3" json:"chain_id,omitempty"`
@@ -1947,6 +1948,13 @@ func (x *ActorMessageReplyFrame) ProtoReflect() protoreflect.Message {
 // Deprecated: Use ActorMessageReplyFrame.ProtoReflect.Descriptor instead.
 func (*ActorMessageReplyFrame) Descriptor() ([]byte, []int) {
 	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *ActorMessageReplyFrame) GetCompletionKey() string {
+	if x != nil {
+		return x.CompletionKey
+	}
+	return ""
 }
 
 func (x *ActorMessageReplyFrame) GetOriginalRequestId() string {
@@ -4089,6 +4097,11 @@ type BridgeDeliveryAckRequest struct {
 	Delivered     bool                   `protobuf:"varint,4,opt,name=delivered,proto3" json:"delivered,omitempty"`
 	Reason        string                 `protobuf:"bytes,5,opt,name=reason,proto3" json:"reason,omitempty"`
 	BoundedResult []byte                 `protobuf:"bytes,6,opt,name=bounded_result,json=boundedResult,proto3" json:"bounded_result,omitempty"`
+	RuntimeId     string                 `protobuf:"bytes,7,opt,name=runtime_id,json=runtimeId,proto3" json:"runtime_id,omitempty"`
+	Incarnation   uint64                 `protobuf:"varint,8,opt,name=incarnation,proto3" json:"incarnation,omitempty"`
+	PiSessionId   string                 `protobuf:"bytes,9,opt,name=pi_session_id,json=piSessionId,proto3" json:"pi_session_id,omitempty"`
+	Kind          string                 `protobuf:"bytes,10,opt,name=kind,proto3" json:"kind,omitempty"`
+	SourceScope   string                 `protobuf:"bytes,11,opt,name=source_scope,json=sourceScope,proto3" json:"source_scope,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4163,6 +4176,41 @@ func (x *BridgeDeliveryAckRequest) GetBoundedResult() []byte {
 		return x.BoundedResult
 	}
 	return nil
+}
+
+func (x *BridgeDeliveryAckRequest) GetRuntimeId() string {
+	if x != nil {
+		return x.RuntimeId
+	}
+	return ""
+}
+
+func (x *BridgeDeliveryAckRequest) GetIncarnation() uint64 {
+	if x != nil {
+		return x.Incarnation
+	}
+	return 0
+}
+
+func (x *BridgeDeliveryAckRequest) GetPiSessionId() string {
+	if x != nil {
+		return x.PiSessionId
+	}
+	return ""
+}
+
+func (x *BridgeDeliveryAckRequest) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *BridgeDeliveryAckRequest) GetSourceScope() string {
+	if x != nil {
+		return x.SourceScope
+	}
+	return ""
 }
 
 type BridgeDeliveryAckResponse struct {
@@ -5479,8 +5527,9 @@ const file_api_subagents_v1_subagents_proto_rawDesc = "" +
 	"\x1bclient_agent_roster_request\x18< \x01(\v22.workstation.subagents.v1.ClientAgentRosterRequestH\x00R\x18clientAgentRosterRequest\x12m\n" +
 	"\x19client_agent_roster_frame\x18= \x01(\v20.workstation.subagents.v1.ClientAgentRosterFrameH\x00R\x16clientAgentRosterFrame\x12m\n" +
 	"\x19actor_message_reply_frame\x18> \x01(\v20.workstation.subagents.v1.ActorMessageReplyFrameH\x00R\x16actorMessageReplyFrameB\t\n" +
-	"\apayload\"\xd1\x03\n" +
-	"\x16ActorMessageReplyFrame\x12.\n" +
+	"\apayload\"\xf8\x03\n" +
+	"\x16ActorMessageReplyFrame\x12%\n" +
+	"\x0ecompletion_key\x18\f \x01(\tR\rcompletionKey\x12.\n" +
 	"\x13original_request_id\x18\x01 \x01(\tR\x11originalRequestId\x12\x1b\n" +
 	"\tdedupe_id\x18\x02 \x01(\tR\bdedupeId\x12\x19\n" +
 	"\bchain_id\x18\x03 \x01(\tR\achainId\x128\n" +
@@ -5711,14 +5760,21 @@ const file_api_subagents_v1_subagents_proto_rawDesc = "" +
 	"deliveries\x18\x03 \x03(\v2(.workstation.subagents.v1.BridgeDeliveryR\n" +
 	"deliveries\x12'\n" +
 	"\x0flatest_sequence\x18\x04 \x01(\x04R\x0elatestSequence\x12\x16\n" +
-	"\x06reason\x18\x05 \x01(\tR\x06reason\"\xcb\x01\n" +
+	"\x06reason\x18\x05 \x01(\tR\x06reason\"\xe7\x02\n" +
 	"\x18BridgeDeliveryAckRequest\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12\x1a\n" +
 	"\bsequence\x18\x02 \x01(\x04R\bsequence\x12\x1b\n" +
 	"\tdedupe_id\x18\x03 \x01(\tR\bdedupeId\x12\x1c\n" +
 	"\tdelivered\x18\x04 \x01(\bR\tdelivered\x12\x16\n" +
 	"\x06reason\x18\x05 \x01(\tR\x06reason\x12%\n" +
-	"\x0ebounded_result\x18\x06 \x01(\fR\rboundedResult\"O\n" +
+	"\x0ebounded_result\x18\x06 \x01(\fR\rboundedResult\x12\x1d\n" +
+	"\n" +
+	"runtime_id\x18\a \x01(\tR\truntimeId\x12 \n" +
+	"\vincarnation\x18\b \x01(\x04R\vincarnation\x12\"\n" +
+	"\rpi_session_id\x18\t \x01(\tR\vpiSessionId\x12\x12\n" +
+	"\x04kind\x18\n" +
+	" \x01(\tR\x04kind\x12!\n" +
+	"\fsource_scope\x18\v \x01(\tR\vsourceScope\"O\n" +
 	"\x19BridgeDeliveryAckResponse\x12\x1a\n" +
 	"\baccepted\x18\x01 \x01(\bR\baccepted\x12\x16\n" +
 	"\x06reason\x18\x02 \x01(\tR\x06reason\"\xd2\x01\n" +

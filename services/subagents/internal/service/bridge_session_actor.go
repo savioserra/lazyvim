@@ -53,7 +53,14 @@ func (a *bridgeSessionActor) Receive(ctx *actor.ReceiveContext) {
 		a.closed = true
 	case *application.BridgeSessionPushCompleted:
 		a.busy = false
-		if message.Advanced && a.pending != "" {
+		if !message.Advanced {
+			if message.Reason != "post-fence replay" {
+				a.closed = true
+				a.service.unregisterBridgePush(a.session)
+			}
+			return
+		}
+		if a.pending != "" {
 			reason := a.pending
 			a.pending = ""
 			a.schedulePush(ctx, reason)

@@ -388,7 +388,7 @@ func startWithListener(ctx context.Context, listener net.Listener, options ...an
 		return fail(err)
 	}
 	service.bridgeWatcher = bridgeWatcher
-	if _, err := guardian.SpawnChild(ctx, "actor-reply-broker", &actorReplyBroker{service: service}, actor.WithMailbox(actor.NewNonBlockingBoundedMailbox(256)), actor.WithPassivationStrategy(passivation.NewLongLivedStrategy())); err != nil {
+	if _, err := guardian.SpawnChild(ctx, "actor-reply-projection", &actorReplyBroker{service: service}, actor.WithMailbox(actor.NewNonBlockingBoundedMailbox(256)), actor.WithPassivationStrategy(passivation.NewLongLivedStrategy())); err != nil {
 		return fail(err)
 	}
 	service.closeHostedSession = service.CloseSession
@@ -453,12 +453,24 @@ func (s *Service) reconcileDurableHosted(ctx context.Context) error {
 	}
 	for index := range records {
 		record := records[index]
-		s.hostedMu.Lock()
-		if owner := s.hostedProjects[record.RuntimeConfig.ProjectDirectory]; owner != "" && owner != record.AgentID {
-			s.hostedMu.Unlock()
-			return fmt.Errorf("durable hosted worktree is shared by %s and %s", owner, record.AgentID)
+		// Terminal records carry no hosted runtime, project, credential, or
+		// ownership file: register them before any hosted path validation and
+		// never let them reach ownership loading or stale-record removal.
+		if record.AuthorityBinding.Kind != application.AuthorityBindingHostedOwned {
+			registration := application.RegisterAgent{AgentID: record.AgentID, Role: record.Binding.Role, DisplayName: record.Binding.DisplayName, AuthorityBinding: record.AuthorityBinding, HostedPiRuntime: record.Binding, AllowedCapability: append([]string(nil), record.AllowedCapabilities...), Retention: record.Retention, Recovery: record.Recovery, PersistencePID: s.persistencePID, PersistenceSupervisor: s.persistenceSupervisor, DurableRecord: &record}
+			if _, err := s.registerAgent(ctx, registration, hostedRegistration{}); err != nil {
+				return fmt.Errorf("register durable terminal agent %s: %w", record.AgentID, err)
+			}
+			continue
 		}
-		s.hostedProjects[record.RuntimeConfig.ProjectDirectory] = record.AgentID
+		s.hostedMu.Lock()
+		if record.RuntimeConfig.ProjectDirectory != "" {
+			if owner := s.hostedProjects[record.RuntimeConfig.ProjectDirectory]; owner != "" && owner != record.AgentID {
+				s.hostedMu.Unlock()
+				return fmt.Errorf("durable hosted worktree is shared by %s and %s", owner, record.AgentID)
+			}
+			s.hostedProjects[record.RuntimeConfig.ProjectDirectory] = record.AgentID
+		}
 		s.hostedMu.Unlock()
 		if !pathWithin(record.Session.CredentialFile, s.hostedAdmin.CredentialDirectory) || !pathWithin(record.LaunchSpec.PiSessionDirectory, s.hostedAdmin.PiSessionDirectory) {
 			return fmt.Errorf("durable hosted %s escaped configured private roots", record.AgentID)
@@ -1420,6 +1432,32 @@ func (s *Service) recordActorMessageReply(ctx context.Context, reply *applicatio
 	}
 }
 
+func (s *Service) flushActorReplyPrincipal(principal string) {
+	s.actorReplyMu.Lock()
+	sessions := make([]*actorReplySession, 0, len(s.actorReplySessions))
+	for _, session := range s.actorReplySessions {
+		if session.principal == principal {
+			sessions = append(sessions, session)
+		}
+	}
+	s.actorReplyMu.Unlock()
+	for _, session := range sessions {
+		s.flushActorReplies(session)
+	}
+}
+
+func (s *Service) flushAllActorReplies() {
+	s.actorReplyMu.Lock()
+	sessions := make([]*actorReplySession, 0, len(s.actorReplySessions))
+	for _, session := range s.actorReplySessions {
+		sessions = append(sessions, session)
+	}
+	s.actorReplyMu.Unlock()
+	for _, session := range sessions {
+		s.flushActorReplies(session)
+	}
+}
+
 func (s *Service) flushActorReplies(session *actorReplySession) bool {
 	if session == nil {
 		return false
@@ -1436,36 +1474,49 @@ func (s *Service) flushActorReplies(session *actorReplySession) bool {
 	if !ok || !result.Allowed {
 		return false
 	}
+	route, err := s.authorizeAgent(ctx, &subagentsv1.Envelope{SessionId: session.sessionID, GenerationId: session.generationID, CallerIdentity: session.principal, SessionCredential: session.credential}, session.principal, []string{"observe"})
+	if err != nil || !route.Allowed {
+		return false
+	}
+	drained := make(chan []application.ActorTaskCompleted, 1)
+	if err := s.system.NoSender().Tell(ctx, route.PID, &application.DrainReceivedTaskCompletions{Result: drained}); err != nil {
+		return false
+	}
+	var completions []application.ActorTaskCompleted
+	select {
+	case completions = <-drained:
+	case <-ctx.Done():
+		return false
+	}
 	key := actorReplySessionKey(session.sessionID, session.generationID, session.principal)
-	for {
+	for _, completion := range completions {
 		s.actorReplyMu.Lock()
-		index := -1
-		records := s.actorReplies[key]
-		for i := range records {
-			if !records[i].delivered {
-				index = i
+		delivered := false
+		for _, record := range s.actorReplies[key] {
+			if record.frame.GetActorMessageReplyFrame().CompletionKey == completion.CompletionKey && record.delivered {
+				delivered = true
 				break
 			}
 		}
-		if index < 0 {
+		if delivered {
 			s.actorReplyMu.Unlock()
-			return true
+			continue
 		}
-		frame := proto.Clone(records[index].frame).(*subagentsv1.Envelope)
+		s.actorReplyNext[key]++
+		frame := &subagentsv1.Envelope{ProtocolMajor: protocol.ProtocolMajor, ProtocolMinor: protocol.ProtocolMinor, SessionId: session.sessionID, GenerationId: session.generationID, RequestId: completion.OriginalRequestID, CallerIdentity: session.principal, Sequence: s.actorReplyNext[key], Payload: &subagentsv1.Envelope_ActorMessageReplyFrame{ActorMessageReplyFrame: &subagentsv1.ActorMessageReplyFrame{CompletionKey: completion.CompletionKey, OriginalRequestId: completion.OriginalRequestID, DedupeId: completion.DedupeID, ChainId: completion.ChainID, SourceMutationSequence: completion.SourceMutationSequence, Accepted: completion.Terminal.Accepted, Completed: completion.Terminal.Completed, BoundedResult: append([]byte(nil), completion.Terminal.Result...), Reason: completion.Terminal.Reason, Source: protoCommunicationPeer(completion.Source), Target: protoCommunicationPeer(completion.Target), Kind: bridgeDeliveryKindLabel(completion.Kind)}}}
 		s.actorReplyMu.Unlock()
 		select {
 		case <-session.closed:
 			return false
 		case session.writer <- frame:
-			s.actorReplyMu.Lock()
-			if index < len(s.actorReplies[key]) && s.actorReplies[key][index].sequence == frame.Sequence {
-				s.actorReplies[key][index].delivered = true
-			}
-			s.actorReplyMu.Unlock()
 		case <-ctx.Done():
 			return false
 		}
+		s.actorReplyMu.Lock()
+		s.actorReplies[key] = append(s.actorReplies[key], actorReplyRecord{sequence: frame.Sequence, frame: frame, delivered: true})
+		s.actorReplyMu.Unlock()
 	}
+	return true
 }
 
 func (s *Service) bridgePushRegistration(request, response *subagentsv1.Envelope, writer chan<- *subagentsv1.Envelope, closed <-chan struct{}) *bridgePushSession {
@@ -1580,8 +1631,11 @@ func (s *Service) pushBridgeToSession(session *bridgePushSession, reason string)
 		return false
 	}
 	poll, ok := value.(*application.BridgePollResult)
-	if !ok || (len(poll.Events) == 0 && len(poll.Deliveries) == 0) {
+	if !ok {
 		return false
+	}
+	if len(poll.Events) == 0 && len(poll.Deliveries) == 0 {
+		return true
 	}
 	frame := &subagentsv1.Envelope{ProtocolMajor: protocol.ProtocolMajor, ProtocolMinor: protocol.ProtocolMinor, Payload: &subagentsv1.Envelope_BridgePushFrame{BridgePushFrame: &subagentsv1.BridgePushFrame{AgentId: session.agentID, Events: protoBridgeEvents(poll.Events), Deliveries: s.protoBridgeDeliveries(ctx, poll.Deliveries), LatestSequence: poll.LatestSequence, Reason: reason}}}
 	select {
@@ -2018,21 +2072,25 @@ func (s *Service) dispatch(request *subagentsv1.Envelope) *subagentsv1.Envelope 
 		if !validMode || !validSource {
 			return errorResponse(request, subagentsv1.ProtocolError_CODE_INVALID_REQUEST, "actor message mode or authenticated source is invalid")
 		}
-		route, err := s.authorizeAgent(ctx, request, payload.ActorMessageRequest.Target, []string{capability})
-		if err != nil || !route.Allowed {
+		targetRoute, err := s.authorizeAgent(ctx, request, payload.ActorMessageRequest.Target, []string{capability})
+		if err != nil || !targetRoute.Allowed {
 			return errorResponse(request, subagentsv1.ProtocolError_CODE_SESSION_MISMATCH, "actor message authorization denied")
 		}
-		intent := &application.BridgeIntent{SessionID: request.SessionId, GenerationID: route.GenerationID, Principal: route.Principal, Handle: request.AgentHandle, Fence: request.AgentFence, SourceAgentID: source, TargetAgentID: payload.ActorMessageRequest.Target, RequestID: request.RequestId, RequiredCapability: capability, DedupeID: payload.ActorMessageRequest.DedupeId, ChainID: payload.ActorMessageRequest.ChainId, Deadline: time.UnixMilli(request.DeadlineUnixMillis), HopLimit: payload.ActorMessageRequest.HopLimit, SourceMutationSequence: payload.ActorMessageRequest.SourceMutationSequence, Mode: application.BridgeMessageMode(payload.ActorMessageRequest.Mode), Payload: append([]byte(nil), payload.ActorMessageRequest.BoundedPayload...)}
-		receipt := make(chan application.BridgeIntentResult, 1)
-		var completion chan application.BridgeIntentResult
-		if payload.ActorMessageRequest.Mode == subagentsv1.ActorMessageRequest_MODE_ASK {
-			completion = make(chan application.BridgeIntentResult, 1)
-			intent.Completion = completion
+		if _, isClient := authenticatedClientSource(request.CallerIdentity); isClient {
+			if err := s.ensureTerminalAgent(ctx, source); err != nil {
+				return internalError(response)
+			}
 		}
-		intent.Receipt = receipt
+		sourceRoute, err := s.authorizeAgent(ctx, request, source, []string{capability})
+		if err != nil || !sourceRoute.Allowed {
+			return errorResponse(request, subagentsv1.ProtocolError_CODE_SESSION_MISMATCH, "source actor authorization denied")
+		}
+		receipt := make(chan application.BridgeIntentResult, 1)
+		task := &application.SendActorTask{TargetPID: targetRoute.PID, TargetPeer: s.communicationPeer(ctx, payload.ActorMessageRequest.Target), RequestID: request.RequestId, RequiredCapability: capability, DedupeID: payload.ActorMessageRequest.DedupeId, ChainID: payload.ActorMessageRequest.ChainId, Deadline: time.UnixMilli(request.DeadlineUnixMillis), HopLimit: payload.ActorMessageRequest.HopLimit, SourceMutationSequence: payload.ActorMessageRequest.SourceMutationSequence, Mode: application.BridgeMessageMode(payload.ActorMessageRequest.Mode), Payload: append([]byte(nil), payload.ActorMessageRequest.BoundedPayload...), Receipt: receipt}
 		var result *application.BridgeIntentResult
-		if route.PID.IsRemote() {
-			reply, err := s.system.NoSender().Ask(ctx, route.PID, remoteBridgeIntent(intent), requestTimeout)
+		if targetRoute.PID.IsRemote() {
+			intent := &application.BridgeIntent{SessionID: request.SessionId, GenerationID: targetRoute.GenerationID, Principal: targetRoute.Principal, Handle: request.AgentHandle, Fence: request.AgentFence, SourceAgentID: source, TargetAgentID: payload.ActorMessageRequest.Target, RequestID: request.RequestId, RequiredCapability: capability, DedupeID: payload.ActorMessageRequest.DedupeId, ChainID: payload.ActorMessageRequest.ChainId, Deadline: time.UnixMilli(request.DeadlineUnixMillis), HopLimit: payload.ActorMessageRequest.HopLimit, SourceMutationSequence: payload.ActorMessageRequest.SourceMutationSequence, Mode: application.BridgeMessageMode(payload.ActorMessageRequest.Mode), Payload: append([]byte(nil), payload.ActorMessageRequest.BoundedPayload...)}
+			reply, err := s.system.NoSender().Ask(ctx, targetRoute.PID, remoteBridgeIntent(intent), requestTimeout)
 			if err != nil {
 				return internalError(response)
 			}
@@ -2042,7 +2100,7 @@ func (s *Service) dispatch(request *subagentsv1.Envelope) *subagentsv1.Envelope 
 			}
 			result = value
 		} else {
-			if err := s.system.NoSender().Tell(ctx, route.PID, intent); err != nil {
+			if err := s.system.NoSender().Tell(ctx, sourceRoute.PID, task); err != nil {
 				return internalError(response)
 			}
 			select {
@@ -2054,9 +2112,6 @@ func (s *Service) dispatch(request *subagentsv1.Envelope) *subagentsv1.Envelope 
 		}
 		if result.Accepted {
 			s.pushBridgeUpdate(payload.ActorMessageRequest.Target, "actor delivery admitted")
-			if result.AwaitingAck && completion != nil {
-				s.trackActorMessageCompletion(request, intent, completion)
-			}
 		}
 		response.Payload = &subagentsv1.Envelope_ActorMessageResponse{ActorMessageResponse: &subagentsv1.ActorMessageResponse{Accepted: result.Accepted, Completed: result.Completed, BoundedResult: result.Result, Reason: result.Reason, Source: protoCommunicationPeer(s.communicationPeer(ctx, source)), Target: protoCommunicationPeer(s.communicationPeer(ctx, payload.ActorMessageRequest.Target)), Kind: actorMessageKind(payload.ActorMessageRequest.Mode)}}
 	case *subagentsv1.Envelope_ActorControlRequest:
@@ -3399,6 +3454,19 @@ func actorModeCapability(mode subagentsv1.ActorMessageRequest_Mode) (string, boo
 		return "", false
 	}
 }
+func bridgeDeliveryKindLabel(kind application.BridgeDeliveryKind) string {
+	switch kind {
+	case application.BridgeDeliveryPrompt:
+		return "ask"
+	case application.BridgeDeliveryAbort:
+		return "abort"
+	case application.BridgeDeliveryShutdown:
+		return "shutdown"
+	default:
+		return "tell"
+	}
+}
+
 func actorMessageKind(mode subagentsv1.ActorMessageRequest_Mode) string {
 	switch mode {
 	case subagentsv1.ActorMessageRequest_MODE_TELL:
@@ -3439,6 +3507,33 @@ func hostedStartupFailureClass(reason string) string {
 		return "hosted bridge attachment failed"
 	default:
 		return "hosted bridge startup rejected"
+	}
+}
+
+func (s *Service) ensureTerminalAgent(ctx context.Context, agentID string) error {
+	if agentID == "" {
+		return fmt.Errorf("terminal agent id is empty")
+	}
+	value, err := s.system.NoSender().Ask(ctx, s.agentRegistry, &application.ResolveAgentControl{AgentID: agentID}, requestTimeout)
+	if err == nil {
+		if resolved, ok := value.(*application.AgentControlPID); ok && resolved.Found {
+			return nil
+		}
+	}
+	registered := make(chan application.RegisterAgentResult, 1)
+	durable := application.DurableHostedRecord{SchemaVersion: application.DurableHostedSchemaVersion, OwnerUID: os.Getuid(), AgentID: agentID, AuthorityBinding: application.AuthorityBinding{Kind: application.AuthorityBindingPhaseOneObservedUpstream, ObservedUpstreamRunID: agentID}, AllowedCapabilities: []string{"observe", "send", "ask", "prompt", "control_abort", "control_shutdown"}, Retention: "bounded", Recovery: "terminal-reattach", Binding: application.InactiveHostedPiRuntimeBinding()}
+	registration := application.RegisterAgent{AgentID: agentID, Role: "TERMINAL PI", DisplayName: "TERMINAL PI", AuthorityBinding: durable.AuthorityBinding, HostedPiRuntime: durable.Binding, AllowedCapability: append([]string(nil), durable.AllowedCapabilities...), Retention: durable.Retention, Recovery: durable.Recovery, PersistencePID: s.persistencePID, PersistenceSupervisor: s.persistenceSupervisor, DurableRecord: &durable}
+	if err := s.system.NoSender().Tell(ctx, s.agentRegistry, &application.CoordinateAgentRegistration{OperationID: "terminal-agent-" + agentID, Registration: registration, Result: registered}); err != nil {
+		return err
+	}
+	select {
+	case result := <-registered:
+		if result.Created || result.Reason == "agent already registered" {
+			return nil
+		}
+		return fmt.Errorf("register terminal agent: %s", result.Reason)
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 }
 

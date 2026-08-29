@@ -65,6 +65,7 @@ message Envelope {
 }
 
 message ActorMessageReplyFrame {
+  string completion_key = 12;
   string original_request_id = 1;
   string dedupe_id = 2;
   string chain_id = 3;
@@ -362,6 +363,11 @@ message BridgeDeliveryAckRequest {
   bool delivered = 4;
   string reason = 5;
   bytes bounded_result = 6;
+  string runtime_id = 7;
+  uint64 incarnation = 8;
+  string pi_session_id = 9;
+  string kind = 10;
+  string source_scope = 11;
 }
 message BridgeDeliveryAckResponse {
   bool accepted = 1;

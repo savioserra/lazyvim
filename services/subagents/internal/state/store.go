@@ -241,6 +241,17 @@ func validateRecord(r application.DurableHostedRecord) error {
 	if r.OwnerUID != os.Getuid() {
 		return errors.New("durable hosted record owner mismatch")
 	}
+	if r.AuthorityBinding.Kind != application.AuthorityBindingHostedOwned {
+		if r.AgentID == "" || len(r.AgentID) > 64 || len(r.AllowedCapabilities) > 16 || len(r.AgentState.Attachments) > 4096 || len(r.AgentState.Revoked) > 4096 || len(r.AgentState.MutationScopes) > 256 || len(r.AgentState.SourceOutbox) > 256 || len(r.AgentState.SourceTaskHistory) > 1024 || len(r.AgentState.ReceivedTaskCompletions) > 1024 || len(r.AgentState.TaskCreditReservations) > 256 {
+			return errors.New("durable terminal record bound or identity mismatch")
+		}
+		for _, value := range []string{r.AgentID, r.AuthorityBinding.ObservedUpstreamRunID} {
+			if value == "" || len(value) > 4096 || value != strings.TrimSpace(value) || strings.ContainsAny(value, "\x00\r\n") {
+				return errors.New("durable terminal record contains invalid text")
+			}
+		}
+		return nil
+	}
 	if r.AgentID == "" || len(r.AgentID) > 64 || r.Session.SessionID == "" || r.Session.GenerationID == "" || r.Session.Caller != "hosted:"+r.AgentID || !r.Session.Persistent || !r.Session.ExpiresAt.IsZero() || r.LaunchSpec.AgentID != r.AgentID || r.Binding.RuntimeID != r.LaunchSpec.RuntimeID || r.Binding.Incarnation != r.LaunchSpec.Incarnation {
 		return errors.New("durable hosted record identity mismatch")
 	}

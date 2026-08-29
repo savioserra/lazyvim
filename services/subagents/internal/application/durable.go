@@ -7,7 +7,20 @@ import (
 	"github.com/tochemey/goakt/v4/actor"
 )
 
-const DurableHostedSchemaVersion = 2
+const (
+	DurableHostedSchemaVersion      = 2
+	DurableAgentRuntimeSchemaV3     = 3
+	DurableHostedPiBridgeSchemaV1   = 1
+	DurableAskCorrelationSchemaV1   = 1
+	DurableActorReplyReplaySchemaV1 = 1
+)
+
+const (
+	DurableRecordKindAgentRuntime     = "agent-runtime"
+	DurableRecordKindHostedPiBridge   = "hosted-pi-bridge"
+	DurableRecordKindAskCorrelation   = "ask-correlation"
+	DurableRecordKindActorReplyReplay = "actor-reply-replay"
+)
 
 type DurableHostedSession struct {
 	SessionID      string    `json:"session_id"`
@@ -46,6 +59,25 @@ type DurableDedupeRecord struct {
 	Sequence, MutationSequence uint64
 	ChainID                    string
 }
+type DurableActorTaskOutboxItem struct {
+	TaskID                                           string            `json:"task_id"`
+	Target                                           CommunicationPeer `json:"target"`
+	RequestID, DedupeID, ChainID, RequiredCapability string
+	SourceMutationSequence                           uint64            `json:"source_mutation_sequence"`
+	Deadline                                         time.Time         `json:"deadline"`
+	HopLimit                                         uint32            `json:"hop_limit"`
+	Mode                                             BridgeMessageMode `json:"mode"`
+	Payload                                          []byte            `json:"payload"`
+	PayloadDigest                                    [32]byte          `json:"payload_digest"`
+	Credit                                           TaskCredit        `json:"credit"`
+	State                                            string            `json:"state"`
+}
+
+type DurableTaskCreditReservation struct {
+	Credit TaskCredit `json:"credit"`
+	Source string     `json:"source"`
+}
+
 type DurableAgentState struct {
 	Revision, CommandSequence, Fence, BridgeFence, BridgeSequence, BridgeLeaseToken uint64
 	BridgeReady, BridgeDeclaredReady                                                bool
@@ -55,6 +87,76 @@ type DurableAgentState struct {
 	BridgeDeliveries                                                                []BridgeDelivery
 	DeliverySources                                                                 map[uint64]string
 	MutationScopes                                                                  []DurableMutationScope
+	SourceOutbox                                                                    []DurableActorTaskOutboxItem
+	SourceTaskHistory                                                               []ActorTaskCompleted
+	ReceivedTaskCompletions                                                         []ActorTaskCompleted
+	TaskCreditEpoch                                                                 uint64
+	TaskCreditReservations                                                          []DurableTaskCreditReservation
+}
+
+type DurableBridgeAckRecord struct {
+	Sequence    uint64             `json:"sequence"`
+	DedupeID    string             `json:"dedupe_id"`
+	Kind        BridgeDeliveryKind `json:"kind"`
+	SourceScope string             `json:"source_scope"`
+	Delivered   bool               `json:"delivered"`
+	Reason      string             `json:"reason"`
+	Result      []byte             `json:"result,omitempty"`
+}
+
+type DurableAskCorrelation struct {
+	SchemaVersion          int                  `json:"schema_version"`
+	RecordKind             string               `json:"record_kind"`
+	Key                    string               `json:"key"`
+	RequestID              string               `json:"request_id"`
+	DedupeID               string               `json:"dedupe_id"`
+	ChainID                string               `json:"chain_id"`
+	SourceMutationSequence uint64               `json:"source_mutation_sequence"`
+	DeliverySequence       uint64               `json:"delivery_sequence"`
+	Source                 CommunicationPeer    `json:"source"`
+	Target                 CommunicationPeer    `json:"target"`
+	TargetHomeNode         string               `json:"target_home_node"`
+	OriginHomeNode         string               `json:"origin_home_node"`
+	RequestingClient       string               `json:"requesting_client"`
+	ReplyRoute             string               `json:"reply_route"`
+	Deadline               time.Time            `json:"deadline"`
+	PayloadDigest          [32]byte             `json:"payload_digest"`
+	State                  string               `json:"state"`
+	TerminalDigest         [32]byte             `json:"terminal_digest"`
+	TerminalResult         BridgeIntentResult   `json:"terminal_result"`
+	CreatedAt              time.Time            `json:"created_at"`
+	UpdatedAt              time.Time            `json:"updated_at"`
+	ReplayExpiresAt        time.Time            `json:"replay_expires_at"`
+	TombstoneExpiresAt     time.Time            `json:"tombstone_expires_at"`
+	FrontendPushLedger     map[string]time.Time `json:"frontend_push_ledger,omitempty"`
+}
+
+type DurableHostedPiBridgeState struct {
+	SchemaVersion              int                               `json:"schema_version"`
+	RecordKind                 string                            `json:"record_kind"`
+	MigrationFromAgentRevision uint64                            `json:"migration_from_agent_revision"`
+	MigrationID                string                            `json:"migration_id,omitempty"`
+	MigrationInProgress        bool                              `json:"migration_in_progress,omitempty"`
+	MigrationCommitted         bool                              `json:"migration_committed,omitempty"`
+	AgentID                    string                            `json:"agent_id"`
+	RuntimeID                  string                            `json:"runtime_id"`
+	Incarnation                uint64                            `json:"incarnation"`
+	SessionID                  string                            `json:"session_id"`
+	GenerationID               string                            `json:"generation_id"`
+	Principal                  string                            `json:"principal"`
+	Handle                     string                            `json:"handle"`
+	PiSessionID                string                            `json:"pi_session_id"`
+	Fence                      uint64                            `json:"fence"`
+	NextDeliverySequence       uint64                            `json:"next_delivery_sequence"`
+	AckCursor                  uint64                            `json:"ack_cursor"`
+	AckGapBuffer               map[uint64]DurableBridgeAckRecord `json:"ack_gap_buffer"`
+	ReplayWindow               []BridgeDelivery                  `json:"replay_window"`
+	DeliverySources            map[uint64]string                 `json:"delivery_sources"`
+	MutationScopes             []DurableMutationScope            `json:"mutation_scopes"`
+	ReadinessLeaseGeneration   uint64                            `json:"readiness_lease_generation"`
+	Ready                      bool                              `json:"ready"`
+	AskCorrelations            []DurableAskCorrelation           `json:"ask_correlations"`
+	ReplyTombstones            map[string]time.Time              `json:"reply_tombstones"`
 }
 type DurableHostedRecord struct {
 	SchemaVersion       int                    `json:"schema_version"`

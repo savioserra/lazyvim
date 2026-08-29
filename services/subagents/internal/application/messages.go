@@ -345,6 +345,20 @@ const ClientAgentRosterTopic = "subagents.client.agent_roster"
 const ActorMessageReplyTopic = "subagents.actor.message_replies"
 
 const (
+	HostedPiBridgeActorStableNamePrefix = "agents/"
+	HostedPiBridgeActorNonAuthoritative = "non-authoritative-additive-migration-boundary"
+)
+
+func HostedPiBridgeActorStableName(agentID, runtimeID string, incarnation uint64) string {
+	return fmt.Sprintf("agents/%s/bridge/%s/%d", agentID, runtimeID, incarnation)
+}
+
+func HostedPiBridgeActorSpawnName(agentID, runtimeID string, incarnation uint64) string {
+	digest := sha256.Sum256([]byte(HostedPiBridgeActorStableName(agentID, runtimeID, incarnation)))
+	return "hosted-pi-bridge-" + fmt.Sprintf("%x", digest[:8])
+}
+
+const (
 	ClientAgentRosterStatus        = "status"
 	ClientAgentRosterSnapshotReset = "snapshot-reset"
 	ClientAgentRosterUpsert        = "upsert"
@@ -539,6 +553,143 @@ type ActorMessageReply struct {
 	SourceMutationSequence                                                                         uint64
 	Mode                                                                                           BridgeMessageMode
 	Result                                                                                         BridgeIntentResult
+}
+
+type SendActorTask struct {
+	TargetPID                                        *actor.PID
+	TargetPeer                                       CommunicationPeer
+	RequestID, DedupeID, ChainID, RequiredCapability string
+	SourceMutationSequence                           uint64
+	Deadline                                         time.Time
+	HopLimit                                         uint32
+	Mode                                             BridgeMessageMode
+	Payload                                          []byte
+	Receipt                                          chan<- BridgeIntentResult
+}
+
+type TaskCredit struct {
+	TaskID, CreditID string
+	TargetEpoch      uint64
+	ExpiresAt        time.Time
+	PayloadDigest    [32]byte
+}
+
+type RequestTaskCredit struct {
+	TaskID, RequestID, DedupeID, ChainID string
+	Deadline                             time.Time
+	PayloadDigest                        [32]byte
+}
+
+type TaskCreditGranted struct{ Credit TaskCredit }
+
+type TaskBackpressured struct {
+	TaskID, Reason string
+	TargetEpoch    uint64
+	RetryAfter     time.Duration
+}
+
+type ActorTask struct {
+	Credit                                           TaskCredit
+	SourcePeer, TargetPeer                           CommunicationPeer
+	RequestID, DedupeID, ChainID, RequiredCapability string
+	SourceMutationSequence                           uint64
+	Deadline                                         time.Time
+	HopLimit                                         uint32
+	Mode                                             BridgeMessageMode
+	Payload                                          []byte
+}
+
+const TargetTaskCommittedTopic = "subagents.target-task-committed"
+
+type ActorTaskAccepted struct {
+	TaskID, CreditID string
+	TargetAgentID    string
+	Accepted         bool
+	Reason           string
+}
+
+type TargetTaskCommitted struct {
+	TaskID, TargetAgentID string
+}
+
+type ActorTaskCompleted struct {
+	CompletionKey                        string
+	OriginalRequestID, DedupeID, ChainID string
+	SourceMutationSequence               uint64
+	Terminal                             BridgeIntentResult
+	Source, Target                       CommunicationPeer
+	Kind                                 BridgeDeliveryKind
+}
+
+type DrainReceivedTaskCompletions struct {
+	Result chan<- []ActorTaskCompleted
+}
+
+type CommitBridgeDelivery struct {
+	SourcePeer, TargetPeer                                       CommunicationPeer
+	SourceHomeNode, TargetHomeNode, RequestID, DedupeID, ChainID string
+	SourceScope, ReplyRoute, RequestingClientGeneration          string
+	SourceMutationSequence                                       uint64
+	Deadline                                                     time.Time
+	HopLimit                                                     uint32
+	Kind                                                         BridgeDeliveryKind
+	Policy                                                       BridgeDeliveryPolicy
+	Payload                                                      []byte
+	Admission                                                    chan<- BridgeIntentResult
+}
+
+type BridgeDeliveryAckEvidence struct {
+	SessionID, GenerationID, Principal, Handle, RuntimeID, PiSessionID, DedupeID, SourceScope, Reason string
+	Fence, Incarnation, Sequence                                                                      uint64
+	Kind                                                                                              BridgeDeliveryKind
+	Delivered                                                                                         bool
+	Result                                                                                            []byte
+	Completion                                                                                        chan<- BridgeDeliveryAckResult
+}
+
+type CompleteAskCorrelation struct {
+	CompletionKey string
+	Reason        string
+}
+
+type RouteActorMessageReply struct {
+	CompletionKey                                              string
+	OriginalRequestID, DedupeID, ChainID                       string
+	SourceMutationSequence                                     uint64
+	Terminal                                                   BridgeIntentResult
+	Source, Target                                             CommunicationPeer
+	Kind                                                       BridgeDeliveryKind
+	OriginHomeNode, TargetHomeNode, RequestingClientGeneration string
+}
+
+type MarkFrontendCompletionDelivered struct {
+	CompletionKey string
+	GenerationID  string
+	Result        chan<- OperationResult
+}
+
+type StopHostedBridge struct {
+	AgentID, RuntimeID string
+	Incarnation        uint64
+	Reason             string
+	Result             chan<- OperationResult
+}
+
+type RuntimeIncarnationRetired struct {
+	AgentID, RuntimeID string
+	Incarnation        uint64
+	Reason             string
+}
+
+type HostedPiBridgeStatus struct{}
+
+type HostedPiBridgeStateSnapshot struct {
+	StableName           string
+	MigrationBoundary    string
+	State                DurableHostedPiBridgeState
+	PendingReplay        []BridgeDelivery
+	TerminalReplyKeys    []string
+	NonAuthoritativeOnly bool
 }
 
 type AgentProjectionEvent struct {
