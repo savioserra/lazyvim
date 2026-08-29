@@ -306,13 +306,24 @@ func (a *AgentActor) Receive(ctx *actor.ReceiveContext) {
 			_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), a.runtimePID, message)
 		}
 	case *application.HostedPiRuntimeStateChanged:
-		a.hostedPiRuntime = message.Binding
+		binding := message.Binding
+		if binding.AggregateID == "" {
+			binding.AggregateID = a.hostedPiRuntime.AggregateID
+		}
+		if binding.DisplayName == "" {
+			binding.DisplayName = a.hostedPiRuntime.DisplayName
+		}
+		if binding.Role == "" {
+			binding.Role = a.hostedPiRuntime.Role
+		}
+		a.hostedPiRuntime = binding
 		if a.durableRecord != nil {
-			a.durableRecord.Binding = message.Binding
+			a.durableRecord.Binding = binding
 		}
 		a.revision++
 		if a.registryPID != nil {
 			copy := *message
+			copy.Binding = binding
 			_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), a.registryPID, &copy)
 		}
 	case *application.BridgeConnect:
