@@ -6,7 +6,7 @@ Status: approved UX contract for implementation. This document is the exact visu
 
 | Layer | Purpose | Allowed content |
 |---|---|---|
-| Realtime status | Temporary current state only | Ready, working, waiting, reviewing, testing, correcting, reconnecting, degraded |
+| Realtime status | Temporary current state only | Authenticated connection plus daemon-published actor lifecycle; productive labels only after AgentActor/WorkflowActor exposes a typed productive phase |
 | Conversation flow | Durable human-readable interaction | Received notes, requests, sent messages, replies, decisions, and failures |
 | Expanded details | Optional operational context | Dynamic role, duration, delivery state, evidence summary |
 
@@ -171,6 +171,8 @@ Actors
 ● UX QA                ready
 ```
 
+The fixed Pi status bar uses the same authority but a compact one-line form, for example `actors UX Implementer:[redacted] ready Architecture Review:[redacted] degraded +2`. It is length-bounded, sanitized, and shows an overflow count instead of wrapping. Until a typed productive phase is added by AgentActor/WorkflowActor, the status bar intentionally prefixes lifecycle as `[redacted]` and never shows `working`, `testing`, or similar productive activity.
+
 ## 6. Layout and responsive behavior
 
 - Use Pi TUI `Box`, `Container`, and `Text` with theme tokens.
@@ -183,7 +185,7 @@ Actors
 ## 7. Replay and persistence
 
 - Each communication has one stable dedupe key.
-- Client-side interaction state should be reduced by an explicit XState client actor. It owns view-local connection, pending request, replay cursor, and render-snapshot state while daemon actors remain authoritative for durable lifecycle, authorization, routing, and productive progress.
+- Client-side interaction state is reduced by an explicit XState-style client reducer. It owns view-local connection, pending request, roster replay cursor, and render-snapshot state while daemon actors remain authoritative for durable lifecycle, authorization, routing, and productive progress.
 - Reconnect/replay must not append duplicate visible cards.
 - Incoming request prompt injection and its visual representation count as one conversation item, not two.
 - Persist only bounded, sanitized conversation presentation data permitted by session policy.
@@ -218,6 +220,7 @@ Rules:
 - Productive phase comes from AgentActor or WorkflowActor state.
 - Process, Pi, tmux, or heartbeat liveness is never productive progress.
 - Runtime authority validates exact ownership before updating a pane.
+- Ordinary client roster UI consumes authenticated daemon push (`ClientAgentRosterFrame`) with epoch/sequence fencing. It must not poll `ListAgentsRequest` for fixed status-bar refresh.
 - No foreign tmux resources may be modified.
 
 ## 9. Scrolling

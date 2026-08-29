@@ -356,7 +356,20 @@ func (a *AgentActor) Receive(ctx *actor.ReceiveContext) {
 	case *application.HostedPiBridgeLeaseExpired:
 		a.bridgeLeaseExpired(ctx, message)
 	case *application.RemoteBridgeIntent:
-		a.bridgeIntent(ctx, &application.BridgeIntent{SessionID: message.SessionID, GenerationID: message.GenerationID, Principal: message.Principal, Handle: message.Handle, SourceAgentID: message.SourceAgentID, TargetAgentID: message.TargetAgentID, RequestID: message.RequestID, RequiredCapability: message.RequiredCapability, DedupeID: message.DedupeID, ChainID: message.ChainID, Fence: message.Fence, SourceMutationSequence: message.SourceMutationSequence, Deadline: message.Deadline, HopLimit: message.HopLimit, Mode: message.Mode, Payload: message.Payload})
+		var completion chan application.BridgeIntentResult
+		if message.ReplyTopic != "" && message.Mode == application.BridgeMessageAsk {
+			completion = make(chan application.BridgeIntentResult, 1)
+			system := ctx.ActorSystem()
+			self := ctx.Self()
+			go func() {
+				select {
+				case result := <-completion:
+					publishActorReply(system, self, message, result)
+				case <-time.After(max(time.Until(message.Deadline), time.Millisecond)):
+				}
+			}()
+		}
+		a.bridgeIntent(ctx, &application.BridgeIntent{SessionID: message.SessionID, GenerationID: message.GenerationID, Principal: message.Principal, Handle: message.Handle, SourceAgentID: message.SourceAgentID, TargetAgentID: message.TargetAgentID, RequestID: message.RequestID, RequiredCapability: message.RequiredCapability, DedupeID: message.DedupeID, ChainID: message.ChainID, Fence: message.Fence, SourceMutationSequence: message.SourceMutationSequence, Deadline: message.Deadline, HopLimit: message.HopLimit, Mode: message.Mode, Payload: message.Payload, Completion: completion})
 	case *application.BridgeIntent:
 		a.bridgeIntent(ctx, message)
 	case *application.BridgeControl:
@@ -1046,6 +1059,15 @@ func (a *AgentActor) bridgeControl(ctx *actor.ReceiveContext, message *applicati
 	}
 	_ = ctx.ActorSystem().ScheduleOnce(context.WithoutCancel(ctx.Context()), &application.BridgeIntentTimeout{ScopeKey: key, DedupeID: message.DedupeID}, ctx.Self(), max(time.Until(message.Deadline), time.Millisecond))
 	respondBridgeIntent(ctx, message.Completion, &result)
+}
+
+func publishActorReply(system actor.ActorSystem, self *actor.PID, message *application.RemoteBridgeIntent, result application.BridgeIntentResult) {
+	if system.TopicActor() == nil || self == nil || message == nil || message.ReplyTopic == "" {
+		return
+	}
+	reply := &application.ActorMessageReply{SessionID: message.SessionID, GenerationID: message.GenerationID, Principal: message.Principal, SourceAgentID: message.SourceAgentID, TargetAgentID: message.TargetAgentID, RequestID: message.RequestID, DedupeID: message.DedupeID, ChainID: message.ChainID, SourceMutationSequence: message.SourceMutationSequence, Mode: message.Mode, Result: result}
+	id := fmt.Sprintf("%s:%s:%d", message.SessionID, message.RequestID, message.SourceMutationSequence)
+	_ = self.Tell(context.Background(), system.TopicActor(), actor.NewPublish(id, message.ReplyTopic, reply))
 }
 
 func sourceMutationScopeKey(sessionID, generationID, principal string, fence, incarnation uint64) string {

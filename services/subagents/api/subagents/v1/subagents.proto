@@ -58,7 +58,46 @@ message Envelope {
     BridgePushFrame bridge_push_frame = 57;
     BridgeHeartbeatRequest bridge_heartbeat_request = 58;
     BridgeHeartbeatResponse bridge_heartbeat_response = 59;
+    ClientAgentRosterRequest client_agent_roster_request = 60;
+    ClientAgentRosterFrame client_agent_roster_frame = 61;
+    ActorMessageReplyFrame actor_message_reply_frame = 62;
   }
+}
+
+message ActorMessageReplyFrame {
+  string original_request_id = 1;
+  string dedupe_id = 2;
+  string chain_id = 3;
+  uint64 source_mutation_sequence = 4;
+  bool accepted = 5;
+  bool completed = 6;
+  bytes bounded_result = 7;
+  string reason = 8;
+  CommunicationPeer source = 9;
+  CommunicationPeer target = 10;
+  string kind = 11;
+}
+
+message ClientAgentRosterRequest {
+  // Snapshot/replay starts after the last client-rendered authoritative event.
+  uint64 last_epoch = 1;
+  uint64 after_sequence = 2;
+}
+
+message ClientAgentRosterFrame {
+  enum Operation {
+    OPERATION_UNSPECIFIED = 0;
+    OPERATION_STATUS = 1;
+    OPERATION_SNAPSHOT_RESET = 2;
+    OPERATION_UPSERT = 3;
+    OPERATION_REMOVE = 4;
+  }
+  Operation operation = 1;
+  uint64 epoch = 2;
+  uint64 sequence = 3;
+  AgentReference agent = 4;
+  string agent_id = 5;
+  string status = 6;
 }
 
 message BridgeHeartbeatRequest {

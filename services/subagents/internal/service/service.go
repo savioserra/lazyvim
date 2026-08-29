@@ -141,6 +141,14 @@ type Service struct {
 
 	pushMu       sync.Mutex
 	pushSessions map[*bridgePushSession]*actor.PID
+
+	rosterMu       sync.Mutex
+	rosterSessions map[*clientRosterSession]*actor.PID
+
+	actorReplyMu       sync.Mutex
+	actorReplySessions map[string]*actorReplySession
+	actorReplies       map[string][]actorReplyRecord
+	actorReplyNext     map[string]uint64
 }
 
 type requestRecord struct {
@@ -169,6 +177,15 @@ type connectionReplay struct {
 	order   []uint64
 }
 
+type clientRosterSession struct {
+	mu                                 sync.Mutex
+	sessionID, generationID, principal string
+	credential                         []byte
+	lastEpoch, afterSequence           uint64
+	writer                             chan<- *subagentsv1.Envelope
+	closed                             <-chan struct{}
+}
+
 type bridgePushSession struct {
 	mu                                                  sync.Mutex
 	sessionID, generationID, principal, agentID, handle string
@@ -176,6 +193,20 @@ type bridgePushSession struct {
 	fence, afterSequence                                uint64
 	writer                                              chan<- *subagentsv1.Envelope
 	closed                                              <-chan struct{}
+}
+
+type actorReplySession struct {
+	mu                                 sync.Mutex
+	sessionID, generationID, principal string
+	credential                         []byte
+	writer                             chan<- *subagentsv1.Envelope
+	closed                             <-chan struct{}
+}
+
+type actorReplyRecord struct {
+	sequence  uint64
+	delivered bool
+	frame     *subagentsv1.Envelope
 }
 
 func Start(ctx context.Context, socketPath string) (*Service, error) {
@@ -341,7 +372,7 @@ func startWithListener(ctx context.Context, listener net.Listener, options ...an
 	}
 	service := &Service{
 		system: system, guardian: guardian, sessionRegistry: sessions, agentRegistry: agents, sessionCoordinator: coordinator, hostedSupervisor: hostedSupervisor, workflowRegistry: workflowRegistry, taskCoordinator: taskCoordinator, publicDirectory: publicDirectory, persistenceSupervisor: persistenceSupervisor, listener: listener, actorPlane: actorPlane,
-		connectionSlots: make(chan struct{}, maxConnections), activeConnections: make(map[net.Conn]struct{}), requestResults: make(map[string]requestRecord), hostedRuntimes: make(map[string]*actor.PID), hostedRegistrations: make(map[string]hostedRegistration), hostedTerminal: make(map[string]application.HostedPiRuntimeBinding), hostedStartupFailure: make(map[string]string), hostedCleanup: make(map[string]hostedRegistration), hostedProjects: make(map[string]string), hostedStarting: make(map[string]int), registrationPlaceholders: make(map[string]*registrationPlaceholder), registrationCleanups: make(map[string]*registrationCleanup), hostedAdmin: hosted, socketPath: socketPath, hostedOperationCancels: make(map[uint64]context.CancelFunc), hostedAgentLocks: make(map[string]*sync.Mutex), registrationTimeout: requestTimeout, durableStore: durableStore, persistencePID: persistencePID, hostedIndeterminate: make(map[string]application.HostedPiRuntimeBinding), taskLifecycles: make(map[string]*taskLifecycle), clientSessions: make(map[string]*actor.PID), publicSessionGenerations: make(map[string]string), pushSessions: make(map[*bridgePushSession]*actor.PID),
+		connectionSlots: make(chan struct{}, maxConnections), activeConnections: make(map[net.Conn]struct{}), requestResults: make(map[string]requestRecord), hostedRuntimes: make(map[string]*actor.PID), hostedRegistrations: make(map[string]hostedRegistration), hostedTerminal: make(map[string]application.HostedPiRuntimeBinding), hostedStartupFailure: make(map[string]string), hostedCleanup: make(map[string]hostedRegistration), hostedProjects: make(map[string]string), hostedStarting: make(map[string]int), registrationPlaceholders: make(map[string]*registrationPlaceholder), registrationCleanups: make(map[string]*registrationCleanup), hostedAdmin: hosted, socketPath: socketPath, hostedOperationCancels: make(map[uint64]context.CancelFunc), hostedAgentLocks: make(map[string]*sync.Mutex), registrationTimeout: requestTimeout, durableStore: durableStore, persistencePID: persistencePID, hostedIndeterminate: make(map[string]application.HostedPiRuntimeBinding), taskLifecycles: make(map[string]*taskLifecycle), clientSessions: make(map[string]*actor.PID), publicSessionGenerations: make(map[string]string), pushSessions: make(map[*bridgePushSession]*actor.PID), rosterSessions: make(map[*clientRosterSession]*actor.PID), actorReplySessions: make(map[string]*actorReplySession), actorReplies: make(map[string][]actorReplyRecord), actorReplyNext: make(map[string]uint64),
 	}
 	if actorPlane != nil {
 		placementAuthority := placementAuthorityName(actorPlane.NodeIdentity)
@@ -357,6 +388,9 @@ func startWithListener(ctx context.Context, listener net.Listener, options ...an
 		return fail(err)
 	}
 	service.bridgeWatcher = bridgeWatcher
+	if _, err := guardian.SpawnChild(ctx, "actor-reply-broker", &actorReplyBroker{service: service}, actor.WithMailbox(actor.NewNonBlockingBoundedMailbox(256)), actor.WithPassivationStrategy(passivation.NewLongLivedStrategy())); err != nil {
+		return fail(err)
+	}
 	service.closeHostedSession = service.CloseSession
 	service.removeHostedCredential = hostedpi.RemoveCredentialFile
 	if hosted.Enabled {
@@ -1143,6 +1177,8 @@ func (s *Service) handleConnection(connection net.Conn) {
 	writer := make(chan *subagentsv1.Envelope, 32)
 	closed := make(chan struct{})
 	var pushSession *bridgePushSession
+	var rosterSession *clientRosterSession
+	var actorReplyKey [3]string
 	writerDone := make(chan struct{})
 	go func() {
 		defer close(writerDone)
@@ -1158,6 +1194,12 @@ func (s *Service) handleConnection(connection net.Conn) {
 		close(closed)
 		if pushSession != nil {
 			s.unregisterBridgePush(pushSession)
+		}
+		if rosterSession != nil {
+			s.unregisterClientRoster(rosterSession)
+		}
+		if actorReplyKey[0] != "" {
+			s.unregisterActorReplySession(actorReplyKey[0], actorReplyKey[1], actorReplyKey[2])
 		}
 		close(writer)
 		<-writerDone
@@ -1182,12 +1224,23 @@ func (s *Service) handleConnection(connection net.Conn) {
 		if !enqueueFrame(writer, response, responseDeadline) {
 			return
 		}
+		if _, ok := authenticatedClientSource(envelope.CallerIdentity); ok && response.GetProtocolError() == nil {
+			actorReplyKey = [3]string{envelope.SessionId, envelope.GenerationId, envelope.CallerIdentity}
+			s.registerActorReplySession(envelope, writer, closed)
+		}
 		if next := s.bridgePushRegistration(envelope, response, writer, closed); next != nil {
 			if pushSession != nil {
 				s.unregisterBridgePush(pushSession)
 			}
 			pushSession = next
 			s.registerBridgePush(next)
+		}
+		if next := s.clientRosterRegistration(envelope, response, writer, closed); next != nil {
+			if rosterSession != nil {
+				s.unregisterClientRoster(rosterSession)
+			}
+			rosterSession = next
+			s.registerClientRoster(next)
 		}
 	}
 }
@@ -1203,6 +1256,215 @@ func enqueueFrame(writer chan<- *subagentsv1.Envelope, envelope *subagentsv1.Env
 		return true
 	case <-timer.C:
 		return false
+	}
+}
+
+func (s *Service) clientRosterRegistration(request, response *subagentsv1.Envelope, writer chan<- *subagentsv1.Envelope, closed <-chan struct{}) *clientRosterSession {
+	payload, ok := request.Payload.(*subagentsv1.Envelope_ClientAgentRosterRequest)
+	operation := response.GetAgentOperationResponse()
+	if !ok || operation == nil || !operation.Completed || operation.Reason != "" {
+		return nil
+	}
+	return &clientRosterSession{sessionID: request.SessionId, generationID: request.GenerationId, principal: request.CallerIdentity, credential: append([]byte(nil), request.SessionCredential...), lastEpoch: payload.ClientAgentRosterRequest.LastEpoch, afterSequence: payload.ClientAgentRosterRequest.AfterSequence, writer: writer, closed: closed}
+}
+
+func (s *Service) registerClientRoster(session *clientRosterSession) {
+	suffix, suffixErr := randomHandle()
+	if suffixErr != nil {
+		suffix = fmt.Sprint(time.Now().UnixNano())
+	}
+	pid, err := s.guardian.SpawnChild(context.Background(), "client-roster-session-"+session.sessionID+"-"+suffix, newClientRosterActor(s, session), actor.WithMailbox(actor.NewNonBlockingBoundedMailbox(128)), actor.WithPassivationStrategy(passivation.NewLongLivedStrategy()))
+	if err != nil || pid == nil {
+		return
+	}
+	s.rosterMu.Lock()
+	s.rosterSessions[session] = pid
+	s.rosterMu.Unlock()
+	if err := s.system.NoSender().Tell(context.Background(), pid, &clientRosterFlush{}); err != nil {
+		s.unregisterClientRoster(session)
+	}
+}
+
+func (s *Service) unregisterClientRoster(session *clientRosterSession) {
+	s.rosterMu.Lock()
+	pid := s.rosterSessions[session]
+	delete(s.rosterSessions, session)
+	s.rosterMu.Unlock()
+	if pid != nil {
+		_ = s.system.NoSender().Tell(context.Background(), pid, &clientRosterClosed{})
+		_ = pid.Shutdown(context.Background())
+	}
+}
+
+func (s *Service) removeClientRosterActorName(name string) {
+	s.rosterMu.Lock()
+	defer s.rosterMu.Unlock()
+	for session, current := range s.rosterSessions {
+		if current != nil && current.Name() == name {
+			delete(s.rosterSessions, session)
+		}
+	}
+}
+
+func (s *Service) pushClientRosterToSession(session *clientRosterSession, events []application.ClientAgentRosterEvent) bool {
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), requestTimeout)
+	defer cancel()
+	value, err := s.system.NoSender().Ask(ctx, s.sessionRegistry, &application.SessionAuthorization{SessionID: session.sessionID, GenerationID: session.generationID, Caller: session.principal, Credential: session.credential, Capability: "observe"}, requestTimeout)
+	if err != nil {
+		return false
+	}
+	result, ok := value.(*application.AuthorizationResult)
+	if !ok || !result.Allowed {
+		return false
+	}
+	frames := make([]*subagentsv1.Envelope, 0, len(events))
+	for _, event := range events {
+		if event.Operation == "" || (event.Epoch < session.lastEpoch || event.Epoch == session.lastEpoch && event.Sequence <= session.afterSequence) {
+			continue
+		}
+		frames = append(frames, &subagentsv1.Envelope{ProtocolMajor: protocol.ProtocolMajor, ProtocolMinor: protocol.ProtocolMinor, Payload: &subagentsv1.Envelope_ClientAgentRosterFrame{ClientAgentRosterFrame: protoClientAgentRosterFrame(event)}})
+	}
+	if len(frames) == 0 {
+		return true
+	}
+	for _, frame := range frames {
+		select {
+		case <-session.closed:
+			return false
+		case session.writer <- frame:
+			pushed := frame.GetClientAgentRosterFrame()
+			session.lastEpoch, session.afterSequence = pushed.Epoch, pushed.Sequence
+		case <-ctx.Done():
+			return false
+		}
+	}
+	return true
+}
+
+func actorReplySessionKey(sessionID, generationID, principal string) string {
+	return sessionID + "\x00" + generationID + "\x00" + principal
+}
+
+func (s *Service) registerActorReplySession(request *subagentsv1.Envelope, writer chan<- *subagentsv1.Envelope, closed <-chan struct{}) {
+	if _, ok := authenticatedClientSource(request.CallerIdentity); !ok || request.SessionId == "" || request.GenerationId == "" || len(request.SessionCredential) == 0 {
+		return
+	}
+	session := &actorReplySession{sessionID: request.SessionId, generationID: request.GenerationId, principal: request.CallerIdentity, credential: append([]byte(nil), request.SessionCredential...), writer: writer, closed: closed}
+	key := actorReplySessionKey(session.sessionID, session.generationID, session.principal)
+	s.actorReplyMu.Lock()
+	s.actorReplySessions[key] = session
+	s.actorReplyMu.Unlock()
+	s.flushActorReplies(session)
+}
+
+func (s *Service) unregisterActorReplySession(sessionID, generationID, principal string) {
+	key := actorReplySessionKey(sessionID, generationID, principal)
+	s.actorReplyMu.Lock()
+	delete(s.actorReplySessions, key)
+	s.actorReplyMu.Unlock()
+}
+
+func (s *Service) trackActorMessageCompletion(request *subagentsv1.Envelope, intent *application.BridgeIntent, completion <-chan application.BridgeIntentResult) {
+	if request == nil || intent == nil || completion == nil || intent.Mode != application.BridgeMessageAsk {
+		return
+	}
+	go func() {
+		select {
+		case result := <-completion:
+			s.recordActorMessageReply(context.Background(), &application.ActorMessageReply{SessionID: request.SessionId, GenerationID: request.GenerationId, Principal: request.CallerIdentity, SourceAgentID: intent.SourceAgentID, TargetAgentID: intent.TargetAgentID, RequestID: intent.RequestID, DedupeID: intent.DedupeID, ChainID: intent.ChainID, SourceMutationSequence: intent.SourceMutationSequence, Mode: intent.Mode, Result: result})
+		case <-time.After(max(time.Until(intent.Deadline), time.Millisecond)):
+		}
+	}()
+}
+
+func (s *Service) recordActorMessageReply(ctx context.Context, reply *application.ActorMessageReply) {
+	if reply == nil || reply.SessionID == "" || reply.GenerationID == "" || reply.Principal == "" || reply.RequestID == "" || reply.DedupeID == "" || reply.ChainID == "" {
+		return
+	}
+	result := reply.Result
+	if len(result.Result) > maxPromptBytes {
+		result.Result = result.Result[:maxPromptBytes]
+	}
+	if len(result.Reason) > 240 {
+		result.Reason = result.Reason[:240]
+	}
+	key := actorReplySessionKey(reply.SessionID, reply.GenerationID, reply.Principal)
+	frame := &subagentsv1.Envelope{ProtocolMajor: protocol.ProtocolMajor, ProtocolMinor: protocol.ProtocolMinor, SessionId: reply.SessionID, GenerationId: reply.GenerationID, RequestId: reply.RequestID, CallerIdentity: reply.Principal, Payload: &subagentsv1.Envelope_ActorMessageReplyFrame{ActorMessageReplyFrame: &subagentsv1.ActorMessageReplyFrame{OriginalRequestId: reply.RequestID, DedupeId: reply.DedupeID, ChainId: reply.ChainID, SourceMutationSequence: reply.SourceMutationSequence, Accepted: result.Accepted, Completed: result.Completed, BoundedResult: append([]byte(nil), result.Result...), Reason: result.Reason, Source: protoCommunicationPeer(s.communicationPeer(ctx, reply.SourceAgentID)), Target: protoCommunicationPeer(s.communicationPeer(ctx, reply.TargetAgentID)), Kind: actorMessageKind(subagentsv1.ActorMessageRequest_Mode(reply.Mode))}}}
+	s.actorReplyMu.Lock()
+	records := s.actorReplies[key]
+	for index := range records {
+		if records[index].frame.GetActorMessageReplyFrame().OriginalRequestId == reply.RequestID {
+			records[index].frame = frame
+			s.actorReplies[key] = records
+			session := s.actorReplySessions[key]
+			s.actorReplyMu.Unlock()
+			if session != nil && !records[index].delivered {
+				s.flushActorReplies(session)
+			}
+			return
+		}
+	}
+	s.actorReplyNext[key]++
+	frame.Sequence = s.actorReplyNext[key]
+	records = append(records, actorReplyRecord{sequence: frame.Sequence, frame: frame})
+	if len(records) > maxRequestResults {
+		records = records[len(records)-maxRequestResults:]
+	}
+	s.actorReplies[key] = records
+	session := s.actorReplySessions[key]
+	s.actorReplyMu.Unlock()
+	if session != nil {
+		s.flushActorReplies(session)
+	}
+}
+
+func (s *Service) flushActorReplies(session *actorReplySession) bool {
+	if session == nil {
+		return false
+	}
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), requestTimeout)
+	defer cancel()
+	value, err := s.system.NoSender().Ask(ctx, s.sessionRegistry, &application.SessionAuthorization{SessionID: session.sessionID, GenerationID: session.generationID, Caller: session.principal, Credential: session.credential, Capability: "observe"}, requestTimeout)
+	if err != nil {
+		return false
+	}
+	result, ok := value.(*application.AuthorizationResult)
+	if !ok || !result.Allowed {
+		return false
+	}
+	key := actorReplySessionKey(session.sessionID, session.generationID, session.principal)
+	for {
+		s.actorReplyMu.Lock()
+		index := -1
+		records := s.actorReplies[key]
+		for i := range records {
+			if !records[i].delivered {
+				index = i
+				break
+			}
+		}
+		if index < 0 {
+			s.actorReplyMu.Unlock()
+			return true
+		}
+		frame := proto.Clone(records[index].frame).(*subagentsv1.Envelope)
+		s.actorReplyMu.Unlock()
+		select {
+		case <-session.closed:
+			return false
+		case session.writer <- frame:
+			s.actorReplyMu.Lock()
+			if index < len(s.actorReplies[key]) && s.actorReplies[key][index].sequence == frame.Sequence {
+				s.actorReplies[key][index].delivered = true
+			}
+			s.actorReplyMu.Unlock()
+		case <-ctx.Done():
+			return false
+		}
 	}
 }
 
@@ -1438,6 +1700,8 @@ func (s *Service) reauthorizeReplay(request *subagentsv1.Envelope) bool {
 	case *subagentsv1.Envelope_BridgePollRequest:
 		agentID = payload.BridgePollRequest.AgentId
 		capability = "hosted_bridge"
+	case *subagentsv1.Envelope_ClientAgentRosterRequest:
+		capability = "observe"
 	}
 	if agentID != "" {
 		route, err := s.authorizeAgent(context.Background(), request, agentID, []string{capability})
@@ -1473,6 +1737,21 @@ func (s *Service) dispatch(request *subagentsv1.Envelope) *subagentsv1.Envelope 
 			return internalError(response)
 		}
 		response.Payload = &subagentsv1.Envelope_HealthResponse{HealthResponse: &subagentsv1.HealthResponse{Live: health.Live, Ready: health.Ready, Status: health.Status}}
+	case *subagentsv1.Envelope_ClientAgentRosterRequest:
+		message := &application.ClientAgentRosterSnapshot{SessionID: request.SessionId, GenerationID: request.GenerationId, Caller: request.CallerIdentity, Credential: request.SessionCredential, LastEpoch: payload.ClientAgentRosterRequest.LastEpoch, AfterSequence: payload.ClientAgentRosterRequest.AfterSequence}
+		value, err := s.system.NoSender().Ask(ctx, s.agentRegistry, message, requestTimeout)
+		if err != nil {
+			return internalError(response)
+		}
+		snapshot, ok := value.(*application.ClientAgentRosterSnapshotResult)
+		if !ok {
+			return internalError(response)
+		}
+		if snapshot.Reason != "" {
+			response.Payload = &subagentsv1.Envelope_AgentOperationResponse{AgentOperationResponse: &subagentsv1.AgentOperationResponse{Completed: false, Reason: snapshot.Reason}}
+			return response
+		}
+		response.Payload = &subagentsv1.Envelope_AgentOperationResponse{AgentOperationResponse: &subagentsv1.AgentOperationResponse{Completed: true}}
 	case *subagentsv1.Envelope_ListAgentsRequest:
 		message := &application.ListAgents{SessionID: request.SessionId, GenerationID: request.GenerationId, Caller: request.CallerIdentity, Credential: request.SessionCredential}
 		value, err := s.system.NoSender().Ask(ctx, s.agentRegistry, message, requestTimeout)
@@ -1745,6 +2024,11 @@ func (s *Service) dispatch(request *subagentsv1.Envelope) *subagentsv1.Envelope 
 		}
 		intent := &application.BridgeIntent{SessionID: request.SessionId, GenerationID: route.GenerationID, Principal: route.Principal, Handle: request.AgentHandle, Fence: request.AgentFence, SourceAgentID: source, TargetAgentID: payload.ActorMessageRequest.Target, RequestID: request.RequestId, RequiredCapability: capability, DedupeID: payload.ActorMessageRequest.DedupeId, ChainID: payload.ActorMessageRequest.ChainId, Deadline: time.UnixMilli(request.DeadlineUnixMillis), HopLimit: payload.ActorMessageRequest.HopLimit, SourceMutationSequence: payload.ActorMessageRequest.SourceMutationSequence, Mode: application.BridgeMessageMode(payload.ActorMessageRequest.Mode), Payload: append([]byte(nil), payload.ActorMessageRequest.BoundedPayload...)}
 		receipt := make(chan application.BridgeIntentResult, 1)
+		var completion chan application.BridgeIntentResult
+		if payload.ActorMessageRequest.Mode == subagentsv1.ActorMessageRequest_MODE_ASK {
+			completion = make(chan application.BridgeIntentResult, 1)
+			intent.Completion = completion
+		}
 		intent.Receipt = receipt
 		var result *application.BridgeIntentResult
 		if route.PID.IsRemote() {
@@ -1770,6 +2054,9 @@ func (s *Service) dispatch(request *subagentsv1.Envelope) *subagentsv1.Envelope 
 		}
 		if result.Accepted {
 			s.pushBridgeUpdate(payload.ActorMessageRequest.Target, "actor delivery admitted")
+			if result.AwaitingAck && completion != nil {
+				s.trackActorMessageCompletion(request, intent, completion)
+			}
 		}
 		response.Payload = &subagentsv1.Envelope_ActorMessageResponse{ActorMessageResponse: &subagentsv1.ActorMessageResponse{Accepted: result.Accepted, Completed: result.Completed, BoundedResult: result.Result, Reason: result.Reason, Source: protoCommunicationPeer(s.communicationPeer(ctx, source)), Target: protoCommunicationPeer(s.communicationPeer(ctx, payload.ActorMessageRequest.Target)), Kind: actorMessageKind(payload.ActorMessageRequest.Mode)}}
 	case *subagentsv1.Envelope_ActorControlRequest:
@@ -2062,6 +2349,23 @@ func (s *Service) operationResponse(ctx context.Context, response *subagentsv1.E
 	}
 	response.Payload = &subagentsv1.Envelope_AgentOperationResponse{AgentOperationResponse: &subagentsv1.AgentOperationResponse{Completed: result.Completed, Revision: result.Revision, Reason: result.Reason}}
 	return response
+}
+
+func protoClientAgentRosterFrame(event application.ClientAgentRosterEvent) *subagentsv1.ClientAgentRosterFrame {
+	operation := subagentsv1.ClientAgentRosterFrame_OPERATION_STATUS
+	switch event.Operation {
+	case application.ClientAgentRosterSnapshotReset:
+		operation = subagentsv1.ClientAgentRosterFrame_OPERATION_SNAPSHOT_RESET
+	case application.ClientAgentRosterUpsert:
+		operation = subagentsv1.ClientAgentRosterFrame_OPERATION_UPSERT
+	case application.ClientAgentRosterRemove:
+		operation = subagentsv1.ClientAgentRosterFrame_OPERATION_REMOVE
+	}
+	agentID := event.AgentID
+	if agentID == "" {
+		agentID = event.Reference.AgentID
+	}
+	return &subagentsv1.ClientAgentRosterFrame{Operation: operation, Epoch: event.Epoch, Sequence: event.Sequence, AgentId: agentID, Agent: protoPublicAgentReference(event.Reference), Status: event.Status}
 }
 
 func protoPublicAgentReference(item application.AgentReference) *subagentsv1.AgentReference {

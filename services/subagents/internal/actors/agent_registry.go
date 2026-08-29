@@ -54,6 +54,9 @@ type AgentRegistryActor struct {
 	publicEpoch       uint64
 	publicSequence    uint64
 	publicResetSent   bool
+	clientEpoch       uint64
+	clientSequence    uint64
+	clientResetSent   bool
 }
 
 func NewAgentRegistryActor(registrationDelay ...time.Duration) *AgentRegistryActor {
@@ -68,9 +71,14 @@ func (*AgentRegistryActor) PostStop(*actor.Context) error { return nil }
 func (a *AgentRegistryActor) Receive(ctx *actor.ReceiveContext) {
 	switch message := ctx.Message().(type) {
 	case *actor.PostStart:
+		a.clientEpoch = uint64(time.Now().UnixNano())
+		if a.clientEpoch == 0 {
+			a.clientEpoch = 1
+		}
 		if topic := ctx.ActorSystem().TopicActor(); topic != nil {
 			_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), topic, actor.NewSubscribe(publicAgentDirectoryRequestTopic))
 		}
+		a.publishClientAgentSnapshot(ctx)
 	case *application.StageSession:
 		accepted := message.Registry == application.AgentRegistry && a.stage(message.Session)
 		a.ack(ctx, message.Acknowledge, &application.SessionStageAck{SessionID: message.Session.SessionID, GenerationID: message.Session.GenerationID, Registry: application.AgentRegistry, Accepted: accepted})
@@ -154,6 +162,8 @@ func (a *AgentRegistryActor) Receive(ctx *actor.ReceiveContext) {
 		}
 		slices.SortFunc(agents, func(left, right application.AgentReference) int { return cmpString(left.AgentID, right.AgentID) })
 		ctx.Response(&application.AgentList{Agents: agents})
+	case *application.ClientAgentRosterSnapshot:
+		a.clientRosterSnapshot(ctx, message)
 	case *application.ResolveAgent:
 		if !a.authorized(message.SessionID, message.GenerationID, message.Caller, message.Credential, "observe") {
 			ctx.Response(&application.ResolveAgentResult{})
@@ -188,6 +198,7 @@ func (a *AgentRegistryActor) Receive(ctx *actor.ReceiveContext) {
 			}
 			item.reference.LifecycleRevision++
 			a.agents[message.AgentID] = item
+			a.publishClientAgentUpsert(ctx, message.AgentID, item)
 			a.publishPublicAgentUpsert(ctx, message.AgentID, item)
 		}
 	case *actor.Terminated:
@@ -202,6 +213,7 @@ func (a *AgentRegistryActor) Receive(ctx *actor.ReceiveContext) {
 				item.reference.HostedPiRuntime.BridgeReady = false
 				item.reference.LifecycleRevision++
 				a.agents[id] = item
+				a.publishClientAgentUpsert(ctx, id, item)
 				a.publishPublicAgentUpsert(ctx, id, item)
 			}
 		}
@@ -296,6 +308,7 @@ func (a *AgentRegistryActor) beginRegistrationCompensation(ctx *actor.ReceiveCon
 		ctx.UnWatch(item.runtimePID)
 	}
 	delete(a.agents, agentID)
+	a.publishClientAgentRemove(ctx, agentID, item)
 	a.publishPublicAgentRemove(ctx, agentID, item)
 	// Registry retirement and exact PID publication are immediate. Service-owned
 	// asynchronous cleanup may take arbitrarily longer without losing identity.
@@ -360,6 +373,7 @@ func (a *AgentRegistryActor) register(ctx *actor.ReceiveContext, message *applic
 	a.agents[message.AgentID] = registeredAgent{actorName: name, registrationOperationID: operationID, agentPID: pid, reference: application.AgentReference{AgentID: message.AgentID, LifecycleRevision: 1, Role: role, DisplayName: displayName, RetentionPolicy: message.Retention, RecoveryPolicy: message.Recovery, AuthorityBinding: message.AuthorityBinding, HostedPiRuntime: message.HostedPiRuntime}, allowed: allowed, recipe: recipe}
 	defer func() {
 		if item, exists := a.agents[message.AgentID]; exists {
+			a.publishClientAgentUpsert(ctx, message.AgentID, item)
 			a.publishPublicAgentUpsert(ctx, message.AgentID, item)
 		}
 	}()
@@ -440,6 +454,81 @@ func (a *AgentRegistryActor) reconcileAgentTermination(ctx *actor.ReceiveContext
 	item.reference.LifecycleRevision++
 	a.agents[agentID] = item
 	a.publishPublicAgentUpsert(ctx, agentID, item)
+}
+
+func (a *AgentRegistryActor) clientRosterSnapshot(ctx *actor.ReceiveContext, message *application.ClientAgentRosterSnapshot) {
+	if !a.authorized(message.SessionID, message.GenerationID, message.Caller, message.Credential, "observe") {
+		ctx.Response(&application.ClientAgentRosterSnapshotResult{Reason: "session authorization denied"})
+		return
+	}
+	events := make([]application.ClientAgentRosterEvent, 0, len(a.agents)+1)
+	sequence := a.clientSequence + 1
+	events = append(events, application.ClientAgentRosterEvent{Operation: application.ClientAgentRosterSnapshotReset, Epoch: a.clientEpoch, Sequence: sequence})
+	agents := make([]registeredAgent, 0, len(a.agents))
+	for _, item := range a.agents {
+		agents = append(agents, item)
+	}
+	slices.SortFunc(agents, func(left, right registeredAgent) int {
+		return cmpString(left.reference.AgentID, right.reference.AgentID)
+	})
+	for _, item := range agents {
+		sequence++
+		events = append(events, application.ClientAgentRosterEvent{Operation: application.ClientAgentRosterUpsert, Epoch: a.clientEpoch, Sequence: sequence, AgentID: item.reference.AgentID, Reference: item.reference, Status: clientAgentStatus(item.reference)})
+	}
+	a.clientSequence = sequence
+	ctx.Response(&application.ClientAgentRosterSnapshotResult{Events: events})
+}
+
+func (a *AgentRegistryActor) publishClientAgentSnapshot(ctx *actor.ReceiveContext) {
+	if !a.clientResetSent {
+		a.publishClientAgentEvent(ctx, &application.ClientAgentRosterEvent{Operation: application.ClientAgentRosterSnapshotReset})
+		a.clientResetSent = true
+	}
+	for agentID, item := range a.agents {
+		a.publishClientAgentUpsert(ctx, agentID, item)
+	}
+}
+
+func (a *AgentRegistryActor) publishClientAgentUpsert(ctx *actor.ReceiveContext, agentID string, item registeredAgent) {
+	a.publishClientAgentEvent(ctx, &application.ClientAgentRosterEvent{Operation: application.ClientAgentRosterUpsert, AgentID: agentID, Reference: item.reference, Status: clientAgentStatus(item.reference)})
+}
+
+func (a *AgentRegistryActor) publishClientAgentRemove(ctx *actor.ReceiveContext, agentID string, item registeredAgent) {
+	reference := item.reference
+	reference.LifecycleRevision++
+	a.publishClientAgentEvent(ctx, &application.ClientAgentRosterEvent{Operation: application.ClientAgentRosterRemove, AgentID: agentID, Reference: reference, Status: "removed"})
+}
+
+func (a *AgentRegistryActor) publishClientAgentEvent(ctx *actor.ReceiveContext, event *application.ClientAgentRosterEvent) {
+	if topic := ctx.ActorSystem().TopicActor(); topic != nil {
+		a.clientSequence++
+		event.Epoch = a.clientEpoch
+		event.Sequence = a.clientSequence
+		id := "client-roster:" + event.AgentID + ":" + strconv.FormatUint(event.Epoch, 10) + ":" + strconv.FormatUint(event.Sequence, 10)
+		_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), topic, actor.NewPublish(id, application.ClientAgentRosterTopic, event))
+	}
+}
+
+func clientAgentStatus(reference application.AgentReference) string {
+	if reference.HostedPiRuntime.State == application.HostedPiRuntimeReady && reference.HostedPiRuntime.BridgeReady {
+		return "ready"
+	}
+	switch reference.HostedPiRuntime.State {
+	case application.HostedPiRuntimeStarting:
+		return "starting"
+	case application.HostedPiRuntimeReady:
+		return "ready"
+	case application.HostedPiRuntimeDegraded:
+		return "degraded"
+	case application.HostedPiRuntimeStopping:
+		return "stopping"
+	case application.HostedPiRuntimeStopped:
+		return "stopped"
+	}
+	if reference.AuthorityBinding.Kind == application.AuthorityBindingPhaseOneObservedUpstream {
+		return "observed"
+	}
+	return "registered"
 }
 
 func (a *AgentRegistryActor) publishPublicAgentSnapshot(ctx *actor.ReceiveContext) {
@@ -533,6 +622,7 @@ func (a *AgentRegistryActor) unregister(ctx *actor.ReceiveContext, message *appl
 	pid, err := ctx.ActorSystem().ActorOf(ctx.Context(), item.actorName)
 	if err != nil {
 		delete(a.agents, message.AgentID)
+		a.publishClientAgentRemove(ctx, message.AgentID, item)
 		a.publishPublicAgentRemove(ctx, message.AgentID, item)
 		deliverUnregisterResult(message.Result, application.UnregisterAgentResult{Completed: true})
 		return
@@ -542,6 +632,7 @@ func (a *AgentRegistryActor) unregister(ctx *actor.ReceiveContext, message *appl
 		ctx.UnWatch(item.runtimePID)
 	}
 	delete(a.agents, message.AgentID)
+	a.publishClientAgentRemove(ctx, message.AgentID, item)
 	a.publishPublicAgentRemove(ctx, message.AgentID, item)
 	result, runtimePID := message.Result, item.runtimePID
 	go func() {

@@ -21,6 +21,7 @@ func PublicAgentSerializers() []remote.Option {
 		remote.WithSerializers(new(application.AttachResult), cbor),
 		remote.WithSerializers(new(application.RemoteBridgeIntent), cbor),
 		remote.WithSerializers(new(application.BridgeIntentResult), cbor),
+		remote.WithSerializers(new(application.ActorMessageReply), cbor),
 		remote.WithSerializers(new(application.AgentReference), cbor),
 		remote.WithSerializers(new(application.AuthorityBinding), cbor),
 		remote.WithSerializers(new(application.HostedPiRuntimeBinding), cbor),

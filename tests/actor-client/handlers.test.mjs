@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { publicAgentView, registerClientHandlers } from "../../home/dot_pi/private_agent/extensions/actor-client/handlers.ts";
-import { ActorClientConversationLog, validateRemoteProject } from "../../home/dot_pi/private_agent/extensions/actor-client/index.ts";
+import { ActorClientConversationLog, initialActorClientRosterState, reduceActorClientRoster, validateRemoteProject } from "../../home/dot_pi/private_agent/extensions/actor-client/index.ts";
 import { outgoingExchange } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/communication-ui.ts";
 
 test("remote project validation is syntax-only and does not require a local path", () => {
@@ -14,6 +14,31 @@ test("actor-client public views use display metadata and suppress raw runtime in
   assert.deepEqual(view,{agentId:"agent-42",displayName:"Release Reviewer",role:"Review Lead",state:3,bridgeReady:true,cleanupPending:false});
   const encoded = JSON.stringify(view);
   for (const forbidden of ["raw-runtime","tmux","panePid","123","hosted-raw","attachTarget","sessionId","handle","fence"]) assert.doesNotMatch(encoded,new RegExp(forbidden,"i"));
+});
+
+test("actor-client roster reducer fences frames and renders redacted lifecycle", () => {
+  let state = initialActorClientRosterState();
+  state = reduceActorClientRoster(state, { type: "CONNECTED" });
+  state = reduceActorClientRoster(state, { type: "ROSTER_FRAME", frame: { operation: 2, epoch: 10n, sequence: 1n } });
+  state = reduceActorClientRoster(state, { type: "ROSTER_FRAME", frame: { operation: 3, epoch: 10n, sequence: 2n, status: "ready\n\u001b[31m", agentId: "alpha", agent: { agentId: "alpha", displayName: "Alpha\nReviewer", role: "QA", lifecycleRevision: 7n } } });
+  assert.match(state.render, /^actors Alpha Reviewer:\[redacted\] ready/);
+  assert.doesNotMatch(state.render, /\u001b|working|idle|tmux|pid/i);
+  const fenced = reduceActorClientRoster(state, { type: "ROSTER_FRAME", frame: { operation: 4, epoch: 9n, sequence: 99n, agentId: "alpha" } });
+  assert.equal(fenced.agents.has("alpha"), true);
+  state = reduceActorClientRoster(state, { type: "ROSTER_FRAME", frame: { operation: 4, epoch: 10n, sequence: 3n, agentId: "alpha" } });
+  assert.equal(state.agents.size, 0);
+});
+
+test("actor ask reply updates one outgoing conversation card", () => {
+  const entries=[];
+  const log = new ActorClientConversationLog({ appendEntry: (_type, data) => entries.push(data) });
+  const view = outgoingExchange({ key: "actor-client:request-1", target: "Reviewer", body: "question", accepted: true, completed: false, mode: "ask" });
+  assert.equal(log.append(view), true);
+  assert.equal(log.append(view), false);
+  assert.equal(log.complete("actor-client:request-1", "complete answer", true), true);
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].view.state, "replied");
+  assert.equal(entries[0].view.reply, "complete answer");
 });
 
 test("regular client Pi callbacks register noncolliding commands and tools", async () => {

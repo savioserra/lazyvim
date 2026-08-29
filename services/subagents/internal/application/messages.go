@@ -341,6 +341,39 @@ type PublicAgentSnapshotRequest struct {
 	NodeIdentity string
 }
 
+const ClientAgentRosterTopic = "subagents.client.agent_roster"
+const ActorMessageReplyTopic = "subagents.actor.message_replies"
+
+const (
+	ClientAgentRosterStatus        = "status"
+	ClientAgentRosterSnapshotReset = "snapshot-reset"
+	ClientAgentRosterUpsert        = "upsert"
+	ClientAgentRosterRemove        = "remove"
+)
+
+type ClientAgentRosterEvent struct {
+	Operation string
+	Epoch     uint64
+	Sequence  uint64
+	AgentID   string
+	Reference AgentReference
+	Status    string
+}
+
+type ClientAgentRosterSnapshot struct {
+	SessionID     string
+	GenerationID  string
+	Caller        string
+	Credential    []byte
+	LastEpoch     uint64
+	AfterSequence uint64
+}
+
+type ClientAgentRosterSnapshotResult struct {
+	Events []ClientAgentRosterEvent
+	Reason string
+}
+
 type PublicAgentDirectoryEvent struct {
 	Operation    string
 	NodeIdentity string
@@ -498,6 +531,14 @@ type RemoteBridgeIntent struct {
 	HopLimit                                                                                                                   uint32
 	Mode                                                                                                                       BridgeMessageMode
 	Payload                                                                                                                    []byte
+	ReplyTopic                                                                                                                 string
+}
+
+type ActorMessageReply struct {
+	SessionID, GenerationID, Principal, SourceAgentID, TargetAgentID, RequestID, DedupeID, ChainID string
+	SourceMutationSequence                                                                         uint64
+	Mode                                                                                           BridgeMessageMode
+	Result                                                                                         BridgeIntentResult
 }
 
 type AgentProjectionEvent struct {

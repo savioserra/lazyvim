@@ -82,6 +82,61 @@ func (AuthorityOperation) EnumDescriptor() ([]byte, []int) {
 	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{0}
 }
 
+type ClientAgentRosterFrame_Operation int32
+
+const (
+	ClientAgentRosterFrame_OPERATION_UNSPECIFIED    ClientAgentRosterFrame_Operation = 0
+	ClientAgentRosterFrame_OPERATION_STATUS         ClientAgentRosterFrame_Operation = 1
+	ClientAgentRosterFrame_OPERATION_SNAPSHOT_RESET ClientAgentRosterFrame_Operation = 2
+	ClientAgentRosterFrame_OPERATION_UPSERT         ClientAgentRosterFrame_Operation = 3
+	ClientAgentRosterFrame_OPERATION_REMOVE         ClientAgentRosterFrame_Operation = 4
+)
+
+// Enum value maps for ClientAgentRosterFrame_Operation.
+var (
+	ClientAgentRosterFrame_Operation_name = map[int32]string{
+		0: "OPERATION_UNSPECIFIED",
+		1: "OPERATION_STATUS",
+		2: "OPERATION_SNAPSHOT_RESET",
+		3: "OPERATION_UPSERT",
+		4: "OPERATION_REMOVE",
+	}
+	ClientAgentRosterFrame_Operation_value = map[string]int32{
+		"OPERATION_UNSPECIFIED":    0,
+		"OPERATION_STATUS":         1,
+		"OPERATION_SNAPSHOT_RESET": 2,
+		"OPERATION_UPSERT":         3,
+		"OPERATION_REMOVE":         4,
+	}
+)
+
+func (x ClientAgentRosterFrame_Operation) Enum() *ClientAgentRosterFrame_Operation {
+	p := new(ClientAgentRosterFrame_Operation)
+	*p = x
+	return p
+}
+
+func (x ClientAgentRosterFrame_Operation) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ClientAgentRosterFrame_Operation) Descriptor() protoreflect.EnumDescriptor {
+	return file_api_subagents_v1_subagents_proto_enumTypes[1].Descriptor()
+}
+
+func (ClientAgentRosterFrame_Operation) Type() protoreflect.EnumType {
+	return &file_api_subagents_v1_subagents_proto_enumTypes[1]
+}
+
+func (x ClientAgentRosterFrame_Operation) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ClientAgentRosterFrame_Operation.Descriptor instead.
+func (ClientAgentRosterFrame_Operation) EnumDescriptor() ([]byte, []int) {
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{3, 0}
+}
+
 type PhaseOneAuthorityBinding_Kind int32
 
 const (
@@ -115,11 +170,11 @@ func (x PhaseOneAuthorityBinding_Kind) String() string {
 }
 
 func (PhaseOneAuthorityBinding_Kind) Descriptor() protoreflect.EnumDescriptor {
-	return file_api_subagents_v1_subagents_proto_enumTypes[1].Descriptor()
+	return file_api_subagents_v1_subagents_proto_enumTypes[2].Descriptor()
 }
 
 func (PhaseOneAuthorityBinding_Kind) Type() protoreflect.EnumType {
-	return &file_api_subagents_v1_subagents_proto_enumTypes[1]
+	return &file_api_subagents_v1_subagents_proto_enumTypes[2]
 }
 
 func (x PhaseOneAuthorityBinding_Kind) Number() protoreflect.EnumNumber {
@@ -128,7 +183,7 @@ func (x PhaseOneAuthorityBinding_Kind) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use PhaseOneAuthorityBinding_Kind.Descriptor instead.
 func (PhaseOneAuthorityBinding_Kind) EnumDescriptor() ([]byte, []int) {
-	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{8, 0}
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{11, 0}
 }
 
 type HostedPiRuntimeBinding_State int32
@@ -176,11 +231,11 @@ func (x HostedPiRuntimeBinding_State) String() string {
 }
 
 func (HostedPiRuntimeBinding_State) Descriptor() protoreflect.EnumDescriptor {
-	return file_api_subagents_v1_subagents_proto_enumTypes[2].Descriptor()
+	return file_api_subagents_v1_subagents_proto_enumTypes[3].Descriptor()
 }
 
 func (HostedPiRuntimeBinding_State) Type() protoreflect.EnumType {
-	return &file_api_subagents_v1_subagents_proto_enumTypes[2]
+	return &file_api_subagents_v1_subagents_proto_enumTypes[3]
 }
 
 func (x HostedPiRuntimeBinding_State) Number() protoreflect.EnumNumber {
@@ -189,7 +244,7 @@ func (x HostedPiRuntimeBinding_State) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use HostedPiRuntimeBinding_State.Descriptor instead.
 func (HostedPiRuntimeBinding_State) EnumDescriptor() ([]byte, []int) {
-	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{9, 0}
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{12, 0}
 }
 
 type HostedPiRuntimeBinding_Lifetime int32
@@ -222,11 +277,11 @@ func (x HostedPiRuntimeBinding_Lifetime) String() string {
 }
 
 func (HostedPiRuntimeBinding_Lifetime) Descriptor() protoreflect.EnumDescriptor {
-	return file_api_subagents_v1_subagents_proto_enumTypes[3].Descriptor()
+	return file_api_subagents_v1_subagents_proto_enumTypes[4].Descriptor()
 }
 
 func (HostedPiRuntimeBinding_Lifetime) Type() protoreflect.EnumType {
-	return &file_api_subagents_v1_subagents_proto_enumTypes[3]
+	return &file_api_subagents_v1_subagents_proto_enumTypes[4]
 }
 
 func (x HostedPiRuntimeBinding_Lifetime) Number() protoreflect.EnumNumber {
@@ -235,7 +290,7 @@ func (x HostedPiRuntimeBinding_Lifetime) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use HostedPiRuntimeBinding_Lifetime.Descriptor instead.
 func (HostedPiRuntimeBinding_Lifetime) EnumDescriptor() ([]byte, []int) {
-	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{9, 1}
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{12, 1}
 }
 
 type HostedPiRuntimeBinding_TmuxOwnership int32
@@ -268,11 +323,11 @@ func (x HostedPiRuntimeBinding_TmuxOwnership) String() string {
 }
 
 func (HostedPiRuntimeBinding_TmuxOwnership) Descriptor() protoreflect.EnumDescriptor {
-	return file_api_subagents_v1_subagents_proto_enumTypes[4].Descriptor()
+	return file_api_subagents_v1_subagents_proto_enumTypes[5].Descriptor()
 }
 
 func (HostedPiRuntimeBinding_TmuxOwnership) Type() protoreflect.EnumType {
-	return &file_api_subagents_v1_subagents_proto_enumTypes[4]
+	return &file_api_subagents_v1_subagents_proto_enumTypes[5]
 }
 
 func (x HostedPiRuntimeBinding_TmuxOwnership) Number() protoreflect.EnumNumber {
@@ -281,7 +336,7 @@ func (x HostedPiRuntimeBinding_TmuxOwnership) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use HostedPiRuntimeBinding_TmuxOwnership.Descriptor instead.
 func (HostedPiRuntimeBinding_TmuxOwnership) EnumDescriptor() ([]byte, []int) {
-	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{9, 2}
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{12, 2}
 }
 
 type HostedPiRuntimeBinding_ControlBoundary int32
@@ -314,11 +369,11 @@ func (x HostedPiRuntimeBinding_ControlBoundary) String() string {
 }
 
 func (HostedPiRuntimeBinding_ControlBoundary) Descriptor() protoreflect.EnumDescriptor {
-	return file_api_subagents_v1_subagents_proto_enumTypes[5].Descriptor()
+	return file_api_subagents_v1_subagents_proto_enumTypes[6].Descriptor()
 }
 
 func (HostedPiRuntimeBinding_ControlBoundary) Type() protoreflect.EnumType {
-	return &file_api_subagents_v1_subagents_proto_enumTypes[5]
+	return &file_api_subagents_v1_subagents_proto_enumTypes[6]
 }
 
 func (x HostedPiRuntimeBinding_ControlBoundary) Number() protoreflect.EnumNumber {
@@ -327,7 +382,7 @@ func (x HostedPiRuntimeBinding_ControlBoundary) Number() protoreflect.EnumNumber
 
 // Deprecated: Use HostedPiRuntimeBinding_ControlBoundary.Descriptor instead.
 func (HostedPiRuntimeBinding_ControlBoundary) EnumDescriptor() ([]byte, []int) {
-	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{9, 3}
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{12, 3}
 }
 
 type HostedPiRuntimeBinding_VisualizationBoundary int32
@@ -360,11 +415,11 @@ func (x HostedPiRuntimeBinding_VisualizationBoundary) String() string {
 }
 
 func (HostedPiRuntimeBinding_VisualizationBoundary) Descriptor() protoreflect.EnumDescriptor {
-	return file_api_subagents_v1_subagents_proto_enumTypes[6].Descriptor()
+	return file_api_subagents_v1_subagents_proto_enumTypes[7].Descriptor()
 }
 
 func (HostedPiRuntimeBinding_VisualizationBoundary) Type() protoreflect.EnumType {
-	return &file_api_subagents_v1_subagents_proto_enumTypes[6]
+	return &file_api_subagents_v1_subagents_proto_enumTypes[7]
 }
 
 func (x HostedPiRuntimeBinding_VisualizationBoundary) Number() protoreflect.EnumNumber {
@@ -373,7 +428,7 @@ func (x HostedPiRuntimeBinding_VisualizationBoundary) Number() protoreflect.Enum
 
 // Deprecated: Use HostedPiRuntimeBinding_VisualizationBoundary.Descriptor instead.
 func (HostedPiRuntimeBinding_VisualizationBoundary) EnumDescriptor() ([]byte, []int) {
-	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{9, 4}
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{12, 4}
 }
 
 type ActorMessageRequest_Mode int32
@@ -409,11 +464,11 @@ func (x ActorMessageRequest_Mode) String() string {
 }
 
 func (ActorMessageRequest_Mode) Descriptor() protoreflect.EnumDescriptor {
-	return file_api_subagents_v1_subagents_proto_enumTypes[7].Descriptor()
+	return file_api_subagents_v1_subagents_proto_enumTypes[8].Descriptor()
 }
 
 func (ActorMessageRequest_Mode) Type() protoreflect.EnumType {
-	return &file_api_subagents_v1_subagents_proto_enumTypes[7]
+	return &file_api_subagents_v1_subagents_proto_enumTypes[8]
 }
 
 func (x ActorMessageRequest_Mode) Number() protoreflect.EnumNumber {
@@ -422,7 +477,7 @@ func (x ActorMessageRequest_Mode) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ActorMessageRequest_Mode.Descriptor instead.
 func (ActorMessageRequest_Mode) EnumDescriptor() ([]byte, []int) {
-	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{19, 0}
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{22, 0}
 }
 
 type ActorControlRequest_Intent int32
@@ -458,11 +513,11 @@ func (x ActorControlRequest_Intent) String() string {
 }
 
 func (ActorControlRequest_Intent) Descriptor() protoreflect.EnumDescriptor {
-	return file_api_subagents_v1_subagents_proto_enumTypes[8].Descriptor()
+	return file_api_subagents_v1_subagents_proto_enumTypes[9].Descriptor()
 }
 
 func (ActorControlRequest_Intent) Type() protoreflect.EnumType {
-	return &file_api_subagents_v1_subagents_proto_enumTypes[8]
+	return &file_api_subagents_v1_subagents_proto_enumTypes[9]
 }
 
 func (x ActorControlRequest_Intent) Number() protoreflect.EnumNumber {
@@ -471,7 +526,7 @@ func (x ActorControlRequest_Intent) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ActorControlRequest_Intent.Descriptor instead.
 func (ActorControlRequest_Intent) EnumDescriptor() ([]byte, []int) {
-	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{20, 0}
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{23, 0}
 }
 
 type BridgeDelivery_Kind int32
@@ -513,11 +568,11 @@ func (x BridgeDelivery_Kind) String() string {
 }
 
 func (BridgeDelivery_Kind) Descriptor() protoreflect.EnumDescriptor {
-	return file_api_subagents_v1_subagents_proto_enumTypes[9].Descriptor()
+	return file_api_subagents_v1_subagents_proto_enumTypes[10].Descriptor()
 }
 
 func (BridgeDelivery_Kind) Type() protoreflect.EnumType {
-	return &file_api_subagents_v1_subagents_proto_enumTypes[9]
+	return &file_api_subagents_v1_subagents_proto_enumTypes[10]
 }
 
 func (x BridgeDelivery_Kind) Number() protoreflect.EnumNumber {
@@ -526,7 +581,7 @@ func (x BridgeDelivery_Kind) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use BridgeDelivery_Kind.Descriptor instead.
 func (BridgeDelivery_Kind) EnumDescriptor() ([]byte, []int) {
-	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{25, 0}
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{28, 0}
 }
 
 type BridgeDelivery_Policy int32
@@ -562,11 +617,11 @@ func (x BridgeDelivery_Policy) String() string {
 }
 
 func (BridgeDelivery_Policy) Descriptor() protoreflect.EnumDescriptor {
-	return file_api_subagents_v1_subagents_proto_enumTypes[10].Descriptor()
+	return file_api_subagents_v1_subagents_proto_enumTypes[11].Descriptor()
 }
 
 func (BridgeDelivery_Policy) Type() protoreflect.EnumType {
-	return &file_api_subagents_v1_subagents_proto_enumTypes[10]
+	return &file_api_subagents_v1_subagents_proto_enumTypes[11]
 }
 
 func (x BridgeDelivery_Policy) Number() protoreflect.EnumNumber {
@@ -575,7 +630,7 @@ func (x BridgeDelivery_Policy) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use BridgeDelivery_Policy.Descriptor instead.
 func (BridgeDelivery_Policy) EnumDescriptor() ([]byte, []int) {
-	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{25, 1}
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{28, 1}
 }
 
 type BridgeLifecycleRequest_Event int32
@@ -620,11 +675,11 @@ func (x BridgeLifecycleRequest_Event) String() string {
 }
 
 func (BridgeLifecycleRequest_Event) Descriptor() protoreflect.EnumDescriptor {
-	return file_api_subagents_v1_subagents_proto_enumTypes[11].Descriptor()
+	return file_api_subagents_v1_subagents_proto_enumTypes[12].Descriptor()
 }
 
 func (BridgeLifecycleRequest_Event) Type() protoreflect.EnumType {
-	return &file_api_subagents_v1_subagents_proto_enumTypes[11]
+	return &file_api_subagents_v1_subagents_proto_enumTypes[12]
 }
 
 func (x BridgeLifecycleRequest_Event) Number() protoreflect.EnumNumber {
@@ -633,7 +688,7 @@ func (x BridgeLifecycleRequest_Event) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use BridgeLifecycleRequest_Event.Descriptor instead.
 func (BridgeLifecycleRequest_Event) EnumDescriptor() ([]byte, []int) {
-	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{31, 0}
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{34, 0}
 }
 
 type HostedAdminRequest_Operation int32
@@ -672,11 +727,11 @@ func (x HostedAdminRequest_Operation) String() string {
 }
 
 func (HostedAdminRequest_Operation) Descriptor() protoreflect.EnumDescriptor {
-	return file_api_subagents_v1_subagents_proto_enumTypes[12].Descriptor()
+	return file_api_subagents_v1_subagents_proto_enumTypes[13].Descriptor()
 }
 
 func (HostedAdminRequest_Operation) Type() protoreflect.EnumType {
-	return &file_api_subagents_v1_subagents_proto_enumTypes[12]
+	return &file_api_subagents_v1_subagents_proto_enumTypes[13]
 }
 
 func (x HostedAdminRequest_Operation) Number() protoreflect.EnumNumber {
@@ -685,7 +740,7 @@ func (x HostedAdminRequest_Operation) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use HostedAdminRequest_Operation.Descriptor instead.
 func (HostedAdminRequest_Operation) EnumDescriptor() ([]byte, []int) {
-	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{33, 0}
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{36, 0}
 }
 
 type ClientSessionRequest_Operation int32
@@ -721,11 +776,11 @@ func (x ClientSessionRequest_Operation) String() string {
 }
 
 func (ClientSessionRequest_Operation) Descriptor() protoreflect.EnumDescriptor {
-	return file_api_subagents_v1_subagents_proto_enumTypes[13].Descriptor()
+	return file_api_subagents_v1_subagents_proto_enumTypes[14].Descriptor()
 }
 
 func (ClientSessionRequest_Operation) Type() protoreflect.EnumType {
-	return &file_api_subagents_v1_subagents_proto_enumTypes[13]
+	return &file_api_subagents_v1_subagents_proto_enumTypes[14]
 }
 
 func (x ClientSessionRequest_Operation) Number() protoreflect.EnumNumber {
@@ -734,7 +789,7 @@ func (x ClientSessionRequest_Operation) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ClientSessionRequest_Operation.Descriptor instead.
 func (ClientSessionRequest_Operation) EnumDescriptor() ([]byte, []int) {
-	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{35, 0}
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{38, 0}
 }
 
 type TaskLifecycleRequest_Operation int32
@@ -773,11 +828,11 @@ func (x TaskLifecycleRequest_Operation) String() string {
 }
 
 func (TaskLifecycleRequest_Operation) Descriptor() protoreflect.EnumDescriptor {
-	return file_api_subagents_v1_subagents_proto_enumTypes[14].Descriptor()
+	return file_api_subagents_v1_subagents_proto_enumTypes[15].Descriptor()
 }
 
 func (TaskLifecycleRequest_Operation) Type() protoreflect.EnumType {
-	return &file_api_subagents_v1_subagents_proto_enumTypes[14]
+	return &file_api_subagents_v1_subagents_proto_enumTypes[15]
 }
 
 func (x TaskLifecycleRequest_Operation) Number() protoreflect.EnumNumber {
@@ -786,7 +841,7 @@ func (x TaskLifecycleRequest_Operation) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use TaskLifecycleRequest_Operation.Descriptor instead.
 func (TaskLifecycleRequest_Operation) EnumDescriptor() ([]byte, []int) {
-	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{39, 0}
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{42, 0}
 }
 
 type TaskLifecycleResponse_State int32
@@ -834,11 +889,11 @@ func (x TaskLifecycleResponse_State) String() string {
 }
 
 func (TaskLifecycleResponse_State) Descriptor() protoreflect.EnumDescriptor {
-	return file_api_subagents_v1_subagents_proto_enumTypes[15].Descriptor()
+	return file_api_subagents_v1_subagents_proto_enumTypes[16].Descriptor()
 }
 
 func (TaskLifecycleResponse_State) Type() protoreflect.EnumType {
-	return &file_api_subagents_v1_subagents_proto_enumTypes[15]
+	return &file_api_subagents_v1_subagents_proto_enumTypes[16]
 }
 
 func (x TaskLifecycleResponse_State) Number() protoreflect.EnumNumber {
@@ -847,7 +902,7 @@ func (x TaskLifecycleResponse_State) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use TaskLifecycleResponse_State.Descriptor instead.
 func (TaskLifecycleResponse_State) EnumDescriptor() ([]byte, []int) {
-	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{40, 0}
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{43, 0}
 }
 
 type AttachResponse_Status int32
@@ -886,11 +941,11 @@ func (x AttachResponse_Status) String() string {
 }
 
 func (AttachResponse_Status) Descriptor() protoreflect.EnumDescriptor {
-	return file_api_subagents_v1_subagents_proto_enumTypes[16].Descriptor()
+	return file_api_subagents_v1_subagents_proto_enumTypes[17].Descriptor()
 }
 
 func (AttachResponse_Status) Type() protoreflect.EnumType {
-	return &file_api_subagents_v1_subagents_proto_enumTypes[16]
+	return &file_api_subagents_v1_subagents_proto_enumTypes[17]
 }
 
 func (x AttachResponse_Status) Number() protoreflect.EnumNumber {
@@ -899,7 +954,7 @@ func (x AttachResponse_Status) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use AttachResponse_Status.Descriptor instead.
 func (AttachResponse_Status) EnumDescriptor() ([]byte, []int) {
-	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{42, 0}
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{45, 0}
 }
 
 type AuthorityResponse_Status int32
@@ -941,11 +996,11 @@ func (x AuthorityResponse_Status) String() string {
 }
 
 func (AuthorityResponse_Status) Descriptor() protoreflect.EnumDescriptor {
-	return file_api_subagents_v1_subagents_proto_enumTypes[17].Descriptor()
+	return file_api_subagents_v1_subagents_proto_enumTypes[18].Descriptor()
 }
 
 func (AuthorityResponse_Status) Type() protoreflect.EnumType {
-	return &file_api_subagents_v1_subagents_proto_enumTypes[17]
+	return &file_api_subagents_v1_subagents_proto_enumTypes[18]
 }
 
 func (x AuthorityResponse_Status) Number() protoreflect.EnumNumber {
@@ -954,7 +1009,7 @@ func (x AuthorityResponse_Status) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use AuthorityResponse_Status.Descriptor instead.
 func (AuthorityResponse_Status) EnumDescriptor() ([]byte, []int) {
-	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{44, 0}
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{47, 0}
 }
 
 type ProtocolError_Code int32
@@ -1005,11 +1060,11 @@ func (x ProtocolError_Code) String() string {
 }
 
 func (ProtocolError_Code) Descriptor() protoreflect.EnumDescriptor {
-	return file_api_subagents_v1_subagents_proto_enumTypes[18].Descriptor()
+	return file_api_subagents_v1_subagents_proto_enumTypes[19].Descriptor()
 }
 
 func (ProtocolError_Code) Type() protoreflect.EnumType {
-	return &file_api_subagents_v1_subagents_proto_enumTypes[18]
+	return &file_api_subagents_v1_subagents_proto_enumTypes[19]
 }
 
 func (x ProtocolError_Code) Number() protoreflect.EnumNumber {
@@ -1018,7 +1073,7 @@ func (x ProtocolError_Code) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ProtocolError_Code.Descriptor instead.
 func (ProtocolError_Code) EnumDescriptor() ([]byte, []int) {
-	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{46, 0}
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{49, 0}
 }
 
 type Envelope struct {
@@ -1076,6 +1131,9 @@ type Envelope struct {
 	//	*Envelope_BridgePushFrame
 	//	*Envelope_BridgeHeartbeatRequest
 	//	*Envelope_BridgeHeartbeatResponse
+	//	*Envelope_ClientAgentRosterRequest
+	//	*Envelope_ClientAgentRosterFrame
+	//	*Envelope_ActorMessageReplyFrame
 	Payload       isEnvelope_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1555,6 +1613,33 @@ func (x *Envelope) GetBridgeHeartbeatResponse() *BridgeHeartbeatResponse {
 	return nil
 }
 
+func (x *Envelope) GetClientAgentRosterRequest() *ClientAgentRosterRequest {
+	if x != nil {
+		if x, ok := x.Payload.(*Envelope_ClientAgentRosterRequest); ok {
+			return x.ClientAgentRosterRequest
+		}
+	}
+	return nil
+}
+
+func (x *Envelope) GetClientAgentRosterFrame() *ClientAgentRosterFrame {
+	if x != nil {
+		if x, ok := x.Payload.(*Envelope_ClientAgentRosterFrame); ok {
+			return x.ClientAgentRosterFrame
+		}
+	}
+	return nil
+}
+
+func (x *Envelope) GetActorMessageReplyFrame() *ActorMessageReplyFrame {
+	if x != nil {
+		if x, ok := x.Payload.(*Envelope_ActorMessageReplyFrame); ok {
+			return x.ActorMessageReplyFrame
+		}
+	}
+	return nil
+}
+
 type isEnvelope_Payload interface {
 	isEnvelope_Payload()
 }
@@ -1719,6 +1804,18 @@ type Envelope_BridgeHeartbeatResponse struct {
 	BridgeHeartbeatResponse *BridgeHeartbeatResponse `protobuf:"bytes,59,opt,name=bridge_heartbeat_response,json=bridgeHeartbeatResponse,proto3,oneof"`
 }
 
+type Envelope_ClientAgentRosterRequest struct {
+	ClientAgentRosterRequest *ClientAgentRosterRequest `protobuf:"bytes,60,opt,name=client_agent_roster_request,json=clientAgentRosterRequest,proto3,oneof"`
+}
+
+type Envelope_ClientAgentRosterFrame struct {
+	ClientAgentRosterFrame *ClientAgentRosterFrame `protobuf:"bytes,61,opt,name=client_agent_roster_frame,json=clientAgentRosterFrame,proto3,oneof"`
+}
+
+type Envelope_ActorMessageReplyFrame struct {
+	ActorMessageReplyFrame *ActorMessageReplyFrame `protobuf:"bytes,62,opt,name=actor_message_reply_frame,json=actorMessageReplyFrame,proto3,oneof"`
+}
+
 func (*Envelope_HealthRequest) isEnvelope_Payload() {}
 
 func (*Envelope_HealthResponse) isEnvelope_Payload() {}
@@ -1799,6 +1896,273 @@ func (*Envelope_BridgeHeartbeatRequest) isEnvelope_Payload() {}
 
 func (*Envelope_BridgeHeartbeatResponse) isEnvelope_Payload() {}
 
+func (*Envelope_ClientAgentRosterRequest) isEnvelope_Payload() {}
+
+func (*Envelope_ClientAgentRosterFrame) isEnvelope_Payload() {}
+
+func (*Envelope_ActorMessageReplyFrame) isEnvelope_Payload() {}
+
+type ActorMessageReplyFrame struct {
+	state                  protoimpl.MessageState `protogen:"open.v1"`
+	OriginalRequestId      string                 `protobuf:"bytes,1,opt,name=original_request_id,json=originalRequestId,proto3" json:"original_request_id,omitempty"`
+	DedupeId               string                 `protobuf:"bytes,2,opt,name=dedupe_id,json=dedupeId,proto3" json:"dedupe_id,omitempty"`
+	ChainId                string                 `protobuf:"bytes,3,opt,name=chain_id,json=chainId,proto3" json:"chain_id,omitempty"`
+	SourceMutationSequence uint64                 `protobuf:"varint,4,opt,name=source_mutation_sequence,json=sourceMutationSequence,proto3" json:"source_mutation_sequence,omitempty"`
+	Accepted               bool                   `protobuf:"varint,5,opt,name=accepted,proto3" json:"accepted,omitempty"`
+	Completed              bool                   `protobuf:"varint,6,opt,name=completed,proto3" json:"completed,omitempty"`
+	BoundedResult          []byte                 `protobuf:"bytes,7,opt,name=bounded_result,json=boundedResult,proto3" json:"bounded_result,omitempty"`
+	Reason                 string                 `protobuf:"bytes,8,opt,name=reason,proto3" json:"reason,omitempty"`
+	Source                 *CommunicationPeer     `protobuf:"bytes,9,opt,name=source,proto3" json:"source,omitempty"`
+	Target                 *CommunicationPeer     `protobuf:"bytes,10,opt,name=target,proto3" json:"target,omitempty"`
+	Kind                   string                 `protobuf:"bytes,11,opt,name=kind,proto3" json:"kind,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
+}
+
+func (x *ActorMessageReplyFrame) Reset() {
+	*x = ActorMessageReplyFrame{}
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ActorMessageReplyFrame) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ActorMessageReplyFrame) ProtoMessage() {}
+
+func (x *ActorMessageReplyFrame) ProtoReflect() protoreflect.Message {
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ActorMessageReplyFrame.ProtoReflect.Descriptor instead.
+func (*ActorMessageReplyFrame) Descriptor() ([]byte, []int) {
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *ActorMessageReplyFrame) GetOriginalRequestId() string {
+	if x != nil {
+		return x.OriginalRequestId
+	}
+	return ""
+}
+
+func (x *ActorMessageReplyFrame) GetDedupeId() string {
+	if x != nil {
+		return x.DedupeId
+	}
+	return ""
+}
+
+func (x *ActorMessageReplyFrame) GetChainId() string {
+	if x != nil {
+		return x.ChainId
+	}
+	return ""
+}
+
+func (x *ActorMessageReplyFrame) GetSourceMutationSequence() uint64 {
+	if x != nil {
+		return x.SourceMutationSequence
+	}
+	return 0
+}
+
+func (x *ActorMessageReplyFrame) GetAccepted() bool {
+	if x != nil {
+		return x.Accepted
+	}
+	return false
+}
+
+func (x *ActorMessageReplyFrame) GetCompleted() bool {
+	if x != nil {
+		return x.Completed
+	}
+	return false
+}
+
+func (x *ActorMessageReplyFrame) GetBoundedResult() []byte {
+	if x != nil {
+		return x.BoundedResult
+	}
+	return nil
+}
+
+func (x *ActorMessageReplyFrame) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+func (x *ActorMessageReplyFrame) GetSource() *CommunicationPeer {
+	if x != nil {
+		return x.Source
+	}
+	return nil
+}
+
+func (x *ActorMessageReplyFrame) GetTarget() *CommunicationPeer {
+	if x != nil {
+		return x.Target
+	}
+	return nil
+}
+
+func (x *ActorMessageReplyFrame) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+type ClientAgentRosterRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Snapshot/replay starts after the last client-rendered authoritative event.
+	LastEpoch     uint64 `protobuf:"varint,1,opt,name=last_epoch,json=lastEpoch,proto3" json:"last_epoch,omitempty"`
+	AfterSequence uint64 `protobuf:"varint,2,opt,name=after_sequence,json=afterSequence,proto3" json:"after_sequence,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ClientAgentRosterRequest) Reset() {
+	*x = ClientAgentRosterRequest{}
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ClientAgentRosterRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ClientAgentRosterRequest) ProtoMessage() {}
+
+func (x *ClientAgentRosterRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ClientAgentRosterRequest.ProtoReflect.Descriptor instead.
+func (*ClientAgentRosterRequest) Descriptor() ([]byte, []int) {
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *ClientAgentRosterRequest) GetLastEpoch() uint64 {
+	if x != nil {
+		return x.LastEpoch
+	}
+	return 0
+}
+
+func (x *ClientAgentRosterRequest) GetAfterSequence() uint64 {
+	if x != nil {
+		return x.AfterSequence
+	}
+	return 0
+}
+
+type ClientAgentRosterFrame struct {
+	state         protoimpl.MessageState           `protogen:"open.v1"`
+	Operation     ClientAgentRosterFrame_Operation `protobuf:"varint,1,opt,name=operation,proto3,enum=workstation.subagents.v1.ClientAgentRosterFrame_Operation" json:"operation,omitempty"`
+	Epoch         uint64                           `protobuf:"varint,2,opt,name=epoch,proto3" json:"epoch,omitempty"`
+	Sequence      uint64                           `protobuf:"varint,3,opt,name=sequence,proto3" json:"sequence,omitempty"`
+	Agent         *AgentReference                  `protobuf:"bytes,4,opt,name=agent,proto3" json:"agent,omitempty"`
+	AgentId       string                           `protobuf:"bytes,5,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
+	Status        string                           `protobuf:"bytes,6,opt,name=status,proto3" json:"status,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ClientAgentRosterFrame) Reset() {
+	*x = ClientAgentRosterFrame{}
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ClientAgentRosterFrame) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ClientAgentRosterFrame) ProtoMessage() {}
+
+func (x *ClientAgentRosterFrame) ProtoReflect() protoreflect.Message {
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ClientAgentRosterFrame.ProtoReflect.Descriptor instead.
+func (*ClientAgentRosterFrame) Descriptor() ([]byte, []int) {
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *ClientAgentRosterFrame) GetOperation() ClientAgentRosterFrame_Operation {
+	if x != nil {
+		return x.Operation
+	}
+	return ClientAgentRosterFrame_OPERATION_UNSPECIFIED
+}
+
+func (x *ClientAgentRosterFrame) GetEpoch() uint64 {
+	if x != nil {
+		return x.Epoch
+	}
+	return 0
+}
+
+func (x *ClientAgentRosterFrame) GetSequence() uint64 {
+	if x != nil {
+		return x.Sequence
+	}
+	return 0
+}
+
+func (x *ClientAgentRosterFrame) GetAgent() *AgentReference {
+	if x != nil {
+		return x.Agent
+	}
+	return nil
+}
+
+func (x *ClientAgentRosterFrame) GetAgentId() string {
+	if x != nil {
+		return x.AgentId
+	}
+	return ""
+}
+
+func (x *ClientAgentRosterFrame) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
 type BridgeHeartbeatRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	AgentId       string                 `protobuf:"bytes,1,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
@@ -1810,7 +2174,7 @@ type BridgeHeartbeatRequest struct {
 
 func (x *BridgeHeartbeatRequest) Reset() {
 	*x = BridgeHeartbeatRequest{}
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[1]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1822,7 +2186,7 @@ func (x *BridgeHeartbeatRequest) String() string {
 func (*BridgeHeartbeatRequest) ProtoMessage() {}
 
 func (x *BridgeHeartbeatRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[1]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1835,7 +2199,7 @@ func (x *BridgeHeartbeatRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BridgeHeartbeatRequest.ProtoReflect.Descriptor instead.
 func (*BridgeHeartbeatRequest) Descriptor() ([]byte, []int) {
-	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{1}
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *BridgeHeartbeatRequest) GetAgentId() string {
@@ -1869,7 +2233,7 @@ type BridgeHeartbeatResponse struct {
 
 func (x *BridgeHeartbeatResponse) Reset() {
 	*x = BridgeHeartbeatResponse{}
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[2]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1881,7 +2245,7 @@ func (x *BridgeHeartbeatResponse) String() string {
 func (*BridgeHeartbeatResponse) ProtoMessage() {}
 
 func (x *BridgeHeartbeatResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[2]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1894,7 +2258,7 @@ func (x *BridgeHeartbeatResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BridgeHeartbeatResponse.ProtoReflect.Descriptor instead.
 func (*BridgeHeartbeatResponse) Descriptor() ([]byte, []int) {
-	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{2}
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *BridgeHeartbeatResponse) GetAccepted() bool {
@@ -1919,7 +2283,7 @@ type HealthRequest struct {
 
 func (x *HealthRequest) Reset() {
 	*x = HealthRequest{}
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[3]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1931,7 +2295,7 @@ func (x *HealthRequest) String() string {
 func (*HealthRequest) ProtoMessage() {}
 
 func (x *HealthRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[3]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1944,7 +2308,7 @@ func (x *HealthRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HealthRequest.ProtoReflect.Descriptor instead.
 func (*HealthRequest) Descriptor() ([]byte, []int) {
-	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{3}
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{6}
 }
 
 type HealthResponse struct {
@@ -1958,7 +2322,7 @@ type HealthResponse struct {
 
 func (x *HealthResponse) Reset() {
 	*x = HealthResponse{}
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[4]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1970,7 +2334,7 @@ func (x *HealthResponse) String() string {
 func (*HealthResponse) ProtoMessage() {}
 
 func (x *HealthResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[4]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1983,7 +2347,7 @@ func (x *HealthResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HealthResponse.ProtoReflect.Descriptor instead.
 func (*HealthResponse) Descriptor() ([]byte, []int) {
-	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{4}
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *HealthResponse) GetLive() bool {
@@ -2015,7 +2379,7 @@ type ListAgentsRequest struct {
 
 func (x *ListAgentsRequest) Reset() {
 	*x = ListAgentsRequest{}
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[5]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2027,7 +2391,7 @@ func (x *ListAgentsRequest) String() string {
 func (*ListAgentsRequest) ProtoMessage() {}
 
 func (x *ListAgentsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[5]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2040,7 +2404,7 @@ func (x *ListAgentsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAgentsRequest.ProtoReflect.Descriptor instead.
 func (*ListAgentsRequest) Descriptor() ([]byte, []int) {
-	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{5}
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{8}
 }
 
 type ListAgentsResponse struct {
@@ -2052,7 +2416,7 @@ type ListAgentsResponse struct {
 
 func (x *ListAgentsResponse) Reset() {
 	*x = ListAgentsResponse{}
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[6]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2064,7 +2428,7 @@ func (x *ListAgentsResponse) String() string {
 func (*ListAgentsResponse) ProtoMessage() {}
 
 func (x *ListAgentsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[6]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2077,7 +2441,7 @@ func (x *ListAgentsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAgentsResponse.ProtoReflect.Descriptor instead.
 func (*ListAgentsResponse) Descriptor() ([]byte, []int) {
-	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{6}
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *ListAgentsResponse) GetAgents() []*AgentReference {
@@ -2103,7 +2467,7 @@ type AgentReference struct {
 
 func (x *AgentReference) Reset() {
 	*x = AgentReference{}
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[7]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2115,7 +2479,7 @@ func (x *AgentReference) String() string {
 func (*AgentReference) ProtoMessage() {}
 
 func (x *AgentReference) ProtoReflect() protoreflect.Message {
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[7]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2128,7 +2492,7 @@ func (x *AgentReference) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentReference.ProtoReflect.Descriptor instead.
 func (*AgentReference) Descriptor() ([]byte, []int) {
-	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{7}
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *AgentReference) GetAgentId() string {
@@ -2198,7 +2562,7 @@ type PhaseOneAuthorityBinding struct {
 
 func (x *PhaseOneAuthorityBinding) Reset() {
 	*x = PhaseOneAuthorityBinding{}
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[8]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2210,7 +2574,7 @@ func (x *PhaseOneAuthorityBinding) String() string {
 func (*PhaseOneAuthorityBinding) ProtoMessage() {}
 
 func (x *PhaseOneAuthorityBinding) ProtoReflect() protoreflect.Message {
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[8]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2223,7 +2587,7 @@ func (x *PhaseOneAuthorityBinding) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PhaseOneAuthorityBinding.ProtoReflect.Descriptor instead.
 func (*PhaseOneAuthorityBinding) Descriptor() ([]byte, []int) {
-	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{8}
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *PhaseOneAuthorityBinding) GetKind() PhaseOneAuthorityBinding_Kind {
@@ -2280,7 +2644,7 @@ type HostedPiRuntimeBinding struct {
 
 func (x *HostedPiRuntimeBinding) Reset() {
 	*x = HostedPiRuntimeBinding{}
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[9]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2292,7 +2656,7 @@ func (x *HostedPiRuntimeBinding) String() string {
 func (*HostedPiRuntimeBinding) ProtoMessage() {}
 
 func (x *HostedPiRuntimeBinding) ProtoReflect() protoreflect.Message {
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[9]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2305,7 +2669,7 @@ func (x *HostedPiRuntimeBinding) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HostedPiRuntimeBinding.ProtoReflect.Descriptor instead.
 func (*HostedPiRuntimeBinding) Descriptor() ([]byte, []int) {
-	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{9}
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *HostedPiRuntimeBinding) GetState() HostedPiRuntimeBinding_State {
@@ -2492,7 +2856,7 @@ type ResolveAgentRequest struct {
 
 func (x *ResolveAgentRequest) Reset() {
 	*x = ResolveAgentRequest{}
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[10]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2504,7 +2868,7 @@ func (x *ResolveAgentRequest) String() string {
 func (*ResolveAgentRequest) ProtoMessage() {}
 
 func (x *ResolveAgentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[10]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2517,7 +2881,7 @@ func (x *ResolveAgentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolveAgentRequest.ProtoReflect.Descriptor instead.
 func (*ResolveAgentRequest) Descriptor() ([]byte, []int) {
-	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{10}
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *ResolveAgentRequest) GetAgentId() string {
@@ -2538,7 +2902,7 @@ type ResolveAgentResponse struct {
 
 func (x *ResolveAgentResponse) Reset() {
 	*x = ResolveAgentResponse{}
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[11]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2550,7 +2914,7 @@ func (x *ResolveAgentResponse) String() string {
 func (*ResolveAgentResponse) ProtoMessage() {}
 
 func (x *ResolveAgentResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[11]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2563,7 +2927,7 @@ func (x *ResolveAgentResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolveAgentResponse.ProtoReflect.Descriptor instead.
 func (*ResolveAgentResponse) Descriptor() ([]byte, []int) {
-	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{11}
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ResolveAgentResponse) GetAgent() *AgentReference {
@@ -2597,7 +2961,7 @@ type AttachRequest struct {
 
 func (x *AttachRequest) Reset() {
 	*x = AttachRequest{}
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[12]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2609,7 +2973,7 @@ func (x *AttachRequest) String() string {
 func (*AttachRequest) ProtoMessage() {}
 
 func (x *AttachRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[12]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2622,7 +2986,7 @@ func (x *AttachRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AttachRequest.ProtoReflect.Descriptor instead.
 func (*AttachRequest) Descriptor() ([]byte, []int) {
-	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{12}
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *AttachRequest) GetAgentId() string {
@@ -2649,7 +3013,7 @@ type ReattachRequest struct {
 
 func (x *ReattachRequest) Reset() {
 	*x = ReattachRequest{}
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[13]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2661,7 +3025,7 @@ func (x *ReattachRequest) String() string {
 func (*ReattachRequest) ProtoMessage() {}
 
 func (x *ReattachRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[13]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2674,7 +3038,7 @@ func (x *ReattachRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReattachRequest.ProtoReflect.Descriptor instead.
 func (*ReattachRequest) Descriptor() ([]byte, []int) {
-	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{13}
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ReattachRequest) GetAgentId() string {
@@ -2700,7 +3064,7 @@ type DetachAgentRequest struct {
 
 func (x *DetachAgentRequest) Reset() {
 	*x = DetachAgentRequest{}
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[14]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2712,7 +3076,7 @@ func (x *DetachAgentRequest) String() string {
 func (*DetachAgentRequest) ProtoMessage() {}
 
 func (x *DetachAgentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[14]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2725,7 +3089,7 @@ func (x *DetachAgentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DetachAgentRequest.ProtoReflect.Descriptor instead.
 func (*DetachAgentRequest) Descriptor() ([]byte, []int) {
-	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{14}
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *DetachAgentRequest) GetAgentId() string {
@@ -2745,7 +3109,7 @@ type SubscribeAgentRequest struct {
 
 func (x *SubscribeAgentRequest) Reset() {
 	*x = SubscribeAgentRequest{}
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[15]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2757,7 +3121,7 @@ func (x *SubscribeAgentRequest) String() string {
 func (*SubscribeAgentRequest) ProtoMessage() {}
 
 func (x *SubscribeAgentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[15]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2770,7 +3134,7 @@ func (x *SubscribeAgentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubscribeAgentRequest.ProtoReflect.Descriptor instead.
 func (*SubscribeAgentRequest) Descriptor() ([]byte, []int) {
-	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{15}
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *SubscribeAgentRequest) GetAgentId() string {
@@ -2796,7 +3160,7 @@ type UnsubscribeAgentRequest struct {
 
 func (x *UnsubscribeAgentRequest) Reset() {
 	*x = UnsubscribeAgentRequest{}
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[16]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2808,7 +3172,7 @@ func (x *UnsubscribeAgentRequest) String() string {
 func (*UnsubscribeAgentRequest) ProtoMessage() {}
 
 func (x *UnsubscribeAgentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[16]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2821,7 +3185,7 @@ func (x *UnsubscribeAgentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UnsubscribeAgentRequest.ProtoReflect.Descriptor instead.
 func (*UnsubscribeAgentRequest) Descriptor() ([]byte, []int) {
-	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{16}
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *UnsubscribeAgentRequest) GetAgentId() string {
@@ -2845,7 +3209,7 @@ type BridgeConnectRequest struct {
 
 func (x *BridgeConnectRequest) Reset() {
 	*x = BridgeConnectRequest{}
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[17]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2857,7 +3221,7 @@ func (x *BridgeConnectRequest) String() string {
 func (*BridgeConnectRequest) ProtoMessage() {}
 
 func (x *BridgeConnectRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[17]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2870,7 +3234,7 @@ func (x *BridgeConnectRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BridgeConnectRequest.ProtoReflect.Descriptor instead.
 func (*BridgeConnectRequest) Descriptor() ([]byte, []int) {
-	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{17}
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *BridgeConnectRequest) GetAgentId() string {
@@ -2920,7 +3284,7 @@ type BridgeConnectResponse struct {
 
 func (x *BridgeConnectResponse) Reset() {
 	*x = BridgeConnectResponse{}
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[18]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2932,7 +3296,7 @@ func (x *BridgeConnectResponse) String() string {
 func (*BridgeConnectResponse) ProtoMessage() {}
 
 func (x *BridgeConnectResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[18]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2945,7 +3309,7 @@ func (x *BridgeConnectResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BridgeConnectResponse.ProtoReflect.Descriptor instead.
 func (*BridgeConnectResponse) Descriptor() ([]byte, []int) {
-	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{18}
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *BridgeConnectResponse) GetAccepted() bool {
@@ -2991,7 +3355,7 @@ type ActorMessageRequest struct {
 
 func (x *ActorMessageRequest) Reset() {
 	*x = ActorMessageRequest{}
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[19]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3003,7 +3367,7 @@ func (x *ActorMessageRequest) String() string {
 func (*ActorMessageRequest) ProtoMessage() {}
 
 func (x *ActorMessageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[19]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3016,7 +3380,7 @@ func (x *ActorMessageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ActorMessageRequest.ProtoReflect.Descriptor instead.
 func (*ActorMessageRequest) Descriptor() ([]byte, []int) {
-	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{19}
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *ActorMessageRequest) GetMode() ActorMessageRequest_Mode {
@@ -3082,7 +3446,7 @@ type ActorControlRequest struct {
 
 func (x *ActorControlRequest) Reset() {
 	*x = ActorControlRequest{}
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[20]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3094,7 +3458,7 @@ func (x *ActorControlRequest) String() string {
 func (*ActorControlRequest) ProtoMessage() {}
 
 func (x *ActorControlRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[20]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3107,7 +3471,7 @@ func (x *ActorControlRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ActorControlRequest.ProtoReflect.Descriptor instead.
 func (*ActorControlRequest) Descriptor() ([]byte, []int) {
-	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{20}
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *ActorControlRequest) GetIntent() ActorControlRequest_Intent {
@@ -3167,7 +3531,7 @@ type ActorMessageResponse struct {
 
 func (x *ActorMessageResponse) Reset() {
 	*x = ActorMessageResponse{}
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[21]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3179,7 +3543,7 @@ func (x *ActorMessageResponse) String() string {
 func (*ActorMessageResponse) ProtoMessage() {}
 
 func (x *ActorMessageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[21]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3192,7 +3556,7 @@ func (x *ActorMessageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ActorMessageResponse.ProtoReflect.Descriptor instead.
 func (*ActorMessageResponse) Descriptor() ([]byte, []int) {
-	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{21}
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *ActorMessageResponse) GetAccepted() bool {
@@ -3255,7 +3619,7 @@ type CommunicationPeer struct {
 
 func (x *CommunicationPeer) Reset() {
 	*x = CommunicationPeer{}
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[22]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3267,7 +3631,7 @@ func (x *CommunicationPeer) String() string {
 func (*CommunicationPeer) ProtoMessage() {}
 
 func (x *CommunicationPeer) ProtoReflect() protoreflect.Message {
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[22]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3280,7 +3644,7 @@ func (x *CommunicationPeer) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommunicationPeer.ProtoReflect.Descriptor instead.
 func (*CommunicationPeer) Descriptor() ([]byte, []int) {
-	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{22}
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *CommunicationPeer) GetStableId() string {
@@ -3315,7 +3679,7 @@ type BridgePollRequest struct {
 
 func (x *BridgePollRequest) Reset() {
 	*x = BridgePollRequest{}
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[23]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3327,7 +3691,7 @@ func (x *BridgePollRequest) String() string {
 func (*BridgePollRequest) ProtoMessage() {}
 
 func (x *BridgePollRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[23]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3340,7 +3704,7 @@ func (x *BridgePollRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BridgePollRequest.ProtoReflect.Descriptor instead.
 func (*BridgePollRequest) Descriptor() ([]byte, []int) {
-	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{23}
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *BridgePollRequest) GetAfterSequence() uint64 {
@@ -3376,7 +3740,7 @@ type BridgeEvent struct {
 
 func (x *BridgeEvent) Reset() {
 	*x = BridgeEvent{}
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[24]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3388,7 +3752,7 @@ func (x *BridgeEvent) String() string {
 func (*BridgeEvent) ProtoMessage() {}
 
 func (x *BridgeEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[24]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3401,7 +3765,7 @@ func (x *BridgeEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BridgeEvent.ProtoReflect.Descriptor instead.
 func (*BridgeEvent) Descriptor() ([]byte, []int) {
-	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{24}
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *BridgeEvent) GetSequence() uint64 {
@@ -3453,7 +3817,7 @@ type BridgeDelivery struct {
 
 func (x *BridgeDelivery) Reset() {
 	*x = BridgeDelivery{}
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[25]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3465,7 +3829,7 @@ func (x *BridgeDelivery) String() string {
 func (*BridgeDelivery) ProtoMessage() {}
 
 func (x *BridgeDelivery) ProtoReflect() protoreflect.Message {
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[25]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3478,7 +3842,7 @@ func (x *BridgeDelivery) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BridgeDelivery.ProtoReflect.Descriptor instead.
 func (*BridgeDelivery) Descriptor() ([]byte, []int) {
-	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{25}
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *BridgeDelivery) GetSequence() uint64 {
@@ -3585,7 +3949,7 @@ type BridgePollResponse struct {
 
 func (x *BridgePollResponse) Reset() {
 	*x = BridgePollResponse{}
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[26]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3597,7 +3961,7 @@ func (x *BridgePollResponse) String() string {
 func (*BridgePollResponse) ProtoMessage() {}
 
 func (x *BridgePollResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[26]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3610,7 +3974,7 @@ func (x *BridgePollResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BridgePollResponse.ProtoReflect.Descriptor instead.
 func (*BridgePollResponse) Descriptor() ([]byte, []int) {
-	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{26}
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *BridgePollResponse) GetEvents() []*BridgeEvent {
@@ -3654,7 +4018,7 @@ type BridgePushFrame struct {
 
 func (x *BridgePushFrame) Reset() {
 	*x = BridgePushFrame{}
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[27]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3666,7 +4030,7 @@ func (x *BridgePushFrame) String() string {
 func (*BridgePushFrame) ProtoMessage() {}
 
 func (x *BridgePushFrame) ProtoReflect() protoreflect.Message {
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[27]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3679,7 +4043,7 @@ func (x *BridgePushFrame) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BridgePushFrame.ProtoReflect.Descriptor instead.
 func (*BridgePushFrame) Descriptor() ([]byte, []int) {
-	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{27}
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *BridgePushFrame) GetAgentId() string {
@@ -3731,7 +4095,7 @@ type BridgeDeliveryAckRequest struct {
 
 func (x *BridgeDeliveryAckRequest) Reset() {
 	*x = BridgeDeliveryAckRequest{}
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[28]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3743,7 +4107,7 @@ func (x *BridgeDeliveryAckRequest) String() string {
 func (*BridgeDeliveryAckRequest) ProtoMessage() {}
 
 func (x *BridgeDeliveryAckRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[28]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3756,7 +4120,7 @@ func (x *BridgeDeliveryAckRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BridgeDeliveryAckRequest.ProtoReflect.Descriptor instead.
 func (*BridgeDeliveryAckRequest) Descriptor() ([]byte, []int) {
-	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{28}
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *BridgeDeliveryAckRequest) GetAgentId() string {
@@ -3811,7 +4175,7 @@ type BridgeDeliveryAckResponse struct {
 
 func (x *BridgeDeliveryAckResponse) Reset() {
 	*x = BridgeDeliveryAckResponse{}
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[29]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3823,7 +4187,7 @@ func (x *BridgeDeliveryAckResponse) String() string {
 func (*BridgeDeliveryAckResponse) ProtoMessage() {}
 
 func (x *BridgeDeliveryAckResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[29]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3836,7 +4200,7 @@ func (x *BridgeDeliveryAckResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BridgeDeliveryAckResponse.ProtoReflect.Descriptor instead.
 func (*BridgeDeliveryAckResponse) Descriptor() ([]byte, []int) {
-	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{29}
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *BridgeDeliveryAckResponse) GetAccepted() bool {
@@ -3866,7 +4230,7 @@ type BridgeReplaceRequest struct {
 
 func (x *BridgeReplaceRequest) Reset() {
 	*x = BridgeReplaceRequest{}
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[30]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3878,7 +4242,7 @@ func (x *BridgeReplaceRequest) String() string {
 func (*BridgeReplaceRequest) ProtoMessage() {}
 
 func (x *BridgeReplaceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[30]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3891,7 +4255,7 @@ func (x *BridgeReplaceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BridgeReplaceRequest.ProtoReflect.Descriptor instead.
 func (*BridgeReplaceRequest) Descriptor() ([]byte, []int) {
-	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{30}
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *BridgeReplaceRequest) GetAgentId() string {
@@ -3941,7 +4305,7 @@ type BridgeLifecycleRequest struct {
 
 func (x *BridgeLifecycleRequest) Reset() {
 	*x = BridgeLifecycleRequest{}
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[31]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3953,7 +4317,7 @@ func (x *BridgeLifecycleRequest) String() string {
 func (*BridgeLifecycleRequest) ProtoMessage() {}
 
 func (x *BridgeLifecycleRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[31]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3966,7 +4330,7 @@ func (x *BridgeLifecycleRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BridgeLifecycleRequest.ProtoReflect.Descriptor instead.
 func (*BridgeLifecycleRequest) Descriptor() ([]byte, []int) {
-	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{31}
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *BridgeLifecycleRequest) GetAgentId() string {
@@ -4007,7 +4371,7 @@ type BridgeLifecycleResponse struct {
 
 func (x *BridgeLifecycleResponse) Reset() {
 	*x = BridgeLifecycleResponse{}
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[32]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4019,7 +4383,7 @@ func (x *BridgeLifecycleResponse) String() string {
 func (*BridgeLifecycleResponse) ProtoMessage() {}
 
 func (x *BridgeLifecycleResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[32]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4032,7 +4396,7 @@ func (x *BridgeLifecycleResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BridgeLifecycleResponse.ProtoReflect.Descriptor instead.
 func (*BridgeLifecycleResponse) Descriptor() ([]byte, []int) {
-	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{32}
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *BridgeLifecycleResponse) GetAccepted() bool {
@@ -4066,7 +4430,7 @@ type HostedAdminRequest struct {
 
 func (x *HostedAdminRequest) Reset() {
 	*x = HostedAdminRequest{}
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[33]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4078,7 +4442,7 @@ func (x *HostedAdminRequest) String() string {
 func (*HostedAdminRequest) ProtoMessage() {}
 
 func (x *HostedAdminRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[33]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4091,7 +4455,7 @@ func (x *HostedAdminRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HostedAdminRequest.ProtoReflect.Descriptor instead.
 func (*HostedAdminRequest) Descriptor() ([]byte, []int) {
-	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{33}
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *HostedAdminRequest) GetOperation() HostedAdminRequest_Operation {
@@ -4156,7 +4520,7 @@ type HostedAdminResponse struct {
 
 func (x *HostedAdminResponse) Reset() {
 	*x = HostedAdminResponse{}
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[34]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4168,7 +4532,7 @@ func (x *HostedAdminResponse) String() string {
 func (*HostedAdminResponse) ProtoMessage() {}
 
 func (x *HostedAdminResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[34]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4181,7 +4545,7 @@ func (x *HostedAdminResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HostedAdminResponse.ProtoReflect.Descriptor instead.
 func (*HostedAdminResponse) Descriptor() ([]byte, []int) {
-	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{34}
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *HostedAdminResponse) GetAccepted() bool {
@@ -4228,7 +4592,7 @@ type ClientSessionRequest struct {
 
 func (x *ClientSessionRequest) Reset() {
 	*x = ClientSessionRequest{}
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[35]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4240,7 +4604,7 @@ func (x *ClientSessionRequest) String() string {
 func (*ClientSessionRequest) ProtoMessage() {}
 
 func (x *ClientSessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[35]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4253,7 +4617,7 @@ func (x *ClientSessionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClientSessionRequest.ProtoReflect.Descriptor instead.
 func (*ClientSessionRequest) Descriptor() ([]byte, []int) {
-	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{35}
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *ClientSessionRequest) GetOperation() ClientSessionRequest_Operation {
@@ -4278,7 +4642,7 @@ type ClientSessionResponse struct {
 
 func (x *ClientSessionResponse) Reset() {
 	*x = ClientSessionResponse{}
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[36]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4290,7 +4654,7 @@ func (x *ClientSessionResponse) String() string {
 func (*ClientSessionResponse) ProtoMessage() {}
 
 func (x *ClientSessionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[36]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4303,7 +4667,7 @@ func (x *ClientSessionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClientSessionResponse.ProtoReflect.Descriptor instead.
 func (*ClientSessionResponse) Descriptor() ([]byte, []int) {
-	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{36}
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *ClientSessionResponse) GetAccepted() bool {
@@ -4369,7 +4733,7 @@ type PromptTaskRequest struct {
 
 func (x *PromptTaskRequest) Reset() {
 	*x = PromptTaskRequest{}
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[37]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4381,7 +4745,7 @@ func (x *PromptTaskRequest) String() string {
 func (*PromptTaskRequest) ProtoMessage() {}
 
 func (x *PromptTaskRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[37]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4394,7 +4758,7 @@ func (x *PromptTaskRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PromptTaskRequest.ProtoReflect.Descriptor instead.
 func (*PromptTaskRequest) Descriptor() ([]byte, []int) {
-	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{37}
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *PromptTaskRequest) GetTarget() string {
@@ -4451,7 +4815,7 @@ type PromptTaskResponse struct {
 
 func (x *PromptTaskResponse) Reset() {
 	*x = PromptTaskResponse{}
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[38]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4463,7 +4827,7 @@ func (x *PromptTaskResponse) String() string {
 func (*PromptTaskResponse) ProtoMessage() {}
 
 func (x *PromptTaskResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[38]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4476,7 +4840,7 @@ func (x *PromptTaskResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PromptTaskResponse.ProtoReflect.Descriptor instead.
 func (*PromptTaskResponse) Descriptor() ([]byte, []int) {
-	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{38}
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *PromptTaskResponse) GetAccepted() bool {
@@ -4524,7 +4888,7 @@ type TaskLifecycleRequest struct {
 
 func (x *TaskLifecycleRequest) Reset() {
 	*x = TaskLifecycleRequest{}
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[39]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4536,7 +4900,7 @@ func (x *TaskLifecycleRequest) String() string {
 func (*TaskLifecycleRequest) ProtoMessage() {}
 
 func (x *TaskLifecycleRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[39]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4549,7 +4913,7 @@ func (x *TaskLifecycleRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskLifecycleRequest.ProtoReflect.Descriptor instead.
 func (*TaskLifecycleRequest) Descriptor() ([]byte, []int) {
-	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{39}
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *TaskLifecycleRequest) GetOperation() TaskLifecycleRequest_Operation {
@@ -4629,7 +4993,7 @@ type TaskLifecycleResponse struct {
 
 func (x *TaskLifecycleResponse) Reset() {
 	*x = TaskLifecycleResponse{}
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[40]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4641,7 +5005,7 @@ func (x *TaskLifecycleResponse) String() string {
 func (*TaskLifecycleResponse) ProtoMessage() {}
 
 func (x *TaskLifecycleResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[40]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4654,7 +5018,7 @@ func (x *TaskLifecycleResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskLifecycleResponse.ProtoReflect.Descriptor instead.
 func (*TaskLifecycleResponse) Descriptor() ([]byte, []int) {
-	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{40}
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *TaskLifecycleResponse) GetAccepted() bool {
@@ -4710,7 +5074,7 @@ type AgentOperationResponse struct {
 
 func (x *AgentOperationResponse) Reset() {
 	*x = AgentOperationResponse{}
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[41]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4722,7 +5086,7 @@ func (x *AgentOperationResponse) String() string {
 func (*AgentOperationResponse) ProtoMessage() {}
 
 func (x *AgentOperationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[41]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4735,7 +5099,7 @@ func (x *AgentOperationResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentOperationResponse.ProtoReflect.Descriptor instead.
 func (*AgentOperationResponse) Descriptor() ([]byte, []int) {
-	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{41}
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *AgentOperationResponse) GetCompleted() bool {
@@ -4771,7 +5135,7 @@ type AttachResponse struct {
 
 func (x *AttachResponse) Reset() {
 	*x = AttachResponse{}
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[42]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4783,7 +5147,7 @@ func (x *AttachResponse) String() string {
 func (*AttachResponse) ProtoMessage() {}
 
 func (x *AttachResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[42]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4796,7 +5160,7 @@ func (x *AttachResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AttachResponse.ProtoReflect.Descriptor instead.
 func (*AttachResponse) Descriptor() ([]byte, []int) {
-	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{42}
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *AttachResponse) GetStatus() AttachResponse_Status {
@@ -4839,7 +5203,7 @@ type AuthorityRequest struct {
 
 func (x *AuthorityRequest) Reset() {
 	*x = AuthorityRequest{}
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[43]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4851,7 +5215,7 @@ func (x *AuthorityRequest) String() string {
 func (*AuthorityRequest) ProtoMessage() {}
 
 func (x *AuthorityRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[43]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4864,7 +5228,7 @@ func (x *AuthorityRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AuthorityRequest.ProtoReflect.Descriptor instead.
 func (*AuthorityRequest) Descriptor() ([]byte, []int) {
-	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{43}
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *AuthorityRequest) GetOperation() AuthorityOperation {
@@ -4906,7 +5270,7 @@ type AuthorityResponse struct {
 
 func (x *AuthorityResponse) Reset() {
 	*x = AuthorityResponse{}
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[44]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4918,7 +5282,7 @@ func (x *AuthorityResponse) String() string {
 func (*AuthorityResponse) ProtoMessage() {}
 
 func (x *AuthorityResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[44]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4931,7 +5295,7 @@ func (x *AuthorityResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AuthorityResponse.ProtoReflect.Descriptor instead.
 func (*AuthorityResponse) Descriptor() ([]byte, []int) {
-	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{44}
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *AuthorityResponse) GetStatus() AuthorityResponse_Status {
@@ -4964,7 +5328,7 @@ type AuthorityHint struct {
 
 func (x *AuthorityHint) Reset() {
 	*x = AuthorityHint{}
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[45]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4976,7 +5340,7 @@ func (x *AuthorityHint) String() string {
 func (*AuthorityHint) ProtoMessage() {}
 
 func (x *AuthorityHint) ProtoReflect() protoreflect.Message {
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[45]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4989,7 +5353,7 @@ func (x *AuthorityHint) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AuthorityHint.ProtoReflect.Descriptor instead.
 func (*AuthorityHint) Descriptor() ([]byte, []int) {
-	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{45}
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *AuthorityHint) GetEvent() string {
@@ -5009,7 +5373,7 @@ type ProtocolError struct {
 
 func (x *ProtocolError) Reset() {
 	*x = ProtocolError{}
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[46]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5021,7 +5385,7 @@ func (x *ProtocolError) String() string {
 func (*ProtocolError) ProtoMessage() {}
 
 func (x *ProtocolError) ProtoReflect() protoreflect.Message {
-	mi := &file_api_subagents_v1_subagents_proto_msgTypes[46]
+	mi := &file_api_subagents_v1_subagents_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5034,7 +5398,7 @@ func (x *ProtocolError) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProtocolError.ProtoReflect.Descriptor instead.
 func (*ProtocolError) Descriptor() ([]byte, []int) {
-	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{46}
+	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *ProtocolError) GetCode() ProtocolError_Code {
@@ -5055,7 +5419,7 @@ var File_api_subagents_v1_subagents_proto protoreflect.FileDescriptor
 
 const file_api_subagents_v1_subagents_proto_rawDesc = "" +
 	"\n" +
-	" api/subagents/v1/subagents.proto\x12\x18workstation.subagents.v1\"\xcd\"\n" +
+	" api/subagents/v1/subagents.proto\x12\x18workstation.subagents.v1\"\xa0%\n" +
 	"\bEnvelope\x12%\n" +
 	"\x0eprotocol_major\x18\x01 \x01(\rR\rprotocolMajor\x12%\n" +
 	"\x0eprotocol_minor\x18\x02 \x01(\rR\rprotocolMinor\x12\x1d\n" +
@@ -5111,8 +5475,41 @@ const file_api_subagents_v1_subagents_proto_rawDesc = "" +
 	"\x17task_lifecycle_response\x188 \x01(\v2/.workstation.subagents.v1.TaskLifecycleResponseH\x00R\x15taskLifecycleResponse\x12W\n" +
 	"\x11bridge_push_frame\x189 \x01(\v2).workstation.subagents.v1.BridgePushFrameH\x00R\x0fbridgePushFrame\x12l\n" +
 	"\x18bridge_heartbeat_request\x18: \x01(\v20.workstation.subagents.v1.BridgeHeartbeatRequestH\x00R\x16bridgeHeartbeatRequest\x12o\n" +
-	"\x19bridge_heartbeat_response\x18; \x01(\v21.workstation.subagents.v1.BridgeHeartbeatResponseH\x00R\x17bridgeHeartbeatResponseB\t\n" +
-	"\apayload\"t\n" +
+	"\x19bridge_heartbeat_response\x18; \x01(\v21.workstation.subagents.v1.BridgeHeartbeatResponseH\x00R\x17bridgeHeartbeatResponse\x12s\n" +
+	"\x1bclient_agent_roster_request\x18< \x01(\v22.workstation.subagents.v1.ClientAgentRosterRequestH\x00R\x18clientAgentRosterRequest\x12m\n" +
+	"\x19client_agent_roster_frame\x18= \x01(\v20.workstation.subagents.v1.ClientAgentRosterFrameH\x00R\x16clientAgentRosterFrame\x12m\n" +
+	"\x19actor_message_reply_frame\x18> \x01(\v20.workstation.subagents.v1.ActorMessageReplyFrameH\x00R\x16actorMessageReplyFrameB\t\n" +
+	"\apayload\"\xd1\x03\n" +
+	"\x16ActorMessageReplyFrame\x12.\n" +
+	"\x13original_request_id\x18\x01 \x01(\tR\x11originalRequestId\x12\x1b\n" +
+	"\tdedupe_id\x18\x02 \x01(\tR\bdedupeId\x12\x19\n" +
+	"\bchain_id\x18\x03 \x01(\tR\achainId\x128\n" +
+	"\x18source_mutation_sequence\x18\x04 \x01(\x04R\x16sourceMutationSequence\x12\x1a\n" +
+	"\baccepted\x18\x05 \x01(\bR\baccepted\x12\x1c\n" +
+	"\tcompleted\x18\x06 \x01(\bR\tcompleted\x12%\n" +
+	"\x0ebounded_result\x18\a \x01(\fR\rboundedResult\x12\x16\n" +
+	"\x06reason\x18\b \x01(\tR\x06reason\x12C\n" +
+	"\x06source\x18\t \x01(\v2+.workstation.subagents.v1.CommunicationPeerR\x06source\x12C\n" +
+	"\x06target\x18\n" +
+	" \x01(\v2+.workstation.subagents.v1.CommunicationPeerR\x06target\x12\x12\n" +
+	"\x04kind\x18\v \x01(\tR\x04kind\"`\n" +
+	"\x18ClientAgentRosterRequest\x12\x1d\n" +
+	"\n" +
+	"last_epoch\x18\x01 \x01(\x04R\tlastEpoch\x12%\n" +
+	"\x0eafter_sequence\x18\x02 \x01(\x04R\rafterSequence\"\xa0\x03\n" +
+	"\x16ClientAgentRosterFrame\x12X\n" +
+	"\toperation\x18\x01 \x01(\x0e2:.workstation.subagents.v1.ClientAgentRosterFrame.OperationR\toperation\x12\x14\n" +
+	"\x05epoch\x18\x02 \x01(\x04R\x05epoch\x12\x1a\n" +
+	"\bsequence\x18\x03 \x01(\x04R\bsequence\x12>\n" +
+	"\x05agent\x18\x04 \x01(\v2(.workstation.subagents.v1.AgentReferenceR\x05agent\x12\x19\n" +
+	"\bagent_id\x18\x05 \x01(\tR\aagentId\x12\x16\n" +
+	"\x06status\x18\x06 \x01(\tR\x06status\"\x86\x01\n" +
+	"\tOperation\x12\x19\n" +
+	"\x15OPERATION_UNSPECIFIED\x10\x00\x12\x14\n" +
+	"\x10OPERATION_STATUS\x10\x01\x12\x1c\n" +
+	"\x18OPERATION_SNAPSHOT_RESET\x10\x02\x12\x14\n" +
+	"\x10OPERATION_UPSERT\x10\x03\x12\x14\n" +
+	"\x10OPERATION_REMOVE\x10\x04\"t\n" +
 	"\x16BridgeHeartbeatRequest\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12\x1d\n" +
 	"\n" +
@@ -5490,155 +5887,166 @@ func file_api_subagents_v1_subagents_proto_rawDescGZIP() []byte {
 	return file_api_subagents_v1_subagents_proto_rawDescData
 }
 
-var file_api_subagents_v1_subagents_proto_enumTypes = make([]protoimpl.EnumInfo, 19)
-var file_api_subagents_v1_subagents_proto_msgTypes = make([]protoimpl.MessageInfo, 47)
+var file_api_subagents_v1_subagents_proto_enumTypes = make([]protoimpl.EnumInfo, 20)
+var file_api_subagents_v1_subagents_proto_msgTypes = make([]protoimpl.MessageInfo, 50)
 var file_api_subagents_v1_subagents_proto_goTypes = []any{
 	(AuthorityOperation)(0),                           // 0: workstation.subagents.v1.AuthorityOperation
-	(PhaseOneAuthorityBinding_Kind)(0),                // 1: workstation.subagents.v1.PhaseOneAuthorityBinding.Kind
-	(HostedPiRuntimeBinding_State)(0),                 // 2: workstation.subagents.v1.HostedPiRuntimeBinding.State
-	(HostedPiRuntimeBinding_Lifetime)(0),              // 3: workstation.subagents.v1.HostedPiRuntimeBinding.Lifetime
-	(HostedPiRuntimeBinding_TmuxOwnership)(0),         // 4: workstation.subagents.v1.HostedPiRuntimeBinding.TmuxOwnership
-	(HostedPiRuntimeBinding_ControlBoundary)(0),       // 5: workstation.subagents.v1.HostedPiRuntimeBinding.ControlBoundary
-	(HostedPiRuntimeBinding_VisualizationBoundary)(0), // 6: workstation.subagents.v1.HostedPiRuntimeBinding.VisualizationBoundary
-	(ActorMessageRequest_Mode)(0),                     // 7: workstation.subagents.v1.ActorMessageRequest.Mode
-	(ActorControlRequest_Intent)(0),                   // 8: workstation.subagents.v1.ActorControlRequest.Intent
-	(BridgeDelivery_Kind)(0),                          // 9: workstation.subagents.v1.BridgeDelivery.Kind
-	(BridgeDelivery_Policy)(0),                        // 10: workstation.subagents.v1.BridgeDelivery.Policy
-	(BridgeLifecycleRequest_Event)(0),                 // 11: workstation.subagents.v1.BridgeLifecycleRequest.Event
-	(HostedAdminRequest_Operation)(0),                 // 12: workstation.subagents.v1.HostedAdminRequest.Operation
-	(ClientSessionRequest_Operation)(0),               // 13: workstation.subagents.v1.ClientSessionRequest.Operation
-	(TaskLifecycleRequest_Operation)(0),               // 14: workstation.subagents.v1.TaskLifecycleRequest.Operation
-	(TaskLifecycleResponse_State)(0),                  // 15: workstation.subagents.v1.TaskLifecycleResponse.State
-	(AttachResponse_Status)(0),                        // 16: workstation.subagents.v1.AttachResponse.Status
-	(AuthorityResponse_Status)(0),                     // 17: workstation.subagents.v1.AuthorityResponse.Status
-	(ProtocolError_Code)(0),                           // 18: workstation.subagents.v1.ProtocolError.Code
-	(*Envelope)(nil),                                  // 19: workstation.subagents.v1.Envelope
-	(*BridgeHeartbeatRequest)(nil),                    // 20: workstation.subagents.v1.BridgeHeartbeatRequest
-	(*BridgeHeartbeatResponse)(nil),                   // 21: workstation.subagents.v1.BridgeHeartbeatResponse
-	(*HealthRequest)(nil),                             // 22: workstation.subagents.v1.HealthRequest
-	(*HealthResponse)(nil),                            // 23: workstation.subagents.v1.HealthResponse
-	(*ListAgentsRequest)(nil),                         // 24: workstation.subagents.v1.ListAgentsRequest
-	(*ListAgentsResponse)(nil),                        // 25: workstation.subagents.v1.ListAgentsResponse
-	(*AgentReference)(nil),                            // 26: workstation.subagents.v1.AgentReference
-	(*PhaseOneAuthorityBinding)(nil),                  // 27: workstation.subagents.v1.PhaseOneAuthorityBinding
-	(*HostedPiRuntimeBinding)(nil),                    // 28: workstation.subagents.v1.HostedPiRuntimeBinding
-	(*ResolveAgentRequest)(nil),                       // 29: workstation.subagents.v1.ResolveAgentRequest
-	(*ResolveAgentResponse)(nil),                      // 30: workstation.subagents.v1.ResolveAgentResponse
-	(*AttachRequest)(nil),                             // 31: workstation.subagents.v1.AttachRequest
-	(*ReattachRequest)(nil),                           // 32: workstation.subagents.v1.ReattachRequest
-	(*DetachAgentRequest)(nil),                        // 33: workstation.subagents.v1.DetachAgentRequest
-	(*SubscribeAgentRequest)(nil),                     // 34: workstation.subagents.v1.SubscribeAgentRequest
-	(*UnsubscribeAgentRequest)(nil),                   // 35: workstation.subagents.v1.UnsubscribeAgentRequest
-	(*BridgeConnectRequest)(nil),                      // 36: workstation.subagents.v1.BridgeConnectRequest
-	(*BridgeConnectResponse)(nil),                     // 37: workstation.subagents.v1.BridgeConnectResponse
-	(*ActorMessageRequest)(nil),                       // 38: workstation.subagents.v1.ActorMessageRequest
-	(*ActorControlRequest)(nil),                       // 39: workstation.subagents.v1.ActorControlRequest
-	(*ActorMessageResponse)(nil),                      // 40: workstation.subagents.v1.ActorMessageResponse
-	(*CommunicationPeer)(nil),                         // 41: workstation.subagents.v1.CommunicationPeer
-	(*BridgePollRequest)(nil),                         // 42: workstation.subagents.v1.BridgePollRequest
-	(*BridgeEvent)(nil),                               // 43: workstation.subagents.v1.BridgeEvent
-	(*BridgeDelivery)(nil),                            // 44: workstation.subagents.v1.BridgeDelivery
-	(*BridgePollResponse)(nil),                        // 45: workstation.subagents.v1.BridgePollResponse
-	(*BridgePushFrame)(nil),                           // 46: workstation.subagents.v1.BridgePushFrame
-	(*BridgeDeliveryAckRequest)(nil),                  // 47: workstation.subagents.v1.BridgeDeliveryAckRequest
-	(*BridgeDeliveryAckResponse)(nil),                 // 48: workstation.subagents.v1.BridgeDeliveryAckResponse
-	(*BridgeReplaceRequest)(nil),                      // 49: workstation.subagents.v1.BridgeReplaceRequest
-	(*BridgeLifecycleRequest)(nil),                    // 50: workstation.subagents.v1.BridgeLifecycleRequest
-	(*BridgeLifecycleResponse)(nil),                   // 51: workstation.subagents.v1.BridgeLifecycleResponse
-	(*HostedAdminRequest)(nil),                        // 52: workstation.subagents.v1.HostedAdminRequest
-	(*HostedAdminResponse)(nil),                       // 53: workstation.subagents.v1.HostedAdminResponse
-	(*ClientSessionRequest)(nil),                      // 54: workstation.subagents.v1.ClientSessionRequest
-	(*ClientSessionResponse)(nil),                     // 55: workstation.subagents.v1.ClientSessionResponse
-	(*PromptTaskRequest)(nil),                         // 56: workstation.subagents.v1.PromptTaskRequest
-	(*PromptTaskResponse)(nil),                        // 57: workstation.subagents.v1.PromptTaskResponse
-	(*TaskLifecycleRequest)(nil),                      // 58: workstation.subagents.v1.TaskLifecycleRequest
-	(*TaskLifecycleResponse)(nil),                     // 59: workstation.subagents.v1.TaskLifecycleResponse
-	(*AgentOperationResponse)(nil),                    // 60: workstation.subagents.v1.AgentOperationResponse
-	(*AttachResponse)(nil),                            // 61: workstation.subagents.v1.AttachResponse
-	(*AuthorityRequest)(nil),                          // 62: workstation.subagents.v1.AuthorityRequest
-	(*AuthorityResponse)(nil),                         // 63: workstation.subagents.v1.AuthorityResponse
-	(*AuthorityHint)(nil),                             // 64: workstation.subagents.v1.AuthorityHint
-	(*ProtocolError)(nil),                             // 65: workstation.subagents.v1.ProtocolError
+	(ClientAgentRosterFrame_Operation)(0),             // 1: workstation.subagents.v1.ClientAgentRosterFrame.Operation
+	(PhaseOneAuthorityBinding_Kind)(0),                // 2: workstation.subagents.v1.PhaseOneAuthorityBinding.Kind
+	(HostedPiRuntimeBinding_State)(0),                 // 3: workstation.subagents.v1.HostedPiRuntimeBinding.State
+	(HostedPiRuntimeBinding_Lifetime)(0),              // 4: workstation.subagents.v1.HostedPiRuntimeBinding.Lifetime
+	(HostedPiRuntimeBinding_TmuxOwnership)(0),         // 5: workstation.subagents.v1.HostedPiRuntimeBinding.TmuxOwnership
+	(HostedPiRuntimeBinding_ControlBoundary)(0),       // 6: workstation.subagents.v1.HostedPiRuntimeBinding.ControlBoundary
+	(HostedPiRuntimeBinding_VisualizationBoundary)(0), // 7: workstation.subagents.v1.HostedPiRuntimeBinding.VisualizationBoundary
+	(ActorMessageRequest_Mode)(0),                     // 8: workstation.subagents.v1.ActorMessageRequest.Mode
+	(ActorControlRequest_Intent)(0),                   // 9: workstation.subagents.v1.ActorControlRequest.Intent
+	(BridgeDelivery_Kind)(0),                          // 10: workstation.subagents.v1.BridgeDelivery.Kind
+	(BridgeDelivery_Policy)(0),                        // 11: workstation.subagents.v1.BridgeDelivery.Policy
+	(BridgeLifecycleRequest_Event)(0),                 // 12: workstation.subagents.v1.BridgeLifecycleRequest.Event
+	(HostedAdminRequest_Operation)(0),                 // 13: workstation.subagents.v1.HostedAdminRequest.Operation
+	(ClientSessionRequest_Operation)(0),               // 14: workstation.subagents.v1.ClientSessionRequest.Operation
+	(TaskLifecycleRequest_Operation)(0),               // 15: workstation.subagents.v1.TaskLifecycleRequest.Operation
+	(TaskLifecycleResponse_State)(0),                  // 16: workstation.subagents.v1.TaskLifecycleResponse.State
+	(AttachResponse_Status)(0),                        // 17: workstation.subagents.v1.AttachResponse.Status
+	(AuthorityResponse_Status)(0),                     // 18: workstation.subagents.v1.AuthorityResponse.Status
+	(ProtocolError_Code)(0),                           // 19: workstation.subagents.v1.ProtocolError.Code
+	(*Envelope)(nil),                                  // 20: workstation.subagents.v1.Envelope
+	(*ActorMessageReplyFrame)(nil),                    // 21: workstation.subagents.v1.ActorMessageReplyFrame
+	(*ClientAgentRosterRequest)(nil),                  // 22: workstation.subagents.v1.ClientAgentRosterRequest
+	(*ClientAgentRosterFrame)(nil),                    // 23: workstation.subagents.v1.ClientAgentRosterFrame
+	(*BridgeHeartbeatRequest)(nil),                    // 24: workstation.subagents.v1.BridgeHeartbeatRequest
+	(*BridgeHeartbeatResponse)(nil),                   // 25: workstation.subagents.v1.BridgeHeartbeatResponse
+	(*HealthRequest)(nil),                             // 26: workstation.subagents.v1.HealthRequest
+	(*HealthResponse)(nil),                            // 27: workstation.subagents.v1.HealthResponse
+	(*ListAgentsRequest)(nil),                         // 28: workstation.subagents.v1.ListAgentsRequest
+	(*ListAgentsResponse)(nil),                        // 29: workstation.subagents.v1.ListAgentsResponse
+	(*AgentReference)(nil),                            // 30: workstation.subagents.v1.AgentReference
+	(*PhaseOneAuthorityBinding)(nil),                  // 31: workstation.subagents.v1.PhaseOneAuthorityBinding
+	(*HostedPiRuntimeBinding)(nil),                    // 32: workstation.subagents.v1.HostedPiRuntimeBinding
+	(*ResolveAgentRequest)(nil),                       // 33: workstation.subagents.v1.ResolveAgentRequest
+	(*ResolveAgentResponse)(nil),                      // 34: workstation.subagents.v1.ResolveAgentResponse
+	(*AttachRequest)(nil),                             // 35: workstation.subagents.v1.AttachRequest
+	(*ReattachRequest)(nil),                           // 36: workstation.subagents.v1.ReattachRequest
+	(*DetachAgentRequest)(nil),                        // 37: workstation.subagents.v1.DetachAgentRequest
+	(*SubscribeAgentRequest)(nil),                     // 38: workstation.subagents.v1.SubscribeAgentRequest
+	(*UnsubscribeAgentRequest)(nil),                   // 39: workstation.subagents.v1.UnsubscribeAgentRequest
+	(*BridgeConnectRequest)(nil),                      // 40: workstation.subagents.v1.BridgeConnectRequest
+	(*BridgeConnectResponse)(nil),                     // 41: workstation.subagents.v1.BridgeConnectResponse
+	(*ActorMessageRequest)(nil),                       // 42: workstation.subagents.v1.ActorMessageRequest
+	(*ActorControlRequest)(nil),                       // 43: workstation.subagents.v1.ActorControlRequest
+	(*ActorMessageResponse)(nil),                      // 44: workstation.subagents.v1.ActorMessageResponse
+	(*CommunicationPeer)(nil),                         // 45: workstation.subagents.v1.CommunicationPeer
+	(*BridgePollRequest)(nil),                         // 46: workstation.subagents.v1.BridgePollRequest
+	(*BridgeEvent)(nil),                               // 47: workstation.subagents.v1.BridgeEvent
+	(*BridgeDelivery)(nil),                            // 48: workstation.subagents.v1.BridgeDelivery
+	(*BridgePollResponse)(nil),                        // 49: workstation.subagents.v1.BridgePollResponse
+	(*BridgePushFrame)(nil),                           // 50: workstation.subagents.v1.BridgePushFrame
+	(*BridgeDeliveryAckRequest)(nil),                  // 51: workstation.subagents.v1.BridgeDeliveryAckRequest
+	(*BridgeDeliveryAckResponse)(nil),                 // 52: workstation.subagents.v1.BridgeDeliveryAckResponse
+	(*BridgeReplaceRequest)(nil),                      // 53: workstation.subagents.v1.BridgeReplaceRequest
+	(*BridgeLifecycleRequest)(nil),                    // 54: workstation.subagents.v1.BridgeLifecycleRequest
+	(*BridgeLifecycleResponse)(nil),                   // 55: workstation.subagents.v1.BridgeLifecycleResponse
+	(*HostedAdminRequest)(nil),                        // 56: workstation.subagents.v1.HostedAdminRequest
+	(*HostedAdminResponse)(nil),                       // 57: workstation.subagents.v1.HostedAdminResponse
+	(*ClientSessionRequest)(nil),                      // 58: workstation.subagents.v1.ClientSessionRequest
+	(*ClientSessionResponse)(nil),                     // 59: workstation.subagents.v1.ClientSessionResponse
+	(*PromptTaskRequest)(nil),                         // 60: workstation.subagents.v1.PromptTaskRequest
+	(*PromptTaskResponse)(nil),                        // 61: workstation.subagents.v1.PromptTaskResponse
+	(*TaskLifecycleRequest)(nil),                      // 62: workstation.subagents.v1.TaskLifecycleRequest
+	(*TaskLifecycleResponse)(nil),                     // 63: workstation.subagents.v1.TaskLifecycleResponse
+	(*AgentOperationResponse)(nil),                    // 64: workstation.subagents.v1.AgentOperationResponse
+	(*AttachResponse)(nil),                            // 65: workstation.subagents.v1.AttachResponse
+	(*AuthorityRequest)(nil),                          // 66: workstation.subagents.v1.AuthorityRequest
+	(*AuthorityResponse)(nil),                         // 67: workstation.subagents.v1.AuthorityResponse
+	(*AuthorityHint)(nil),                             // 68: workstation.subagents.v1.AuthorityHint
+	(*ProtocolError)(nil),                             // 69: workstation.subagents.v1.ProtocolError
 }
 var file_api_subagents_v1_subagents_proto_depIdxs = []int32{
-	22, // 0: workstation.subagents.v1.Envelope.health_request:type_name -> workstation.subagents.v1.HealthRequest
-	23, // 1: workstation.subagents.v1.Envelope.health_response:type_name -> workstation.subagents.v1.HealthResponse
-	31, // 2: workstation.subagents.v1.Envelope.attach_request:type_name -> workstation.subagents.v1.AttachRequest
-	61, // 3: workstation.subagents.v1.Envelope.attach_response:type_name -> workstation.subagents.v1.AttachResponse
-	32, // 4: workstation.subagents.v1.Envelope.reattach_request:type_name -> workstation.subagents.v1.ReattachRequest
-	62, // 5: workstation.subagents.v1.Envelope.authority_request:type_name -> workstation.subagents.v1.AuthorityRequest
-	63, // 6: workstation.subagents.v1.Envelope.authority_response:type_name -> workstation.subagents.v1.AuthorityResponse
-	65, // 7: workstation.subagents.v1.Envelope.protocol_error:type_name -> workstation.subagents.v1.ProtocolError
-	64, // 8: workstation.subagents.v1.Envelope.authority_hint:type_name -> workstation.subagents.v1.AuthorityHint
-	24, // 9: workstation.subagents.v1.Envelope.list_agents_request:type_name -> workstation.subagents.v1.ListAgentsRequest
-	25, // 10: workstation.subagents.v1.Envelope.list_agents_response:type_name -> workstation.subagents.v1.ListAgentsResponse
-	29, // 11: workstation.subagents.v1.Envelope.resolve_agent_request:type_name -> workstation.subagents.v1.ResolveAgentRequest
-	30, // 12: workstation.subagents.v1.Envelope.resolve_agent_response:type_name -> workstation.subagents.v1.ResolveAgentResponse
-	33, // 13: workstation.subagents.v1.Envelope.detach_agent_request:type_name -> workstation.subagents.v1.DetachAgentRequest
-	34, // 14: workstation.subagents.v1.Envelope.subscribe_agent_request:type_name -> workstation.subagents.v1.SubscribeAgentRequest
-	60, // 15: workstation.subagents.v1.Envelope.agent_operation_response:type_name -> workstation.subagents.v1.AgentOperationResponse
-	35, // 16: workstation.subagents.v1.Envelope.unsubscribe_agent_request:type_name -> workstation.subagents.v1.UnsubscribeAgentRequest
-	36, // 17: workstation.subagents.v1.Envelope.bridge_connect_request:type_name -> workstation.subagents.v1.BridgeConnectRequest
-	37, // 18: workstation.subagents.v1.Envelope.bridge_connect_response:type_name -> workstation.subagents.v1.BridgeConnectResponse
-	38, // 19: workstation.subagents.v1.Envelope.actor_message_request:type_name -> workstation.subagents.v1.ActorMessageRequest
-	40, // 20: workstation.subagents.v1.Envelope.actor_message_response:type_name -> workstation.subagents.v1.ActorMessageResponse
-	42, // 21: workstation.subagents.v1.Envelope.bridge_poll_request:type_name -> workstation.subagents.v1.BridgePollRequest
-	45, // 22: workstation.subagents.v1.Envelope.bridge_poll_response:type_name -> workstation.subagents.v1.BridgePollResponse
-	50, // 23: workstation.subagents.v1.Envelope.bridge_lifecycle_request:type_name -> workstation.subagents.v1.BridgeLifecycleRequest
-	51, // 24: workstation.subagents.v1.Envelope.bridge_lifecycle_response:type_name -> workstation.subagents.v1.BridgeLifecycleResponse
-	47, // 25: workstation.subagents.v1.Envelope.bridge_delivery_ack_request:type_name -> workstation.subagents.v1.BridgeDeliveryAckRequest
-	48, // 26: workstation.subagents.v1.Envelope.bridge_delivery_ack_response:type_name -> workstation.subagents.v1.BridgeDeliveryAckResponse
-	39, // 27: workstation.subagents.v1.Envelope.actor_control_request:type_name -> workstation.subagents.v1.ActorControlRequest
-	49, // 28: workstation.subagents.v1.Envelope.bridge_replace_request:type_name -> workstation.subagents.v1.BridgeReplaceRequest
-	52, // 29: workstation.subagents.v1.Envelope.hosted_admin_request:type_name -> workstation.subagents.v1.HostedAdminRequest
-	53, // 30: workstation.subagents.v1.Envelope.hosted_admin_response:type_name -> workstation.subagents.v1.HostedAdminResponse
-	54, // 31: workstation.subagents.v1.Envelope.client_session_request:type_name -> workstation.subagents.v1.ClientSessionRequest
-	55, // 32: workstation.subagents.v1.Envelope.client_session_response:type_name -> workstation.subagents.v1.ClientSessionResponse
-	56, // 33: workstation.subagents.v1.Envelope.prompt_task_request:type_name -> workstation.subagents.v1.PromptTaskRequest
-	57, // 34: workstation.subagents.v1.Envelope.prompt_task_response:type_name -> workstation.subagents.v1.PromptTaskResponse
-	58, // 35: workstation.subagents.v1.Envelope.task_lifecycle_request:type_name -> workstation.subagents.v1.TaskLifecycleRequest
-	59, // 36: workstation.subagents.v1.Envelope.task_lifecycle_response:type_name -> workstation.subagents.v1.TaskLifecycleResponse
-	46, // 37: workstation.subagents.v1.Envelope.bridge_push_frame:type_name -> workstation.subagents.v1.BridgePushFrame
-	20, // 38: workstation.subagents.v1.Envelope.bridge_heartbeat_request:type_name -> workstation.subagents.v1.BridgeHeartbeatRequest
-	21, // 39: workstation.subagents.v1.Envelope.bridge_heartbeat_response:type_name -> workstation.subagents.v1.BridgeHeartbeatResponse
-	26, // 40: workstation.subagents.v1.ListAgentsResponse.agents:type_name -> workstation.subagents.v1.AgentReference
-	27, // 41: workstation.subagents.v1.AgentReference.authority_binding:type_name -> workstation.subagents.v1.PhaseOneAuthorityBinding
-	28, // 42: workstation.subagents.v1.AgentReference.hosted_pi_runtime:type_name -> workstation.subagents.v1.HostedPiRuntimeBinding
-	1,  // 43: workstation.subagents.v1.PhaseOneAuthorityBinding.kind:type_name -> workstation.subagents.v1.PhaseOneAuthorityBinding.Kind
-	2,  // 44: workstation.subagents.v1.HostedPiRuntimeBinding.state:type_name -> workstation.subagents.v1.HostedPiRuntimeBinding.State
-	3,  // 45: workstation.subagents.v1.HostedPiRuntimeBinding.lifetime:type_name -> workstation.subagents.v1.HostedPiRuntimeBinding.Lifetime
-	4,  // 46: workstation.subagents.v1.HostedPiRuntimeBinding.tmux_ownership:type_name -> workstation.subagents.v1.HostedPiRuntimeBinding.TmuxOwnership
-	5,  // 47: workstation.subagents.v1.HostedPiRuntimeBinding.control_boundary:type_name -> workstation.subagents.v1.HostedPiRuntimeBinding.ControlBoundary
-	6,  // 48: workstation.subagents.v1.HostedPiRuntimeBinding.visualization_boundary:type_name -> workstation.subagents.v1.HostedPiRuntimeBinding.VisualizationBoundary
-	26, // 49: workstation.subagents.v1.ResolveAgentResponse.agent:type_name -> workstation.subagents.v1.AgentReference
-	26, // 50: workstation.subagents.v1.ResolveAgentResponse.candidates:type_name -> workstation.subagents.v1.AgentReference
-	7,  // 51: workstation.subagents.v1.ActorMessageRequest.mode:type_name -> workstation.subagents.v1.ActorMessageRequest.Mode
-	8,  // 52: workstation.subagents.v1.ActorControlRequest.intent:type_name -> workstation.subagents.v1.ActorControlRequest.Intent
-	41, // 53: workstation.subagents.v1.ActorMessageResponse.source:type_name -> workstation.subagents.v1.CommunicationPeer
-	41, // 54: workstation.subagents.v1.ActorMessageResponse.target:type_name -> workstation.subagents.v1.CommunicationPeer
-	10, // 55: workstation.subagents.v1.BridgeDelivery.policy:type_name -> workstation.subagents.v1.BridgeDelivery.Policy
-	9,  // 56: workstation.subagents.v1.BridgeDelivery.kind:type_name -> workstation.subagents.v1.BridgeDelivery.Kind
-	41, // 57: workstation.subagents.v1.BridgeDelivery.source:type_name -> workstation.subagents.v1.CommunicationPeer
-	41, // 58: workstation.subagents.v1.BridgeDelivery.target:type_name -> workstation.subagents.v1.CommunicationPeer
-	43, // 59: workstation.subagents.v1.BridgePollResponse.events:type_name -> workstation.subagents.v1.BridgeEvent
-	44, // 60: workstation.subagents.v1.BridgePollResponse.deliveries:type_name -> workstation.subagents.v1.BridgeDelivery
-	43, // 61: workstation.subagents.v1.BridgePushFrame.events:type_name -> workstation.subagents.v1.BridgeEvent
-	44, // 62: workstation.subagents.v1.BridgePushFrame.deliveries:type_name -> workstation.subagents.v1.BridgeDelivery
-	11, // 63: workstation.subagents.v1.BridgeLifecycleRequest.event:type_name -> workstation.subagents.v1.BridgeLifecycleRequest.Event
-	12, // 64: workstation.subagents.v1.HostedAdminRequest.operation:type_name -> workstation.subagents.v1.HostedAdminRequest.Operation
-	28, // 65: workstation.subagents.v1.HostedAdminResponse.runtime:type_name -> workstation.subagents.v1.HostedPiRuntimeBinding
-	13, // 66: workstation.subagents.v1.ClientSessionRequest.operation:type_name -> workstation.subagents.v1.ClientSessionRequest.Operation
-	14, // 67: workstation.subagents.v1.TaskLifecycleRequest.operation:type_name -> workstation.subagents.v1.TaskLifecycleRequest.Operation
-	15, // 68: workstation.subagents.v1.TaskLifecycleResponse.state:type_name -> workstation.subagents.v1.TaskLifecycleResponse.State
-	16, // 69: workstation.subagents.v1.AttachResponse.status:type_name -> workstation.subagents.v1.AttachResponse.Status
-	0,  // 70: workstation.subagents.v1.AuthorityRequest.operation:type_name -> workstation.subagents.v1.AuthorityOperation
-	17, // 71: workstation.subagents.v1.AuthorityResponse.status:type_name -> workstation.subagents.v1.AuthorityResponse.Status
-	18, // 72: workstation.subagents.v1.ProtocolError.code:type_name -> workstation.subagents.v1.ProtocolError.Code
-	73, // [73:73] is the sub-list for method output_type
-	73, // [73:73] is the sub-list for method input_type
-	73, // [73:73] is the sub-list for extension type_name
-	73, // [73:73] is the sub-list for extension extendee
-	0,  // [0:73] is the sub-list for field type_name
+	26, // 0: workstation.subagents.v1.Envelope.health_request:type_name -> workstation.subagents.v1.HealthRequest
+	27, // 1: workstation.subagents.v1.Envelope.health_response:type_name -> workstation.subagents.v1.HealthResponse
+	35, // 2: workstation.subagents.v1.Envelope.attach_request:type_name -> workstation.subagents.v1.AttachRequest
+	65, // 3: workstation.subagents.v1.Envelope.attach_response:type_name -> workstation.subagents.v1.AttachResponse
+	36, // 4: workstation.subagents.v1.Envelope.reattach_request:type_name -> workstation.subagents.v1.ReattachRequest
+	66, // 5: workstation.subagents.v1.Envelope.authority_request:type_name -> workstation.subagents.v1.AuthorityRequest
+	67, // 6: workstation.subagents.v1.Envelope.authority_response:type_name -> workstation.subagents.v1.AuthorityResponse
+	69, // 7: workstation.subagents.v1.Envelope.protocol_error:type_name -> workstation.subagents.v1.ProtocolError
+	68, // 8: workstation.subagents.v1.Envelope.authority_hint:type_name -> workstation.subagents.v1.AuthorityHint
+	28, // 9: workstation.subagents.v1.Envelope.list_agents_request:type_name -> workstation.subagents.v1.ListAgentsRequest
+	29, // 10: workstation.subagents.v1.Envelope.list_agents_response:type_name -> workstation.subagents.v1.ListAgentsResponse
+	33, // 11: workstation.subagents.v1.Envelope.resolve_agent_request:type_name -> workstation.subagents.v1.ResolveAgentRequest
+	34, // 12: workstation.subagents.v1.Envelope.resolve_agent_response:type_name -> workstation.subagents.v1.ResolveAgentResponse
+	37, // 13: workstation.subagents.v1.Envelope.detach_agent_request:type_name -> workstation.subagents.v1.DetachAgentRequest
+	38, // 14: workstation.subagents.v1.Envelope.subscribe_agent_request:type_name -> workstation.subagents.v1.SubscribeAgentRequest
+	64, // 15: workstation.subagents.v1.Envelope.agent_operation_response:type_name -> workstation.subagents.v1.AgentOperationResponse
+	39, // 16: workstation.subagents.v1.Envelope.unsubscribe_agent_request:type_name -> workstation.subagents.v1.UnsubscribeAgentRequest
+	40, // 17: workstation.subagents.v1.Envelope.bridge_connect_request:type_name -> workstation.subagents.v1.BridgeConnectRequest
+	41, // 18: workstation.subagents.v1.Envelope.bridge_connect_response:type_name -> workstation.subagents.v1.BridgeConnectResponse
+	42, // 19: workstation.subagents.v1.Envelope.actor_message_request:type_name -> workstation.subagents.v1.ActorMessageRequest
+	44, // 20: workstation.subagents.v1.Envelope.actor_message_response:type_name -> workstation.subagents.v1.ActorMessageResponse
+	46, // 21: workstation.subagents.v1.Envelope.bridge_poll_request:type_name -> workstation.subagents.v1.BridgePollRequest
+	49, // 22: workstation.subagents.v1.Envelope.bridge_poll_response:type_name -> workstation.subagents.v1.BridgePollResponse
+	54, // 23: workstation.subagents.v1.Envelope.bridge_lifecycle_request:type_name -> workstation.subagents.v1.BridgeLifecycleRequest
+	55, // 24: workstation.subagents.v1.Envelope.bridge_lifecycle_response:type_name -> workstation.subagents.v1.BridgeLifecycleResponse
+	51, // 25: workstation.subagents.v1.Envelope.bridge_delivery_ack_request:type_name -> workstation.subagents.v1.BridgeDeliveryAckRequest
+	52, // 26: workstation.subagents.v1.Envelope.bridge_delivery_ack_response:type_name -> workstation.subagents.v1.BridgeDeliveryAckResponse
+	43, // 27: workstation.subagents.v1.Envelope.actor_control_request:type_name -> workstation.subagents.v1.ActorControlRequest
+	53, // 28: workstation.subagents.v1.Envelope.bridge_replace_request:type_name -> workstation.subagents.v1.BridgeReplaceRequest
+	56, // 29: workstation.subagents.v1.Envelope.hosted_admin_request:type_name -> workstation.subagents.v1.HostedAdminRequest
+	57, // 30: workstation.subagents.v1.Envelope.hosted_admin_response:type_name -> workstation.subagents.v1.HostedAdminResponse
+	58, // 31: workstation.subagents.v1.Envelope.client_session_request:type_name -> workstation.subagents.v1.ClientSessionRequest
+	59, // 32: workstation.subagents.v1.Envelope.client_session_response:type_name -> workstation.subagents.v1.ClientSessionResponse
+	60, // 33: workstation.subagents.v1.Envelope.prompt_task_request:type_name -> workstation.subagents.v1.PromptTaskRequest
+	61, // 34: workstation.subagents.v1.Envelope.prompt_task_response:type_name -> workstation.subagents.v1.PromptTaskResponse
+	62, // 35: workstation.subagents.v1.Envelope.task_lifecycle_request:type_name -> workstation.subagents.v1.TaskLifecycleRequest
+	63, // 36: workstation.subagents.v1.Envelope.task_lifecycle_response:type_name -> workstation.subagents.v1.TaskLifecycleResponse
+	50, // 37: workstation.subagents.v1.Envelope.bridge_push_frame:type_name -> workstation.subagents.v1.BridgePushFrame
+	24, // 38: workstation.subagents.v1.Envelope.bridge_heartbeat_request:type_name -> workstation.subagents.v1.BridgeHeartbeatRequest
+	25, // 39: workstation.subagents.v1.Envelope.bridge_heartbeat_response:type_name -> workstation.subagents.v1.BridgeHeartbeatResponse
+	22, // 40: workstation.subagents.v1.Envelope.client_agent_roster_request:type_name -> workstation.subagents.v1.ClientAgentRosterRequest
+	23, // 41: workstation.subagents.v1.Envelope.client_agent_roster_frame:type_name -> workstation.subagents.v1.ClientAgentRosterFrame
+	21, // 42: workstation.subagents.v1.Envelope.actor_message_reply_frame:type_name -> workstation.subagents.v1.ActorMessageReplyFrame
+	45, // 43: workstation.subagents.v1.ActorMessageReplyFrame.source:type_name -> workstation.subagents.v1.CommunicationPeer
+	45, // 44: workstation.subagents.v1.ActorMessageReplyFrame.target:type_name -> workstation.subagents.v1.CommunicationPeer
+	1,  // 45: workstation.subagents.v1.ClientAgentRosterFrame.operation:type_name -> workstation.subagents.v1.ClientAgentRosterFrame.Operation
+	30, // 46: workstation.subagents.v1.ClientAgentRosterFrame.agent:type_name -> workstation.subagents.v1.AgentReference
+	30, // 47: workstation.subagents.v1.ListAgentsResponse.agents:type_name -> workstation.subagents.v1.AgentReference
+	31, // 48: workstation.subagents.v1.AgentReference.authority_binding:type_name -> workstation.subagents.v1.PhaseOneAuthorityBinding
+	32, // 49: workstation.subagents.v1.AgentReference.hosted_pi_runtime:type_name -> workstation.subagents.v1.HostedPiRuntimeBinding
+	2,  // 50: workstation.subagents.v1.PhaseOneAuthorityBinding.kind:type_name -> workstation.subagents.v1.PhaseOneAuthorityBinding.Kind
+	3,  // 51: workstation.subagents.v1.HostedPiRuntimeBinding.state:type_name -> workstation.subagents.v1.HostedPiRuntimeBinding.State
+	4,  // 52: workstation.subagents.v1.HostedPiRuntimeBinding.lifetime:type_name -> workstation.subagents.v1.HostedPiRuntimeBinding.Lifetime
+	5,  // 53: workstation.subagents.v1.HostedPiRuntimeBinding.tmux_ownership:type_name -> workstation.subagents.v1.HostedPiRuntimeBinding.TmuxOwnership
+	6,  // 54: workstation.subagents.v1.HostedPiRuntimeBinding.control_boundary:type_name -> workstation.subagents.v1.HostedPiRuntimeBinding.ControlBoundary
+	7,  // 55: workstation.subagents.v1.HostedPiRuntimeBinding.visualization_boundary:type_name -> workstation.subagents.v1.HostedPiRuntimeBinding.VisualizationBoundary
+	30, // 56: workstation.subagents.v1.ResolveAgentResponse.agent:type_name -> workstation.subagents.v1.AgentReference
+	30, // 57: workstation.subagents.v1.ResolveAgentResponse.candidates:type_name -> workstation.subagents.v1.AgentReference
+	8,  // 58: workstation.subagents.v1.ActorMessageRequest.mode:type_name -> workstation.subagents.v1.ActorMessageRequest.Mode
+	9,  // 59: workstation.subagents.v1.ActorControlRequest.intent:type_name -> workstation.subagents.v1.ActorControlRequest.Intent
+	45, // 60: workstation.subagents.v1.ActorMessageResponse.source:type_name -> workstation.subagents.v1.CommunicationPeer
+	45, // 61: workstation.subagents.v1.ActorMessageResponse.target:type_name -> workstation.subagents.v1.CommunicationPeer
+	11, // 62: workstation.subagents.v1.BridgeDelivery.policy:type_name -> workstation.subagents.v1.BridgeDelivery.Policy
+	10, // 63: workstation.subagents.v1.BridgeDelivery.kind:type_name -> workstation.subagents.v1.BridgeDelivery.Kind
+	45, // 64: workstation.subagents.v1.BridgeDelivery.source:type_name -> workstation.subagents.v1.CommunicationPeer
+	45, // 65: workstation.subagents.v1.BridgeDelivery.target:type_name -> workstation.subagents.v1.CommunicationPeer
+	47, // 66: workstation.subagents.v1.BridgePollResponse.events:type_name -> workstation.subagents.v1.BridgeEvent
+	48, // 67: workstation.subagents.v1.BridgePollResponse.deliveries:type_name -> workstation.subagents.v1.BridgeDelivery
+	47, // 68: workstation.subagents.v1.BridgePushFrame.events:type_name -> workstation.subagents.v1.BridgeEvent
+	48, // 69: workstation.subagents.v1.BridgePushFrame.deliveries:type_name -> workstation.subagents.v1.BridgeDelivery
+	12, // 70: workstation.subagents.v1.BridgeLifecycleRequest.event:type_name -> workstation.subagents.v1.BridgeLifecycleRequest.Event
+	13, // 71: workstation.subagents.v1.HostedAdminRequest.operation:type_name -> workstation.subagents.v1.HostedAdminRequest.Operation
+	32, // 72: workstation.subagents.v1.HostedAdminResponse.runtime:type_name -> workstation.subagents.v1.HostedPiRuntimeBinding
+	14, // 73: workstation.subagents.v1.ClientSessionRequest.operation:type_name -> workstation.subagents.v1.ClientSessionRequest.Operation
+	15, // 74: workstation.subagents.v1.TaskLifecycleRequest.operation:type_name -> workstation.subagents.v1.TaskLifecycleRequest.Operation
+	16, // 75: workstation.subagents.v1.TaskLifecycleResponse.state:type_name -> workstation.subagents.v1.TaskLifecycleResponse.State
+	17, // 76: workstation.subagents.v1.AttachResponse.status:type_name -> workstation.subagents.v1.AttachResponse.Status
+	0,  // 77: workstation.subagents.v1.AuthorityRequest.operation:type_name -> workstation.subagents.v1.AuthorityOperation
+	18, // 78: workstation.subagents.v1.AuthorityResponse.status:type_name -> workstation.subagents.v1.AuthorityResponse.Status
+	19, // 79: workstation.subagents.v1.ProtocolError.code:type_name -> workstation.subagents.v1.ProtocolError.Code
+	80, // [80:80] is the sub-list for method output_type
+	80, // [80:80] is the sub-list for method input_type
+	80, // [80:80] is the sub-list for extension type_name
+	80, // [80:80] is the sub-list for extension extendee
+	0,  // [0:80] is the sub-list for field type_name
 }
 
 func init() { file_api_subagents_v1_subagents_proto_init() }
@@ -5687,14 +6095,17 @@ func file_api_subagents_v1_subagents_proto_init() {
 		(*Envelope_BridgePushFrame)(nil),
 		(*Envelope_BridgeHeartbeatRequest)(nil),
 		(*Envelope_BridgeHeartbeatResponse)(nil),
+		(*Envelope_ClientAgentRosterRequest)(nil),
+		(*Envelope_ClientAgentRosterFrame)(nil),
+		(*Envelope_ActorMessageReplyFrame)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_subagents_v1_subagents_proto_rawDesc), len(file_api_subagents_v1_subagents_proto_rawDesc)),
-			NumEnums:      19,
-			NumMessages:   47,
+			NumEnums:      20,
+			NumMessages:   50,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

@@ -9,7 +9,7 @@ This file is the canonical delivery roadmap. ADRs in this directory define archi
 | 0. GoAkt foundation | Approved | Global actors, protobuf WebSocket application plane, fencing, lifecycle, security tests |
 | 1. Hosted Pi runtime | Approved | Full Pi TUI in exactly owned tmux; dynamic actor lifecycle; bridge commands/tools |
 | 2. Self-hosting client MVP | Live, managed | Normal Pi creates dynamic actors, sends a real prompt, receives the correlated model answer, and delegates a repository task through the owned system |
-| 3. Actor-native push stabilization | Current | Hosted bridges use authenticated daemon push frames from watched BridgeSessionActors, reconnect replay starts from last delivery ACK, and periodic polling is compatibility-only |
+| 3. Actor-native push stabilization | Current | Hosted bridges use authenticated daemon push frames from watched BridgeSessionActors; ordinary clients use authenticated roster push with epoch/sequence fencing; periodic polling is compatibility-only |
 | 4. Client stabilization | Next | Reproduce/fix same-name restart; use isolated worktrees; complete several real tasks through owned TaskCoordinator/Workflow actors |
 | 5. Authority cutover | Deferred | Owned execution parity proven; disable third-party authority without dual writers; retain bounded rollback window |
 | 6. Legacy removal | Deferred | Remove `pi-subagents`, old XState/Terminal Kit observer, superseded tests/docs/packages |
@@ -42,13 +42,13 @@ Current managed entry point: restart an ordinary globally discovered `pi`; the `
 
 [The draft workflow-template specification](WORKFLOW-TEMPLATE-SPEC.md) inventories current canonical fields separately from proposed strict TOML vocabulary, with non-runnable dogfood examples under [`examples/`](examples/). Implementation must validate and materialize a versioned template into an actor-owned workflow run without agent guesswork, pin the resolved version/digest, and fail without side effects when validation or authorization fails.
 
-## Future ticket: XState client actor model
+## Client reducer model
 
-Replace ad-hoc client-side UI state with an explicit XState client actor for each attached Pi/TUI client. The client actor should exchange typed daemon messages, reduce subscription/list/status/ask/send lifecycle events into a deterministic local projection, own reconnect cursors and pending request UI state, and expose one bounded render snapshot to Pi. Daemon-side `AgentActor`, `WorkflowActor`, `BridgeSessionActor`, and session registries remain authoritative for security and durable state; the XState client actor is a cleaner client reducer/orchestrator, not a second authority or transport-specific cache.
+The ordinary actor-client extension now has an explicit XState-style reducer for connection, roster cursor, and compact render state. It exchanges typed daemon messages, subscribes to `ClientAgentRosterFrame` push, owns reconnect cursors and pending request UI state, and exposes one bounded render snapshot to Pi. Daemon-side `AgentActor`, `WorkflowActor`, `BridgeSessionActor`, and session registries remain authoritative for security and durable state; the client reducer is not a second authority or transport-specific cache.
 
 Implementation notes:
 
-- Model daemon connection, authentication, subscriptions, requests, reconnect, replay, and terminal failures as explicit XState states/events.
+- Continue broadening daemon connection, authentication, subscriptions, requests, reconnect, replay, and terminal failures as explicit XState states/events.
 - Preserve typed protocol identities, fences, lifecycle IDs, and delivery ACK cursors in actor context.
 - Keep human rendering derived from the XState snapshot while model-visible tool content remains complete and machine-actionable.
 - Use the same actor abstraction for slash commands, model tools, and future dashboards so UI clients share one reducer contract.
