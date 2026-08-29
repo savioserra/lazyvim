@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { publicAgentView, registerClientHandlers } from "../../home/dot_pi/private_agent/extensions/actor-client/handlers.ts";
-import { ActorClientConversationLog, actorAskCompletionContent, initialActorClientRosterState, reduceActorClientRoster, validateRemoteProject } from "../../home/dot_pi/private_agent/extensions/actor-client/index.ts";
+import { ACTOR_ASK_COMPLETION_TIMEOUT, ActorClientConversationLog, actorAskCompletionContent, initialActorClientRosterState, reduceActorClientRoster, validateRemoteProject } from "../../home/dot_pi/private_agent/extensions/actor-client/index.ts";
 import { outgoingExchange } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/communication-ui.ts";
 
 test("remote project validation is syntax-only and does not require a local path", () => {
@@ -27,6 +27,10 @@ test("actor-client roster reducer fences frames and renders redacted lifecycle",
   assert.equal(fenced.agents.has("alpha"), true);
   state = reduceActorClientRoster(state, { type: "ROSTER_FRAME", frame: { operation: 4, epoch: 10n, sequence: 3n, agentId: "alpha" } });
   assert.equal(state.agents.size, 0);
+});
+
+test("actor ask completion deadline remains bounded for real model tasks", () => {
+  assert.equal(ACTOR_ASK_COMPLETION_TIMEOUT, 30 * 60_000);
 });
 
 test("actor ask reply sends one model-visible custom message and clears pending", async () => {
