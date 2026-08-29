@@ -163,6 +163,7 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
   let reconnecting: Promise<void> | undefined;
   let heartbeatTimer: NodeJS.Timeout | undefined;
   let pollTimer: NodeJS.Timeout | undefined;
+  let bridgeShuttingDown = false;
   let lastAckedSequence = 0n;
   const pendingPushFrames: Envelope[] = [];
   let pushTail = Promise.resolve();
@@ -265,6 +266,7 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
   registerHostedHandlers(pi as any, { list, resolve, health, message: (mode, target, text) => message(mode as ActorMessageRequest_Mode, target, text), control: (intent, target) => control(intent as ActorControlRequest_Intent, target), subscribe, unsubscribe }, { empty: Type.Object({}), target: Type.Object({ target: targetSchema }), modelTarget: modelTargetSchema, message: messageSchema });
 
   pi.on("session_start", async (_event, ctx) => {
+    bridgeShuttingDown = false;
     extensionContext = ctx;
     for (const entry of ctx.sessionManager.getEntries()) {
       if (entry.type !== "custom") continue;
@@ -296,11 +298,11 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
     await pushTail;
     await lifecycle(BridgeLifecycleRequest_Event.SESSION_START);
     await lifecycle(BridgeLifecycleRequest_Event.READY);
-    heartbeatTimer = setInterval(() => { void heartbeat().catch(() => reconnect(ctx)); }, 400);
+    heartbeatTimer = setInterval(() => { void heartbeat().catch(() => consumeReconnect(() => reconnect(ctx))); }, 400);
     heartbeatTimer.unref();
-    pollTimer = setInterval(() => { void poll(ctx).catch(() => reconnect(ctx)); }, 1000);
+    pollTimer = setInterval(() => { void poll(ctx).catch(() => consumeReconnect(() => reconnect(ctx))); }, 1000);
     pollTimer.unref();
-    void poll(ctx).catch(() => reconnect(ctx));
+    void poll(ctx).catch(() => consumeReconnect(() => reconnect(ctx)));
     ctx.ui.setStatus("hosted-pi-bridge", "hosted bridge ready");
   });
 
@@ -309,6 +311,7 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
   pi.on("agent_settled", async () => { await lifecycle(BridgeLifecycleRequest_Event.AGENT_SETTLED); });
 
   pi.on("session_shutdown", async (_event, ctx) => {
+    bridgeShuttingDown = true;
     if (heartbeatTimer) clearInterval(heartbeatTimer);
     if (pollTimer) clearInterval(pollTimer);
     heartbeatTimer = undefined;
@@ -350,7 +353,9 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
       pendingPushFrames.push(envelope);
       return;
     }
-    pushTail = pushTail.then(() => handlePush(ctx, envelope)).catch(() => reconnect(ctx));
+    pushTail = pushTail.then(() => handlePush(ctx, envelope)).catch(async () => {
+      try { await reconnect(ctx); } catch { /* degraded status is authoritative; never crash Pi */ }
+    });
   }
 
   async function handlePush(ctx: ExtensionContext, envelope: Envelope) {
@@ -433,7 +438,8 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
     if (reconnecting) return reconnecting;
     reconnecting = (async () => {
       ctx.ui.setStatus("hosted-pi-bridge", "hosted bridge reconnecting");
-      for (let attempt = 0; attempt < 5; attempt++) {
+      let attempt = 0;
+      while (!bridgeShuttingDown) {
         try {
           await client?.close();
           const current = requiredBinding(binding);
@@ -449,15 +455,22 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
           await poll(ctx);
           ctx.ui.setStatus("hosted-pi-bridge", "hosted bridge ready");
           return;
-        } catch { await delay(Math.min(1000, 100 * 2 ** attempt)); }
+        } catch {
+          attempt++;
+          if (attempt >= 5) ctx.ui.setStatus("hosted-pi-bridge", "hosted bridge degraded · retrying");
+          await delay(Math.min(5000, 100 * 2 ** Math.min(attempt, 6)));
+        }
       }
-      ctx.ui.setStatus("hosted-pi-bridge", "hosted bridge degraded");
-      throw new Error("hosted bridge reconnect attempts exhausted");
+      throw new Error("hosted bridge session is shutting down");
     })().finally(() => { reconnecting = undefined; });
     return reconnecting;
   }
 }
 
+
+export function consumeReconnect(operation: () => Promise<unknown>): void {
+  void operation().catch(() => { /* caller already projects reconnect failure as degraded */ });
+}
 
 async function loadBinding(): Promise<Binding> {
   const endpoint = requiredEnv("WS_SUBAGENTS_ENDPOINT");

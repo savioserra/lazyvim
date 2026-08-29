@@ -2,9 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { buildActorControl, buildActorMessage, buildDeliveryAck, communicationKey, communicationLine, CommunicationTimeline, completeHostedEnvironment, ExactMutationSequencer, PromptTaskCoordinator, deliveryAction, destroyOnFramingFailure, drainPages, executeTypedDelivery, invokeTypedDeliveryForAck, parseTargetMessage, registerHostedHandlers, requireExplicitModelTarget } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/handlers.ts";
 import { incomingNote, incomingRequestText, outgoingExchange, renderCommunicationCard, compactToolCall, compactToolResult, modelResultContent } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/communication-ui.ts";
-import { actorMessageModelResult, connectBridgeWithRetry } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/index.ts";
+import { actorMessageModelResult, connectBridgeWithRetry, consumeReconnect } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/index.ts";
 
 const complete = { WS_SUBAGENTS_ENDPOINT: "ws://127.0.0.1:17213/actors", WS_SUBAGENTS_CREDENTIAL_FILE: "/state/credential", WS_SUBAGENTS_SESSION_ID: "session", WS_SUBAGENTS_GENERATION_ID: "generation", WS_SUBAGENTS_CALLER: "hosted:agent", WS_SUBAGENTS_AGENT_ID: "agent", WS_SUBAGENTS_RUNTIME_ID: "runtime", WS_SUBAGENTS_INCARNATION: "1" };
+
+test("fire-and-forget reconnect exhaustion never becomes an unhandled rejection", async () => {
+  consumeReconnect(async () => { throw new Error("planned reconnect exhaustion"); });
+  await new Promise((resolve) => setImmediate(resolve));
+});
 
 test("bridge startup passes the dynamically imported connect schema explicitly", async () => {
   const schema = { typeName: "test.BridgeConnectRequest" };

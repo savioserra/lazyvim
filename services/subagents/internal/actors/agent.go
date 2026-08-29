@@ -313,6 +313,15 @@ func (a *AgentActor) Receive(ctx *actor.ReceiveContext) {
 		}
 	case *application.HostedPiRuntimeStateChanged:
 		binding := message.Binding
+		if binding.RuntimeID != a.hostedPiRuntime.RuntimeID || !validRuntimeProjectionAdvance(a.hostedPiRuntime, binding) {
+			return
+		}
+		if binding.Incarnation > a.hostedPiRuntime.Incarnation {
+			a.bridgeSession, a.bridgeGeneration, a.bridgePrincipal, a.bridgeHandle, a.bridgePiSession = "", "", "", "", ""
+			a.bridgeFence = 0
+			a.bridgeDeclaredReady = false
+			a.bridgeLeaseToken++
+		}
 		if binding.AggregateID == "" {
 			binding.AggregateID = a.hostedPiRuntime.AggregateID
 		}
@@ -330,6 +339,7 @@ func (a *AgentActor) Receive(ctx *actor.ReceiveContext) {
 		}
 		if a.durableRecord != nil {
 			a.durableRecord.Binding = binding
+			a.durableRecord.LaunchSpec.Incarnation = binding.Incarnation
 		}
 		a.revision++
 		if a.registryPID != nil {

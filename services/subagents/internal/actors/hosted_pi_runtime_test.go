@@ -3,6 +3,7 @@ package actors_test
 import (
 	"context"
 	"errors"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -57,6 +58,21 @@ func (p *gatedStopProcess) Stop(ctx context.Context) error {
 type fakeHostedRuntime struct {
 	process application.HostedPiOwnedProcess
 	err     error
+}
+
+type sequenceHostedRuntime struct {
+	processes []application.HostedPiOwnedProcess
+	calls     atomic.Int32
+}
+
+func (r *sequenceHostedRuntime) Start(context.Context, application.HostedPiLaunchSpec) (application.HostedPiOwnedProcess, error) {
+	r.calls.Add(1)
+	if len(r.processes) == 0 {
+		return nil, errors.New("planned recovery start failure")
+	}
+	process := r.processes[0]
+	r.processes = r.processes[1:]
+	return process, nil
 }
 
 func (f *fakeHostedRuntime) Start(context.Context, application.HostedPiLaunchSpec) (application.HostedPiOwnedProcess, error) {
@@ -164,6 +180,69 @@ func TestHostedPiRuntimeActorRejectsReadinessRevivalDuringStop(t *testing.T) {
 	stopped := owner.ExpectAnyMessage().(*application.HostedPiRuntimeStateChanged)
 	if stopped.Binding.State != application.HostedPiRuntimeStopped {
 		t.Fatalf("runtime did not finish exact stop: %#v", stopped)
+	}
+}
+
+func TestHostedPiRuntimeActorRecoversUnexpectedExitWithNewIncarnation(t *testing.T) {
+	ctx := context.Background()
+	kit := testkit.New(ctx, t)
+	t.Cleanup(func() { kit.Shutdown(ctx) })
+	owner := kit.NewProbe(ctx)
+	first := &fakeHostedProcess{binding: application.HostedPiRuntimeBinding{RuntimeID: "recover", Incarnation: 1}, exited: make(chan error, 1), stopped: make(chan struct{})}
+	second := &fakeHostedProcess{binding: application.HostedPiRuntimeBinding{RuntimeID: "recover", Incarnation: 2}, exited: make(chan error, 1), stopped: make(chan struct{})}
+	runtime := &sequenceHostedRuntime{processes: []application.HostedPiOwnedProcess{first, second}}
+	kit.Spawn(ctx, "hosted-runtime-recover", actors.NewHostedPiRuntimeActor(runtime, application.HostedPiLaunchSpec{AgentID: "recover", RuntimeID: "recover", Incarnation: 1}, owner.PID()))
+	pid, _ := kit.ActorSystem().ActorOf(ctx, "hosted-runtime-recover")
+	owner.Send(pid.Name(), &application.StartHostedPiRuntime{})
+	owner.ExpectAnyMessage()
+	owner.ExpectAnyMessage()
+	first.exited <- application.ErrHostedRuntimeUnexpectedExit
+	degraded := owner.ExpectAnyMessage().(*application.HostedPiRuntimeStateChanged)
+	if degraded.Binding.State != application.HostedPiRuntimeDegraded {
+		t.Fatalf("unexpected exit was not degraded first: %#v", degraded)
+	}
+	recoveredMessages := 0
+	for recoveredMessages < 2 {
+		message := owner.ExpectAnyMessage().(*application.HostedPiRuntimeStateChanged)
+		if message.Binding.Incarnation != 2 {
+			continue
+		}
+		if message.Binding.State != application.HostedPiRuntimeStarting {
+			t.Fatalf("recovery did not fence through starting: %#v", message)
+		}
+		recoveredMessages++
+	}
+	if calls := runtime.calls.Load(); calls != 2 {
+		t.Fatalf("unexpected recovery start count: %d", calls)
+	}
+}
+
+func TestHostedPiRuntimeActorExplicitStopCancelsPendingRecovery(t *testing.T) {
+	ctx := context.Background()
+	kit := testkit.New(ctx, t)
+	t.Cleanup(func() { kit.Shutdown(ctx) })
+	owner := kit.NewProbe(ctx)
+	first := &fakeHostedProcess{binding: application.HostedPiRuntimeBinding{RuntimeID: "cancel-recover", Incarnation: 1}, exited: make(chan error, 1), stopped: make(chan struct{})}
+	runtime := &sequenceHostedRuntime{processes: []application.HostedPiOwnedProcess{first}}
+	kit.Spawn(ctx, "hosted-runtime-cancel-recover", actors.NewHostedPiRuntimeActor(runtime, application.HostedPiLaunchSpec{AgentID: "cancel-recover", RuntimeID: "cancel-recover", Incarnation: 1}, owner.PID()))
+	pid, _ := kit.ActorSystem().ActorOf(ctx, "hosted-runtime-cancel-recover")
+	owner.Send(pid.Name(), &application.StartHostedPiRuntime{})
+	owner.ExpectAnyMessage()
+	owner.ExpectAnyMessage()
+	first.exited <- application.ErrHostedRuntimeUnexpectedExit
+	owner.ExpectAnyMessage()
+	accepted := make(chan application.OperationResult, 1)
+	owner.Send(pid.Name(), &application.StopHostedPiRuntime{Reason: "explicit test stop", Accepted: accepted})
+	stopped := owner.ExpectAnyMessage().(*application.HostedPiRuntimeStateChanged)
+	if stopped.Binding.State != application.HostedPiRuntimeStopped {
+		t.Fatalf("explicit stop did not cancel recovery: %#v", stopped)
+	}
+	if result := <-accepted; !result.Completed {
+		t.Fatalf("explicit stop was not accepted: %#v", result)
+	}
+	time.Sleep(400 * time.Millisecond)
+	if calls := runtime.calls.Load(); calls != 1 {
+		t.Fatalf("canceled recovery started another process: calls=%d", calls)
 	}
 }
 

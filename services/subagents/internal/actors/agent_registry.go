@@ -178,8 +178,14 @@ func (a *AgentRegistryActor) Receive(ctx *actor.ReceiveContext) {
 	case *application.AuthorizeAgentAccess:
 		a.authorizeRoute(ctx, message)
 	case *application.HostedPiRuntimeStateChanged:
-		if item, ok := a.agents[message.AgentID]; ok && item.reference.AuthorityBinding.Kind == application.AuthorityBindingHostedOwned && item.reference.AuthorityBinding.HostedRuntimeID == message.Binding.RuntimeID && item.reference.HostedPiRuntime.Incarnation == message.Binding.Incarnation {
+		if item, ok := a.agents[message.AgentID]; ok && item.reference.AuthorityBinding.Kind == application.AuthorityBindingHostedOwned && item.reference.AuthorityBinding.HostedRuntimeID == message.Binding.RuntimeID && validRuntimeProjectionAdvance(item.reference.HostedPiRuntime, message.Binding) {
 			item.reference.HostedPiRuntime = message.Binding
+			item.recipe.HostedPiRuntime = message.Binding
+			item.recipe.LaunchSpec.Incarnation = message.Binding.Incarnation
+			if item.recipe.DurableRecord != nil {
+				item.recipe.DurableRecord.Binding = message.Binding
+				item.recipe.DurableRecord.LaunchSpec.Incarnation = message.Binding.Incarnation
+			}
 			item.reference.LifecycleRevision++
 			a.agents[message.AgentID] = item
 			a.publishPublicAgentUpsert(ctx, message.AgentID, item)
@@ -397,7 +403,8 @@ func (a *AgentRegistryActor) reconcileAgentTermination(ctx *actor.ReceiveContext
 		a.publishPublicAgentUpsert(ctx, agentID, item)
 		return
 	}
-	pid := ctx.Spawn(item.actorName, NewAgentActor(&item.recipe, ctx.Self()), actor.WithMailbox(actor.NewNonBlockingBoundedMailbox(1024)), actor.WithPassivationStrategy(passivation.NewLongLivedStrategy()), actor.WithSupervisor(supervisor.NewSupervisor(supervisor.WithAnyErrorDirective(supervisor.RestartDirective))))
+	actorRecipe := copyRegistrationRecipe(&item.recipe)
+	pid := ctx.Spawn(item.actorName, NewAgentActor(&actorRecipe, ctx.Self()), actor.WithMailbox(actor.NewNonBlockingBoundedMailbox(1024)), actor.WithPassivationStrategy(passivation.NewLongLivedStrategy()), actor.WithSupervisor(supervisor.NewSupervisor(supervisor.WithAnyErrorDirective(supervisor.RestartDirective))))
 	if pid == nil {
 		item.agentPID = nil
 		a.agents[agentID] = item
@@ -481,6 +488,13 @@ func (a *AgentRegistryActor) publishPublicAgentEvent(ctx *actor.ReceiveContext, 
 		id := event.NodeIdentity + ":" + event.AgentID + ":" + strconv.FormatUint(event.Epoch, 10) + ":" + strconv.FormatUint(event.Sequence, 10)
 		_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), topic, actor.NewPublish(id, publicAgentDirectoryTopic, event))
 	}
+}
+
+func validRuntimeProjectionAdvance(current, next application.HostedPiRuntimeBinding) bool {
+	if next.Incarnation == current.Incarnation {
+		return true
+	}
+	return current.State == application.HostedPiRuntimeDegraded && next.State == application.HostedPiRuntimeStarting && next.Incarnation == current.Incarnation+1
 }
 
 func hostedRuntimeActorName(message *application.RegisterAgent) string {

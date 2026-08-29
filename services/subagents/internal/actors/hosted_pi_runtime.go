@@ -3,6 +3,7 @@ package actors
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/savioserra/lazyvim/services/subagents/internal/application"
@@ -11,20 +12,26 @@ import (
 
 // HostedPiRuntimeActor serializes lifecycle state while all subprocess, tmux,
 // and filesystem effects execute outside Receive and report typed completions.
+const maxHostedRuntimeRecoveryAttempts = 3
+
+var hostedRuntimeRecoveryDelays = [...]time.Duration{250 * time.Millisecond, time.Second, 4 * time.Second}
+
 type HostedPiRuntimeActor struct {
-	runtime       application.HostedPiRuntime
-	spec          application.HostedPiLaunchSpec
-	owner         *actor.PID
-	process       application.HostedPiOwnedProcess
-	binding       application.HostedPiRuntimeBinding
-	busy          bool
-	pendingStop   bool
-	cleanupFailed bool
-	exitObserved  bool
-	stopSucceeded bool
-	startCancel   context.CancelFunc
-	adoptObserved bool
-	lastFailure   string
+	runtime          application.HostedPiRuntime
+	spec             application.HostedPiLaunchSpec
+	owner            *actor.PID
+	process          application.HostedPiOwnedProcess
+	binding          application.HostedPiRuntimeBinding
+	busy             bool
+	pendingStop      bool
+	cleanupFailed    bool
+	exitObserved     bool
+	stopSucceeded    bool
+	startCancel      context.CancelFunc
+	adoptObserved    bool
+	lastFailure      string
+	recoveryToken    uint64
+	recoveryAttempts uint8
 }
 
 func NewHostedPiRuntimeActor(runtime application.HostedPiRuntime, spec application.HostedPiLaunchSpec, owner *actor.PID, adopted ...application.HostedPiOwnedProcess) *HostedPiRuntimeActor {
@@ -52,6 +59,8 @@ func (a *HostedPiRuntimeActor) Receive(ctx *actor.ReceiveContext) {
 	switch message := ctx.Message().(type) {
 	case *application.StartHostedPiRuntime:
 		a.start(ctx, message)
+	case *application.RetryHostedPiRuntime:
+		a.retry(ctx, message)
 	case *application.HostedPiRuntimeStarted:
 		a.started(ctx, message)
 	case *application.HostedPiRuntimeExited:
@@ -75,6 +84,9 @@ func (a *HostedPiRuntimeActor) Receive(ctx *actor.ReceiveContext) {
 			a.binding.State = application.HostedPiRuntimeStarting
 		}
 		a.changed(ctx, "")
+		if message.Ready {
+			a.recoveryAttempts = 0
+		}
 	case *application.HostedPiRuntimeStatus:
 		copy := a.binding
 		ctx.Response(&copy)
@@ -102,6 +114,7 @@ func (a *HostedPiRuntimeActor) start(ctx *actor.ReceiveContext, message *applica
 	}
 	a.busy = true
 	a.binding.State = application.HostedPiRuntimeStarting
+	a.log(ctx, "start_requested", "none")
 	a.changed(ctx, "")
 	system, self := ctx.ActorSystem(), ctx.Self()
 	runtime, spec, fallback := a.runtime, a.spec, a.binding
@@ -137,11 +150,16 @@ func (a *HostedPiRuntimeActor) started(ctx *actor.ReceiveContext, message *appli
 		a.binding.State = application.HostedPiRuntimeDegraded
 		a.binding.OwnershipIndeterminate = errors.Is(message.Err, application.ErrHostedOwnershipIndeterminate)
 		a.lastFailure = boundedRuntimeFailure(message.Err)
+		a.log(ctx, "start_failed", runtimeFailureClass(message.Err))
 		a.changed(ctx, "runtime start failed")
+		if a.recoveryAttempts > 0 && !a.binding.OwnershipIndeterminate {
+			a.scheduleRecovery(ctx)
+		}
 		return
 	}
 	a.process = message.Process
 	a.lastFailure = ""
+	a.log(ctx, "start_succeeded", "none")
 	ready := a.binding.BridgeReady
 	a.binding = message.Binding
 	a.binding.RuntimeID, a.binding.Incarnation = a.spec.RuntimeID, a.spec.Incarnation
@@ -182,11 +200,18 @@ func (a *HostedPiRuntimeActor) exited(ctx *actor.ReceiveContext, message *applic
 	}
 	a.busy = false
 	a.lastFailure = boundedRuntimeFailure(message.Err)
+	a.binding.OwnershipIndeterminate = errors.Is(message.Err, application.ErrHostedOwnershipIndeterminate)
 	a.binding.State = application.HostedPiRuntimeDegraded
+	a.logExit(ctx, message.Err)
 	a.changed(ctx, "runtime lost unexpectedly")
+	if errors.Is(message.Err, application.ErrHostedRuntimeUnexpectedExit) && !a.binding.OwnershipIndeterminate {
+		a.scheduleRecovery(ctx)
+	}
 }
 
 func (a *HostedPiRuntimeActor) stop(ctx *actor.ReceiveContext, message *application.StopHostedPiRuntime) {
+	a.recoveryToken++
+	a.log(ctx, "stop_requested", "none")
 	if a.busy {
 		a.pendingStop = true
 		if a.startCancel != nil {
@@ -198,8 +223,9 @@ func (a *HostedPiRuntimeActor) stop(ctx *actor.ReceiveContext, message *applicat
 		return
 	}
 	if a.process == nil {
-		if a.binding.State != application.HostedPiRuntimeDegraded {
+		if a.binding.State != application.HostedPiRuntimeDegraded || !a.binding.OwnershipIndeterminate {
 			a.binding.State = application.HostedPiRuntimeStopped
+			a.binding.BridgeReady = false
 			a.changed(ctx, "")
 			respondOperation(ctx, message.Accepted, &application.OperationResult{Completed: true})
 		} else {
@@ -239,6 +265,96 @@ func (a *HostedPiRuntimeActor) stopped(ctx *actor.ReceiveContext, message *appli
 		a.binding.State = application.HostedPiRuntimeStopped
 		a.binding.BridgeReady = false
 		a.changed(ctx, "")
+	}
+}
+
+func (a *HostedPiRuntimeActor) scheduleRecovery(ctx *actor.ReceiveContext) {
+	if a.recoveryAttempts >= maxHostedRuntimeRecoveryAttempts {
+		a.log(ctx, "recovery_exhausted", "retry_budget_exhausted")
+		a.changed(ctx, "runtime recovery exhausted")
+		return
+	}
+	a.recoveryToken++
+	token := a.recoveryToken
+	delay := hostedRuntimeRecoveryDelays[a.recoveryAttempts]
+	a.log(ctx, "recovery_scheduled", "unexpected_exit")
+	_ = ctx.ActorSystem().ScheduleOnce(context.WithoutCancel(ctx.Context()), &application.RetryHostedPiRuntime{Token: token}, ctx.Self(), delay)
+}
+
+func (a *HostedPiRuntimeActor) retry(ctx *actor.ReceiveContext, message *application.RetryHostedPiRuntime) {
+	if message.Token != a.recoveryToken || a.binding.State != application.HostedPiRuntimeDegraded || a.process != nil || a.busy || a.binding.OwnershipIndeterminate || a.recoveryAttempts >= maxHostedRuntimeRecoveryAttempts {
+		return
+	}
+	a.recoveryAttempts++
+	a.spec.Incarnation++
+	previous := a.binding
+	a.binding = application.InactiveHostedPiRuntimeBinding()
+	a.binding.State = application.HostedPiRuntimeStarting
+	a.binding.RuntimeID = a.spec.RuntimeID
+	a.binding.Incarnation = a.spec.Incarnation
+	a.binding.AggregateID = previous.AggregateID
+	a.binding.DisplayName = previous.DisplayName
+	a.binding.Role = previous.Role
+	a.cleanupFailed = false
+	a.exitObserved = false
+	a.stopSucceeded = false
+	a.pendingStop = false
+	a.lastFailure = ""
+	a.log(ctx, "recovery_started", "unexpected_exit")
+	a.start(ctx, &application.StartHostedPiRuntime{Timeout: 10 * time.Second})
+}
+
+func (a *HostedPiRuntimeActor) log(ctx *actor.ReceiveContext, event, failureClass string) {
+	ctx.ActorSystem().Logger().Infof("component=hosted_runtime event=%s agent_id=%s runtime_id=%s incarnation=%d recovery_attempt=%d failure_class=%s", event, a.spec.AgentID, a.spec.RuntimeID, a.spec.Incarnation, a.recoveryAttempts, failureClass)
+}
+
+func (a *HostedPiRuntimeActor) logExit(ctx *actor.ReceiveContext, err error) {
+	status, signal := "unknown", "none"
+	var reported interface {
+		ExitStatus() string
+		ExitSignal() string
+	}
+	if errors.As(err, &reported) {
+		if reported.ExitStatus() != "" {
+			status = boundedLogToken(reported.ExitStatus())
+		}
+		if reported.ExitSignal() != "" {
+			signal = boundedLogToken(reported.ExitSignal())
+		}
+	}
+	ctx.ActorSystem().Logger().Infof("component=hosted_runtime event=unexpected_exit agent_id=%s runtime_id=%s incarnation=%d recovery_attempt=%d failure_class=%s exit_status=%s exit_signal=%s", a.spec.AgentID, a.spec.RuntimeID, a.spec.Incarnation, a.recoveryAttempts, runtimeFailureClass(err), status, signal)
+}
+
+func boundedLogToken(value string) string {
+	value = strings.Map(func(r rune) rune {
+		if r >= '0' && r <= '9' {
+			return r
+		}
+		return -1
+	}, value)
+	if value == "" {
+		return "unknown"
+	}
+	if len(value) > 3 {
+		return value[:3]
+	}
+	return value
+}
+
+func runtimeFailureClass(err error) string {
+	switch {
+	case err == nil:
+		return "process_exit"
+	case errors.Is(err, application.ErrHostedOwnershipIndeterminate):
+		return "ownership_indeterminate"
+	case errors.Is(err, application.ErrHostedRuntimeUnexpectedExit):
+		return "unexpected_exit"
+	case errors.Is(err, context.DeadlineExceeded):
+		return "deadline_exceeded"
+	case errors.Is(err, context.Canceled):
+		return "canceled"
+	default:
+		return "operation_failed"
 	}
 }
 

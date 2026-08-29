@@ -133,7 +133,10 @@ type AuthorityBinding struct {
 	HostedRuntimeID       string
 }
 
-var ErrHostedOwnershipIndeterminate = errors.New("hosted runtime ownership is indeterminate")
+var (
+	ErrHostedOwnershipIndeterminate = errors.New("hosted runtime ownership is indeterminate")
+	ErrHostedRuntimeUnexpectedExit  = errors.New("hosted runtime disappeared unexpectedly")
+)
 
 type HostedPiRuntimeState uint8
 type HostedPiRuntimeLifetime uint8
@@ -213,6 +216,7 @@ type HostedPiRuntime interface {
 }
 
 type StartHostedPiRuntime struct{ Timeout time.Duration }
+type RetryHostedPiRuntime struct{ Token uint64 }
 type StopHostedPiRuntime struct {
 	Reason   string
 	Timeout  time.Duration

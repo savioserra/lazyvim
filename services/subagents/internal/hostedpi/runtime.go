@@ -27,7 +27,7 @@ import (
 
 var (
 	ErrRuntimeAlreadyExists  = errors.New("hosted Pi runtime ownership record already exists")
-	ErrUnexpectedRuntimeExit = errors.New("hosted Pi runtime disappeared unexpectedly")
+	ErrUnexpectedRuntimeExit = application.ErrHostedRuntimeUnexpectedExit
 	ErrRuntimeAbsent         = errors.New("hosted Pi runtime is proven absent")
 )
 
@@ -50,6 +50,25 @@ type ownershipRecord struct {
 	Binding       application.HostedPiRuntimeBinding `json:"binding"`
 	ServerName    string                             `json:"tmux_server_name,omitempty"`
 }
+
+type RuntimeProcessExitError struct {
+	Status string
+	Signal string
+}
+
+func (e *RuntimeProcessExitError) Error() string {
+	if e.Signal != "" {
+		return fmt.Sprintf("%s (exit_signal=%s)", ErrUnexpectedRuntimeExit, e.Signal)
+	}
+	if e.Status != "" {
+		return fmt.Sprintf("%s (exit_status=%s)", ErrUnexpectedRuntimeExit, e.Status)
+	}
+	return ErrUnexpectedRuntimeExit.Error()
+}
+
+func (e *RuntimeProcessExitError) Unwrap() error      { return ErrUnexpectedRuntimeExit }
+func (e *RuntimeProcessExitError) ExitStatus() string { return e.Status }
+func (e *RuntimeProcessExitError) ExitSignal() string { return e.Signal }
 
 type ownedProcess struct {
 	config           Config
@@ -310,6 +329,22 @@ func (p *ownedProcess) observe() {
 		present, err := sessionExists(ctx, p.config, p.record.Binding)
 		cancel()
 		if err != nil {
+			var exited *RuntimeProcessExitError
+			if errors.As(err, &exited) {
+				cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 3*time.Second)
+				runtime := Runtime{Config: p.config, beforeAtomicKill: p.beforeAtomicKill}
+				cleanupErr := runtime.killCaptured(cleanupCtx, p.record.Binding, "unexpected-exit")
+				if cleanupErr == nil {
+					cleanupErr = removePrivateRecord(p.path)
+				}
+				cleanupCancel()
+				if cleanupErr != nil {
+					p.complete(errors.Join(application.ErrHostedOwnershipIndeterminate, err, fmt.Errorf("unexpected runtime exact cleanup: %w", cleanupErr)))
+				} else {
+					p.complete(err)
+				}
+				return
+			}
 			failures++
 			if failures >= 3 {
 				p.complete(fmt.Errorf("indeterminate tmux observation failure: %w", err))
@@ -358,7 +393,7 @@ func (p *ownedProcess) Stop(ctx context.Context) error {
 }
 
 func sessionExists(ctx context.Context, config Config, binding application.HostedPiRuntimeBinding) (bool, error) {
-	args := append(tmuxPrefix(config), "display-message", "-p", "-t", binding.TmuxPane, "#{pid}\t#{session_id}\t#{window_id}\t#{pane_id}\t#{pane_pid}\t#{pane_tty}\t#{@ws_hosted_server_start}\t#{@ws_hosted_process_start}")
+	args := append(tmuxPrefix(config), "display-message", "-p", "-t", binding.TmuxPane, "#{pid}\t#{session_id}\t#{window_id}\t#{pane_id}\t#{pane_pid}\t#{pane_tty}\t#{@ws_hosted_server_start}\t#{@ws_hosted_process_start}\t#{pane_dead}\tstatus:#{pane_dead_status}\tsignal:#{pane_dead_signal}")
 	output, err := exec.CommandContext(ctx, config.TmuxBinary, args...).CombinedOutput()
 	if err != nil {
 		if strings.Contains(string(output), "no server running") || strings.Contains(string(output), "failed to connect") || strings.Contains(string(output), "can't find") {
@@ -367,15 +402,18 @@ func sessionExists(ctx context.Context, config Config, binding application.Hoste
 		return false, fmt.Errorf("inspect tmux runtime lease: %w: %s", err, boundedText(output))
 	}
 	fields := strings.Split(strings.TrimSpace(string(output)), "\t")
-	if len(fields) != 8 || fields[0] != strconv.FormatInt(binding.TmuxServerPID, 10) || fields[1] != binding.TmuxSessionID || fields[2] != binding.TmuxWindowID || fields[3] != binding.TmuxPane || fields[4] != strconv.FormatInt(binding.PanePID, 10) || fields[5] != binding.TTY || fields[6] != ownershipDigest(binding.TmuxServerStartToken) || fields[7] != ownershipDigest(binding.ProcessStartToken) {
+	if len(fields) != 11 || fields[0] != strconv.FormatInt(binding.TmuxServerPID, 10) || fields[1] != binding.TmuxSessionID || fields[2] != binding.TmuxWindowID || fields[3] != binding.TmuxPane || fields[4] != strconv.FormatInt(binding.PanePID, 10) || fields[5] != binding.TTY || fields[6] != ownershipDigest(binding.TmuxServerStartToken) || fields[7] != ownershipDigest(binding.ProcessStartToken) {
 		return false, errors.New("tmux runtime identity was replaced")
+	}
+	if fields[8] == "1" {
+		return false, &RuntimeProcessExitError{Status: strings.TrimPrefix(fields[9], "status:"), Signal: strings.TrimPrefix(fields[10], "signal:")}
 	}
 	return true, nil
 }
 
 func (r *Runtime) markOwnership(ctx context.Context, binding application.HostedPiRuntimeBinding) error {
 	serverMarker, processMarker := ownershipDigest(binding.TmuxServerStartToken), ownershipDigest(binding.ProcessStartToken)
-	args := append(tmuxPrefix(r.Config), "set-option", "-p", "-t", binding.TmuxPane, "@ws_hosted_server_start", serverMarker, ";", "set-option", "-p", "-t", binding.TmuxPane, "@ws_hosted_process_start", processMarker)
+	args := append(tmuxPrefix(r.Config), "set-option", "-p", "-t", binding.TmuxPane, "remain-on-exit", "on", ";", "set-option", "-p", "-t", binding.TmuxPane, "@ws_hosted_server_start", serverMarker, ";", "set-option", "-p", "-t", binding.TmuxPane, "@ws_hosted_process_start", processMarker)
 	if output, err := exec.CommandContext(ctx, r.Config.TmuxBinary, args...).CombinedOutput(); err != nil {
 		return fmt.Errorf("mark tmux ownership tuple: %w: %s", err, boundedText(output))
 	}

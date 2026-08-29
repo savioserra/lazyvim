@@ -93,6 +93,9 @@ func TestRuntimeUsesStableTmuxIDsAndRefusesForeignNameReplacement(t *testing.T) 
 	if !strings.HasPrefix(binding.TmuxSessionID, "$") || !strings.HasPrefix(binding.TmuxWindowID, "@") || !strings.HasPrefix(binding.TmuxPane, "%") || binding.TmuxServerPID < 1 || binding.TmuxServerStartToken == "" {
 		t.Fatalf("stable tmux IDs not captured: %#v", binding)
 	}
+	if output, optionErr := exec.Command(tmux, "-L", server, "show-options", "-p", "-t", binding.TmuxPane, "-v", "remain-on-exit").CombinedOutput(); optionErr != nil || strings.TrimSpace(string(output)) != "on" {
+		t.Fatalf("owned pane does not retain bounded exit evidence: %v: %s", optionErr, output)
+	}
 	stopCtx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	if err := process.Stop(stopCtx); err == nil {

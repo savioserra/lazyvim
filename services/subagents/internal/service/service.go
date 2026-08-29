@@ -243,7 +243,7 @@ func startWithListener(ctx context.Context, listener net.Listener, options ...an
 			useWebSocket = true
 		}
 	}
-	actorOptions := []actor.Option{actor.WithLogger(goaktlog.DiscardLogger), actor.WithPubSub(), actor.WithMessageRetention(5 * time.Minute)}
+	actorOptions := []actor.Option{actor.WithLogger(goaktlog.DefaultLogger), actor.WithPubSub(), actor.WithMessageRetention(5 * time.Minute)}
 	guardianName := "service-guardian"
 	if actorPlane != nil {
 		if actorPlane.Remote == nil || actorPlane.NodeIdentity == "" {
