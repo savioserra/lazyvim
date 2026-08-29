@@ -1,6 +1,6 @@
 # Subagents roadmap
 
-This file is the canonical delivery roadmap. ADRs in this directory define architectural decisions; `docs/subagents.md` documents current behavior and operation. The approved visual and interaction contract is the [Actor UX design system](ACTOR-UX-DESIGN-SYSTEM.md).
+This file is the canonical delivery roadmap. ADRs in this directory define architectural decisions; `docs/subagents.md` documents current behavior and operation. The approved visual and interaction contract is the [Actor UX design system](ACTOR-UX-DESIGN-SYSTEM.md). The canonical implementation-ready bridge/frontend architecture, including Ask completion authority, ACK cursor semantics, HostedPiBridgeActor placement, migration, XState package ownership, and remote E2E evidence, is [ADR 0005](0005-daemon-connected-bridge-and-frontend-projections.md).
 
 ## Status
 
@@ -9,7 +9,7 @@ This file is the canonical delivery roadmap. ADRs in this directory define archi
 | 0. GoAkt foundation | Approved | Global actors, protobuf WebSocket application plane, fencing, lifecycle, security tests |
 | 1. Hosted Pi runtime | Approved | Full Pi TUI in exactly owned tmux; dynamic actor lifecycle; bridge commands/tools |
 | 2. Self-hosting client MVP | Live, managed | Normal Pi creates dynamic actors, sends a real prompt, receives the correlated model answer, and delegates a repository task through the owned system |
-| 3. Actor-native push stabilization | Current | Hosted bridges use authenticated daemon push frames from watched BridgeSessionActors; ordinary clients use authenticated roster push with epoch/sequence fencing; periodic polling is compatibility-only |
+| 3. Actor-native push stabilization | Current | Implement ADR 0005 exactly: durable `HostedPiBridgeActor`, recovery-safe regular-actor-message Ask completion, contiguous ACK cursor with gap replay, authenticated roster/status push, epoch/sequence fencing, one-way schema migration, and compatibility polling retirement |
 | 4. Client stabilization | Next | Reproduce/fix same-name restart; use isolated worktrees; complete several real tasks through owned TaskCoordinator/Workflow actors |
 | 5. Authority cutover | Deferred | Owned execution parity proven; disable third-party authority without dual writers; retain bounded rollback window |
 | 6. Legacy removal | Deferred | Remove `pi-subagents`, old XState/Terminal Kit observer, superseded tests/docs/packages |
@@ -34,9 +34,11 @@ Current managed entry point: restart an ordinary globally discovered `pi`; the `
 
 ## Next three deliverables
 
-1. Exercise the actor-native BridgeSessionActor push path with a real provider-backed self-improvement task and record reconnect/ACK evidence.
+1. Exercise the actor-native `HostedPiBridgeActor`/`BridgeSessionActor` push path with a real provider-backed self-improvement task and record reconnect, contiguous ACK cursor, gap replay, and exactly-one Ask completion evidence.
 2. Drive worker -> reviewer -> QA -> correction through WorkflowActor without PM UI dependence and record evidence-correct progress.
 3. Fix any defect found through the client lane, especially immediate same-name recreation after STOP.
+
+Remote/VPS E2E evidence for phase 8 uses three logical nodes (`node-a`, `node-b`, `node-c`) on an owner-controlled private overlay or disposable VPS/VM network with URI-SAN mTLS and distinct actor/discovery/peers/application ports. Required artifacts are sanitized command transcript, logs, and test output proving remote placement, public roster reconciliation, Tell/Ask, target and origin restart replay, ACK gap replay, stale home-node failure, and no host/port or answer leak on public surfaces.
 
 ## Future ticket: strong workflow templates
 
@@ -44,12 +46,12 @@ Current managed entry point: restart an ordinary globally discovered `pi`; the `
 
 ## Client reducer model
 
-The ordinary actor-client extension now has an explicit XState-style reducer for connection, roster cursor, and compact render state. It exchanges typed daemon messages, subscribes to `ClientAgentRosterFrame` push, owns reconnect cursors and pending request UI state, and exposes one bounded render snapshot to Pi. Daemon-side `AgentActor`, `WorkflowActor`, `BridgeSessionActor`, and session registries remain authoritative for security and durable state; the client reducer is not a second authority or transport-specific cache.
+The ordinary actor-client extension owns the ADR 0005 frontend reducer implementation. When XState machines replace the current reducer shape, `home/dot_pi/private_agent/extensions/actor-client/` must pin `xstate` exactly to 5.20.2 in package and lockfile and own the reducer tests. It exchanges typed daemon messages, subscribes to `ClientAgentRosterFrame` push, owns reconnect cursors and pending request UI state, and exposes one bounded render snapshot to Pi. Daemon-side `AgentActor`, `WorkflowActor`, `BridgeSessionActor`, and session registries remain authoritative for security and durable state; the client reducer is not a second authority or transport-specific cache.
 
 Implementation notes:
 
-- Continue broadening daemon connection, authentication, subscriptions, requests, reconnect, replay, and terminal failures as explicit XState states/events.
-- Preserve typed protocol identities, fences, lifecycle IDs, and delivery ACK cursors in actor context.
+- Implement daemon connection, authentication, subscriptions, requests, reconnect, replay, and terminal failures as explicit XState v5 states/events under the actor-client extension.
+- Preserve typed protocol identities, fences, lifecycle IDs, completion dedupe keys, and the highest-contiguous delivery ACK cursor in actor-client context.
 - Keep human rendering derived from the XState snapshot while model-visible tool content remains complete and machine-actionable.
 - Use the same actor abstraction for slash commands, model tools, and future dashboards so UI clients share one reducer contract.
 - Do not scrape terminal state or infer productive progress in the client actor; consume daemon actor/workflow projections only.

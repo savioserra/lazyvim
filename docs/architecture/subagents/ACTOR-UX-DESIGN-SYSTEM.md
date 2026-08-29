@@ -101,7 +101,7 @@ Requirements:
 
 - Render the completed question and reply as one coherent exchange card from one `pi.sendMessage()` custom message of type `actor-client-ask-completion`; it participates in model context and uses the registered message renderer for the human card.
 - Store only hidden pending restore markers while awaiting the reply; do not append pending conversation cards.
-- Deduplicate replay by the completion key/request ID restored from persisted custom messages.
+- Deduplicate replay by the ADR 0005 canonical completion key restored from persisted custom messages; request ID alone is not sufficient.
 - Use realtime status while pending:
 
 ```text
@@ -186,7 +186,7 @@ The fixed Pi status bar uses the same authority but a compact one-line form, for
 
 ## 7. Replay and persistence
 
-- Each communication has one stable dedupe key.
+- Each communication has one stable dedupe key. For Ask terminal completions, the canonical key and collision rules are defined by ADR 0005 and include target home, target agent, runtime/incarnation, delivery sequence, request/dedupe/chain IDs, source mutation sequence, source peer, and requesting client generation.
 - Client-side interaction state is reduced by an explicit XState-style client reducer. It owns view-local connection, pending request, roster replay cursor, and render-snapshot state while daemon actors remain authoritative for durable lifecycle, authorization, routing, and productive progress.
 - Reconnect/replay must not append duplicate visible cards.
 - Incoming request prompt injection and its visual representation count as one conversation item, not two.
