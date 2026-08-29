@@ -193,6 +193,77 @@ Recovery rules:
 
 The UI may describe a task as “Ask” because the caller expects a later result, but the actor protocol remains Tell `ActorTask` followed by Tell `ActorTaskCompleted`. Deadlines produce the same correlated failure message to the source AgentActor.
 
+### Expected GoAkt implementation shape
+
+The following is illustrative pseudocode. Exact repository messages remain immutable registered application types, and every persistence callback returns to the owning actor as a message.
+
+```go
+// The authenticated transport commands the terminal Pi's own AgentActor.
+case *SendActorTask:
+    target := resolveAuthorizedTarget(message.Target)
+    correlation := newTaskCorrelation(ctx.Self(), target, message)
+    persistOutgoing(correlation)
+    ctx.Tell(target, &ActorTask{
+        Correlation: correlation.Public(),
+        Payload:     cloneBounded(message.Payload),
+    })
+
+// The target sees the real source ActorRef because an actor, not NoSender,
+// issued the Tell. Persist it before dispatching work to the hosted Pi.
+case *ActorTask:
+    source := ctx.Sender()
+    if source == nil || source == ctx.ActorSystem().NoSender() {
+        rejectMissingActorSource()
+        return
+    }
+    persistTargetCorrelation(message.Correlation, source.Path())
+    ctx.Tell(hostedBridge, &CommitBridgeDelivery{Task: message})
+
+// Runtime ACK is evidence for the target actor. It is not the reply route.
+case *HostedTaskFinished:
+    completed := retainedCompletion(message.Correlation, message.Result)
+    persistCompletionTellPending(completed, originalSourcePath)
+    ctx.Tell(originalSourcePID, completed)
+
+// The source owns the received result before any WebSocket/frontend action.
+case *ActorTaskCompleted:
+    if commitReceivedOnce(message) {
+        notifyAttachedTerminalProjection(message.CorrelationKey)
+    }
+```
+
+The target must not call `ctx.Response`, because the model run is not a bounded GoAkt Ask. It must not require a second user tool invocation. One external command causes the source actor Tell, hosted work, and the target actor's automatic completion Tell.
+
+```text
+Terminal Pi     ClientSession     Source AgentActor     Target AgentActor     Hosted Pi
+    | attach          |                  |                    |                   |
+    | actor_tell ---->| SendActorTask -->|                    |                   |
+    | admission <-----|<-----------------|-- Tell ActorTask ->|                   |
+    |                 |                  |                    |-- durable work -->|
+    |                 |                  |                    |<-- result + ACK --|
+    |                 |                  |<- Tell Completed --|                   |
+    |                 |                  |-- commit mailbox   |                   |
+    |<-- render once -|<-- projection ---|                    |                   |
+```
+
+For a remote target, GoAkt remoting preserves the actor sender address. The target stores both the captured ActorRef address and stable logical `AgentReference`; recovery re-resolves the same logical source and re-drives the same completion key. TopicActor and WebSocket session lookup are never substitutes.
+
+```text
+source node                    target node
+Source AgentActor --remote Tell ActorTask--> Target AgentActor
+Source AgentActor <-remote Tell Completed---- Target AgentActor
+```
+
+Required tests:
+
+- one transport command produces one `ActorTask` and one automatic `ActorTaskCompleted` without another command;
+- target rejects peer work received from `NoSender`;
+- terminal disconnect before completion leaves the source AgentActor mailbox authoritative;
+- duplicate target completion Tell commits and renders once by correlation key;
+- target restart after runtime ACK re-drives the pending completion Tell;
+- source-node outage retains bounded target correlation and remote retry;
+- TopicActor publication or client-session replacement cannot complete a task.
+
 ## Frontend-only XState v5 projections
 
 Each frontend session owns disposable XState v5 machines and deterministic reducers. The ordinary `actor-client` extension owns the frontend state-machine package and must pin `xstate` exactly to `5.20.2` in `home/dot_pi/private_agent/extensions/actor-client/package.json` and its lockfile when implementing these machines; reducer tests live under the same extension-owned test path used by the actor client. These machines consume authenticated daemon facts and produce render snapshots only. This ADR does not add Node as a workstation bootstrap dependency because the dependency is extension-local and installed by the existing managed Pi extension lifecycle.
