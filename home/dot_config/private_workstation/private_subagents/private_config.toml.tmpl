@@ -33,57 +33,27 @@ default_project_directory = "{{ .chezmoi.homeDir }}"
 # project path carried by that typed request.
 trust_project = true
 
-{{- $clusterNode := "" }}
-{{- $clusterHost := "" }}
-{{- if eq .chezmoi.hostname "aurora" }}
-{{- $clusterNode = "aurora" }}
-{{- $clusterHost = "aurora.taila7392b.ts.net" }}
-{{- else if or (eq .chezmoi.hostname "savioserra") (eq .chezmoi.hostname "srv1379823") }}
-{{- $clusterNode = "vps" }}
-{{- $clusterHost = "vps.taila7392b.ts.net" }}
-{{- else if eq .chezmoi.os "darwin" }}
-{{- $clusterNode = "mac" }}
-{{- $clusterHost = "mac.taila7392b.ts.net" }}
-{{- end }}
+{{- $clusterNode := env "WS_SUBAGENTS_NODE_IDENTITY" }}
+{{- $clusterHost := env "WS_SUBAGENTS_BIND_HOST" }}
+{{- $dnsSuffix := env "WS_SUBAGENTS_DNS_SUFFIX" }}
+{{- $clusterEnabled := and (ne $clusterNode "") (ne $clusterHost "") }}
 [remoting]
-# The private node network is the reachability boundary. URI-SAN mTLS is an
-# independent allowlist. The GoAkt and workstation listeners bind only the
-# resolved local advertised address.
-enabled = {{ ne $clusterNode "" }}
+# Remoting is configuration-driven. Provide the node identity, advertised host,
+# DNS suffix, and peer inventory through owner-local environment/data outside
+# this source tree; this template must not encode a private infrastructure map.
+enabled = {{ $clusterEnabled }}
 mode = "cluster"
-network_trust = "tailscale"
+network_trust = "trusted-overlay"
 cluster_name = "workstation-subagents"
 node_identity = "{{ $clusterNode }}"
 bind_host = "{{ $clusterHost }}"
-magicdns_suffix = ".taila7392b.ts.net"
+dns_suffix = "{{ $dnsSuffix }}"
 port = 17210
 discovery_port = 17211
 peers_port = 17212
 allowed_cidrs = ["100.64.0.0/10"]
 address_families = ["ipv4"]
-mtls_identity = "spiffe://workstation/subagents/{{ $clusterNode }}"
+mtls_identity = "{{ if ne $clusterNode "" }}spiffe://workstation/subagents/{{ $clusterNode }}{{ end }}"
 ca_file = "{{ .chezmoi.homeDir }}/.local/state/workstation/subagents/remoting/ca.pem"
 cert_file = "{{ .chezmoi.homeDir }}/.local/state/workstation/subagents/remoting/node.pem"
 key_file = "{{ .chezmoi.homeDir }}/.local/state/workstation/subagents/remoting/node.key"
-{{- if ne $clusterNode "aurora" }}
-
-[[remoting.peers]]
-node_identity = "aurora"
-host = "aurora.taila7392b.ts.net"
-mtls_identity = "spiffe://workstation/subagents/aurora"
-{{- end }}
-{{- if ne $clusterNode "vps" }}
-
-[[remoting.peers]]
-node_identity = "vps"
-host = "vps.taila7392b.ts.net"
-mtls_identity = "spiffe://workstation/subagents/vps"
-ssh_target = "root@vps"
-{{- end }}
-{{- if ne $clusterNode "mac" }}
-
-[[remoting.peers]]
-node_identity = "mac"
-host = "mac.taila7392b.ts.net"
-mtls_identity = "spiffe://workstation/subagents/mac"
-{{- end }}

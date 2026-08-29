@@ -54,19 +54,19 @@ func TestValidatedRuntimeBuildsMutuallyAuthenticatedTLS(t *testing.T) {
 		paths[node] = [3]string{writeTLSFile(t, directory, "ca.pem", caPEM), writeTLSFile(t, directory, "cert.pem", certPEM), writeTLSFile(t, directory, "key.pem", keyPEM)}
 	}
 	resolver := mapResolver{
-		"a.taila.ts.net": netip.MustParseAddr("100.64.0.10"),
-		"b.taila.ts.net": netip.MustParseAddr("100.64.0.11"),
-		"c.taila.ts.net": netip.MustParseAddr("100.64.0.12"),
+		"peer-a.example.internal": netip.MustParseAddr("100.64.0.10"),
+		"peer-b.example.internal": netip.MustParseAddr("100.64.0.11"),
+		"peer-c.example.internal": netip.MustParseAddr("100.64.0.12"),
 	}
 	build := func(node, host string, peerNames ...string) *remoting.Runtime {
 		peers := make([]config.PeerConfig, 0, len(peerNames))
 		for _, peer := range peerNames {
-			peers = append(peers, config.PeerConfig{NodeIdentity: "node-" + peer, Host: peer + ".taila.ts.net", MTLSIdentity: identities["node-"+peer]})
+			peers = append(peers, config.PeerConfig{NodeIdentity: "node-" + peer, Host: "peer-" + peer + ".example.internal", MTLSIdentity: identities["node-"+peer]})
 		}
 		material := paths[node]
 		cfg := config.RemotingConfig{
-			Enabled: true, Mode: "cluster", NetworkTrust: "tailscale", ClusterName: "workstation-subagents", NodeIdentity: node,
-			BindHost: host, MagicDNSSuffix: ".taila.ts.net", Port: 17210, DiscoveryPort: 17211, PeersPort: 17212,
+			Enabled: true, Mode: "cluster", NetworkTrust: "trusted-overlay", ClusterName: "workstation-subagents", NodeIdentity: node,
+			BindHost: host, DNSSuffix: ".example.internal", Port: 17210, DiscoveryPort: 17211, PeersPort: 17212,
 			AllowedCIDRs: []string{"100.64.0.0/10"}, AddressFamilies: []string{"ipv4"}, MTLSIdentity: identities[node],
 			CAFile: material[0], CertFile: material[1], KeyFile: material[2], Peers: peers,
 		}
@@ -76,8 +76,8 @@ func TestValidatedRuntimeBuildsMutuallyAuthenticatedTLS(t *testing.T) {
 		}
 		return runtime
 	}
-	a := build("node-a", "a.taila.ts.net", "b", "c")
-	b := build("node-b", "b.taila.ts.net", "a", "c")
+	a := build("node-a", "peer-a.example.internal", "b", "c")
+	b := build("node-b", "peer-b.example.internal", "a", "c")
 	handshakeTLS(t, a.Remote.TLS().ServerConfig, b.Remote.TLS().ClientConfig)
 	// GoAkt v4.5.2 uses ClientConfig on both sides of memberlist transport and
 	// dials its own registry endpoint while maintaining the routing table.

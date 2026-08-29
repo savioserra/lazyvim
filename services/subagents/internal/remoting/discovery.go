@@ -12,12 +12,12 @@ import (
 	"github.com/tochemey/goakt/v4/discovery"
 )
 
-var _ discovery.Provider = (*MagicDNSDiscovery)(nil)
+var _ discovery.Provider = (*TrustedDNSDiscovery)(nil)
 
-// MagicDNSDiscovery is a read-only bootstrap provider. Each DiscoverPeers call
-// resolves the configured MagicDNS names again so quorum-loss rejoin does not
-// retain stale Tailscale addresses.
-type MagicDNSDiscovery struct {
+// TrustedDNSDiscovery is a read-only bootstrap provider. Each DiscoverPeers call
+// resolves the configured DNS names again so quorum-loss rejoin does not retain
+// stale trusted-network addresses.
+type TrustedDNSDiscovery struct {
 	resolver config.Resolver
 	peers    []config.ResolvedPeer
 	port     int
@@ -25,23 +25,23 @@ type MagicDNSDiscovery struct {
 	closed   bool
 }
 
-func NewMagicDNSDiscovery(resolver config.Resolver, peers []config.ResolvedPeer, discoveryPort int) (*MagicDNSDiscovery, error) {
+func NewTrustedDNSDiscovery(resolver config.Resolver, peers []config.ResolvedPeer, discoveryPort int) (*TrustedDNSDiscovery, error) {
 	if resolver == nil || len(peers) == 0 || discoveryPort < 1024 || discoveryPort > 65535 {
-		return nil, errors.New("MagicDNS discovery requires a resolver, peers, and a fixed unprivileged port")
+		return nil, errors.New("trusted DNS discovery requires a resolver, peers, and a fixed unprivileged port")
 	}
-	return &MagicDNSDiscovery{resolver: resolver, peers: append([]config.ResolvedPeer(nil), peers...), port: discoveryPort}, nil
+	return &TrustedDNSDiscovery{resolver: resolver, peers: append([]config.ResolvedPeer(nil), peers...), port: discoveryPort}, nil
 }
 
-func (*MagicDNSDiscovery) ID() string        { return "workstation-tailscale-magicdns" }
-func (*MagicDNSDiscovery) Initialize() error { return nil }
-func (*MagicDNSDiscovery) Register() error   { return nil }
-func (*MagicDNSDiscovery) Deregister() error { return nil }
+func (*TrustedDNSDiscovery) ID() string        { return "workstation-trusted-dns" }
+func (*TrustedDNSDiscovery) Initialize() error { return nil }
+func (*TrustedDNSDiscovery) Register() error   { return nil }
+func (*TrustedDNSDiscovery) Deregister() error { return nil }
 
-func (d *MagicDNSDiscovery) DiscoverPeers() ([]string, error) {
+func (d *TrustedDNSDiscovery) DiscoverPeers() ([]string, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if d.closed {
-		return nil, errors.New("MagicDNS discovery is closed")
+		return nil, errors.New("trusted DNS discovery is closed")
 	}
 	allowed := netip.MustParsePrefix("100.64.0.0/10")
 	seen := make(map[netip.Addr]struct{})
@@ -57,7 +57,7 @@ func (d *MagicDNSDiscovery) DiscoverPeers() ([]string, error) {
 		for _, raw := range resolved {
 			address := raw.Unmap()
 			if !address.Is4() || !allowed.Contains(address) {
-				return nil, fmt.Errorf("peer %q resolved outside the Tailscale IPv4 range", peer.NodeIdentity)
+				return nil, fmt.Errorf("peer %q resolved outside the trusted IPv4 range", peer.NodeIdentity)
 			}
 			if _, exists := seen[address]; !exists {
 				seen[address] = struct{}{}
@@ -73,7 +73,7 @@ func (d *MagicDNSDiscovery) DiscoverPeers() ([]string, error) {
 	return result, nil
 }
 
-func (d *MagicDNSDiscovery) Close() error {
+func (d *TrustedDNSDiscovery) Close() error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.closed = true

@@ -13,7 +13,6 @@ const MAX_FRAME = 64 * 1024;
 const MAX_TEXT = 16 * 1024;
 const REQUEST_TIMEOUT_MS = 30 * 60_000;
 const SHORT_REQUEST_TIMEOUT_MS = 2_000;
-const ASK_TIMEOUT_MS = REQUEST_TIMEOUT_MS;
 const textDecoder = new TextDecoder("utf-8", { fatal: true });
 
 type CredentialFile = { credential_b64: string };
@@ -205,6 +204,12 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
     };
   };
 
+  const health = async (target?: string) => {
+    const started = Date.now();
+    const resolved: any = await resolve(target);
+    return { reachable: Boolean(resolved.agent) && !resolved.ambiguous, latencyMs: Date.now() - started, ...resolved };
+  };
+
   const ensureFence = async (target: string): Promise<TargetFence> => {
     const existing = fences.get(target);
     if (existing) return existing;
@@ -221,7 +226,7 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
     if (inherited && inherited.hopLimit < 1) throw new Error("inherited prompt hop budget exhausted");
     return mutations.run(mutationScopeKey(fence,current.incarnation),
       (sequence)=>({requestId:randomUUID(),value:buildActorMessage(mode,destination,text,randomUUID(),inherited?.chainId ?? randomUUID(),sequence,inherited?.hopLimit ?? 8)}),
-      async (logical)=>{const started=Date.now();const active=requiredClient(client);const response=await active.request("actorMessageRequest",ActorMessageRequestSchema,logical.value,fence,logical.requestId,mode===ActorMessageRequest_Mode.ASK?ASK_TIMEOUT_MS:SHORT_REQUEST_TIMEOUT_MS);if(response.payload.case!=="actorMessageResponse"){active.invalidate(new Error("unexpected actor message response"));throw new Error("unexpected actor message response")};const result=actorMessageModelResult(logical,response.payload.value);appendCommunicationView(outgoingExchange({key:`request:${logical.requestId}`,target:response.payload.value.target,body:text,reply:mode===ActorMessageRequest_Mode.ASK?result.result:undefined,accepted:response.payload.value.accepted,completed:response.payload.value.completed,mode:mode===ActorMessageRequest_Mode.ASK?"ask":"tell",reason:response.payload.value.reason,durationMillis:Date.now()-started}));return result},
+      async (logical)=>{const started=Date.now();const active=requiredClient(client);const response=await active.request("actorMessageRequest",ActorMessageRequestSchema,logical.value,fence,logical.requestId,SHORT_REQUEST_TIMEOUT_MS);if(response.payload.case!=="actorMessageResponse"){active.invalidate(new Error("unexpected actor message response"));throw new Error("unexpected actor message response")};const result=actorMessageModelResult(logical,response.payload.value);appendCommunicationView(outgoingExchange({key:`request:${logical.requestId}`,target:response.payload.value.target,body:text,accepted:response.payload.value.accepted,completed:response.payload.value.completed,mode:mode===ActorMessageRequest_Mode.ASK?"ask":"tell",reason:response.payload.value.reason,durationMillis:Date.now()-started}));return result},
 
       async()=>reconnect(requiredContext(extensionContext)));
   };
@@ -257,7 +262,7 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
   const targetSchema = Type.Optional(Type.String({ description: "Stable logical actor ID; omitted means self for human commands" }));
   const modelTargetSchema = Type.Object({ target: Type.String({ minLength: 1, description: "Explicit stable logical actor ID" }) });
   const messageSchema = Type.Object({ target: Type.String({ minLength: 1 }), message: Type.String({ maxLength: MAX_TEXT }) });
-  registerHostedHandlers(pi as any, { list, resolve, message: (mode, target, text) => message(mode as ActorMessageRequest_Mode, target, text), control: (intent, target) => control(intent as ActorControlRequest_Intent, target), subscribe, unsubscribe }, { empty: Type.Object({}), target: Type.Object({ target: targetSchema }), modelTarget: modelTargetSchema, message: messageSchema });
+  registerHostedHandlers(pi as any, { list, resolve, health, message: (mode, target, text) => message(mode as ActorMessageRequest_Mode, target, text), control: (intent, target) => control(intent as ActorControlRequest_Intent, target), subscribe, unsubscribe }, { empty: Type.Object({}), target: Type.Object({ target: targetSchema }), modelTarget: modelTargetSchema, message: messageSchema });
 
   pi.on("session_start", async (_event, ctx) => {
     extensionContext = ctx;

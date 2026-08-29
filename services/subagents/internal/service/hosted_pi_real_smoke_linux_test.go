@@ -185,8 +185,8 @@ func TestRealInstalledPiHostedBridgeIsolatedTmuxSmoke(t *testing.T) {
 	}
 	for _, mode := range []subagentsv1.ActorMessageRequest_Mode{subagentsv1.ActorMessageRequest_MODE_TELL, subagentsv1.ActorMessageRequest_MODE_ASK} {
 		result := smokeRequest(&subagentsv1.Envelope_ActorMessageRequest{ActorMessageRequest: &subagentsv1.ActorMessageRequest{Mode: mode, Target: spec.AgentID, BoundedPayload: []byte("hosted smoke"), DedupeId: fmt.Sprintf("real-%d", mode), HopLimit: 8, ChainId: fmt.Sprintf("real-chain-%d", mode), SourceMutationSequence: uint64(mode)}}, attached.AgentHandle, attached.Fence).GetActorMessageResponse()
-		if !result.Accepted || (mode == subagentsv1.ActorMessageRequest_MODE_ASK && !result.Completed) {
-			t.Fatalf("real smoke typed delivery acknowledgement failed: %#v", result)
+		if !result.Accepted || (mode == subagentsv1.ActorMessageRequest_MODE_ASK && result.Completed) {
+			t.Fatalf("real smoke typed delivery admission failed: %#v", result)
 		}
 	}
 	if !smokeRequest(&subagentsv1.Envelope_SubscribeAgentRequest{SubscribeAgentRequest: &subagentsv1.SubscribeAgentRequest{AgentId: spec.AgentID}}, attached.AgentHandle, attached.Fence).GetAgentOperationResponse().Completed {

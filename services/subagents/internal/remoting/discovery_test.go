@@ -24,9 +24,9 @@ func (r *changingResolver) LookupNetIP(_, _ string) ([]netip.Addr, error) {
 	return []netip.Addr{netip.MustParseAddr("100.64.0.23"), netip.MustParseAddr("203.0.113.9")}, nil
 }
 
-func TestMagicDNSDiscoveryReresolvesAndFailsClosedOnPoisonedAnswer(t *testing.T) {
+func TestTrustedDNSDiscoveryReresolvesAndFailsClosedOnPoisonedAnswer(t *testing.T) {
 	resolver := &changingResolver{}
-	provider, err := remoting.NewMagicDNSDiscovery(resolver, []config.ResolvedPeer{{NodeIdentity: "peer", Host: "peer.taila.ts.net"}}, 17211)
+	provider, err := remoting.NewTrustedDNSDiscovery(resolver, []config.ResolvedPeer{{NodeIdentity: "peer", Host: "peer-b.example.internal"}}, 17211)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,7 +38,7 @@ func TestMagicDNSDiscoveryReresolvesAndFailsClosedOnPoisonedAnswer(t *testing.T)
 	if err != nil || len(second) != 1 || second[0] != "100.64.0.22:17211" {
 		t.Fatalf("unexpected second resolution: %v %v", second, err)
 	}
-	if _, err := provider.DiscoverPeers(); err == nil || !strings.Contains(err.Error(), "outside the Tailscale") {
+	if _, err := provider.DiscoverPeers(); err == nil || !strings.Contains(err.Error(), "outside the trusted") {
 		t.Fatalf("poisoned resolution was accepted: %v", err)
 	}
 	if err := provider.Close(); err != nil {

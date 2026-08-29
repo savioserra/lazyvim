@@ -17,12 +17,12 @@ import (
 )
 
 func TestPlacementAuthorityNamesAreNodeScoped(t *testing.T) {
-	local := placementAuthorityName("aurora")
-	remote := placementAuthorityName("vps")
+	local := placementAuthorityName("node-a")
+	remote := placementAuthorityName("node-b")
 	if local == remote {
 		t.Fatal("different nodes must not share a placement authority actor name")
 	}
-	if local != placementAuthorityName("aurora") {
+	if local != placementAuthorityName("node-a") {
 		t.Fatal("placement authority name must be deterministic")
 	}
 	if len(local) > 64 {
@@ -31,18 +31,18 @@ func TestPlacementAuthorityNamesAreNodeScoped(t *testing.T) {
 }
 
 func TestHostedPlacementAuthorityRejectsInvalidReplayCollisionBeforeEffects(t *testing.T) {
-	authority := &hostedPlacementAuthority{service: placementTrustService(t, "vps", "spiffe://workstation/subagents/local", "spiffe://workstation/subagents/vps"), replays: map[string]placementReplay{}, order: []string{}}
-	expired := authority.place(context.Background(), signedPlacement(t, authority.service, "vps", "op", "d", time.Now().Add(-time.Second), "a"))
+	authority := &hostedPlacementAuthority{service: placementTrustService(t, "node-b", "spiffe://workstation/subagents/local", "spiffe://workstation/subagents/node-b"), replays: map[string]placementReplay{}, order: []string{}}
+	expired := authority.place(context.Background(), signedPlacement(t, authority.service, "node-b", "op", "d", time.Now().Add(-time.Second), "a"))
 	if expired.Reason != "placement operation identity is invalid or expired" {
 		t.Fatalf("expired accepted: %#v", expired)
 	}
-	original := signedPlacement(t, authority.service, "vps", "op", "d", time.Now().Add(time.Minute), "a")
+	original := signedPlacement(t, authority.service, "node-b", "op", "d", time.Now().Add(time.Minute), "a")
 	authority.replays["op"] = placementReplay{digest: remotePlacementDigest(original), result: application.RemoteHostedPlacementResult{Accepted: true, AgentID: "a"}}
 	replay := authority.place(context.Background(), original)
 	if !replay.Accepted || replay.AgentID != "a" {
 		t.Fatalf("exact replay not returned: %#v", replay)
 	}
-	collision := signedPlacement(t, authority.service, "vps", "op", "other", time.Now().Add(time.Minute), "a")
+	collision := signedPlacement(t, authority.service, "node-b", "op", "other", time.Now().Add(time.Minute), "a")
 	got := authority.place(context.Background(), collision)
 	if got.Reason != "placement operation collision" {
 		t.Fatalf("collision not rejected: %#v", got)
@@ -50,9 +50,9 @@ func TestHostedPlacementAuthorityRejectsInvalidReplayCollisionBeforeEffects(t *t
 }
 
 func TestPlacementSignatureRejectsWrongTargetMutationAndUnallowlistedSAN(t *testing.T) {
-	service := placementTrustService(t, "vps", "spiffe://workstation/subagents/local", "spiffe://workstation/subagents/vps")
+	service := placementTrustService(t, "node-b", "spiffe://workstation/subagents/local", "spiffe://workstation/subagents/node-b")
 	authority := &hostedPlacementAuthority{service: service}
-	valid := signedPlacement(t, service, "vps", "op", "d", time.Now().Add(time.Minute), "a")
+	valid := signedPlacement(t, service, "node-b", "op", "d", time.Now().Add(time.Minute), "a")
 	if err := authority.verifyPlacement(valid); err != nil {
 		t.Fatalf("valid placement rejected: %v", err)
 	}
@@ -67,7 +67,7 @@ func TestPlacementSignatureRejectsWrongTargetMutationAndUnallowlistedSAN(t *test
 		t.Fatal("mutated envelope accepted")
 	}
 	bad := placementTrustService(t, "evil", "spiffe://workstation/subagents/evil")
-	badMsg := signedPlacement(t, bad, "vps", "bad", "d", time.Now().Add(time.Minute), "a")
+	badMsg := signedPlacement(t, bad, "node-b", "bad", "d", time.Now().Add(time.Minute), "a")
 	if err := authority.verifyPlacement(badMsg); err == nil {
 		t.Fatal("wrong CA or unallowlisted SAN accepted")
 	}

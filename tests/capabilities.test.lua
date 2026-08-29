@@ -115,13 +115,13 @@ enabled = true
 [remoting]
 enabled = true
 mode = "cluster"
-network_trust = "tailscale"
+network_trust = "trusted-overlay"
 allowed_cidrs = ["100.64.0.0/10"]
 address_families = ["ipv4"]
 [[remoting.peers]]
-node_identity = "vps"
+node_identity = "node-b"
 [[remoting.peers]]
-node_identity = "mac"
+node_identity = "node-c"
 ]=])
 assert(not pcall(
 	subagents_config.verify_managed_active,

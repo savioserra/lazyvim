@@ -18,7 +18,7 @@ func TestPublicAgentSerializersRoundTripAndNoCredential(t *testing.T) {
 		&application.ListPublicHostedAgentsResult{Agents: []application.PublicHostedAgent{{AgentID: "ui_remote_qa", ActorName: "agent-1", Reference: application.AgentReference{AgentID: "ui_remote_qa"}}}},
 		&application.PublicHostedAgent{AgentID: "ui_remote_qa", ActorName: "agent-1", Reference: application.AgentReference{AgentID: "ui_remote_qa"}},
 		&application.PublicAgentSnapshotRequest{NodeIdentity: "local"},
-		&application.PublicAgentDirectoryEvent{Operation: "upsert", NodeIdentity: "vps", AgentID: "ui_remote_qa", ActorName: "agent-1", Sequence: 1, Reference: application.AgentReference{AgentID: "ui_remote_qa", AuthorityBinding: application.AuthorityBinding{Kind: application.AuthorityBindingHostedOwned}}},
+		&application.PublicAgentDirectoryEvent{Operation: "upsert", NodeIdentity: "node-b", AgentID: "ui_remote_qa", ActorName: "agent-1", Sequence: 1, Reference: application.AgentReference{AgentID: "ui_remote_qa", AuthorityBinding: application.AuthorityBinding{Kind: application.AuthorityBindingHostedOwned}}},
 		&application.RemoteAttachAgent{SessionID: "s", GenerationID: "g", Principal: "pm", AgentID: "ui_remote_qa", RequestedCapabilities: []string{"observe", "prompt"}, IssuedHandle: "h"},
 		&application.AttachResult{Completed: true, Handle: "h", Fence: 1},
 		&application.RemoteBridgeIntent{SessionID: "s", GenerationID: "g", Principal: "pm", Handle: "h", SourceAgentID: "client", TargetAgentID: "ui_remote_qa", RequestID: "r", RequiredCapability: "prompt", DedupeID: "d", ChainID: "c", Fence: 1, SourceMutationSequence: 1, Deadline: time.Now().Add(time.Minute), HopLimit: 8, Mode: application.BridgeMessagePrompt, Payload: []byte("prompt")},

@@ -34,11 +34,11 @@ func TestRemoteHostedOrdinaryServicePath(t *testing.T) {
 	for _, name := range []string{"project", "dup", "missing", "denied"} {
 		_ = os.Mkdir(filepath.Join(root, name), 0o700)
 	}
-	localPort, vpsPort := serviceFreePort(t), serviceFreePort(t)
-	localRuntime, vpsRuntime := integrationRuntimes(t, localPort, vpsPort)
+	localPort, remotePort := serviceFreePort(t), serviceFreePort(t)
+	localRuntime, remoteRuntime := integrationRuntimes(t, localPort, remotePort)
 	local := startIntegrationService(t, ctx, filepath.Join(root, "local"), localRuntime)
-	vps := startIntegrationService(t, ctx, filepath.Join(root, "vps"), vpsRuntime)
-	_ = vps
+	remote := startIntegrationService(t, ctx, filepath.Join(root, "node-b"), remoteRuntime)
+	_ = remote
 	time.Sleep(time.Second)
 
 	admin := application.OpenSession{Credential: local.adminCredential}
@@ -46,7 +46,7 @@ func TestRemoteHostedOrdinaryServicePath(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	t.Run("targetNode remote create yields full remote hosted AgentActor reference", func(t *testing.T) {
-		createEnvelope := local.dispatch(env(local, admin, &subagentsv1.Envelope_HostedAdminRequest{HostedAdminRequest: &subagentsv1.HostedAdminRequest{Operation: subagentsv1.HostedAdminRequest_OPERATION_START, AgentId: "ui_remote_qa", ProjectDirectory: filepath.Join(root, "project"), TrustProject: true, DisplayName: "Remote QA", Role: "qa", TargetNode: "vps"}}, "create-1", "", 0))
+		createEnvelope := local.dispatch(env(local, admin, &subagentsv1.Envelope_HostedAdminRequest{HostedAdminRequest: &subagentsv1.HostedAdminRequest{Operation: subagentsv1.HostedAdminRequest_OPERATION_START, AgentId: "ui_remote_qa", ProjectDirectory: filepath.Join(root, "project"), TrustProject: true, DisplayName: "Remote QA", Role: "qa", TargetNode: "node-b"}}, "create-1", "", 0))
 		created := createEnvelope.GetHostedAdminResponse()
 		if created == nil || !created.Accepted || created.GetRuntime().GetState() == subagentsv1.HostedPiRuntimeBinding_STATE_UNSPECIFIED {
 			t.Fatalf("remote create failed: %#v err=%#v envelope=%#v", created, createEnvelope.GetProtocolError(), createEnvelope)
@@ -64,8 +64,8 @@ func TestRemoteHostedOrdinaryServicePath(t *testing.T) {
 	})
 
 	t.Run("duplicate idempotency", func(t *testing.T) {
-		first := local.dispatch(env(local, admin, &subagentsv1.Envelope_HostedAdminRequest{HostedAdminRequest: &subagentsv1.HostedAdminRequest{Operation: subagentsv1.HostedAdminRequest_OPERATION_START, AgentId: "ui_remote_dup", ProjectDirectory: filepath.Join(root, "dup"), TrustProject: true, TargetNode: "vps"}}, "dup-same", "", 0)).GetHostedAdminResponse()
-		second := local.dispatch(env(local, admin, &subagentsv1.Envelope_HostedAdminRequest{HostedAdminRequest: &subagentsv1.HostedAdminRequest{Operation: subagentsv1.HostedAdminRequest_OPERATION_START, AgentId: "ui_remote_dup", ProjectDirectory: filepath.Join(root, "dup"), TrustProject: true, TargetNode: "vps"}}, "dup-same", "", 0)).GetHostedAdminResponse()
+		first := local.dispatch(env(local, admin, &subagentsv1.Envelope_HostedAdminRequest{HostedAdminRequest: &subagentsv1.HostedAdminRequest{Operation: subagentsv1.HostedAdminRequest_OPERATION_START, AgentId: "ui_remote_dup", ProjectDirectory: filepath.Join(root, "dup"), TrustProject: true, TargetNode: "node-b"}}, "dup-same", "", 0)).GetHostedAdminResponse()
+		second := local.dispatch(env(local, admin, &subagentsv1.Envelope_HostedAdminRequest{HostedAdminRequest: &subagentsv1.HostedAdminRequest{Operation: subagentsv1.HostedAdminRequest_OPERATION_START, AgentId: "ui_remote_dup", ProjectDirectory: filepath.Join(root, "dup"), TrustProject: true, TargetNode: "node-b"}}, "dup-same", "", 0)).GetHostedAdminResponse()
 		if first == nil || second == nil || !first.Accepted || !second.Accepted || first.AgentId != second.AgentId {
 			t.Fatalf("duplicate not idempotent: %#v %#v", first, second)
 		}
@@ -80,7 +80,7 @@ func TestRemoteHostedOrdinaryServicePath(t *testing.T) {
 	})
 
 	handle, fence := attachRemote(t, local, client, "ui_remote_qa")
-	connectFakeBridge(t, vps, "ui_remote_qa")
+	connectFakeBridge(t, remote, "ui_remote_qa")
 	time.Sleep(50 * time.Millisecond)
 	t.Run("attach then Tell and Ask cross nodes", func(t *testing.T) {
 		tell := local.dispatch(env(local, client, &subagentsv1.Envelope_ActorMessageRequest{ActorMessageRequest: &subagentsv1.ActorMessageRequest{Mode: subagentsv1.ActorMessageRequest_MODE_TELL, Target: "ui_remote_qa", BoundedPayload: []byte("notify"), DedupeId: "tell-d", ChainId: "tell-c", HopLimit: 4, SourceMutationSequence: 1}}, "tell-1", handle, fence)).GetActorMessageResponse()
@@ -88,16 +88,16 @@ func TestRemoteHostedOrdinaryServicePath(t *testing.T) {
 			t.Fatalf("tell failed: %#v", tell)
 		}
 		waitRemoteDeterminate(t, local, client, "ui_remote_qa")
-		go ackNextPrompt(t, vps, "ui_remote_qa", []byte("answer"))
 		ask := askUntilDeterminate(t, local, client, handle, fence, &subagentsv1.ActorMessageRequest{Mode: subagentsv1.ActorMessageRequest_MODE_ASK, Target: "ui_remote_qa", BoundedPayload: []byte("question"), DedupeId: "ask-d", ChainId: "ask-c", HopLimit: 4, SourceMutationSequence: 2})
-		if !ask.Accepted || !ask.Completed || string(ask.BoundedResult) != "answer" {
-			t.Fatalf("ask failed: %#v", ask)
+		if !ask.Accepted || ask.Completed {
+			t.Fatalf("ask admission should be asynchronous: %#v", ask)
 		}
+		ackNextPrompt(t, remote, "ui_remote_qa", []byte("answer"))
 	})
 
 	t.Run("typed prompt lifecycle reaches remote bridge correlation boundary", func(t *testing.T) {
 		waitRemoteDeterminate(t, local, client, "ui_remote_qa")
-		go ackNextPrompt(t, vps, "ui_remote_qa", []byte("life-answer"))
+		go ackNextPrompt(t, remote, "ui_remote_qa", []byte("life-answer"))
 		started := local.dispatch(env(local, client, &subagentsv1.Envelope_TaskLifecycleRequest{TaskLifecycleRequest: &subagentsv1.TaskLifecycleRequest{Operation: subagentsv1.TaskLifecycleRequest_OPERATION_START, LifecycleId: "life-1", Target: "ui_remote_qa", BoundedPrompt: []byte("do work"), DedupeId: "life-d", ChainId: "life-c", HopLimit: 4, SourceMutationSequence: 3}}, "life-req", handle, fence)).GetTaskLifecycleResponse()
 		if started == nil || !started.Accepted || started.LifecycleId != "life-1" {
 			t.Fatalf("lifecycle start failed: %#v", started)
@@ -110,7 +110,7 @@ func TestRemoteHostedOrdinaryServicePath(t *testing.T) {
 
 	t.Run("unauthorized local admin denied before remote traffic", func(t *testing.T) {
 		bad := application.OpenSession{Credential: []byte("bad-bad-bad-bad-bad-bad-bad-bad!")}
-		resp := local.dispatch(env(local, bad, &subagentsv1.Envelope_HostedAdminRequest{HostedAdminRequest: &subagentsv1.HostedAdminRequest{Operation: subagentsv1.HostedAdminRequest_OPERATION_START, AgentId: "denied", ProjectDirectory: filepath.Join(root, "denied"), TargetNode: "vps"}}, "denied", "", 0)).GetProtocolError()
+		resp := local.dispatch(env(local, bad, &subagentsv1.Envelope_HostedAdminRequest{HostedAdminRequest: &subagentsv1.HostedAdminRequest{Operation: subagentsv1.HostedAdminRequest_OPERATION_START, AgentId: "denied", ProjectDirectory: filepath.Join(root, "denied"), TargetNode: "node-b"}}, "denied", "", 0)).GetProtocolError()
 		if resp == nil {
 			t.Fatal("unauthorized admin was not denied")
 		}
@@ -168,21 +168,21 @@ func startIntegrationService(t *testing.T, ctx context.Context, root string, run
 	return svc
 }
 
-func integrationRuntimes(t *testing.T, localPort, vpsPort int) (*remoting.Runtime, *remoting.Runtime) {
+func integrationRuntimes(t *testing.T, localPort, remotePort int) (*remoting.Runtime, *remoting.Runtime) {
 	t.Helper()
 	_, caKey, ca := placementCA(t)
 	roots := x509.NewCertPool()
 	roots.AddCert(ca)
 	localKey, localDER := placementLeaf(t, ca, caKey, "spiffe://workstation/subagents/local")
-	vpsKey, vpsDER := placementLeaf(t, ca, caKey, "spiffe://workstation/subagents/vps")
-	allowed := map[string]struct{}{"spiffe://workstation/subagents/local": {}, "spiffe://workstation/subagents/vps": {}}
+	remoteKey, remoteDER := placementLeaf(t, ca, caKey, "spiffe://workstation/subagents/node-b")
+	allowed := map[string]struct{}{"spiffe://workstation/subagents/local": {}, "spiffe://workstation/subagents/node-b": {}}
 	local := &remoting.PlacementTrust{Signer: localKey, CertificateDER: [][]byte{localDER}, Roots: roots, AllowedURIs: allowed}
-	vps := &remoting.PlacementTrust{Signer: vpsKey, CertificateDER: [][]byte{vpsDER}, Roots: roots, AllowedURIs: allowed}
-	return integrationRuntime("local", localPort, vpsPort, local), integrationRuntime("vps", vpsPort, localPort, vps)
+	remote := &remoting.PlacementTrust{Signer: remoteKey, CertificateDER: [][]byte{remoteDER}, Roots: roots, AllowedURIs: allowed}
+	return integrationRuntime("local", localPort, remotePort, local), integrationRuntime("node-b", remotePort, localPort, remote)
 }
 func integrationRuntime(id string, port, peerPort int, trust *remoting.PlacementTrust) *remoting.Runtime {
-	peer := "vps"
-	if id == "vps" {
+	peer := "node-b"
+	if id == "node-b" {
 		peer = "local"
 	}
 	return &remoting.Runtime{NodeIdentity: id, MTLSIdentity: "spiffe://workstation/subagents/" + id, Remote: remote.NewConfig("127.0.0.1", port, remoting.PublicAgentSerializers()...), PublicNodes: map[string]application.PublicNode{id: {Identity: id, Host: "127.0.0.1", Port: port}, peer: {Identity: peer, Host: "127.0.0.1", Port: peerPort}}, Trust: trust}

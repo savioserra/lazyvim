@@ -115,7 +115,7 @@ func TestAgentRegistryPublishesHostedAvailabilityEvents(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := system.NoSender().Tell(ctx, registry, &application.ConfigurePublicAgentEvents{NodeIdentity: "vps", PlacementAuthority: application.HostedPlacementAuthorityName("vps"), Epoch: 1}); err != nil {
+	if err := system.NoSender().Tell(ctx, registry, &application.ConfigurePublicAgentEvents{NodeIdentity: "node-b", PlacementAuthority: application.HostedPlacementAuthorityName("node-b"), Epoch: 1}); err != nil {
 		t.Fatal(err)
 	}
 	runtime := &registryRuntime{proc: &registryProcess{wait: make(chan struct{})}}
@@ -132,7 +132,7 @@ func TestAgentRegistryPublishesHostedAvailabilityEvents(t *testing.T) {
 		t.Fatal("hosted registration timed out")
 	}
 	upsert := waitPublicEvent(t, messages, "upsert")
-	if upsert.NodeIdentity != "vps" || upsert.AgentID != "public-hosted" || upsert.ActorName != application.HostedPlacementAuthorityName("vps") || upsert.Epoch != 1 || upsert.Sequence == 0 || upsert.Reference.AuthorityBinding.Kind != application.AuthorityBindingHostedOwned {
+	if upsert.NodeIdentity != "node-b" || upsert.AgentID != "public-hosted" || upsert.ActorName != application.HostedPlacementAuthorityName("node-b") || upsert.Epoch != 1 || upsert.Sequence == 0 || upsert.Reference.AuthorityBinding.Kind != application.AuthorityBindingHostedOwned {
 		t.Fatalf("unexpected upsert event: %#v", upsert)
 	}
 	unregistered := make(chan application.UnregisterAgentResult, 1)
@@ -140,7 +140,7 @@ func TestAgentRegistryPublishesHostedAvailabilityEvents(t *testing.T) {
 		t.Fatal(err)
 	}
 	remove := waitPublicEvent(t, messages, "remove")
-	if remove.NodeIdentity != "vps" || remove.AgentID != "public-hosted" || remove.Sequence <= upsert.Sequence {
+	if remove.NodeIdentity != "node-b" || remove.AgentID != "public-hosted" || remove.Sequence <= upsert.Sequence {
 		t.Fatalf("unexpected remove event: %#v", remove)
 	}
 }

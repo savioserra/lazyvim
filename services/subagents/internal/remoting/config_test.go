@@ -15,9 +15,9 @@ type resolver struct{}
 
 func (resolver) LookupNetIP(_, host string) ([]netip.Addr, error) {
 	switch host {
-	case "bind.taila.ts.net":
+	case "peer-a.example.internal":
 		return []netip.Addr{netip.MustParseAddr("100.64.0.10")}, nil
-	case "peer-b.taila.ts.net":
+	case "peer-b.example.internal":
 		return []netip.Addr{netip.MustParseAddr("100.64.0.11")}, nil
 	default:
 		return []netip.Addr{netip.MustParseAddr("100.64.0.12")}, nil
@@ -41,15 +41,15 @@ func TestDisabledRemotingIsInertAndEnabledRemotingRequiresPrivateTLSMaterial(t *
 		t.Fatal(err)
 	}
 	enabled := config.RemotingConfig{
-		Enabled: true, Mode: "cluster", NetworkTrust: "tailscale", ClusterName: "workstation-subagents",
-		NodeIdentity: "node-a", BindHost: "bind.taila.ts.net", MagicDNSSuffix: ".taila.ts.net",
+		Enabled: true, Mode: "cluster", NetworkTrust: "trusted-overlay", ClusterName: "workstation-subagents",
+		NodeIdentity: "node-a", BindHost: "peer-a.example.internal", DNSSuffix: ".example.internal",
 		Port: 17210, DiscoveryPort: 17211, PeersPort: 17212,
 		AllowedCIDRs: []string{"100.64.0.0/10"}, AddressFamilies: []string{"ipv4"},
 		MTLSIdentity: "spiffe://workstation/subagents/node-a",
 		CAFile:       filepath.Join(root, "ca.pem"), CertFile: filepath.Join(root, "node.pem"), KeyFile: filepath.Join(root, "node.key"),
 		Peers: []config.PeerConfig{
-			{NodeIdentity: "node-b", Host: "peer-b.taila.ts.net", MTLSIdentity: "spiffe://workstation/subagents/node-b"},
-			{NodeIdentity: "node-c", Host: "peer-c.taila.ts.net", MTLSIdentity: "spiffe://workstation/subagents/node-c"},
+			{NodeIdentity: "node-b", Host: "peer-b.example.internal", MTLSIdentity: "spiffe://workstation/subagents/node-b"},
+			{NodeIdentity: "node-c", Host: "peer-c.example.internal", MTLSIdentity: "spiffe://workstation/subagents/node-c"},
 		},
 	}
 	runtime, resolved, err := remoting.NewValidatedConfig(enabled, resolver{}, locals{})

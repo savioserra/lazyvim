@@ -54,7 +54,7 @@ type RemotingConfig struct {
 	ClusterName     string       `toml:"cluster_name"`
 	NodeIdentity    string       `toml:"node_identity"`
 	BindHost        string       `toml:"bind_host"`
-	MagicDNSSuffix  string       `toml:"magicdns_suffix"`
+	DNSSuffix       string       `toml:"dns_suffix"`
 	Port            int          `toml:"port"`
 	DiscoveryPort   int          `toml:"discovery_port"`
 	PeersPort       int          `toml:"peers_port"`
@@ -79,7 +79,7 @@ type ResolvedRemoting struct {
 	ClusterName               string
 	NodeIdentity              string
 	BindAddress               netip.Addr
-	MagicDNSSuffix            string
+	DNSSuffix                 string
 	Port, DiscoveryPort       int
 	PeersPort                 int
 	MTLSIdentity              string
@@ -207,7 +207,7 @@ func ResolveRemoting(cfg RemotingConfig, resolver Resolver, localSource LocalAdd
 			return ResolvedRemoting{}, fmt.Errorf("%s must be a clean absolute path", name)
 		}
 	}
-	if err := magicDNSHost(cfg.BindHost, cfg.MagicDNSSuffix); err != nil {
+	if err := trustedDNSHost(cfg.BindHost, cfg.DNSSuffix); err != nil {
 		return ResolvedRemoting{}, fmt.Errorf("bind_host: %w", err)
 	}
 	ports := []int{cfg.Port, cfg.DiscoveryPort, cfg.PeersPort}
@@ -271,7 +271,7 @@ func ResolveRemoting(cfg RemotingConfig, resolver Resolver, localSource LocalAdd
 			return ResolvedRemoting{}, fmt.Errorf("peer %d: duplicate mtls_identity", i)
 		}
 		seenIdentities[peer.MTLSIdentity] = struct{}{}
-		if err := magicDNSHost(peer.Host, cfg.MagicDNSSuffix); err != nil {
+		if err := trustedDNSHost(peer.Host, cfg.DNSSuffix); err != nil {
 			return ResolvedRemoting{}, fmt.Errorf("peer %d: %w", i, err)
 		}
 		if err := sshTarget(peer.SSHTarget); err != nil {
@@ -290,23 +290,23 @@ func ResolveRemoting(cfg RemotingConfig, resolver Resolver, localSource LocalAdd
 		})
 	}
 	return ResolvedRemoting{
-		Enabled:        true,
-		ClusterName:    cfg.ClusterName,
-		NodeIdentity:   cfg.NodeIdentity,
-		BindAddress:    bind,
-		MagicDNSSuffix: cfg.MagicDNSSuffix,
-		Port:           cfg.Port,
-		DiscoveryPort:  cfg.DiscoveryPort,
-		PeersPort:      cfg.PeersPort,
-		MTLSIdentity:   cfg.MTLSIdentity,
-		CAFile:         cfg.CAFile,
-		CertFile:       cfg.CertFile,
-		KeyFile:        cfg.KeyFile,
-		Peers:          peers,
+		Enabled:       true,
+		ClusterName:   cfg.ClusterName,
+		NodeIdentity:  cfg.NodeIdentity,
+		BindAddress:   bind,
+		DNSSuffix:     cfg.DNSSuffix,
+		Port:          cfg.Port,
+		DiscoveryPort: cfg.DiscoveryPort,
+		PeersPort:     cfg.PeersPort,
+		MTLSIdentity:  cfg.MTLSIdentity,
+		CAFile:        cfg.CAFile,
+		CertFile:      cfg.CertFile,
+		KeyFile:       cfg.KeyFile,
+		Peers:         peers,
 	}, nil
 }
 
-func magicDNSHost(host, suffix string) error {
+func trustedDNSHost(host, suffix string) error {
 	if suffix == "" || suffix != strings.TrimSpace(suffix) || !strings.HasPrefix(suffix, ".") || strings.HasSuffix(suffix, ".") {
 		return errors.New("dns suffix must be a trim-equal suffix beginning with '.'")
 	}

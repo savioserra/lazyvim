@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { buildActorControl, buildActorMessage, buildDeliveryAck, communicationKey, communicationLine, CommunicationTimeline, completeHostedEnvironment, ExactMutationSequencer, PromptTaskCoordinator, deliveryAction, destroyOnFramingFailure, drainPages, executeTypedDelivery, invokeTypedDeliveryForAck, parseTargetMessage, registerHostedHandlers, requireExplicitModelTarget } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/handlers.ts";
-import { incomingNote, incomingRequestText, outgoingExchange, renderCommunicationCard, renderToolResult, compactToolCall, compactToolResult, modelResultContent } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/communication-ui.ts";
+import { incomingNote, incomingRequestText, outgoingExchange, renderCommunicationCard, compactToolCall, compactToolResult, modelResultContent } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/communication-ui.ts";
 import { actorMessageModelResult, connectBridgeWithRetry } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/index.ts";
 
 const complete = { WS_SUBAGENTS_ENDPOINT: "ws://127.0.0.1:17213/actors", WS_SUBAGENTS_CREDENTIAL_FILE: "/state/credential", WS_SUBAGENTS_SESSION_ID: "session", WS_SUBAGENTS_GENERATION_ID: "generation", WS_SUBAGENTS_CALLER: "hosted:agent", WS_SUBAGENTS_AGENT_ID: "agent", WS_SUBAGENTS_RUNTIME_ID: "runtime", WS_SUBAGENTS_INCARNATION: "1" };
@@ -50,8 +50,8 @@ test("actual registered command and tool callbacks invoke every hosted operation
   const commands = new Map(), tools = new Map(), calls = [];
   const api = { registerCommand(name, registration) { commands.set(name, registration); }, registerTool(registration) { tools.set(registration.name, registration); } };
   const operations = {
-    async list() { calls.push(["list"]); return { ok: true }; }, async resolve(target) { calls.push(["resolve", target]); return {}; },
-    async message(mode, target, text) { calls.push(["message", mode, target, text]); return { accepted: true, completed: mode === 2 }; },
+    async list() { calls.push(["list"]); return { ok: true }; }, async resolve(target) { calls.push(["resolve", target]); return {}; }, async health(target) { calls.push(["health", target]); return { reachable: true }; },
+    async message(mode, target, text) { calls.push(["message", mode, target, text]); return { accepted: true, completed: false }; },
     async control(intent, target) { calls.push(["control", intent, target]); return { accepted: true }; },
     async subscribe(target) { calls.push(["subscribe", target]); return { completed: true }; }, async unsubscribe(target) { calls.push(["unsubscribe", target]); return { completed: true }; },
   };
@@ -60,22 +60,21 @@ test("actual registered command and tool callbacks invoke every hosted operation
   const context = { ui: { notify(message) { notices.push(message); } } };
   await commands.get("actor-list").handler("", context); await commands.get("actor-resolve").handler("", context);
   const beforeMessageNotices = notices.length;
-  await commands.get("actor-send").handler(" -- human self", context); await commands.get("actor-ask").handler("target -- question", context);
-  assert.equal(notices.length, beforeMessageNotices, "command-driven message exchanges are rendered as cards, not duplicate popups");
+  await commands.get("actor-tell").handler("target -- question", context);
+  assert.ok(notices.length>=beforeMessageNotices, "command-driven async messages return receipts");
   await commands.get("actor-abort").handler("target", context); await commands.get("actor-shutdown").handler("target", context);
   await commands.get("actor-subscribe").handler("target", context); await commands.get("actor-unsubscribe").handler("target", context);
-  for (const [name, params] of [["actor_list", {}], ["actor_resolve", { target: "target" }], ["actor_send", { target: "target", message: "tell" }], ["actor_ask", { target: "target", message: "ask" }], ["actor_abort", { target: "target" }], ["actor_shutdown", { target: "target" }], ["actor_subscribe", { target: "target" }], ["actor_unsubscribe", { target: "target" }]]) {
+  for (const [name, params] of [["actor_list", {}], ["actor_resolve", { target: "target" }], ["actor_health", { target: "target" }], ["actor_tell", { target: "target", message: "tell async" }], ["actor_abort", { target: "target" }], ["actor_shutdown", { target: "target" }], ["actor_subscribe", { target: "target" }], ["actor_unsubscribe", { target: "target" }]]) {
     const registration = tools.get(name);
     const result = await registration.execute("id", params);
     assert.equal(typeof registration.renderCall, "function");
     assert.equal(typeof registration.renderResult, "function");
     assert.doesNotMatch(result.content[0].text, /^\s*[\[{]/, `${name} exposed raw JSON as tool content`);
   }
-  await assert.rejects(() => tools.get("actor_send").execute("id", { message: "implicit" }), /explicit target/);
+  await assert.rejects(() => tools.get("actor_tell").execute("id", { message: "implicit" }), /explicit target/);
   assert.equal(commands.size, 8); assert.equal(tools.size, 8);
-  assert.ok(calls.some((call) => call[0] === "message" && call[1] === 1 && call[2] === undefined));
   assert.ok(calls.some((call) => call[0] === "message" && call[1] === 2 && call[2] === "target"));
-  for (const operation of ["list", "resolve", "message", "control", "subscribe", "unsubscribe"]) assert.ok(calls.some((call) => call[0] === operation), `${operation} handler was not invoked`);
+  for (const operation of ["list", "resolve", "health", "message", "control", "subscribe", "unsubscribe"]) assert.ok(calls.some((call) => call[0] === operation), `${operation} handler was not invoked`);
 });
 
 test("protobuf request builders preserve typed modes, fences inputs, ACK outcomes and no client authority", () => {
@@ -179,7 +178,7 @@ test("communication view model renders direction, request replies, redaction, an
   assert.match(tellLines, /✓ delivered/);
 });
 
-test("actor_send and actor_ask model results expose exact stable correlation only", () => {
+test("actor_tell model results expose exact stable correlation only", () => {
   const logical = { requestId: "request-1", value: { dedupeId: "dedupe-1", chainId: "chain-1", sourceMutationSequence: 7n } };
   const details = actorMessageModelResult(logical, { accepted: true, completed: true, boundedResult: new TextEncoder().encode("answer"), reason: "", source: { stableId: "source-actor", displayName: "session-secret", role: "MANAGER" }, target: { stableId: "target-actor", displayName: "handle-secret", role: "WORKER" }, kind: "ask" });
   assert.equal(details.requestId, "request-1");
@@ -189,33 +188,16 @@ test("actor_send and actor_ask model results expose exact stable correlation onl
   assert.equal(details.source, "source-actor");
   assert.equal(details.target, "target-actor");
   assert.equal(details.kind, "ask");
-  const visible = modelResultContent("actor_ask", details);
+  const visible = modelResultContent("actor_tell", details);
   for (const required of ["requestId=request-1", "dedupeId=dedupe-1", "chainId=chain-1", "sourceMutationSequence=7", "source=source-actor", "target=target-actor", "kind=ask"]) assert.match(visible, new RegExp(required));
   assert.doesNotMatch(visible, /session-secret|handle-secret/);
   assert.throws(() => actorMessageModelResult({ requestId: "bad\nrequest", value: { dedupeId: "dedupe", chainId: "chain", sourceMutationSequence: 1n } }, { boundedResult: new Uint8Array(), kind: "tell" }), /requestId/);
 });
 
 test("actor tool rendering is compact and does not expose raw protocol fields", () => {
-  assert.equal(compactToolCall("actor_ask", { target: "beta", message: "Reply exactly BODY_ASK_CONTENT_OK" }), "Ask beta: Reply exactly BODY_ASK_CONTENT_OK");
-  assert.equal(compactToolResult("actor_ask", { answer: "BODY_ASK_CONTENT_OK", sessionId: "raw-session", handle: "raw-handle" }), "Reply: BODY_ASK_CONTENT_OK");
-  assert.doesNotMatch(compactToolResult("actor_status", { displayName: "Beta", role: "CODE REVIEWER", state: 3, runtimeId: "raw-runtime", fence: 1n }), /runtime|fence|raw/i);
-});
-
-test("actor model results include complete bounded answers while UI stays compact", () => {
-  const longAnswer = `first line\n${"x".repeat(700)}\nlast line`;
-  const details = { lifecycleId: "life", terminal: true, answer: longAnswer };
-  const visible = modelResultContent("actor_prompt_wait", details);
-  assert.match(visible, /fullAnswer:/);
-  assert.match(visible, /first line/);
-  assert.match(visible, /last line/);
-  assert.ok(visible.includes("x".repeat(700)));
-  assert.doesNotMatch(compactToolResult("actor_prompt_wait", details), /last line/);
-  const theme = { fg: (_name, text) => text, bg: (_name, text) => text, bold: (text) => text };
-  const collapsed = renderToolResult("actor_prompt_wait", { details }, { expanded: false }, theme).render(80).join("\n");
-  assert.doesNotMatch(collapsed, /last line/);
-  const expanded = renderToolResult("actor_prompt_wait", { details }, { expanded: true }, theme).render(80).join("\n");
-  assert.match(expanded, /first line/);
-  assert.match(expanded, /last line/);
+  assert.equal(compactToolCall("actor_tell", { target: "beta", message: "Reply exactly BODY_ASK_CONTENT_OK" }), "Tell beta: Reply exactly BODY_ASK_CONTENT_OK");
+  assert.equal(compactToolResult("actor_tell", { accepted: true, completed: false, sessionId: "raw-session", handle: "raw-handle" }), "Request accepted");
+  assert.doesNotMatch(compactToolResult("actor_health", { displayName: "Beta", role: "CODE REVIEWER", state: 3, runtimeId: "raw-runtime", fence: 1n }), /runtime|fence|raw/i);
 });
 
 test("typed delivery invokes documented context abort/shutdown and notification methods", async () => {

@@ -45,9 +45,9 @@ func run() error {
 	if err := workstationsocket.EnsureOwnedPrivateDir(paths.StateDir); err != nil {
 		return fmt.Errorf("prepare XDG state directory: %w", err)
 	}
-	// The actor plane binds only the concrete local Tailscale address. MagicDNS
-	// supplies bootstrap addresses; Tailscale ACL identity and URI-SAN mTLS are
-	// independent, conjunctive trust boundaries.
+	// The actor plane binds only the concrete local trusted-network address.
+	// Configured DNS supplies bootstrap addresses; network identity and URI-SAN
+	// mTLS are independent, conjunctive trust boundaries.
 	actorPlane, _, err := remoting.NewValidatedConfig(cfg.Remoting, config.NewNetworkResolver(), config.InterfaceAddressSource{})
 	if err != nil {
 		return fmt.Errorf("validate remoting: %w", err)

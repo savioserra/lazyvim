@@ -1655,11 +1655,7 @@ func (s *Service) dispatch(request *subagentsv1.Envelope) *subagentsv1.Envelope 
 		}
 		intent := &application.BridgeIntent{SessionID: request.SessionId, GenerationID: route.GenerationID, Principal: route.Principal, Handle: request.AgentHandle, Fence: request.AgentFence, SourceAgentID: source, TargetAgentID: payload.ActorMessageRequest.Target, RequestID: request.RequestId, RequiredCapability: capability, DedupeID: payload.ActorMessageRequest.DedupeId, ChainID: payload.ActorMessageRequest.ChainId, Deadline: time.UnixMilli(request.DeadlineUnixMillis), HopLimit: payload.ActorMessageRequest.HopLimit, SourceMutationSequence: payload.ActorMessageRequest.SourceMutationSequence, Mode: application.BridgeMessageMode(payload.ActorMessageRequest.Mode), Payload: append([]byte(nil), payload.ActorMessageRequest.BoundedPayload...)}
 		receipt := make(chan application.BridgeIntentResult, 1)
-		completion := make(chan application.BridgeIntentResult, 1)
 		intent.Receipt = receipt
-		if intent.Mode == application.BridgeMessageAsk {
-			intent.Completion = completion
-		}
 		var result *application.BridgeIntentResult
 		if route.PID.IsRemote() {
 			reply, err := s.system.NoSender().Ask(ctx, route.PID, remoteBridgeIntent(intent), requestTimeout)
@@ -1684,14 +1680,6 @@ func (s *Service) dispatch(request *subagentsv1.Envelope) *subagentsv1.Envelope 
 		}
 		if result.Accepted {
 			s.pushBridgeUpdate(payload.ActorMessageRequest.Target, "actor delivery admitted")
-		}
-		if intent.Mode == application.BridgeMessageAsk && result.Accepted && result.AwaitingAck {
-			select {
-			case completed := <-completion:
-				result = &completed
-			case <-ctx.Done():
-				return errorResponse(request, subagentsv1.ProtocolError_CODE_DEADLINE_EXCEEDED, "actor delivery acknowledgement deadline expired")
-			}
 		}
 		response.Payload = &subagentsv1.Envelope_ActorMessageResponse{ActorMessageResponse: &subagentsv1.ActorMessageResponse{Accepted: result.Accepted, Completed: result.Completed, BoundedResult: result.Result, Reason: result.Reason, Source: protoCommunicationPeer(s.communicationPeer(ctx, source)), Target: protoCommunicationPeer(s.communicationPeer(ctx, payload.ActorMessageRequest.Target)), Kind: actorMessageKind(payload.ActorMessageRequest.Mode)}}
 	case *subagentsv1.Envelope_ActorControlRequest:

@@ -30,9 +30,10 @@ type PlacementTrust struct {
 	AllowedURIs    map[string]struct{}
 }
 
-// NewValidatedConfig constructs a Tailscale-bound, mutually authenticated
-// three-node cluster. Tailscale ACL/device identity is the network boundary;
-// URI-SAN mTLS independently limits the actor plane to explicitly trusted peers.
+// NewValidatedConfig constructs a trusted-network-bound, mutually authenticated
+// three-node cluster. Operator-managed network identity is the reachability
+// boundary; URI-SAN mTLS independently limits the actor plane to explicitly
+// trusted peers.
 func NewValidatedConfig(cfg config.RemotingConfig, resolver config.Resolver, local config.LocalAddressSource) (*Runtime, config.ResolvedRemoting, error) {
 	resolved, err := config.ResolveRemoting(cfg, resolver, local)
 	if err != nil {
@@ -42,7 +43,7 @@ func NewValidatedConfig(cfg config.RemotingConfig, resolver config.Resolver, loc
 		return nil, resolved, nil
 	}
 	if len(resolved.Peers) != 2 {
-		return nil, resolved, errors.New("tailscale cluster mode requires exactly two peers (three nodes total)")
+		return nil, resolved, errors.New("trusted-network cluster mode requires exactly two peers (three nodes total)")
 	}
 	tlsInfo, err := loadTLS(resolved)
 	if err != nil {
@@ -52,7 +53,7 @@ func NewValidatedConfig(cfg config.RemotingConfig, resolver config.Resolver, loc
 	if err != nil {
 		return nil, resolved, err
 	}
-	provider, err := NewMagicDNSDiscovery(resolver, resolved.Peers, resolved.DiscoveryPort)
+	provider, err := NewTrustedDNSDiscovery(resolver, resolved.Peers, resolved.DiscoveryPort)
 	if err != nil {
 		return nil, resolved, err
 	}

@@ -39,7 +39,7 @@ func (a *hostedPlacementAuthority) remoteBridgeIntent(ctx context.Context, messa
 	}
 	select {
 	case result := <-receipt:
-		if result.Accepted && result.AwaitingAck && (message.Mode == application.BridgeMessageAsk || message.Mode == application.BridgeMessagePrompt) {
+		if result.Accepted && result.AwaitingAck && message.RequiredCapability == "prompt" {
 			select {
 			case completed := <-completion:
 				return &completed

@@ -20,7 +20,7 @@ func TestPublicAgentDirectoryAuthorizationPrivateAndStaleNode(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = system.Stop(context.Background()) })
-	dir, err := system.Spawn(ctx, "public-directory", NewPublicAgentDirectoryActor("local", map[string]application.PublicNode{"vps": {Identity: "vps", Host: "127.0.0.1", Port: 1, Stale: true}}))
+	dir, err := system.Spawn(ctx, "public-directory", NewPublicAgentDirectoryActor("local", map[string]application.PublicNode{"node-b": {Identity: "node-b", Host: "127.0.0.1", Port: 1, Stale: true}}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -29,7 +29,7 @@ func TestPublicAgentDirectoryAuthorizationPrivateAndStaleNode(t *testing.T) {
 		t.Fatal(err)
 	}
 	time.Sleep(20 * time.Millisecond)
-	unauth, err := system.NoSender().Ask(ctx, dir, &application.CreatePublicAgent{SessionID: "s", GenerationID: "g", Caller: "pm", Credential: credential, AgentID: "ui_remote_qa", Placement: application.PublicAgentPlacement{NodeIdentity: "vps"}}, time.Second)
+	unauth, err := system.NoSender().Ask(ctx, dir, &application.CreatePublicAgent{SessionID: "s", GenerationID: "g", Caller: "pm", Credential: credential, AgentID: "ui_remote_qa", Placement: application.PublicAgentPlacement{NodeIdentity: "node-b"}}, time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,14 +40,14 @@ func TestPublicAgentDirectoryAuthorizationPrivateAndStaleNode(t *testing.T) {
 		t.Fatal(err)
 	}
 	time.Sleep(20 * time.Millisecond)
-	private, err := system.NoSender().Ask(ctx, dir, &application.CreatePublicAgent{SessionID: "admin", GenerationID: "g", Caller: "pm", Credential: credential, AgentID: "ui_remote_qa", Private: true, Placement: application.PublicAgentPlacement{NodeIdentity: "vps"}}, time.Second)
+	private, err := system.NoSender().Ask(ctx, dir, &application.CreatePublicAgent{SessionID: "admin", GenerationID: "g", Caller: "pm", Credential: credential, AgentID: "ui_remote_qa", Private: true, Placement: application.PublicAgentPlacement{NodeIdentity: "node-b"}}, time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got := private.(*application.PublicAgentCreateResult); got.Reason != "invalid public agent" {
 		t.Fatalf("private actor was not excluded: %#v", got)
 	}
-	stale, err := system.NoSender().Ask(ctx, dir, &application.CreatePublicAgent{SessionID: "admin", GenerationID: "g", Caller: "pm", Credential: credential, AgentID: "ui_remote_qa", Placement: application.PublicAgentPlacement{NodeIdentity: "vps"}}, time.Second)
+	stale, err := system.NoSender().Ask(ctx, dir, &application.CreatePublicAgent{SessionID: "admin", GenerationID: "g", Caller: "pm", Credential: credential, AgentID: "ui_remote_qa", Placement: application.PublicAgentPlacement{NodeIdentity: "node-b"}}, time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,7 +66,7 @@ func TestPublicAgentDirectoryLearnsRemoteHostedAgentsFromTopicEvents(t *testing.
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = system.Stop(context.Background()) })
-	dir, err := system.Spawn(ctx, "public-directory-events", NewPublicAgentDirectoryActor("local", map[string]application.PublicNode{"vps": {Identity: "vps", Host: "127.0.0.1", Port: 17213}}))
+	dir, err := system.Spawn(ctx, "public-directory-events", NewPublicAgentDirectoryActor("local", map[string]application.PublicNode{"node-b": {Identity: "node-b", Host: "127.0.0.1", Port: 17213}}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,17 +76,17 @@ func TestPublicAgentDirectoryLearnsRemoteHostedAgentsFromTopicEvents(t *testing.
 		t.Fatal(err)
 	}
 	reference := application.AgentReference{AgentID: "ui_remote_qa", LifecycleRevision: 2, Role: "qa", DisplayName: "Remote QA", AuthorityBinding: application.AuthorityBinding{Kind: application.AuthorityBindingHostedOwned}}
-	published := &application.PublicAgentDirectoryEvent{Operation: "upsert", NodeIdentity: "vps", AgentID: "ui_remote_qa", ActorName: application.HostedPlacementAuthorityName("vps"), Epoch: 1, Sequence: 1, Reference: reference}
-	if err := system.NoSender().Tell(ctx, system.TopicActor(), actor.NewPublish("vps:ui_remote_qa:1", publicAgentDirectoryTopic, published)); err != nil {
+	published := &application.PublicAgentDirectoryEvent{Operation: "upsert", NodeIdentity: "node-b", AgentID: "ui_remote_qa", ActorName: application.HostedPlacementAuthorityName("node-b"), Epoch: 1, Sequence: 1, Reference: reference}
+	if err := system.NoSender().Tell(ctx, system.TopicActor(), actor.NewPublish("node-b:ui_remote_qa:1", publicAgentDirectoryTopic, published)); err != nil {
 		t.Fatal(err)
 	}
 	waitForPublicList(t, system, dir, credential, 1)
-	removed := &application.PublicAgentDirectoryEvent{Operation: "remove", NodeIdentity: "vps", AgentID: "ui_remote_qa", ActorName: application.HostedPlacementAuthorityName("vps"), Epoch: 1, Sequence: 2}
-	if err := system.NoSender().Tell(ctx, system.TopicActor(), actor.NewPublish("vps:ui_remote_qa:2", publicAgentDirectoryTopic, removed)); err != nil {
+	removed := &application.PublicAgentDirectoryEvent{Operation: "remove", NodeIdentity: "node-b", AgentID: "ui_remote_qa", ActorName: application.HostedPlacementAuthorityName("node-b"), Epoch: 1, Sequence: 2}
+	if err := system.NoSender().Tell(ctx, system.TopicActor(), actor.NewPublish("node-b:ui_remote_qa:2", publicAgentDirectoryTopic, removed)); err != nil {
 		t.Fatal(err)
 	}
 	waitForPublicList(t, system, dir, credential, 0)
-	if err := system.NoSender().Tell(ctx, system.TopicActor(), actor.NewPublish("vps:ui_remote_qa:old", publicAgentDirectoryTopic, published)); err != nil {
+	if err := system.NoSender().Tell(ctx, system.TopicActor(), actor.NewPublish("node-b:ui_remote_qa:old", publicAgentDirectoryTopic, published)); err != nil {
 		t.Fatal(err)
 	}
 	time.Sleep(50 * time.Millisecond)

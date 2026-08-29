@@ -247,10 +247,10 @@ func TestDeterministicHostedBridgeGatewayAndClientIndependence(t *testing.T) {
 	if !tell.GetActorMessageResponse().Accepted {
 		t.Fatalf("tell admission rejected: %#v", tell)
 	}
-	askResult := make(chan *subagentsv1.Envelope, 1)
-	go func() {
-		askResult <- request(t, path, fencedBase(&subagentsv1.Envelope_ActorMessageRequest{ActorMessageRequest: &subagentsv1.ActorMessageRequest{Mode: subagentsv1.ActorMessageRequest_MODE_ASK, Target: "agent-one", BoundedPayload: []byte("ask-message"), DedupeId: "ask", HopLimit: 8, ChainId: "chain-ask", SourceMutationSequence: 2}}))
-	}()
+	askAdmission := request(t, path, fencedBase(&subagentsv1.Envelope_ActorMessageRequest{ActorMessageRequest: &subagentsv1.ActorMessageRequest{Mode: subagentsv1.ActorMessageRequest_MODE_ASK, Target: "agent-one", BoundedPayload: []byte("ask-message"), DedupeId: "ask", HopLimit: 8, ChainId: "chain-ask", SourceMutationSequence: 2}})).GetActorMessageResponse()
+	if !askAdmission.Accepted || askAdmission.Completed {
+		t.Fatalf("ask admission should be asynchronous: %#v", askAdmission)
+	}
 	var deliveries []*subagentsv1.BridgeDelivery
 	deadline := time.Now().Add(time.Second)
 	for len(deliveries) < 2 && time.Now().Before(deadline) {
@@ -273,14 +273,6 @@ func TestDeterministicHostedBridgeGatewayAndClientIndependence(t *testing.T) {
 			t.Fatalf("delivery ack rejected: %#v", ack)
 		}
 	}
-	select {
-	case response := <-askResult:
-		if !response.GetActorMessageResponse().Completed {
-			t.Fatalf("ask did not wait for ack: %#v", response)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("ask did not complete after delivery ack")
-	}
 	askReplay := request(t, path, fencedBase(&subagentsv1.Envelope_ActorMessageRequest{ActorMessageRequest: &subagentsv1.ActorMessageRequest{Mode: subagentsv1.ActorMessageRequest_MODE_ASK, Target: "agent-one", BoundedPayload: []byte("ask-message"), DedupeId: "ask", HopLimit: 8, ChainId: "chain-ask", SourceMutationSequence: 2}})).GetActorMessageResponse()
 	if !askReplay.Accepted || !askReplay.Completed {
 		t.Fatalf("completed ASK exact retry did not return immediately: %#v", askReplay)
@@ -289,12 +281,6 @@ func TestDeterministicHostedBridgeGatewayAndClientIndependence(t *testing.T) {
 	if duplicate.Accepted || !strings.Contains(duplicate.Reason, "collision") {
 		t.Fatalf("sequence collision did not fail closed: %#v", duplicate)
 	}
-	timed := fencedBase(&subagentsv1.Envelope_ActorMessageRequest{ActorMessageRequest: &subagentsv1.ActorMessageRequest{Mode: subagentsv1.ActorMessageRequest_MODE_ASK, Target: "agent-one", BoundedPayload: []byte("timeout"), DedupeId: "timeout", HopLimit: 8, ChainId: "timeout-chain", SourceMutationSequence: 3}})
-	timed.DeadlineUnixMillis = time.Now().Add(50 * time.Millisecond).UnixMilli()
-	if response := request(t, path, timed); response.GetProtocolError() == nil && (response.GetActorMessageResponse() == nil || response.GetActorMessageResponse().Completed || response.GetActorMessageResponse().Reason == "") {
-		t.Fatalf("unacknowledged ask did not time out: %#v", response)
-	}
-
 	clientCredential := []byte(strings.Repeat("c", 32))
 	client := application.OpenSession{SessionID: "client", GenerationID: "client-one", Caller: "human", Credential: clientCredential, Capabilities: []string{"observe"}, ExpiresAt: time.Now().Add(time.Hour)}
 	if err := daemon.OpenSession(context.Background(), client); err != nil {

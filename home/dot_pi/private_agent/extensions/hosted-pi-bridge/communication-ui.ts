@@ -119,8 +119,7 @@ export function renderCommunicationCard(view: CommunicationView, theme: any) {
 export function compactToolCall(name: string, args: any): string {
   const target = safePreview(args?.target ?? args?.agentId ?? "", 48);
   const prompt = safePreview(args?.message ?? args?.prompt ?? "", 72);
-  if (/ask|prompt_start/.test(name)) return `Ask ${target || "actor"}${prompt ? `: ${prompt}` : ""}`;
-  if (/send/.test(name)) return `Tell ${target || "actor"}${prompt ? `: ${prompt}` : ""}`;
+  if (/tell|ask|send/.test(name)) return `Tell ${target || "actor"}${prompt ? `: ${prompt}` : ""}`;
   if (/list/.test(name)) return "List actors";
   if (/resolve|status/.test(name)) return `Check ${target || "actor"}`;
   if (/create/.test(name)) return `Create ${target || "actor"}`;
@@ -132,19 +131,16 @@ export function compactToolCall(name: string, args: any): string {
 export function compactToolResult(name: string, details: any): string {
   if (Array.isArray(details)) return details.map((item) => actorStatusLine(item)).join("\n") || "No actors";
   if (details?.accepted === false || (details?.reason && details?.accepted !== true)) return `! ${safePreview(details.reason || "request failed", 120)}`;
-  if (/ask|prompt_wait/.test(name) && (details?.answer || details?.result)) return `Reply: ${safePreview(details.answer || details.result, MAX_TOOL_PREVIEW)}`;
-  if (/prompt_start/.test(name)) return details?.terminal === false ? "Started; waiting may continue later" : compactToolResult("prompt_wait", details);
-  if (/prompt_status|prompt_wait/.test(name)) return details?.terminal === false ? "Waiting" : details?.answer ? `Reply: ${safePreview(details.answer, MAX_TOOL_PREVIEW)}` : "Completed";
   if (/send/.test(name)) return details?.accepted ? "Delivered" : "Delivery failed";
+  if (/tell|ask/.test(name)) return details?.accepted ? "Request accepted" : "Delivery failed";
   if (/resolve/.test(name)) return actorStatusLine(details?.agent ? { displayName: details.displayName ?? details.agent, role: details.role, state: 3 } : details);
-  if (/status/.test(name)) return actorStatusLine(details);
-  if (details?.lifecycleId && details?.terminal === false) return "Request accepted";
+  if (/health|status/.test(name)) return details?.reachable === true ? actorStatusLine(details?.agent ? { displayName: details.displayName ?? details.agent, role: details.role, state: 3 } : details) : actorStatusLine(details);
   return details?.completed === false ? "Waiting" : "Done";
 }
 
 export function renderToolCall(name: string, args: any, theme: any) {
   const target = safePreview(args?.target ?? args?.agentId ?? "actor", 48);
-  if (/ask|prompt_start/.test(name)) return new Text(theme.fg("accent", `↗ Asking ${target}…`), 0, 0);
+  if (/tell|ask/.test(name)) return new Text(theme.fg("accent", `↗ Telling ${target}…`), 0, 0);
   if (/send/.test(name)) return new Text(theme.fg("toolTitle", `↑ Sending to ${target}…`), 0, 0);
   return new Text(theme.fg("toolTitle", compactToolCall(name, args)), 0, 0);
 }
@@ -167,7 +163,7 @@ export function naturalResultSummary(name: string, details: any): string {
 
 export function modelResultContent(name: string, details: any): string {
   const summary = naturalResultSummary(name, details);
-  if (/actor_send|actor_ask/.test(name) && details) {
+  if (/actor_tell/.test(name) && details) {
     const parts = [`${summary}.`];
     for (const field of ["requestId", "dedupeId", "chainId", "sourceMutationSequence", "kind", "source", "target"] as const) {
       if (details[field] !== undefined && details[field] !== "") parts.push(`${field}=${safePreview(String(details[field]), 128)}`);
@@ -176,19 +172,6 @@ export function modelResultContent(name: string, details: any): string {
     if (details.reason) parts.push(`reason=${safePreview(details.reason, 120)}`);
     const answer = fullModelAnswer(details);
     if (answer !== undefined) parts.push(`fullAnswer:\n${answer}`);
-    return parts.join(" ");
-  }
-  if (/prompt_start|prompt_status|prompt_wait/.test(name) && details?.lifecycleId) {
-    const parts = [`${summary}.`, `lifecycleId=${safePreview(details.lifecycleId, 128)}`, `channel=actor-client-lifecycle`, `threadId=${safePreview(details.threadId ?? details.thread ?? details.lifecycleId, 128)}`];
-    for (const field of ["requestId", "dedupeId", "chainId", "sourceMutationSequence", "sourceStableId", "sourceDisplayName", "sourceRole", "targetStableId", "targetDisplayName", "targetRole"] as const) {
-      if (details[field] !== undefined && details[field] !== "") parts.push(`${field}=${safePreview(String(details[field]), 128)}`);
-    }
-    if (details.state !== undefined) parts.push(`state=${safePreview(String(details.state), 32)}`);
-    if (details.terminal !== undefined) parts.push(`terminal=${details.terminal ? "true" : "false"}`);
-    if (details.reason) parts.push(`reason=${safePreview(details.reason, 120)}`);
-    const answer = fullModelAnswer(details);
-    if (answer !== undefined) parts.push(`fullAnswer:\n${answer}`);
-    if (details.terminal === false) parts.push(`next=actor_prompt_wait with this lifecycleId`);
     return parts.join(" ");
   }
   return summary;

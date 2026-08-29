@@ -131,6 +131,7 @@ function boundedAtom(value: string, max: number): string {
 export type HostedHandlerOperations = {
   list(): Promise<unknown>;
   resolve(target?: string): Promise<unknown>;
+  health(target?: string): Promise<unknown>;
   message(mode: number, target: string | undefined, text: string): Promise<unknown>;
   control(intent: number, target?: string): Promise<unknown>;
   subscribe(target?: string): Promise<unknown>;
@@ -147,8 +148,8 @@ export function registerHostedHandlers(api: RegistrationAPI, operations: HostedH
   const notify = (ctx: CommandContext, name: string, value: unknown) => ctx.ui.notify(naturalResultSummary(name, value), "info");
   api.registerCommand("actor-list", { description: "List authorized logical actors", handler: async (_args, ctx) => notify(ctx, "actor_list", await operations.list()) });
   api.registerCommand("actor-resolve", { description: "Resolve a logical actor; omitted target means self", handler: async (args, ctx) => notify(ctx, "actor_resolve", await operations.resolve(args)) });
-  api.registerCommand("actor-send", { description: "Tell a logical actor: [target] -- message; omitted target means self", handler: async (args, _ctx) => { const [target, text] = parseTargetMessage(args); await operations.message(1, target, text); } });
-  api.registerCommand("actor-ask", { description: "Ask a logical actor: [target] -- message; omitted target means self", handler: async (args, _ctx) => { const [target, text] = parseTargetMessage(args); await operations.message(2, target, text); } });
+  api.registerCommand("actor-health", { description: "Ping a logical actor; omitted target means self", handler: async (args, ctx) => notify(ctx, "actor_health", await operations.health(args)) });
+  api.registerCommand("actor-tell", { description: "Tell a logical actor asynchronously: [target] -- message; omitted target means self", handler: async (args, ctx) => { const [target, text] = parseTargetMessage(args); notify(ctx, "actor_tell", await operations.message(2, target, text)); } });
   api.registerCommand("actor-abort", { description: "Abort a hosted actor using control_abort", handler: async (args, ctx) => notify(ctx, "actor_abort", await operations.control(1, args)) });
   api.registerCommand("actor-shutdown", { description: "Shutdown a hosted actor using control_shutdown", handler: async (args, ctx) => notify(ctx, "actor_shutdown", await operations.control(2, args)) });
   api.registerCommand("actor-subscribe", { description: "Subscribe to actor events", handler: async (args, ctx) => notify(ctx, "actor_subscribe", await operations.subscribe(args)) });
@@ -156,8 +157,8 @@ export function registerHostedHandlers(api: RegistrationAPI, operations: HostedH
   const tool = (name: string, description: string, parameters: unknown, execute: (params: any) => Promise<unknown>) => api.registerTool({ name, label: name, description, parameters, async execute(_id, params) { const result = await execute(params); return { content: [{ type: "text", text: modelResultContent(name, result) }], details: result }; }, renderCall(args, theme, context) { return renderToolCall(name, args, theme); }, renderResult(result, options, theme, context) { return renderToolResult(name, result, options, theme); } });
   tool("actor_list", "List authorized logical actors", schemas.empty, async () => operations.list());
   tool("actor_resolve", "Resolve a logical actor", schemas.modelTarget, async (params) => operations.resolve(requireExplicitModelTarget(params.target)));
-  tool("actor_send", "Tell a logical actor", schemas.message, async (params) => operations.message(1, requireExplicitModelTarget(params.target), params.message));
-  tool("actor_ask", "Ask a logical actor", schemas.message, async (params) => operations.message(2, requireExplicitModelTarget(params.target), params.message));
+  tool("actor_health", "Ping actor reachability and details", schemas.modelTarget, async (params) => operations.health(requireExplicitModelTarget(params.target)));
+  tool("actor_tell", "Tell a logical actor asynchronously", schemas.message, async (params) => operations.message(2, requireExplicitModelTarget(params.target), params.message));
   tool("actor_abort", "Abort a hosted actor", schemas.modelTarget, async (params) => operations.control(1, requireExplicitModelTarget(params.target)));
   tool("actor_shutdown", "Shutdown a hosted actor", schemas.modelTarget, async (params) => operations.control(2, requireExplicitModelTarget(params.target)));
   tool("actor_subscribe", "Subscribe to bounded events", schemas.modelTarget, async (params) => operations.subscribe(requireExplicitModelTarget(params.target)));
