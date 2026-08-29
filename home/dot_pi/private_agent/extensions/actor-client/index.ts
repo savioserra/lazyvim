@@ -19,7 +19,8 @@ type Fence = { handle: string; fence: bigint };
 type CredentialFile = { credential_b64: string };
 type CommunicationEntry = { key: string; line?: string; view?: CommunicationView };
 type ActorAskPendingEntry = { key: string; requestId: string; dedupeId: string; chainId: string; sourceMutationSequence: string; source?: string; target?: string; kind: string; prompt: string; targetPeer?: PeerMetadata };
-export type ActorAskCompletionMessage = { key: string; requestId: string; dedupeId: string; chainId: string; sourceMutationSequence: string; source?: string; target?: string; kind: string; terminal: "replied" | "failed"; nextAction: string; prompt: string; answer: string; reason?: string; communicationView: CommunicationView };
+export type ActorAskCompletionMessage = { key: string; requestId: string; dedupeId: string; chainId: string; sourceMutationSequence: string; source?: string; target?: string; sourcePeer?: PeerMetadata; targetPeer?: PeerMetadata; kind: string; terminal: "replied" | "failed"; nextAction: string; prompt: string; answer: string; reason?: string; communicationView: CommunicationView };
+type ConversationPi = Pick<ExtensionAPI, "appendEntry" | "sendMessage">;
 type PeerMetadata = { stableId?: string; displayName: string; role?: string; authoritative: boolean };
 export type ActorRosterItem = { agentId: string; displayName: string; role?: string; lifecycle: string; revision: bigint };
 export type ActorClientRosterState = { connection: "disconnected" | "connecting" | "connected"; epoch: bigint; sequence: bigint; agents: Map<string, ActorRosterItem>; overflow: number; render: string };
@@ -51,8 +52,8 @@ function rosterItemFromFrame(frame: any): ActorRosterItem | undefined { const ag
 function rosterLifecycle(status: unknown, agent: any): string { const value = sanitizeStatusText(status, 24); if (value) return `[redacted] ${value}`; const state = Number(agent?.hostedPiRuntime?.state ?? 0); const names: Record<number, string> = { 1: "inactive", 2: "starting", 3: "ready", 4: "degraded", 5: "stopping", 6: "stopped" }; return `[redacted] ${names[state] ?? "registered"}`; }
 function sanitizeStatusText(value: unknown, max: number): string | undefined { if (typeof value !== "string") return undefined; const clean = value.replace(/[\0\r\n\t\u001b\u202a-\u202e\u2066-\u2069]/g, " ").replace(/[^\p{L}\p{N} .:_+\-\[\]]/gu, " ").replace(/\s+/g, " ").trim(); return clean ? clean.slice(0, max) : undefined; }
 export function actorAskCompletionContent(details: ActorAskCompletionMessage): string {
-  const lines = [`Actor Ask ${details.terminal}: ${details.source || "client"} -> ${details.target || "actor"} (${details.kind})`, `requestId=${details.requestId}`, `dedupeId=${details.dedupeId}`, `chainId=${details.chainId}`, `sourceMutationSequence=${details.sourceMutationSequence}`, `source=${details.source || ""}`, `target=${details.target || ""}`, `kind=${details.kind}`, `terminal=${details.terminal}`, `nextAction=${details.nextAction}`, "prompt:", details.prompt, "answer:", details.answer];
-  if (details.reason) lines.splice(10, 0, `reason=${details.reason}`);
+  const lines = [`Actor Ask ${details.terminal}: ${details.source || "client"} -> ${details.target || "actor"} (${details.kind})`, `requestId=${details.requestId}`, `dedupeId=${details.dedupeId}`, `chainId=${details.chainId}`, `sourceMutationSequence=${details.sourceMutationSequence}`, `source=${details.source || ""}`, `sourceStableId=${details.sourcePeer?.stableId || ""}`, `sourceRole=${details.sourcePeer?.role || ""}`, `sourceAuthoritative=${details.sourcePeer?.authoritative === true}`, `target=${details.target || ""}`, `targetStableId=${details.targetPeer?.stableId || ""}`, `targetRole=${details.targetPeer?.role || ""}`, `targetAuthoritative=${details.targetPeer?.authoritative === true}`, `kind=${details.kind}`, `terminal=${details.terminal}`, `nextAction=${details.nextAction}`, "prompt:", details.prompt, "answer:", details.answer];
+  if (details.reason) lines.splice(16, 0, `reason=${details.reason}`);
   return lines.join("\n");
 }
 
@@ -60,9 +61,9 @@ export class ActorClientConversationLog {
   private readonly seenEntries = new Set<string>();
   private readonly pending = new Map<string, ActorAskPendingEntry>();
   private readonly terminal = new Set<string>();
-  private readonly pi: { appendEntry<T>(customType: string, data: T): void; sendMessage?(message: { customType: string; content: string; display?: boolean; details?: unknown }, options?: { deliverAs?: "steer" | "followUp" | "nextTurn"; triggerTurn?: boolean }): void | Promise<void> };
+  private readonly pi: ConversationPi;
   private readonly setPendingStatus?: (count: number) => void;
-  constructor(pi: { appendEntry<T>(customType: string, data: T): void; sendMessage?(message: { customType: string; content: string; display?: boolean; details?: unknown }, options?: { deliverAs?: "steer" | "followUp" | "nextTurn"; triggerTurn?: boolean }): void | Promise<void> }, setPendingStatus?: (count: number) => void) { this.pi = pi; this.setPendingStatus = setPendingStatus; }
+  constructor(pi: ConversationPi, setPendingStatus?: (count: number) => void) { this.pi = pi; this.setPendingStatus = setPendingStatus; }
   restore(entries: Array<{ type?: string; customType?: string; data?: Partial<ActorAskPendingEntry | ActorAskCompletionMessage>; content?: string; details?: Partial<ActorAskCompletionMessage> }>) {
     for (const entry of entries) {
       const data = (entry.data ?? entry.details) as Partial<ActorAskPendingEntry | ActorAskCompletionMessage> | undefined;
@@ -99,6 +100,8 @@ export class ActorClientConversationLog {
       sourceMutationSequence: entry.sourceMutationSequence ?? pending?.sourceMutationSequence ?? "",
       source: entry.source?.displayName ?? pending?.source,
       target: entry.target?.displayName ?? pending?.target,
+      sourcePeer: entry.source,
+      targetPeer: entry.target ?? pending?.targetPeer,
       kind: entry.kind ?? pending?.kind ?? "Ask",
       terminal,
       nextAction: entry.completed ? "continue with the returned answer" : "retry or choose another actor if needed",
@@ -108,8 +111,8 @@ export class ActorClientConversationLog {
       communicationView: view,
     };
     const content = actorAskCompletionContent(details);
-    await this.pi.sendMessage?.({ customType: "actor-client-ask-completion", content, display: true, details }, { deliverAs: "followUp", triggerTurn: true });
     this.terminal.add(entry.key); this.seenEntries.add(entry.key); this.pending.delete(entry.key); this.updateStatus();
+    await this.pi.sendMessage({ customType: "actor-client-ask-completion", content, display: true, details }, { deliverAs: "followUp", triggerTurn: true });
     return true;
   }
   private updateStatus() { this.setPendingStatus?.(this.pending.size); }

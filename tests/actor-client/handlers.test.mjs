@@ -46,18 +46,27 @@ test("actor ask reply sends one model-visible custom message and clears pending"
   assert.match(messages[0].message.content, /chainId=chain-1/);
   assert.match(messages[0].message.content, /sourceMutationSequence=7/);
   assert.match(messages[0].message.content, /source=Project Manager/);
+  assert.match(messages[0].message.content, /sourceAuthoritative=true/);
   assert.match(messages[0].message.content, /target=Reviewer/);
+  assert.match(messages[0].message.content, /targetAuthoritative=true/);
   assert.match(messages[0].message.content, /kind=Ask/);
   assert.match(messages[0].message.content, /terminal=replied/);
   assert.match(messages[0].message.content, /nextAction=continue/);
   assert.match(messages[0].message.content, /complete answer\nwith all details/);
   assert.equal(messages[0].message.details.answer, "complete answer\nwith all details");
+  assert.deepEqual(messages[0].message.details.sourcePeer, { displayName: "Project Manager", authoritative: true });
+  assert.deepEqual(messages[0].message.details.targetPeer, { displayName: "Reviewer", authoritative: true });
   assert.equal(actorAskCompletionContent(messages[0].message.details), messages[0].message.content);
   assert.equal(messages[0].message.details.communicationView.state, "replied");
   assert.deepEqual(statuses, [1, 0]);
 });
 
-test("actor ask completion dedupes replay restored from custom messages", async () => {
+test("actor ask completion dedupes concurrent pushes and replay restored from custom messages", async () => {
+  const concurrent=[];
+  const delayed = new ActorClientConversationLog({ appendEntry: () => {}, sendMessage: async (message) => { concurrent.push(message); await new Promise((resolve) => setTimeout(resolve, 10)); } });
+  await Promise.all([delayed.complete({ key: "actor-client:request-race", reply: "first", completed: true }), delayed.complete({ key: "actor-client:request-race", reply: "second", completed: true })]);
+  assert.equal(concurrent.length, 1);
+  assert.equal(concurrent[0].details.answer, "first");
   const messages=[],statuses=[];
   const log = new ActorClientConversationLog({ appendEntry: () => {}, sendMessage: (message) => messages.push(message) }, (count) => statuses.push(count));
   log.restore([{ type: "custom", customType: "actor-client-ask-pending", data: { key: "actor-client:request-2", requestId: "request-2", dedupeId: "dedupe-2", chainId: "chain-2", sourceMutationSequence: "8", prompt: "question", kind: "Ask" } }, { type: "custom", customType: "actor-client-ask-completion", details: { key: "actor-client:request-2" } }]);
