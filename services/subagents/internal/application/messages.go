@@ -214,8 +214,9 @@ type HostedPiRuntime interface {
 
 type StartHostedPiRuntime struct{ Timeout time.Duration }
 type StopHostedPiRuntime struct {
-	Reason  string
-	Timeout time.Duration
+	Reason   string
+	Timeout  time.Duration
+	Accepted chan<- OperationResult
 }
 type HostedPiRuntimeStarted struct {
 	Process HostedPiOwnedProcess
@@ -225,6 +226,8 @@ type HostedPiRuntimeStarted struct {
 type HostedPiRuntimeExited struct{ Err error }
 type HostedPiRuntimeStoppedResult struct{ Err error }
 type HostedPiRuntimeStatus struct{}
+type HostedPiRuntimeFailureStatus struct{}
+type HostedPiRuntimeFailure struct{ Reason string }
 type BindHostedPiRuntimeActor struct{ PID *actor.PID }
 type RebindHostedPiRuntimeOwner struct{ PID *actor.PID }
 type HostedPiRuntimeStateChanged struct {

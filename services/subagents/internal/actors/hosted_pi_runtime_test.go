@@ -39,6 +39,21 @@ type hangingStopProcess struct{ *fakeHostedProcess }
 
 func (p *hangingStopProcess) Stop(ctx context.Context) error { <-ctx.Done(); return ctx.Err() }
 
+type gatedStopProcess struct {
+	*fakeHostedProcess
+	release chan struct{}
+}
+
+func (p *gatedStopProcess) Stop(ctx context.Context) error {
+	select {
+	case <-p.release:
+		p.exited <- nil
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
 type fakeHostedRuntime struct {
 	process application.HostedPiOwnedProcess
 	err     error
@@ -111,6 +126,45 @@ func TestHostedPiRuntimeActorRunsEffectsAsTypedCompletionsAndReportsDeath(t *tes
 		t.Fatal(err)
 	}
 	owner.ExpectTerminatedWithin(pid.Name(), time.Second)
+}
+
+func TestHostedPiRuntimeActorRejectsReadinessRevivalDuringStop(t *testing.T) {
+	ctx := context.Background()
+	kit := testkit.New(ctx, t)
+	t.Cleanup(func() { kit.Shutdown(ctx) })
+	owner := kit.NewProbe(ctx)
+	base := &fakeHostedProcess{binding: application.HostedPiRuntimeBinding{RuntimeID: "stop-fence", Incarnation: 1}, exited: make(chan error, 1), stopped: make(chan struct{})}
+	process := &gatedStopProcess{fakeHostedProcess: base, release: make(chan struct{})}
+	kit.Spawn(ctx, "hosted-runtime-stop-fence", actors.NewHostedPiRuntimeActor(&fakeHostedRuntime{process: process}, application.HostedPiLaunchSpec{AgentID: "stop-fence", RuntimeID: "stop-fence", Incarnation: 1}, owner.PID()))
+	pid, _ := kit.ActorSystem().ActorOf(ctx, "hosted-runtime-stop-fence")
+	owner.Send(pid.Name(), &application.StartHostedPiRuntime{})
+	owner.ExpectAnyMessage()
+	owner.ExpectAnyMessage()
+	owner.Send(pid.Name(), &application.HostedPiBridgeReadiness{Ready: true})
+	owner.ExpectAnyMessage()
+	accepted := make(chan application.OperationResult, 1)
+	owner.Send(pid.Name(), &application.StopHostedPiRuntime{Reason: "test", Accepted: accepted})
+	stopping := owner.ExpectAnyMessage().(*application.HostedPiRuntimeStateChanged)
+	if stopping.Binding.State != application.HostedPiRuntimeStopping {
+		t.Fatalf("runtime did not enter stopping: %#v", stopping)
+	}
+	if result := <-accepted; !result.Completed {
+		t.Fatalf("stop was not admitted: %#v", result)
+	}
+	owner.Send(pid.Name(), &application.HostedPiBridgeReadiness{Ready: true})
+	value, err := kit.ActorSystem().NoSender().Ask(ctx, pid, &application.HostedPiRuntimeStatus{}, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	status := value.(*application.HostedPiRuntimeBinding)
+	if status.State != application.HostedPiRuntimeStopping || status.BridgeReady {
+		t.Fatalf("readiness revived stopping runtime: %#v", status)
+	}
+	close(process.release)
+	stopped := owner.ExpectAnyMessage().(*application.HostedPiRuntimeStateChanged)
+	if stopped.Binding.State != application.HostedPiRuntimeStopped {
+		t.Fatalf("runtime did not finish exact stop: %#v", stopped)
+	}
 }
 
 func TestHostedPiRuntimeActorTreatsUnrequestedLossAsDegraded(t *testing.T) {

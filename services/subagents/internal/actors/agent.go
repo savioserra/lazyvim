@@ -138,6 +138,7 @@ type AgentActor struct {
 
 	registryPID           *actor.PID
 	runtimePID            *actor.PID
+	runtimeFailure        string
 	bridgeSession         string
 	bridgeGeneration      string
 	bridgePrincipal       string
@@ -273,6 +274,7 @@ func (a *AgentActor) Receive(ctx *actor.ReceiveContext) {
 	case *actor.Terminated:
 		if a.runtimePID != nil && message.ActorPath().Name() == a.runtimePID.Name() {
 			a.runtimePID = nil
+			a.runtimeFailure = "hosted runtime actor terminated"
 			a.hostedPiRuntime.State = application.HostedPiRuntimeDegraded
 			a.hostedPiRuntime.BridgeReady = false
 			a.revision++
@@ -289,6 +291,8 @@ func (a *AgentActor) Receive(ctx *actor.ReceiveContext) {
 	case *application.HostedPiRuntimeStatus:
 		copy := a.hostedPiRuntime
 		ctx.Response(&copy)
+	case *application.HostedPiRuntimeFailureStatus:
+		ctx.Response(&application.HostedPiRuntimeFailure{Reason: a.runtimeFailure})
 	case *application.StartHostedPiRuntime:
 		if a.runtimePID != nil {
 			_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), a.runtimePID, message)
@@ -297,9 +301,11 @@ func (a *AgentActor) Receive(ctx *actor.ReceiveContext) {
 		if a.runtimePID != nil {
 			_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), a.runtimePID, message)
 		} else {
+			a.runtimeFailure = "hosted runtime actor unavailable during stop"
 			a.hostedPiRuntime.State = application.HostedPiRuntimeDegraded
 			a.hostedPiRuntime.BridgeReady = false
 			a.revision++
+			respondOperation(ctx, message.Accepted, &application.OperationResult{Reason: a.runtimeFailure})
 		}
 	case *application.HostedPiBridgeReadiness:
 		if a.runtimePID != nil {
@@ -317,6 +323,11 @@ func (a *AgentActor) Receive(ctx *actor.ReceiveContext) {
 			binding.Role = a.hostedPiRuntime.Role
 		}
 		a.hostedPiRuntime = binding
+		if message.Reason != "" {
+			a.runtimeFailure = message.Reason
+		} else if binding.State != application.HostedPiRuntimeDegraded {
+			a.runtimeFailure = ""
+		}
 		if a.durableRecord != nil {
 			a.durableRecord.Binding = binding
 		}

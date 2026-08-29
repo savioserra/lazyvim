@@ -744,7 +744,7 @@ func (s *Service) attemptRegistrationCleanup(ctx context.Context, operationID st
 	}
 	defer cleanup.mu.Unlock()
 	if !cleanup.runtimeStopped && cleanup.runtimePID != nil {
-		if err := s.system.NoSender().Tell(ctx, cleanup.runtimePID, &application.StopHostedPiRuntime{Reason: "registration timeout compensation", Timeout: boundedRemaining(ctx, 10*time.Second)}); err != nil {
+		if err := s.requestHostedRuntimeStop(ctx, cleanup.runtimePID, "registration timeout compensation", boundedRemaining(ctx, 10*time.Second)); err != nil {
 			cleanup.lastErr = err
 			return err
 		}
@@ -966,6 +966,27 @@ func (s *Service) Stop(ctx context.Context) error {
 	return s.stopResult
 }
 
+func (s *Service) requestHostedRuntimeStop(ctx context.Context, pid *actor.PID, reason string, timeout time.Duration) error {
+	accepted := make(chan application.OperationResult, 1)
+	if err := s.system.NoSender().Tell(ctx, pid, &application.StopHostedPiRuntime{Reason: reason, Timeout: timeout, Accepted: accepted}); err != nil {
+		return err
+	}
+	select {
+	case result := <-accepted:
+		if !result.Completed {
+			if result.Reason == "" {
+				result.Reason = "hosted runtime stop was not admitted"
+			}
+			return errors.New(result.Reason)
+		}
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(min(requestTimeout, timeout)):
+		return errors.New("hosted runtime stop admission timed out")
+	}
+}
+
 func (s *Service) quiesceHostedRuntimes(ctx context.Context) error {
 	s.hostedMu.Lock()
 	runtimes := make(map[string]*actor.PID, len(s.hostedRuntimes))
@@ -1021,7 +1042,7 @@ func (s *Service) stopHostedRuntimes(ctx context.Context, only map[string]struct
 	}
 	s.hostedMu.Unlock()
 	for _, pid := range runtimes {
-		if err := s.system.NoSender().Tell(ctx, pid, &application.StopHostedPiRuntime{Reason: "daemon shutdown", Timeout: boundedRemaining(ctx, 5*time.Second)}); err != nil {
+		if err := s.requestHostedRuntimeStop(ctx, pid, "daemon shutdown", boundedRemaining(ctx, 5*time.Second)); err != nil {
 			return err
 		}
 	}
@@ -2842,7 +2863,7 @@ func (s *Service) stopHostedAgent(ctx context.Context, agentID string) (applicat
 	s.hostedMu.Lock()
 	s.hostedRuntimes[agentID] = pid
 	s.hostedMu.Unlock()
-	if err := s.system.NoSender().Tell(ctx, pid, &application.StopHostedPiRuntime{Reason: "authenticated admin stop", Timeout: boundedRemaining(ctx, 5*time.Second)}); err != nil {
+	if err := s.requestHostedRuntimeStop(ctx, pid, "authenticated admin stop", boundedRemaining(ctx, 5*time.Second)); err != nil {
 		return application.HostedPiRuntimeBinding{}, err
 	}
 	for {
@@ -2863,7 +2884,13 @@ func (s *Service) stopHostedAgent(ctx context.Context, agentID string) (applicat
 			return binding, nil
 		}
 		if binding.State == application.HostedPiRuntimeDegraded {
-			return binding, errors.New("hosted runtime cleanup degraded")
+			reason := "hosted runtime cleanup degraded"
+			if value, failureErr := s.system.NoSender().Ask(ctx, pid, &application.HostedPiRuntimeFailureStatus{}, min(requestTimeout, boundedRemaining(ctx, requestTimeout))); failureErr == nil {
+				if failure, ok := value.(*application.HostedPiRuntimeFailure); ok && failure.Reason != "" {
+					reason += ": " + failure.Reason
+				}
+			}
+			return binding, errors.New(reason)
 		}
 		select {
 		case <-ctx.Done():
@@ -2876,7 +2903,7 @@ func (s *Service) stopHostedAgent(ctx context.Context, agentID string) (applicat
 func (s *Service) rollbackHostedRegistration(ctx context.Context, agentID string, pid *actor.PID, metadata hostedRegistration) error {
 	terminal := application.HostedPiRuntimeBinding{State: application.HostedPiRuntimeStopped}
 	if pid != nil {
-		_ = s.system.NoSender().Tell(ctx, pid, &application.StopHostedPiRuntime{Reason: "hosted start rollback", Timeout: boundedRemaining(ctx, 5*time.Second)})
+		_ = s.requestHostedRuntimeStop(ctx, pid, "hosted start rollback", boundedRemaining(ctx, 5*time.Second))
 	}
 	for pid != nil {
 		value, err := s.system.NoSender().Ask(ctx, pid, &application.HostedPiRuntimeStatus{}, min(requestTimeout, boundedRemaining(ctx, requestTimeout)))

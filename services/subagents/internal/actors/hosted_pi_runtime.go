@@ -24,6 +24,7 @@ type HostedPiRuntimeActor struct {
 	stopSucceeded bool
 	startCancel   context.CancelFunc
 	adoptObserved bool
+	lastFailure   string
 }
 
 func NewHostedPiRuntimeActor(runtime application.HostedPiRuntime, spec application.HostedPiLaunchSpec, owner *actor.PID, adopted ...application.HostedPiOwnedProcess) *HostedPiRuntimeActor {
@@ -63,6 +64,10 @@ func (a *HostedPiRuntimeActor) Receive(ctx *actor.ReceiveContext) {
 	case *application.HostedPiRuntimeStoppedResult:
 		a.stopped(ctx, message)
 	case *application.HostedPiBridgeReadiness:
+		if a.binding.State == application.HostedPiRuntimeStopping || a.binding.State == application.HostedPiRuntimeStopped {
+			a.binding.BridgeReady = false
+			return
+		}
 		a.binding.BridgeReady = message.Ready
 		if message.Ready && a.process != nil {
 			a.binding.State = application.HostedPiRuntimeReady
@@ -73,6 +78,8 @@ func (a *HostedPiRuntimeActor) Receive(ctx *actor.ReceiveContext) {
 	case *application.HostedPiRuntimeStatus:
 		copy := a.binding
 		ctx.Response(&copy)
+	case *application.HostedPiRuntimeFailureStatus:
+		ctx.Response(&application.HostedPiRuntimeFailure{Reason: a.lastFailure})
 	default:
 		ctx.Unhandled()
 	}
@@ -129,10 +136,12 @@ func (a *HostedPiRuntimeActor) started(ctx *actor.ReceiveContext, message *appli
 		}
 		a.binding.State = application.HostedPiRuntimeDegraded
 		a.binding.OwnershipIndeterminate = errors.Is(message.Err, application.ErrHostedOwnershipIndeterminate)
+		a.lastFailure = boundedRuntimeFailure(message.Err)
 		a.changed(ctx, "runtime start failed")
 		return
 	}
 	a.process = message.Process
+	a.lastFailure = ""
 	ready := a.binding.BridgeReady
 	a.binding = message.Binding
 	a.binding.RuntimeID, a.binding.Incarnation = a.spec.RuntimeID, a.spec.Incarnation
@@ -154,7 +163,7 @@ func (a *HostedPiRuntimeActor) started(ctx *actor.ReceiveContext, message *appli
 	}()
 }
 
-func (a *HostedPiRuntimeActor) exited(ctx *actor.ReceiveContext, _ *application.HostedPiRuntimeExited) {
+func (a *HostedPiRuntimeActor) exited(ctx *actor.ReceiveContext, message *application.HostedPiRuntimeExited) {
 	if a.process == nil && !a.exitObserved {
 		return
 	}
@@ -172,6 +181,7 @@ func (a *HostedPiRuntimeActor) exited(ctx *actor.ReceiveContext, _ *application.
 		return
 	}
 	a.busy = false
+	a.lastFailure = boundedRuntimeFailure(message.Err)
 	a.binding.State = application.HostedPiRuntimeDegraded
 	a.changed(ctx, "runtime lost unexpectedly")
 }
@@ -184,18 +194,23 @@ func (a *HostedPiRuntimeActor) stop(ctx *actor.ReceiveContext, message *applicat
 		}
 		a.binding.State = application.HostedPiRuntimeStopping
 		a.changed(ctx, "")
+		respondOperation(ctx, message.Accepted, &application.OperationResult{Completed: true})
 		return
 	}
 	if a.process == nil {
 		if a.binding.State != application.HostedPiRuntimeDegraded {
 			a.binding.State = application.HostedPiRuntimeStopped
 			a.changed(ctx, "")
+			respondOperation(ctx, message.Accepted, &application.OperationResult{Completed: true})
+		} else {
+			respondOperation(ctx, message.Accepted, &application.OperationResult{Reason: a.lastFailure})
 		}
 		return
 	}
 	a.busy = true
 	a.binding.State = application.HostedPiRuntimeStopping
 	a.changed(ctx, "")
+	respondOperation(ctx, message.Accepted, &application.OperationResult{Completed: true})
 	system, self, process := ctx.ActorSystem(), ctx.Self(), a.process
 	timeout := message.Timeout
 	if timeout <= 0 || timeout > 10*time.Second {
@@ -212,17 +227,30 @@ func (a *HostedPiRuntimeActor) stop(ctx *actor.ReceiveContext, message *applicat
 func (a *HostedPiRuntimeActor) stopped(ctx *actor.ReceiveContext, message *application.HostedPiRuntimeStoppedResult) {
 	a.busy = false
 	if message.Err != nil {
+		a.lastFailure = boundedRuntimeFailure(message.Err)
 		a.cleanupFailed = true
 		a.binding.State = application.HostedPiRuntimeDegraded
 		a.changed(ctx, "runtime cleanup failed")
 		return
 	}
 	a.stopSucceeded = true
+	a.lastFailure = ""
 	if a.exitObserved {
 		a.binding.State = application.HostedPiRuntimeStopped
 		a.binding.BridgeReady = false
 		a.changed(ctx, "")
 	}
+}
+
+func boundedRuntimeFailure(err error) string {
+	if err == nil {
+		return "runtime process exited without an error"
+	}
+	value := err.Error()
+	if len(value) > 240 {
+		value = value[:240]
+	}
+	return value
 }
 
 func (a *HostedPiRuntimeActor) changed(ctx *actor.ReceiveContext, reason string) {
