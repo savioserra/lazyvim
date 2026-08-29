@@ -18,6 +18,8 @@ type Session = { sessionId: string; generationId: string; caller: string; creden
 type Fence = { handle: string; fence: bigint };
 type CredentialFile = { credential_b64: string };
 type CommunicationEntry = { key: string; line?: string; view?: CommunicationView };
+type ActorAskPendingEntry = { key: string; requestId: string; dedupeId: string; chainId: string; sourceMutationSequence: string; source?: string; target?: string; kind: string; prompt: string; targetPeer?: PeerMetadata };
+export type ActorAskCompletionMessage = { key: string; requestId: string; dedupeId: string; chainId: string; sourceMutationSequence: string; source?: string; target?: string; kind: string; terminal: "replied" | "failed"; nextAction: string; prompt: string; answer: string; reason?: string; communicationView: CommunicationView };
 type PeerMetadata = { stableId?: string; displayName: string; role?: string; authoritative: boolean };
 export type ActorRosterItem = { agentId: string; displayName: string; role?: string; lifecycle: string; revision: bigint };
 export type ActorClientRosterState = { connection: "disconnected" | "connecting" | "connected"; epoch: bigint; sequence: bigint; agents: Map<string, ActorRosterItem>; overflow: number; render: string };
@@ -48,26 +50,69 @@ export function renderActorClientStatus(state: ActorClientRosterState, max = 120
 function rosterItemFromFrame(frame: any): ActorRosterItem | undefined { const agent = frame.agent ?? {}; const agentId = sanitizeStatusText(frame.agentId || agent.agentId, 64); if (!agentId) return undefined; const displayName = sanitizeStatusText(agent.displayName || agent.hostedPiRuntime?.displayName || agentId, 32) ?? agentId; const role = sanitizeStatusText(agent.role || agent.hostedPiRuntime?.role, 24); return { agentId, displayName, role, lifecycle: rosterLifecycle(frame.status, agent), revision: BigInt(agent.lifecycleRevision ?? 0) }; }
 function rosterLifecycle(status: unknown, agent: any): string { const value = sanitizeStatusText(status, 24); if (value) return `[redacted] ${value}`; const state = Number(agent?.hostedPiRuntime?.state ?? 0); const names: Record<number, string> = { 1: "inactive", 2: "starting", 3: "ready", 4: "degraded", 5: "stopping", 6: "stopped" }; return `[redacted] ${names[state] ?? "registered"}`; }
 function sanitizeStatusText(value: unknown, max: number): string | undefined { if (typeof value !== "string") return undefined; const clean = value.replace(/[\0\r\n\t\u001b\u202a-\u202e\u2066-\u2069]/g, " ").replace(/[^\p{L}\p{N} .:_+\-\[\]]/gu, " ").replace(/\s+/g, " ").trim(); return clean ? clean.slice(0, max) : undefined; }
+export function actorAskCompletionContent(details: ActorAskCompletionMessage): string {
+  const lines = [`Actor Ask ${details.terminal}: ${details.source || "client"} -> ${details.target || "actor"} (${details.kind})`, `requestId=${details.requestId}`, `dedupeId=${details.dedupeId}`, `chainId=${details.chainId}`, `sourceMutationSequence=${details.sourceMutationSequence}`, `source=${details.source || ""}`, `target=${details.target || ""}`, `kind=${details.kind}`, `terminal=${details.terminal}`, `nextAction=${details.nextAction}`, "prompt:", details.prompt, "answer:", details.answer];
+  if (details.reason) lines.splice(10, 0, `reason=${details.reason}`);
+  return lines.join("\n");
+}
 
 export class ActorClientConversationLog {
-  private readonly seen = new Set<string>();
-  private readonly views = new Map<string, CommunicationView>();
-  private readonly pi: { appendEntry<T>(customType: string, data: T): void };
-  constructor(pi: { appendEntry<T>(customType: string, data: T): void }) { this.pi = pi; }
-  restore(entries: Array<{ type?: string; customType?: string; data?: Partial<CommunicationEntry> }>) {
-    for (const entry of entries) if (entry.type === "custom" && entry.customType === "actor-client-communication" && typeof entry.data?.key === "string") { this.seen.add(entry.data.key); if (entry.data.view) this.views.set(entry.data.key, entry.data.view); }
+  private readonly seenEntries = new Set<string>();
+  private readonly pending = new Map<string, ActorAskPendingEntry>();
+  private readonly terminal = new Set<string>();
+  private readonly pi: { appendEntry<T>(customType: string, data: T): void; sendMessage?(message: { customType: string; content: string; display?: boolean; details?: unknown }, options?: { deliverAs?: "steer" | "followUp" | "nextTurn"; triggerTurn?: boolean }): void | Promise<void> };
+  private readonly setPendingStatus?: (count: number) => void;
+  constructor(pi: { appendEntry<T>(customType: string, data: T): void; sendMessage?(message: { customType: string; content: string; display?: boolean; details?: unknown }, options?: { deliverAs?: "steer" | "followUp" | "nextTurn"; triggerTurn?: boolean }): void | Promise<void> }, setPendingStatus?: (count: number) => void) { this.pi = pi; this.setPendingStatus = setPendingStatus; }
+  restore(entries: Array<{ type?: string; customType?: string; data?: Partial<ActorAskPendingEntry | ActorAskCompletionMessage>; content?: string; details?: Partial<ActorAskCompletionMessage> }>) {
+    for (const entry of entries) {
+      const data = (entry.data ?? entry.details) as Partial<ActorAskPendingEntry | ActorAskCompletionMessage> | undefined;
+      if (entry.type === "custom" && entry.customType === "actor-client-communication" && typeof data?.key === "string") this.seenEntries.add(data.key);
+      if (entry.type === "custom" && entry.customType === "actor-client-ask-pending" && typeof data?.key === "string" && !this.terminal.has(data.key)) this.pending.set(data.key, data as ActorAskPendingEntry);
+      if (entry.type === "custom" && entry.customType === "actor-client-ask-completion" && typeof data?.key === "string") { this.terminal.add(data.key); this.pending.delete(data.key); this.seenEntries.add(data.key); }
+    }
+    this.updateStatus();
   }
   append(view: CommunicationView): boolean {
-    if (this.seen.has(view.key)) return false;
-    this.seen.add(view.key); this.views.set(view.key, view);
+    if (this.seenEntries.has(view.key) || this.terminal.has(view.key) || this.pending.has(view.key)) return false;
+    this.seenEntries.add(view.key);
     this.pi.appendEntry<CommunicationEntry>("actor-client-communication", { key: view.key, line: legacyCommunicationLine(view), view });
     return true;
   }
-  complete(key: string, reply: string, completed: boolean, reason?: string): boolean {
-    const view = this.views.get(key); if (!view) return false;
-    view.reply = reply; view.state = completed ? "replied" : "failed"; if (!completed && reason) view.body = reason;
+  recordAskPending(entry: ActorAskPendingEntry): boolean {
+    if (this.terminal.has(entry.key) || this.pending.has(entry.key)) return false;
+    this.pending.set(entry.key, entry);
+    this.pi.appendEntry<ActorAskPendingEntry>("actor-client-ask-pending", entry);
+    this.updateStatus();
     return true;
   }
+  async complete(entry: { key: string; reply: string; completed: boolean; reason?: string; source?: PeerMetadata; target?: PeerMetadata; kind?: string; requestId?: string; dedupeId?: string; chainId?: string; sourceMutationSequence?: string }): Promise<boolean> {
+    if (this.terminal.has(entry.key)) return false;
+    const pending = this.pending.get(entry.key);
+    const target = entry.target ?? pending?.targetPeer ?? pending?.target ?? "Unknown actor";
+    const terminal = entry.completed ? "replied" : "failed";
+    const view = outgoingExchange({ key: entry.key, target, body: pending?.prompt ?? `Ask request ${entry.requestId ?? pending?.requestId ?? entry.key}`, reply: entry.reply, accepted: entry.completed, completed: entry.completed, mode: "ask", reason: entry.reason });
+    const details: ActorAskCompletionMessage = {
+      key: entry.key,
+      requestId: entry.requestId ?? pending?.requestId ?? entry.key.replace(/^actor-client:/, ""),
+      dedupeId: entry.dedupeId ?? pending?.dedupeId ?? "",
+      chainId: entry.chainId ?? pending?.chainId ?? "",
+      sourceMutationSequence: entry.sourceMutationSequence ?? pending?.sourceMutationSequence ?? "",
+      source: entry.source?.displayName ?? pending?.source,
+      target: entry.target?.displayName ?? pending?.target,
+      kind: entry.kind ?? pending?.kind ?? "Ask",
+      terminal,
+      nextAction: entry.completed ? "continue with the returned answer" : "retry or choose another actor if needed",
+      prompt: pending?.prompt ?? "",
+      answer: entry.reply,
+      reason: entry.reason,
+      communicationView: view,
+    };
+    const content = actorAskCompletionContent(details);
+    await this.pi.sendMessage?.({ customType: "actor-client-ask-completion", content, display: true, details }, { deliverAs: "followUp", triggerTurn: true });
+    this.terminal.add(entry.key); this.seenEntries.add(entry.key); this.pending.delete(entry.key); this.updateStatus();
+    return true;
+  }
+  private updateStatus() { this.setPendingStatus?.(this.pending.size); }
 }
 
 class Client {
@@ -130,11 +175,13 @@ export default async function wsActorClient(pi: ExtensionAPI) {
   let admin:Client|undefined;let regular:Client|undefined;let session:Session|undefined;let context:ExtensionContext|undefined;
   const fences=new Map<string,Fence>();const peerCache=new Map<string,PeerMetadata>();let sourcePeer:PeerMetadata|undefined;const mutations=new ExactMutationSequencer();let rosterState=initialActorClientRosterState();
   const applyRosterEvent=(event:ActorClientRosterEvent)=>{rosterState=reduceActorClientRoster(rosterState,event);context?.ui.setStatus("actor-client",rosterState.render||undefined);};
-  const handlePush=(envelope:Envelope)=>{if(envelope.payload?.case==="clientAgentRosterFrame")applyRosterEvent({type:"ROSTER_FRAME",frame:envelope.payload.value});if(envelope.payload?.case==="actorMessageReplyFrame"){const value=envelope.payload.value;conversation.complete(`actor-client:${value.originalRequestId||envelope.requestId}`,new TextDecoder().decode(value.boundedResult??new Uint8Array()),!!value.completed,value.reason);}};
+  const setPendingAskStatus=(count:number)=>context?.ui.setStatus("actor-client-asks",count?`actor asks ${count} pending`:undefined);
+  const handlePush=(envelope:Envelope)=>{if(envelope.payload?.case==="clientAgentRosterFrame")applyRosterEvent({type:"ROSTER_FRAME",frame:envelope.payload.value});if(envelope.payload?.case==="actorMessageReplyFrame"){const value=envelope.payload.value;void conversation.complete({key:`actor-client:${value.originalRequestId||envelope.requestId}`,reply:new TextDecoder().decode(value.boundedResult??new Uint8Array()),completed:!!value.completed,reason:value.reason,source:peerFromProto(value.source),target:peerFromProto(value.target),kind:value.kind,requestId:value.originalRequestId||envelope.requestId,dedupeId:value.dedupeId,chainId:value.chainId,sourceMutationSequence:String(value.sourceMutationSequence??"")});}};
   const adminSession:Session={sessionId:"",generationId:"",caller:"client-bootstrap",credential:new Uint8Array()};
 
   pi.registerEntryRenderer<CommunicationEntry>("actor-client-communication", (entry, _options, theme) => entry.data?.view ? renderCommunicationCard(entry.data.view, theme) : { render: () => [entry.data?.line ?? "actor communication unavailable"], invalidate() {} });
-  const conversation = new ActorClientConversationLog(pi);
+  pi.registerMessageRenderer<ActorAskCompletionMessage>("actor-client-ask-completion", (message, _options, theme) => renderCommunicationCard((message.details as ActorAskCompletionMessage | undefined)?.communicationView ?? outgoingExchange({key:"actor-client:unavailable",target:"Unknown actor",body:String(message.content ?? "Actor Ask completed"),accepted:false,completed:false,mode:"ask"}), theme));
+  const conversation = new ActorClientConversationLog(pi, setPendingAskStatus);
 
   const createActor=async(agentId:string,projectDirectory:string,displayName?:string,role?:string,nodeIdentity?:string)=>{
     validateAgentID(agentId);if(nodeIdentity!==undefined){validateNodeIdentity(nodeIdentity);validateRemoteProject(projectDirectory);}else await validateProject(projectDirectory);if(displayName!==undefined)validateDisplayMetadata(displayName,"display name",80);if(role!==undefined)validateDisplayMetadata(role,"role",64);
@@ -156,7 +203,7 @@ export default async function wsActorClient(pi: ExtensionAPI) {
   const unsubscribe=async(agentId:string)=>{const fence=await attach(agentId);const response=await required(regular).request("unsubscribeAgentRequest",UnsubscribeAgentRequestSchema,{agentId},{fence});if(response.payload.case!=="agentOperationResponse")throw new Error("unexpected unsubscribe response");return {completed:response.payload.value.completed,reason:response.payload.value.reason};};
   const control=async(agentId:string,intent:number)=>{validateAgentID(agentId);const fence=await attach(agentId);return mutations.run(mutationScopeKey(fence,0n),(sourceMutationSequence)=>({requestId:randomUUID(),value:{intent,target:agentId,dedupeId:randomUUID(),chainId:randomUUID(),sourceMutationSequence,hopLimit:2}}),async(logical)=>{const response=await required(regular).request("actorControlRequest",ActorControlRequestSchema,logical.value,{fence,requestId:logical.requestId,timeout:NORMAL_TIMEOUT});if(response.payload.case!=="actorMessageResponse")throw new Error("unexpected actor control response");return {accepted:response.payload.value.accepted,completed:response.payload.value.completed,reason:response.payload.value.reason,kind:response.payload.value.kind,requestId:logical.requestId,dedupeId:logical.value.dedupeId,chainId:logical.value.chainId,sourceMutationSequence:String(logical.value.sourceMutationSequence)};},async()=>required(regular).reopen());};
   const send=async(agentId:string,message:string,options:{appendConversation?:boolean}={})=>{validateAgentID(agentId);const text=message.trim();const encoded=new TextEncoder().encode(text);if(!encoded.byteLength||encoded.byteLength>MAX_TEXT)throw new Error("message must be non-empty and at most 16 KiB");const fence=await attach(agentId);return mutations.run(mutationScopeKey(fence,0n),(sourceMutationSequence)=>({requestId:randomUUID(),value:{mode:ActorMessageRequest_Mode.TELL,target:agentId,boundedPayload:encoded,dedupeId:randomUUID(),chainId:randomUUID(),hopLimit:8,sourceMutationSequence}}),async(logical)=>{const started=Date.now();const response=await required(regular).request("actorMessageRequest",ActorMessageRequestSchema,logical.value,{fence,requestId:logical.requestId,timeout:NORMAL_TIMEOUT});if(response.payload.case!=="actorMessageResponse")throw new Error("unexpected actor message response");const value=response.payload.value;const targetPeer=peerFromProto(value.target)??await authoritativePeer(agentId);const protoSource=peerFromProto(value.source);if(protoSource)sourcePeer=protoSource;if(targetPeer.authoritative)cacheAuthoritativePeer(agentId,targetPeer);const view=outgoingExchange({key:`actor-client:${logical.requestId}`,target:targetPeer,body:text,accepted:value.accepted,completed:value.completed,mode:"tell",reason:value.reason,durationMillis:Date.now()-started});if(options.appendConversation!==false)conversation.append(view);return {accepted:value.accepted,completed:value.completed,reason:value.reason,source:protoSource?.displayName,target:targetPeer.authoritative?targetPeer.displayName:undefined,kind:value.kind,requestId:logical.requestId,dedupeId:logical.value.dedupeId,chainId:logical.value.chainId,sourceMutationSequence:String(logical.value.sourceMutationSequence),communicationView:view};},async()=>required(regular).reopen());};
-  const ask=async(agentId:string,prompt:string,options:{appendConversation?:boolean}={})=>{validateAgentID(agentId);const text=prompt.trim();const encoded=new TextEncoder().encode(text);if(!encoded.byteLength||encoded.byteLength>MAX_TEXT)throw new Error("prompt must be non-empty and at most 16 KiB");const fence=await attach(agentId);return mutations.run(mutationScopeKey(fence,0n),(sourceMutationSequence)=>({requestId:randomUUID(),value:{mode:ActorMessageRequest_Mode.ASK,target:agentId,boundedPayload:encoded,dedupeId:randomUUID(),chainId:randomUUID(),hopLimit:8,sourceMutationSequence}}),async(logical)=>{const started=Date.now();const response=await required(regular).request("actorMessageRequest",ActorMessageRequestSchema,logical.value,{fence,requestId:logical.requestId,timeout:NORMAL_TIMEOUT});if(response.payload.case!=="actorMessageResponse")throw new Error("unexpected actor message response");const value=response.payload.value;const targetPeer=peerFromProto(value.target)??await authoritativePeer(agentId);const protoSource=peerFromProto(value.source);if(protoSource)sourcePeer=protoSource;if(targetPeer.authoritative)cacheAuthoritativePeer(agentId,targetPeer);const answer=value.boundedResult?.byteLength?new TextDecoder().decode(value.boundedResult):undefined;const view=outgoingExchange({key:`actor-client:${logical.requestId}`,target:targetPeer,body:text,reply:answer,accepted:value.accepted,completed:value.completed,mode:"ask",reason:value.reason,durationMillis:Date.now()-started});if(options.appendConversation!==false)conversation.append(view);return {accepted:value.accepted,completed:value.completed,awaitingReply:value.accepted&&!value.completed,answer,reason:value.reason,source:protoSource?.displayName,target:targetPeer.authoritative?targetPeer.displayName:undefined,kind:value.kind,requestId:logical.requestId,dedupeId:logical.value.dedupeId,chainId:logical.value.chainId,sourceMutationSequence:String(logical.value.sourceMutationSequence),communicationView:view};},async()=>required(regular).reopen());};
+  const ask=async(agentId:string,prompt:string,options:{appendConversation?:boolean}={})=>{validateAgentID(agentId);const text=prompt.trim();const encoded=new TextEncoder().encode(text);if(!encoded.byteLength||encoded.byteLength>MAX_TEXT)throw new Error("prompt must be non-empty and at most 16 KiB");const fence=await attach(agentId);return mutations.run(mutationScopeKey(fence,0n),(sourceMutationSequence)=>({requestId:randomUUID(),value:{mode:ActorMessageRequest_Mode.ASK,target:agentId,boundedPayload:encoded,dedupeId:randomUUID(),chainId:randomUUID(),hopLimit:8,sourceMutationSequence}}),async(logical)=>{const started=Date.now();const response=await required(regular).request("actorMessageRequest",ActorMessageRequestSchema,logical.value,{fence,requestId:logical.requestId,timeout:NORMAL_TIMEOUT});if(response.payload.case!=="actorMessageResponse")throw new Error("unexpected actor message response");const value=response.payload.value;const targetPeer=peerFromProto(value.target)??await authoritativePeer(agentId);const protoSource=peerFromProto(value.source);if(protoSource)sourcePeer=protoSource;if(targetPeer.authoritative)cacheAuthoritativePeer(agentId,targetPeer);const answer=value.boundedResult?.byteLength?new TextDecoder().decode(value.boundedResult):undefined;const key=`actor-client:${logical.requestId}`;const view=outgoingExchange({key,target:targetPeer,body:text,reply:answer,accepted:value.accepted,completed:value.completed,mode:"ask",reason:value.reason,durationMillis:Date.now()-started});if(options.appendConversation!==false&&value.accepted&&!value.completed)conversation.recordAskPending({key,requestId:logical.requestId,dedupeId:logical.value.dedupeId,chainId:logical.value.chainId,sourceMutationSequence:String(logical.value.sourceMutationSequence),source:protoSource?.displayName,target:targetPeer.authoritative?targetPeer.displayName:undefined,kind:value.kind||"Ask",prompt:text,targetPeer});if(options.appendConversation!==false&&(!value.accepted||value.completed))void conversation.complete({key,reply:answer??"",completed:!!value.completed&&value.accepted,reason:value.reason,source:protoSource,target:targetPeer,kind:value.kind||"Ask",requestId:logical.requestId,dedupeId:logical.value.dedupeId,chainId:logical.value.chainId,sourceMutationSequence:String(logical.value.sourceMutationSequence)});return {accepted:value.accepted,completed:value.completed,awaitingReply:value.accepted&&!value.completed,answer,reason:value.reason,source:protoSource?.displayName,target:targetPeer.authoritative?targetPeer.displayName:undefined,kind:value.kind,requestId:logical.requestId,dedupeId:logical.value.dedupeId,chainId:logical.value.chainId,sourceMutationSequence:String(logical.value.sourceMutationSequence),communicationView:view};},async()=>required(regular).reopen());};
   const attachCommand=async(agentId:string)=>attach(agentId);
   const connectEndpoint=async(target:string)=>{const endpoint=actorEndpointFromTarget(target);if(endpoint)validateActorEndpoint(endpoint);activeEndpoint=endpoint;clientGeneration++;await resetClients(true);return {accepted:true,endpoint:endpoint?publicEndpointLabel(endpoint):"managed-local"};};
   let bootstrap:Promise<void>|undefined;

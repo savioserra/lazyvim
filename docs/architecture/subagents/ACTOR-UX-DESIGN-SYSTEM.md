@@ -99,8 +99,9 @@ Requirements:
 
 Requirements:
 
-- Render the completed question and reply as one coherent exchange card.
-- While awaiting the reply, do not append repeated pending conversation entries.
+- Render the completed question and reply as one coherent exchange card from one `pi.sendMessage()` custom message of type `actor-client-ask-completion`; it participates in model context and uses the registered message renderer for the human card.
+- Store only hidden pending restore markers while awaiting the reply; do not append pending conversation cards.
+- Deduplicate replay by the completion key/request ID restored from persisted custom messages.
 - Use realtime status while pending:
 
 ```text
@@ -108,6 +109,7 @@ Requirements:
 ```
 
 - Clear the pending status when the exchange reaches a terminal state.
+- The custom message content and details retain the full bounded answer plus request ID, dedupe ID, chain ID, source mutation sequence, source, target, kind, terminal state, and next action.
 
 ### 4.5 Failure
 

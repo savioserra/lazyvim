@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { publicAgentView, registerClientHandlers } from "../../home/dot_pi/private_agent/extensions/actor-client/handlers.ts";
-import { ActorClientConversationLog, initialActorClientRosterState, reduceActorClientRoster, validateRemoteProject } from "../../home/dot_pi/private_agent/extensions/actor-client/index.ts";
+import { ActorClientConversationLog, actorAskCompletionContent, initialActorClientRosterState, reduceActorClientRoster, validateRemoteProject } from "../../home/dot_pi/private_agent/extensions/actor-client/index.ts";
 import { outgoingExchange } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/communication-ui.ts";
 
 test("remote project validation is syntax-only and does not require a local path", () => {
@@ -29,16 +29,52 @@ test("actor-client roster reducer fences frames and renders redacted lifecycle",
   assert.equal(state.agents.size, 0);
 });
 
-test("actor ask reply updates one outgoing conversation card", () => {
-  const entries=[];
-  const log = new ActorClientConversationLog({ appendEntry: (_type, data) => entries.push(data) });
-  const view = outgoingExchange({ key: "actor-client:request-1", target: "Reviewer", body: "question", accepted: true, completed: false, mode: "ask" });
-  assert.equal(log.append(view), true);
-  assert.equal(log.append(view), false);
-  assert.equal(log.complete("actor-client:request-1", "complete answer", true), true);
+test("actor ask reply sends one model-visible custom message and clears pending", async () => {
+  const entries=[],messages=[],statuses=[];
+  const log = new ActorClientConversationLog({ appendEntry: (_type, data) => entries.push(data), sendMessage: (message, options) => messages.push({ message, options }) }, (count) => statuses.push(count));
+  assert.equal(log.recordAskPending({ key: "actor-client:request-1", requestId: "request-1", dedupeId: "dedupe-1", chainId: "chain-1", sourceMutationSequence: "7", source: "Project Manager", target: "Reviewer", kind: "Ask", prompt: "question" }), true);
+  assert.equal(log.recordAskPending({ key: "actor-client:request-1", requestId: "request-1", dedupeId: "dedupe-1", chainId: "chain-1", sourceMutationSequence: "7", prompt: "question", kind: "Ask" }), false);
+  assert.equal(await log.complete({ key: "actor-client:request-1", reply: "complete answer\nwith all details", completed: true, requestId: "request-1", dedupeId: "dedupe-1", chainId: "chain-1", sourceMutationSequence: "7", source: { displayName: "Project Manager", authoritative: true }, target: { displayName: "Reviewer", authoritative: true }, kind: "Ask" }), true);
+  assert.equal(await log.complete({ key: "actor-client:request-1", reply: "duplicate", completed: true }), false);
   assert.equal(entries.length, 1);
-  assert.equal(entries[0].view.state, "replied");
-  assert.equal(entries[0].view.reply, "complete answer");
+  assert.equal(messages.length, 1);
+  assert.deepEqual(messages[0].options, { deliverAs: "followUp", triggerTurn: true });
+  assert.equal(messages[0].message.customType, "actor-client-ask-completion");
+  assert.equal(messages[0].message.display, true);
+  assert.match(messages[0].message.content, /requestId=request-1/);
+  assert.match(messages[0].message.content, /dedupeId=dedupe-1/);
+  assert.match(messages[0].message.content, /chainId=chain-1/);
+  assert.match(messages[0].message.content, /sourceMutationSequence=7/);
+  assert.match(messages[0].message.content, /source=Project Manager/);
+  assert.match(messages[0].message.content, /target=Reviewer/);
+  assert.match(messages[0].message.content, /kind=Ask/);
+  assert.match(messages[0].message.content, /terminal=replied/);
+  assert.match(messages[0].message.content, /nextAction=continue/);
+  assert.match(messages[0].message.content, /complete answer\nwith all details/);
+  assert.equal(messages[0].message.details.answer, "complete answer\nwith all details");
+  assert.equal(actorAskCompletionContent(messages[0].message.details), messages[0].message.content);
+  assert.equal(messages[0].message.details.communicationView.state, "replied");
+  assert.deepEqual(statuses, [1, 0]);
+});
+
+test("actor ask completion dedupes replay restored from custom messages", async () => {
+  const messages=[],statuses=[];
+  const log = new ActorClientConversationLog({ appendEntry: () => {}, sendMessage: (message) => messages.push(message) }, (count) => statuses.push(count));
+  log.restore([{ type: "custom", customType: "actor-client-ask-pending", data: { key: "actor-client:request-2", requestId: "request-2", dedupeId: "dedupe-2", chainId: "chain-2", sourceMutationSequence: "8", prompt: "question", kind: "Ask" } }, { type: "custom", customType: "actor-client-ask-completion", details: { key: "actor-client:request-2" } }]);
+  assert.equal(await log.complete({ key: "actor-client:request-2", reply: "replayed", completed: true }), false);
+  assert.equal(messages.length, 0);
+  assert.equal(statuses.at(-1), 0);
+});
+
+test("actor ask failure completion preserves metadata and next action", async () => {
+  const messages=[];
+  const log = new ActorClientConversationLog({ appendEntry: () => {}, sendMessage: (message) => messages.push(message) });
+  await log.complete({ key: "actor-client:request-3", reply: "", completed: false, reason: "target failed", requestId: "request-3", dedupeId: "dedupe-3", chainId: "chain-3", sourceMutationSequence: "9", kind: "Ask" });
+  assert.equal(messages.length, 1);
+  assert.match(messages[0].content, /terminal=failed/);
+  assert.match(messages[0].content, /reason=target failed/);
+  assert.match(messages[0].content, /nextAction=retry or choose another actor/);
+  assert.equal(messages[0].details.communicationView.state, "failed");
 });
 
 test("regular client Pi callbacks register noncolliding commands and tools", async () => {
