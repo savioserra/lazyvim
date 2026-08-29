@@ -1,23 +1,37 @@
 # ADR 0005: Daemon-connected hosted bridge and frontend projections
 
 - **Status:** Accepted
-- **Scope:** hosted bridge boundary, actor message delivery, Ask completion routing, frontend projections, fixed status, migration, and test gates
+- **Scope:** hosted bridge boundary, actor task/reply protocol, frontend projections, fixed status, migration, and test gates
 
 ## Decision summary
 
-The target architecture separates durable actor authority from frontend projection state.
+The target architecture separates durable actor authority from frontend projection state and treats every model-bearing Pi as an agent peer.
 
 ```text
-Normal Pi / hosted Pi extension / future dashboard
-  -> authenticated workstation protobuf WebSocket application plane
-  -> ClientSessionActor or BridgeSessionActor connection lifetime
-  -> AgentRegistryActor / PlacementAuthorityActor
-  -> AgentActor, HostedPiRuntimeActor, HostedPiBridgeActor, WorkflowActor
-  -> GoAkt TopicActor publishes bounded projection facts
-  -> frontend-local XState v5 machines render disposable views
+User terminal Pi AgentActor
+  owns: independent logical agent identity, mailbox, Pi process/model context attachment
+  connects through: ephemeral authenticated ClientSessionActor transport
+  sends: GoAkt Tell from its own ActorRef to another AgentActor
+  receives: the target's correlated completion Tell at that same ActorRef
+
+Hosted Pi AgentActor
+  owns: stable logical agent identity, capabilities, lifecycle, productive state
+  owns child infrastructure:
+    HostedPiRuntimeActor -> exactly owned daemon-supervised Pi process/tmux lifecycle
+    HostedPiBridgeActor  -> durable delivery, ACK, replay, readiness, Ask correlation for that Pi
+  connects through: BridgeSessionActor for one ephemeral hosted bridge WebSocket connection
+
+Projection frontends and dashboards
+  own: local XState v5 render machines, cursors, cards, status widgets
+  consume: authenticated projection facts from TopicActor/client-session replay
+  never own: routing, lifecycle, delivery ACK, Ask completion, runtime, or productive progress
 ```
 
-`hosted-pi-bridge` is a separately supervised logical daemon-connected agent boundary for one hosted runtime. It is not embedded frontend projection state, not a tmux observer, and not an XState view authority. The Pi extension remains a process-local client of the daemon; durable bridge state lives in the Go service under `services/subagents/`.
+A user-launched terminal Pi is not contained by a hosted agent. It attaches to its own independently registered `AgentActor`, whose ActorRef is the source and reply destination for peer protocol messages. The terminal process supplies that agent's model context while connected; `ClientSessionActor` is only its authenticated WebSocket transport. Closing, reloading, or disconnecting removes the connection credentials, handles, subscriptions, and local views, but never turns a transport session into actor authority and never stops another hosted AgentActor or its owned Pi runtime. The source AgentActor retains correlated completion messages according to policy so a connection loss cannot erase an actor-protocol result.
+
+A hosted Pi agent is a distinct long-lived hosted `AgentActor`. That AgentActor owns one daemon-supervised Pi process as execution infrastructure through `HostedPiRuntimeActor` and uses `HostedPiBridgeActor` as the durable authority for the owned Pi's authenticated bridge binding, delivery queue, ACK cursor/gap buffer, replay, readiness lease, mutation source scopes, and Ask correlations. The hosted bridge extension inside the owned Pi remains process-local client code; durable bridge state lives in the Go service under `services/subagents/`.
+
+Terminal Pi agents and hosted Pi agents communicate as peers through authenticated actor messaging over the application and actor planes. Frontend XState projections remain local disposable views and are never agent or Pi authority. Diagrams, tables, public APIs, and UI text must not represent a terminal Pi as a frontend inside a hosted AgentActor.
 
 The current implementation still stores some bridge delivery and mutation state in `AgentActor`. The implementation target is now fully specified: split that bridge aggregate into a durable supervised `HostedPiBridgeActor` named by `(agent_id, runtime_id, incarnation)` while preserving the accepted AgentActor lifetime and hosted Pi runtime invariants from ADR 0002, routing/persistence invariants from ADR 0003, and supervisor/workflow invariants from ADR 0004.
 
@@ -25,12 +39,13 @@ The current implementation still stores some bridge delivery and mutation state 
 
 | Component | Owns | Must not own |
 | --- | --- | --- |
-| `AgentActor` | Stable logical agent identity, display name, dynamic role, lifecycle revision, authority binding, capability attachment/fence ledger, command ordering, public directory metadata, runtime child reference, productive phase published by the agent domain | WebSocket connection buffers, bridge push cursors, frontend roster/cards/status, tmux view state, per-client UI timelines |
-| `HostedPiRuntimeActor` | Exact hosted Pi/tmux process lifecycle, runtime incarnation, exact ownership validation, start/stop/adopt/retry, readiness lease effects, runtime degraded state | Prompt delivery queues, model answer correlation, terminal scraping, user-pane mutation |
-| `HostedPiBridgeActor` | Durable bridge binding for one hosted runtime incarnation: bridge principal, Pi session ID, current bridge handle/fence, delivery sequence, ACK cursor, ACK gap buffer, replay window, mutation source scopes, pending/completed Ask correlation, terminal completion tombstones, bridge lifecycle/readiness facts | Frontend rendering, roster layout, process ownership, public placement decisions, frontend completion authority |
+| Terminal Pi `AgentActor` | Independent logical agent identity and ActorRef, mailbox, capability/fence ledger, ordered outgoing tasks, correlated incoming completion messages, terminal-runtime attachment state | Another agent's runtime, WebSocket buffers, frontend cards/status, hosted placement authority |
+| Hosted Pi `AgentActor` | Long-lived logical identity and ActorRef, mailbox, display name, dynamic role, lifecycle revision, capabilities, command ordering, owned runtime/bridge child references, productive phase | Terminal Pi lifecycle, WebSocket connection buffers, frontend roster/cards/status, tmux view state |
+| `HostedPiRuntimeActor` | Exact hosted Pi/tmux process lifecycle for the owning hosted AgentActor, runtime incarnation, exact ownership validation, start/stop/adopt/retry, readiness lease effects, runtime degraded state | Prompt delivery queues, model answer correlation, terminal scraping, user-pane mutation, terminal Pi client lifecycle |
+| `HostedPiBridgeActor` | Durable bridge binding for one hosted runtime incarnation: bridge principal, Pi session ID, current bridge handle/fence, delivery sequence, ACK cursor, ACK gap buffer, replay window, mutation source scopes, pending/completed Ask correlation, terminal completion tombstones, bridge lifecycle/readiness facts | Frontend rendering, roster layout, process ownership, public placement decisions, frontend completion authority, terminal Pi client state |
 | `BridgeSessionActor` | One authenticated daemon push connection to a hosted bridge process; ordered push after durable commit; reconnect replay from ACK cursor; connection shutdown cleanup | Durable delivery authority, logical agent identity, model-visible completion state |
-| `ClientSessionActor` | One ordinary frontend client session, credentials, subscriptions, response replay window, reply-frame delivery ledger, client teardown | Agent work, hosted runtime, workflow state, Ask terminal truth |
-| `WorkflowActor` | Durable workflow/task progress, pending decisions, productive phase, worker/reviewer/QA/correction state from typed evidence | PM UI state, tmux state, frontend card ordering |
+| `ClientSessionActor` | Ephemeral authenticated transport attaching a terminal Pi/frontend to its independent AgentActor; subscriptions, frame delivery, teardown | Source identity, peer completion authority, agent work, hosted runtime, workflow state |
+| `WorkflowActor` | Optional independently supervised durable multi-agent workflow progress, assignments, pending decisions, productive phase, worker/reviewer/QA/correction evidence | Parentage or ownership of agents/Pi runtimes, PM UI state, tmux state, frontend card ordering |
 | `PlacementAuthorityActor` | Local hosted creation authority and typed remote placement admission for its logical node | DNS identity, SSH/shell transport, automatic actor relocation |
 | Frontend clients | XState v5 projection machines, deterministic reducers, status/footer/widget rendering, cards, local rendered-frame dedupe, reconnect UI state | Durable lifecycle truth, routing authority, ACK retirement, productive progress inference |
 
@@ -40,10 +55,10 @@ The daemon may expose sanitized projection snapshots and events to many frontend
 
 Two planes remain distinct:
 
-1. **Workstation application plane:** the length-prefixed protobuf WebSocket API for Pi extensions, normal clients, hosted bridge connections, and future dashboards. It carries authenticated requests, replies, push frames, and snapshots. Unknown major versions fail closed; minor-compatible readers preserve protobuf unknown-field compatibility.
-2. **GoAkt actor plane:** direct local/remote actors, Tell/Ask, supervision, DeathWatch, TopicActor PubSub, and optional trusted-network remoting. Application protobuf messages do not expose GoAkt PIDs, actor paths, serializer names, or remoting internals.
+1. **Workstation application plane:** the length-prefixed protobuf WebSocket API for terminal Pi actor-client sessions, hosted bridge connections, and future dashboards. It carries authenticated requests, replies, push frames, and snapshots. Unknown major versions fail closed; minor-compatible readers preserve protobuf unknown-field compatibility.
+2. **GoAkt actor plane:** direct local/remote actors, Tell/Ask, supervision, DeathWatch, TopicActor PubSub, and optional trusted-network remoting between durable agent peers. Application protobuf messages do not expose GoAkt PIDs, actor paths, serializer names, or remoting internals.
 
-Use regular actor messages for authoritative mutations, ordered delivery, terminal Ask completion, and remote forwarding. Use GoAkt lifecycle mechanisms for actor start/stop, supervision, DeathWatch, and restart/adoption effects. Use GoAkt TopicActor topics only for bounded projection fanout and hints after the authoritative state mutation has committed. A TopicActor publication can never route, acknowledge, or complete an Ask and can never be the only carrier of terminal completion.
+Use regular GoAkt actor messages for authoritative mutations, peer routing, ordered delivery, task completion, and remote forwarding. An authenticated terminal command first reaches its own source `AgentActor`; that actor calls Tell on the target `AgentActor`, making its ActorRef the protocol sender. The target captures that sender/reply reference with the correlation record, processes through its owned runtime when hosted, and at completion calls Tell with `ActorTaskCompleted` to the original source ActorRef. `ClientSessionActor` only transports commands to and received actor messages from the terminal's AgentActor. It is never the source identity or completion owner. A hosted Pi agent likewise originates messages from its `AgentActor`; its bridge binding authenticates runtime evidence but does not replace the ActorRef. Incoming work for a hosted Pi is committed by its `HostedPiBridgeActor` before runtime delivery. Use GoAkt lifecycle mechanisms for actor start/stop, supervision, DeathWatch, and restart/adoption effects. Use GoAkt TopicActor topics only for bounded projection fanout and hints after the authoritative state mutation has committed. A TopicActor publication can never route, acknowledge, or complete an Ask and can never be the only carrier of terminal completion.
 
 Remote node behavior:
 
@@ -64,25 +79,29 @@ ServiceGuardian
 ├── PersistenceSupervisor               name: persistence
 ├── ClientSessionActor[]                name: clients/<session_generation>
 ├── BridgeSessionActor[]                name: bridge-sessions/<session_generation>
-└── AgentActor                          name: agents/<agent_id>
-    ├── HostedPiRuntimeActor            name: agents/<agent_id>/runtime/<runtime_id>
-    ├── HostedPiBridgeActor             name: agents/<agent_id>/bridge/<runtime_id>/<incarnation>
-    └── WorkflowActor[]                 name: agents/<agent_id>/workflows/<workflow_id>
+├── WorkflowActor[]                     name: workflows/<workflow_id>
+└── AgentActor[]                        name: agents/<agent_id>
+    ├── [terminal binding: no owned hosted runtime children]
+    └── [hosted binding]
+        ├── HostedPiRuntimeActor        name: agents/<agent_id>/runtime/<runtime_id>
+        └── HostedPiBridgeActor         name: agents/<agent_id>/bridge/<runtime_id>/<incarnation>
 ```
 
-`AgentActor` is still the global lifetime and capability boundary from ADR 0002. It supervises and DeathWatches the hosted runtime and bridge children, but it does not own bridge queues, ACK retirement, or Ask terminal records after the split. `HostedPiRuntimeActor` owns exact process/tmux identity only. `HostedPiBridgeActor` owns delivery and completion for exactly one runtime incarnation. `BridgeSessionActor` is an ephemeral watched connection child of the session layer and must reacquire bridge state by regular actor messages after reconnect.
+`AgentActor` is the logical peer, mailbox, source ActorRef, and capability boundary. A terminal-bound AgentActor has no daemon-owned runtime child; its user-launched Pi attaches through an ephemeral `ClientSessionActor`. A hosted AgentActor supervises and DeathWatches its owned runtime and bridge children. `HostedPiRuntimeActor` owns exact process/tmux identity only for that hosted agent. `HostedPiBridgeActor` owns runtime delivery/ACK state for one incarnation but sends the resulting `ActorTaskCompleted` back to the original source ActorRef. `ClientSessionActor` and `BridgeSessionActor` are transports only. `WorkflowActor` is independently supervised and coordinates agents by Tell; it is never their parent.
 
 Lifecycle rules:
 
+- A terminal Pi starts and stops under the user's terminal lifecycle and attaches to its independently registered AgentActor. Reload/disconnect/close revokes only the transport session, credentials, handles, subscriptions, and views. Its AgentActor mailbox and correlated received messages follow explicit retention/passivation policy; transport cleanup cannot discard an admitted task completion or stop any hosted agent/runtime.
 - START creates or adopts `AgentActor`, then starts/adopts `HostedPiRuntimeActor`, then starts/adopts `HostedPiBridgeActor` from durable records before declaring bridge readiness.
 - Same-name START while a non-terminal owned record exists is rejected unless exact STOP has durably retired the previous runtime PID and bridge binding.
 - Explicit STOP is destructive only for exactly owned resources. It first sends `StopHostedBridge{agent_id,runtime_id,incarnation,reason=explicit_stop}` to the bridge, persists readiness false and terminal failures for pending deliveries, then sends `StopHostedPiRuntime` to the runtime, then retires live PIDs and credentials. Late bridge lifecycle or ACK messages for the stopped incarnation fail closed.
 - Unexpected runtime exit advances incarnation only after exact ownership proof and cleanup. The old bridge receives `RuntimeIncarnationRetired` and rejects new admission; retained pending Ask correlations complete as bounded failure unless the ACK had already committed. The replacement runtime starts with a new bridge actor name and fence.
-- Daemon restart enumerates durable agent/runtime/bridge records, validates owner-private paths and exact ownership tokens, adopts live runtime records, reconstructs bridge actors from bridge records, and resumes replay from the durable ACK cursor. Origin restart does not lose pending Ask correlations.
+- Terminal Pi reload/disconnect destroys only local XState machines and the current application connection. Reconnect reattaches to the same authorized terminal AgentActor and drains its bounded correlated mailbox. It cannot adopt, replace, or clean up a hosted Pi runtime.
+- Daemon restart enumerates durable agent/runtime/bridge records, validates owner-private paths and exact ownership tokens, adopts live runtime records, reconstructs bridge actors from bridge records, and resumes replay from the durable ACK cursor. Origin restart does not lose pending Ask correlations. Terminal client sessions are not durable agent authority and must reconnect/authenticate; global hosted AgentActors and exactly owned Pi processes remain available for adoption if exact ownership validates.
 - Bridge actor crash is supervised restart-from-record. If the durable record is missing, mixed, or fails validation, the supervisor quarantines it, publishes degraded projection only after commit, and denies new mutations until explicit recovery.
-- DeathWatch is a degradation signal, not authority to mutate foreign resources. Runtime death tells the bridge to stop admitting and to fail or replay based on durable state; bridge death makes runtime readiness degraded but does not kill Pi; AgentActor death during daemon shutdown never grants session cleanup permission to stop the global agent.
+- DeathWatch is a degradation signal, not authority to mutate foreign resources. Runtime death tells the bridge to stop admitting and to fail or replay based on durable state; bridge death makes runtime readiness degraded but does not kill Pi; AgentActor death during daemon shutdown never grants session cleanup permission to stop the global agent; terminal Pi client cleanup never grants permission to stop or mutate hosted runtime resources.
 
-Remote-origin routing uses the same tree on each node. A source node routes terminal completion to the requesting origin by regular `RouteActorMessageReply` actor message addressed to the durable home node and authorized `ClientSessionActor`/reply broker. TopicActor projection of that reply is optional and post-commit only.
+Remote-origin routing preserves the source AgentActor reference/logical address across the actor plane. The target sends `ActorTaskCompleted` by regular Tell to that original source actor; if its node is temporarily unavailable, the target retains the correlated terminal message for bounded re-drive. TopicActor is never on this protocol path.
 
 ## Identity, fencing, sequence, epoch, and incarnation rules
 
@@ -91,24 +110,26 @@ Remote-origin routing uses the same tree on each node. A source node routes term
 | `agent_id` | Public logical agent | Stable opaque identity; never a PID, tmux name, hostname, credential, or model role. |
 | `runtime_id` | Hosted runtime generation | Stable for one hosted runtime generation; paired with `agent_id`. |
 | `incarnation` | Hosted runtime restart/adoption | Monotonically increases for every replacement Pi/runtime after unexpected exit or explicit replacement; stale incarnation messages fail closed. |
+| terminal Pi peer | User-launched source peer | Authenticated client session/generation/principal plus authorized display metadata; independent of hosted AgentActor lifecycle and never inferred from frontend state. |
+| hosted Pi peer | Hosted AgentActor's owned model worker | Stable `agent_id` plus current hosted bridge binding, runtime ID, and incarnation; its Pi process is execution infrastructure owned by the hosted AgentActor. |
 | `bridge principal` | Hosted bridge authenticated source | Derived server-side from the authenticated session/generation/principal/runtime tuple. |
 | `handle`/`fence` | Capability attachment | Issued by daemon actor authority; every mutation requires the current fence; replacement revokes the old fence before admitting new mutations. |
-| `source_mutation_sequence` | Authenticated source scope | Positive and exactly-one-increasing within `(session, generation, principal, target fence, runtime incarnation)`; same sequence with identical payload returns the retained durable admission/terminal state and re-registers only a disposable connection wake-up; collision fails closed. |
+| `source_mutation_sequence` | Authenticated source scope | Positive and exactly-one-increasing within `(session, generation, principal, target fence, runtime incarnation-or-client-peer-scope)`; same sequence with identical payload returns the retained durable admission/terminal state and re-registers only a disposable connection wake-up; collision fails closed. |
 | delivery `sequence` | Hosted bridge delivery queue | Monotonic per bridge actor; ACK retires only the exact sequence/dedupe/kind after durable commit. |
 | roster `epoch`/`sequence` | Client roster projection | Epoch is unique per daemon incarnation/projection source; a snapshot reset starts a new sequence, and lower epoch/sequence frames are ignored. |
 | request/dedupe/chain IDs | Logical operation | Bounded, retained, collision-checked, and safe to reuse only in independent source scopes. |
 
 A bridge reconnect pins the same Pi session ID and sends the last durable ACK cursor. Same-session reconnect preserves source scope. Explicit fenced replacement creates a new source scope only after old authorization is revoked. Pending queue entries retain their original source scope until ACK, deadline, or fail-closed recovery, even if another source mutates the same target.
 
-## Durable delivery, ACK, replay, and Ask completion
+## Durable delivery, ACK, replay, and task completion
 
-Bridge delivery is at-least-once over the application connection and exactly-once at the model-visible completion layer. The durable `HostedPiBridgeActor` record is the only authoritative owner of hosted delivery retirement and terminal Ask completion for its target runtime incarnation. Service-local channels, in-memory waiters, TopicActor delivery, and result polling are never authoritative.
+Bridge delivery is at-least-once over the hosted runtime connection. The durable `HostedPiBridgeActor` owns runtime delivery retirement; the source and target AgentActors own the peer task/reply protocol. Service-local channels, in-memory waiters, TopicActor delivery, and result polling are never authoritative.
 
 ### Delivery admission
 
-1. Caller admission authenticates session/admin credential, checks capability, deadline, fence, hop limit, target, and source sequence before lookup or replay.
-2. `AgentActor`/routing authority resolves the target and sends a regular actor message.
-3. For a hosted target, the target's `HostedPiBridgeActor` handles `CommitBridgeDelivery{source_peer,target_peer,request_id,dedupe_id,chain_id,source_mutation_sequence,deadline,kind,payload,reply_route}`. It appends a `BridgeDelivery` to durable state, assigns the next delivery sequence, creates any required `AskCorrelation`, and persists before reporting admission.
+1. Caller admission authenticates session/admin credential, derives source `CommunicationPeer` server-side, checks capability, deadline, fence, hop limit, target, and source sequence before lookup or replay.
+2. `AgentActor`/routing authority resolves the target logical peer and sends a regular actor message. Terminal Pi origin and hosted Pi origin follow the same actor-message route after authentication; only their connection/session authorities differ.
+3. For a hosted target, the target's `HostedPiBridgeActor` handles `CommitBridgeDelivery{source_agent_ref,target_agent_ref,request_id,dedupe_id,chain_id,source_mutation_sequence,deadline,kind,payload}`. It appends a `BridgeDelivery` and `TaskCorrelation` to durable state, assigns the next delivery sequence, and persists before reporting admission.
 4. After durable commit, watched `BridgeSessionActor` instances are told `PushCommittedBridgeDelivery{agent_id,runtime_id,incarnation,sequence}`. Push failure never retires the delivery.
 
 ### ACK cursor, out-of-order ACK, and replay
@@ -126,46 +147,51 @@ ACK rules:
 
 Replay and retention are bounded. Evicted source mutation results leave tombstones and are never reexecuted. Tombstones retain enough identity to reject collision and replay outside the retention window without retaining prompts or answers.
 
-### Authoritative Ask completion contract
+### Authoritative actor task completion contract
 
-A completed Ask cannot depend on an in-memory completion channel. The durable target `HostedPiBridgeActor` owns the `AskCorrelation` lifecycle and terminal state. It emits exactly one regular actor message carrying terminal completion to the source route after ACK commit; source-side brokers and client sessions own only authorized delivery/replay of that already-terminal fact to frontends.
+Model work is a two-message GoAkt protocol, not a delayed WebSocket response or service-side notification:
+
+```text
+source AgentActor --Tell(ActorTask)--> target AgentActor
+source AgentActor <--Tell(ActorTaskCompleted)-- target AgentActor
+```
+
+The authenticated application request commands the source AgentActor and receives only a bounded admission receipt. The source actor sends `ActorTask` with its ActorRef as sender. The target captures that original source ActorRef plus a stable logical source reference in durable correlation state. A hosted target commits runtime delivery through `HostedPiBridgeActor`; after the owned Pi completes and its ACK commits, the target AgentActor sends `ActorTaskCompleted` by Tell to the original source ActorRef. No service-local completion channel, `NoSender` dispatch, reply broker, TopicActor route, result polling, or client-session tuple is completion authority.
 
 Durable key and schema:
 
-- Canonical completion dedupe key: `completion:v1:<target_home_node>:<target_agent_id>:<runtime_id>:<incarnation>:<delivery_sequence>:<request_id>:<dedupe_id>:<chain_id>:<source_mutation_sequence>:<source_peer_id>:<requesting_client_generation>`.
-- The key is computed from normalized opaque IDs after authorization. Empty optional logical IDs are encoded as `-`; values containing separators are length-prefixed or protobuf-field encoded before hashing when used as storage keys.
-- If the same key appears with byte-identical immutable fields and terminal payload digest, it is a duplicate replay and returns the retained result. If the same key appears with different immutable fields or terminal payload digest, it is a collision; quarantine that correlation, fail the new admission/ACK closed, and do not render a frontend completion.
-- `AskCorrelation v1` fields: schema version, key, original request ID, dedupe ID, chain ID, source mutation sequence, delivery sequence, source/target `CommunicationPeer`, target home node, origin home node, requesting client session/generation/principal hash, reply route, deadline, immutable payload digest, state, terminal result digest, bounded terminal result or redacted failure, created/updated monotonic timestamps, replay expiry, tombstone expiry, and push ledger keyed by authorized frontend session generation.
+- Canonical key: the versioned protobuf encoding of target logical reference, target runtime/incarnation/delivery sequence, source logical AgentReference, request ID, dedupe ID, chain ID, and source mutation sequence, hashed for storage.
+- `TaskCorrelation v1` stores that key, the source logical AgentReference and captured ActorRef address, target reference, delivery identity, deadline, immutable payload digest, state, terminal digest/result, Tell-attempt state, replay expiry, and tombstone expiry. It never makes a WebSocket generation part of actor identity.
+- Identical replay returns retained state. Any immutable-field or terminal-digest mismatch is a collision and fails closed.
 
 State transitions:
 
 ```text
-pending_admission -> delivery_committed -> pushed_to_bridge -> ack_buffered? -> ack_committed -> reply_routed -> frontend_committed -> tombstoned -> evicted
-                                            \-> expired_failed -> reply_routed -> frontend_committed -> tombstoned
-                                            \-> quarantined_failed -> reply_routed? -> tombstoned
+delivery_committed -> runtime_dispatched -> ack_buffered? -> ack_committed
+      -> completion_tell_pending -> completion_told -> source_committed -> tombstoned
+      \-> expired_failed ---------> completion_tell_pending
+      \-> quarantined_failed -----> completion_tell_pending when safe
 ```
-
-Only `ack_committed`, `expired_failed`, and `quarantined_failed` are terminal. A terminal correlation is immutable except for bounded frontend push ledger updates and tombstone/eviction metadata.
 
 Exact actor messages:
 
-- `CommitBridgeDelivery` creates delivery and `AskCorrelation` in one durable mutation.
-- `BridgeDeliveryAck` validates terminal bridge evidence and commits or buffers ACK.
-- `CompleteAskCorrelation` is an internal self-message used to re-drive expired or recovered correlations from durable state.
-- `RouteActorMessageReply` is a regular local/remote actor message to the origin home node. It carries the completion key, original IDs, terminal state, bounded answer/failure, source/target peers, and authorized opaque provenance.
-- `ActorMessageReply` is recorded by the origin reply broker/client-session authority and then converted to `ActorMessageReplyFrame` for authorized frontend connections.
-- `MarkFrontendCompletionDelivered` records that a specific client generation received or persisted the terminal custom message for this completion key.
+- `SendActorTask` commands the authenticated source AgentActor to initiate work.
+- `ActorTask` is sent by that source AgentActor to the target AgentActor with correlation and bounded task data; `ctx.Sender()` is the reply ActorRef.
+- `CommitBridgeDelivery` and `BridgeDeliveryAck` durably drive a hosted target's owned runtime.
+- `ActorTaskCompleted` is the normal correlated Tell from the target AgentActor to the original source ActorRef.
+- `CommitReceivedTaskCompletion` durably records the message in the source AgentActor mailbox before any attached terminal transport is notified.
+- `MarkTaskCompletionPresented` records presentation only after the terminal Pi persists the completion key with its model-visible custom message.
 
-Re-drive rules:
+Recovery rules:
 
-- Requesting client disconnect: the target bridge correlation remains pending until ACK, deadline, or quarantine. The origin reply broker retains terminal `ActorMessageReply` until replay expiry even when no frontend is connected. On reconnect, the authorized client receives at most one retained `ActorMessageReplyFrame` for each key not marked delivered for that client generation.
-- Requesting model context is redacted or no longer authenticated: the full bounded answer is not sent to public status/diagnostics or another model context. The terminal record remains as sanitized failure/status for roster and diagnostics and may be replayed only to the authenticated requesting model context or a successor session whose authorization policy explicitly binds it to that original context.
-- Daemon/origin restart: both target bridge and origin reply broker reload records, re-drive `CompleteAskCorrelation`/`RouteActorMessageReply` for terminal correlations whose reply route is not marked delivered, and preserve exactly-one frontend completion by the completion key and push ledger.
-- Remote-origin restart: route by durable `origin_home_node` and requesting client generation through `RouteActorMessageReply`. If the origin is unavailable, retain and retry until deadline/replay expiry; do not publish to TopicActor as a substitute route.
-- Bridge/runtime restart: same incarnation reconnect replays from ACK cursor; new incarnation fails stale messages and terminal-fails old pending correlations unless their ACK already committed.
-- Exactly-one frontend completion: a client renderer must persist the completion key before or atomically with `pi.sendMessage(type=actor-client-ask-completion)`. Replayed frames with a persisted key update hidden pending state only and do not create another model-visible custom message.
+- A disconnected terminal Pi does not affect its source AgentActor's mailbox. `ActorTaskCompleted` is committed there and presented when an authorized terminal runtime reattaches.
+- If a target or node restarts after terminal ACK but before the completion Tell, durable `completion_tell_pending` state re-drives the same `ActorTaskCompleted` to the source ActorRef/logical address. The source dedupes by correlation key.
+- If the source actor is temporarily unreachable, the target retains and retries the completion Tell within the bounded replay policy. It never substitutes TopicActor publication or a WebSocket session lookup.
+- Actor supervision/restart preserves the logical source address; remote routing resolves that address through the actor plane. A dead/passivated source that cannot be recovered causes a bounded terminal delivery failure, not delivery to a different client.
+- The source AgentActor exposes received completion only to the authenticated Pi attachment authorized for that agent/model context. Public roster, status, and diagnostics remain redacted.
+- The terminal renderer persists the completion key before or atomically with `pi.sendMessage(type=actor-client-task-completion)`. Replayed received messages do not create another model-visible completion.
 
-Deadlines terminate the durable correlation with a failure frame. Uncertain terminal state must render as failure or pending status, never as a false reply.
+The UI may describe a task as “Ask” because the caller expects a later result, but the actor protocol remains Tell `ActorTask` followed by Tell `ActorTaskCompleted`. Deadlines produce the same correlated failure message to the source AgentActor.
 
 ## Frontend-only XState v5 projections
 
@@ -205,7 +231,7 @@ Required public/application fields or messages:
 - `BridgeDelivery`: sequence, source/target agent IDs, request ID, deadline, dedupe ID, hop limit, bounded payload, policy, kind, chain ID, source/target `CommunicationPeer`.
 - `BridgeDeliveryAckRequest`: agent ID, runtime ID, incarnation, Pi session ID, delivery sequence, dedupe ID, kind, source scope, delivered flag, reason, bounded result.
 - `BridgePushFrame`: ordered events/deliveries and latest emitted sequence.
-- `ActorMessageReplyFrame`: completion key, original request ID, dedupe ID, chain ID, source mutation sequence, accepted/completed, bounded result, reason, source/target peers, kind, approved opaque provenance, next action.
+- `ActorTaskCompletedFrame`: transport projection of a source AgentActor's committed `ActorTaskCompleted`; completion key, original IDs, terminal result/failure, source/target references, approved opaque provenance, and next action. The existing `ActorMessageReplyFrame` is a migration adapter only.
 - `ClientAgentRosterRequest`: last epoch and after-sequence.
 - `ClientAgentRosterFrame`: operation, epoch, sequence, agent reference or removed agent ID, sanitized status.
 - Hosted admin/placement messages: operation, agent ID, project directory, trust choice, display name, role, optional logical target node.
@@ -260,7 +286,7 @@ Durable schema versions and markers:
 | Hosted agent/runtime | `schema_version <= 2` with bridge fields embedded in agent/hosted record | `schema_version = 3`, `record_kind = agent-runtime` | `AgentActor`/`HostedPiRuntimeActor` | New record wins after successful migration marker fsync |
 | Bridge | none or embedded legacy bridge fields | `schema_version = 1`, `record_kind = hosted-pi-bridge`, `migration_from_agent_revision` | `HostedPiBridgeActor` | Authoritative after matching agent-runtime marker references it |
 | Ask correlation | legacy pending waiter/result fields | `schema_version = 1`, `record_kind = ask-correlation` | `HostedPiBridgeActor` | New correlation/tombstone wins; legacy waiter cannot complete |
-| Client reply replay | legacy response replay only | `schema_version = 1`, `record_kind = actor-reply-replay` | origin reply broker/`ClientSessionActor` | New replay key wins |
+| Source task mailbox | legacy service response replay only | `schema_version = 1`, `record_kind = received-task-completion` | source `AgentActor` | Actor mailbox record wins; transport replay is disposable |
 
 Migration algorithm:
 
@@ -277,7 +303,7 @@ Cutover phases:
 1. Centralize names under workstation-owned constants: actor names, topic names, placement authority names, extension names, service names, state directories, status labels, record kinds, and schema versions. Remove hardcoded legacy prefixes only after adapters are in place.
 2. Add durable `HostedPiBridgeActor` under `internal/actors/` with the stable name `agents/<agent_id>/bridge/<runtime_id>/<incarnation>` and route new hosted bridge connect/lifecycle/delivery/ACK messages to it. Keep current `AgentActor` fields readable only for migration/adoption/rollback before commit.
 3. Move delivery queues, source mutation scopes, ACK cursor/gap buffer/replay, bridge readiness, and Ask correlations from `AgentActor` durable state into bridge durable state. Fail closed on ambiguous mixed state.
-4. Switch Ask completion to durable correlation, regular `RouteActorMessageReply` actor messages, and pushed `ActorMessageReplyFrame` only. Remove in-memory completion-channel authority and prohibit result polling.
+4. Route every model task as source AgentActor Tell `ActorTask`, then target AgentActor Tell `ActorTaskCompleted` back to the original ActorRef. Remove `NoSender` dispatch, service reply-broker authority, in-memory completion channels, and result polling.
 5. Switch fixed frontend status to topic-backed roster subscriptions with epoch/sequence reset. Keep list/resolve commands for explicit user/tool requests, not refresh loops.
 6. Replace ad hoc client state with frontend-local XState v5 machines and deterministic reducers behind the existing actor-client/hosted bridge API.
 7. Drive WorkflowActor-owned worker/reviewer/QA/correction flows through typed evidence messages and task lifecycle events.
@@ -307,11 +333,11 @@ No repository-level wrapper, root Go module, root CLI, Makefile, OS package-mana
 | --- | --- |
 | 1. Contracts | Additive protobuf/state contracts for bridge actor, Ask correlation, reply frame replay, roster events; codegen verify; golden fixture updates intentional |
 | 2. Bridge actor split | `HostedPiBridgeActor` owns durable queue/scope/ACK/readiness; AgentActor remains logical; restart adopts existing records; persistence quarantine tests pass |
-| 3. Ask completion | Recovery test proves durable ACK replay completes a lost-waiter Ask exactly once through pushed `ActorMessageReplyFrame`; no actor_result polling exists |
+| 3. Actor task completion | Recovery test proves target runtime ACK causes exactly one correlated `ActorTaskCompleted` Tell to the original source ActorRef; source mailbox survives terminal disconnect and dedupes replay; no result polling exists |
 | 4. Frontend projections | XState v5 machines/reducers cover connection, roster, pending Ask, conversation cards, status, reconnect cursors, and responsive rendering; snapshot/replay/dedupe tests pass |
 | 5. Topic-backed status | Fixed status bar uses authenticated roster topic frames; no periodic `ListAgentsRequest`/`actor_list` refresh; no tmux/process/heartbeat inference |
 | 6. Workflow ownership | WorkflowActor drives PM-independent worker -> reviewer -> QA -> correction/completed from typed evidence and publishes productive phases |
-| 7. Local E2E | Fresh normal Pi creates hosted actor, Tell succeeds, Ask admission then pushed completion renders one model-visible card, client restart dedupes, daemon restart replays/adopts, exact STOP cleans only owned resources |
+| 7. Local E2E | Terminal Pi AgentActor Tells a hosted AgentActor, receives its correlated completion Tell, and renders one model-visible card; terminal disconnect preserves the source mailbox; daemon restart replays/adopts; exact STOP cleans only owned resources |
 | 8. Remote/VPS E2E | Three logical service nodes (`node-a`, `node-b`, `node-c`) on an owner-controlled private overlay or disposable VPS/VM network, each with distinct actor/discovery/peers/application ports, URI-SAN mTLS, schema-v2 config, remoting enabled only for the test; evidence includes trusted-node placement from node-a to node-b, remote public roster reconciliation on node-c, local-to-remote Tell/Ask, durable reply routing across target and origin daemon restarts, ACK cursor gap replay, stale home-node deterministic failure, redacted public/status output with no host/port leak, logs and command transcript stored as sanitized test artifacts |
 | 9. Exact STOP/recovery | Same-name restart after STOP, unexpected Pi exit retry with newer incarnation, indeterminate tmux/process identity fail-closed, no foreign pane/session mutation |
 | 10. Cutover | Legacy authority disabled only after parity evidence, rollback plan, and docs/tests updated |
@@ -323,7 +349,7 @@ Fast validation before completing implementation changes remains the repository-
 - `hosted-pi-bridge` is a daemon-connected hosted bridge boundary with durable Go actor state, not frontend projection state.
 - `AgentActor` remains the logical identity/capability authority and global lifetime boundary.
 - Bridge delivery, ACK, replay, source mutation scopes, readiness lease, and Ask correlations belong to `HostedPiBridgeActor`.
-- Ask completion authority is the target `HostedPiBridgeActor` durable `AskCorrelation`; completion is routed by regular actor messages and pushed exactly once to the authorized model context through `actor-client-ask-completion`; result polling is not part of the public API.
+- Task completion is the target AgentActor's correlated Tell to the original source ActorRef after its bridge commits runtime evidence; the source AgentActor durably receives it and its terminal attachment renders it once. Result polling is not part of the public API.
 - Frontend roster/cards/status/reconnect state is frontend-local XState v5 projection state.
 - Fixed status is topic-backed and authenticated; polling and scraping are rejected.
 - GoAkt topics are projection fanout only; regular actor messages and durable records are authoritative for mutations, remote forwarding, ACK retirement, and terminal Ask completion.

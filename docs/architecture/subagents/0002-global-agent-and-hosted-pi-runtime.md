@@ -5,11 +5,11 @@
 
 ## Context
 
-Client sessions and observer views are ephemeral, but an agent may represent long-running work reused by later clients. Hosted execution must preserve a normal Pi TUI without controlling user panes or scraping terminal output. Existing `pi-subagents` runs and the XState tmux observer must retain their current authority.
+Client sessions and observer views are ephemeral, but a hosted agent may represent long-running work reused by later clients. A user-launched terminal Pi is itself an independent peer with its own terminal lifecycle and model context; it is not a frontend contained by a hosted agent. Hosted execution must preserve a normal Pi TUI owned by the hosted AgentActor without controlling user panes or scraping terminal output. Existing `pi-subagents` runs and the XState tmux observer must retain their current authority.
 
 ## Decision
 
-Each `AgentActor` is global and reusable. It outlives credentials, connections, subscriptions, views, and Pi client sessions. Closing or expiring a client removes only that client's grants, opaque handles, projection subscription, and view; it never stops the AgentActor or its work.
+Each hosted `AgentActor` is global and reusable. It outlives credentials, connections, subscriptions, views, and terminal Pi client sessions. Closing or expiring a terminal client removes only that client's grants, opaque handles, projection subscription, reply delivery state, and view; it never stops the hosted AgentActor, its owned Pi runtime, or its work.
 
 A separately typed, explicit hosted-owned registration may give one AgentActor one persistent full Pi TUI/session. The AgentActor owns a `HostedPiRuntimeActor` child and watches it with DeathWatch. The child serializes `inactive`, `starting`, `ready`, `degraded`, `stopping`, and `stopped` state. Tmux, process, filesystem, and bridge effects run asynchronously and report typed completion messages; actor `Receive` handlers do not perform blocking I/O or Ask.
 
@@ -22,7 +22,7 @@ Authority is selected once per AgentActor:
 1. **Observed upstream:** `pi-subagents` continues to own its execution, worktrees, controls, receipts, recovery, and XState projections. No hosted runtime starts.
 2. **Hosted owned:** an explicitly registered new logical agent owns its Pi runtime through the hosted bridge. It is never simultaneously bound to an upstream run.
 
-The repository-managed daemon and `[hosted_pi]` configuration are enabled by the reviewed owner policy. An owner-private bootstrap credential authenticates bounded START/STATUS/STOP; START creates the session credential/runtime config and returns only nonsecret identity metadata. Merely discovering the hosted bridge extension in an ordinary Pi is inert; only the exact hosted runtime environment opts it into API registration and connection behavior. There is no automatic authority migration or dual-writer period.
+The repository-managed daemon and `[hosted_pi]` configuration are enabled by the reviewed owner policy. An owner-private bootstrap credential authenticates bounded START/STATUS/STOP; START creates the session credential/runtime config and returns only nonsecret identity metadata. Merely discovering the hosted bridge extension in a terminal Pi is inert; only the exact hosted runtime environment opts it into hosted bridge API registration and connection behavior. The ordinary actor-client extension uses `ClientSessionActor` only as transport to its independently registered terminal `AgentActor`; that actor's ActorRef is the peer source and reply mailbox. There is no automatic authority migration or dual-writer period.
 
 ## Persistence boundary
 
@@ -34,7 +34,7 @@ Hosted agents preserve a full interactive Pi session across client and managed d
 
 ## Invariants
 
-- Client/session cleanup cannot stop a global AgentActor or hosted Pi runtime.
+- Terminal client/session cleanup cannot stop a global hosted AgentActor or hosted Pi runtime.
 - Every hosted runtime has one AgentActor owner, one runtime actor incarnation, and one exact tmux/process identity.
 - Observed-upstream and hosted-owned authority bindings are mutually exclusive.
 - Bridge readiness is a renewable fenced lease driven by connect/authenticated poll and GoAkt scheduler expiry; stale timers cannot revoke a newer lease.
