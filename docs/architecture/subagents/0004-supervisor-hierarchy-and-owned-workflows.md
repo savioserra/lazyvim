@@ -17,13 +17,13 @@ The subagents daemon is moving authority out of service-owned maps and into boun
 
 All actors use bounded mailboxes. Receive handlers only mutate in-memory state or enqueue typed effects; blocking work runs outside Receive and returns typed messages. Owned bridge delivery remains at-least-once with dedupe, bounded retained results, direct `Tell` after durable commit, bridge heartbeat supervision, and post-fence replay ordering.
 
-## Retained team actors and lifecycle controls
+## Retained workflow participants and lifecycle controls
 
-Owned worker, reviewer, QA, and correction AgentActors remain alive across normal workflow phase transitions. A completed assignment changes typed productive/workflow state; it does not retire the actor. Retention preserves the actor's Pi context, stable identity, mailbox correlation, and observer pane so later evidence, cross-examination, or correction can return to the same actor.
+Every owned workflow-participant AgentActor remains alive across normal phase transitions regardless of dynamic role metadata. A completed assignment changes typed productive/workflow state; it does not retire the actor. Retention preserves Pi context, stable identity, mailbox correlation, and observer pane so later evidence, cross-examination, or follow-up work can return to the participant selected by workflow policy.
 
-One-writer safety is an authorization and workflow-state invariant: only the selected writer receives write capability for a cwd/worktree. Review and QA actors remain read-only, and an idle retained worker cannot write until the workflow grants its next correction phase. Keeping actors alive therefore does not permit concurrent writers.
+One-writer safety is an authorization and workflow-state invariant: only the selected participant receives write capability for a cwd/worktree. Every participant not granted the current write phase remains read-only, and an idle retained participant cannot write until the workflow grants a later phase. Keeping actors alive therefore does not permit concurrent writers.
 
-`actor_stop`, abort, and shutdown belong only to the management/diagnostic control plane. Valid uses are explicit operator-requested retirement, whole-workflow/mission teardown after the retention window, exact-owner recovery, or unrecoverable failure handling. They are forbidden as ordinary assignment completion, worker-to-reviewer handoff, review response, QA transition, correction request, model-message exchange, or frontend/session cleanup. Those flows use typed regular actor messages and preserve context.
+`actor_stop`, abort, and shutdown belong only to the management/diagnostic control plane. Valid uses are explicit operator-requested retirement, whole-workflow/mission teardown after the retention window, exact-owner recovery, or unrecoverable failure handling. They are forbidden for ordinary assignment completion, phase handoff, evidence exchange, decision routing, follow-up work, model-message exchange, or frontend/session cleanup. Those flows use typed regular actor messages and preserve context.
 
 Ephemeral Pi/client session cleanup cannot stop a global AgentActor. A retained hosted actor may reconnect or recover its owned Pi runtime under the exact ownership and incarnation rules without changing its workflow identity.
 
