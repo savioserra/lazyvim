@@ -438,6 +438,12 @@ message ClientSessionRequest {
     OPERATION_CLOSE = 2;
   }
   Operation operation = 1;
+  // Stable terminal identity supplied by the client: the daemon derives the
+  // session principal (client:<terminal_identity>) and reattaches the one
+  // durable terminal AgentActor registered for that identity instead of
+  // minting an ephemeral agent per session. Empty keeps the legacy ephemeral
+  // mint. Bounded to [A-Za-z0-9_-]{1,48}; malformed values are rejected.
+  string terminal_identity = 2;
 }
 message ClientSessionResponse {
   bool accepted = 1;

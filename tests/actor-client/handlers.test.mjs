@@ -30,7 +30,7 @@ test("actor-client roster reducer fences frames and renders redacted lifecycle",
 });
 
 test("actor ask completion deadline remains bounded for real model tasks", () => {
-  assert.equal(ACTOR_ASK_COMPLETION_TIMEOUT, 30 * 60_000);
+  assert.equal(ACTOR_ASK_COMPLETION_TIMEOUT, 6 * 60 * 60_000);
 });
 
 test("actor ask reply sends one model-visible custom message and clears pending", async () => {

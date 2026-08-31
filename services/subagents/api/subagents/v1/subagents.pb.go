@@ -4664,10 +4664,16 @@ func (x *HostedAdminResponse) GetReason() string {
 }
 
 type ClientSessionRequest struct {
-	state         protoimpl.MessageState         `protogen:"open.v1"`
-	Operation     ClientSessionRequest_Operation `protobuf:"varint,1,opt,name=operation,proto3,enum=workstation.subagents.v1.ClientSessionRequest_Operation" json:"operation,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state     protoimpl.MessageState         `protogen:"open.v1"`
+	Operation ClientSessionRequest_Operation `protobuf:"varint,1,opt,name=operation,proto3,enum=workstation.subagents.v1.ClientSessionRequest_Operation" json:"operation,omitempty"`
+	// Stable terminal identity supplied by the client: the daemon derives the
+	// session principal (client:<terminal_identity>) and reattaches the one
+	// durable terminal AgentActor registered for that identity instead of
+	// minting an ephemeral agent per session. Empty keeps the legacy ephemeral
+	// mint. Bounded to [A-Za-z0-9_-]{1,48}; malformed values are rejected.
+	TerminalIdentity string `protobuf:"bytes,2,opt,name=terminal_identity,json=terminalIdentity,proto3" json:"terminal_identity,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *ClientSessionRequest) Reset() {
@@ -4705,6 +4711,13 @@ func (x *ClientSessionRequest) GetOperation() ClientSessionRequest_Operation {
 		return x.Operation
 	}
 	return ClientSessionRequest_OPERATION_UNSPECIFIED
+}
+
+func (x *ClientSessionRequest) GetTerminalIdentity() string {
+	if x != nil {
+		return x.TerminalIdentity
+	}
+	return ""
 }
 
 type ClientSessionResponse struct {
@@ -5856,9 +5869,10 @@ const file_api_subagents_v1_subagents_proto_rawDesc = "" +
 	"\bagent_id\x18\x02 \x01(\tR\aagentId\x12J\n" +
 	"\aruntime\x18\x03 \x01(\v20.workstation.subagents.v1.HostedPiRuntimeBindingR\aruntime\x12#\n" +
 	"\rattach_target\x18\x04 \x01(\tR\fattachTarget\x12\x16\n" +
-	"\x06reason\x18\x05 \x01(\tR\x06reason\"\xbf\x01\n" +
+	"\x06reason\x18\x05 \x01(\tR\x06reason\"\xec\x01\n" +
 	"\x14ClientSessionRequest\x12V\n" +
-	"\toperation\x18\x01 \x01(\x0e28.workstation.subagents.v1.ClientSessionRequest.OperationR\toperation\"O\n" +
+	"\toperation\x18\x01 \x01(\x0e28.workstation.subagents.v1.ClientSessionRequest.OperationR\toperation\x12+\n" +
+	"\x11terminal_identity\x18\x02 \x01(\tR\x10terminalIdentity\"O\n" +
 	"\tOperation\x12\x19\n" +
 	"\x15OPERATION_UNSPECIFIED\x10\x00\x12\x12\n" +
 	"\x0eOPERATION_OPEN\x10\x01\x12\x13\n" +

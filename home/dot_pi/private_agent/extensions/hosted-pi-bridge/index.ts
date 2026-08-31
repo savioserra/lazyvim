@@ -6,7 +6,8 @@ import { readFile, lstat } from "node:fs/promises";
 import { Type } from "typebox";
 type Envelope = any;
 let EnvelopeSchema: DescMessage;
-import { bridgeErrorClass, buildActorControl, buildActorMessage, buildIdentityDeliveryAck, communicationKey, CommunicationTimeline, completeHostedEnvironment, drainPages, ExactMutationSequencer, executeTypedDelivery, invokeTypedDeliveryForAck, missingAckIdentity, mutationScopeKey, PromptTaskCoordinator, registerHostedHandlers, type PromptTaskLifecycleEvent } from "./handlers.ts";
+import { bridgeErrorClass, buildActorControl, buildActorMessage, buildIdentityDeliveryAck, communicationKey, CommunicationTimeline, completeHostedEnvironment, drainPages, executeTypedDelivery, invokeTypedDeliveryForAck, missingAckIdentity, PromptTaskCoordinator, registerHostedHandlers, type PromptTaskLifecycleEvent } from "./handlers.ts";
+import { ClientMutationSequencer } from "./mutations.ts";
 import { bridgeDiagnostic, incomingControl, incomingNote, incomingRequestText, legacyCommunicationLine, outgoingExchange, peerView, renderCommunicationCard, type CommunicationView } from "./communication-ui.ts";
 
 const MAX_FRAME = 64 * 1024;
@@ -169,7 +170,7 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
   const pendingPushFrames: Envelope[] = [];
   let pushTail = Promise.resolve();
   const pollSequences = new Map<string, bigint>();
-  const mutations = new ExactMutationSequencer();
+  const mutations = new ClientMutationSequencer();
   const timeline = new CommunicationTimeline(512);
   let extensionContext: ExtensionContext | undefined;
 
@@ -247,9 +248,10 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
 
   const message = async (mode: ActorMessageRequest_Mode, target: string | undefined, text: string) => {
     const current = requiredBinding(binding); const destination = target?.trim() || current.agentId; const fence = await ensureFence(destination);
+    const messageScope = bridgeMessageScopeKey(current);
     const inherited = prompts.active()?.delivery;
     if (inherited && inherited.hopLimit < 1) throw new Error("inherited prompt hop budget exhausted");
-    return mutations.run(mutationScopeKey(fence,current.incarnation),
+    return mutations.run(messageScope,
       (sequence)=>({requestId:randomUUID(),value:buildActorMessage(mode,destination,text,randomUUID(),inherited?.chainId ?? randomUUID(),sequence,inherited?.hopLimit ?? 8)}),
       async (logical)=>{const started=Date.now();const active=requiredClient(client);const response=await active.request("actorMessageRequest",ActorMessageRequestSchema,logical.value,fence,logical.requestId,SHORT_REQUEST_TIMEOUT_MS);if(response.payload.case!=="actorMessageResponse"){active.invalidate(new Error("unexpected actor message response"));throw new Error("unexpected actor message response")};const result=actorMessageModelResult(logical,response.payload.value);appendCommunicationView(outgoingExchange({key:`request:${logical.requestId}`,target:response.payload.value.target,body:text,accepted:response.payload.value.accepted,completed:response.payload.value.completed,mode:mode===ActorMessageRequest_Mode.ASK?"ask":"tell",reason:response.payload.value.reason,durationMillis:Date.now()-started}));return result},
 
@@ -260,7 +262,7 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
     const current=requiredBinding(binding);const destination=target?.trim()||current.agentId;const fence=await ensureFence(destination);
     const inherited = prompts.active()?.delivery;
     if (inherited && inherited.hopLimit < 1) throw new Error("inherited prompt hop budget exhausted");
-    return mutations.run(mutationScopeKey(fence,current.incarnation),
+    return mutations.run(bridgeControlScopeKey(current,fence),
       (sequence)=>({requestId:randomUUID(),value:buildActorControl(intent,destination,randomUUID(),inherited?.chainId ?? randomUUID(),sequence,inherited?.hopLimit ?? 2)}),
       async(logical)=>{const active=requiredClient(client);const response=await active.request("actorControlRequest",ActorControlRequestSchema,logical.value,fence,logical.requestId,SHORT_REQUEST_TIMEOUT_MS);if(response.payload.case!=="actorMessageResponse"){active.invalidate(new Error("unexpected actor control response"));throw new Error("unexpected actor control response")};return {accepted:response.payload.value.accepted,reason:response.payload.value.reason}},
       async()=>reconnect(requiredContext(extensionContext)));
@@ -355,12 +357,12 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
     try { await lifecycle(BridgeLifecycleRequest_Event.SESSION_SHUTDOWN); } catch { /* shutdown remains best effort */ }
     for (const [target, fence] of fences) {
       try {
-        const response=await client?.request("detachAgentRequest",DetachAgentRequestSchema,{agentId:target},fence);
-        if(response?.payload.case==="agentOperationResponse"&&response.payload.value.completed)mutations.retireScope(mutationScopeKey(fence,requiredBinding(binding).incarnation),true);
+        await client?.request("detachAgentRequest",DetachAgentRequestSchema,{agentId:target},fence);
       } catch { /* daemon fencing performs final cleanup */ }
     }
     fences.clear();
     subscriptions.clear();
+    if (binding) mutations.retireScopes(bridgeSessionToken(binding));
     await client?.close();
     client = undefined;
     pollClient = undefined;
@@ -573,6 +575,10 @@ export function degradedBridgeStatus(error: unknown): string {
 export function consumeReconnect(operation: () => Promise<unknown>): void {
   void operation().catch(() => { /* caller already projects reconnect failure as degraded */ });
 }
+
+function bridgeSessionToken(value:Binding):string{return `${value.sessionId}\0${value.generationId}\0${value.caller}\0${value.agentId}`;}
+function bridgeMessageScopeKey(value:Binding):string{return `${bridgeSessionToken(value)}\0messages`;}
+function bridgeControlScopeKey(value:Binding,fence:TargetFence):string{return `${bridgeSessionToken(value)}\0control\0${fence.handle}\0${fence.fence}`;}
 
 async function loadBinding(): Promise<Binding> {
   const endpoint = requiredEnv("WS_SUBAGENTS_ENDPOINT");

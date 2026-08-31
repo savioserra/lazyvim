@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -37,6 +38,7 @@ import (
 )
 
 var clientSessionTTL = 30 * time.Minute
+var terminalIdentityPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,48}$`)
 
 const (
 	requestTimeout                   = 2 * time.Second
@@ -2646,16 +2648,28 @@ func (s *Service) clientSessionResponse(ctx context.Context, request *subagentsv
 		if !s.authorizedAdmin(request.SessionCredential) {
 			return errorResponse(request, subagentsv1.ProtocolError_CODE_SESSION_MISMATCH, "client bootstrap authentication denied")
 		}
+		// A stable terminal identity reattaches the one durable terminal
+		// AgentActor for that identity across reconnects and daemon restarts:
+		// the session principal must not churn per OPEN or retained completions
+		// strand in orphaned agent mailboxes nothing drains. Empty keeps the
+		// legacy ephemeral mint for older clients.
+		if command.TerminalIdentity != "" && !terminalIdentityPattern.MatchString(command.TerminalIdentity) {
+			return errorResponse(request, subagentsv1.ProtocolError_CODE_INVALID_REQUEST, "client terminal identity is invalid")
+		}
 		random, err := randomHandle()
 		if err != nil {
 			return internalError(response)
+		}
+		caller := "client:" + random
+		if command.TerminalIdentity != "" {
+			caller = "client:" + command.TerminalIdentity
 		}
 		credential := make([]byte, 32)
 		if _, err := rand.Read(credential); err != nil {
 			return internalError(response)
 		}
 		expires := time.Now().Add(clientSessionTTL)
-		session := application.OpenSession{SessionID: "client-session-" + random, GenerationID: "client-generation-" + random, Caller: "client:" + random, Credential: credential, Capabilities: []string{"observe", "send", "ask", "prompt", "control_abort", "control_shutdown"}, ExpiresAt: expires}
+		session := application.OpenSession{SessionID: "client-session-" + random, GenerationID: "client-generation-" + random, Caller: caller, Credential: credential, Capabilities: []string{"observe", "send", "ask", "prompt", "control_abort", "control_shutdown"}, ExpiresAt: expires}
 		if err := s.OpenSession(ctx, session); err != nil {
 			response.Payload = &subagentsv1.Envelope_ClientSessionResponse{ClientSessionResponse: &subagentsv1.ClientSessionResponse{Reason: redactedLifecycleReason("client open", err)}}
 			return response
