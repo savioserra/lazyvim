@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { buildActorControl, buildActorMessage, buildIdentityDeliveryAck, communicationKey, communicationLine, CommunicationTimeline, completeHostedEnvironment, ExactMutationSequencer, PromptTaskCoordinator, deliveryAction, deliveryKindLabel, destroyOnFramingFailure, drainPages, executeTypedDelivery, invokeTypedDeliveryForAck, parseTargetMessage, registerHostedHandlers, requireExplicitModelTarget } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/handlers.ts";
 import { incomingNote, incomingRequestText, outgoingExchange, renderCommunicationCard, compactToolCall, compactToolResult, modelResultContent } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/communication-ui.ts";
-import { actorMessageModelResult, connectBridgeWithRetry, consumeReconnect } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/index.ts";
+import { actorMessageModelResult, connectBridgeWithRetry, consumeReconnect, degradedBridgeStatus } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/index.ts";
 
 const complete = { WS_SUBAGENTS_ENDPOINT: "ws://127.0.0.1:17213/actors", WS_SUBAGENTS_CREDENTIAL_FILE: "/state/credential", WS_SUBAGENTS_SESSION_ID: "session", WS_SUBAGENTS_GENERATION_ID: "generation", WS_SUBAGENTS_CALLER: "hosted:agent", WS_SUBAGENTS_AGENT_ID: "agent", WS_SUBAGENTS_RUNTIME_ID: "runtime", WS_SUBAGENTS_INCARNATION: "1" };
 
@@ -228,6 +228,17 @@ test("ordinary bytes cannot select abort or shutdown semantics", () => {
   assert.equal(deliveryAction(2), "abort");
   assert.equal(deliveryAction(3), "shutdown");
   assert.throws(() => deliveryAction(0), /unsupported/);
+});
+
+test("acknowledgement rejection surfaces as a bounded visible degradation reason", () => {
+  const rejected = degradedBridgeStatus(new Error("delivery acknowledgement rejected: delivery acknowledgement identity rejected"));
+  assert.match(rejected, /^hosted bridge degraded · delivery acknowledgement rejected: delivery acknowledgement identity rejected$/);
+  const missing = degradedBridgeStatus(new Error("delivery acknowledgement identity is missing"));
+  assert.match(missing, /identity is missing$/);
+  const bounded = degradedBridgeStatus(new Error("x".repeat(500) + "\n\tinjection"));
+  assert.ok(bounded.length <= 130, `degradation status must stay bounded: ${bounded.length}`);
+  assert.doesNotMatch(bounded, /[\r\n\t]/);
+  assert.match(degradedBridgeStatus("plain failure"), /hosted bridge degraded · plain failure$/);
 });
 
 test("prompt delivery uses sendUserMessage then agent_end returns one bounded answer", async () => {

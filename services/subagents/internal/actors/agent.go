@@ -1220,6 +1220,15 @@ func (a *AgentActor) restoreDurableTimers(ctx *actor.ReceiveContext) {
 		if !ok || record.sequence != delivery.Sequence {
 			continue
 		}
+		if !delivery.AckIdentityComplete() {
+			// Legacy durable records persisted before acknowledgement identity
+			// existed carry no source scope token or completion key, so no
+			// bridge client can ever acknowledge them. Retire them immediately
+			// through the bounded deadline path instead of serving them and
+			// stalling the acknowledgement cursor forever.
+			_ = ctx.ActorSystem().ScheduleOnce(context.WithoutCancel(ctx.Context()), &application.BridgeIntentTimeout{ScopeKey: key, DedupeID: delivery.DedupeID}, ctx.Self(), time.Millisecond)
+			continue
+		}
 		_ = ctx.ActorSystem().ScheduleOnce(context.WithoutCancel(ctx.Context()), &application.BridgeIntentTimeout{ScopeKey: key, DedupeID: delivery.DedupeID}, ctx.Self(), max(time.Until(delivery.Deadline), time.Millisecond))
 	}
 	if len(a.sourceOutbox) != 0 || len(a.completionTellPending) != 0 {
@@ -1758,6 +1767,9 @@ func (a *AgentActor) acceptActorTaskWithCredit(ctx *actor.ReceiveContext, messag
 	a.bridgeSequence++
 	targetPeer := application.CommunicationPeer{StableID: a.id, DisplayName: aggregateDisplayName(a.id, a.hostedPiRuntime.DisplayName), Role: aggregateRole(a.id, a.hostedPiRuntime.Role)}
 	delivery := application.BridgeDelivery{Sequence: a.bridgeSequence, SourceAgentID: message.SourceAgentID, TargetAgentID: a.id, RequestID: message.RequestID, DedupeID: message.DedupeID, ChainID: message.ChainID, Source: sourcePeer, Target: targetPeer, Deadline: message.Deadline, HopLimit: message.HopLimit - 1, Payload: append([]byte(nil), message.Payload...), Policy: policy, Kind: kind, SourceScope: token, CompletionKey: actorTaskCompletionKey(a.id, a.bridgeSequence, message.SourceAgentID, message.RequestID, message.DedupeID, message.ChainID, message.SourceMutationSequence)}
+	if !delivery.AckIdentityComplete() {
+		return false
+	}
 	a.bridgeDeliveries = append(a.bridgeDeliveries, delivery)
 	a.deliverySources[delivery.Sequence] = key
 	a.taskSources[delivery.Sequence] = replyTo
@@ -1913,6 +1925,10 @@ func (a *AgentActor) bridgeIntent(ctx *actor.ReceiveContext, message *applicatio
 	oldDurable := a.durableState()
 	a.bridgeSequence++
 	delivery := application.BridgeDelivery{Sequence: a.bridgeSequence, SourceAgentID: message.SourceAgentID, TargetAgentID: a.id, RequestID: message.RequestID, DedupeID: message.DedupeID, ChainID: message.ChainID, Deadline: message.Deadline, HopLimit: message.HopLimit - 1, Payload: append([]byte(nil), message.Payload...), Policy: policy, Kind: kind, SourceScope: token, CompletionKey: actorTaskCompletionKey(a.id, a.bridgeSequence, message.Principal, message.RequestID, message.DedupeID, message.ChainID, message.SourceMutationSequence)}
+	if !delivery.AckIdentityComplete() {
+		complete(application.BridgeIntentResult{Reason: "delivery acknowledgement identity unavailable"})
+		return
+	}
 	a.bridgeDeliveries = append(a.bridgeDeliveries, delivery)
 	a.deliverySources[delivery.Sequence] = key
 	scope.dedupe[message.DedupeID] = bridgeDedupeRecord{sequence: delivery.Sequence, mutationSequence: message.SourceMutationSequence, chainID: message.ChainID}
@@ -1980,6 +1996,10 @@ func (a *AgentActor) bridgeIntentFromActorTask(ctx *actor.ReceiveContext, messag
 	a.bridgeSequence++
 	targetPeer := application.CommunicationPeer{StableID: a.id, DisplayName: aggregateDisplayName(a.id, a.hostedPiRuntime.DisplayName), Role: aggregateRole(a.id, a.hostedPiRuntime.Role)}
 	delivery := application.BridgeDelivery{Sequence: a.bridgeSequence, SourceAgentID: message.SourceAgentID, TargetAgentID: a.id, RequestID: message.RequestID, DedupeID: message.DedupeID, ChainID: message.ChainID, Source: sourcePeer, Target: targetPeer, Deadline: message.Deadline, HopLimit: message.HopLimit - 1, Payload: append([]byte(nil), message.Payload...), Policy: policy, Kind: kind, SourceScope: token, CompletionKey: actorTaskCompletionKey(a.id, a.bridgeSequence, message.SourceAgentID, message.RequestID, message.DedupeID, message.ChainID, message.SourceMutationSequence)}
+	if !delivery.AckIdentityComplete() {
+		complete(application.BridgeIntentResult{Reason: "delivery acknowledgement identity unavailable"})
+		return
+	}
 	a.bridgeDeliveries = append(a.bridgeDeliveries, delivery)
 	a.deliverySources[delivery.Sequence] = key
 	a.taskSources[delivery.Sequence] = replyTo
@@ -2042,6 +2062,10 @@ func (a *AgentActor) bridgeControl(ctx *actor.ReceiveContext, message *applicati
 	oldDurable := a.durableState()
 	a.bridgeSequence++
 	delivery := application.BridgeDelivery{Sequence: a.bridgeSequence, SourceAgentID: message.SourceAgentID, TargetAgentID: a.id, RequestID: message.RequestID, DedupeID: message.DedupeID, ChainID: message.ChainID, Deadline: message.Deadline, HopLimit: message.HopLimit - 1, Kind: kind, SourceScope: token, CompletionKey: actorTaskCompletionKey(a.id, a.bridgeSequence, message.Principal, message.RequestID, message.DedupeID, message.ChainID, message.SourceMutationSequence)}
+	if !delivery.AckIdentityComplete() {
+		complete(application.BridgeIntentResult{Reason: "delivery acknowledgement identity unavailable"})
+		return
+	}
 	a.bridgeDeliveries = append(a.bridgeDeliveries, delivery)
 	a.deliverySources[delivery.Sequence] = key
 	scope.dedupe[message.DedupeID] = bridgeDedupeRecord{sequence: delivery.Sequence, mutationSequence: message.SourceMutationSequence, chainID: message.ChainID}
@@ -2727,6 +2751,27 @@ func (a *AgentActor) bridgeIntentTimeout(ctx *actor.ReceiveContext, message *app
 			}
 		}
 	}
+	// A deadline retirement terminally resolves the sequence: advance the
+	// contiguous acknowledgement cursor past it and drain any buffered
+	// acknowledgements that became contiguous. Without this a retired
+	// delivery (including a legacy identity-less one retired immediately on
+	// reload) would wedge the cursor and the bounded gap buffer forever.
+	if index >= 0 && record.sequence == a.ackCursor+1 {
+		a.ackCursor = record.sequence
+		for {
+			next, buffered := a.ackGaps[a.ackCursor+1]
+			if !buffered {
+				break
+			}
+			if burst == nil {
+				burst = &ackBurstReceipt{}
+			}
+			if !a.commitAck(ctx, &next, burst) {
+				break
+			}
+			delete(a.ackGaps, next.Sequence)
+		}
+	}
 	if a.beginDurablePersist(ctx, &pendingDurableReceipt{old: oldDurable, askScope: message.ScopeKey, askDedupe: message.DedupeID, askCompletion: askCompletion, askResult: &result, ackBurst: burst, retryTimeout: true, liveTaskSources: liveTaskSources}) {
 		return
 	}
@@ -2778,7 +2823,10 @@ func (a *AgentActor) pollBridge(ctx *actor.ReceiveContext, message *application.
 	}
 	if exactBridge {
 		for index := range a.bridgeDeliveries {
-			if a.bridgeDeliveries[index].Sequence > message.AfterSequence {
+			// Never serve a delivery whose acknowledgement identity is
+			// incomplete: it cannot be acknowledged and would stall the bridge
+			// acknowledgement chain. Legacy records are retired on restore.
+			if a.bridgeDeliveries[index].Sequence > message.AfterSequence && a.bridgeDeliveries[index].AckIdentityComplete() {
 				items = append(items, item{sequence: a.bridgeDeliveries[index].Sequence, delivery: &a.bridgeDeliveries[index]})
 			}
 		}

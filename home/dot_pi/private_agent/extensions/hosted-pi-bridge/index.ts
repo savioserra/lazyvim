@@ -165,6 +165,7 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
   let pollTimer: NodeJS.Timeout | undefined;
   let bridgeShuttingDown = false;
   let lastAckedSequence = 0n;
+  let bridgeFailureReason = "";
   const pendingPushFrames: Envelope[] = [];
   let pushTail = Promise.resolve();
   const pollSequences = new Map<string, bigint>();
@@ -182,7 +183,7 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
     if (encoded.byteLength > MAX_TEXT) throw new Error("assistant answer exceeds bridge bound");
     const ack = buildIdentityDeliveryAck(requiredBinding(binding).agentId, { runtimeId: requiredBinding(binding).runtimeId, incarnation: requiredBinding(binding).incarnation, piSessionId }, pending.delivery, deliveredSuccessfully, reason, encoded);
     const response = await requiredClient(client).request("bridgeDeliveryAckRequest", BridgeDeliveryAckRequestSchema, ack, pending.fence);
-    if (response.payload.case !== "bridgeDeliveryAckResponse" || !response.payload.value.accepted) throw new Error("prompt completion acknowledgement rejected");
+    if (response.payload.case !== "bridgeDeliveryAckResponse" || !response.payload.value.accepted) throw new Error(`prompt completion acknowledgement rejected: ${boundedPublic(String(response.payload.value?.reason || ""), 80)}`);
     if (deliveredSuccessfully) deliveredPrompt(pending.delivery.dedupeId, pending.delivery.sequence);
   });
 
@@ -298,16 +299,19 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
     await pushTail;
     await lifecycle(BridgeLifecycleRequest_Event.SESSION_START);
     await lifecycle(BridgeLifecycleRequest_Event.READY);
-    heartbeatTimer = setInterval(() => { void heartbeat().catch(() => consumeReconnect(() => reconnect(ctx))); }, 400);
+    heartbeatTimer = setInterval(() => { void heartbeat().catch((error) => { reportBridgeDegraded(ctx, error); return consumeReconnect(() => reconnect(ctx)); }); }, 400);
     heartbeatTimer.unref();
-    pollTimer = setInterval(() => { void poll(ctx).catch(() => consumeReconnect(() => reconnect(ctx))); }, 1000);
+    pollTimer = setInterval(() => { void poll(ctx).catch((error) => { reportBridgeDegraded(ctx, error); return consumeReconnect(() => reconnect(ctx)); }); }, 1000);
     pollTimer.unref();
-    void poll(ctx).catch(() => consumeReconnect(() => reconnect(ctx)));
+    void poll(ctx).catch((error) => { reportBridgeDegraded(ctx, error); return consumeReconnect(() => reconnect(ctx)); });
     ctx.ui.setStatus("hosted-pi-bridge", "hosted bridge ready");
   });
 
   pi.on("agent_start", async () => { await lifecycle(BridgeLifecycleRequest_Event.AGENT_START); });
-  pi.on("agent_end", async (event) => { await prompts.agentEnd(event.messages as unknown[]); });
+  pi.on("agent_end", async (event) => {
+    try { await prompts.agentEnd(event.messages as unknown[]); }
+    catch (error) { if (extensionContext) reportBridgeDegraded(extensionContext, error); }
+  });
   pi.on("agent_settled", async () => { await lifecycle(BridgeLifecycleRequest_Event.AGENT_SETTLED); });
 
   pi.on("session_shutdown", async (_event, ctx) => {
@@ -353,7 +357,8 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
       pendingPushFrames.push(envelope);
       return;
     }
-    pushTail = pushTail.then(() => handlePush(ctx, envelope)).catch(async () => {
+    pushTail = pushTail.then(() => handlePush(ctx, envelope)).catch(async (error) => {
+      reportBridgeDegraded(ctx, error);
       try { await reconnect(ctx); } catch { /* degraded status is authoritative; never crash Pi */ }
     });
   }
@@ -404,7 +409,7 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
       }
     });
     const response = await requiredClient(client).request("bridgeDeliveryAckRequest", BridgeDeliveryAckRequestSchema, ack, fence);
-    if (response.payload.case !== "bridgeDeliveryAckResponse" || !response.payload.value.accepted) throw new Error("delivery acknowledgement rejected");
+    if (response.payload.case !== "bridgeDeliveryAckResponse" || !response.payload.value.accepted) throw new Error(`delivery acknowledgement rejected: ${boundedPublic(String(response.payload.value?.reason || ""), 80)}`);
     if (ack.delivered) {
       lastAckedSequence = maxBigInt(lastAckedSequence, delivery.sequence);
       appendDeliveryMarker(delivery.dedupeId, delivery.sequence, delivery.kind);
@@ -453,11 +458,12 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
           await lifecycle(BridgeLifecycleRequest_Event.READY);
           await prompts.retryCompletion();
           await poll(ctx);
+          bridgeFailureReason = "";
           ctx.ui.setStatus("hosted-pi-bridge", "hosted bridge ready");
           return;
         } catch {
           attempt++;
-          if (attempt >= 5) ctx.ui.setStatus("hosted-pi-bridge", "hosted bridge degraded · retrying");
+          if (attempt >= 5) ctx.ui.setStatus("hosted-pi-bridge", `hosted bridge degraded · ${bridgeFailureReason || "retrying"}`);
           await delay(Math.min(5000, 100 * 2 ** Math.min(attempt, 6)));
         }
       }
@@ -465,6 +471,22 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
     })().finally(() => { reconnecting = undefined; });
     return reconnecting;
   }
+
+  // reportBridgeDegraded makes an acknowledgement or delivery failure visible
+  // as a bounded status line with its exact reason instead of silently
+  // stalling the acknowledgement chain: delivery rejection, missing server
+  // acknowledgement identity, or a rejected prompt completion all surface here.
+  function reportBridgeDegraded(ctx: ExtensionContext, error: unknown) {
+    bridgeFailureReason = boundedPublic(error instanceof Error ? error.message : String(error), 100);
+    ctx.ui.setStatus("hosted-pi-bridge", degradedBridgeStatus(error));
+  }
+}
+
+// degradedBridgeStatus is the bounded, single-line degradation reason shown in
+// the bridge status surface. It must never leak control characters or exceed a
+// bounded width, and it must keep the server's exact rejection reason visible.
+export function degradedBridgeStatus(error: unknown): string {
+  return `hosted bridge degraded · ${boundedPublic(error instanceof Error ? error.message : String(error), 100)}`;
 }
 
 

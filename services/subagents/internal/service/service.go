@@ -1697,12 +1697,13 @@ func (s *Service) pushBridgeToSession(session *bridgePushSession, reason string)
 	if len(poll.Events) == 0 && len(poll.Deliveries) == 0 {
 		return true
 	}
-	frame := &subagentsv1.Envelope{ProtocolMajor: protocol.ProtocolMajor, ProtocolMinor: protocol.ProtocolMinor, Payload: &subagentsv1.Envelope_BridgePushFrame{BridgePushFrame: &subagentsv1.BridgePushFrame{AgentId: session.agentID, Events: protoBridgeEvents(poll.Events), Deliveries: s.protoBridgeDeliveries(ctx, poll.Deliveries), LatestSequence: poll.LatestSequence, Reason: reason}}}
+	deliveries := s.protoBridgeDeliveries(ctx, poll.Deliveries)
+	frame := &subagentsv1.Envelope{ProtocolMajor: protocol.ProtocolMajor, ProtocolMinor: protocol.ProtocolMinor, Payload: &subagentsv1.Envelope_BridgePushFrame{BridgePushFrame: &subagentsv1.BridgePushFrame{AgentId: session.agentID, Events: protoBridgeEvents(poll.Events), Deliveries: deliveries, LatestSequence: poll.LatestSequence, Reason: reason}}}
 	select {
 	case <-session.closed:
 		return false
 	case session.writer <- frame:
-		if len(poll.Deliveries) == 0 {
+		if len(deliveries) == 0 {
 			session.afterSequence = poll.LatestSequence
 		}
 		return true
@@ -2252,6 +2253,11 @@ func protoBridgeEvents(events []application.BridgeEvent) []*subagentsv1.BridgeEv
 func (s *Service) protoBridgeDeliveries(ctx context.Context, deliveries []application.BridgeDelivery) []*subagentsv1.BridgeDelivery {
 	result := make([]*subagentsv1.BridgeDelivery, 0, len(deliveries))
 	for _, delivery := range deliveries {
+		// Defense in depth: a delivery without acknowledgement identity can
+		// never be acknowledged, so it must never reach a bridge client.
+		if !delivery.AckIdentityComplete() {
+			continue
+		}
 		source, target := delivery.Source, delivery.Target
 		if source.StableID == "" {
 			source = s.communicationPeer(ctx, delivery.SourceAgentID)

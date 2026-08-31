@@ -31,6 +31,24 @@ func hostedFixtureEnvelope() *subagentsv1.Envelope {
 	}
 }
 
+// bridgePushFixtureEnvelope is the golden shape of a pushed prompt delivery:
+// every field a hosted bridge acknowledgement must echo, including the
+// opaque source scope token and completion key.
+func bridgePushFixtureEnvelope() *subagentsv1.Envelope {
+	return &subagentsv1.Envelope{
+		ProtocolMajor: 1, ProtocolMinor: 1, SessionId: "bridge-session-fixture", GenerationId: "bridge-generation-fixture", RequestId: "bridge-push-fixture",
+		DeadlineUnixMillis: 1893456001234, Sequence: 23, CallerIdentity: "hosted:agent-fixture", AgentHandle: "opaque-fenced-handle", AgentFence: 31,
+		Payload: &subagentsv1.Envelope_BridgePushFrame{BridgePushFrame: &subagentsv1.BridgePushFrame{
+			AgentId: "agent-target", LatestSequence: 9,
+			Deliveries: []*subagentsv1.BridgeDelivery{{
+				Sequence: 9, SourceAgentId: "hosted:agent-fixture", TargetAgentId: "agent-target", RequestId: "request-9", DeadlineUnixMillis: 1893456005678,
+				DedupeId: "dedupe-9", HopLimit: 7, BoundedPayload: []byte("wake up"), Kind: subagentsv1.BridgeDelivery_KIND_PROMPT, ChainId: "chain-9",
+				SourceScope: "opaque-scope-token-9", CompletionKey: "agent-target:9:hosted:agent-fixture:request-9:dedupe-9:chain-9:1",
+			}},
+		}},
+	}
+}
+
 func TestDeterministicGoldenFrame(t *testing.T) {
 	var frame bytes.Buffer
 	if err := protocol.WriteEnvelope(&frame, fixtureEnvelope()); err != nil {
@@ -65,6 +83,25 @@ func TestHostedBridgeGoldenFrame(t *testing.T) {
 	decoded, err := protocol.ReadEnvelope(bytes.NewReader(frame.Bytes()))
 	if err != nil || decoded.GetActorMessageRequest().GetDedupeId() != "dedupe-fixture" || decoded.GetAgentFence() != 23 {
 		t.Fatalf("hosted bridge golden did not round trip: %#v %v", decoded, err)
+	}
+}
+
+func TestBridgePushDeliveryGoldenFrame(t *testing.T) {
+	var frame bytes.Buffer
+	if err := protocol.WriteEnvelope(&frame, bridgePushFixtureEnvelope()); err != nil {
+		t.Fatal(err)
+	}
+	golden, err := os.ReadFile(filepath.Join("..", "..", "testdata", "golden", "bridge-push-frame.hex"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hex.EncodeToString(frame.Bytes()) != strings.TrimSpace(string(golden)) {
+		t.Fatal("Go bridge push encoding differs from the checked-in TypeScript golden frame")
+	}
+	decoded, err := protocol.ReadEnvelope(bytes.NewReader(frame.Bytes()))
+	push := decoded.GetBridgePushFrame()
+	if err != nil || len(push.GetDeliveries()) != 1 || push.GetDeliveries()[0].GetSourceScope() == "" || push.GetDeliveries()[0].GetCompletionKey() == "" {
+		t.Fatalf("bridge push golden did not round trip with acknowledgement identity: %#v %v", decoded, err)
 	}
 }
 

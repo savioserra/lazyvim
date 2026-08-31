@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --import tsx --test testdata/golden/protocol_golden.test.mjs"
+    "test": "node --import tsx --test testdata/golden/protocol_golden.test.mjs testdata/golden/bridge_delivery_ack.test.mjs"
   },
   "dependencies": {
     "@bufbuild/protobuf": "2.11.0"

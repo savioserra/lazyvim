@@ -880,6 +880,14 @@ type BridgeDelivery struct {
 	Kind                                                       BridgeDeliveryKind
 	SourceScope, CompletionKey                                 string
 }
+
+// AckIdentityComplete reports whether the delivery carries the opaque
+// server-issued source scope token and completion key that every bridge
+// acknowledgement must echo. A delivery without both can never be
+// acknowledged and must never be pushed or polled to a hosted bridge.
+func (d BridgeDelivery) AckIdentityComplete() bool {
+	return d.SourceScope != "" && d.CompletionKey != ""
+}
 type BridgeEvent struct {
 	Sequence, Revision uint64
 	AgentID, Operation string
