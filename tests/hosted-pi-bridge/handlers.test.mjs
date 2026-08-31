@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildActorControl, buildActorMessage, buildIdentityDeliveryAck, communicationKey, communicationLine, CommunicationTimeline, completeHostedEnvironment, ExactMutationSequencer, PromptTaskCoordinator, deliveryAction, deliveryKindLabel, destroyOnFramingFailure, drainPages, executeTypedDelivery, invokeTypedDeliveryForAck, parseTargetMessage, registerHostedHandlers, requireExplicitModelTarget } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/handlers.ts";
+import { buildActorControl, buildActorMessage, buildIdentityDeliveryAck, communicationKey, communicationLine, CommunicationTimeline, completeHostedEnvironment, ExactMutationSequencer, PromptTaskCoordinator, deliveryAction, deliveryKindLabel, destroyOnFramingFailure, drainPages, executeTypedDelivery, invokeTypedDeliveryForAck, missingAckIdentity, parseTargetMessage, registerHostedHandlers, requireExplicitModelTarget } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/handlers.ts";
 import { incomingNote, incomingRequestText, outgoingExchange, renderCommunicationCard, compactToolCall, compactToolResult, modelResultContent } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/communication-ui.ts";
 import { actorMessageModelResult, connectBridgeWithRetry, consumeReconnect, degradedBridgeStatus } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/index.ts";
 
@@ -219,8 +219,31 @@ test("typed delivery invokes documented context abort/shutdown and notification 
   const failedDelivery = { sequence: 2n, dedupeId: "failed", kind: 2, sourceScope: "scope-key", completionKey: "completion-key" };
   const success = await invokeTypedDeliveryForAck("agent", identity, okDelivery, () => ctx.abort());
   const failure = await invokeTypedDeliveryForAck("agent", identity, failedDelivery, () => { throw new Error("abort failed"); });
-  assert.equal(success.delivered, true); assert.equal(failure.delivered, false); assert.equal(failure.reason, "abort failed");
-  assert.equal(success.kind, "abort"); assert.equal(success.completionKey, "completion-key");
+  assert.equal(success.ack.delivered, true); assert.equal(failure.ack.delivered, false); assert.equal(failure.ack.reason, "abort failed");
+  assert.equal(success.ack.kind, "abort"); assert.equal(success.ack.completionKey, "completion-key");
+  // A delivery failure must surface through the built acknowledgement, never
+  // by re-throwing out of the wrapper: the acknowledgement still commits with
+  // delivered=false so the daemon cursor advances instead of stalling.
+  assert.equal(failure.degraded, undefined);
+});
+
+test("missing acknowledgement identity degrades visibly without side effects or re-throw", async () => {
+  const identity = { runtimeId: "runtime-9", incarnation: 2n, piSessionId: "pi-9" };
+  const executed = [];
+  for (const stripped of [
+    { sequence: 12n, dedupeId: "legacy-both", kind: 4 },
+    { sequence: 13n, dedupeId: "legacy-scope", kind: 1, completionKey: "completion-key" },
+    { sequence: 14n, dedupeId: "legacy-key", kind: 2, sourceScope: "scope-key" },
+  ]) {
+    const outcome = await invokeTypedDeliveryForAck("agent", identity, stripped, () => { executed.push(stripped.dedupeId); });
+    assert.equal(outcome.ack, undefined, `${stripped.dedupeId} unexpectedly built an acknowledgement`);
+    assert.match(outcome.degraded, /delivery acknowledgement identity is missing/);
+    assert.match(outcome.degraded, new RegExp(String.raw`sequence ${stripped.sequence}`));
+    assert.match(degradedBridgeStatus(new Error(outcome.degraded)), /^hosted bridge degraded · delivery acknowledgement identity is missing/);
+  }
+  assert.deepEqual(executed, [], "identity-less delivery side effects must not run");
+  assert.equal(missingAckIdentity({ sequence: 1n, dedupeId: "d", kind: 1, sourceScope: "s", completionKey: "c" }), undefined);
+  assert.match(missingAckIdentity({ sequence: 1n, dedupeId: "d", kind: 1 }), /identity is missing/);
 });
 
 test("ordinary bytes cannot select abort or shutdown semantics", () => {

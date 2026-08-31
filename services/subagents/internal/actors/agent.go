@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"os"
 	"slices"
 	"strings"
 	"time"
@@ -1210,7 +1211,34 @@ func (a *AgentActor) completeDurableReceipt(ctx *actor.ReceiveContext, pending *
 	}
 }
 func (a *AgentActor) restoreDurableTimers(ctx *actor.ReceiveContext) {
+	retire := make([]uint64, 0, len(a.bridgeDeliveries))
 	for _, delivery := range a.bridgeDeliveries {
+		if !delivery.AckIdentityComplete() {
+			// Legacy durable records persisted before acknowledgement identity
+			// existed carry no source scope token or completion key, so no
+			// bridge client can ever acknowledge them. Retire them immediately
+			// through the bounded deadline path instead of serving them and
+			// stalling the acknowledgement cursor forever. When the owning scope
+			// or dedupe record no longer resolves, the timeout path cannot retire
+			// them, so drop them here loudly: they can never be served or
+			// acknowledged and would otherwise stall the cursor invisibly. The
+			// drop repeats idempotently on every restore until the durable
+			// record is overwritten.
+			key := a.deliverySources[delivery.Sequence]
+			scope := a.mutationScopes[key]
+			resolved := false
+			var record bridgeDedupeRecord
+			if scope != nil {
+				record, resolved = scope.dedupe[delivery.DedupeID]
+			}
+			if scope != nil && resolved && record.sequence == delivery.Sequence {
+				_ = ctx.ActorSystem().ScheduleOnce(context.WithoutCancel(ctx.Context()), &application.BridgeIntentTimeout{ScopeKey: key, DedupeID: delivery.DedupeID}, ctx.Self(), time.Millisecond)
+				continue
+			}
+			retire = append(retire, delivery.Sequence)
+			fmt.Fprintf(os.Stderr, "legacy identity-less bridge delivery dropped at restore: agent=%s sequence=%d kind=%d dedupe=%s reason=acknowledgement identity incomplete and owning scope did not resolve\n", boundedActorLogAtom(a.id, 64), delivery.Sequence, delivery.Kind, boundedActorLogAtom(delivery.DedupeID, 64))
+			continue
+		}
 		key := a.deliverySources[delivery.Sequence]
 		scope := a.mutationScopes[key]
 		if scope == nil {
@@ -1220,16 +1248,13 @@ func (a *AgentActor) restoreDurableTimers(ctx *actor.ReceiveContext) {
 		if !ok || record.sequence != delivery.Sequence {
 			continue
 		}
-		if !delivery.AckIdentityComplete() {
-			// Legacy durable records persisted before acknowledgement identity
-			// existed carry no source scope token or completion key, so no
-			// bridge client can ever acknowledge them. Retire them immediately
-			// through the bounded deadline path instead of serving them and
-			// stalling the acknowledgement cursor forever.
-			_ = ctx.ActorSystem().ScheduleOnce(context.WithoutCancel(ctx.Context()), &application.BridgeIntentTimeout{ScopeKey: key, DedupeID: delivery.DedupeID}, ctx.Self(), time.Millisecond)
-			continue
-		}
 		_ = ctx.ActorSystem().ScheduleOnce(context.WithoutCancel(ctx.Context()), &application.BridgeIntentTimeout{ScopeKey: key, DedupeID: delivery.DedupeID}, ctx.Self(), max(time.Until(delivery.Deadline), time.Millisecond))
+	}
+	if len(retire) != 0 {
+		a.bridgeDeliveries = slices.DeleteFunc(a.bridgeDeliveries, func(item application.BridgeDelivery) bool { return slices.Contains(retire, item.Sequence) })
+		for _, sequence := range retire {
+			delete(a.deliverySources, sequence)
+		}
 	}
 	if len(a.sourceOutbox) != 0 || len(a.completionTellPending) != 0 {
 		_ = ctx.ActorSystem().ScheduleOnce(context.WithoutCancel(ctx.Context()), &retrySourceOutbox{}, ctx.Self(), outboxBaseRetryDelay)
@@ -2470,6 +2495,21 @@ func boundedAckReason(reason string) string {
 		return reason[:256]
 	}
 	return reason
+}
+
+// boundedActorLogAtom bounds an actor-side log field to a fixed width and
+// strips control characters so operator-facing log lines stay bounded.
+func boundedActorLogAtom(value string, max int) string {
+	clean := strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return ' '
+		}
+		return r
+	}, value)
+	if len(clean) > max {
+		return clean[:max-1] + "…"
+	}
+	return clean
 }
 
 func (a *AgentActor) deliverAckBurstEffects(ctx *actor.ReceiveContext, burst *ackBurstReceipt) {

@@ -191,9 +191,32 @@ export function buildIdentityDeliveryAck(agentId: string, identity: BridgeSessio
   return { agentId, sequence: delivery.sequence, dedupeId: delivery.dedupeId, delivered, reason, boundedResult, runtimeId: identity.runtimeId, incarnation: identity.incarnation, piSessionId: identity.piSessionId, kind: deliveryKindLabel(delivery.kind), sourceScope: delivery.sourceScope, completionKey: delivery.completionKey };
 }
 
-export async function invokeTypedDeliveryForAck(agentId: string, identity: BridgeSessionIdentity, delivery: AckableDelivery, invoke: () => void | Promise<void>) {
-  try { await invoke(); return buildIdentityDeliveryAck(agentId, identity, delivery, true, ""); }
-  catch (error) { return buildIdentityDeliveryAck(agentId, identity, delivery, false, error instanceof Error ? error.message : "delivery failed"); }
+// missingAckIdentity returns the bounded degraded reason when a delivered
+// frame lacks the acknowledgement identity the daemon must receive back. It
+// is the one shared gate for every delivery-consuming surface: push, poll,
+// and reconnect replay all check it before any delivery side effect runs.
+export function missingAckIdentity(delivery: { sequence?: unknown; dedupeId?: unknown; sourceScope?: string; completionKey?: string }): string | undefined {
+  if (delivery.sourceScope && delivery.completionKey) return undefined;
+  return `delivery acknowledgement identity is missing (sequence ${boundedAtom(String(delivery.sequence ?? ""), 32)}, dedupeId ${boundedAtom(String(delivery.dedupeId ?? ""), 48)})`;
+}
+
+export type TypedDeliveryAckOutcome = { ack: ReturnType<typeof buildIdentityDeliveryAck>; degraded?: undefined } | { ack?: undefined; degraded: string };
+
+// invokeTypedDeliveryForAck executes a typed delivery and builds its identity
+// acknowledgement. Acknowledgement identity is required before any side
+// effect: a frame without it can never be acknowledged, so executing it would
+// replay forever while the acknowledgement chain stalls. A missing identity
+// degrades visibly through the bounded reason instead of re-throwing from the
+// catch path (which previously masked the real failure and silently dropped
+// the acknowledgement).
+export async function invokeTypedDeliveryForAck(agentId: string, identity: BridgeSessionIdentity, delivery: AckableDelivery, invoke: () => void | Promise<void>): Promise<TypedDeliveryAckOutcome> {
+  const degraded = missingAckIdentity(delivery);
+  if (degraded) return { degraded };
+  let delivered = true;
+  let reason = "";
+  try { await invoke(); }
+  catch (error) { delivered = false; reason = error instanceof Error ? error.message : "delivery failed"; }
+  return { ack: buildIdentityDeliveryAck(agentId, identity, delivery, delivered, reason) };
 }
 
 export function executeTypedDelivery(ctx: { abort(): void; shutdown(): void; ui: { notify(message: string, level: string): void } }, kind: number, text: string) {

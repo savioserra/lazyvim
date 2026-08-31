@@ -6,7 +6,7 @@ import { readFile, lstat } from "node:fs/promises";
 import { Type } from "typebox";
 type Envelope = any;
 let EnvelopeSchema: DescMessage;
-import { buildActorControl, buildActorMessage, buildIdentityDeliveryAck, communicationKey, CommunicationTimeline, completeHostedEnvironment, drainPages, ExactMutationSequencer, executeTypedDelivery, invokeTypedDeliveryForAck, mutationScopeKey, PromptTaskCoordinator, registerHostedHandlers } from "./handlers.ts";
+import { buildActorControl, buildActorMessage, buildIdentityDeliveryAck, communicationKey, CommunicationTimeline, completeHostedEnvironment, drainPages, ExactMutationSequencer, executeTypedDelivery, invokeTypedDeliveryForAck, missingAckIdentity, mutationScopeKey, PromptTaskCoordinator, registerHostedHandlers } from "./handlers.ts";
 import { incomingControl, incomingNote, incomingRequestText, legacyCommunicationLine, outgoingExchange, peerView, renderCommunicationCard, type CommunicationView } from "./communication-ui.ts";
 
 const MAX_FRAME = 64 * 1024;
@@ -393,13 +393,21 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
   }
 
   async function deliverAndAcknowledge(ctx: ExtensionContext, delivery: any, fence: TargetFence) {
+    // Acknowledgement identity is required before any delivery side effect: a
+    // replayed frame without source scope or completion key can never be
+    // acknowledged, so executing it would replay forever while the cursor
+    // stalls. Surface a bounded degraded status instead of throwing into the
+    // reconnect loop, which would flip the pane back to ready and hide the
+    // stall. The status persists because every poll cycle re-reports it.
+    const missingIdentity = missingAckIdentity(delivery);
+    if (missingIdentity) { reportBridgeDegraded(ctx, new Error(missingIdentity)); return; }
     const duplicate = delivered.has(delivery.dedupeId);
     if (delivery.kind === 4) { if (!duplicate) await prompts.deliver({ ...delivery, boundedPayload: new TextEncoder().encode(incomingRequestText(delivery)) }, fence); return; }
     if (!duplicate) {
       if (delivery.kind === 1) appendCommunicationView(incomingNote(communicationKey(delivery), delivery.source, delivery.boundedPayload));
       else appendCommunicationView(incomingControl(communicationKey(delivery), delivery.source, deliveryKindName(delivery.kind)));
     }
-    const ack = await invokeTypedDeliveryForAck(requiredBinding(binding).agentId, { runtimeId: requiredBinding(binding).runtimeId, incarnation: requiredBinding(binding).incarnation, piSessionId }, delivery, async () => {
+    const outcome = await invokeTypedDeliveryForAck(requiredBinding(binding).agentId, { runtimeId: requiredBinding(binding).runtimeId, incarnation: requiredBinding(binding).incarnation, piSessionId }, delivery, async () => {
       if (delivery.hopLimit === 0) throw new Error("delivery hop budget exhausted");
       if (BigInt(Date.now()) > delivery.deadlineUnixMillis) throw new Error("delivery deadline expired");
       if (!duplicate) {
@@ -408,9 +416,10 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
         if (delivered.size > 512) delivered.delete(delivered.values().next().value!);
       }
     });
-    const response = await requiredClient(client).request("bridgeDeliveryAckRequest", BridgeDeliveryAckRequestSchema, ack, fence);
+    if (outcome.degraded) { reportBridgeDegraded(ctx, new Error(outcome.degraded)); return; }
+    const response = await requiredClient(client).request("bridgeDeliveryAckRequest", BridgeDeliveryAckRequestSchema, outcome.ack, fence);
     if (response.payload.case !== "bridgeDeliveryAckResponse" || !response.payload.value.accepted) throw new Error(`delivery acknowledgement rejected: ${boundedPublic(String(response.payload.value?.reason || ""), 80)}`);
-    if (ack.delivered) {
+    if (outcome.ack.delivered) {
       lastAckedSequence = maxBigInt(lastAckedSequence, delivery.sequence);
       appendDeliveryMarker(delivery.dedupeId, delivery.sequence, delivery.kind);
     }

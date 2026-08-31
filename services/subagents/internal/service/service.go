@@ -2219,6 +2219,11 @@ func (s *Service) dispatch(request *subagentsv1.Envelope) *subagentsv1.Envelope 
 		}
 		if result.Accepted {
 			s.updateBridgeAckCursor(payload.BridgeDeliveryAckRequest.AgentId, request.SessionId, request.GenerationId, request.AgentHandle, request.AgentFence, result.Cursor)
+		} else {
+			// Every acknowledgement rejection is logged with a bounded reason so a
+			// stalled acknowledgement chain is diagnosable from the daemon side
+			// instead of surfacing only as a silent cursor gap.
+			fmt.Fprintf(os.Stderr, "bridge delivery ack rejected: agent=%s sequence=%d dedupe=%s reason=%s\n", boundedLogAtom(payload.BridgeDeliveryAckRequest.AgentId, 64), payload.BridgeDeliveryAckRequest.Sequence, boundedLogAtom(payload.BridgeDeliveryAckRequest.DedupeId, 64), boundedLogAtom(result.Reason, 120))
 		}
 		response.Payload = &subagentsv1.Envelope_BridgeDeliveryAckResponse{BridgeDeliveryAckResponse: &subagentsv1.BridgeDeliveryAckResponse{Accepted: result.Accepted, Reason: result.Reason, Cursor: result.Cursor}}
 	case *subagentsv1.Envelope_BridgePollRequest:
@@ -2250,12 +2255,19 @@ func protoBridgeEvents(events []application.BridgeEvent) []*subagentsv1.BridgeEv
 	return result
 }
 
+// protoBridgeDeliveries is the single shared conversion every bridge
+// delivery-serializing surface funnels through: initial push, poll, and the
+// reconnect/post-fence replay paths all serialize deliveries exclusively here.
+// Acknowledgement identity is required: a delivery without it can never be
+// acknowledged, so it must never reach a bridge client, and withholding it is
+// logged loudly instead of being dropped silently.
 func (s *Service) protoBridgeDeliveries(ctx context.Context, deliveries []application.BridgeDelivery) []*subagentsv1.BridgeDelivery {
 	result := make([]*subagentsv1.BridgeDelivery, 0, len(deliveries))
 	for _, delivery := range deliveries {
 		// Defense in depth: a delivery without acknowledgement identity can
 		// never be acknowledged, so it must never reach a bridge client.
 		if !delivery.AckIdentityComplete() {
+			fmt.Fprintf(os.Stderr, "bridge delivery withheld: agent=%s sequence=%d kind=%d dedupe=%s reason=acknowledgement identity incomplete\n", boundedLogAtom(delivery.TargetAgentID, 64), delivery.Sequence, delivery.Kind, boundedLogAtom(delivery.DedupeID, 64))
 			continue
 		}
 		source, target := delivery.Source, delivery.Target
@@ -3677,6 +3689,22 @@ func actorControlCapability(intent subagentsv1.ActorControlRequest_Intent) (stri
 		return "", false
 	}
 }
+
+// boundedLogAtom bounds a daemon log field to a fixed width and strips
+// control characters so operator-facing log lines stay single-line and bounded.
+func boundedLogAtom(value string, max int) string {
+	clean := strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return ' '
+		}
+		return r
+	}, value)
+	if len(clean) > max {
+		return clean[:max-1] + "…"
+	}
+	return clean
+}
+
 func hostedStartupFailureClass(reason string) string {
 	switch reason {
 	case "hosted bridge authorization denied", "hosted bridge binding rejected", "hosted bridge replacement requires an explicit fenced transition", "durable persistence is busy":

@@ -278,3 +278,81 @@ func TestPushedAndPolledAskDeliveriesCarryAcknowledgementIdentity(t *testing.T) 
 		t.Fatalf("acknowledged delivery replayed after cursor advance: %#v", after.Deliveries)
 	}
 }
+
+// TestReconnectReplayFrameCarriesAcknowledgementIdentityAndCommitsCursor
+// models the deployed incident sequencing exactly: a prompt delivery is queued
+// with full acknowledgement identity BEFORE the bridge connection bounces, and
+// afterwards it is consumed exclusively through reconnect replay from the
+// acknowledgement cursor. The replayed frame must still carry the source scope
+// token and completion key on every serializing surface, the acknowledgement
+// built from the replayed frame must commit, and the cursor must advance so the
+// delivery is never served again.
+func TestReconnectReplayFrameCarriesAcknowledgementIdentityAndCommitsCursor(t *testing.T) {
+	root := t.TempDir()
+	harness := startBridgeIdentityHarness(t, root, filepath.Join(root, "control.sock"))
+	bridge := harness.bridgeConnect("replay-pi", 0)
+	bridge.lifecycle(harness.alphaHost, subagentsv1.BridgeLifecycleRequest_EVENT_SESSION_START)
+	bridge.lifecycle(harness.alphaHost, subagentsv1.BridgeLifecycleRequest_EVENT_READY)
+
+	// Queue the delivery before the bounce with a deadline that outlives the
+	// reconnect, mirroring a durable prompt that survives a bridge restart.
+	att := harness.dispatch(&subagentsv1.Envelope_AttachRequest{AttachRequest: &subagentsv1.AttachRequest{AgentId: "alpha", RequestedCapabilities: []string{"send", "ask"}}}, harness.betaHost, "", 0, "attach-replay-source").GetAttachResponse()
+	if att == nil || att.AgentHandle == "" {
+		t.Fatalf("hosted source attach failed: %#v", att)
+	}
+	ask := &subagentsv1.Envelope{ProtocolMajor: 1, Sequence: 1, RequestId: "ask-replay", DeadlineUnixMillis: time.Now().Add(60 * time.Second).UnixMilli(), SessionId: harness.betaHost.SessionID, GenerationId: harness.betaHost.GenerationID, CallerIdentity: harness.betaHost.Caller, SessionCredential: harness.betaHost.Credential, AgentHandle: att.AgentHandle, AgentFence: att.Fence, Payload: &subagentsv1.Envelope_ActorMessageRequest{ActorMessageRequest: &subagentsv1.ActorMessageRequest{Mode: subagentsv1.ActorMessageRequest_MODE_ASK, Target: "alpha", BoundedPayload: []byte("wake up"), DedupeId: "replay-dedupe", ChainId: "replay-chain", HopLimit: 8, SourceMutationSequence: 1}}}
+	admission := harness.daemon.dispatch(ask).GetActorMessageResponse()
+	if admission == nil || !admission.Accepted || admission.Completed {
+		t.Fatalf("hosted source ask admission failed: %#v", admission)
+	}
+
+	// Bounce: drop the bridge connection without acknowledging anything, then
+	// reconnect from the still-zero acknowledgement cursor.
+	handle, fence := bridge.handle, bridge.fence
+	if err := bridge.conn.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reconnected := harness.bridgeConnect("replay-pi", 0)
+	defer reconnected.conn.Close()
+	if reconnected.handle != handle || reconnected.fence != fence {
+		t.Fatalf("idempotent reconnect rotated bridge fence: first=%s/%d second=%s/%d", handle, fence, reconnected.handle, reconnected.fence)
+	}
+
+	// The reconnect replay must deliver the queued prompt with its full
+	// acknowledgement identity, exactly like the initial push surface.
+	replayed := reconnected.nextPushedDelivery(3 * time.Second)
+	if replayed.GetKind() != subagentsv1.BridgeDelivery_KIND_PROMPT {
+		t.Fatalf("expected prompt-kind replayed delivery, got %#v", replayed.GetKind())
+	}
+	requireAckIdentity(t, "reconnect replay", replayed)
+
+	// The poll surface after reconnect must expose the same identity, not a
+	// stripped copy: poll from the same zero cursor and compare.
+	polled := reconnected.poll(harness.alphaHost, 0)
+	if polled == nil {
+		t.Fatal("poll response missing after reconnect")
+	}
+	found := false
+	for _, delivery := range polled.Deliveries {
+		requireAckIdentity(t, "polled after reconnect", delivery)
+		if delivery.GetSequence() == replayed.GetSequence() && delivery.GetDedupeId() == replayed.GetDedupeId() {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("poll after reconnect lost the replayed delivery seq %d: %#v", replayed.GetSequence(), polled.Deliveries)
+	}
+
+	// The acknowledgement built from the replayed frame must commit and
+	// advance the cursor so the delivery is never served again.
+	ack := reconnected.acknowledge(harness.alphaHost, replayed, []byte("WAKE2-OK"))
+	if ack == nil || !ack.Accepted {
+		t.Fatalf("replayed acknowledgement rejected: %#v", ack)
+	}
+	if ack.GetCursor() != replayed.GetSequence() {
+		t.Fatalf("replayed acknowledgement did not advance the cursor: delivery seq %d cursor %d", replayed.GetSequence(), ack.GetCursor())
+	}
+	if after := reconnected.poll(harness.alphaHost, 0); after != nil && len(after.Deliveries) != 0 {
+		t.Fatalf("acknowledged replayed delivery served again after cursor advance: %#v", after.Deliveries)
+	}
+}
