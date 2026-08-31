@@ -1718,12 +1718,26 @@ func lookupActorRef(system actor.ActorSystem, ref application.DurableActorRef) *
 		if resolved, err := system.ActorOf(resolveCtx, ref.Name); err == nil {
 			pid = resolved
 		}
+		// Stale refs recorded before deterministic naming carry a retired
+		// per-registration name; fall back to the stable name derived from the
+		// logical agent id so retained outbox/correlation state still resolves.
+		if pid == nil && ref.AgentID != "" {
+			stable := "agent-" + hex.EncodeToString(stableAgentNameDigest(ref.AgentID))
+			if resolved, err := system.ActorOf(resolveCtx, stable); err == nil {
+			pid = resolved
+			}
+		}
 	} else if noSender := system.NoSender(); noSender != nil {
 		if resolved, err := noSender.RemoteLookup(resolveCtx, ref.Host, ref.Port, ref.Name); err == nil {
 			pid = resolved
 		}
 	}
 	return pid
+}
+
+func stableAgentNameDigest(agentID string) []byte {
+	digest := sha256.Sum256([]byte(agentID))
+	return digest[:8]
 }
 
 // actorRefResolved is the async continuation of resolveActorRefAsync: cache

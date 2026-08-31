@@ -353,7 +353,10 @@ func (a *AgentRegistryActor) register(ctx *actor.ReceiveContext, message *applic
 	if _, exists := a.agents[message.AgentID]; exists {
 		return application.RegisterAgentResult{Reason: "agent already registered"}
 	}
-	digest := sha256.Sum256([]byte(message.AgentID + "\x00" + operationID))
+	// Actor names must be deterministic per logical agent id so refs recorded in
+	// durable outbox/correlation state survive re-registration; random per-
+	// registration names orphaned every retained ref after a wipe or re-create.
+	digest := sha256.Sum256([]byte(message.AgentID))
 	name := "agent-" + hex.EncodeToString(digest[:8])
 	pid, spawnErr := ctx.ActorSystem().Spawn(context.WithoutCancel(ctx.Context()), name, NewAgentActor(message, ctx.Self()), actor.WithMailbox(actor.NewNonBlockingBoundedMailbox(1024)), actor.WithPassivationStrategy(passivation.NewLongLivedStrategy()), actor.WithSupervisor(supervisor.NewSupervisor(supervisor.WithAnyErrorDirective(supervisor.RestartDirective))))
 	if spawnErr != nil || pid == nil {
