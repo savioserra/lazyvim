@@ -611,6 +611,10 @@ func (a *AgentActor) bridgeConnect(ctx *actor.ReceiveContext, message *applicati
 	old := a.durableState()
 	a.bridgeSession, a.bridgeGeneration, a.bridgePrincipal, a.bridgePiSession = message.SessionID, message.GenerationID, message.Principal, message.PiSessionID
 	a.bridgeHandle, a.bridgeFence = message.Handle, message.Fence
+	// A new binding starts a fresh acknowledgement scope: acknowledgements
+	// buffered for the retired binding carry its pi-session identity and can
+	// never validate, and the contiguous baseline resets to the live queue.
+	a.rebaseAckCursor(true)
 	a.renewBridgeLease(ctx)
 	result := application.BridgeResult{Accepted: true, Handle: a.bridgeHandle, Fence: a.bridgeFence}
 	if a.beginDurablePersist(ctx, &pendingDurableReceipt{old: old, bridge: &result, bridgeCompletion: message.Result}) {
@@ -636,6 +640,10 @@ func (a *AgentActor) bridgeReplace(ctx *actor.ReceiveContext, message *applicati
 	current.handle, current.fence = message.NewHandle, a.fence
 	a.attachments[key] = current
 	a.bridgeHandle, a.bridgeFence, a.bridgePiSession = current.handle, current.fence, message.NewPiSessionID
+	// The replaced pi-session identity invalidates every buffered
+	// acknowledgement: rebase the acknowledgement scope to the new binding so
+	// its acknowledgements are never buffered behind the retired identity.
+	a.rebaseAckCursor(true)
 	a.bridgeDeclaredReady = false
 	a.bridgeLeaseToken++
 	a.hostedPiRuntime.BridgeReady = false
@@ -1255,6 +1263,11 @@ func (a *AgentActor) restoreDurableTimers(ctx *actor.ReceiveContext) {
 		for _, sequence := range retire {
 			delete(a.deliverySources, sequence)
 		}
+		// Retirement that drops sequences without a commit must advance the
+		// contiguous acknowledgement baseline past everything it drops: a fresh
+		// delivery's acknowledgement may never buffer behind legacy predecessors
+		// that no bridge client can ever acknowledge.
+		a.rebaseAckCursor(false)
 	}
 	if len(a.sourceOutbox) != 0 || len(a.completionTellPending) != 0 {
 		_ = ctx.ActorSystem().ScheduleOnce(context.WithoutCancel(ctx.Context()), &retrySourceOutbox{}, ctx.Self(), outboxBaseRetryDelay)
@@ -2307,24 +2320,37 @@ func (a *AgentActor) bridgeDeliveryAck(ctx *actor.ReceiveContext, message *appli
 	if message.Sequence <= a.ackCursor {
 		record, retained := a.committedAcks[message.Sequence]
 		if !retained {
-			respondBridgeAck(ctx, message.Completion, &application.BridgeDeliveryAckResult{Reason: "delivery acknowledgement is not retained"})
+			respondBridgeAck(ctx, message.Completion, &application.BridgeDeliveryAckResult{Reason: "delivery acknowledgement is not retained", Cursor: a.ackCursor})
 			return
 		}
 		if message.DedupeID != record.DedupeID || message.CompletionKey != record.CompletionKey || message.SourceScope != record.SourceScope || message.Kind != application.BridgeDeliveryKindLabel(record.Kind) || message.RuntimeID != record.RuntimeID || message.Incarnation != record.Incarnation || message.PiSessionID != record.PiSessionID || message.Delivered != record.Delivered {
-			respondBridgeAck(ctx, message.Completion, &application.BridgeDeliveryAckResult{Reason: "delivery acknowledgement identity collision"})
+			respondBridgeAck(ctx, message.Completion, &application.BridgeDeliveryAckResult{Reason: "delivery acknowledgement identity collision", Cursor: a.ackCursor})
 			return
 		}
 		respondBridgeAck(ctx, message.Completion, &application.BridgeDeliveryAckResult{Accepted: true, Reason: record.Reason, Cursor: a.ackCursor})
 		return
 	}
-	// Idempotent re-acknowledgement of an already-buffered gap entry.
+	// Scope the contiguous cursor to what is actually live: an identity-valid
+	// acknowledgement for the oldest live delivery must always be able to
+	// commit, never buffer behind predecessors that retirement already dropped
+	// without a commit. Those sequences can never fill the gap, and buffering
+	// behind them is the deployed infinite re-acknowledge loop.
+	a.rebaseAckCursor(false)
+	// Idempotent re-acknowledgement of an already-buffered gap entry. A buffered
+	// entry that became contiguous is not idempotently re-buffered: on exact
+	// identity match it is evicted and commits, so the entry can never wedge
+	// ahead of the cursor; a mismatched identity collides and fails closed
+	// without evicting the genuine entry.
 	if buffered, exists := a.ackGaps[message.Sequence]; exists {
 		if message.DedupeID != buffered.DedupeID || message.CompletionKey != buffered.CompletionKey || message.SourceScope != buffered.SourceScope || message.Kind != buffered.Kind || message.RuntimeID != buffered.RuntimeID || message.Incarnation != buffered.Incarnation || message.PiSessionID != buffered.PiSessionID || message.Delivered != buffered.Delivered {
-			respondBridgeAck(ctx, message.Completion, &application.BridgeDeliveryAckResult{Reason: "delivery acknowledgement identity collision"})
+			respondBridgeAck(ctx, message.Completion, &application.BridgeDeliveryAckResult{Reason: "delivery acknowledgement identity collision", Cursor: a.ackCursor})
 			return
 		}
-		respondBridgeAck(ctx, message.Completion, &application.BridgeDeliveryAckResult{Accepted: true, Reason: "acknowledgement buffered behind cursor gap", Cursor: a.ackCursor})
-		return
+		if message.Sequence > a.ackCursor+1 {
+			respondBridgeAck(ctx, message.Completion, &application.BridgeDeliveryAckResult{Accepted: true, Reason: "acknowledgement buffered behind cursor gap", Cursor: a.ackCursor})
+			return
+		}
+		delete(a.ackGaps, message.Sequence)
 	}
 	index := slices.IndexFunc(a.bridgeDeliveries, func(item application.BridgeDelivery) bool {
 		return item.Sequence == message.Sequence
@@ -2358,6 +2384,43 @@ func (a *AgentActor) bridgeDeliveryAck(ctx *actor.ReceiveContext, message *appli
 		return
 	}
 	a.commitContiguousAcks(ctx, message)
+}
+
+// rebaseAckCursor scopes the contiguous acknowledgement baseline to the
+// current bridge binding and the live delivery queue. Every retirement path
+// that drops sequences without a commit (deadline expiry, legacy
+// identity-less restore drops, binding wipes, incarnation retirement) must
+// advance the baseline past everything it drops: those sequences can never
+// be acknowledged again, so buffering a later acknowledgement behind them
+// is an unfillable gap — the deployed infinite re-acknowledge loop. Buffered
+// acknowledgements whose deliveries no longer exist are discarded because
+// their intents were already terminally resolved by the retiring path. A
+// binding or incarnation change discards the whole buffer: buffered
+// acknowledgements carry the retired binding's runtime, incarnation, and
+// pi-session identity, which validAckIdentity can never accept again.
+func (a *AgentActor) rebaseAckCursor(discardBuffered bool) {
+	baseline := a.ackCursor
+	if len(a.bridgeDeliveries) == 0 {
+		baseline = max(baseline, a.bridgeSequence)
+	} else {
+		oldest := a.bridgeDeliveries[0].Sequence
+		for _, delivery := range a.bridgeDeliveries {
+			oldest = min(oldest, delivery.Sequence)
+		}
+		if oldest > 1 {
+			baseline = max(baseline, oldest-1)
+		}
+	}
+	a.ackCursor = baseline
+	if discardBuffered {
+		a.ackGaps = make(map[uint64]application.BridgeDeliveryAck)
+		return
+	}
+	for sequence := range a.ackGaps {
+		if sequence <= baseline || !slices.ContainsFunc(a.bridgeDeliveries, func(item application.BridgeDelivery) bool { return item.Sequence == sequence }) {
+			delete(a.ackGaps, sequence)
+		}
+	}
 }
 
 func (a *AgentActor) validAckIdentity(message *application.BridgeDeliveryAck, delivery *application.BridgeDelivery) bool {
@@ -2395,6 +2458,7 @@ func (a *AgentActor) commitContiguousAcks(ctx *actor.ReceiveContext, trigger *ap
 			ack = &next
 		}
 	}
+	a.rebaseAckCursor(false)
 	burst.result.Cursor = a.ackCursor
 	if a.beginDurablePersist(ctx, &pendingDurableReceipt{old: oldDurable, ackBurst: burst, liveTaskSources: liveTaskSources}) {
 		return
@@ -2722,6 +2786,13 @@ func (a *AgentActor) retirePendingBridgeDeliveries(ctx *actor.ReceiveContext, re
 		a.pruneMutationScope(key, scope)
 	}
 	a.bridgeDeliveries = nil
+	// The whole queue retired under a dead binding: the contiguous cursor must
+	// advance past every retired sequence and the buffered acknowledgements
+	// must go, because they carry the retired binding's runtime, incarnation,
+	// and pi-session identity and can never validate again. Without the
+	// rebase, the next incarnation's acknowledgements buffer forever behind
+	// sequences this retirement already dropped.
+	a.rebaseAckCursor(true)
 	return burst
 }
 
@@ -2791,26 +2862,26 @@ func (a *AgentActor) bridgeIntentTimeout(ctx *actor.ReceiveContext, message *app
 			}
 		}
 	}
-	// A deadline retirement terminally resolves the sequence: advance the
-	// contiguous acknowledgement cursor past it and drain any buffered
-	// acknowledgements that became contiguous. Without this a retired
-	// delivery (including a legacy identity-less one retired immediately on
-	// reload) would wedge the cursor and the bounded gap buffer forever.
-	if index >= 0 && record.sequence == a.ackCursor+1 {
-		a.ackCursor = record.sequence
-		for {
-			next, buffered := a.ackGaps[a.ackCursor+1]
-			if !buffered {
-				break
-			}
-			if burst == nil {
-				burst = &ackBurstReceipt{}
-			}
-			if !a.commitAck(ctx, &next, burst) {
-				break
-			}
-			delete(a.ackGaps, next.Sequence)
+	// A deadline retirement terminally resolves the sequence: rebase the
+	// contiguous acknowledgement cursor past it and every other sequence that
+	// no longer has a live delivery, then drain any buffered acknowledgements
+	// that became contiguous. Without this a retired delivery (including a
+	// legacy identity-less one retired immediately on reload) would wedge the
+	// cursor and the bounded gap buffer forever behind a gap that can never
+	// fill.
+	a.rebaseAckCursor(false)
+	for {
+		next, buffered := a.ackGaps[a.ackCursor+1]
+		if !buffered {
+			break
 		}
+		if burst == nil {
+			burst = &ackBurstReceipt{}
+		}
+		if !a.commitAck(ctx, &next, burst) {
+			break
+		}
+		delete(a.ackGaps, next.Sequence)
 	}
 	if a.beginDurablePersist(ctx, &pendingDurableReceipt{old: oldDurable, askScope: message.ScopeKey, askDedupe: message.DedupeID, askCompletion: askCompletion, askResult: &result, ackBurst: burst, retryTimeout: true, liveTaskSources: liveTaskSources}) {
 		return
