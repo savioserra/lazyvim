@@ -54,17 +54,17 @@ func TestBridgeDeliveryAckValidationRetainsPromptDelivery(t *testing.T) {
 	}
 	delivery := poll.Deliveries[0]
 	oversized := make([]byte, 16*1024+1)
-	if result := ask(&application.BridgeDeliveryAck{SessionID: "session", GenerationID: "generation", Principal: "hosted:source", Handle: attached.Handle, Fence: attached.Fence, Sequence: delivery.Sequence, DedupeID: delivery.DedupeID, Delivered: true, Result: oversized}).(*application.BridgeDeliveryAckResult); result.Accepted || result.Reason == "" {
+	if result := ask(identityAck("session", "generation", "hosted:source", attached.Handle, attached.Fence, "runtime", "pi", delivery, true, oversized)).(*application.BridgeDeliveryAckResult); result.Accepted || result.Reason == "" {
 		t.Fatalf("oversized ack accepted: %#v", result)
 	}
-	if result := ask(&application.BridgeDeliveryAck{SessionID: "session", GenerationID: "generation", Principal: "hosted:source", Handle: attached.Handle, Fence: attached.Fence, Sequence: delivery.Sequence, DedupeID: delivery.DedupeID, Delivered: true}).(*application.BridgeDeliveryAckResult); result.Accepted || result.Reason == "" {
+	if result := ask(identityAck("session", "generation", "hosted:source", attached.Handle, attached.Fence, "runtime", "pi", delivery, true, nil)).(*application.BridgeDeliveryAckResult); result.Accepted || result.Reason == "" {
 		t.Fatalf("empty prompt ack accepted: %#v", result)
 	}
 	replay := ask(&application.PollBridge{SessionID: "session", GenerationID: "generation", Principal: "hosted:source", Handle: attached.Handle, Fence: attached.Fence, AfterSequence: 0, MaxItems: 64}).(*application.BridgePollResult)
 	if len(replay.Deliveries) != 1 || replay.Deliveries[0].Sequence != delivery.Sequence {
 		t.Fatalf("rejected ack removed delivery: %#v", replay)
 	}
-	if result := ask(&application.BridgeDeliveryAck{SessionID: "session", GenerationID: "generation", Principal: "hosted:source", Handle: attached.Handle, Fence: attached.Fence, Sequence: delivery.Sequence, DedupeID: delivery.DedupeID, Delivered: true, Result: []byte("answer")}).(*application.BridgeDeliveryAckResult); !result.Accepted {
+	if result := ask(identityAck("session", "generation", "hosted:source", attached.Handle, attached.Fence, "runtime", "pi", delivery, true, []byte("answer"))).(*application.BridgeDeliveryAckResult); !result.Accepted {
 		t.Fatalf("valid ack rejected: %#v", result)
 	}
 }

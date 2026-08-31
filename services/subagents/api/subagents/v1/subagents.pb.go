@@ -3819,6 +3819,8 @@ type BridgeDelivery struct {
 	ChainId            string                 `protobuf:"bytes,11,opt,name=chain_id,json=chainId,proto3" json:"chain_id,omitempty"`
 	Source             *CommunicationPeer     `protobuf:"bytes,12,opt,name=source,proto3" json:"source,omitempty"`
 	Target             *CommunicationPeer     `protobuf:"bytes,13,opt,name=target,proto3" json:"target,omitempty"`
+	SourceScope        string                 `protobuf:"bytes,14,opt,name=source_scope,json=sourceScope,proto3" json:"source_scope,omitempty"`
+	CompletionKey      string                 `protobuf:"bytes,15,opt,name=completion_key,json=completionKey,proto3" json:"completion_key,omitempty"`
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
@@ -3942,6 +3944,20 @@ func (x *BridgeDelivery) GetTarget() *CommunicationPeer {
 		return x.Target
 	}
 	return nil
+}
+
+func (x *BridgeDelivery) GetSourceScope() string {
+	if x != nil {
+		return x.SourceScope
+	}
+	return ""
+}
+
+func (x *BridgeDelivery) GetCompletionKey() string {
+	if x != nil {
+		return x.CompletionKey
+	}
+	return ""
 }
 
 type BridgePollResponse struct {
@@ -4102,6 +4118,7 @@ type BridgeDeliveryAckRequest struct {
 	PiSessionId   string                 `protobuf:"bytes,9,opt,name=pi_session_id,json=piSessionId,proto3" json:"pi_session_id,omitempty"`
 	Kind          string                 `protobuf:"bytes,10,opt,name=kind,proto3" json:"kind,omitempty"`
 	SourceScope   string                 `protobuf:"bytes,11,opt,name=source_scope,json=sourceScope,proto3" json:"source_scope,omitempty"`
+	CompletionKey string                 `protobuf:"bytes,12,opt,name=completion_key,json=completionKey,proto3" json:"completion_key,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4213,10 +4230,18 @@ func (x *BridgeDeliveryAckRequest) GetSourceScope() string {
 	return ""
 }
 
+func (x *BridgeDeliveryAckRequest) GetCompletionKey() string {
+	if x != nil {
+		return x.CompletionKey
+	}
+	return ""
+}
+
 type BridgeDeliveryAckResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Accepted      bool                   `protobuf:"varint,1,opt,name=accepted,proto3" json:"accepted,omitempty"`
 	Reason        string                 `protobuf:"bytes,2,opt,name=reason,proto3" json:"reason,omitempty"`
+	Cursor        uint64                 `protobuf:"varint,3,opt,name=cursor,proto3" json:"cursor,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4263,6 +4288,13 @@ func (x *BridgeDeliveryAckResponse) GetReason() string {
 		return x.Reason
 	}
 	return ""
+}
+
+func (x *BridgeDeliveryAckResponse) GetCursor() uint64 {
+	if x != nil {
+		return x.Cursor
+	}
+	return 0
 }
 
 type BridgeReplaceRequest struct {
@@ -5718,7 +5750,7 @@ const file_api_subagents_v1_subagents_proto_rawDesc = "" +
 	"\bsequence\x18\x01 \x01(\x04R\bsequence\x12\x19\n" +
 	"\bagent_id\x18\x02 \x01(\tR\aagentId\x12\x1a\n" +
 	"\brevision\x18\x03 \x01(\x04R\brevision\x12\x1c\n" +
-	"\toperation\x18\x04 \x01(\tR\toperation\"\xbc\x06\n" +
+	"\toperation\x18\x04 \x01(\tR\toperation\"\x86\a\n" +
 	"\x0eBridgeDelivery\x12\x1a\n" +
 	"\bsequence\x18\x01 \x01(\x04R\bsequence\x12&\n" +
 	"\x0fsource_agent_id\x18\x02 \x01(\tR\rsourceAgentId\x12&\n" +
@@ -5734,7 +5766,9 @@ const file_api_subagents_v1_subagents_proto_rawDesc = "" +
 	" \x01(\x0e2-.workstation.subagents.v1.BridgeDelivery.KindR\x04kind\x12\x19\n" +
 	"\bchain_id\x18\v \x01(\tR\achainId\x12C\n" +
 	"\x06source\x18\f \x01(\v2+.workstation.subagents.v1.CommunicationPeerR\x06source\x12C\n" +
-	"\x06target\x18\r \x01(\v2+.workstation.subagents.v1.CommunicationPeerR\x06target\"g\n" +
+	"\x06target\x18\r \x01(\v2+.workstation.subagents.v1.CommunicationPeerR\x06target\x12!\n" +
+	"\fsource_scope\x18\x0e \x01(\tR\vsourceScope\x12%\n" +
+	"\x0ecompletion_key\x18\x0f \x01(\tR\rcompletionKey\"g\n" +
 	"\x04Kind\x12\x14\n" +
 	"\x10KIND_UNSPECIFIED\x10\x00\x12\x15\n" +
 	"\x11KIND_NOTIFICATION\x10\x01\x12\x0e\n" +
@@ -5760,7 +5794,7 @@ const file_api_subagents_v1_subagents_proto_rawDesc = "" +
 	"deliveries\x18\x03 \x03(\v2(.workstation.subagents.v1.BridgeDeliveryR\n" +
 	"deliveries\x12'\n" +
 	"\x0flatest_sequence\x18\x04 \x01(\x04R\x0elatestSequence\x12\x16\n" +
-	"\x06reason\x18\x05 \x01(\tR\x06reason\"\xe7\x02\n" +
+	"\x06reason\x18\x05 \x01(\tR\x06reason\"\x8e\x03\n" +
 	"\x18BridgeDeliveryAckRequest\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12\x1a\n" +
 	"\bsequence\x18\x02 \x01(\x04R\bsequence\x12\x1b\n" +
@@ -5774,10 +5808,12 @@ const file_api_subagents_v1_subagents_proto_rawDesc = "" +
 	"\rpi_session_id\x18\t \x01(\tR\vpiSessionId\x12\x12\n" +
 	"\x04kind\x18\n" +
 	" \x01(\tR\x04kind\x12!\n" +
-	"\fsource_scope\x18\v \x01(\tR\vsourceScope\"O\n" +
+	"\fsource_scope\x18\v \x01(\tR\vsourceScope\x12%\n" +
+	"\x0ecompletion_key\x18\f \x01(\tR\rcompletionKey\"g\n" +
 	"\x19BridgeDeliveryAckResponse\x12\x1a\n" +
 	"\baccepted\x18\x01 \x01(\bR\baccepted\x12\x16\n" +
-	"\x06reason\x18\x02 \x01(\tR\x06reason\"\xd2\x01\n" +
+	"\x06reason\x18\x02 \x01(\tR\x06reason\x12\x16\n" +
+	"\x06cursor\x18\x03 \x01(\x04R\x06cursor\"\xd2\x01\n" +
 	"\x14BridgeReplaceRequest\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12\x1d\n" +
 	"\n" +

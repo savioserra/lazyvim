@@ -239,7 +239,7 @@ func TestHostedBridgePushDeliversWithoutPoll(t *testing.T) {
 	if duplicate.DedupeId != "push-dedupe" || duplicate.Kind != subagentsv1.BridgeDelivery_KIND_NOTIFICATION || string(duplicate.BoundedPayload) != "pushed tell" {
 		t.Fatalf("writer-failure reconnect did not replay same unacked delivery: %#v", duplicate)
 	}
-	ack := replayRequest(&subagentsv1.Envelope_BridgeDeliveryAckRequest{BridgeDeliveryAckRequest: &subagentsv1.BridgeDeliveryAckRequest{AgentId: "alpha", Sequence: duplicate.Sequence, DedupeId: duplicate.DedupeId, Delivered: true}}, reconnected.AgentHandle, reconnected.Fence).GetBridgeDeliveryAckResponse()
+	ack := replayRequest(&subagentsv1.Envelope_BridgeDeliveryAckRequest{BridgeDeliveryAckRequest: identityBridgeAck("alpha", alpha.LaunchSpec.RuntimeID, "push-alpha", 1, duplicate, true, nil)}, reconnected.AgentHandle, reconnected.Fence).GetBridgeDeliveryAckResponse()
 	if ack == nil || !ack.Accepted {
 		t.Fatalf("push ack failed: %#v", ack)
 	}

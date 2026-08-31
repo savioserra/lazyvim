@@ -392,6 +392,32 @@ func (p *ownedProcess) Stop(ctx context.Context) error {
 	return p.stopErr
 }
 
+// ProveAbsent reports whether the exactly owned runtime is proven absent:
+// the tmux server is gone or the pane identity no longer exists, or the exact
+// pane is dead and guarded cleanup under the ownership predicate succeeded.
+// Any unproven outcome (inspection failure, identity replacement, refused
+// cleanup) returns an indeterminate error so callers stay fail-closed.
+func (r *Runtime) ProveAbsent(ctx context.Context, binding application.HostedPiRuntimeBinding) (bool, error) {
+	present, err := sessionExists(ctx, r.Config, binding)
+	if err == nil {
+		return !present, nil
+	}
+	var exited *RuntimeProcessExitError
+	if !errors.As(err, &exited) {
+		return false, errors.Join(application.ErrHostedOwnershipIndeterminate, err)
+	}
+	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
+	defer cancel()
+	if killErr := r.killCaptured(cleanupCtx, binding, "operator-absence-recovery"); killErr != nil {
+		return false, errors.Join(application.ErrHostedOwnershipIndeterminate, killErr)
+	}
+	present, err = sessionExists(cleanupCtx, r.Config, binding)
+	if err != nil {
+		return false, errors.Join(application.ErrHostedOwnershipIndeterminate, err)
+	}
+	return !present, nil
+}
+
 func sessionExists(ctx context.Context, config Config, binding application.HostedPiRuntimeBinding) (bool, error) {
 	args := append(tmuxPrefix(config), "display-message", "-p", "-t", binding.TmuxPane, "#{pid}\t#{session_id}\t#{window_id}\t#{pane_id}\t#{pane_pid}\t#{pane_tty}\t#{@ws_hosted_server_start}\t#{@ws_hosted_process_start}\t#{pane_dead}\tstatus:#{pane_dead_status}\tsignal:#{pane_dead_signal}")
 	output, err := exec.CommandContext(ctx, config.TmuxBinary, args...).CombinedOutput()

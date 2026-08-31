@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -447,103 +448,146 @@ func (s *Service) observeClusterEvents() {
 }
 
 func (s *Service) reconcileDurableHosted(ctx context.Context) error {
-	records, err := s.durableStore.LoadAll(ctx)
+	records, quarantined, err := s.durableStore.LoadAllWithQuarantine(ctx)
 	if err != nil {
 		return err
 	}
+	for _, entry := range quarantined {
+		// Per-record fail-closed quarantine: an invalid or unsafe durable entry
+		// is moved aside and projected as degraded state instead of exiting the
+		// daemon, so poisoned records can never crash-loop startup.
+		s.reportDurableQuarantine(entry.Name, fmt.Sprintf("durable state entry quarantined: %s", entry.Reason))
+	}
 	for index := range records {
 		record := records[index]
-		// Terminal records carry no hosted runtime, project, credential, or
-		// ownership file: register them before any hosted path validation and
-		// never let them reach ownership loading or stale-record removal.
-		if record.AuthorityBinding.Kind != application.AuthorityBindingHostedOwned {
-			registration := application.RegisterAgent{AgentID: record.AgentID, Role: record.Binding.Role, DisplayName: record.Binding.DisplayName, AuthorityBinding: record.AuthorityBinding, HostedPiRuntime: record.Binding, AllowedCapability: append([]string(nil), record.AllowedCapabilities...), Retention: record.Retention, Recovery: record.Recovery, PersistencePID: s.persistencePID, PersistenceSupervisor: s.persistenceSupervisor, DurableRecord: &record}
-			if _, err := s.registerAgent(ctx, registration, hostedRegistration{}); err != nil {
-				return fmt.Errorf("register durable terminal agent %s: %w", record.AgentID, err)
-			}
-			continue
-		}
-		s.hostedMu.Lock()
-		if record.RuntimeConfig.ProjectDirectory != "" {
-			if owner := s.hostedProjects[record.RuntimeConfig.ProjectDirectory]; owner != "" && owner != record.AgentID {
-				s.hostedMu.Unlock()
-				return fmt.Errorf("durable hosted worktree is shared by %s and %s", owner, record.AgentID)
-			}
-			s.hostedProjects[record.RuntimeConfig.ProjectDirectory] = record.AgentID
-		}
-		s.hostedMu.Unlock()
-		if !pathWithin(record.Session.CredentialFile, s.hostedAdmin.CredentialDirectory) || !pathWithin(record.LaunchSpec.PiSessionDirectory, s.hostedAdmin.PiSessionDirectory) {
-			return fmt.Errorf("durable hosted %s escaped configured private roots", record.AgentID)
-		}
-		if err := validateProjectDirectory(record.RuntimeConfig.ProjectDirectory); err != nil {
-			return fmt.Errorf("durable hosted %s project: %w", record.AgentID, err)
-		}
-		credential, err := hostedpi.ReadCredentialFile(record.Session.CredentialFile)
-		if err != nil {
-			return fmt.Errorf("durable hosted %s credential: %w", record.AgentID, err)
-		}
-		binding := record.Binding
-		if binding.TmuxSessionID == "" {
-			binding, err = hostedpi.LoadOwnershipBinding(s.hostedAdmin.StateDirectory, record.LaunchSpec.RuntimeID)
-			if err != nil {
-				if errors.Is(err, os.ErrNotExist) {
-					if removeErr := s.removeStaleDurable(ctx, record); removeErr != nil {
-						return removeErr
-					}
-					continue
-				}
-				return fmt.Errorf("durable hosted %s ownership record: %w", record.AgentID, err)
-			}
-		}
-		runtimeConfig := hostedpi.Config{TmuxBinary: s.hostedAdmin.TmuxBinary, PiBinary: s.hostedAdmin.PiBinary, BridgeExtension: s.hostedAdmin.BridgeExtension, DaemonEndpoint: hostedActorEndpoint(s.hostedAdmin), CredentialFile: record.Session.CredentialFile, ServerName: s.hostedAdmin.ServerName, TmuxConfig: s.hostedAdmin.TmuxConfig, ProjectDirectory: record.RuntimeConfig.ProjectDirectory, StateDirectory: s.hostedAdmin.StateDirectory, SessionID: record.Session.SessionID, GenerationID: record.Session.GenerationID, CallerIdentity: record.Session.Caller, TrustProject: record.RuntimeConfig.TrustProject}
-		runtime := &hostedpi.Runtime{Config: runtimeConfig}
-		process, adoptErr := runtime.Adopt(ctx, record.LaunchSpec, binding)
-		if errors.Is(adoptErr, hostedpi.ErrRuntimeAbsent) {
-			if err := s.removeStaleDurable(ctx, record); err != nil {
-				return err
-			}
-			continue
-		}
-		if adoptErr != nil {
-			binding.State = application.HostedPiRuntimeDegraded
-			binding.BridgeReady = false
-			binding.OwnershipIndeterminate = true
-			s.hostedMu.Lock()
-			s.hostedTerminal[record.AgentID] = binding
-			s.hostedIndeterminate[record.AgentID] = binding
-			s.hostedRegistrations[record.AgentID] = hostedRegistration{sessionID: record.Session.SessionID, credentialFile: record.Session.CredentialFile}
-			s.hostedMu.Unlock()
-			continue
-		}
-		binding.State = application.HostedPiRuntimeStarting
-		binding.BridgeReady = false
-		record.Binding = binding
-		session := application.OpenSession{SessionID: record.Session.SessionID, GenerationID: record.Session.GenerationID, Caller: record.Session.Caller, Credential: credential, Capabilities: append([]string(nil), record.Session.Capabilities...), ExpiresAt: record.Session.ExpiresAt, Persistent: record.Session.Persistent}
-		if !session.Persistent {
-			return fmt.Errorf("durable hosted %s uses an expiring legacy session", record.AgentID)
-		}
-		if err := s.OpenSession(ctx, session); err != nil {
-			return fmt.Errorf("reopen durable hosted session %s: %w", record.AgentID, err)
-		}
-		registration := application.RegisterAgent{AgentID: record.AgentID, Role: binding.Role, DisplayName: binding.DisplayName, AuthorityBinding: record.AuthorityBinding, HostedPiRuntime: binding, AllowedCapability: append([]string(nil), record.AllowedCapabilities...), PhaseTwoOwned: true, Retention: record.Retention, Recovery: record.Recovery, Runtime: runtime, LaunchSpec: record.LaunchSpec, RuntimeStartTimeout: requestTimeout, AdoptedProcess: process, PersistencePID: s.persistencePID, PersistenceSupervisor: s.persistenceSupervisor, DurableRecord: &record}
-		result, err := s.registerAgent(ctx, registration, hostedRegistration{sessionID: session.SessionID, credentialFile: record.Session.CredentialFile})
-		if err != nil {
-			return fmt.Errorf("register adopted hosted agent %s: %w", record.AgentID, err)
-		}
-		s.hostedMu.Lock()
-		s.hostedRuntimes[record.AgentID] = result.AgentPID
-		s.hostedRegistrations[record.AgentID] = hostedRegistration{sessionID: session.SessionID, credentialFile: record.Session.CredentialFile}
-		s.hostedMu.Unlock()
-		barrier, err := s.durableBarrier(ctx, result.AgentPID)
-		if err != nil {
-			return err
-		}
-		if !barrier.Completed {
-			return fmt.Errorf("adopted durable publication failed: %s", barrier.Reason)
+		if err := s.reconcileDurableRecord(ctx, record); err != nil {
+			s.quarantineDurableRecord(ctx, record, err)
 		}
 	}
 	return nil
 }
+
+// quarantineDurableRecord retires an unusable durable record fail-closed: the
+// record file is moved aside for operator inspection, the persistence
+// supervisor projects the degraded state, and the daemon keeps starting.
+func (s *Service) quarantineDurableRecord(ctx context.Context, record application.DurableHostedRecord, cause error) {
+	reason := fmt.Sprintf("durable hosted record %s quarantined: %v", record.AgentID, cause)
+	if err := s.durableStore.Quarantine(record.AgentID, reason); err != nil {
+		reason = fmt.Sprintf("%s (quarantine move failed: %v)", reason, err)
+	}
+	s.hostedMu.Lock()
+	if s.hostedProjects[record.RuntimeConfig.ProjectDirectory] == record.AgentID {
+		delete(s.hostedProjects, record.RuntimeConfig.ProjectDirectory)
+	}
+	s.hostedMu.Unlock()
+	s.reportDurableQuarantine(record.AgentID, reason)
+}
+
+func (s *Service) reportDurableQuarantine(agentID, reason string) {
+	if s.persistenceSupervisor != nil {
+		_ = s.system.NoSender().Tell(context.Background(), s.persistenceSupervisor, &application.QuarantineDurableHostedState{AgentID: agentID, Reason: reason})
+	}
+}
+
+func (s *Service) reconcileDurableRecord(ctx context.Context, record application.DurableHostedRecord) error {
+	// Terminal records carry no hosted runtime, project, credential, or
+	// ownership file: register them before any hosted path validation and
+	// never let them reach ownership loading or stale-record removal.
+	if record.AuthorityBinding.Kind != application.AuthorityBindingHostedOwned {
+		// Heal legacy terminal records whose durable binding carries live
+		// display metadata: the registry validator accepts only the pristine
+		// inactive binding, while role and display name travel as registration
+		// metadata. Without this the daemon rejects its own terminal records at
+		// restart and crash-loops on "invalid agent registration".
+		role, displayName := record.Binding.Role, record.Binding.DisplayName
+		record.Binding = application.InactiveHostedPiRuntimeBinding()
+		registration := application.RegisterAgent{AgentID: record.AgentID, Role: role, DisplayName: displayName, AuthorityBinding: record.AuthorityBinding, HostedPiRuntime: record.Binding, AllowedCapability: append([]string(nil), record.AllowedCapabilities...), Retention: record.Retention, Recovery: record.Recovery, PersistencePID: s.persistencePID, PersistenceSupervisor: s.persistenceSupervisor, DurableRecord: &record}
+		if _, err := s.registerAgent(ctx, registration, hostedRegistration{}); err != nil {
+			return fmt.Errorf("register durable terminal agent %s: %w", record.AgentID, err)
+		}
+		return nil
+	}
+	s.hostedMu.Lock()
+	if record.RuntimeConfig.ProjectDirectory != "" {
+		if owner := s.hostedProjects[record.RuntimeConfig.ProjectDirectory]; owner != "" && owner != record.AgentID {
+			s.hostedMu.Unlock()
+			return fmt.Errorf("durable hosted worktree is shared by %s and %s", owner, record.AgentID)
+		}
+		s.hostedProjects[record.RuntimeConfig.ProjectDirectory] = record.AgentID
+	}
+	s.hostedMu.Unlock()
+	if !pathWithin(record.Session.CredentialFile, s.hostedAdmin.CredentialDirectory) || !pathWithin(record.LaunchSpec.PiSessionDirectory, s.hostedAdmin.PiSessionDirectory) {
+		return fmt.Errorf("durable hosted %s escaped configured private roots", record.AgentID)
+	}
+	if err := validateProjectDirectory(record.RuntimeConfig.ProjectDirectory); err != nil {
+		return fmt.Errorf("durable hosted %s project: %w", record.AgentID, err)
+	}
+	credential, err := hostedpi.ReadCredentialFile(record.Session.CredentialFile)
+	if err != nil {
+		return fmt.Errorf("durable hosted %s credential: %w", record.AgentID, err)
+	}
+	binding := record.Binding
+	if binding.TmuxSessionID == "" {
+		binding, err = hostedpi.LoadOwnershipBinding(s.hostedAdmin.StateDirectory, record.LaunchSpec.RuntimeID)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				if removeErr := s.removeStaleDurable(ctx, record); removeErr != nil {
+					return removeErr
+				}
+				return nil
+			}
+			return fmt.Errorf("durable hosted %s ownership record: %w", record.AgentID, err)
+		}
+	}
+	runtimeConfig := hostedpi.Config{TmuxBinary: s.hostedAdmin.TmuxBinary, PiBinary: s.hostedAdmin.PiBinary, BridgeExtension: s.hostedAdmin.BridgeExtension, DaemonEndpoint: hostedActorEndpoint(s.hostedAdmin), CredentialFile: record.Session.CredentialFile, ServerName: s.hostedAdmin.ServerName, TmuxConfig: s.hostedAdmin.TmuxConfig, ProjectDirectory: record.RuntimeConfig.ProjectDirectory, StateDirectory: s.hostedAdmin.StateDirectory, SessionID: record.Session.SessionID, GenerationID: record.Session.GenerationID, CallerIdentity: record.Session.Caller, TrustProject: record.RuntimeConfig.TrustProject}
+	runtime := &hostedpi.Runtime{Config: runtimeConfig}
+	process, adoptErr := runtime.Adopt(ctx, record.LaunchSpec, binding)
+	if errors.Is(adoptErr, hostedpi.ErrRuntimeAbsent) {
+		if err := s.removeStaleDurable(ctx, record); err != nil {
+			return err
+		}
+		return nil
+	}
+	if adoptErr != nil {
+		binding.State = application.HostedPiRuntimeDegraded
+		binding.BridgeReady = false
+		binding.OwnershipIndeterminate = true
+		s.hostedMu.Lock()
+		s.hostedTerminal[record.AgentID] = binding
+		s.hostedIndeterminate[record.AgentID] = binding
+		s.hostedRegistrations[record.AgentID] = hostedRegistration{sessionID: record.Session.SessionID, credentialFile: record.Session.CredentialFile}
+		s.hostedMu.Unlock()
+		return nil
+	}
+	binding.State = application.HostedPiRuntimeStarting
+	binding.BridgeReady = false
+	record.Binding = binding
+	session := application.OpenSession{SessionID: record.Session.SessionID, GenerationID: record.Session.GenerationID, Caller: record.Session.Caller, Credential: credential, Capabilities: append([]string(nil), record.Session.Capabilities...), ExpiresAt: record.Session.ExpiresAt, Persistent: record.Session.Persistent}
+	if !session.Persistent {
+		return fmt.Errorf("durable hosted %s uses an expiring legacy session", record.AgentID)
+	}
+	if err := s.OpenSession(ctx, session); err != nil {
+		return fmt.Errorf("reopen durable hosted session %s: %w", record.AgentID, err)
+	}
+	registration := application.RegisterAgent{AgentID: record.AgentID, Role: binding.Role, DisplayName: binding.DisplayName, AuthorityBinding: record.AuthorityBinding, HostedPiRuntime: binding, AllowedCapability: append([]string(nil), record.AllowedCapabilities...), PhaseTwoOwned: true, Retention: record.Retention, Recovery: record.Recovery, Runtime: runtime, LaunchSpec: record.LaunchSpec, RuntimeStartTimeout: requestTimeout, AdoptedProcess: process, PersistencePID: s.persistencePID, PersistenceSupervisor: s.persistenceSupervisor, DurableRecord: &record}
+	result, err := s.registerAgent(ctx, registration, hostedRegistration{sessionID: session.SessionID, credentialFile: record.Session.CredentialFile})
+	if err != nil {
+		return fmt.Errorf("register adopted hosted agent %s: %w", record.AgentID, err)
+	}
+	s.hostedMu.Lock()
+	s.hostedRuntimes[record.AgentID] = result.AgentPID
+	s.hostedRegistrations[record.AgentID] = hostedRegistration{sessionID: session.SessionID, credentialFile: record.Session.CredentialFile}
+	s.hostedMu.Unlock()
+	barrier, err := s.durableBarrier(ctx, result.AgentPID)
+	if err != nil {
+		return err
+	}
+	if !barrier.Completed {
+		return fmt.Errorf("adopted durable publication failed: %s", barrier.Reason)
+	}
+	return nil
+}
+
 func (s *Service) removeStaleDurable(ctx context.Context, record application.DurableHostedRecord) error {
 	defer func() {
 		s.hostedMu.Lock()
@@ -595,6 +639,22 @@ func (s *Service) Health(ctx context.Context) (application.HealthState, error) {
 	if indeterminate {
 		result.Ready = false
 		result.Status = "durable hosted ownership is indeterminate"
+	}
+	if result.Ready && s.persistenceSupervisor != nil {
+		// Durable quarantine is fail-closed: health derives from the live
+		// quarantine projection rather than continuing as if persistence were
+		// reliable after a record was moved aside or a wipe was refused.
+		if value, err := s.system.NoSender().Ask(ctx, s.persistenceSupervisor, &application.DurableQuarantineStatus{}, requestTimeout); err == nil {
+			if state, ok := value.(*application.DurableQuarantineState); ok && state.FailClosed {
+				ids := make([]string, 0, len(state.Items))
+				for id := range state.Items {
+					ids = append(ids, id)
+				}
+				slices.Sort(ids)
+				result.Ready = false
+				result.Status = "durable hosted state quarantined: " + strings.Join(ids, ",")
+			}
+		}
 	}
 	return result, nil
 }
@@ -1228,7 +1288,7 @@ func (s *Service) handleConnection(connection net.Conn) {
 			return
 		}
 		responseDeadline := time.UnixMilli(envelope.DeadlineUnixMillis).Add(time.Second)
-		if maximum := time.Now().Add(15 * time.Minute); responseDeadline.After(maximum) {
+		if maximum := time.Now().Add(6 * time.Hour); responseDeadline.After(maximum) {
 			responseDeadline = maximum
 		}
 		_ = connection.SetReadDeadline(responseDeadline)
@@ -2087,28 +2147,24 @@ func (s *Service) dispatch(request *subagentsv1.Envelope) *subagentsv1.Envelope 
 		}
 		receipt := make(chan application.BridgeIntentResult, 1)
 		task := &application.SendActorTask{TargetPID: targetRoute.PID, TargetPeer: s.communicationPeer(ctx, payload.ActorMessageRequest.Target), RequestID: request.RequestId, RequiredCapability: capability, DedupeID: payload.ActorMessageRequest.DedupeId, ChainID: payload.ActorMessageRequest.ChainId, Deadline: time.UnixMilli(request.DeadlineUnixMillis), HopLimit: payload.ActorMessageRequest.HopLimit, SourceMutationSequence: payload.ActorMessageRequest.SourceMutationSequence, Mode: application.BridgeMessageMode(payload.ActorMessageRequest.Mode), Payload: append([]byte(nil), payload.ActorMessageRequest.BoundedPayload...), Receipt: receipt}
+		// Local and remote targets follow the same source-actor credit/task
+		// protocol: the resolved target PID addresses the concrete agent actor
+		// (possibly on another node) and the actor plane preserves the source
+		// ActorRef as sender across remoting.
+		targetPID, targetAvailable := s.resolveRemoteAgentActor(ctx, targetRoute, payload.ActorMessageRequest.Target)
+		if !targetAvailable {
+			return errorResponse(request, subagentsv1.ProtocolError_CODE_SESSION_MISMATCH, "actor message target actor unavailable")
+		}
+		task.TargetPID = targetPID
 		var result *application.BridgeIntentResult
-		if targetRoute.PID.IsRemote() {
-			intent := &application.BridgeIntent{SessionID: request.SessionId, GenerationID: targetRoute.GenerationID, Principal: targetRoute.Principal, Handle: request.AgentHandle, Fence: request.AgentFence, SourceAgentID: source, TargetAgentID: payload.ActorMessageRequest.Target, RequestID: request.RequestId, RequiredCapability: capability, DedupeID: payload.ActorMessageRequest.DedupeId, ChainID: payload.ActorMessageRequest.ChainId, Deadline: time.UnixMilli(request.DeadlineUnixMillis), HopLimit: payload.ActorMessageRequest.HopLimit, SourceMutationSequence: payload.ActorMessageRequest.SourceMutationSequence, Mode: application.BridgeMessageMode(payload.ActorMessageRequest.Mode), Payload: append([]byte(nil), payload.ActorMessageRequest.BoundedPayload...)}
-			reply, err := s.system.NoSender().Ask(ctx, targetRoute.PID, remoteBridgeIntent(intent), requestTimeout)
-			if err != nil {
-				return internalError(response)
-			}
-			value, ok := reply.(*application.BridgeIntentResult)
-			if !ok {
-				return internalError(response)
-			}
-			result = value
-		} else {
-			if err := s.system.NoSender().Tell(ctx, sourceRoute.PID, task); err != nil {
-				return internalError(response)
-			}
-			select {
-			case completed := <-receipt:
-				result = &completed
-			case <-ctx.Done():
-				return errorResponse(request, subagentsv1.ProtocolError_CODE_DEADLINE_EXCEEDED, "durable actor mutation deadline expired")
-			}
+		if err := s.system.NoSender().Tell(ctx, sourceRoute.PID, task); err != nil {
+			return internalError(response)
+		}
+		select {
+		case completed := <-receipt:
+			result = &completed
+		case <-ctx.Done():
+			return errorResponse(request, subagentsv1.ProtocolError_CODE_DEADLINE_EXCEEDED, "durable actor mutation deadline expired")
 		}
 		if result.Accepted {
 			s.pushBridgeUpdate(payload.ActorMessageRequest.Target, "actor delivery admitted")
@@ -2149,7 +2205,7 @@ func (s *Service) dispatch(request *subagentsv1.Envelope) *subagentsv1.Envelope 
 			return errorResponse(request, subagentsv1.ProtocolError_CODE_SESSION_MISMATCH, "delivery acknowledgement authorization denied")
 		}
 		completion := make(chan application.BridgeDeliveryAckResult, 1)
-		ack := &application.BridgeDeliveryAck{SessionID: request.SessionId, GenerationID: route.GenerationID, Principal: route.Principal, Handle: request.AgentHandle, Fence: request.AgentFence, Sequence: payload.BridgeDeliveryAckRequest.Sequence, DedupeID: payload.BridgeDeliveryAckRequest.DedupeId, Delivered: payload.BridgeDeliveryAckRequest.Delivered, Reason: payload.BridgeDeliveryAckRequest.Reason, Result: append([]byte(nil), payload.BridgeDeliveryAckRequest.BoundedResult...), Completion: completion}
+		ack := &application.BridgeDeliveryAck{SessionID: request.SessionId, GenerationID: route.GenerationID, Principal: route.Principal, Handle: request.AgentHandle, Fence: request.AgentFence, Sequence: payload.BridgeDeliveryAckRequest.Sequence, DedupeID: payload.BridgeDeliveryAckRequest.DedupeId, Delivered: payload.BridgeDeliveryAckRequest.Delivered, Reason: payload.BridgeDeliveryAckRequest.Reason, Result: append([]byte(nil), payload.BridgeDeliveryAckRequest.BoundedResult...), RuntimeID: payload.BridgeDeliveryAckRequest.RuntimeId, Incarnation: payload.BridgeDeliveryAckRequest.Incarnation, PiSessionID: payload.BridgeDeliveryAckRequest.PiSessionId, Kind: payload.BridgeDeliveryAckRequest.Kind, SourceScope: payload.BridgeDeliveryAckRequest.SourceScope, CompletionKey: payload.BridgeDeliveryAckRequest.CompletionKey, Completion: completion}
 		if err := s.system.NoSender().Tell(ctx, route.PID, ack); err != nil {
 			return internalError(response)
 		}
@@ -2161,9 +2217,9 @@ func (s *Service) dispatch(request *subagentsv1.Envelope) *subagentsv1.Envelope 
 			return errorResponse(request, subagentsv1.ProtocolError_CODE_DEADLINE_EXCEEDED, "durable delivery acknowledgement deadline expired")
 		}
 		if result.Accepted {
-			s.updateBridgeAckCursor(payload.BridgeDeliveryAckRequest.AgentId, request.SessionId, request.GenerationId, request.AgentHandle, request.AgentFence, payload.BridgeDeliveryAckRequest.Sequence)
+			s.updateBridgeAckCursor(payload.BridgeDeliveryAckRequest.AgentId, request.SessionId, request.GenerationId, request.AgentHandle, request.AgentFence, result.Cursor)
 		}
-		response.Payload = &subagentsv1.Envelope_BridgeDeliveryAckResponse{BridgeDeliveryAckResponse: &subagentsv1.BridgeDeliveryAckResponse{Accepted: result.Accepted, Reason: result.Reason}}
+		response.Payload = &subagentsv1.Envelope_BridgeDeliveryAckResponse{BridgeDeliveryAckResponse: &subagentsv1.BridgeDeliveryAckResponse{Accepted: result.Accepted, Reason: result.Reason, Cursor: result.Cursor}}
 	case *subagentsv1.Envelope_BridgePollRequest:
 		agentID := payload.BridgePollRequest.AgentId
 		route, err := s.authorizeAgent(ctx, request, agentID, []string{"hosted_bridge"})
@@ -2203,7 +2259,7 @@ func (s *Service) protoBridgeDeliveries(ctx context.Context, deliveries []applic
 		if target.StableID == "" {
 			target = s.communicationPeer(ctx, delivery.TargetAgentID)
 		}
-		result = append(result, &subagentsv1.BridgeDelivery{Sequence: delivery.Sequence, SourceAgentId: delivery.SourceAgentID, TargetAgentId: delivery.TargetAgentID, RequestId: delivery.RequestID, DeadlineUnixMillis: delivery.Deadline.UnixMilli(), DedupeId: delivery.DedupeID, HopLimit: delivery.HopLimit, BoundedPayload: delivery.Payload, Policy: subagentsv1.BridgeDelivery_Policy(delivery.Policy), Kind: subagentsv1.BridgeDelivery_Kind(delivery.Kind), ChainId: delivery.ChainID, Source: protoCommunicationPeer(source), Target: protoCommunicationPeer(target)})
+		result = append(result, &subagentsv1.BridgeDelivery{Sequence: delivery.Sequence, SourceAgentId: delivery.SourceAgentID, TargetAgentId: delivery.TargetAgentID, RequestId: delivery.RequestID, DeadlineUnixMillis: delivery.Deadline.UnixMilli(), DedupeId: delivery.DedupeID, HopLimit: delivery.HopLimit, BoundedPayload: delivery.Payload, Policy: subagentsv1.BridgeDelivery_Policy(delivery.Policy), Kind: subagentsv1.BridgeDelivery_Kind(delivery.Kind), ChainId: delivery.ChainID, Source: protoCommunicationPeer(source), Target: protoCommunicationPeer(target), SourceScope: delivery.SourceScope, CompletionKey: delivery.CompletionKey})
 	}
 	return result
 }
@@ -2286,6 +2342,33 @@ func (s *Service) authorizeAgent(ctx context.Context, request *subagentsv1.Envel
 		return route, nil
 	}
 	return &application.AgentRoute{Allowed: true, PID: pid, GenerationID: request.GenerationId, Principal: request.CallerIdentity}, nil
+}
+
+// resolveRemoteAgentActor resolves a remote agent route to its concrete agent
+// actor through the remote node's placement authority, so cross-node messages
+// address the agent actor itself and the source ActorRef survives as sender.
+// Failures are deterministic and never leak host or port details.
+func (s *Service) resolveRemoteAgentActor(ctx context.Context, route *application.AgentRoute, agentID string) (*actor.PID, bool) {
+	if !route.PID.IsRemote() {
+		return route.PID, true
+	}
+	path := route.PID.Path()
+	if path == nil {
+		return nil, false
+	}
+	reply, err := s.system.NoSender().Ask(ctx, route.PID, &application.ResolveAgentActor{AgentID: agentID}, requestTimeout)
+	if err != nil {
+		return nil, false
+	}
+	actorRef, ok := reply.(*application.AgentActorRef)
+	if !ok || !actorRef.Found || actorRef.ActorName == "" {
+		return nil, false
+	}
+	pid, err := s.system.NoSender().RemoteLookup(ctx, path.Host(), path.Port(), actorRef.ActorName)
+	if err != nil || pid == nil {
+		return nil, false
+	}
+	return pid, true
 }
 
 func (s *Service) attachRequest(ctx context.Context, pid *actor.PID, message any) (*application.AttachResult, error) {
@@ -2633,17 +2716,26 @@ func (s *Service) startTaskLifecycle(ctx context.Context, request *subagentsv1.E
 	intent := &application.BridgeIntent{SessionID: request.SessionId, GenerationID: route.GenerationID, Principal: route.Principal, Handle: request.AgentHandle, Fence: request.AgentFence, SourceAgentID: source, TargetAgentID: command.Target, RequestID: request.RequestId, RequiredCapability: "prompt", DedupeID: command.DedupeId, ChainID: command.ChainId, Deadline: time.UnixMilli(request.DeadlineUnixMillis), HopLimit: command.HopLimit, SourceMutationSequence: command.SourceMutationSequence, Mode: application.BridgeMessagePrompt, Payload: append([]byte(nil), command.BoundedPrompt...), Receipt: receipt, Completion: completion}
 	if route.PID.IsRemote() {
 		go func() {
-			reply, err := s.system.NoSender().Ask(context.Background(), route.PID, remoteBridgeIntent(intent), time.Until(intent.Deadline))
-			if err != nil {
-				runnerReceipt <- application.BridgeIntentResult{Reason: err.Error()}
+			for {
+				reply, err := s.system.NoSender().Ask(context.Background(), route.PID, remoteBridgeIntent(intent), time.Until(intent.Deadline))
+				if err != nil {
+					runnerReceipt <- application.BridgeIntentResult{Reason: err.Error()}
+					return
+				}
+				result, ok := reply.(*application.BridgeIntentResult)
+				if !ok {
+					runnerReceipt <- application.BridgeIntentResult{Reason: "unexpected remote lifecycle response"}
+					return
+				}
+				// A busy target persistence window is transient: retry the
+				// intent until the deadline instead of failing the lifecycle.
+				if !result.Accepted && result.Reason == "durable persistence is busy" && time.Now().Before(intent.Deadline) {
+					time.Sleep(25 * time.Millisecond)
+					continue
+				}
+				runnerReceipt <- *result
 				return
 			}
-			result, ok := reply.(*application.BridgeIntentResult)
-			if !ok {
-				runnerReceipt <- application.BridgeIntentResult{Reason: "unexpected remote lifecycle response"}
-				return
-			}
-			runnerReceipt <- *result
 		}()
 	} else {
 		if err := s.system.NoSender().Tell(ctx, route.PID, intent); err != nil {
@@ -3165,6 +3257,21 @@ func (s *Service) stopHostedAgent(ctx context.Context, agentID string) (applicat
 	pid, metadata := s.hostedRuntimes[agentID], s.hostedRegistrations[agentID]
 	if degraded, exists := s.hostedIndeterminate[agentID]; exists {
 		s.hostedMu.Unlock()
+		// Operator recovery for an ownership-indeterminate deadlock: a dead
+		// runtime plus an indeterminate record otherwise blocks both admin STOP
+		// and same-name recreation with no path except manual file surgery.
+		// STOP accepts only proven-absence evidence (tmux server gone or the
+		// exact pane dead under the guarded ownership predicate) and retires the
+		// record; anything unproven stays fail-closed indeterminate.
+		retired, retireErr := s.retireHostedOnProvenAbsence(ctx, agentID, degraded, metadata)
+		if retireErr != nil {
+			return degraded, retireErr
+		}
+		if retired {
+			binding := degraded
+			binding.State, binding.BridgeReady, binding.OwnershipIndeterminate, binding.CleanupPending = application.HostedPiRuntimeStopped, false, false, false
+			return binding, nil
+		}
 		return degraded, application.ErrHostedOwnershipIndeterminate
 	}
 	var registrationID string
@@ -3257,6 +3364,71 @@ func (s *Service) stopHostedAgent(ctx context.Context, agentID string) (applicat
 		case <-time.After(10 * time.Millisecond):
 		}
 	}
+}
+
+// retireHostedOnProvenAbsence implements the documented operator recovery for
+// an ownership-indeterminate hosted record: it retires the durable record, the
+// ownership record, and the session credential only when the exact runtime is
+// proven absent (tmux server gone, or the exact pane dead and cleanup under the
+// guarded ownership predicate succeeded). It returns (false, nil) when absence
+// is not provable, leaving the fail-closed indeterminate state untouched.
+func (s *Service) retireHostedOnProvenAbsence(ctx context.Context, agentID string, degraded application.HostedPiRuntimeBinding, metadata hostedRegistration) (bool, error) {
+	records, _, err := s.durableStore.LoadAllWithQuarantine(ctx)
+	if err != nil {
+		return false, err
+	}
+	var record *application.DurableHostedRecord
+	for index := range records {
+		if records[index].AgentID == agentID {
+			record = &records[index]
+			break
+		}
+	}
+	if record == nil {
+		// No durable record remains: nothing left to recover.
+		s.hostedMu.Lock()
+		delete(s.hostedIndeterminate, agentID)
+		delete(s.hostedTerminal, agentID)
+		delete(s.hostedRegistrations, agentID)
+		s.hostedMu.Unlock()
+		return true, nil
+	}
+	credentialFile := metadata.credentialFile
+	if credentialFile == "" {
+		credentialFile = record.Session.CredentialFile
+	}
+	runtime := &hostedpi.Runtime{Config: hostedpi.Config{TmuxBinary: s.hostedAdmin.TmuxBinary, PiBinary: s.hostedAdmin.PiBinary, BridgeExtension: s.hostedAdmin.BridgeExtension, DaemonEndpoint: hostedActorEndpoint(s.hostedAdmin), CredentialFile: credentialFile, ServerName: s.hostedAdmin.ServerName, TmuxConfig: s.hostedAdmin.TmuxConfig, ProjectDirectory: record.RuntimeConfig.ProjectDirectory, StateDirectory: s.hostedAdmin.StateDirectory, SessionID: record.Session.SessionID, GenerationID: record.Session.GenerationID, CallerIdentity: record.Session.Caller}}
+	absent, probeErr := runtime.ProveAbsent(ctx, degraded)
+	if probeErr != nil {
+		return false, errors.Join(application.ErrHostedOwnershipIndeterminate, probeErr)
+	}
+	if !absent {
+		return false, nil
+	}
+	if err := hostedpi.RemoveOwnershipRecord(s.hostedAdmin.StateDirectory, degraded.RuntimeID); err != nil {
+		return false, err
+	}
+	if credentialFile != "" {
+		if err := hostedpi.RemoveCredentialFile(credentialFile); err != nil {
+			return false, err
+		}
+	}
+	if err := s.durableStore.Remove(ctx, agentID); err != nil {
+		return false, err
+	}
+	if sessionID := record.Session.SessionID; sessionID != "" {
+		_ = s.CloseSession(ctx, sessionID)
+	}
+	s.hostedMu.Lock()
+	if s.hostedProjects[record.RuntimeConfig.ProjectDirectory] == agentID {
+		delete(s.hostedProjects, record.RuntimeConfig.ProjectDirectory)
+	}
+	delete(s.hostedIndeterminate, agentID)
+	delete(s.hostedTerminal, agentID)
+	delete(s.hostedRegistrations, agentID)
+	delete(s.hostedCleanup, agentID)
+	s.hostedMu.Unlock()
+	return true, nil
 }
 
 func (s *Service) rollbackHostedRegistration(ctx context.Context, agentID string, pid *actor.PID, metadata hostedRegistration) error {

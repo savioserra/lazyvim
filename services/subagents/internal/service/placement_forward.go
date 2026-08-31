@@ -26,6 +26,11 @@ func (a *hostedPlacementAuthority) remoteAttach(ctx context.Context, message *ap
 	}
 }
 
+// remoteBridgeIntent is the synchronous correlation boundary for remote prompt
+// and task-lifecycle bridge intents: it forwards to the local target agent and
+// holds the remote reply open until the acknowledged terminal or deadline.
+// Actor messages do not use this path: they follow the credit/task protocol
+// addressed directly to the agent actor.
 func (a *hostedPlacementAuthority) remoteBridgeIntent(ctx context.Context, message *application.RemoteBridgeIntent) *application.BridgeIntentResult {
 	pid, err := a.localAgentPID(ctx, message.TargetAgentID)
 	if err != nil {
@@ -51,6 +56,17 @@ func (a *hostedPlacementAuthority) remoteBridgeIntent(ctx context.Context, messa
 	case <-ctx.Done():
 		return &application.BridgeIntentResult{Reason: ctx.Err().Error()}
 	}
+}
+
+// remoteResolveAgentActor answers a remote node's request for the concrete
+// agent actor name so cross-node delivery can address the agent actor directly
+// and preserve the original sender identity across remoting.
+func (a *hostedPlacementAuthority) remoteResolveAgentActor(ctx context.Context, message *application.ResolveAgentActor) *application.AgentActorRef {
+	pid, err := a.localAgentPID(ctx, message.AgentID)
+	if err != nil || pid == nil {
+		return &application.AgentActorRef{AgentID: message.AgentID, Reason: "agent actor unavailable"}
+	}
+	return &application.AgentActorRef{AgentID: message.AgentID, ActorName: pid.Name(), Found: true}
 }
 
 func (a *hostedPlacementAuthority) localAgentPID(ctx context.Context, agentID string) (*actor.PID, error) {

@@ -60,6 +60,11 @@ func (p *taskPeerProbe) waitFor(kind string, timeout time.Duration) any {
 					p.mu.Unlock()
 					return message
 				}
+			case "completed":
+				if _, ok := message.(*application.ActorTaskCompleted); ok {
+					p.mu.Unlock()
+					return message
+				}
 			}
 		}
 		p.mu.Unlock()
@@ -239,5 +244,83 @@ func TestForgedTargetOriginCannotGrantCreditRetireOutboxOrPublishCommit(t *testi
 		}
 	case <-time.After(time.Second):
 		t.Fatal("reserved acceptance commit publication missing")
+	}
+}
+
+// TestActorRefPathFieldsMustMatchReservedTargetRef proves sender validation
+// compares the full durable address (host, port, and name) against the
+// reserved ActorRef, not only its canonical address string: a cross-node or
+// renamed actor whose ref merely reuses the reserved address is rejected
+// fail-closed, while the exact reserved target still drives the flow.
+func TestActorRefPathFieldsMustMatchReservedTargetRef(t *testing.T) {
+	ctx := context.Background()
+	system, err := goakt.NewActorSystem("task-origin-path")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = system.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		stop, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		_ = system.Stop(stop)
+	})
+	reserved := spawnTaskPeer(t, ctx, system, "spoof-reserved")
+	rogue := spawnTaskPeer(t, ctx, system, "spoof-rogue")
+	host, port := system.Host(), system.Port()
+	payload := []byte("path spoof payload")
+	digest := sha256.Sum256(payload)
+	ref := func(name string, host string, port int, address string) application.DurableActorRef {
+		return application.DurableActorRef{AgentID: "target-agent", Host: host, Port: port, Name: name, Address: address}
+	}
+	item := func(taskID, dedupe, chain string, sequence uint64, targetRef application.DurableActorRef) application.DurableActorTaskOutboxItem {
+		return application.DurableActorTaskOutboxItem{TaskID: taskID, Target: application.CommunicationPeer{StableID: "target-agent"}, TargetRef: targetRef, RequestID: "request-" + dedupe, DedupeID: dedupe, ChainID: chain, RequiredCapability: "send", SourceMutationSequence: sequence, Deadline: time.Now().Add(time.Minute), HopLimit: 8, Mode: application.BridgeMessageTell, Payload: payload, PayloadDigest: digest, State: "pending_credit"}
+	}
+	// The name-spoofed ref carries the rogue's own address, so an address-only
+	// comparison would accept the rogue as the reserved target.
+	nameSpoofed := item("client:pm:name-spoof:chain-a:1", "name-spoof", "chain-a", 1, ref("spoof-reserved", host, port, rogue.pid.ID()))
+	// The port- and host-spoofed refs carry the reserved target's own address
+	// but claim a different node endpoint.
+	portSpoofed := item("client:pm:port-spoof:chain-b:2", "port-spoof", "chain-b", 2, ref("spoof-reserved", host, port+1, reserved.pid.ID()))
+	hostSpoofed := item("client:pm:host-spoof:chain-c:3", "host-spoof", "chain-c", 3, ref("spoof-reserved", "foreign-node", port, reserved.pid.ID()))
+	exact := item("client:pm:exact:chain-d:4", "exact", "chain-d", 4, actorRefOf("target-agent", reserved.pid))
+	record := application.DurableHostedRecord{SchemaVersion: application.DurableHostedSchemaVersion, AgentID: "client:pm", AuthorityBinding: application.AuthorityBinding{Kind: application.AuthorityBindingPhaseOneObservedUpstream, ObservedUpstreamRunID: "client:pm"}, Binding: application.InactiveHostedPiRuntimeBinding(), AgentState: application.DurableAgentState{SourceOutbox: []application.DurableActorTaskOutboxItem{nameSpoofed, portSpoofed, hostSpoofed, exact}}}
+	source, err := system.Spawn(ctx, "spoof-source-agent", actors.NewAgentActor(&application.RegisterAgent{AgentID: "client:pm", AuthorityBinding: record.AuthorityBinding, HostedPiRuntime: record.Binding, AllowedCapability: []string{"send"}, Retention: "bounded", Recovery: "terminal-reattach", DurableRecord: &record}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	grant := func(taskID string) *application.TaskCreditGranted {
+		return &application.TaskCreditGranted{Credit: application.TaskCredit{TaskID: taskID, CreditID: "credit-" + taskID, TargetEpoch: 1, ExpiresAt: time.Now().Add(time.Minute), PayloadDigest: digest}}
+	}
+	// The rogue must not be handed the task even though it owns the spoofed
+	// ref's exact address string.
+	if err = rogue.tell(ctx, source, grant(nameSpoofed.TaskID)); err != nil {
+		t.Fatal(err)
+	}
+	if rogue.waitFor("task", 250*time.Millisecond) != nil {
+		t.Fatal("name-spoofed target ref handed the task to a rogue sender")
+	}
+	// The reserved target itself must be rejected while the ref claims a
+	// different node endpoint (port or host).
+	if err = reserved.tell(ctx, source, grant(portSpoofed.TaskID)); err != nil {
+		t.Fatal(err)
+	}
+	if err = reserved.tell(ctx, source, grant(hostSpoofed.TaskID)); err != nil {
+		t.Fatal(err)
+	}
+	if reserved.waitFor("task", 250*time.Millisecond) != nil {
+		t.Fatal("endpoint-spoofed target ref handed the task to the reserved sender")
+	}
+	// The exact reserved ref still drives the credit flow end to end.
+	if err = reserved.tell(ctx, source, grant(exact.TaskID)); err != nil {
+		t.Fatal(err)
+	}
+	task, ok := reserved.waitFor("task", time.Second).(*application.ActorTask)
+	if !ok {
+		t.Fatal("exact reserved target ref never received the actor task")
+	}
+	if task.Credit.TaskID != exact.TaskID || string(task.Payload) != string(payload) {
+		t.Fatalf("exact reserved ref handed the wrong task: %#v", task)
 	}
 }

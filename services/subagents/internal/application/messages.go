@@ -521,6 +521,13 @@ type RemoteHostedPlacementResult struct {
 	Runtime            HostedPiRuntimeBinding
 	Reason             string
 }
+type ResolveAgentActor struct{ AgentID string }
+type AgentActorRef struct {
+	AgentID, ActorName string
+	Found              bool
+	Reason             string
+}
+
 type RemoteAttachAgent struct {
 	SessionID, GenerationID, Principal, AgentID string
 	RequestedCapabilities                       []string
@@ -847,6 +854,21 @@ type CommunicationPeer struct {
 	Role        string
 }
 
+func BridgeDeliveryKindLabel(kind BridgeDeliveryKind) string {
+	switch kind {
+	case BridgeDeliveryNotification:
+		return "notification"
+	case BridgeDeliveryAbort:
+		return "abort"
+	case BridgeDeliveryShutdown:
+		return "shutdown"
+	case BridgeDeliveryPrompt:
+		return "prompt"
+	default:
+		return ""
+	}
+}
+
 type BridgeDelivery struct {
 	Sequence                                                   uint64
 	SourceAgentID, TargetAgentID, RequestID, DedupeID, ChainID string
@@ -856,6 +878,7 @@ type BridgeDelivery struct {
 	Payload                                                    []byte
 	Policy                                                     BridgeDeliveryPolicy
 	Kind                                                       BridgeDeliveryKind
+	SourceScope, CompletionKey                                 string
 }
 type BridgeEvent struct {
 	Sequence, Revision uint64
@@ -871,11 +894,14 @@ type BridgeDeliveryAck struct {
 	Fence, Sequence                                              uint64
 	Delivered                                                    bool
 	Result                                                       []byte
+	RuntimeID, PiSessionID, Kind, SourceScope, CompletionKey     string
+	Incarnation                                                  uint64
 	Completion                                                   chan<- BridgeDeliveryAckResult
 }
 type BridgeDeliveryAckResult struct {
 	Accepted bool
 	Reason   string
+	Cursor   uint64
 }
 
 type BridgeSessionOpened struct{ Session any }

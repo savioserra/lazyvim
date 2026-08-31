@@ -6,12 +6,12 @@ import { readFile, lstat } from "node:fs/promises";
 import { Type } from "typebox";
 type Envelope = any;
 let EnvelopeSchema: DescMessage;
-import { buildActorControl, buildActorMessage, communicationKey, CommunicationTimeline, completeHostedEnvironment, drainPages, ExactMutationSequencer, executeTypedDelivery, invokeTypedDeliveryForAck, mutationScopeKey, PromptTaskCoordinator, registerHostedHandlers } from "./handlers.ts";
+import { buildActorControl, buildActorMessage, buildIdentityDeliveryAck, communicationKey, CommunicationTimeline, completeHostedEnvironment, drainPages, ExactMutationSequencer, executeTypedDelivery, invokeTypedDeliveryForAck, mutationScopeKey, PromptTaskCoordinator, registerHostedHandlers } from "./handlers.ts";
 import { incomingControl, incomingNote, incomingRequestText, legacyCommunicationLine, outgoingExchange, peerView, renderCommunicationCard, type CommunicationView } from "./communication-ui.ts";
 
 const MAX_FRAME = 64 * 1024;
 const MAX_TEXT = 16 * 1024;
-const REQUEST_TIMEOUT_MS = 30 * 60_000;
+const REQUEST_TIMEOUT_MS = 6 * 60 * 60_000;
 const SHORT_REQUEST_TIMEOUT_MS = 2_000;
 const textDecoder = new TextDecoder("utf-8", { fatal: true });
 
@@ -180,7 +180,7 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
   const prompts = new PromptTaskCoordinator<TargetFence>((text) => { requiredContext(extensionContext); pi.sendUserMessage(text); }, async (pending, deliveredSuccessfully, answer, reason) => {
     const encoded = new TextEncoder().encode(answer);
     if (encoded.byteLength > MAX_TEXT) throw new Error("assistant answer exceeds bridge bound");
-    const ack = { agentId: requiredBinding(binding).agentId, sequence: pending.delivery.sequence, dedupeId: pending.delivery.dedupeId, delivered: deliveredSuccessfully, reason, boundedResult: encoded };
+    const ack = buildIdentityDeliveryAck(requiredBinding(binding).agentId, { runtimeId: requiredBinding(binding).runtimeId, incarnation: requiredBinding(binding).incarnation, piSessionId }, pending.delivery, deliveredSuccessfully, reason, encoded);
     const response = await requiredClient(client).request("bridgeDeliveryAckRequest", BridgeDeliveryAckRequestSchema, ack, pending.fence);
     if (response.payload.case !== "bridgeDeliveryAckResponse" || !response.payload.value.accepted) throw new Error("prompt completion acknowledgement rejected");
     if (deliveredSuccessfully) deliveredPrompt(pending.delivery.dedupeId, pending.delivery.sequence);
@@ -394,7 +394,7 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
       if (delivery.kind === 1) appendCommunicationView(incomingNote(communicationKey(delivery), delivery.source, delivery.boundedPayload));
       else appendCommunicationView(incomingControl(communicationKey(delivery), delivery.source, deliveryKindName(delivery.kind)));
     }
-    const ack = await invokeTypedDeliveryForAck(requiredBinding(binding).agentId, delivery, async () => {
+    const ack = await invokeTypedDeliveryForAck(requiredBinding(binding).agentId, { runtimeId: requiredBinding(binding).runtimeId, incarnation: requiredBinding(binding).incarnation, piSessionId }, delivery, async () => {
       if (delivery.hopLimit === 0) throw new Error("delivery hop budget exhausted");
       if (BigInt(Date.now()) > delivery.deadlineUnixMillis) throw new Error("delivery deadline expired");
       if (!duplicate) {

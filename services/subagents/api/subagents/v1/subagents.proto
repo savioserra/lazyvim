@@ -338,6 +338,8 @@ message BridgeDelivery {
   string chain_id = 11;
   CommunicationPeer source = 12;
   CommunicationPeer target = 13;
+  string source_scope = 14;
+  string completion_key = 15;
 }
 
 message BridgePollResponse {
@@ -368,10 +370,12 @@ message BridgeDeliveryAckRequest {
   string pi_session_id = 9;
   string kind = 10;
   string source_scope = 11;
+  string completion_key = 12;
 }
 message BridgeDeliveryAckResponse {
   bool accepted = 1;
   string reason = 2;
+  uint64 cursor = 3;
 }
 
 message BridgeReplaceRequest {

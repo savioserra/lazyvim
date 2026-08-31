@@ -2,7 +2,9 @@ package actors_test
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -93,7 +95,7 @@ func TestHostedMutationScopesAreExactPerAuthenticatedSource(t *testing.T) {
 		t.Fatalf("another source reset/lost pending deliveries: %d", len(poll.Deliveries))
 	}
 	for _, delivery := range poll.Deliveries {
-		ack := ask(&application.BridgeDeliveryAck{SessionID: "a-session", GenerationID: "a-generation", Principal: "hosted:a", Handle: replaced.Handle, Fence: replaced.Fence, Sequence: delivery.Sequence, DedupeID: delivery.DedupeID, Delivered: true}).(*application.BridgeDeliveryAckResult)
+		ack := ask(identityAck("a-session", "a-generation", "hosted:a", replaced.Handle, replaced.Fence, "runtime", "pi-a-two", delivery, true, nil)).(*application.BridgeDeliveryAckResult)
 		if !ack.Accepted {
 			t.Fatal("retained delivery ACK rejected")
 		}
@@ -102,4 +104,56 @@ func TestHostedMutationScopesAreExactPerAuthenticatedSource(t *testing.T) {
 
 func replacedAttach(result *application.BridgeResult) *application.AttachResult {
 	return &application.AttachResult{Completed: true, Handle: result.Handle, Fence: result.Fence}
+}
+
+// TestSourceScopeTokenIsOpaqueBoundedAndUnforgeable proves the serialized
+// SourceScope is a server-issued opaque token: bounded length, no raw identity
+// tuple material (session, generation, principal, fence, incarnation), stable
+// per source scope, and required verbatim by acknowledgement validation.
+func TestSourceScopeTokenIsOpaqueBoundedAndUnforgeable(t *testing.T) {
+	b := newBridgeHarness(t, "source-scope-token", "target", "alpha")
+	if r := b.ask(b.intent(application.BridgeMessageTell, "alpha", "token-1", "chain-token-1", 1)).(*application.BridgeIntentResult); !r.Accepted {
+		t.Fatalf("first tell rejected: %#v", r)
+	}
+	if r := b.ask(b.intent(application.BridgeMessageTell, "alpha", "token-2", "chain-token-2", 2)).(*application.BridgeIntentResult); !r.Accepted {
+		t.Fatalf("second tell rejected: %#v", r)
+	}
+	deliveries := b.poll().Deliveries
+	if len(deliveries) != 2 {
+		t.Fatalf("expected two deliveries: %#v", deliveries)
+	}
+	for _, delivery := range deliveries {
+		token := delivery.SourceScope
+		if token == "" {
+			t.Fatal("delivery carried an empty source scope token")
+		}
+		if len(token) != 2*16 || len(token) > 64 {
+			t.Fatalf("source scope token is unbounded: %q", token)
+		}
+		if _, err := hex.DecodeString(token); err != nil {
+			t.Fatalf("source scope token is not opaque server-issued bytes: %q", token)
+		}
+		// No raw identity-tuple component (session, generation, principal,
+		// agent, runtime) or tuple separator may appear inside the token; the
+		// fixed-length random hex encoding cannot embed the tuple either.
+		for _, leaked := range []string{b.session, b.generation, b.principal, "alpha", "target", "runtime-target", ":"} {
+			if leaked != "" && strings.Contains(token, leaked) {
+				t.Fatalf("source scope token leaks raw identity material %q: %q", leaked, token)
+			}
+		}
+	}
+	if deliveries[0].SourceScope != deliveries[1].SourceScope {
+		t.Fatal("same-source deliveries rotated their scope token")
+	}
+	// Acknowledgement validation requires the exact server-issued token: a
+	// mutated token is rejected fail-closed even with every other identity
+	// field correct.
+	forged := identityAck(b.session, b.generation, b.principal, b.handle, b.fence, "runtime-target", "pi-target", deliveries[0], true, nil)
+	forged.SourceScope = deliveries[0].SourceScope + "00"
+	if result := b.ask(forged).(*application.BridgeDeliveryAckResult); result.Accepted {
+		t.Fatalf("forged source scope token was accepted: %#v", result)
+	}
+	if result := b.ask(identityAck(b.session, b.generation, b.principal, b.handle, b.fence, "runtime-target", "pi-target", deliveries[0], true, nil)).(*application.BridgeDeliveryAckResult); !result.Accepted {
+		t.Fatalf("verbatim source scope token was rejected: %#v", result)
+	}
 }

@@ -80,12 +80,22 @@ func TestHostedBridgePaginationAcknowledgementBackpressureAndSubscriptionSemanti
 	}
 	all := append(first.Deliveries, second.Deliveries...)
 	for _, delivery := range all {
-		if !ask(&application.BridgeDeliveryAck{SessionID: "session", GenerationID: "generation", Principal: "hosted:source", Handle: attached.Handle, Fence: attached.Fence, Sequence: delivery.Sequence, DedupeID: delivery.DedupeID, Delivered: true}).(*application.BridgeDeliveryAckResult).Accepted {
+		if !ask(identityAck("session", "generation", "hosted:source", attached.Handle, attached.Fence, "runtime", "pi-session", delivery, true, nil)).(*application.BridgeDeliveryAckResult).Accepted {
 			t.Fatal("ack rejected")
 		}
 	}
-	if ask(&application.BridgeDeliveryAck{SessionID: "session", GenerationID: "generation", Principal: "hosted:source", Handle: attached.Handle, Fence: attached.Fence, Sequence: all[0].Sequence, DedupeID: all[0].DedupeID, Delivered: true}).(*application.BridgeDeliveryAckResult).Accepted {
-		t.Fatal("duplicate acknowledgement was accepted")
+	if ask(identityAck("session", "generation", "hosted:source", attached.Handle, attached.Fence, "runtime", "pi-session", all[0], true, nil)).(*application.BridgeDeliveryAckResult).Accepted {
+		t.Fatal("duplicate acknowledgement outside the retained window was accepted")
+	}
+	latest := all[len(all)-1]
+	duplicate := ask(identityAck("session", "generation", "hosted:source", attached.Handle, attached.Fence, "runtime", "pi-session", latest, true, nil)).(*application.BridgeDeliveryAckResult)
+	if !duplicate.Accepted {
+		t.Fatalf("idempotent duplicate acknowledgement must return the retained terminal: %#v", duplicate)
+	}
+	forged := identityAck("session", "generation", "hosted:source", attached.Handle, attached.Fence, "runtime", "pi-session", latest, true, nil)
+	forged.CompletionKey = "forged-completion-key"
+	if ask(forged).(*application.BridgeDeliveryAckResult).Accepted {
+		t.Fatal("duplicate acknowledgement with mismatched identity was accepted")
 	}
 	for index := 65; index < 321; index++ {
 		if !ask(intent(index)).(*application.BridgeIntentResult).Accepted {

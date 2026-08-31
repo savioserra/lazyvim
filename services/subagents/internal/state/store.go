@@ -24,6 +24,16 @@ import (
 const MaxRecords = 4096
 const MaxRecordBytes = 1024 * 1024
 
+// QuarantineDirectoryName holds durable records that failed per-record
+// reconciliation. Quarantined records stay inspectable for operators but are
+// never re-loaded, so a poisoned record can never crash-loop the daemon.
+const QuarantineDirectoryName = "quarantine"
+
+type QuarantinedEntry struct {
+	Name   string
+	Reason string
+}
+
 type CrashPoint string
 
 const (
@@ -162,77 +172,175 @@ func (s *Store) Remove(ctx context.Context, agentID string) error {
 	return dir.Sync()
 }
 func (s *Store) LoadAll(ctx context.Context) ([]application.DurableHostedRecord, error) {
-	dir, err := securepath.OpenDir(s.Directory, privateValidator)
+	records, quarantined, err := s.load(ctx, false)
 	if err != nil {
 		return nil, err
+	}
+	if len(quarantined) != 0 {
+		return nil, fmt.Errorf("durable state entry %q is unusable", quarantined[0].Name)
+	}
+	return records, nil
+}
+
+// LoadAllWithQuarantine loads every usable record and moves each invalid or
+// unsafe entry aside into the quarantine directory instead of failing the
+// whole daemon startup. The returned entries describe what was quarantined
+// so callers can project a degraded state; only systemic directory failures
+// remain fatal.
+func (s *Store) LoadAllWithQuarantine(ctx context.Context) ([]application.DurableHostedRecord, []QuarantinedEntry, error) {
+	return s.load(ctx, true)
+}
+
+func (s *Store) load(ctx context.Context, tolerate bool) ([]application.DurableHostedRecord, []QuarantinedEntry, error) {
+	dir, err := securepath.OpenDir(s.Directory, privateValidator)
+	if err != nil {
+		return nil, nil, err
 	}
 	defer dir.Close()
 	entries, err := dir.Readdirnames(MaxRecords + 1)
 	if err != nil && !errors.Is(err, io.EOF) {
-		return nil, err
+		return nil, nil, err
 	}
-	if len(entries) > MaxRecords {
-		return nil, errors.New("durable hosted state entry count exceeds bound")
-	}
-	records := make([]application.DurableHostedRecord, 0, len(entries))
-	removedTemporary := false
+	filtered := make([]string, 0, len(entries))
 	for _, name := range entries {
+		if name == QuarantineDirectoryName {
+			continue
+		}
+		filtered = append(filtered, name)
+	}
+	if len(filtered) > MaxRecords {
+		return nil, nil, errors.New("durable hosted state entry count exceeds bound")
+	}
+	records := make([]application.DurableHostedRecord, 0, len(filtered))
+	var quarantined []QuarantinedEntry
+	quarantineFailed := func(name, reason string) {
+		if !tolerate {
+			quarantined = append(quarantined, QuarantinedEntry{Name: name, Reason: reason})
+			return
+		}
+		if moveErr := s.moveAside(dir, name, reason); moveErr != nil {
+			reason = fmt.Sprintf("%s (quarantine move failed: %v)", reason, moveErr)
+		}
+		quarantined = append(quarantined, QuarantinedEntry{Name: name, Reason: reason})
+	}
+	removedTemporary := false
+	for _, name := range filtered {
 		select {
 		case <-ctx.Done():
-			return nil, ctx.Err()
+			return nil, nil, ctx.Err()
 		default:
 		}
 		if temporaryRecordName(name) {
 			if err := unix.Unlinkat(int(dir.Fd()), name, 0); err != nil {
-				return nil, fmt.Errorf("remove interrupted durable state temporary %q: %w", name, err)
+				return nil, nil, fmt.Errorf("remove interrupted durable state temporary %q: %w", name, err)
 			}
 			removedTemporary = true
 			continue
 		}
 		if len(records) >= MaxRecords {
-			return nil, errors.New("durable hosted record count exceeds bound")
+			return nil, nil, errors.New("durable hosted record count exceeds bound")
 		}
 		if len(name) != 37 || !strings.HasSuffix(name, ".json") {
-			return nil, fmt.Errorf("unexpected durable state entry %q", name)
+			quarantineFailed(name, "unexpected durable state entry name")
+			continue
 		}
 		fd, err := unix.Openat(int(dir.Fd()), name, unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 		if err != nil {
-			return nil, fmt.Errorf("open durable state entry %q: %w", name, err)
+			quarantineFailed(name, fmt.Sprintf("open durable state entry: %v", err))
+			continue
 		}
 		file := os.NewFile(uintptr(fd), name)
 		info, statErr := file.Stat()
 		if statErr != nil {
 			file.Close()
-			return nil, statErr
+			quarantineFailed(name, fmt.Sprintf("stat durable state entry: %v", statErr))
+			continue
 		}
 		stat := info.Sys().(*syscall.Stat_t)
 		if !info.Mode().IsRegular() || info.Mode().Perm() != 0o600 || stat.Uid != uint32(os.Getuid()) || info.Size() > MaxRecordBytes {
 			file.Close()
-			return nil, fmt.Errorf("durable state entry %q is unsafe", name)
+			quarantineFailed(name, "durable state entry is unsafe")
+			continue
 		}
 		contents, readErr := io.ReadAll(io.LimitReader(file, MaxRecordBytes+1))
 		file.Close()
 		if readErr != nil {
-			return nil, readErr
+			quarantineFailed(name, fmt.Sprintf("read durable state entry: %v", readErr))
+			continue
 		}
 		var record application.DurableHostedRecord
 		if err = json.Unmarshal(contents, &record); err != nil {
-			return nil, fmt.Errorf("decode durable state entry %q: %w", name, err)
+			quarantineFailed(name, fmt.Sprintf("decode durable state entry: %v", err))
+			continue
 		}
 		if err = validateRecord(record); err != nil {
-			return nil, fmt.Errorf("validate durable state entry %q: %w", name, err)
+			quarantineFailed(name, fmt.Sprintf("validate durable state entry: %v", err))
+			continue
 		}
 		if recordName(record.AgentID) != name {
-			return nil, fmt.Errorf("durable state filename identity mismatch")
+			quarantineFailed(name, "durable state filename identity mismatch")
+			continue
 		}
 		records = append(records, record)
 	}
 	if removedTemporary {
 		if err := dir.Sync(); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
-	return records, nil
+	return records, quarantined, nil
+}
+
+// Quarantine moves the durable record for agentID aside with a bounded reason
+// sidecar. It is the fail-closed operator-visible retirement path for records
+// that are valid on disk but unusable at reconciliation.
+func (s *Store) Quarantine(agentID, reason string) error {
+	dir, err := securepath.OpenDir(s.Directory, privateValidator)
+	if err != nil {
+		return err
+	}
+	defer dir.Close()
+	name := recordName(agentID)
+	var stat unix.Stat_t
+	if statErr := unix.Fstatat(int(dir.Fd()), name, &stat, unix.AT_SYMLINK_NOFOLLOW); statErr != nil {
+		if errors.Is(statErr, unix.ENOENT) {
+			return nil
+		}
+		return statErr
+	}
+	return s.moveAside(dir, name, reason)
+}
+
+func (s *Store) moveAside(dir *os.File, name, reason string) error {
+	quarantine, err := securepath.EnsureDir(filepath.Join(s.Directory, QuarantineDirectoryName), 0o700, privateValidator)
+	if err != nil {
+		return err
+	}
+	defer quarantine.Close()
+	if len(reason) > 4096 {
+		reason = reason[:4096]
+	}
+	if err := unix.Renameat(int(dir.Fd()), name, int(quarantine.Fd()), name); err != nil && !errors.Is(err, unix.ENOENT) {
+		return err
+	}
+	sidecar := name + ".reason"
+	fd, err := unix.Openat(int(quarantine.Fd()), sidecar, unix.O_WRONLY|unix.O_CREAT|unix.O_TRUNC|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0o600)
+	if err != nil {
+		return err
+	}
+	file := os.NewFile(uintptr(fd), sidecar)
+	if _, err = file.WriteString(reason + "\n"); err != nil {
+		file.Close()
+		return err
+	}
+	if err = file.Sync(); err != nil {
+		file.Close()
+		return err
+	}
+	if err = file.Close(); err != nil {
+		return err
+	}
+	return quarantine.Sync()
 }
 func validateRecord(r application.DurableHostedRecord) error {
 	if r.SchemaVersion != application.DurableHostedSchemaVersion {
@@ -242,7 +350,7 @@ func validateRecord(r application.DurableHostedRecord) error {
 		return errors.New("durable hosted record owner mismatch")
 	}
 	if r.AuthorityBinding.Kind != application.AuthorityBindingHostedOwned {
-		if r.AgentID == "" || len(r.AgentID) > 64 || len(r.AllowedCapabilities) > 16 || len(r.AgentState.Attachments) > 4096 || len(r.AgentState.Revoked) > 4096 || len(r.AgentState.MutationScopes) > 256 || len(r.AgentState.SourceOutbox) > 256 || len(r.AgentState.SourceTaskHistory) > 1024 || len(r.AgentState.ReceivedTaskCompletions) > 1024 || len(r.AgentState.TaskCreditReservations) > 256 {
+		if r.AgentID == "" || len(r.AgentID) > 64 || len(r.AllowedCapabilities) > 16 || len(r.AgentState.Attachments) > 4096 || len(r.AgentState.Revoked) > 4096 || len(r.AgentState.MutationScopes) > 256 || len(r.AgentState.SourceOutbox) > 256 || len(r.AgentState.SourceTaskHistory) > 1024 || len(r.AgentState.ReceivedTaskCompletions) > 1024 || len(r.AgentState.TaskCreditReservations) > 256 || len(r.AgentState.AckGapBuffer) > 64 || len(r.AgentState.CommittedAcks) > 64 {
 			return errors.New("durable terminal record bound or identity mismatch")
 		}
 		for _, value := range []string{r.AgentID, r.AuthorityBinding.ObservedUpstreamRunID} {
@@ -255,7 +363,7 @@ func validateRecord(r application.DurableHostedRecord) error {
 	if r.AgentID == "" || len(r.AgentID) > 64 || r.Session.SessionID == "" || r.Session.GenerationID == "" || r.Session.Caller != "hosted:"+r.AgentID || !r.Session.Persistent || !r.Session.ExpiresAt.IsZero() || r.LaunchSpec.AgentID != r.AgentID || r.Binding.RuntimeID != r.LaunchSpec.RuntimeID || r.Binding.Incarnation != r.LaunchSpec.Incarnation {
 		return errors.New("durable hosted record identity mismatch")
 	}
-	if len(r.AllowedCapabilities) > 16 || len(r.Session.Capabilities) > 16 || len(r.AgentState.Attachments) > 4096 || len(r.AgentState.Revoked) > 4096 || len(r.AgentState.BridgeDeliveries) > 256 || len(r.AgentState.DeliverySources) > 256 || len(r.AgentState.MutationScopes) > 256 {
+	if len(r.AllowedCapabilities) > 16 || len(r.Session.Capabilities) > 16 || len(r.AgentState.Attachments) > 4096 || len(r.AgentState.Revoked) > 4096 || len(r.AgentState.BridgeDeliveries) > 256 || len(r.AgentState.DeliverySources) > 256 || len(r.AgentState.MutationScopes) > 256 || len(r.AgentState.AckGapBuffer) > 64 || len(r.AgentState.CommittedAcks) > 64 {
 		return errors.New("durable hosted record collection bound exceeded")
 	}
 	scopeKeys := make(map[string]struct{}, len(r.AgentState.MutationScopes))

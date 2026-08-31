@@ -355,8 +355,8 @@ func (a *AgentRegistryActor) register(ctx *actor.ReceiveContext, message *applic
 	}
 	digest := sha256.Sum256([]byte(message.AgentID + "\x00" + operationID))
 	name := "agent-" + hex.EncodeToString(digest[:8])
-	pid := ctx.Spawn(name, NewAgentActor(message, ctx.Self()), actor.WithMailbox(actor.NewNonBlockingBoundedMailbox(1024)), actor.WithPassivationStrategy(passivation.NewLongLivedStrategy()), actor.WithSupervisor(supervisor.NewSupervisor(supervisor.WithAnyErrorDirective(supervisor.RestartDirective))))
-	if pid == nil {
+	pid, spawnErr := ctx.ActorSystem().Spawn(context.WithoutCancel(ctx.Context()), name, NewAgentActor(message, ctx.Self()), actor.WithMailbox(actor.NewNonBlockingBoundedMailbox(1024)), actor.WithPassivationStrategy(passivation.NewLongLivedStrategy()), actor.WithSupervisor(supervisor.NewSupervisor(supervisor.WithAnyErrorDirective(supervisor.RestartDirective))))
+	if spawnErr != nil || pid == nil {
 		return application.RegisterAgentResult{Reason: "agent actor spawn failed"}
 	}
 	ctx.Watch(pid)
@@ -418,8 +418,8 @@ func (a *AgentRegistryActor) reconcileAgentTermination(ctx *actor.ReceiveContext
 		return
 	}
 	actorRecipe := copyRegistrationRecipe(&item.recipe)
-	pid := ctx.Spawn(item.actorName, NewAgentActor(&actorRecipe, ctx.Self()), actor.WithMailbox(actor.NewNonBlockingBoundedMailbox(1024)), actor.WithPassivationStrategy(passivation.NewLongLivedStrategy()), actor.WithSupervisor(supervisor.NewSupervisor(supervisor.WithAnyErrorDirective(supervisor.RestartDirective))))
-	if pid == nil {
+	pid, spawnErr := ctx.ActorSystem().Spawn(context.WithoutCancel(ctx.Context()), item.actorName, NewAgentActor(&actorRecipe, ctx.Self()), actor.WithMailbox(actor.NewNonBlockingBoundedMailbox(1024)), actor.WithPassivationStrategy(passivation.NewLongLivedStrategy()), actor.WithSupervisor(supervisor.NewSupervisor(supervisor.WithAnyErrorDirective(supervisor.RestartDirective))))
+	if spawnErr != nil || pid == nil {
 		item.agentPID = nil
 		a.agents[agentID] = item
 		if int(attempt) < maxAgentReconcileSpawnRetries {

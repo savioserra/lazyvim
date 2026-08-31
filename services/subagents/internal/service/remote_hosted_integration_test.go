@@ -95,10 +95,76 @@ func TestRemoteHostedOrdinaryServicePath(t *testing.T) {
 		ackNextPrompt(t, remote, "ui_remote_qa", []byte("answer"))
 	})
 
+	t.Run("unified credit protocol completes remote ask with completion told back cross-node", func(t *testing.T) {
+		waitRemoteDeterminate(t, local, client, "ui_remote_qa")
+		// The remote tell exercises credit grant -> ActorTask -> acceptance on
+		// the remote node; the ask additionally returns the acknowledged
+		// terminal through the completion Tell back to the source node. The
+		// completion replay must use the same request identity.
+		unified := &subagentsv1.Envelope_ActorMessageRequest{ActorMessageRequest: &subagentsv1.ActorMessageRequest{Mode: subagentsv1.ActorMessageRequest_MODE_ASK, Target: "ui_remote_qa", BoundedPayload: []byte("unified question"), DedupeId: "unified-d", ChainId: "unified-c", HopLimit: 4, SourceMutationSequence: 3}}
+		ask := local.dispatch(env(local, client, unified, "unified-ask-1", handle, fence)).GetActorMessageResponse()
+		if ask == nil || !ask.Accepted || ask.Completed {
+			t.Fatalf("unified remote ask admission should be asynchronous: %#v", ask)
+		}
+		ackNextPrompt(t, remote, "ui_remote_qa", []byte("unified answer"))
+		deadline := time.Now().Add(5 * time.Second)
+		for time.Now().Before(deadline) {
+			completed := local.dispatch(env(local, client, unified, "unified-ask-1", handle, fence)).GetActorMessageResponse()
+			if completed != nil && completed.Accepted && completed.Completed {
+				if string(completed.BoundedResult) != "unified answer" {
+					t.Fatalf("unified remote ask completion carried the wrong terminal: %#v", completed)
+				}
+				return
+			}
+			time.Sleep(25 * time.Millisecond)
+		}
+		t.Fatal("unified remote ask completion never reached the source node")
+	})
+
+	t.Run("remote duplicate actor message is idempotent", func(t *testing.T) {
+		waitRemoteDeterminate(t, local, client, "ui_remote_qa")
+		duplicate := &subagentsv1.ActorMessageRequest{Mode: subagentsv1.ActorMessageRequest_MODE_TELL, Target: "ui_remote_qa", BoundedPayload: []byte("dup notify"), DedupeId: "dup-d", ChainId: "dup-c", HopLimit: 4, SourceMutationSequence: 4}
+		first := local.dispatch(env(local, client, &subagentsv1.Envelope_ActorMessageRequest{ActorMessageRequest: duplicate}, "dup-1", handle, fence)).GetActorMessageResponse()
+		second := askUntilDeterminate(t, local, client, handle, fence, duplicate)
+		if first == nil || second == nil || !first.Accepted || !second.Accepted {
+			t.Fatalf("duplicate remote tell not idempotent: %#v %#v", first, second)
+		}
+		if second.Completed || second.Reason != "stored_pending_credit" {
+			t.Fatalf("duplicate remote tell must replay the stored pending credit receipt: %#v", second)
+		}
+	})
+
+	t.Run("stale remote node fails deterministically without host or port leak", func(t *testing.T) {
+		waitRemoteDeterminate(t, local, client, "ui_remote_qa")
+		// Poison the public directory entry for a synthetic remote agent so the
+		// authority itself is unreachable: resolution must fail closed with a
+		// fixed reason and never echo host or port details.
+		local.actorPlane.PublicNodes["gone"] = application.PublicNode{Identity: "gone", Host: "127.0.0.1", Port: serviceFreePort(t)}
+		value, err := local.system.NoSender().Ask(context.Background(), local.publicDirectory, &application.CreatePublicAgent{AgentID: "stale_remote", ActorName: application.HostedPlacementAuthorityName("gone"), Placement: application.PublicAgentPlacement{NodeIdentity: "gone"}, Reference: application.AgentReference{AgentID: "stale_remote", LifecycleRevision: 1, AuthorityBinding: application.AuthorityBinding{Kind: application.AuthorityBindingHostedOwned, HostedRuntimeID: "stale-runtime"}}}, 2*time.Second)
+		if err != nil || value == nil {
+			t.Fatalf("stale directory record creation failed: %v %#v", err, value)
+		}
+		staleEnvelope := local.dispatch(env(local, client, &subagentsv1.Envelope_ActorMessageRequest{ActorMessageRequest: &subagentsv1.ActorMessageRequest{Mode: subagentsv1.ActorMessageRequest_MODE_TELL, Target: "stale_remote", BoundedPayload: []byte("stale"), DedupeId: "stale-d", ChainId: "stale-c", HopLimit: 4, SourceMutationSequence: 5}}, "stale-1", handle, fence))
+		if failed := staleEnvelope.GetActorMessageResponse(); failed != nil && failed.Accepted {
+			t.Fatalf("stale remote target was not rejected: %#v", failed)
+		} else if staleEnvelope.GetProtocolError() == nil {
+			t.Fatalf("stale remote target produced neither denial nor protocol error: %#v", staleEnvelope)
+		}
+		encoded := fmt.Sprintf("%#v", staleEnvelope)
+		for _, forbidden := range []string{"127.0.0.1", ":9", "host:", "port"} {
+			if strings.Contains(encoded, forbidden) {
+				t.Fatalf("stale remote failure leaked %s: %s", forbidden, encoded)
+			}
+		}
+	})
+
 	t.Run("typed prompt lifecycle reaches remote bridge correlation boundary", func(t *testing.T) {
 		waitRemoteDeterminate(t, local, client, "ui_remote_qa")
 		go ackNextPrompt(t, remote, "ui_remote_qa", []byte("life-answer"))
-		started := local.dispatch(env(local, client, &subagentsv1.Envelope_TaskLifecycleRequest{TaskLifecycleRequest: &subagentsv1.TaskLifecycleRequest{Operation: subagentsv1.TaskLifecycleRequest_OPERATION_START, LifecycleId: "life-1", Target: "ui_remote_qa", BoundedPrompt: []byte("do work"), DedupeId: "life-d", ChainId: "life-c", HopLimit: 4, SourceMutationSequence: 3}}, "life-req", handle, fence)).GetTaskLifecycleResponse()
+		// Unified actor messaging advanced the tell/ask mutations in the
+		// per-source actor task scope, so this prompt lifecycle is the first
+		// client-session-scope mutation on the remote target.
+		started := local.dispatch(env(local, client, &subagentsv1.Envelope_TaskLifecycleRequest{TaskLifecycleRequest: &subagentsv1.TaskLifecycleRequest{Operation: subagentsv1.TaskLifecycleRequest_OPERATION_START, LifecycleId: "life-1", Target: "ui_remote_qa", BoundedPrompt: []byte("do work"), DedupeId: "life-d", ChainId: "life-c", HopLimit: 4, SourceMutationSequence: 1}}, "life-req", handle, fence)).GetTaskLifecycleResponse()
 		if started == nil || !started.Accepted || started.LifecycleId != "life-1" {
 			t.Fatalf("lifecycle start failed: %#v", started)
 		}
@@ -362,7 +428,7 @@ func ackNextPrompt(t *testing.T, s *Service, id string, answer []byte) {
 					if d.Kind == subagentsv1.BridgeDelivery_KIND_PROMPT {
 						result = answer
 					}
-					_ = s.dispatch(env(s, bridge.session, &subagentsv1.Envelope_BridgeDeliveryAckRequest{BridgeDeliveryAckRequest: &subagentsv1.BridgeDeliveryAckRequest{AgentId: id, Sequence: d.Sequence, DedupeId: d.DedupeId, Delivered: true, BoundedResult: result}}, "ack"+time.Now().String(), bridge.handle, bridge.fence))
+					_ = s.dispatch(env(s, bridge.session, &subagentsv1.Envelope_BridgeDeliveryAckRequest{BridgeDeliveryAckRequest: identityBridgeAck(id, record.Binding.RuntimeID, "fake-pi", record.Binding.Incarnation, d, true, result)}, "ack"+time.Now().String(), bridge.handle, bridge.fence))
 					if d.Kind == subagentsv1.BridgeDelivery_KIND_PROMPT {
 						return
 					}

@@ -165,7 +165,7 @@ func TestClientBootstrapTwoActorsAndCorrelatedPromptAnswer(t *testing.T) {
 		t.Fatalf("typed prompt not delivered: %#v", delivery)
 	}
 	answer := []byte("Completed the implementation task.")
-	ack := request(&subagentsv1.Envelope_BridgeDeliveryAckRequest{BridgeDeliveryAckRequest: &subagentsv1.BridgeDeliveryAckRequest{AgentId: "alpha", Sequence: delivery.Sequence, DedupeId: delivery.DedupeId, Delivered: true, BoundedResult: answer}}, host, connected.AgentHandle, connected.Fence).GetBridgeDeliveryAckResponse()
+	ack := request(&subagentsv1.Envelope_BridgeDeliveryAckRequest{BridgeDeliveryAckRequest: identityBridgeAck("alpha", record.LaunchSpec.RuntimeID, "pi-alpha", 1, delivery, true, answer)}, host, connected.AgentHandle, connected.Fence).GetBridgeDeliveryAckResponse()
 	if ack == nil || !ack.Accepted {
 		t.Fatalf("prompt ACK failed: %#v", ack)
 	}
@@ -199,7 +199,7 @@ func TestClientBootstrapTwoActorsAndCorrelatedPromptAnswer(t *testing.T) {
 		t.Fatalf("task lifecycle reported model-running without correlated agent_start: %#v", running)
 	}
 	lifecycleAnswer := []byte("Lifecycle completed.")
-	lifecycleAck := request(&subagentsv1.Envelope_BridgeDeliveryAckRequest{BridgeDeliveryAckRequest: &subagentsv1.BridgeDeliveryAckRequest{AgentId: "alpha", Sequence: lifecycleDelivery.Sequence, DedupeId: lifecycleDelivery.DedupeId, Delivered: true, BoundedResult: lifecycleAnswer}}, host, connected.AgentHandle, connected.Fence).GetBridgeDeliveryAckResponse()
+	lifecycleAck := request(&subagentsv1.Envelope_BridgeDeliveryAckRequest{BridgeDeliveryAckRequest: identityBridgeAck("alpha", record.LaunchSpec.RuntimeID, "pi-alpha", 1, lifecycleDelivery, true, lifecycleAnswer)}, host, connected.AgentHandle, connected.Fence).GetBridgeDeliveryAckResponse()
 	if lifecycleAck == nil || !lifecycleAck.Accepted {
 		t.Fatalf("task lifecycle ACK failed: %#v", lifecycleAck)
 	}

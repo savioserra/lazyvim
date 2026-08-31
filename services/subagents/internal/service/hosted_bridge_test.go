@@ -162,7 +162,7 @@ func TestDeterministicHostedBridgeGatewayAndClientIndependence(t *testing.T) {
 	if regularDelivery == nil || regularDelivery.Kind != subagentsv1.BridgeDelivery_KIND_NOTIFICATION || regularDelivery.Source.GetDisplayName() != "PROJECT MANAGER" || regularDelivery.Target.GetDisplayName() != "agent-one" {
 		t.Fatalf("regular client Tell delivery lost authoritative source/target/kind: %#v", regularPoll.Deliveries)
 	}
-	regularAck := request(t, path, fencedBase(&subagentsv1.Envelope_BridgeDeliveryAckRequest{BridgeDeliveryAckRequest: &subagentsv1.BridgeDeliveryAckRequest{AgentId: "agent-one", Sequence: regularDelivery.Sequence, DedupeId: regularDelivery.DedupeId, Delivered: true}}))
+	regularAck := request(t, path, fencedBase(&subagentsv1.Envelope_BridgeDeliveryAckRequest{BridgeDeliveryAckRequest: identityBridgeAck("agent-one", "runtime-one", "pi-session", 1, regularDelivery, true, nil)}))
 	if !regularAck.GetBridgeDeliveryAckResponse().Accepted {
 		t.Fatalf("regular client Tell ack rejected: %#v", regularAck)
 	}
@@ -189,7 +189,7 @@ func TestDeterministicHostedBridgeGatewayAndClientIndependence(t *testing.T) {
 		if controlDelivery == nil {
 			t.Fatalf("direct regular client control delivery %s was not retained", dedupeID)
 		}
-		ack := request(t, path, fencedBase(&subagentsv1.Envelope_BridgeDeliveryAckRequest{BridgeDeliveryAckRequest: &subagentsv1.BridgeDeliveryAckRequest{AgentId: "agent-one", Sequence: controlDelivery.Sequence, DedupeId: controlDelivery.DedupeId, Delivered: true}}))
+		ack := request(t, path, fencedBase(&subagentsv1.Envelope_BridgeDeliveryAckRequest{BridgeDeliveryAckRequest: identityBridgeAck("agent-one", "runtime-one", "pi-session", 1, controlDelivery, true, nil)}))
 		if !ack.GetBridgeDeliveryAckResponse().Accepted {
 			t.Fatalf("direct regular client control ack rejected: %#v", ack)
 		}
@@ -264,7 +264,7 @@ func TestDeterministicHostedBridgeGatewayAndClientIndependence(t *testing.T) {
 		t.Fatalf("bridge did not retain both deliveries: %#v", deliveries)
 	}
 	for _, delivery := range deliveries {
-		ackRequest := &subagentsv1.BridgeDeliveryAckRequest{AgentId: "agent-one", Sequence: delivery.Sequence, DedupeId: delivery.DedupeId, Delivered: true}
+		ackRequest := identityBridgeAck("agent-one", "runtime-one", "pi-session", 1, delivery, true, nil)
 		if delivery.Kind == subagentsv1.BridgeDelivery_KIND_PROMPT {
 			ackRequest.BoundedResult = []byte("model answer")
 		}

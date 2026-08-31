@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildActorControl, buildActorMessage, buildDeliveryAck, communicationKey, communicationLine, CommunicationTimeline, completeHostedEnvironment, ExactMutationSequencer, PromptTaskCoordinator, deliveryAction, destroyOnFramingFailure, drainPages, executeTypedDelivery, invokeTypedDeliveryForAck, parseTargetMessage, registerHostedHandlers, requireExplicitModelTarget } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/handlers.ts";
+import { buildActorControl, buildActorMessage, buildIdentityDeliveryAck, communicationKey, communicationLine, CommunicationTimeline, completeHostedEnvironment, ExactMutationSequencer, PromptTaskCoordinator, deliveryAction, deliveryKindLabel, destroyOnFramingFailure, drainPages, executeTypedDelivery, invokeTypedDeliveryForAck, parseTargetMessage, registerHostedHandlers, requireExplicitModelTarget } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/handlers.ts";
 import { incomingNote, incomingRequestText, outgoingExchange, renderCommunicationCard, compactToolCall, compactToolResult, modelResultContent } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/communication-ui.ts";
 import { actorMessageModelResult, connectBridgeWithRetry, consumeReconnect } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/index.ts";
 
@@ -85,8 +85,13 @@ test("actual registered command and tool callbacks invoke every hosted operation
 test("protobuf request builders preserve typed modes, fences inputs, ACK outcomes and no client authority", () => {
   const tell = buildActorMessage(1, "target", "hello", "dedupe", "chain", 41n); assert.equal(tell.mode, 1); assert.equal(tell.target, "target"); assert.equal(tell.hopLimit, 8); assert.equal(tell.sourceMutationSequence, 41n); assert.equal("sourceAgentId" in tell, false); assert.equal("requiredCapability" in tell, false);
   const control = buildActorControl(1, "target", "control-dedupe", "control-chain", 42n); assert.equal(control.intent, 1); assert.equal(control.hopLimit, 2); assert.equal(control.sourceMutationSequence, 42n);
-  assert.deepEqual(buildDeliveryAck("agent", { sequence: 9n, dedupeId: "d" }, true, ""), { agentId: "agent", sequence: 9n, dedupeId: "d", delivered: true, reason: "", boundedResult: new Uint8Array() });
-  assert.equal(buildDeliveryAck("agent", { sequence: 9n, dedupeId: "d" }, false, "failed").delivered, false);
+  const identity = { runtimeId: "runtime-9", incarnation: 2n, piSessionId: "pi-9" };
+  const ackable = { sequence: 9n, dedupeId: "d", kind: 1, sourceScope: "scope-key", completionKey: "completion-key" };
+  assert.deepEqual(buildIdentityDeliveryAck("agent", identity, ackable, true, ""), { agentId: "agent", sequence: 9n, dedupeId: "d", delivered: true, reason: "", boundedResult: new Uint8Array(), runtimeId: "runtime-9", incarnation: 2n, piSessionId: "pi-9", kind: "notification", sourceScope: "scope-key", completionKey: "completion-key" });
+  assert.equal(buildIdentityDeliveryAck("agent", identity, ackable, false, "failed").delivered, false);
+  assert.equal(deliveryKindLabel(1), "notification"); assert.equal(deliveryKindLabel(4), "prompt");
+  assert.throws(() => buildIdentityDeliveryAck("agent", identity, { sequence: 9n, dedupeId: "d", kind: 1 }, true, ""), /identity is missing/);
+  assert.throws(() => deliveryKindLabel(9), /unsupported/);
 });
 
 test("exact mutation sequencing reconciles pre-write and response-loss without duplicate execution", async () => {
@@ -209,9 +214,13 @@ test("typed delivery invokes documented context abort/shutdown and notification 
   const calls = []; const ctx = { abort() { calls.push("abort"); }, shutdown() { calls.push("shutdown"); }, ui: { notify(text) { calls.push(["notify", text]); } } };
   executeTypedDelivery(ctx, 1, "notice"); executeTypedDelivery(ctx, 2, ""); executeTypedDelivery(ctx, 3, "");
   assert.deepEqual(calls, [["notify", "notice"], "abort", "shutdown"]);
-  const success = await invokeTypedDeliveryForAck("agent", { sequence: 1n, dedupeId: "ok" }, () => ctx.abort());
-  const failure = await invokeTypedDeliveryForAck("agent", { sequence: 2n, dedupeId: "failed" }, () => { throw new Error("abort failed"); });
+  const identity = { runtimeId: "runtime-9", incarnation: 2n, piSessionId: "pi-9" };
+  const okDelivery = { sequence: 1n, dedupeId: "ok", kind: 2, sourceScope: "scope-key", completionKey: "completion-key" };
+  const failedDelivery = { sequence: 2n, dedupeId: "failed", kind: 2, sourceScope: "scope-key", completionKey: "completion-key" };
+  const success = await invokeTypedDeliveryForAck("agent", identity, okDelivery, () => ctx.abort());
+  const failure = await invokeTypedDeliveryForAck("agent", identity, failedDelivery, () => { throw new Error("abort failed"); });
   assert.equal(success.delivered, true); assert.equal(failure.delivered, false); assert.equal(failure.reason, "abort failed");
+  assert.equal(success.kind, "abort"); assert.equal(success.completionKey, "completion-key");
 });
 
 test("ordinary bytes cannot select abort or shutdown semantics", () => {

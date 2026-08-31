@@ -82,7 +82,14 @@ func (h *bridgeHarness) poll() *application.BridgePollResult {
 }
 
 func (h *bridgeHarness) ack(delivery application.BridgeDelivery, answer string) *application.BridgeDeliveryAckResult {
-	return h.ask(&application.BridgeDeliveryAck{SessionID: h.session, GenerationID: h.generation, Principal: h.principal, Handle: h.handle, Fence: h.fence, Sequence: delivery.Sequence, DedupeID: delivery.DedupeID, Delivered: true, Result: []byte(answer)}).(*application.BridgeDeliveryAckResult)
+	ack := identityAck(h.session, h.generation, h.principal, h.handle, h.fence, "runtime-"+h.agent, "pi-"+h.agent, delivery, true, []byte(answer))
+	return h.ask(ack).(*application.BridgeDeliveryAckResult)
+}
+
+// identityAck stamps a bridge acknowledgement with the full runtime, delivery
+// scope, and completion-key identity the target actor now enforces fail-closed.
+func identityAck(sessionID, generationID, principal, handle string, fence uint64, runtimeID, piSessionID string, delivery application.BridgeDelivery, delivered bool, result []byte) *application.BridgeDeliveryAck {
+	return &application.BridgeDeliveryAck{SessionID: sessionID, GenerationID: generationID, Principal: principal, Handle: handle, Fence: fence, Sequence: delivery.Sequence, DedupeID: delivery.DedupeID, Delivered: delivered, Result: result, RuntimeID: runtimeID, Incarnation: 1, PiSessionID: piSessionID, Kind: application.BridgeDeliveryKindLabel(delivery.Kind), SourceScope: delivery.SourceScope, CompletionKey: delivery.CompletionKey}
 }
 
 func TestCrossActorAsyncSendNotificationAtoB(t *testing.T) {

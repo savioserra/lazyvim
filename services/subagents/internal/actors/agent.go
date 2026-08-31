@@ -2,6 +2,7 @@ package actors
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
@@ -26,6 +27,15 @@ const (
 	maxBridgePayloadBytes    = 16 * 1024
 	maxSourceOutboxItems     = 256
 	maxTargetTaskQueueItems  = 256
+	maxAckGapBuffer          = 64
+	maxCommittedAcks         = 64
+	maxCompletionTells       = 64
+	maxCompletionAttempts    = 8
+	maxScopeTokens           = 4096
+	scopeTokenBytes          = 16
+	maxScopeTokenLength      = 64
+	outboxBaseRetryDelay     = 50 * time.Millisecond
+	outboxMaxRetryDelay      = 2 * time.Second
 	taskCreditLease          = 5 * time.Second
 	taskRetryDelay           = 50 * time.Millisecond
 )
@@ -38,6 +48,30 @@ type projectionEvent struct {
 type closeProjection struct{}
 type retryProjectionPubSub struct{}
 type retrySourceOutbox struct{}
+type retryCompletionTells struct{}
+type retryOutboxSchedule struct{}
+
+// actorRefResolved is the async continuation of resolveActorRefAsync: the
+// background lookup reports its result back to the agent mailbox so Receive
+// paths never block on actor-plane resolution.
+type actorRefResolved struct {
+	address string
+	pid     *actor.PID
+}
+
+type ackBurstReceipt struct {
+	response chan<- application.BridgeDeliveryAckResult
+	result   application.BridgeDeliveryAckResult
+	commits  []ackCommitEffect
+}
+
+type ackCommitEffect struct {
+	scopeKey, dedupeID string
+	askCompletion      chan<- application.BridgeIntentResult
+	askResult          application.BridgeIntentResult
+	taskReplyTo        *actor.PID
+	taskCompletion     *application.ActorTaskCompleted
+}
 
 type taskCreditReservation struct {
 	credit  application.TaskCredit
@@ -46,7 +80,6 @@ type taskCreditReservation struct {
 }
 type retryProjectionClose struct{ sessionID, generationID string }
 type restoreDurableTimers struct{}
-
 type projectionDrop struct {
 	message application.DropSession
 }
@@ -91,10 +124,7 @@ type pendingDurableReceipt struct {
 	old                         application.DurableAgentState
 	intent                      *application.BridgeIntentResult
 	intentCompletion            chan<- application.BridgeIntentResult
-	ack                         *application.BridgeDeliveryAckResult
-	ackCompletion               chan<- application.BridgeDeliveryAckResult
-	taskReplyTo                 *actor.PID
-	taskCompletion              *application.ActorTaskCompleted
+	ackBurst                    *ackBurstReceipt
 	taskCreditGrant             *application.TaskCreditGranted
 	taskAccepted                *application.ActorTaskAccepted
 	sourceCreditTarget          *actor.PID
@@ -112,9 +142,18 @@ type pendingDurableReceipt struct {
 	askResult                   *application.BridgeIntentResult
 	removeAskOnFailure          bool
 	retryTimeout                bool
-	drop                        *projectionDrop
-	rollingBack                 bool
-	persistErr                  error
+	// runtimeStateForward carries the incarnation-retirement transition: the
+	// registry projection forward and the bounded retry of the state change
+	// fire only after the retirement batch durably commits.
+	runtimeStateForward    *application.HostedPiRuntimeStateChanged
+	runtimeRollbackBinding *application.HostedPiRuntimeBinding
+	// liveTaskSources snapshots the in-memory delivery-to-source PID map before
+	// a mutation retires deliveries: live PIDs are deliberately absent from the
+	// durable state, so a persistence rollback restores them from here.
+	liveTaskSources map[uint64]*actor.PID
+	drop            *projectionDrop
+	rollingBack     bool
+	persistErr      error
 }
 type pendingBridgeAsk struct {
 	completion chan<- application.BridgeIntentResult
@@ -122,13 +161,17 @@ type pendingBridgeAsk struct {
 type mutationScope struct {
 	sessionID, generationID, principal string
 	fence, incarnation                 uint64
-	highWater                          uint64
-	results                            map[uint64]mutationRecord
-	order                              []uint64
-	completed                          int
-	dedupe                             map[string]bridgeDedupeRecord
-	chains                             map[string]struct{}
-	asks                               map[string]pendingBridgeAsk
+	// token is the opaque server-issued scope token that names this scope on
+	// serialized surfaces (deliveries and acknowledgements). The internal key
+	// stays private to owner state.
+	token     string
+	highWater uint64
+	results   map[uint64]mutationRecord
+	order     []uint64
+	completed int
+	dedupe    map[string]bridgeDedupeRecord
+	chains    map[string]struct{}
+	asks      map[string]pendingBridgeAsk
 }
 
 // AgentActor is globally reusable and independent of all Pi session actors. Its
@@ -172,7 +215,16 @@ type AgentActor struct {
 	bridgeDeliveries       []application.BridgeDelivery
 	deliverySources        map[uint64]string
 	taskSources            map[uint64]*actor.PID
-	sourceCreditTargets    map[string]*actor.PID
+	durableTaskSources     map[uint64]application.DurableActorRef
+	resolvedRefs           map[string]*actor.PID
+	resolvingRefs          map[string]struct{}
+	scopeTokens            map[string]string
+	completionTellPending  map[string]application.DurablePendingCompletion
+	completionTellOrder    []string
+	ackGaps                map[uint64]application.BridgeDeliveryAck
+	committedAcks          map[uint64]application.DurableBridgeAckRecord
+	committedAckOrder      []uint64
+	ackCursor              uint64
 	taskCompletions        map[string]application.ActorTaskCompleted
 	taskCompletionOrder    []string
 	sourceTaskHistory      map[string]application.ActorTaskCompleted
@@ -198,7 +250,7 @@ func NewAgentActor(registration *application.RegisterAgent, registry ...*actor.P
 	metadataBinding := registration.HostedPiRuntime
 	metadataBinding.DisplayName = registration.DisplayName
 	metadataBinding.Role = registration.Role
-	value := &AgentActor{id: registration.AgentID, authorityBinding: registration.AuthorityBinding, hostedPiRuntime: metadataBinding, retention: registration.Retention, recovery: registration.Recovery, allowed: allowed, attachments: make(map[string]attachment), revoked: make(map[string]struct{}), revision: 1, commandResults: make(map[string]commandRecord), projections: make(map[string]*projectionLifecycle), deliverySources: make(map[uint64]string), taskSources: make(map[uint64]*actor.PID), sourceCreditTargets: make(map[string]*actor.PID), taskCompletions: make(map[string]application.ActorTaskCompleted), sourceTaskHistory: make(map[string]application.ActorTaskCompleted), sourceOutbox: make(map[string]application.DurableActorTaskOutboxItem), taskCreditReservations: make(map[string]taskCreditReservation), mutationScopes: make(map[string]*mutationScope), persistencePID: registration.PersistencePID, persistenceSupervisor: registration.PersistenceSupervisor, durableRecord: registration.DurableRecord}
+	value := &AgentActor{id: registration.AgentID, authorityBinding: registration.AuthorityBinding, hostedPiRuntime: metadataBinding, retention: registration.Retention, recovery: registration.Recovery, allowed: allowed, attachments: make(map[string]attachment), revoked: make(map[string]struct{}), revision: 1, commandResults: make(map[string]commandRecord), projections: make(map[string]*projectionLifecycle), deliverySources: make(map[uint64]string), taskSources: make(map[uint64]*actor.PID), durableTaskSources: make(map[uint64]application.DurableActorRef), resolvedRefs: make(map[string]*actor.PID), resolvingRefs: make(map[string]struct{}), scopeTokens: make(map[string]string), completionTellPending: make(map[string]application.DurablePendingCompletion), ackGaps: make(map[uint64]application.BridgeDeliveryAck), committedAcks: make(map[uint64]application.DurableBridgeAckRecord), taskCompletions: make(map[string]application.ActorTaskCompleted), sourceTaskHistory: make(map[string]application.ActorTaskCompleted), sourceOutbox: make(map[string]application.DurableActorTaskOutboxItem), taskCreditReservations: make(map[string]taskCreditReservation), mutationScopes: make(map[string]*mutationScope), persistencePID: registration.PersistencePID, persistenceSupervisor: registration.PersistenceSupervisor, durableRecord: registration.DurableRecord}
 	if registration.DurableRecord != nil {
 		value.restoreDurableState(registration.DurableRecord.AgentState)
 		if registration.AdoptedProcess != nil {
@@ -217,6 +269,12 @@ func (*AgentActor) PreStart(*actor.Context) error { return nil }
 func (*AgentActor) PostStop(*actor.Context) error { return nil }
 func (a *AgentActor) Receive(ctx *actor.ReceiveContext) {
 	switch message := ctx.Message().(type) {
+	case *actor.PostStart:
+		if a.durableRecord != nil {
+			_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), ctx.Self(), &restoreDurableTimers{})
+		}
+	case *restoreDurableTimers:
+		a.restoreDurableTimers(ctx)
 	case *application.RemoteAttachAgent:
 		a.remoteAttach(ctx, message)
 	case *application.AttachAgent:
@@ -320,6 +378,10 @@ func (a *AgentActor) Receive(ctx *actor.ReceiveContext) {
 		}
 	case *application.HostedPiRuntimeStatus:
 		copy := a.hostedPiRuntime
+		// Health and status reports derive bridge readiness from the live
+		// binding, never from a persisted flag: a wiped or stale binding flag
+		// cannot report ready while no live fenced bridge session exists.
+		copy.BridgeReady = copy.BridgeReady && a.bridgeDeclaredReady
 		ctx.Response(&copy)
 	case *application.HostedPiRuntimeFailureStatus:
 		ctx.Response(&application.HostedPiRuntimeFailure{Reason: a.runtimeFailure})
@@ -347,30 +409,10 @@ func (a *AgentActor) Receive(ctx *actor.ReceiveContext) {
 			return
 		}
 		if binding.Incarnation > a.hostedPiRuntime.Incarnation {
-			a.bridgeSession, a.bridgeGeneration, a.bridgePrincipal, a.bridgeHandle, a.bridgePiSession = "", "", "", "", ""
-			a.bridgeFence = 0
-			a.bridgeDeclaredReady = false
-			a.bridgeLeaseToken++
+			a.incarnationRetired(ctx, message, binding)
+			return
 		}
-		if binding.AggregateID == "" {
-			binding.AggregateID = a.hostedPiRuntime.AggregateID
-		}
-		if binding.DisplayName == "" {
-			binding.DisplayName = a.hostedPiRuntime.DisplayName
-		}
-		if binding.Role == "" {
-			binding.Role = a.hostedPiRuntime.Role
-		}
-		a.hostedPiRuntime = binding
-		if message.Reason != "" {
-			a.runtimeFailure = message.Reason
-		} else if binding.State != application.HostedPiRuntimeDegraded {
-			a.runtimeFailure = ""
-		}
-		if a.durableRecord != nil {
-			a.durableRecord.Binding = binding
-			a.durableRecord.LaunchSpec.Incarnation = binding.Incarnation
-		}
+		a.applyRuntimeBinding(message, binding)
 		a.revision++
 		if a.registryPID != nil {
 			copy := *message
@@ -414,6 +456,12 @@ func (a *AgentActor) Receive(ctx *actor.ReceiveContext) {
 		a.actorTaskAccepted(ctx, message)
 	case *retrySourceOutbox:
 		a.retrySourceOutbox(ctx)
+	case *retryCompletionTells:
+		a.retryCompletionTells(ctx)
+	case *retryOutboxSchedule:
+		a.scheduleOutboxRetry(ctx)
+	case *actorRefResolved:
+		a.actorRefResolved(ctx, message)
 	case *application.ActorTaskCompleted:
 		a.actorTaskCompleted(ctx, message)
 	case *application.DrainReceivedTaskCompletions:
@@ -430,8 +478,6 @@ func (a *AgentActor) Receive(ctx *actor.ReceiveContext) {
 		a.durablePersisted(ctx, message)
 	case *application.DurableBarrier:
 		a.durableBarrier(ctx)
-	case *restoreDurableTimers:
-		a.restoreDurableTimers(ctx)
 	case *application.BridgeReplace:
 		a.bridgeReplace(ctx, message)
 	case *application.PollBridge:
@@ -684,7 +730,7 @@ func (a *AgentActor) bridgeLeaseExpired(ctx *actor.ReceiveContext, message *appl
 }
 
 func (a *AgentActor) durableState() application.DurableAgentState {
-	state := application.DurableAgentState{Revision: a.revision, CommandSequence: a.commandSequence, Fence: a.fence, BridgeFence: a.bridgeFence, BridgeSequence: a.bridgeSequence, BridgeLeaseToken: a.bridgeLeaseToken, BridgeReady: a.hostedPiRuntime.BridgeReady, BridgeDeclaredReady: a.bridgeDeclaredReady, BridgeSession: a.bridgeSession, BridgeGeneration: a.bridgeGeneration, BridgePrincipal: a.bridgePrincipal, BridgeHandle: a.bridgeHandle, BridgePiSession: a.bridgePiSession, BridgeDeliveries: append([]application.BridgeDelivery(nil), a.bridgeDeliveries...), DeliverySources: make(map[uint64]string, len(a.deliverySources))}
+	state := application.DurableAgentState{Revision: a.revision, CommandSequence: a.commandSequence, Fence: a.fence, BridgeFence: a.bridgeFence, BridgeSequence: a.bridgeSequence, BridgeLeaseToken: a.bridgeLeaseToken, BridgeReady: a.hostedPiRuntime.BridgeReady, BridgeDeclaredReady: a.bridgeDeclaredReady, BridgeSession: a.bridgeSession, BridgeGeneration: a.bridgeGeneration, BridgePrincipal: a.bridgePrincipal, BridgeHandle: a.bridgeHandle, BridgePiSession: a.bridgePiSession, BridgeDeliveries: append([]application.BridgeDelivery(nil), a.bridgeDeliveries...), DeliverySources: make(map[uint64]string, len(a.deliverySources)), TaskSources: make(map[uint64]application.DurableActorRef, len(a.durableTaskSources))}
 	for sequence, key := range a.deliverySources {
 		state.DeliverySources[sequence] = key
 	}
@@ -707,6 +753,31 @@ func (a *AgentActor) durableState() application.DurableAgentState {
 	for source, reservation := range a.taskCreditReservations {
 		state.TaskCreditReservations = append(state.TaskCreditReservations, application.DurableTaskCreditReservation{Credit: reservation.credit, Source: source})
 	}
+	for sequence, ref := range a.durableTaskSources {
+		if _, retained := a.taskSources[sequence]; !retained {
+			state.TaskSources[sequence] = ref
+		}
+	}
+	for _, key := range a.completionTellOrder {
+		if pending, retained := a.completionTellPending[key]; retained {
+			state.CompletionTellPending = append(state.CompletionTellPending, pending)
+		}
+	}
+	state.AckCursor = a.ackCursor
+	for sequence, ack := range a.ackGaps {
+		state.AckGapBuffer = append(state.AckGapBuffer, application.DurableBridgeAckRecord{Sequence: sequence, DedupeID: ack.DedupeID, Kind: ackDeliveryKind(ack.Kind), SourceScope: ack.SourceScope, CompletionKey: ack.CompletionKey, RuntimeID: ack.RuntimeID, Incarnation: ack.Incarnation, PiSessionID: ack.PiSessionID, Delivered: ack.Delivered, Reason: ack.Reason, Result: append([]byte(nil), ack.Result...)})
+	}
+	slices.SortFunc(state.AckGapBuffer, func(l, r application.DurableBridgeAckRecord) int {
+		if l.Sequence < r.Sequence {
+			return -1
+		}
+		return 1
+	})
+	for _, sequence := range a.committedAckOrder {
+		if record, ok := a.committedAcks[sequence]; ok {
+			state.CommittedAcks = append(state.CommittedAcks, record)
+		}
+	}
 	for key := range a.revoked {
 		state.Revoked = append(state.Revoked, key)
 	}
@@ -724,7 +795,7 @@ func (a *AgentActor) durableState() application.DurableAgentState {
 		return cmpString(l.SessionID+"\x00"+l.GenerationID, r.SessionID+"\x00"+r.GenerationID)
 	})
 	for key, scope := range a.mutationScopes {
-		durable := application.DurableMutationScope{Key: key, SessionID: scope.sessionID, GenerationID: scope.generationID, Principal: scope.principal, Fence: scope.fence, Incarnation: scope.incarnation, HighWater: scope.highWater, Dedupe: make(map[string]application.DurableDedupeRecord, len(scope.dedupe))}
+		durable := application.DurableMutationScope{Key: key, Token: scope.token, SessionID: scope.sessionID, GenerationID: scope.generationID, Principal: scope.principal, Fence: scope.fence, Incarnation: scope.incarnation, HighWater: scope.highWater, Dedupe: make(map[string]application.DurableDedupeRecord, len(scope.dedupe))}
 		for id, item := range scope.dedupe {
 			durable.Dedupe[id] = application.DurableDedupeRecord{Sequence: item.sequence, MutationSequence: item.mutationSequence, ChainID: item.chainID}
 		}
@@ -778,10 +849,35 @@ func (a *AgentActor) restoreDurableState(state application.DurableAgentState) {
 	for _, item := range state.TaskCreditReservations {
 		a.taskCreditReservations[item.Credit.CreditID] = taskCreditReservation{credit: item.Credit, source: item.Source}
 	}
-	// Source-target PID bindings are transient routing facts, not durable
-	// state: a rollback drops them so no later credit grant or acceptance can
-	// validate against a rolled-back outbox entry.
-	a.sourceCreditTargets = make(map[string]*actor.PID)
+	a.durableTaskSources = make(map[uint64]application.DurableActorRef, len(state.TaskSources))
+	for sequence, ref := range state.TaskSources {
+		a.durableTaskSources[sequence] = ref
+	}
+	a.completionTellPending = make(map[string]application.DurablePendingCompletion, len(state.CompletionTellPending))
+	a.completionTellOrder = nil
+	for _, pending := range state.CompletionTellPending {
+		a.completionTellPending[pending.CompletionKey] = pending
+		a.completionTellOrder = append(a.completionTellOrder, pending.CompletionKey)
+	}
+	for len(a.completionTellOrder) > maxCompletionTells {
+		oldest := a.completionTellOrder[0]
+		a.completionTellOrder = a.completionTellOrder[1:]
+		delete(a.completionTellPending, oldest)
+	}
+	a.resolvedRefs = make(map[string]*actor.PID)
+	a.resolvingRefs = make(map[string]struct{})
+	a.scopeTokens = make(map[string]string, len(state.MutationScopes))
+	a.ackCursor = state.AckCursor
+	a.ackGaps = make(map[uint64]application.BridgeDeliveryAck, len(state.AckGapBuffer))
+	for _, record := range state.AckGapBuffer {
+		a.ackGaps[record.Sequence] = application.BridgeDeliveryAck{Sequence: record.Sequence, DedupeID: record.DedupeID, Kind: application.BridgeDeliveryKindLabel(record.Kind), RuntimeID: record.RuntimeID, Incarnation: record.Incarnation, PiSessionID: record.PiSessionID, SourceScope: record.SourceScope, CompletionKey: record.CompletionKey, Delivered: record.Delivered, Reason: record.Reason, Result: append([]byte(nil), record.Result...)}
+	}
+	a.committedAcks = make(map[uint64]application.DurableBridgeAckRecord, len(state.CommittedAcks))
+	a.committedAckOrder = nil
+	for _, record := range state.CommittedAcks {
+		a.committedAcks[record.Sequence] = record
+		a.committedAckOrder = append(a.committedAckOrder, record.Sequence)
+	}
 	a.revoked = make(map[string]struct{}, len(state.Revoked))
 	for _, key := range state.Revoked {
 		a.revoked[key] = struct{}{}
@@ -796,7 +892,7 @@ func (a *AgentActor) restoreDurableState(state application.DurableAgentState) {
 	}
 	a.mutationScopes = make(map[string]*mutationScope, len(state.MutationScopes))
 	for _, item := range state.MutationScopes {
-		scope := &mutationScope{sessionID: item.SessionID, generationID: item.GenerationID, principal: item.Principal, fence: item.Fence, incarnation: item.Incarnation, highWater: item.HighWater, results: make(map[uint64]mutationRecord), dedupe: make(map[string]bridgeDedupeRecord), chains: make(map[string]struct{}), asks: make(map[string]pendingBridgeAsk)}
+		scope := &mutationScope{sessionID: item.SessionID, generationID: item.GenerationID, principal: item.Principal, fence: item.Fence, incarnation: item.Incarnation, token: item.Token, highWater: item.HighWater, results: make(map[uint64]mutationRecord), dedupe: make(map[string]bridgeDedupeRecord), chains: make(map[string]struct{}), asks: make(map[string]pendingBridgeAsk)}
 		for _, result := range item.Results {
 			scope.results[result.Sequence] = mutationRecord{digest: result.Digest, pending: result.Pending, result: result.Result, dedupeID: result.DedupeID, chainID: result.ChainID}
 			scope.order = append(scope.order, result.Sequence)
@@ -811,6 +907,11 @@ func (a *AgentActor) restoreDurableState(state application.DurableAgentState) {
 			scope.chains[chain] = struct{}{}
 		}
 		a.mutationScopes[item.Key] = scope
+		if item.Token != "" {
+			// Rebuild the server-side token-to-internal-key mapping: the token
+			// is the only scope identity that ever leaves owner state.
+			a.scopeTokens[item.Token] = item.Key
+		}
 	}
 }
 func (a *AgentActor) snapshotPendingAsks() map[string]map[string]pendingBridgeAsk {
@@ -836,6 +937,19 @@ func (a *AgentActor) restorePendingAsks(snapshot map[string]map[string]pendingBr
 			}
 		}
 	}
+}
+
+// cloneTaskSources snapshots the live delivery-to-source PID map so a
+// persistence rollback can restore entries the rolled-back mutation retired.
+func (a *AgentActor) cloneTaskSources() map[uint64]*actor.PID {
+	if len(a.taskSources) == 0 {
+		return nil
+	}
+	snapshot := make(map[uint64]*actor.PID, len(a.taskSources))
+	for sequence, pid := range a.taskSources {
+		snapshot[sequence] = pid
+	}
+	return snapshot
 }
 
 func (a *AgentActor) beginDurablePersist(ctx *actor.ReceiveContext, receipt *pendingDurableReceipt) bool {
@@ -864,7 +978,14 @@ func (a *AgentActor) submitDurableState(ctx *actor.ReceiveContext, receipt *pend
 	a.durableCorrelation++
 	receipt.correlation = a.durableCorrelation
 	record := *a.durableRecord
-	record.Binding = a.hostedPiRuntime
+	// Terminal records must round-trip their own reconcile: the registry
+	// validator accepts only the pristine inactive binding for terminal
+	// agents, so live display metadata never enters the durable binding.
+	if a.authorityBinding.Kind != application.AuthorityBindingHostedOwned {
+		record.Binding = application.InactiveHostedPiRuntimeBinding()
+	} else {
+		record.Binding = a.hostedPiRuntime
+	}
 	record.AgentState = state
 	if err := ctx.Self().Tell(context.WithoutCancel(ctx.Context()), a.persistencePID, &application.PersistDurableHostedState{Record: record, Owner: ctx.Self(), Correlation: receipt.correlation}); err != nil {
 		a.durablePersisted(ctx, &application.DurableHostedStatePersisted{Correlation: receipt.correlation, Err: err})
@@ -897,12 +1018,29 @@ func (a *AgentActor) durablePersisted(ctx *actor.ReceiveContext, message *applic
 		asks := a.snapshotPendingAsks()
 		readyAfterEffect := a.hostedPiRuntime.BridgeReady
 		a.restoreDurableState(pending.old)
+		// Live source PIDs never enter the durable state: restore the ones the
+		// rolled-back mutation retired from the receipt snapshot.
+		for sequence, pid := range pending.liveTaskSources {
+			a.taskSources[sequence] = pid
+		}
 		if !readyAfterEffect {
 			a.hostedPiRuntime.BridgeReady = false
 		}
 		if a.runtimePID == nil {
 			a.hostedPiRuntime.State = application.HostedPiRuntimeDegraded
 			a.hostedPiRuntime.BridgeReady = false
+		}
+		// An incarnation-retirement transition swaps the runtime binding as part
+		// of its batch: roll the binding back with the agent state so the
+		// re-driven state change re-runs the retirement from its exact start.
+		if pending.runtimeRollbackBinding != nil {
+			restored := *pending.runtimeRollbackBinding
+			restored.BridgeReady = a.hostedPiRuntime.BridgeReady
+			a.hostedPiRuntime = restored
+			if a.durableRecord != nil {
+				a.durableRecord.Binding = restored
+				a.durableRecord.LaunchSpec.Incarnation = restored.Incarnation
+			}
 		}
 		a.restorePendingAsks(asks)
 		if pending.removeAskOnFailure {
@@ -913,6 +1051,19 @@ func (a *AgentActor) durablePersisted(ctx *actor.ReceiveContext, message *applic
 		if pending.askCompletion != nil {
 			if scope := a.mutationScopes[pending.askScope]; scope != nil {
 				scope.asks[pending.askDedupe] = pendingBridgeAsk{completion: pending.askCompletion}
+			}
+		}
+		// Ack-burst commits removed their pending asks before persisting; the
+		// generic ask snapshot above no longer contains them, so re-register each
+		// effect's ask before the rollback submission.
+		if pending.ackBurst != nil {
+			for index := range pending.ackBurst.commits {
+				effect := &pending.ackBurst.commits[index]
+				if effect.askCompletion != nil {
+					if scope := a.mutationScopes[effect.scopeKey]; scope != nil {
+						scope.asks[effect.dedupeID] = pendingBridgeAsk{completion: effect.askCompletion}
+					}
+				}
 			}
 		}
 		pending.persistErr = message.Err
@@ -955,6 +1106,10 @@ func (a *AgentActor) durablePersisted(ctx *actor.ReceiveContext, message *applic
 	if resultErr != nil && pending.retryTimeout && a.durableFailed == nil {
 		_ = ctx.ActorSystem().ScheduleOnce(context.WithoutCancel(ctx.Context()), &application.BridgeIntentTimeout{ScopeKey: pending.askScope, DedupeID: pending.askDedupe}, ctx.Self(), 10*time.Millisecond)
 	}
+	if resultErr != nil && pending.runtimeStateForward != nil && a.durableFailed == nil {
+		retry := *pending.runtimeStateForward
+		_ = ctx.ActorSystem().ScheduleOnce(context.WithoutCancel(ctx.Context()), &retry, ctx.Self(), 10*time.Millisecond)
+	}
 	if resultErr == nil && pending.timeoutScope != "" {
 		_ = ctx.ActorSystem().ScheduleOnce(context.WithoutCancel(ctx.Context()), &application.BridgeIntentTimeout{ScopeKey: pending.timeoutScope, DedupeID: pending.timeoutDedupe}, ctx.Self(), max(pending.timeout, time.Millisecond))
 	}
@@ -974,16 +1129,27 @@ func (a *AgentActor) completeDurableReceipt(ctx *actor.ReceiveContext, pending *
 		if pending.intent != nil {
 			pending.intent = &application.BridgeIntentResult{Reason: "durable mutation persistence failed"}
 		}
-		if pending.ack != nil {
-			pending.ack = &application.BridgeDeliveryAckResult{Reason: "durable acknowledgement persistence failed"}
+		if pending.ackBurst != nil {
+			// Fail the whole contiguous burst closed: cursor, replay window, and
+			// buffered acknowledgements all roll back together.
+			pending.ackBurst.result = application.BridgeDeliveryAckResult{Reason: "durable acknowledgement persistence failed", Cursor: a.ackCursor}
 		}
 	} else {
 		if pending.askCompletion != nil && pending.askResult != nil {
 			deliverBridgeIntentResult(pending.askCompletion, *pending.askResult)
 		}
-		if pending.taskReplyTo != nil && pending.taskCompletion != nil {
-			_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), pending.taskReplyTo, pending.taskCompletion)
+		if pending.ackBurst != nil {
+			a.deliverAckBurstEffects(ctx, pending.ackBurst)
 		}
+		if pending.runtimeStateForward != nil {
+			// The retirement batch committed: release the registry projection
+			// forward and the bounded completion redrive. The burst effects were
+			// already delivered above, so they must not fire twice.
+			a.completeRuntimeStateEffects(ctx, pending.runtimeStateForward, nil)
+		}
+		// A receipt that retained a completion tell during its mutation must
+		// keep the bounded redrive loop alive on the durable path too.
+		a.scheduleCompletionRetry(ctx)
 		if pending.sender != nil && pending.taskCreditGrant != nil {
 			_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), pending.sender, pending.taskCreditGrant)
 		}
@@ -1012,8 +1178,10 @@ func (a *AgentActor) completeDurableReceipt(ctx *actor.ReceiveContext, pending *
 		deliverBridgeResult(pending.bridgeCompletion, *pending.bridge)
 	} else if pending.intentCompletion != nil && pending.intent != nil {
 		deliverBridgeIntentResult(pending.intentCompletion, *pending.intent)
-	} else if pending.ackCompletion != nil && pending.ack != nil {
-		deliverBridgeAckResult(pending.ackCompletion, *pending.ack)
+	} else if pending.ackBurst != nil {
+		if pending.ackBurst.response != nil {
+			deliverBridgeAckResult(pending.ackBurst.response, pending.ackBurst.result)
+		}
 	} else if pending.operation != nil {
 		result := application.OperationResult{Completed: err == nil}
 		if pending.operationResult != nil {
@@ -1031,8 +1199,6 @@ func (a *AgentActor) completeDurableReceipt(ctx *actor.ReceiveContext, pending *
 			_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), pending.sender, pending.attach)
 		} else if pending.intent != nil {
 			_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), pending.sender, pending.intent)
-		} else if pending.ack != nil {
-			_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), pending.sender, pending.ack)
 		} else {
 			_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), pending.sender, &application.OperationResult{Completed: err == nil, Reason: func() string {
 				if err != nil {
@@ -1055,6 +1221,10 @@ func (a *AgentActor) restoreDurableTimers(ctx *actor.ReceiveContext) {
 			continue
 		}
 		_ = ctx.ActorSystem().ScheduleOnce(context.WithoutCancel(ctx.Context()), &application.BridgeIntentTimeout{ScopeKey: key, DedupeID: delivery.DedupeID}, ctx.Self(), max(time.Until(delivery.Deadline), time.Millisecond))
+	}
+	if len(a.sourceOutbox) != 0 || len(a.completionTellPending) != 0 {
+		_ = ctx.ActorSystem().ScheduleOnce(context.WithoutCancel(ctx.Context()), &retrySourceOutbox{}, ctx.Self(), outboxBaseRetryDelay)
+		_ = ctx.ActorSystem().ScheduleOnce(context.WithoutCancel(ctx.Context()), &retryCompletionTells{}, ctx.Self(), outboxBaseRetryDelay)
 	}
 }
 
@@ -1139,9 +1309,9 @@ func (a *AgentActor) sendActorTask(ctx *actor.ReceiveContext, message *applicati
 	}
 	old := a.durableState()
 	item := application.DurableActorTaskOutboxItem{TaskID: taskID, Target: message.TargetPeer, RequestID: message.RequestID, DedupeID: message.DedupeID, ChainID: message.ChainID, RequiredCapability: message.RequiredCapability, SourceMutationSequence: message.SourceMutationSequence, Deadline: message.Deadline, HopLimit: message.HopLimit, Mode: message.Mode, Payload: append([]byte(nil), message.Payload...), PayloadDigest: sha256.Sum256(message.Payload), State: "pending_credit"}
+	item.TargetRef = actorRefFromPID(message.TargetPeer.StableID, message.TargetPID)
 	a.sourceOutbox[taskID] = item
 	a.sourceOutboxOrder = append(a.sourceOutboxOrder, taskID)
-	a.sourceCreditTargets[taskID] = message.TargetPID
 	persisting := a.beginDurablePersist(ctx, &pendingDurableReceipt{old: old, intent: &application.BridgeIntentResult{Accepted: true, AwaitingAck: true, Reason: "stored_pending_credit"}, intentCompletion: message.Receipt, sourceCreditTarget: message.TargetPID, sourceCreditItem: &item})
 	if !persisting {
 		respondBridgeIntent(ctx, message.Receipt, &application.BridgeIntentResult{Accepted: true, AwaitingAck: true, Reason: "stored_pending_credit"})
@@ -1188,9 +1358,8 @@ func (a *AgentActor) taskCreditGranted(ctx *actor.ReceiveContext, message *appli
 	}
 	// Only the exact target agent this outbox entry requested credit from may
 	// hand the credit back; any other origin is fail-closed before effects.
-	expected, reserved := a.sourceCreditTargets[message.Credit.TaskID]
 	sender := ctx.Sender()
-	if !reserved || sender == nil || isNoSender(ctx, sender) || !sender.Equals(expected) {
+	if sender == nil || isNoSender(ctx, sender) || !actorRefMatchesSender(&item.TargetRef, sender) {
 		return
 	}
 	item.Credit = message.Credit
@@ -1250,9 +1419,8 @@ func (a *AgentActor) actorTaskAccepted(ctx *actor.ReceiveContext, message *appli
 	}
 	// A forged acceptance must not retire the outbox entry or publish a
 	// commit: only the exact reserved target agent may acknowledge it.
-	expected, reserved := a.sourceCreditTargets[message.TaskID]
 	sender := ctx.Sender()
-	if !reserved || sender == nil || isNoSender(ctx, sender) || !sender.Equals(expected) || message.TargetAgentID != item.Target.StableID {
+	if sender == nil || isNoSender(ctx, sender) || !actorRefMatchesSender(&item.TargetRef, sender) || message.TargetAgentID != item.TargetRef.AgentID || message.TargetAgentID != item.Target.StableID {
 		return
 	}
 	if a.durablePending != nil || a.durableFailed != nil {
@@ -1260,7 +1428,6 @@ func (a *AgentActor) actorTaskAccepted(ctx *actor.ReceiveContext, message *appli
 	}
 	old := a.durableState()
 	delete(a.sourceOutbox, message.TaskID)
-	delete(a.sourceCreditTargets, message.TaskID)
 	a.sourceOutboxOrder = slices.DeleteFunc(a.sourceOutboxOrder, func(id string) bool { return id == message.TaskID })
 	committed := &application.TargetTaskCommitted{TaskID: message.TaskID, TargetAgentID: message.TargetAgentID}
 	if a.beginDurablePersist(ctx, &pendingDurableReceipt{old: old, targetTaskCommitted: committed}) {
@@ -1269,7 +1436,284 @@ func (a *AgentActor) actorTaskAccepted(ctx *actor.ReceiveContext, message *appli
 	a.publishTargetTaskCommitted(ctx, committed)
 }
 
-func (a *AgentActor) retrySourceOutbox(ctx *actor.ReceiveContext) {}
+func (a *AgentActor) retrySourceOutbox(ctx *actor.ReceiveContext) {
+	if a.durablePending != nil || a.durableFailed != nil {
+		a.scheduleOutboxRetry(ctx)
+		return
+	}
+	now := time.Now()
+	old := a.durableState()
+	changed := false
+	for _, taskID := range append([]string(nil), a.sourceOutboxOrder...) {
+		item, exists := a.sourceOutbox[taskID]
+		if !exists {
+			continue
+		}
+		if now.After(item.Deadline) {
+			// Deadline failure for lost credit/task/acceptance: retain a
+			// terminal failure result, publish it to the source mailbox, and
+			// retire the outbox entry.
+			failed := application.ActorTaskCompleted{CompletionKey: taskID, OriginalRequestID: item.RequestID, DedupeID: item.DedupeID, ChainID: item.ChainID, SourceMutationSequence: item.SourceMutationSequence, Terminal: application.BridgeIntentResult{Reason: "actor task deadline expired before delivery"}, Source: a.communicationPeer(), Target: item.Target, Kind: application.BridgeDeliveryNotification}
+			a.retainSourceCompletion(taskID, failed)
+			delete(a.sourceOutbox, taskID)
+			a.sourceOutboxOrder = slices.DeleteFunc(a.sourceOutboxOrder, func(id string) bool { return id == taskID })
+			changed = true
+			continue
+		}
+		if now.Before(item.NextAttempt) {
+			continue
+		}
+		// Attempt bookkeeping stays in memory: redrive sends are idempotent by
+		// task identity and must not open durable persistence windows that
+		// would reject concurrent mutations as busy.
+		item.Attempts++
+		item.NextAttempt = now.Add(outboxRetryDelay(item.Attempts))
+		a.sourceOutbox[taskID] = item
+		// Remote resolution runs as an async continuation: this receive path
+		// only enqueues the lookup and retries on the next bounded tick once the
+		// resolved PID is cached.
+		target := a.cachedActorRef(item.TargetRef.Address)
+		if target == nil {
+			a.resolveActorRefAsync(ctx, item.TargetRef)
+			continue
+		}
+		if item.State == "sent" && item.Credit.CreditID != "" && now.Before(item.Credit.ExpiresAt) {
+			_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), target, &application.ActorTask{Credit: item.Credit, SourcePeer: a.communicationPeer(), TargetPeer: item.Target, RequestID: item.RequestID, DedupeID: item.DedupeID, ChainID: item.ChainID, RequiredCapability: item.RequiredCapability, SourceMutationSequence: item.SourceMutationSequence, Deadline: item.Deadline, HopLimit: item.HopLimit, Mode: item.Mode, Payload: append([]byte(nil), item.Payload...)})
+		} else {
+			a.requestOutboxCredit(ctx, target, item)
+		}
+	}
+	// Every pending item keeps one bounded backoff tick scheduled until it is
+	// accepted or terminal: a pure redrive send (no durable state change) must
+	// not starve the loop of its next retry.
+	a.scheduleOutboxRetry(ctx)
+	if !changed {
+		return
+	}
+	if a.beginDurablePersist(ctx, &pendingDurableReceipt{old: old}) {
+		return
+	}
+}
+
+func (a *AgentActor) scheduleOutboxRetry(ctx *actor.ReceiveContext) {
+	if len(a.sourceOutbox) == 0 {
+		return
+	}
+	_ = ctx.ActorSystem().ScheduleOnce(context.WithoutCancel(ctx.Context()), &retrySourceOutbox{}, ctx.Self(), outboxBaseRetryDelay)
+}
+
+func outboxRetryDelay(attempts int) time.Duration {
+	delay := outboxBaseRetryDelay
+	for range min(attempts, 6) {
+		delay *= 2
+		if delay > outboxMaxRetryDelay {
+			return outboxMaxRetryDelay
+		}
+	}
+	return delay
+}
+
+// deferCompletionTell durably retains a terminal completion whose cross-node
+// Tell failed, with bounded redrive attempts.
+func (a *AgentActor) deferCompletionTell(ctx *actor.ReceiveContext, effect *ackCommitEffect, err error) {
+	if effect.taskCompletion == nil || effect.taskCompletion.CompletionKey == "" {
+		return
+	}
+	if a.durablePending != nil || a.durableFailed != nil {
+		_ = ctx.ActorSystem().ScheduleOnce(context.WithoutCancel(ctx.Context()), &retryCompletionTells{}, ctx.Self(), outboxBaseRetryDelay)
+		return
+	}
+	if _, exists := a.completionTellPending[effect.taskCompletion.CompletionKey]; exists {
+		return
+	}
+	source := actorRefFromPID("", effect.taskReplyTo)
+	old := a.durableState()
+	a.completionTellPending[effect.taskCompletion.CompletionKey] = application.DurablePendingCompletion{CompletionKey: effect.taskCompletion.CompletionKey, Source: source, Completed: *effect.taskCompletion}
+	a.completionTellOrder = append(a.completionTellOrder, effect.taskCompletion.CompletionKey)
+	for len(a.completionTellOrder) > maxCompletionTells {
+		oldest := a.completionTellOrder[0]
+		a.completionTellOrder = a.completionTellOrder[1:]
+		delete(a.completionTellPending, oldest)
+	}
+	if a.beginDurablePersist(ctx, &pendingDurableReceipt{old: old}) {
+		return
+	}
+	_ = ctx.ActorSystem().ScheduleOnce(context.WithoutCancel(ctx.Context()), &retryCompletionTells{}, ctx.Self(), outboxBaseRetryDelay)
+	_ = err
+}
+
+func (a *AgentActor) retryCompletionTells(ctx *actor.ReceiveContext) {
+	if a.durablePending != nil || a.durableFailed != nil {
+		_ = ctx.ActorSystem().ScheduleOnce(context.WithoutCancel(ctx.Context()), &retryCompletionTells{}, ctx.Self(), outboxBaseRetryDelay)
+		return
+	}
+	old := a.durableState()
+	changed := false
+	for _, key := range append([]string(nil), a.completionTellOrder...) {
+		pending, exists := a.completionTellPending[key]
+		if !exists {
+			continue
+		}
+		// Remote resolution runs as an async continuation: this receive path
+		// only enqueues the lookup; the resolved PID (or its bounded failure)
+		// arrives back as a message and the next tick delivers.
+		target := a.cachedActorRef(pending.Source.Address)
+		if target == nil {
+			a.resolveActorRefAsync(ctx, pending.Source)
+			continue
+		}
+		if err := ctx.Self().Tell(context.WithoutCancel(ctx.Context()), target, &pending.Completed); err != nil {
+			pending.Attempts++
+			a.completionTellPending[key] = pending
+			changed = true
+		} else {
+			delete(a.completionTellPending, key)
+			a.completionTellOrder = slices.DeleteFunc(a.completionTellOrder, func(id string) bool { return id == key })
+			changed = true
+		}
+		if pending.Attempts >= maxCompletionAttempts {
+			delete(a.completionTellPending, key)
+			a.completionTellOrder = slices.DeleteFunc(a.completionTellOrder, func(id string) bool { return id == key })
+			changed = true
+		}
+	}
+	// Keep the bounded retry loop alive across resolution windows: pending
+	// completions always schedule their next tick until delivered or terminal.
+	if len(a.completionTellPending) != 0 {
+		_ = ctx.ActorSystem().ScheduleOnce(context.WithoutCancel(ctx.Context()), &retryCompletionTells{}, ctx.Self(), outboxRetryDelay(2))
+	}
+	if !changed {
+		return
+	}
+	if a.beginDurablePersist(ctx, &pendingDurableReceipt{old: old}) {
+		return
+	}
+}
+
+func actorRefFromPID(agentID string, pid *actor.PID) application.DurableActorRef {
+	ref := application.DurableActorRef{AgentID: agentID}
+	if pid == nil {
+		return ref
+	}
+	if path := pid.Path(); path != nil {
+		ref.Host, ref.Port, ref.Name = path.Host(), path.Port(), path.Name()
+	}
+	ref.Address = pid.ID()
+	return ref
+}
+
+// actorRefMatchesSender enforces full address equality against the reserved
+// ActorRef: canonical address, host, port, and name must all match. A sender
+// that merely reuses the reserved address string while living at a different
+// node or path is rejected fail-closed.
+func actorRefMatchesSender(ref *application.DurableActorRef, sender *actor.PID) bool {
+	if ref == nil || sender == nil || ref.Address == "" || ref.Host == "" || ref.Name == "" {
+		return false
+	}
+	if sender.ID() != ref.Address {
+		return false
+	}
+	path := sender.Path()
+	if path == nil {
+		return false
+	}
+	return path.Host() == ref.Host && path.Port() == ref.Port && path.Name() == ref.Name
+}
+
+// cachedActorRef returns the live PID for a previously resolved durable
+// reference without touching the actor plane.
+func (a *AgentActor) cachedActorRef(address string) *actor.PID {
+	if address == "" {
+		return nil
+	}
+	return a.resolvedRefs[address]
+}
+
+// resolveActorRefAsync enqueues the re-materialization of a durable actor
+// reference into a live PID. Receive paths never block on ActorOf or
+// RemoteLookup: the lookup runs detached and reports back through the
+// actorRefResolved continuation message, which caches successes and bounds
+// failures for every pending completion waiting on that address.
+func (a *AgentActor) resolveActorRefAsync(ctx *actor.ReceiveContext, ref application.DurableActorRef) {
+	if ref.Address == "" || ref.Name == "" {
+		_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), ctx.Self(), &actorRefResolved{address: ref.Address})
+		return
+	}
+	if _, cached := a.resolvedRefs[ref.Address]; cached {
+		return
+	}
+	if _, inFlight := a.resolvingRefs[ref.Address]; inFlight {
+		return
+	}
+	a.resolvingRefs[ref.Address] = struct{}{}
+	system := ctx.ActorSystem()
+	self := ctx.Self()
+	go func() {
+		pid := lookupActorRef(system, ref)
+		_ = self.Tell(context.Background(), self, &actorRefResolved{address: ref.Address, pid: pid})
+	}()
+}
+
+// lookupActorRef performs the bounded local-or-remote lookup itself; it runs
+// detached from any receive path.
+func lookupActorRef(system actor.ActorSystem, ref application.DurableActorRef) *actor.PID {
+	if ref.Address == "" || ref.Name == "" {
+		return nil
+	}
+	resolveCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	var pid *actor.PID
+	if ref.Host == system.Host() && ref.Port == system.Port() {
+		if resolved, err := system.ActorOf(resolveCtx, ref.Name); err == nil {
+			pid = resolved
+		}
+	} else if noSender := system.NoSender(); noSender != nil {
+		if resolved, err := noSender.RemoteLookup(resolveCtx, ref.Host, ref.Port, ref.Name); err == nil {
+			pid = resolved
+		}
+	}
+	return pid
+}
+
+// actorRefResolved is the async continuation of resolveActorRefAsync: cache
+// the resolved PID, or count one bounded attempt for every pending completion
+// whose source address failed to resolve so they still retire eventually.
+func (a *AgentActor) actorRefResolved(ctx *actor.ReceiveContext, message *actorRefResolved) {
+	if message == nil {
+		return
+	}
+	delete(a.resolvingRefs, message.address)
+	if message.pid != nil {
+		a.resolvedRefs[message.address] = message.pid
+		return
+	}
+	if a.durablePending != nil || a.durableFailed != nil {
+		_ = ctx.ActorSystem().ScheduleOnce(context.WithoutCancel(ctx.Context()), &actorRefResolved{address: message.address}, ctx.Self(), 10*time.Millisecond)
+		return
+	}
+	old := a.durableState()
+	changed := false
+	for _, key := range append([]string(nil), a.completionTellOrder...) {
+		pending, exists := a.completionTellPending[key]
+		if !exists || pending.Source.Address != message.address {
+			continue
+		}
+		pending.Attempts++
+		if pending.Attempts >= maxCompletionAttempts {
+			delete(a.completionTellPending, key)
+			a.completionTellOrder = slices.DeleteFunc(a.completionTellOrder, func(id string) bool { return id == key })
+		} else {
+			a.completionTellPending[key] = pending
+		}
+		changed = true
+	}
+	if !changed {
+		return
+	}
+	if a.beginDurablePersist(ctx, &pendingDurableReceipt{old: old}) {
+		return
+	}
+}
 
 func (a *AgentActor) requestOutboxCredit(ctx *actor.ReceiveContext, target *actor.PID, item application.DurableActorTaskOutboxItem) {
 	if target == nil || time.Now().After(item.Deadline) {
@@ -1307,12 +1751,17 @@ func (a *AgentActor) acceptActorTaskWithCredit(ctx *actor.ReceiveContext, messag
 		}
 		kind, policy = application.BridgeDeliveryPrompt, application.BridgeDeliveryIdleElseFollowUp
 	}
+	token := a.sourceScopeToken(key, scope)
+	if token == "" {
+		return false
+	}
 	a.bridgeSequence++
 	targetPeer := application.CommunicationPeer{StableID: a.id, DisplayName: aggregateDisplayName(a.id, a.hostedPiRuntime.DisplayName), Role: aggregateRole(a.id, a.hostedPiRuntime.Role)}
-	delivery := application.BridgeDelivery{Sequence: a.bridgeSequence, SourceAgentID: message.SourceAgentID, TargetAgentID: a.id, RequestID: message.RequestID, DedupeID: message.DedupeID, ChainID: message.ChainID, Source: sourcePeer, Target: targetPeer, Deadline: message.Deadline, HopLimit: message.HopLimit - 1, Payload: append([]byte(nil), message.Payload...), Policy: policy, Kind: kind}
+	delivery := application.BridgeDelivery{Sequence: a.bridgeSequence, SourceAgentID: message.SourceAgentID, TargetAgentID: a.id, RequestID: message.RequestID, DedupeID: message.DedupeID, ChainID: message.ChainID, Source: sourcePeer, Target: targetPeer, Deadline: message.Deadline, HopLimit: message.HopLimit - 1, Payload: append([]byte(nil), message.Payload...), Policy: policy, Kind: kind, SourceScope: token, CompletionKey: actorTaskCompletionKey(a.id, a.bridgeSequence, message.SourceAgentID, message.RequestID, message.DedupeID, message.ChainID, message.SourceMutationSequence)}
 	a.bridgeDeliveries = append(a.bridgeDeliveries, delivery)
 	a.deliverySources[delivery.Sequence] = key
 	a.taskSources[delivery.Sequence] = replyTo
+	a.durableTaskSources[delivery.Sequence] = actorRefFromPID(message.SourceAgentID, replyTo)
 	scope.dedupe[message.DedupeID] = bridgeDedupeRecord{sequence: delivery.Sequence, mutationSequence: message.SourceMutationSequence, chainID: message.ChainID}
 	scope.chains[message.ChainID] = struct{}{}
 	result := application.BridgeIntentResult{Accepted: true, AwaitingAck: message.Mode == application.BridgeMessageAsk || message.Mode == application.BridgeMessagePrompt}
@@ -1339,11 +1788,28 @@ func (a *AgentActor) actorTaskCompleted(ctx *actor.ReceiveContext, message *appl
 	old := a.durableState()
 	copy := *message
 	copy.Terminal.Result = append([]byte(nil), message.Terminal.Result...)
-	a.taskCompletions[message.CompletionKey] = copy
-	a.taskCompletionOrder = append(a.taskCompletionOrder, message.CompletionKey)
 	historyKey := actorTaskID(a.id, message.OriginalRequestID, message.DedupeID, message.ChainID, message.SourceMutationSequence)
-	a.sourceTaskHistory[historyKey] = copy
-	a.sourceTaskHistoryOrder = append(a.sourceTaskHistoryOrder, historyKey)
+	a.retainSourceCompletion(historyKey, copy)
+	if a.beginDurablePersist(ctx, &pendingDurableReceipt{old: old, taskCompletionPublish: &copy}) {
+		return
+	}
+	a.publishTaskCompletion(ctx, &copy)
+}
+
+func (a *AgentActor) retainSourceCompletion(historyKey string, completion application.ActorTaskCompleted) {
+	if completion.CompletionKey == "" || historyKey == "" {
+		return
+	}
+	copy := completion
+	copy.Terminal.Result = append([]byte(nil), completion.Terminal.Result...)
+	if _, exists := a.taskCompletions[copy.CompletionKey]; !exists {
+		a.taskCompletions[copy.CompletionKey] = copy
+		a.taskCompletionOrder = append(a.taskCompletionOrder, copy.CompletionKey)
+	}
+	if _, exists := a.sourceTaskHistory[historyKey]; !exists {
+		a.sourceTaskHistory[historyKey] = copy
+		a.sourceTaskHistoryOrder = append(a.sourceTaskHistoryOrder, historyKey)
+	}
 	for len(a.sourceTaskHistoryOrder) > maxCommandResults {
 		oldest := a.sourceTaskHistoryOrder[0]
 		a.sourceTaskHistoryOrder = a.sourceTaskHistoryOrder[1:]
@@ -1354,10 +1820,6 @@ func (a *AgentActor) actorTaskCompleted(ctx *actor.ReceiveContext, message *appl
 		a.taskCompletionOrder = a.taskCompletionOrder[1:]
 		delete(a.taskCompletions, oldest)
 	}
-	if a.beginDurablePersist(ctx, &pendingDurableReceipt{old: old, taskCompletionPublish: &copy}) {
-		return
-	}
-	a.publishTaskCompletion(ctx, &copy)
 }
 
 func (a *AgentActor) publishTargetTaskCommitted(ctx *actor.ReceiveContext, message *application.TargetTaskCommitted) {
@@ -1443,9 +1905,14 @@ func (a *AgentActor) bridgeIntent(ctx *actor.ReceiveContext, message *applicatio
 		}
 		kind, policy = application.BridgeDeliveryPrompt, application.BridgeDeliveryIdleElseFollowUp
 	}
+	token := a.sourceScopeToken(key, scope)
+	if token == "" {
+		complete(application.BridgeIntentResult{Reason: "source scope ledger is full"})
+		return
+	}
 	oldDurable := a.durableState()
 	a.bridgeSequence++
-	delivery := application.BridgeDelivery{Sequence: a.bridgeSequence, SourceAgentID: message.SourceAgentID, TargetAgentID: a.id, RequestID: message.RequestID, DedupeID: message.DedupeID, ChainID: message.ChainID, Deadline: message.Deadline, HopLimit: message.HopLimit - 1, Payload: append([]byte(nil), message.Payload...), Policy: policy, Kind: kind}
+	delivery := application.BridgeDelivery{Sequence: a.bridgeSequence, SourceAgentID: message.SourceAgentID, TargetAgentID: a.id, RequestID: message.RequestID, DedupeID: message.DedupeID, ChainID: message.ChainID, Deadline: message.Deadline, HopLimit: message.HopLimit - 1, Payload: append([]byte(nil), message.Payload...), Policy: policy, Kind: kind, SourceScope: token, CompletionKey: actorTaskCompletionKey(a.id, a.bridgeSequence, message.Principal, message.RequestID, message.DedupeID, message.ChainID, message.SourceMutationSequence)}
 	a.bridgeDeliveries = append(a.bridgeDeliveries, delivery)
 	a.deliverySources[delivery.Sequence] = key
 	scope.dedupe[message.DedupeID] = bridgeDedupeRecord{sequence: delivery.Sequence, mutationSequence: message.SourceMutationSequence, chainID: message.ChainID}
@@ -1504,13 +1971,19 @@ func (a *AgentActor) bridgeIntentFromActorTask(ctx *actor.ReceiveContext, messag
 		}
 		kind, policy = application.BridgeDeliveryPrompt, application.BridgeDeliveryIdleElseFollowUp
 	}
+	token := a.sourceScopeToken(key, scope)
+	if token == "" {
+		complete(application.BridgeIntentResult{Reason: "source scope ledger is full"})
+		return
+	}
 	oldDurable := a.durableState()
 	a.bridgeSequence++
 	targetPeer := application.CommunicationPeer{StableID: a.id, DisplayName: aggregateDisplayName(a.id, a.hostedPiRuntime.DisplayName), Role: aggregateRole(a.id, a.hostedPiRuntime.Role)}
-	delivery := application.BridgeDelivery{Sequence: a.bridgeSequence, SourceAgentID: message.SourceAgentID, TargetAgentID: a.id, RequestID: message.RequestID, DedupeID: message.DedupeID, ChainID: message.ChainID, Source: sourcePeer, Target: targetPeer, Deadline: message.Deadline, HopLimit: message.HopLimit - 1, Payload: append([]byte(nil), message.Payload...), Policy: policy, Kind: kind}
+	delivery := application.BridgeDelivery{Sequence: a.bridgeSequence, SourceAgentID: message.SourceAgentID, TargetAgentID: a.id, RequestID: message.RequestID, DedupeID: message.DedupeID, ChainID: message.ChainID, Source: sourcePeer, Target: targetPeer, Deadline: message.Deadline, HopLimit: message.HopLimit - 1, Payload: append([]byte(nil), message.Payload...), Policy: policy, Kind: kind, SourceScope: token, CompletionKey: actorTaskCompletionKey(a.id, a.bridgeSequence, message.SourceAgentID, message.RequestID, message.DedupeID, message.ChainID, message.SourceMutationSequence)}
 	a.bridgeDeliveries = append(a.bridgeDeliveries, delivery)
 	a.deliverySources[delivery.Sequence] = key
 	a.taskSources[delivery.Sequence] = replyTo
+	a.durableTaskSources[delivery.Sequence] = actorRefFromPID(message.SourceAgentID, replyTo)
 	scope.dedupe[message.DedupeID] = bridgeDedupeRecord{sequence: delivery.Sequence, mutationSequence: message.SourceMutationSequence, chainID: message.ChainID}
 	scope.chains[message.ChainID] = struct{}{}
 	result := application.BridgeIntentResult{Accepted: true, AwaitingAck: message.Mode == application.BridgeMessageAsk || message.Mode == application.BridgeMessagePrompt}
@@ -1561,9 +2034,14 @@ func (a *AgentActor) bridgeControl(ctx *actor.ReceiveContext, message *applicati
 		complete(application.BridgeIntentResult{Reason: "target bridge unavailable or overloaded"})
 		return
 	}
+	token := a.sourceScopeToken(key, scope)
+	if token == "" {
+		complete(application.BridgeIntentResult{Reason: "source scope ledger is full"})
+		return
+	}
 	oldDurable := a.durableState()
 	a.bridgeSequence++
-	delivery := application.BridgeDelivery{Sequence: a.bridgeSequence, SourceAgentID: message.SourceAgentID, TargetAgentID: a.id, RequestID: message.RequestID, DedupeID: message.DedupeID, ChainID: message.ChainID, Deadline: message.Deadline, HopLimit: message.HopLimit - 1, Kind: kind}
+	delivery := application.BridgeDelivery{Sequence: a.bridgeSequence, SourceAgentID: message.SourceAgentID, TargetAgentID: a.id, RequestID: message.RequestID, DedupeID: message.DedupeID, ChainID: message.ChainID, Deadline: message.Deadline, HopLimit: message.HopLimit - 1, Kind: kind, SourceScope: token, CompletionKey: actorTaskCompletionKey(a.id, a.bridgeSequence, message.Principal, message.RequestID, message.DedupeID, message.ChainID, message.SourceMutationSequence)}
 	a.bridgeDeliveries = append(a.bridgeDeliveries, delivery)
 	a.deliverySources[delivery.Sequence] = key
 	scope.dedupe[message.DedupeID] = bridgeDedupeRecord{sequence: delivery.Sequence, mutationSequence: message.SourceMutationSequence, chainID: message.ChainID}
@@ -1591,6 +2069,21 @@ func isNoSender(ctx *actor.ReceiveContext, sender *actor.PID) bool {
 		return false
 	}
 	return sender.Equals(ctx.ActorSystem().NoSender())
+}
+
+func ackDeliveryKind(label string) application.BridgeDeliveryKind {
+	switch label {
+	case "notification":
+		return application.BridgeDeliveryNotification
+	case "abort":
+		return application.BridgeDeliveryAbort
+	case "shutdown":
+		return application.BridgeDeliveryShutdown
+	case "prompt":
+		return application.BridgeDeliveryPrompt
+	default:
+		return 0
+	}
 }
 
 func actorTaskCompletionKey(target string, sequence uint64, source, requestID, dedupeID, chainID string, mutationSequence uint64) string {
@@ -1633,6 +2126,41 @@ func (a *AgentActor) expireTaskCredits() {
 
 func sourceMutationScopeKey(sessionID, generationID, principal string, fence, incarnation uint64) string {
 	return fmt.Sprintf("%d:%s%d:%s%d:%s:%d:%d", len(sessionID), sessionID, len(generationID), generationID, len(principal), principal, fence, incarnation)
+}
+
+// newScopeToken mints the opaque server-issued scope token: bounded random
+// bytes with no derivable relationship to the identity tuple it names. A mint
+// failure fails closed (empty token) rather than degrading to a predictable
+// scope identity.
+func newScopeToken() string {
+	raw := make([]byte, scopeTokenBytes)
+	if _, err := rand.Read(raw); err != nil {
+		return ""
+	}
+	return hex.EncodeToString(raw)
+}
+
+// sourceScopeToken issues (once per scope) the opaque token that names a
+// mutation scope on serialized surfaces. Raw identity tuples never enter a
+// delivery or acknowledgement: the internal scope key stays private to owner
+// state and the server-side token-to-key mapping.
+func (a *AgentActor) sourceScopeToken(key string, scope *mutationScope) string {
+	if scope == nil || key == "" {
+		return ""
+	}
+	if scope.token != "" {
+		return scope.token
+	}
+	if len(a.scopeTokens) >= maxScopeTokens {
+		return ""
+	}
+	token := newScopeToken()
+	if token == "" || len(token) > maxScopeTokenLength {
+		return ""
+	}
+	scope.token = token
+	a.scopeTokens[token] = key
+	return token
 }
 func (a *AgentActor) sourceMutationScope(sessionID, generationID, principal string, fence uint64) (string, *mutationScope) {
 	key := sourceMutationScopeKey(sessionID, generationID, principal, fence, a.hostedPiRuntime.Incarnation)
@@ -1722,46 +2250,159 @@ func (a *AgentActor) bridgeDeliveryAck(ctx *actor.ReceiveContext, message *appli
 		return
 	}
 	if a.durablePending != nil || a.durableFailed != nil {
-		respondBridgeAck(ctx, message.Completion, &application.BridgeDeliveryAckResult{Reason: "durable persistence is busy"})
+		respondBridgeAck(ctx, message.Completion, &application.BridgeDeliveryAckResult{Reason: "durable persistence is busy", Cursor: a.ackCursor})
+		return
+	}
+	// Duplicate of an already-contiguously-committed acknowledgement: return the
+	// retained terminal on exact identity match and fail closed on collision.
+	if message.Sequence <= a.ackCursor {
+		record, retained := a.committedAcks[message.Sequence]
+		if !retained {
+			respondBridgeAck(ctx, message.Completion, &application.BridgeDeliveryAckResult{Reason: "delivery acknowledgement is not retained"})
+			return
+		}
+		if message.DedupeID != record.DedupeID || message.CompletionKey != record.CompletionKey || message.SourceScope != record.SourceScope || message.Kind != application.BridgeDeliveryKindLabel(record.Kind) || message.RuntimeID != record.RuntimeID || message.Incarnation != record.Incarnation || message.PiSessionID != record.PiSessionID || message.Delivered != record.Delivered {
+			respondBridgeAck(ctx, message.Completion, &application.BridgeDeliveryAckResult{Reason: "delivery acknowledgement identity collision"})
+			return
+		}
+		respondBridgeAck(ctx, message.Completion, &application.BridgeDeliveryAckResult{Accepted: true, Reason: record.Reason, Cursor: a.ackCursor})
+		return
+	}
+	// Idempotent re-acknowledgement of an already-buffered gap entry.
+	if buffered, exists := a.ackGaps[message.Sequence]; exists {
+		if message.DedupeID != buffered.DedupeID || message.CompletionKey != buffered.CompletionKey || message.SourceScope != buffered.SourceScope || message.Kind != buffered.Kind || message.RuntimeID != buffered.RuntimeID || message.Incarnation != buffered.Incarnation || message.PiSessionID != buffered.PiSessionID || message.Delivered != buffered.Delivered {
+			respondBridgeAck(ctx, message.Completion, &application.BridgeDeliveryAckResult{Reason: "delivery acknowledgement identity collision"})
+			return
+		}
+		respondBridgeAck(ctx, message.Completion, &application.BridgeDeliveryAckResult{Accepted: true, Reason: "acknowledgement buffered behind cursor gap", Cursor: a.ackCursor})
 		return
 	}
 	index := slices.IndexFunc(a.bridgeDeliveries, func(item application.BridgeDelivery) bool {
-		return item.Sequence == message.Sequence && item.DedupeID == message.DedupeID
+		return item.Sequence == message.Sequence
 	})
 	if index < 0 {
 		respondBridgeAck(ctx, message.Completion, &application.BridgeDeliveryAckResult{Reason: "delivery is not retained"})
 		return
 	}
-	key := a.deliverySources[message.Sequence]
-	scope := a.mutationScopes[key]
-	if scope == nil {
-		respondBridgeAck(ctx, message.Completion, &application.BridgeDeliveryAckResult{Reason: "delivery source scope is unavailable"})
-		return
-	}
-	record, ok := scope.dedupe[message.DedupeID]
-	if !ok || record.sequence != message.Sequence {
+	delivery := a.bridgeDeliveries[index]
+	// Fail-closed identity enforcement before any effects: the acknowledgement
+	// must name the exact runtime, incarnation, Pi session, delivery kind,
+	// source scope, sequence, dedupe identity, and completion key.
+	if !a.validAckIdentity(message, &delivery) {
 		respondBridgeAck(ctx, message.Completion, &application.BridgeDeliveryAckResult{Reason: "delivery acknowledgement identity rejected"})
 		return
 	}
+	if message.Sequence > a.ackCursor+1 {
+		if len(a.ackGaps) >= maxAckGapBuffer {
+			respondBridgeAck(ctx, message.Completion, &application.BridgeDeliveryAckResult{Reason: "acknowledgement gap buffer is full"})
+			return
+		}
+		oldDurable := a.durableState()
+		buffered := *message
+		buffered.Completion = nil
+		a.ackGaps[message.Sequence] = buffered
+		burst := &ackBurstReceipt{response: message.Completion, result: application.BridgeDeliveryAckResult{Accepted: true, Reason: "acknowledgement buffered behind cursor gap", Cursor: a.ackCursor}}
+		if a.beginDurablePersist(ctx, &pendingDurableReceipt{old: oldDurable, ackBurst: burst}) {
+			return
+		}
+		respondBridgeAck(ctx, message.Completion, &burst.result)
+		return
+	}
+	a.commitContiguousAcks(ctx, message)
+}
+
+func (a *AgentActor) validAckIdentity(message *application.BridgeDeliveryAck, delivery *application.BridgeDelivery) bool {
+	// SourceScope is the opaque server-issued scope token: equality proves the
+	// acknowledgement names the exact scope that issued the delivery without
+	// exposing the underlying identity tuple.
+	return delivery.SourceScope != "" && delivery.CompletionKey != "" &&
+		message.DedupeID == delivery.DedupeID &&
+		message.RuntimeID == a.hostedPiRuntime.RuntimeID &&
+		message.Incarnation == a.hostedPiRuntime.Incarnation &&
+		message.PiSessionID == a.bridgePiSession &&
+		message.Kind == application.BridgeDeliveryKindLabel(delivery.Kind) &&
+		message.SourceScope == delivery.SourceScope &&
+		message.CompletionKey == delivery.CompletionKey
+}
+
+// commitContiguousAcks commits the triggering acknowledgement when it extends
+// the contiguous cursor and then drains every buffered acknowledgement that
+// became contiguous, with one durable persist covering the whole burst.
+func (a *AgentActor) commitContiguousAcks(ctx *actor.ReceiveContext, trigger *application.BridgeDeliveryAck) {
+	oldDurable := a.durableState()
+	liveTaskSources := a.cloneTaskSources()
+	burst := &ackBurstReceipt{response: trigger.Completion, result: application.BridgeDeliveryAckResult{Accepted: true}}
+	ack := trigger
+	for ack != nil {
+		if !a.commitAck(ctx, ack, burst) {
+			a.restoreDurableState(oldDurable)
+			respondBridgeAck(ctx, trigger.Completion, &application.BridgeDeliveryAckResult{Reason: "delivery acknowledgement identity rejected", Cursor: a.ackCursor})
+			return
+		}
+		delete(a.ackGaps, ack.Sequence)
+		next, buffered := a.ackGaps[ack.Sequence+1]
+		ack = nil
+		if buffered {
+			ack = &next
+		}
+	}
+	burst.result.Cursor = a.ackCursor
+	if a.beginDurablePersist(ctx, &pendingDurableReceipt{old: oldDurable, ackBurst: burst, liveTaskSources: liveTaskSources}) {
+		return
+	}
+	a.deliverAckBurstEffects(ctx, burst)
+	respondBridgeAck(ctx, trigger.Completion, &burst.result)
+}
+
+func (a *AgentActor) commitAck(ctx *actor.ReceiveContext, message *application.BridgeDeliveryAck, burst *ackBurstReceipt) bool {
+	index := slices.IndexFunc(a.bridgeDeliveries, func(item application.BridgeDelivery) bool {
+		return item.Sequence == message.Sequence
+	})
+	if index < 0 {
+		return false
+	}
 	delivery := a.bridgeDeliveries[index]
+	if !a.validAckIdentity(message, &delivery) {
+		return false
+	}
+	key := a.deliverySources[message.Sequence]
+	scope := a.mutationScopes[key]
+	if scope == nil {
+		return false
+	}
+	// Fail closed unless the delivery's scope token maps back to the exact
+	// internal scope that owns its mutation state.
+	if a.scopeTokens[delivery.SourceScope] != key {
+		return false
+	}
+	record, ok := scope.dedupe[message.DedupeID]
+	if !ok || record.sequence != message.Sequence {
+		return false
+	}
 	deliveryKind := delivery.Kind
 	result := application.BridgeIntentResult{Accepted: true, Completed: message.Delivered, Reason: message.Reason}
 	if message.Delivered {
 		if deliveryKind == application.BridgeDeliveryPrompt {
 			if len(message.Result) == 0 {
-				respondBridgeAck(ctx, message.Completion, &application.BridgeDeliveryAckResult{Reason: "prompt completion answer is empty"})
-				return
+				return false
 			}
 			result.Result = append([]byte(nil), message.Result...)
 		} else {
 			result.Result = []byte("delivery acknowledged")
 		}
 	}
-	oldDurable := a.durableState()
 	a.bridgeDeliveries = append(a.bridgeDeliveries[:index], a.bridgeDeliveries[index+1:]...)
 	delete(a.deliverySources, message.Sequence)
 	replyTo := a.taskSources[message.Sequence]
+	sourceRef, hasSourceRef := a.durableTaskSources[message.Sequence]
 	delete(a.taskSources, message.Sequence)
+	delete(a.durableTaskSources, message.Sequence)
+	if replyTo == nil && hasSourceRef {
+		// Resolution is an async continuation: enqueue the lookup instead of
+		// blocking the acknowledgement commit on the actor plane. The retained
+		// pending completion tell below is delivered by the bounded redrive loop.
+		a.resolveActorRefAsync(ctx, sourceRef)
+	}
 	mutation := scope.results[record.mutationSequence]
 	mutation.pending, mutation.result = false, result
 	scope.results[record.mutationSequence] = mutation
@@ -1769,33 +2410,58 @@ func (a *AgentActor) bridgeDeliveryAck(ctx *actor.ReceiveContext, message *appli
 	delete(scope.dedupe, message.DedupeID)
 	delete(scope.chains, record.chainID)
 	retireMutationResults(scope)
-	var askCompletion chan<- application.BridgeIntentResult
+	effect := ackCommitEffect{scopeKey: key, dedupeID: message.DedupeID, askResult: result}
 	if pending, exists := scope.asks[message.DedupeID]; exists {
-		askCompletion = pending.completion
+		effect.askCompletion = pending.completion
 		delete(scope.asks, message.DedupeID)
 	}
 	a.pruneMutationScope(key, scope)
-	ack := application.BridgeDeliveryAckResult{Accepted: true}
-	var taskCompletion *application.ActorTaskCompleted
-	if replyTo != nil || scope.sessionID == "actor" {
-		taskCompletion = &application.ActorTaskCompleted{CompletionKey: actorTaskCompletionKey(a.id, message.Sequence, scope.principal, delivery.RequestID, message.DedupeID, delivery.ChainID, record.mutationSequence), OriginalRequestID: delivery.RequestID, DedupeID: message.DedupeID, ChainID: delivery.ChainID, SourceMutationSequence: record.mutationSequence, Terminal: result, Source: delivery.Source, Target: delivery.Target, Kind: deliveryKind}
-		historyKey := actorTaskID(scope.principal, taskCompletion.OriginalRequestID, taskCompletion.DedupeID, taskCompletion.ChainID, taskCompletion.SourceMutationSequence)
-		a.sourceTaskHistory[historyKey] = *taskCompletion
+	if replyTo != nil || hasSourceRef || scope.sessionID == "actor" {
+		effect.taskCompletion = &application.ActorTaskCompleted{CompletionKey: delivery.CompletionKey, OriginalRequestID: delivery.RequestID, DedupeID: message.DedupeID, ChainID: delivery.ChainID, SourceMutationSequence: record.mutationSequence, Terminal: result, Source: delivery.Source, Target: delivery.Target, Kind: deliveryKind}
+		historyKey := actorTaskID(scope.principal, delivery.RequestID, message.DedupeID, delivery.ChainID, record.mutationSequence)
+		a.sourceTaskHistory[historyKey] = *effect.taskCompletion
 		a.sourceTaskHistoryOrder = append(a.sourceTaskHistoryOrder, historyKey)
 		if replyTo == nil {
-			taskCompletion = nil
+			effect.taskCompletion = nil
+			if hasSourceRef {
+				a.retainPendingCompletionTell(delivery.CompletionKey, sourceRef, application.ActorTaskCompleted{CompletionKey: delivery.CompletionKey, OriginalRequestID: delivery.RequestID, DedupeID: message.DedupeID, ChainID: delivery.ChainID, SourceMutationSequence: record.mutationSequence, Terminal: result, Source: delivery.Source, Target: delivery.Target, Kind: deliveryKind})
+			}
+		}
+		effect.taskReplyTo = replyTo
+	}
+	burst.commits = append(burst.commits, effect)
+	a.committedAcks[message.Sequence] = application.DurableBridgeAckRecord{Sequence: message.Sequence, DedupeID: message.DedupeID, Kind: deliveryKind, SourceScope: delivery.SourceScope, CompletionKey: delivery.CompletionKey, RuntimeID: message.RuntimeID, Incarnation: message.Incarnation, PiSessionID: message.PiSessionID, Delivered: message.Delivered, Reason: boundedAckReason(message.Reason), Result: append([]byte(nil), result.Result...)}
+	a.committedAckOrder = append(a.committedAckOrder, message.Sequence)
+	for len(a.committedAckOrder) > maxCommittedAcks {
+		oldest := a.committedAckOrder[0]
+		a.committedAckOrder = a.committedAckOrder[1:]
+		delete(a.committedAcks, oldest)
+	}
+	a.ackCursor = message.Sequence
+	return true
+}
+
+func boundedAckReason(reason string) string {
+	if len(reason) > 256 {
+		return reason[:256]
+	}
+	return reason
+}
+
+func (a *AgentActor) deliverAckBurstEffects(ctx *actor.ReceiveContext, burst *ackBurstReceipt) {
+	for index := range burst.commits {
+		effect := &burst.commits[index]
+		if effect.askCompletion != nil {
+			deliverBridgeIntentResult(effect.askCompletion, effect.askResult)
+		}
+		if effect.taskReplyTo != nil && effect.taskCompletion != nil {
+			if err := ctx.Self().Tell(context.WithoutCancel(ctx.Context()), effect.taskReplyTo, effect.taskCompletion); err != nil {
+				// The terminal is durable but the completion Tell failed (for
+				// example a restarted peer): retain it durably and redrive.
+				a.deferCompletionTell(ctx, effect, err)
+			}
 		}
 	}
-	if a.beginDurablePersist(ctx, &pendingDurableReceipt{sender: ctx.Sender(), old: oldDurable, ack: &ack, ackCompletion: message.Completion, askScope: key, askDedupe: message.DedupeID, askCompletion: askCompletion, askResult: &result, taskReplyTo: replyTo, taskCompletion: taskCompletion}) {
-		return
-	}
-	if askCompletion != nil {
-		deliverBridgeIntentResult(askCompletion, result)
-	}
-	if replyTo != nil && taskCompletion != nil {
-		_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), replyTo, taskCompletion)
-	}
-	respondBridgeAck(ctx, message.Completion, &ack)
 }
 
 func retireMutationResults(scope *mutationScope) {
@@ -1816,6 +2482,9 @@ func retireMutationResults(scope *mutationScope) {
 func (a *AgentActor) pruneRevokedMutationScope(sessionID, generationID, principal string, fence uint64) {
 	key := sourceMutationScopeKey(sessionID, generationID, principal, fence, a.hostedPiRuntime.Incarnation)
 	if scope := a.mutationScopes[key]; scope != nil && len(scope.dedupe) == 0 {
+		if scope.token != "" {
+			delete(a.scopeTokens, scope.token)
+		}
 		delete(a.mutationScopes, key)
 	}
 }
@@ -1823,13 +2492,173 @@ func (a *AgentActor) pruneMutationScope(key string, scope *mutationScope) {
 	if len(scope.dedupe) != 0 {
 		return
 	}
-	if strings.HasSuffix(scope.sessionID, "#control") {
+	// Control and actor-task scopes keep their high-water mark after their
+	// last delivery retires: a source must never reuse a mutation sequence
+	// (its own history enforces that), so the scope must keep advancing.
+	if strings.HasSuffix(scope.sessionID, "#control") || scope.sessionID == "actor" {
 		return
 	}
 	attachment, active := a.attachments[generationKey(scope.sessionID, scope.generationID)]
 	if !active || attachment.principal != scope.principal || attachment.fence != scope.fence || scope.incarnation != a.hostedPiRuntime.Incarnation {
+		if scope.token != "" {
+			delete(a.scopeTokens, scope.token)
+		}
 		delete(a.mutationScopes, key)
 	}
+}
+
+// applyRuntimeBinding merges a runtime projection advance into owner state.
+// It must only be called for non-retiring advances or as part of a transition
+// whose retirement effects are handled separately.
+func (a *AgentActor) applyRuntimeBinding(message *application.HostedPiRuntimeStateChanged, binding application.HostedPiRuntimeBinding) {
+	if binding.AggregateID == "" {
+		binding.AggregateID = a.hostedPiRuntime.AggregateID
+	}
+	if binding.DisplayName == "" {
+		binding.DisplayName = a.hostedPiRuntime.DisplayName
+	}
+	if binding.Role == "" {
+		binding.Role = a.hostedPiRuntime.Role
+	}
+	a.hostedPiRuntime = binding
+	if message.Reason != "" {
+		a.runtimeFailure = message.Reason
+	} else if binding.State != application.HostedPiRuntimeDegraded {
+		a.runtimeFailure = ""
+	}
+	if a.durableRecord != nil {
+		a.durableRecord.Binding = binding
+		a.durableRecord.LaunchSpec.Incarnation = binding.Incarnation
+	}
+}
+
+// incarnationRetired performs the whole incarnation-retirement terminal-failure
+// batch as one durable transition: the delivery retirement, bridge-binding
+// wipe, and binding swap are persisted before any completion effects, redrive
+// scheduling, or registry forward fire — the same pattern as ACK commits. A
+// crash or persistence failure before the confirm rolls the batch back and
+// re-drives the state change instead of emitting effects twice or never.
+func (a *AgentActor) incarnationRetired(ctx *actor.ReceiveContext, message *application.HostedPiRuntimeStateChanged, binding application.HostedPiRuntimeBinding) {
+	if a.durableFailed != nil {
+		return
+	}
+	if a.durablePending != nil {
+		retry := *message
+		_ = ctx.ActorSystem().ScheduleOnce(context.WithoutCancel(ctx.Context()), &retry, ctx.Self(), 10*time.Millisecond)
+		return
+	}
+	old := a.durableState()
+	oldBinding := a.hostedPiRuntime
+	liveTaskSources := a.cloneTaskSources()
+	burst := a.retirePendingBridgeDeliveries(ctx, "hosted runtime incarnation retired")
+	a.bridgeSession, a.bridgeGeneration, a.bridgePrincipal, a.bridgeHandle, a.bridgePiSession = "", "", "", "", ""
+	a.bridgeFence = 0
+	a.bridgeDeclaredReady = false
+	a.bridgeLeaseToken++
+	a.applyRuntimeBinding(message, binding)
+	a.revision++
+	forward := *message
+	forward.Binding = binding
+	receipt := &pendingDurableReceipt{old: old, ackBurst: burst, runtimeStateForward: &forward, runtimeRollbackBinding: &oldBinding, liveTaskSources: liveTaskSources}
+	if a.beginDurablePersist(ctx, receipt) {
+		return
+	}
+	a.completeRuntimeStateEffects(ctx, &forward, burst)
+}
+
+// completeRuntimeStateEffects fires the post-commit effects of a runtime state
+// transition: retirement completion tells, bounded completion redrive, and the
+// registry projection forward. burst may be nil when effects were already
+// delivered by the durable receipt completion.
+func (a *AgentActor) completeRuntimeStateEffects(ctx *actor.ReceiveContext, forward *application.HostedPiRuntimeStateChanged, burst *ackBurstReceipt) {
+	if burst != nil {
+		a.deliverAckBurstEffects(ctx, burst)
+	}
+	a.scheduleCompletionRetry(ctx)
+	if a.registryPID != nil {
+		_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), a.registryPID, forward)
+	}
+}
+
+func (a *AgentActor) scheduleCompletionRetry(ctx *actor.ReceiveContext) {
+	if len(a.completionTellPending) != 0 {
+		_ = ctx.ActorSystem().ScheduleOnce(context.WithoutCancel(ctx.Context()), &retryCompletionTells{}, ctx.Self(), outboxBaseRetryDelay)
+	}
+}
+
+// retainPendingCompletionTell records a terminal completion whose delivery
+// depends on resolving a durable actor reference asynchronously, bounded like
+// every other completion redrive window.
+func (a *AgentActor) retainPendingCompletionTell(completionKey string, source application.DurableActorRef, completed application.ActorTaskCompleted) {
+	if completionKey == "" {
+		return
+	}
+	a.completionTellPending[completionKey] = application.DurablePendingCompletion{CompletionKey: completionKey, Source: source, Completed: completed}
+	a.completionTellOrder = append(a.completionTellOrder, completionKey)
+	for len(a.completionTellOrder) > maxCompletionTells {
+		oldest := a.completionTellOrder[0]
+		a.completionTellOrder = a.completionTellOrder[1:]
+		delete(a.completionTellPending, oldest)
+	}
+}
+
+// retirePendingBridgeDeliveries mutates every retained delivery of a retired
+// runtime incarnation to its terminal failure and collects the completion
+// effects without emitting them: the caller persists the whole batch first and
+// releases the collected effects only after the durable confirm.
+func (a *AgentActor) retirePendingBridgeDeliveries(ctx *actor.ReceiveContext, reason string) *ackBurstReceipt {
+	if reason == "" {
+		reason = "delivery failed terminally"
+	}
+	burst := &ackBurstReceipt{}
+	for _, delivery := range append([]application.BridgeDelivery(nil), a.bridgeDeliveries...) {
+		key := a.deliverySources[delivery.Sequence]
+		scope := a.mutationScopes[key]
+		if scope == nil {
+			continue
+		}
+		record, ok := scope.dedupe[delivery.DedupeID]
+		if !ok || record.sequence != delivery.Sequence {
+			continue
+		}
+		result := application.BridgeIntentResult{Accepted: true, Reason: reason}
+		mutation := scope.results[record.mutationSequence]
+		mutation.pending, mutation.result = false, result
+		scope.results[record.mutationSequence] = mutation
+		scope.completed++
+		delete(scope.dedupe, delivery.DedupeID)
+		delete(scope.chains, record.chainID)
+		retireMutationResults(scope)
+		effect := ackCommitEffect{scopeKey: key, dedupeID: delivery.DedupeID, askResult: result}
+		if pending, ok := scope.asks[delivery.DedupeID]; ok {
+			effect.askCompletion = pending.completion
+			delete(scope.asks, delivery.DedupeID)
+		}
+		replyTo := a.taskSources[delivery.Sequence]
+		sourceRef, hasSourceRef := a.durableTaskSources[delivery.Sequence]
+		if replyTo == nil && hasSourceRef {
+			// Resolution is an async continuation: enqueue the lookup instead of
+			// blocking this receive path on the actor plane.
+			a.resolveActorRefAsync(ctx, sourceRef)
+		}
+		if delivery.CompletionKey != "" && (replyTo != nil || hasSourceRef || scope.sessionID == "actor") {
+			completed := application.ActorTaskCompleted{CompletionKey: delivery.CompletionKey, OriginalRequestID: delivery.RequestID, DedupeID: delivery.DedupeID, ChainID: delivery.ChainID, SourceMutationSequence: record.mutationSequence, Terminal: result, Source: delivery.Source, Target: delivery.Target, Kind: delivery.Kind}
+			historyKey := actorTaskID(scope.principal, delivery.RequestID, delivery.DedupeID, delivery.ChainID, record.mutationSequence)
+			a.retainSourceCompletion(historyKey, completed)
+			if replyTo != nil {
+				effect.taskReplyTo, effect.taskCompletion = replyTo, &completed
+			} else if hasSourceRef {
+				a.retainPendingCompletionTell(completed.CompletionKey, sourceRef, completed)
+			}
+		}
+		burst.commits = append(burst.commits, effect)
+		delete(a.deliverySources, delivery.Sequence)
+		delete(a.taskSources, delivery.Sequence)
+		delete(a.durableTaskSources, delivery.Sequence)
+		a.pruneMutationScope(key, scope)
+	}
+	a.bridgeDeliveries = nil
+	return burst
 }
 
 func (a *AgentActor) bridgeIntentTimeout(ctx *actor.ReceiveContext, message *application.BridgeIntentTimeout) {
@@ -1852,13 +2681,25 @@ func (a *AgentActor) bridgeIntentTimeout(ctx *actor.ReceiveContext, message *app
 		return
 	}
 	oldDurable := a.durableState()
+	liveTaskSources := a.cloneTaskSources()
 	index := slices.IndexFunc(a.bridgeDeliveries, func(item application.BridgeDelivery) bool {
 		return item.Sequence == record.sequence && item.DedupeID == message.DedupeID
 	})
+	var delivery application.BridgeDelivery
 	if index >= 0 {
+		delivery = a.bridgeDeliveries[index]
 		a.bridgeDeliveries = append(a.bridgeDeliveries[:index], a.bridgeDeliveries[index+1:]...)
 	}
 	delete(a.deliverySources, record.sequence)
+	replyTo := a.taskSources[record.sequence]
+	sourceRef, hasSourceRef := a.durableTaskSources[record.sequence]
+	delete(a.taskSources, record.sequence)
+	delete(a.durableTaskSources, record.sequence)
+	if replyTo == nil && hasSourceRef {
+		// Resolution is an async continuation: enqueue the lookup instead of
+		// blocking the deadline-failure path on the actor plane.
+		a.resolveActorRefAsync(ctx, sourceRef)
+	}
 	result := application.BridgeIntentResult{Accepted: true, Reason: "delivery acknowledgement deadline expired"}
 	mutation := scope.results[record.mutationSequence]
 	mutation.pending, mutation.result = false, result
@@ -1873,12 +2714,29 @@ func (a *AgentActor) bridgeIntentTimeout(ctx *actor.ReceiveContext, message *app
 		delete(scope.asks, message.DedupeID)
 	}
 	a.pruneMutationScope(message.ScopeKey, scope)
-	if a.beginDurablePersist(ctx, &pendingDurableReceipt{old: oldDurable, askScope: message.ScopeKey, askDedupe: message.DedupeID, askCompletion: askCompletion, askResult: &result, retryTimeout: true}) {
+	var burst *ackBurstReceipt
+	if delivery.CompletionKey != "" && (replyTo != nil || hasSourceRef || scope.sessionID == "actor") {
+		completed := application.ActorTaskCompleted{CompletionKey: delivery.CompletionKey, OriginalRequestID: delivery.RequestID, DedupeID: message.DedupeID, ChainID: delivery.ChainID, SourceMutationSequence: record.mutationSequence, Terminal: result, Source: delivery.Source, Target: delivery.Target, Kind: delivery.Kind}
+		historyKey := actorTaskID(scope.principal, delivery.RequestID, message.DedupeID, delivery.ChainID, record.mutationSequence)
+		a.retainSourceCompletion(historyKey, completed)
+		burst = &ackBurstReceipt{commits: []ackCommitEffect{{taskReplyTo: replyTo, taskCompletion: &completed}}}
+		if replyTo == nil {
+			burst.commits[0].taskCompletion = nil
+			if hasSourceRef {
+				a.retainPendingCompletionTell(completed.CompletionKey, sourceRef, completed)
+			}
+		}
+	}
+	if a.beginDurablePersist(ctx, &pendingDurableReceipt{old: oldDurable, askScope: message.ScopeKey, askDedupe: message.DedupeID, askCompletion: askCompletion, askResult: &result, ackBurst: burst, retryTimeout: true, liveTaskSources: liveTaskSources}) {
 		return
 	}
 	if askCompletion != nil {
 		deliverBridgeIntentResult(askCompletion, result)
 	}
+	if burst != nil {
+		a.deliverAckBurstEffects(ctx, burst)
+	}
+	a.scheduleCompletionRetry(ctx)
 }
 
 func (a *AgentActor) pollBridge(ctx *actor.ReceiveContext, message *application.PollBridge) {
@@ -2014,6 +2872,24 @@ func (a *AgentActor) dropSession(ctx *actor.ReceiveContext, message *application
 	if a.durablePending != nil {
 		copy := *message
 		_ = ctx.ActorSystem().ScheduleOnce(context.WithoutCancel(ctx.Context()), &copy, ctx.Self(), 10*time.Millisecond)
+		return
+	}
+	if message.SessionID == a.bridgeSession && message.GenerationID == a.bridgeGeneration && a.authorityBinding.Kind == application.AuthorityBindingHostedOwned && a.runtimePID != nil && a.hostedPiRuntime.State != application.HostedPiRuntimeStopped && a.hostedPiRuntime.State != application.HostedPiRuntimeStopping && a.hostedPiRuntime.State != application.HostedPiRuntimeDegraded {
+		// Fail closed instead of wiping a live hosted bridge binding: a session
+		// coordination drop (for example a late metadata cleanup retry) must not
+		// null the durable bridge binding, revoke its generation, and unlink its
+		// attachment while the exact runtime and its Pi WebSocket are still live.
+		// Such a wipe is unrecoverable: the reconnected bridge could never
+		// reattach, deliveries would stall, and health would stay ready. Only a
+		// fenced bridge teardown or a stopped runtime may retire the binding.
+		err := fmt.Errorf("refusing live hosted bridge binding drop for session %s", message.SessionID)
+		a.durableFailed = errors.Join(a.durableFailed, err)
+		a.hostedPiRuntime.State = application.HostedPiRuntimeDegraded
+		a.hostedPiRuntime.BridgeReady = false
+		a.revision++
+		if a.persistenceSupervisor != nil {
+			_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), a.persistenceSupervisor, &application.QuarantineDurableHostedState{AgentID: a.id, Reason: "live hosted bridge binding drop refused", Err: err})
+		}
 		return
 	}
 	old := a.durableState()

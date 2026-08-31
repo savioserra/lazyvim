@@ -56,7 +56,7 @@ func TestAcknowledgedBridgeIdentityRetentionStaysBoundedAndReplayable(t *testing
 		}
 		delivery := poll.Deliveries[0]
 		cursor = poll.LatestSequence
-		if !ask(&application.BridgeDeliveryAck{SessionID: "session", GenerationID: "generation", Principal: "hosted:source", Handle: attached.Handle, Fence: attached.Fence, Sequence: delivery.Sequence, DedupeID: delivery.DedupeID, Delivered: true}).(*application.BridgeDeliveryAckResult).Accepted {
+		if !ask(identityAck("session", "generation", "hosted:source", attached.Handle, attached.Fence, "runtime", "pi", delivery, true, nil)).(*application.BridgeDeliveryAckResult).Accepted {
 			t.Fatalf("ack %d rejected", index)
 		}
 	}
@@ -92,7 +92,7 @@ func TestAcknowledgedBridgeIdentityRetentionStaysBoundedAndReplayable(t *testing
 	}
 	controlPoll := ask(&application.PollBridge{SessionID: "session", GenerationID: "generation", Principal: "hosted:source", Handle: attached.Handle, Fence: attached.Fence, AfterSequence: cursor, MaxItems: 64}).(*application.BridgePollResult)
 	for _, delivery := range controlPoll.Deliveries {
-		_ = ask(&application.BridgeDeliveryAck{SessionID: "session", GenerationID: "generation", Principal: "hosted:source", Handle: attached.Handle, Fence: attached.Fence, Sequence: delivery.Sequence, DedupeID: delivery.DedupeID, Delivered: true})
+		_ = ask(identityAck("session", "generation", "hosted:source", attached.Handle, attached.Fence, "runtime", "pi", delivery, true, nil))
 	}
 	if replay := ask(control).(*application.BridgeIntentResult); !replay.Accepted || !replay.Completed {
 		t.Fatalf("recent control retry did not return exact result: %#v", replay)

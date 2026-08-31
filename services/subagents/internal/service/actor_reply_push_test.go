@@ -14,6 +14,21 @@ import (
 	"github.com/savioserra/lazyvim/services/subagents/internal/protocol"
 )
 
+func deliveryKindLabel(kind subagentsv1.BridgeDelivery_Kind) string {
+	switch kind {
+	case subagentsv1.BridgeDelivery_KIND_NOTIFICATION:
+		return "notification"
+	case subagentsv1.BridgeDelivery_KIND_ABORT:
+		return "abort"
+	case subagentsv1.BridgeDelivery_KIND_SHUTDOWN:
+		return "shutdown"
+	case subagentsv1.BridgeDelivery_KIND_PROMPT:
+		return "prompt"
+	default:
+		return ""
+	}
+}
+
 func TestActorAskAdmissionThenPushedReplyAndReconnectReplayOnce(t *testing.T) {
 	root := t.TempDir()
 	if err := os.Chmod(root, 0o700); err != nil {
@@ -127,7 +142,21 @@ func TestActorAskAdmissionThenPushedReplyAndReconnectReplayOnce(t *testing.T) {
 			delivery = push.Deliveries[0]
 		}
 	}
-	ack := request(hostConn, host, &subagentsv1.Envelope_BridgeDeliveryAckRequest{BridgeDeliveryAckRequest: &subagentsv1.BridgeDeliveryAckRequest{AgentId: "alpha", Sequence: delivery.Sequence, DedupeId: delivery.DedupeId, Delivered: true, BoundedResult: []byte("answer")}}, connected.AgentHandle, connected.Fence, "ack").GetBridgeDeliveryAckResponse()
+	// An acknowledgement missing or falsifying its delivery identity must be
+	// rejected fail-closed before any effects, keeping the delivery replayable.
+	missing := request(hostConn, host, &subagentsv1.Envelope_BridgeDeliveryAckRequest{BridgeDeliveryAckRequest: &subagentsv1.BridgeDeliveryAckRequest{AgentId: "alpha", Sequence: delivery.Sequence, DedupeId: delivery.DedupeId, Delivered: true, BoundedResult: []byte("answer")}}, connected.AgentHandle, connected.Fence, "missing-identity-ack").GetBridgeDeliveryAckResponse()
+	if missing == nil || missing.Accepted {
+		t.Fatalf("acknowledgement without identity was accepted: %#v", missing)
+	}
+	forged := request(hostConn, host, &subagentsv1.Envelope_BridgeDeliveryAckRequest{BridgeDeliveryAckRequest: &subagentsv1.BridgeDeliveryAckRequest{AgentId: "alpha", Sequence: delivery.Sequence, DedupeId: delivery.DedupeId, Delivered: true, BoundedResult: []byte("wrong"), RuntimeId: records[0].LaunchSpec.RuntimeID, Incarnation: 1, PiSessionId: "pi", Kind: deliveryKindLabel(delivery.Kind), SourceScope: delivery.SourceScope, CompletionKey: "forged-completion-key"}}, connected.AgentHandle, connected.Fence, "forged-ack").GetBridgeDeliveryAckResponse()
+	if forged == nil || forged.Accepted {
+		t.Fatalf("forged completion key was accepted: %#v", forged)
+	}
+	wrongSession := request(hostConn, host, &subagentsv1.Envelope_BridgeDeliveryAckRequest{BridgeDeliveryAckRequest: &subagentsv1.BridgeDeliveryAckRequest{AgentId: "alpha", Sequence: delivery.Sequence, DedupeId: delivery.DedupeId, Delivered: true, BoundedResult: []byte("answer"), RuntimeId: records[0].LaunchSpec.RuntimeID, Incarnation: 1, PiSessionId: "other-pi-session", Kind: deliveryKindLabel(delivery.Kind), SourceScope: delivery.SourceScope, CompletionKey: delivery.CompletionKey}}, connected.AgentHandle, connected.Fence, "wrong-session-ack").GetBridgeDeliveryAckResponse()
+	if wrongSession == nil || wrongSession.Accepted {
+		t.Fatalf("wrong Pi session identity was accepted: %#v", wrongSession)
+	}
+	ack := request(hostConn, host, &subagentsv1.Envelope_BridgeDeliveryAckRequest{BridgeDeliveryAckRequest: &subagentsv1.BridgeDeliveryAckRequest{AgentId: "alpha", Sequence: delivery.Sequence, DedupeId: delivery.DedupeId, Delivered: true, BoundedResult: []byte("answer"), RuntimeId: records[0].LaunchSpec.RuntimeID, Incarnation: 1, PiSessionId: "pi", Kind: deliveryKindLabel(delivery.Kind), SourceScope: delivery.SourceScope, CompletionKey: delivery.CompletionKey}}, connected.AgentHandle, connected.Fence, "ack").GetBridgeDeliveryAckResponse()
 	if ack == nil || !ack.Accepted {
 		t.Fatalf("ack: %#v", ack)
 	}

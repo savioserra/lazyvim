@@ -59,7 +59,7 @@ func TestAcknowledgedTypedControlChainsRetireWithinBoundedMutationCache(t *testi
 	ackAll := func() {
 		poll := ask(&application.PollBridge{SessionID: "session", GenerationID: "generation", Principal: "hosted:source", Handle: attached.Handle, Fence: attached.Fence, MaxItems: 64}).(*application.BridgePollResult)
 		for _, delivery := range poll.Deliveries {
-			if !ask(&application.BridgeDeliveryAck{SessionID: "session", GenerationID: "generation", Principal: "hosted:source", Handle: attached.Handle, Fence: attached.Fence, Sequence: delivery.Sequence, DedupeID: delivery.DedupeID, Delivered: true}).(*application.BridgeDeliveryAckResult).Accepted {
+			if !ask(identityAck("session", "generation", "hosted:source", attached.Handle, attached.Fence, "runtime", "pi", delivery, true, nil)).(*application.BridgeDeliveryAckResult).Accepted {
 				t.Fatal("control ACK rejected")
 			}
 		}

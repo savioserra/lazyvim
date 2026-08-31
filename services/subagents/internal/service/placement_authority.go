@@ -63,6 +63,8 @@ func (a *hostedPlacementAuthority) Receive(ctx *actor.ReceiveContext) {
 		ctx.Response(a.list(ctx.Context(), message))
 	case *application.RemoteAttachAgent:
 		ctx.Response(a.remoteAttach(ctx.Context(), message))
+	case *application.ResolveAgentActor:
+		ctx.Response(a.remoteResolveAgentActor(ctx.Context(), message))
 	case *application.RemoteBridgeIntent:
 		ctx.Response(a.remoteBridgeIntent(ctx.Context(), message))
 	default:

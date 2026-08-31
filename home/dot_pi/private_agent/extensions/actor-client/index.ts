@@ -13,7 +13,7 @@ import { publicAgentView, registerClientHandlers } from "./handlers.ts";
 const MAX_FRAME = 64 * 1024;
 const MAX_TEXT = 16 * 1024;
 const NORMAL_TIMEOUT = 5_000;
-export const ACTOR_ASK_COMPLETION_TIMEOUT = 30 * 60_000;
+export const ACTOR_ASK_COMPLETION_TIMEOUT = 6 * 60 * 60_000;
 
 type Session = { sessionId: string; generationId: string; caller: string; credential: Uint8Array };
 type Fence = { handle: string; fence: bigint };

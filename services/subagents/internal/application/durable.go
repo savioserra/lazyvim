@@ -49,11 +49,11 @@ type DurableMutationResult struct {
 	ChainID  string             `json:"chain_id"`
 }
 type DurableMutationScope struct {
-	Key, SessionID, GenerationID, Principal string
-	Fence, Incarnation, HighWater           uint64
-	Results                                 []DurableMutationResult
-	Dedupe                                  map[string]DurableDedupeRecord
-	Chains                                  []string
+	Key, Token, SessionID, GenerationID, Principal string
+	Fence, Incarnation, HighWater                  uint64
+	Results                                        []DurableMutationResult
+	Dedupe                                         map[string]DurableDedupeRecord
+	Chains                                         []string
 }
 type DurableDedupeRecord struct {
 	Sequence, MutationSequence uint64
@@ -62,6 +62,9 @@ type DurableDedupeRecord struct {
 type DurableActorTaskOutboxItem struct {
 	TaskID                                           string            `json:"task_id"`
 	Target                                           CommunicationPeer `json:"target"`
+	TargetRef                                        DurableActorRef   `json:"target_ref"`
+	Attempts                                         int               `json:"attempts"`
+	NextAttempt                                      time.Time         `json:"next_attempt"`
 	RequestID, DedupeID, ChainID, RequiredCapability string
 	SourceMutationSequence                           uint64            `json:"source_mutation_sequence"`
 	Deadline                                         time.Time         `json:"deadline"`
@@ -78,6 +81,21 @@ type DurableTaskCreditReservation struct {
 	Source string     `json:"source"`
 }
 
+type DurableActorRef struct {
+	AgentID string `json:"agent_id"`
+	Host    string `json:"host"`
+	Port    int    `json:"port"`
+	Name    string `json:"name"`
+	Address string `json:"address"`
+}
+
+type DurablePendingCompletion struct {
+	CompletionKey string             `json:"completion_key"`
+	Source        DurableActorRef    `json:"source"`
+	Completed     ActorTaskCompleted `json:"completed"`
+	Attempts      int                `json:"attempts"`
+}
+
 type DurableAgentState struct {
 	Revision, CommandSequence, Fence, BridgeFence, BridgeSequence, BridgeLeaseToken uint64
 	BridgeReady, BridgeDeclaredReady                                                bool
@@ -92,16 +110,25 @@ type DurableAgentState struct {
 	ReceivedTaskCompletions                                                         []ActorTaskCompleted
 	TaskCreditEpoch                                                                 uint64
 	TaskCreditReservations                                                          []DurableTaskCreditReservation
+	AckCursor                                                                       uint64
+	AckGapBuffer                                                                    []DurableBridgeAckRecord
+	CommittedAcks                                                                   []DurableBridgeAckRecord
+	TaskSources                                                                     map[uint64]DurableActorRef
+	CompletionTellPending                                                           []DurablePendingCompletion
 }
 
 type DurableBridgeAckRecord struct {
-	Sequence    uint64             `json:"sequence"`
-	DedupeID    string             `json:"dedupe_id"`
-	Kind        BridgeDeliveryKind `json:"kind"`
-	SourceScope string             `json:"source_scope"`
-	Delivered   bool               `json:"delivered"`
-	Reason      string             `json:"reason"`
-	Result      []byte             `json:"result,omitempty"`
+	Sequence      uint64             `json:"sequence"`
+	DedupeID      string             `json:"dedupe_id"`
+	Kind          BridgeDeliveryKind `json:"kind"`
+	SourceScope   string             `json:"source_scope"`
+	CompletionKey string             `json:"completion_key"`
+	RuntimeID     string             `json:"runtime_id"`
+	Incarnation   uint64             `json:"incarnation"`
+	PiSessionID   string             `json:"pi_session_id"`
+	Delivered     bool               `json:"delivered"`
+	Reason        string             `json:"reason"`
+	Result        []byte             `json:"result,omitempty"`
 }
 
 type DurableAskCorrelation struct {

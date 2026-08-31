@@ -175,11 +175,25 @@ export function buildActorControl(intent: number, target: string, dedupeId: stri
   if (sourceMutationSequence <= 0n || hopLimit < 1) throw new Error("source mutation sequence and hop limit must be positive");
   return { intent, target, dedupeId, hopLimit, chainId, sourceMutationSequence };
 }
-export function buildDeliveryAck(agentId: string, delivery: { sequence: bigint; dedupeId: string }, delivered: boolean, reason: string, boundedResult = new Uint8Array()) { return { agentId, sequence: delivery.sequence, dedupeId: delivery.dedupeId, delivered, reason, boundedResult }; }
+export type BridgeSessionIdentity = { runtimeId: string; incarnation: bigint; piSessionId: string };
+export type AckableDelivery = { sequence: bigint; dedupeId: string; kind: number; sourceScope?: string; completionKey?: string };
 
-export async function invokeTypedDeliveryForAck(agentId: string, delivery: { sequence: bigint; dedupeId: string }, invoke: () => void | Promise<void>) {
-  try { await invoke(); return buildDeliveryAck(agentId, delivery, true, ""); }
-  catch (error) { return buildDeliveryAck(agentId, delivery, false, error instanceof Error ? error.message : "delivery failed"); }
+export function deliveryKindLabel(kind: number): string {
+  if (kind === 1) return "notification";
+  if (kind === 2) return "abort";
+  if (kind === 3) return "shutdown";
+  if (kind === 4) return "prompt";
+  throw new Error("unsupported typed delivery kind");
+}
+
+export function buildIdentityDeliveryAck(agentId: string, identity: BridgeSessionIdentity, delivery: AckableDelivery, delivered: boolean, reason: string, boundedResult = new Uint8Array()) {
+  if (!delivery.sourceScope || !delivery.completionKey) throw new Error("delivery acknowledgement identity is missing");
+  return { agentId, sequence: delivery.sequence, dedupeId: delivery.dedupeId, delivered, reason, boundedResult, runtimeId: identity.runtimeId, incarnation: identity.incarnation, piSessionId: identity.piSessionId, kind: deliveryKindLabel(delivery.kind), sourceScope: delivery.sourceScope, completionKey: delivery.completionKey };
+}
+
+export async function invokeTypedDeliveryForAck(agentId: string, identity: BridgeSessionIdentity, delivery: AckableDelivery, invoke: () => void | Promise<void>) {
+  try { await invoke(); return buildIdentityDeliveryAck(agentId, identity, delivery, true, ""); }
+  catch (error) { return buildIdentityDeliveryAck(agentId, identity, delivery, false, error instanceof Error ? error.message : "delivery failed"); }
 }
 
 export function executeTypedDelivery(ctx: { abort(): void; shutdown(): void; ui: { notify(message: string, level: string): void } }, kind: number, text: string) {
@@ -189,7 +203,7 @@ export function executeTypedDelivery(ctx: { abort(): void; shutdown(): void; ui:
   else ctx.ui.notify(text.slice(0, 1024), "info");
 }
 
-export type PromptDelivery = { dedupeId: string; boundedPayload: Uint8Array; hopLimit: number; deadlineUnixMillis: bigint; chainId: string; sequence: bigint };
+export type PromptDelivery = { dedupeId: string; boundedPayload: Uint8Array; hopLimit: number; deadlineUnixMillis: bigint; chainId: string; sequence: bigint; kind: number; sourceScope?: string; completionKey?: string };
 export class PromptTaskCoordinator<TFence> {
   private pending?: { delivery: PromptDelivery; fence: TFence };
   private outcome?: { delivered: boolean; answer: string; reason: string };
