@@ -1710,7 +1710,11 @@ func lookupActorRef(system actor.ActorSystem, ref application.DurableActorRef) *
 	resolveCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	var pid *actor.PID
-	if ref.Host == system.Host() && ref.Port == system.Port() {
+	// Port 0 only occurs for refs materialized on a daemon without remoting
+	// enabled: they are local by construction regardless of the recorded host
+	// spelling (loopback literal vs system hostname). Refs from remoting nodes
+	// always carry a real actor-plane port.
+	if ref.Port == 0 || (ref.Host == system.Host() && ref.Port == system.Port()) {
 		if resolved, err := system.ActorOf(resolveCtx, ref.Name); err == nil {
 			pid = resolved
 		}
