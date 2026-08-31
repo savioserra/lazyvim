@@ -6,8 +6,8 @@ import { readFile, lstat } from "node:fs/promises";
 import { Type } from "typebox";
 type Envelope = any;
 let EnvelopeSchema: DescMessage;
-import { buildActorControl, buildActorMessage, buildIdentityDeliveryAck, communicationKey, CommunicationTimeline, completeHostedEnvironment, drainPages, ExactMutationSequencer, executeTypedDelivery, invokeTypedDeliveryForAck, missingAckIdentity, mutationScopeKey, PromptTaskCoordinator, registerHostedHandlers } from "./handlers.ts";
-import { incomingControl, incomingNote, incomingRequestText, legacyCommunicationLine, outgoingExchange, peerView, renderCommunicationCard, type CommunicationView } from "./communication-ui.ts";
+import { bridgeErrorClass, buildActorControl, buildActorMessage, buildIdentityDeliveryAck, communicationKey, CommunicationTimeline, completeHostedEnvironment, drainPages, ExactMutationSequencer, executeTypedDelivery, invokeTypedDeliveryForAck, missingAckIdentity, mutationScopeKey, PromptTaskCoordinator, registerHostedHandlers, type PromptTaskLifecycleEvent } from "./handlers.ts";
+import { bridgeDiagnostic, incomingControl, incomingNote, incomingRequestText, legacyCommunicationLine, outgoingExchange, peerView, renderCommunicationCard, type CommunicationView } from "./communication-ui.ts";
 
 const MAX_FRAME = 64 * 1024;
 const MAX_TEXT = 16 * 1024;
@@ -178,14 +178,37 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
     const line = boundedPublic(entry.data?.line ?? "Communication event unavailable", 160);
     return new Text(`${theme.fg("accent", "Communication")}  ${line}`, 0, 0);
   });
-  const prompts = new PromptTaskCoordinator<TargetFence>((text) => { requiredContext(extensionContext); pi.sendUserMessage(text); }, async (pending, deliveredSuccessfully, answer, reason) => {
+  // The prompt is injected with the followUp delivery mode: when the hosted
+  // agent is already streaming, Pi queues the message for its own turn
+  // instead of rejecting it inside the Pi runtime, where the rejection is
+  // unobservable from the extension (pi.sendUserMessage swallows it). An
+  // unobserved rejection left the task pending forever with no turn, no
+  // acknowledgement, and no degraded status.
+  const prompts = new PromptTaskCoordinator<TargetFence>((text) => { requiredContext(extensionContext); pi.sendUserMessage(text, { deliverAs: "followUp" }); }, async (pending, deliveredSuccessfully, answer, reason) => {
     const encoded = new TextEncoder().encode(answer);
     if (encoded.byteLength > MAX_TEXT) throw new Error("assistant answer exceeds bridge bound");
-    const ack = buildIdentityDeliveryAck(requiredBinding(binding).agentId, { runtimeId: requiredBinding(binding).runtimeId, incarnation: requiredBinding(binding).incarnation, piSessionId }, pending.delivery, deliveredSuccessfully, reason, encoded);
-    const response = await requiredClient(client).request("bridgeDeliveryAckRequest", BridgeDeliveryAckRequestSchema, ack, pending.fence);
-    if (response.payload.case !== "bridgeDeliveryAckResponse" || !response.payload.value.accepted) throw new Error(`prompt completion acknowledgement rejected: ${boundedPublic(String(response.payload.value?.reason || ""), 80)}`);
+    const current = requiredBinding(binding);
+    const ack = buildIdentityDeliveryAck(current.agentId, { runtimeId: current.runtimeId, incarnation: current.incarnation, piSessionId }, pending.delivery, deliveredSuccessfully, reason, encoded);
+    let response: Envelope;
+    try {
+      response = await requiredClient(client).request("bridgeDeliveryAckRequest", BridgeDeliveryAckRequestSchema, ack, pending.fence);
+    } catch (error) {
+      logBridgeDiagnostic(`prompt ack · agent=${boundedPublic(current.agentId, 48)} · sequence=${pending.delivery.sequence} · outcome=error · class=${bridgeErrorClass(error)}`, true);
+      throw error;
+    }
+    if (response.payload.case !== "bridgeDeliveryAckResponse" || !response.payload.value.accepted) {
+      const rejection = `prompt completion acknowledgement rejected: ${boundedPublic(String(response.payload.value?.reason || ""), 80)}`;
+      logBridgeDiagnostic(`prompt ack · agent=${boundedPublic(current.agentId, 48)} · sequence=${pending.delivery.sequence} · outcome=rejected · class=${bridgeErrorClass(new Error(rejection))}`, true);
+      // The daemon no longer retains the delivery (deadline retirement or
+      // committed terminal state): the acknowledgement can never succeed, so
+      // abandon the task instead of retrying it forever behind the reconnect
+      // loop and blocking every later prompt.
+      if (/not retained/.test(String(response.payload.value?.reason || ""))) prompts.abandon("delivery is not retained");
+      throw new Error(rejection);
+    }
+    logBridgeDiagnostic(`prompt ack · agent=${boundedPublic(current.agentId, 48)} · sequence=${pending.delivery.sequence} · outcome=accepted · delivered=${deliveredSuccessfully}`);
     if (deliveredSuccessfully) deliveredPrompt(pending.delivery.dedupeId, pending.delivery.sequence);
-  });
+  }, (event) => logPromptLifecycle(event));
 
   const list = async () => {
     const response = await requiredClient(client).request("listAgentsRequest", ListAgentsRequestSchema, {});
@@ -308,11 +331,19 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
   });
 
   pi.on("agent_start", async () => { await lifecycle(BridgeLifecycleRequest_Event.AGENT_START); });
+  // agent_end only records the finished run's messages: the answer is
+  // correlated when the session settles, so a run that started before the
+  // prompt was injected can never be mistaken for the prompt's answer and a
+  // queued prompt turn can never be dropped by an earlier agent_end.
   pi.on("agent_end", async (event) => {
-    try { await prompts.agentEnd(event.messages as unknown[]); }
+    try { prompts.agentEnd(event.messages as unknown[]); }
     catch (error) { if (extensionContext) reportBridgeDegraded(extensionContext, error); }
   });
-  pi.on("agent_settled", async () => { await lifecycle(BridgeLifecycleRequest_Event.AGENT_SETTLED); });
+  pi.on("agent_settled", async () => {
+    try { await prompts.settled(); }
+    catch (error) { if (extensionContext) reportBridgeDegraded(extensionContext, error); }
+    await lifecycle(BridgeLifecycleRequest_Event.AGENT_SETTLED);
+  });
 
   pi.on("session_shutdown", async (_event, ctx) => {
     bridgeShuttingDown = true;
@@ -375,6 +406,12 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
 
   async function poll(ctx: ExtensionContext) {
     const current = requiredBinding(binding);
+    // Every poll cycle also bounds a stalled prompt task: a task whose turn
+    // never started (unobservable injection failure) or never settled is
+    // terminally failed at its own delivery deadline instead of wedging the
+    // coordinator and every later prompt behind it.
+    try { await prompts.expireStalled(Date.now()); }
+    catch (error) { reportBridgeDegraded(ctx, error); }
     const targets = new Set([current.agentId, ...subscriptions]);
     for (const target of targets) {
       const fence = requiredFence(fences.get(target));
@@ -402,7 +439,16 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
     const missingIdentity = missingAckIdentity(delivery);
     if (missingIdentity) { reportBridgeDegraded(ctx, new Error(missingIdentity)); return; }
     const duplicate = delivered.has(delivery.dedupeId);
-    if (delivery.kind === 4) { if (!duplicate) await prompts.deliver({ ...delivery, boundedPayload: new TextEncoder().encode(incomingRequestText(delivery)) }, fence); return; }
+    if (delivery.kind === 4) {
+      if (!duplicate) { await prompts.deliver({ ...delivery, boundedPayload: new TextEncoder().encode(incomingRequestText(delivery)) }, fence); return; }
+      // A prompt this runtime already delivered and acknowledged may still be
+      // replayed when the daemon lost its cursor (reconnect replay, durable
+      // reload). Silently skipping it wedged the daemon queue forever with no
+      // error on either side; re-acknowledge idempotently so the cursor
+      // advances, without re-running the prompt a second time.
+      await acknowledgeReplayedPrompt(delivery, fence);
+      return;
+    }
     if (!duplicate) {
       if (delivery.kind === 1) appendCommunicationView(incomingNote(communicationKey(delivery), delivery.source, delivery.boundedPayload));
       else appendCommunicationView(incomingControl(communicationKey(delivery), delivery.source, deliveryKindName(delivery.kind)));
@@ -432,6 +478,18 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
     appendDeliveryMarker(dedupeId, sequence, 4);
   }
 
+  async function acknowledgeReplayedPrompt(delivery: any, fence: TargetFence) {
+    const current = requiredBinding(binding);
+    const ack = buildIdentityDeliveryAck(current.agentId, { runtimeId: current.runtimeId, incarnation: current.incarnation, piSessionId }, delivery, true, "prompt replayed after successful acknowledgement");
+    const response = await requiredClient(client).request("bridgeDeliveryAckRequest", BridgeDeliveryAckRequestSchema, ack, fence);
+    if (response.payload.case !== "bridgeDeliveryAckResponse" || !response.payload.value.accepted) {
+      logBridgeDiagnostic(`prompt ack · agent=${boundedPublic(current.agentId, 48)} · sequence=${delivery.sequence} · outcome=rejected · class=${bridgeErrorClass(new Error(String(response.payload.value?.reason || "")))}`, true);
+      throw new Error(`delivery acknowledgement rejected: ${boundedPublic(String(response.payload.value?.reason || ""), 80)}`);
+    }
+    logBridgeDiagnostic(`prompt ack · agent=${boundedPublic(current.agentId, 48)} · sequence=${delivery.sequence} · outcome=accepted · replayed=true`);
+    lastAckedSequence = maxBigInt(lastAckedSequence, delivery.sequence);
+  }
+
   function appendDeliveryMarker(dedupeId: string, sequence: bigint, kind?: number | string) {
     pi.appendEntry<DeliveryMarker>("hosted-pi-delivery-marker", { dedupeId, sequence: sequence.toString(), kind });
   }
@@ -446,6 +504,19 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
   function appendCommunicationView(view: CommunicationView) {
     const line = legacyCommunicationLine(view);
     if (timeline.add({ key: view.key, line })) pi.appendEntry<CommunicationEntry>("hosted-pi-communication", { key: view.key, line, view });
+  }
+
+  let diagnosticCounter = 0;
+  // logBridgeDiagnostic records one bounded, payload-free diagnostic card in
+  // the pane timeline and the session journal: identifiers, sequences,
+  // outcomes, and coarse error classes only. Bridge-side acknowledgement
+  // failures must be visible here instead of dying silently.
+  function logBridgeDiagnostic(line: string, failed = false) {
+    appendCommunicationView(bridgeDiagnostic({ key: `diag\0${++diagnosticCounter}`, line: boundedPublic(line, 200), failed }));
+  }
+
+  function logPromptLifecycle(event: PromptTaskLifecycleEvent) {
+    logBridgeDiagnostic(`prompt ${event.stage} · sequence=${event.sequence} · dedupeId=${boundedPublic(event.dedupeId, 48)} · ${boundedPublic(event.detail, 120)}`, event.stage === "failed" || event.stage === "expired");
   }
 
   function reconnect(ctx: ExtensionContext) {

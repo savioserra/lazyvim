@@ -227,14 +227,47 @@ export function executeTypedDelivery(ctx: { abort(): void; shutdown(): void; ui:
 }
 
 export type PromptDelivery = { dedupeId: string; boundedPayload: Uint8Array; hopLimit: number; deadlineUnixMillis: bigint; chainId: string; sequence: bigint; kind: number; sourceScope?: string; completionKey?: string };
+
+export type PromptTaskStage = "injected" | "completed" | "failed" | "expired";
+export type PromptTaskLifecycleEvent = { stage: PromptTaskStage; sequence: bigint; dedupeId: string; detail: string };
+
+// bridgeErrorClass reduces any bridge failure to a coarse, bounded error class
+// for diagnostic surfaces. It never includes message payloads or identifiers
+// beyond the class name itself.
+export function bridgeErrorClass(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/disconnected|websocket|connection closed/i.test(message)) return "transport";
+  if (/deadline expired|timeout/i.test(message)) return "timeout";
+  if (/frame|bound|decode|exceeds/i.test(message)) return "framing";
+  if (/correlation/i.test(message)) return "correlation";
+  if (/rejected/i.test(message)) return "rejected";
+  if (/identity/i.test(message)) return "identity";
+  return "unknown";
+}
+
+// PromptTaskCoordinator owns exactly one daemon prompt task at a time. The
+// prompt answer is correlated from the agent run that consumed the injected
+// user message: agent_end only records the run's messages, because the answer
+// is final only once the session settles (no retry, compaction, or queued
+// continuation will still run). Acknowledging on the first agent_end could
+// capture an unrelated run's answer or drop the queued prompt turn entirely.
+// The injected message uses the followUp delivery mode so a prompt arriving
+// while the agent is streaming queues cleanly instead of failing inside the
+// Pi runtime, where the rejection is unobservable from the extension.
 export class PromptTaskCoordinator<TFence> {
   private pending?: { delivery: PromptDelivery; fence: TFence };
   private outcome?: { delivered: boolean; answer: string; reason: string };
-  private readonly sendUserMessage: (text: string) => void;
+  private lastRunMessages: unknown[] = [];
+  private readonly sendUserMessage: (text: string) => void | Promise<void>;
   private readonly acknowledge: (pending: { delivery: PromptDelivery; fence: TFence }, delivered: boolean, answer: string, reason: string) => Promise<void>;
-  constructor(sendUserMessage: (text: string) => void, acknowledge: (pending: { delivery: PromptDelivery; fence: TFence }, delivered: boolean, answer: string, reason: string) => Promise<void>) { this.sendUserMessage=sendUserMessage;this.acknowledge=acknowledge; }
+  private readonly lifecycle?: (event: PromptTaskLifecycleEvent) => void;
+  constructor(sendUserMessage: (text: string) => void | Promise<void>, acknowledge: (pending: { delivery: PromptDelivery; fence: TFence }, delivered: boolean, answer: string, reason: string) => Promise<void>, lifecycle?: (event: PromptTaskLifecycleEvent) => void) { this.sendUserMessage=sendUserMessage;this.acknowledge=acknowledge;this.lifecycle=lifecycle; }
   active() { return this.pending; }
   async retryCompletion() { if (this.pending && this.outcome) await this.flush(); }
+  // abandon drops a task whose delivery the daemon no longer retains: retrying
+  // such an acknowledgement can never succeed, so retaining it would wedge the
+  // coordinator and every later prompt behind it.
+  abandon(reason: string): boolean { if (!this.pending) return false; this.pending = undefined; this.outcome = undefined; this.lastRunMessages = []; void reason; return true; }
   async deliver(delivery: PromptDelivery, fence: TFence) {
     if (this.pending) {
       if (this.pending.delivery.dedupeId !== delivery.dedupeId) throw new Error("a different prompt task is already active");
@@ -244,13 +277,35 @@ export class PromptTaskCoordinator<TFence> {
     const text = new TextDecoder("utf-8", { fatal: true }).decode(delivery.boundedPayload);
     if (!text) throw new Error("prompt is empty");
     this.pending = { delivery, fence };
-    try { this.sendUserMessage(text); }
-    catch (error) { await this.finish(false, "", error instanceof Error ? error.message : "prompt injection failed"); }
+    this.lastRunMessages = [];
+    try {
+      await this.sendUserMessage(text);
+      this.lifecycle?.({ stage: "injected", sequence: delivery.sequence, dedupeId: delivery.dedupeId, detail: "prompt injected into the hosted Pi runtime" });
+    }
+    catch (error) {
+      const reason = error instanceof Error ? error.message : "prompt injection failed";
+      await this.finish(false, "", reason);
+    }
   }
-  async agentEnd(messages: unknown[]) { if (this.pending) { const answer=boundedAssistantAnswer(messages);await this.finish(Boolean(answer),answer,answer?"":"prompt run ended without an assistant answer"); } }
+  agentEnd(messages: unknown[]) { if (this.pending && !this.outcome) this.lastRunMessages = messages ?? []; }
+  async settled() {
+    if (!this.pending || this.outcome) return;
+    const answer = boundedAssistantAnswer(this.lastRunMessages);
+    await this.finish(Boolean(answer), answer, answer ? "" : "prompt run ended without an assistant answer");
+  }
+  // expireStalled terminally fails a task whose deadline passed before its run
+  // completed, so a prompt whose turn never started cannot wedge the
+  // coordinator forever. The daemon retires the same deadline durably.
+  async expireStalled(now: number): Promise<boolean> {
+    if (!this.pending || this.outcome) return false;
+    if (BigInt(now) <= this.pending.delivery.deadlineUnixMillis) return false;
+    this.lifecycle?.({ stage: "expired", sequence: this.pending.delivery.sequence, dedupeId: this.pending.delivery.dedupeId, detail: "prompt deadline expired before completion" });
+    await this.finish(false, "", "prompt deadline expired before completion");
+    return true;
+  }
   async shutdown() { if (this.pending) await this.finish(false,"","hosted Pi session shut down before prompt completion"); }
-  private async finish(delivered:boolean,answer:string,reason:string){if(!this.pending)return;this.outcome={delivered,answer,reason};await this.flush();}
-  private async flush(){const pending=this.pending,outcome=this.outcome;if(!pending||!outcome)return;await this.acknowledge(pending,outcome.delivered,outcome.answer,outcome.reason);if(this.pending===pending){this.pending=undefined;this.outcome=undefined;}}
+  private async finish(delivered:boolean,answer:string,reason:string){if(!this.pending)return;this.outcome={delivered,answer,reason};this.lifecycle?.({stage:delivered?"completed":"failed",sequence:this.pending.delivery.sequence,dedupeId:this.pending.delivery.dedupeId,detail:reason?`${reason} (class ${bridgeErrorClass(reason)})`:"assistant answer correlated"});await this.flush();}
+  private async flush(){const pending=this.pending,outcome=this.outcome;if(!pending||!outcome)return;await this.acknowledge(pending,outcome.delivered,outcome.answer,outcome.reason);if(this.pending===pending){this.pending=undefined;this.outcome=undefined;this.lastRunMessages=[];}}
 }
 export function boundedAssistantAnswer(messages: unknown[]): string {
   for (let index=messages.length-1;index>=0;index--){const message=messages[index] as {role?:string;content?:unknown};if(message?.role!=="assistant")continue;let text="";if(typeof message.content==="string")text=message.content;else if(Array.isArray(message.content))text=message.content.filter((part):part is {type:string;text:string}=>Boolean(part)&&typeof part==="object"&&(part as any).type==="text"&&typeof (part as any).text==="string").map((part)=>part.text).join("\n");text=text.trim();while(text&&new TextEncoder().encode(text).byteLength>16*1024)text=text.slice(0,Math.floor(text.length*0.9));return text;}return "";

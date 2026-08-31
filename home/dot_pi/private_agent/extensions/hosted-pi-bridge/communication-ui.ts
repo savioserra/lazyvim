@@ -80,6 +80,14 @@ export function incomingRequestText(delivery: { source?: CommunicationPeer; boun
   return `**${peer.displayName}${role} asked you**\n\n${safePreview(delivery.boundedPayload, 16 * 1024)}`;
 }
 
+// bridgeDiagnostic is the bounded, payload-free diagnostic card for the
+// bridge's own lifecycle surfaces (prompt finish path, acknowledgement
+// outcomes, replay handling). It carries only identifiers, sequences,
+// outcomes, and coarse error classes.
+export function bridgeDiagnostic(input: { key: string; line: string; failed?: boolean }): CommunicationView {
+  return { key: input.key, direction: "outgoing", intent: input.failed ? "failure" : "control", state: input.failed ? "failed" : "delivered", peerDisplayName: "Hosted bridge", peerRole: "bridge", body: safePreview(input.line, 200) };
+}
+
 export function communicationTitle(view: CommunicationView): string {
   const role = view.peerRole ? ` · ${view.peerRole}` : "";
   if (view.intent === "failure") return `Couldn’t reach ${view.peerDisplayName}${role}`;

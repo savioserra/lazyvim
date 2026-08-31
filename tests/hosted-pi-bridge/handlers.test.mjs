@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildActorControl, buildActorMessage, buildIdentityDeliveryAck, communicationKey, communicationLine, CommunicationTimeline, completeHostedEnvironment, ExactMutationSequencer, PromptTaskCoordinator, deliveryAction, deliveryKindLabel, destroyOnFramingFailure, drainPages, executeTypedDelivery, invokeTypedDeliveryForAck, missingAckIdentity, parseTargetMessage, registerHostedHandlers, requireExplicitModelTarget } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/handlers.ts";
-import { incomingNote, incomingRequestText, outgoingExchange, renderCommunicationCard, compactToolCall, compactToolResult, modelResultContent } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/communication-ui.ts";
+import { buildActorControl, buildActorMessage, buildIdentityDeliveryAck, bridgeErrorClass, communicationKey, communicationLine, CommunicationTimeline, completeHostedEnvironment, ExactMutationSequencer, PromptTaskCoordinator, deliveryAction, deliveryKindLabel, destroyOnFramingFailure, drainPages, executeTypedDelivery, invokeTypedDeliveryForAck, missingAckIdentity, parseTargetMessage, registerHostedHandlers, requireExplicitModelTarget } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/handlers.ts";
+import { bridgeDiagnostic, incomingNote, incomingRequestText, outgoingExchange, renderCommunicationCard, compactToolCall, compactToolResult, modelResultContent } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/communication-ui.ts";
 import { actorMessageModelResult, connectBridgeWithRetry, consumeReconnect, degradedBridgeStatus } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/index.ts";
 
 const complete = { WS_SUBAGENTS_ENDPOINT: "ws://127.0.0.1:17213/actors", WS_SUBAGENTS_CREDENTIAL_FILE: "/state/credential", WS_SUBAGENTS_SESSION_ID: "session", WS_SUBAGENTS_GENERATION_ID: "generation", WS_SUBAGENTS_CALLER: "hosted:agent", WS_SUBAGENTS_AGENT_ID: "agent", WS_SUBAGENTS_RUNTIME_ID: "runtime", WS_SUBAGENTS_INCARNATION: "1" };
@@ -204,6 +204,19 @@ test("actor_tell model results expose exact stable correlation only", () => {
   assert.throws(() => actorMessageModelResult({ requestId: "bad\nrequest", value: { dedupeId: "dedupe", chainId: "chain", sourceMutationSequence: 1n } }, { boundedResult: new Uint8Array(), kind: "tell" }), /requestId/);
 });
 
+test("bridge diagnostics render bounded payload-free lifecycle cards", () => {
+  const ok = bridgeDiagnostic({ key: "diag\0test-ok", line: "prompt ack · agent=agent-7 · sequence=12 · outcome=accepted · delivered=true" });
+  assert.equal(ok.direction, "outgoing");
+  assert.equal(ok.intent, "control");
+  assert.equal(ok.state, "delivered");
+  assert.match(ok.body, /sequence=12 · outcome=accepted/);
+  const failed = bridgeDiagnostic({ key: "diag\0test-failed", line: `prompt ack · agent=${"x".repeat(400)} · sequence=13 · outcome=error · class=transport`, failed: true });
+  assert.equal(failed.intent, "failure");
+  assert.equal(failed.state, "failed");
+  assert.ok(failed.body.length <= 200, `diagnostic body must stay bounded: ${failed.body.length}`);
+  assert.doesNotMatch(failed.body, /[\r\n\t\x00]/);
+});
+
 test("actor tool rendering is compact and does not expose raw protocol fields", () => {
   assert.equal(compactToolCall("actor_tell", { target: "beta", message: "Reply exactly BODY_ASK_CONTENT_OK" }), "Tell beta: Reply exactly BODY_ASK_CONTENT_OK");
   assert.equal(compactToolResult("actor_tell", { accepted: true, completed: false, sessionId: "raw-session", handle: "raw-handle" }), "Request accepted");
@@ -264,16 +277,83 @@ test("acknowledgement rejection surfaces as a bounded visible degradation reason
   assert.match(degradedBridgeStatus("plain failure"), /hosted bridge degraded · plain failure$/);
 });
 
-test("prompt delivery uses sendUserMessage then agent_end returns one bounded answer", async () => {
-  const sent=[];const acknowledgements=[];
-  const coordinator=new PromptTaskCoordinator((text)=>sent.push(text),async(pending,delivered,answer,reason)=>acknowledgements.push({pending,delivered,answer,reason}));
+test("prompt delivery injects followUp, correlates the settled answer, and ignores duplicate runs", async () => {
+  const sent=[];const acknowledgements=[];const events=[];
+  const coordinator=new PromptTaskCoordinator((text)=>sent.push(text),async(pending,delivered,answer,reason)=>acknowledgements.push({pending,delivered,answer,reason}),(event)=>events.push(event));
   const delivery={dedupeId:"d1",boundedPayload:new TextEncoder().encode("implement next task"),hopLimit:7,deadlineUnixMillis:BigInt(Date.now()+1000),chainId:"chain",sequence:1n};
   await coordinator.deliver(delivery,{handle:"h",fence:1n});
   assert.deepEqual(sent,["implement next task"]);
-  await coordinator.agentEnd([{role:"assistant",content:[{type:"text",text:"completed answer"}]}]);
-  assert.equal(acknowledgements.length,1);assert.equal(acknowledgements[0].delivered,true);assert.equal(acknowledgements[0].answer,"completed answer");assert.equal(coordinator.active(),undefined);
+  // An agent_end from a run that never included the prompt carries no
+  // correlated answer and must not acknowledge.
+  await coordinator.agentEnd([{role:"user",content:"unrelated"}]);
+  await coordinator.settled();
+  assert.equal(acknowledgements.length,1,"run without an assistant answer acknowledged exactly once as failed");
+  assert.equal(acknowledgements[0].delivered,false);
+  assert.match(acknowledgements[0].reason,/without an assistant answer/);
+  assert.equal(coordinator.active(),undefined);
   await coordinator.agentEnd([{role:"assistant",content:"duplicate"}]);
+  await coordinator.settled();
   assert.equal(acknowledgements.length,1,"duplicate agent_end acknowledged twice");
+  assert.deepEqual(events.map((event)=>event.stage),["injected","failed"]);
+  for (const event of events) { assert.equal(typeof event.sequence,"bigint"); assert.ok(!/[\r\n\t]/.test(event.detail)); }
+});
+
+test("prompt completion correlates the answer only when the session settles", async () => {
+  const acknowledgements=[];
+  const coordinator=new PromptTaskCoordinator(async()=>{},async(_pending,delivered,answer,reason)=>acknowledgements.push({delivered,answer,reason}));
+  const delivery={dedupeId:"d-answer",boundedPayload:new TextEncoder().encode("task"),hopLimit:4,deadlineUnixMillis:BigInt(Date.now()+1000),chainId:"chain",sequence:5n};
+  await coordinator.deliver(delivery,{handle:"h",fence:5n});
+  await coordinator.agentEnd([{role:"assistant",content:[{type:"text",text:"partial"}]}]);
+  assert.equal(acknowledgements.length,0,"agent_end alone must never acknowledge");
+  await coordinator.settled();
+  assert.equal(acknowledgements.length,1);assert.equal(acknowledgements[0].delivered,true);assert.equal(acknowledgements[0].answer,"partial");
+  assert.equal(coordinator.active(),undefined);
+});
+
+test("unobservable prompt injection failures still terminally acknowledge", async () => {
+  const acknowledgements=[];const events=[];
+  const coordinator=new PromptTaskCoordinator(()=>{throw new Error("Extension runtime is stale");},async(_pending,delivered,answer,reason)=>acknowledgements.push({delivered,answer,reason}),(event)=>events.push(event));
+  const delivery={dedupeId:"d-inject",boundedPayload:new TextEncoder().encode("task"),hopLimit:4,deadlineUnixMillis:BigInt(Date.now()+1000),chainId:"chain",sequence:6n};
+  await coordinator.deliver(delivery,{handle:"h",fence:6n});
+  assert.equal(acknowledgements.length,1);
+  assert.equal(acknowledgements[0].delivered,false);
+  assert.match(acknowledgements[0].reason,/stale/);
+  await coordinator.settled();
+  assert.equal(acknowledgements.length,1);
+  assert.equal(coordinator.active(),undefined);
+  assert.deepEqual(events.map((event)=>event.stage),["failed"]);
+});
+
+test("stalled prompts expire at their delivery deadline and abandoned tasks free the coordinator", async () => {
+  const acknowledgements=[];
+  const coordinator=new PromptTaskCoordinator(async()=>{},async(_pending,delivered,_answer,reason)=>acknowledgements.push({delivered,reason}));
+  const expired={dedupeId:"d-expired",boundedPayload:new TextEncoder().encode("task"),hopLimit:4,deadlineUnixMillis:BigInt(Date.now()-1),chainId:"chain",sequence:7n};
+  await assert.rejects(()=>coordinator.deliver(expired,{handle:"h",fence:7n}),/deadline expired/);
+  const stalled={dedupeId:"d-stalled",boundedPayload:new TextEncoder().encode("task"),hopLimit:4,deadlineUnixMillis:BigInt(Date.now()+50),chainId:"chain",sequence:8n};
+  await coordinator.deliver(stalled,{handle:"h",fence:8n});
+  assert.equal(await coordinator.expireStalled(Date.now()),false);
+  await new Promise((resolve)=>setTimeout(resolve,60));
+  assert.equal(await coordinator.expireStalled(Date.now()),true);
+  assert.equal(acknowledgements.length,1);assert.equal(acknowledgements[0].delivered,false);assert.match(acknowledgements[0].reason,/deadline expired before completion/);
+  assert.equal(coordinator.active(),undefined);
+  await coordinator.deliver({dedupeId:"d-next",boundedPayload:new TextEncoder().encode("next"),hopLimit:4,deadlineUnixMillis:BigInt(Date.now()+1000),chainId:"chain",sequence:9n},{handle:"h",fence:9n});
+  assert.equal(coordinator.abandon("delivery is not retained"),true);
+  assert.equal(coordinator.active(),undefined);
+  assert.equal(coordinator.abandon("again"),false);
+  await coordinator.settled();
+  assert.equal(acknowledgements.length,1,"abandoned task never acknowledges");
+});
+
+test("bridge error classes are coarse, bounded, and payload-free", () => {
+  assert.equal(bridgeErrorClass(new Error("hosted bridge is disconnected")),"transport");
+  assert.equal(bridgeErrorClass(new Error("daemon websocket error")),"transport");
+  assert.equal(bridgeErrorClass(new Error("daemon response deadline expired")),"timeout");
+  assert.equal(bridgeErrorClass(new Error("daemon frame bound violated")),"framing");
+  assert.equal(bridgeErrorClass(new Error("hosted bridge response correlation mismatch")),"correlation");
+  assert.equal(bridgeErrorClass(new Error("prompt completion acknowledgement rejected: identity")),"rejected");
+  assert.equal(bridgeErrorClass(new Error("delivery acknowledgement identity is missing")),"identity");
+  assert.equal(bridgeErrorClass(new Error("something else")),"unknown");
+  assert.equal(bridgeErrorClass("plain"),"unknown");
 });
 
 test("prompt completion survives acknowledgement response loss and reconnect", async () => {
@@ -281,7 +361,8 @@ test("prompt completion survives acknowledgement response loss and reconnect", a
   const coordinator=new PromptTaskCoordinator((text)=>sent.push(text),async(_pending,_delivered,answer)=>{attempts++;assert.equal(answer,"durable answer");if(attempts===1)throw new Error("response lost");});
   const delivery={dedupeId:"d2",boundedPayload:new TextEncoder().encode("task"),hopLimit:4,deadlineUnixMillis:BigInt(Date.now()+1000),chainId:"chain-2",sequence:2n};
   await coordinator.deliver(delivery,{handle:"h",fence:2n});
-  await assert.rejects(()=>coordinator.agentEnd([{role:"assistant",content:"durable answer"}]),/response lost/);
+  await coordinator.agentEnd([{role:"assistant",content:"durable answer"}]);
+  await assert.rejects(()=>coordinator.settled(),/response lost/);
   assert.ok(coordinator.active(),"response loss discarded prompt completion");
   await coordinator.retryCompletion();
   assert.equal(attempts,2);assert.equal(coordinator.active(),undefined);assert.deepEqual(sent,["task"]);
