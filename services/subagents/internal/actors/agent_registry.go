@@ -356,8 +356,7 @@ func (a *AgentRegistryActor) register(ctx *actor.ReceiveContext, message *applic
 	// Actor names must be deterministic per logical agent id so refs recorded in
 	// durable outbox/correlation state survive re-registration; random per-
 	// registration names orphaned every retained ref after a wipe or re-create.
-	digest := sha256.Sum256([]byte(message.AgentID))
-	name := "agent-" + hex.EncodeToString(digest[:8])
+	name := stableAgentActorName(message.AgentID)
 	pid, spawnErr := ctx.ActorSystem().Spawn(context.WithoutCancel(ctx.Context()), name, NewAgentActor(message, ctx.Self()), actor.WithMailbox(actor.NewNonBlockingBoundedMailbox(1024)), actor.WithPassivationStrategy(passivation.NewLongLivedStrategy()), actor.WithSupervisor(supervisor.NewSupervisor(supervisor.WithAnyErrorDirective(supervisor.RestartDirective))))
 	if spawnErr != nil || pid == nil {
 		return application.RegisterAgentResult{Reason: "agent actor spawn failed"}
@@ -589,9 +588,12 @@ func validRuntimeProjectionAdvance(current, next application.HostedPiRuntimeBind
 	return current.State == application.HostedPiRuntimeDegraded && next.State == application.HostedPiRuntimeStarting && next.Incarnation == current.Incarnation+1
 }
 
+// hostedRuntimeActorName is lifecycle-internal and runtime-registration-scoped. Durable
+// task/credit/completion routing addresses stableAgentActorName(agentID); it
+// must never retain or resolve this child name as the communication endpoint.
 func hostedRuntimeActorName(message *application.RegisterAgent) string {
 	digest := sha256.Sum256([]byte(message.AgentID + "\x00" + message.HostedPiRuntime.RuntimeID + "\x00" + message.LaunchSpec.PiSessionName))
-	return "hosted-pi-runtime-" + hex.EncodeToString(digest[:8])
+	return hostedRuntimeActorPrefix + hex.EncodeToString(digest[:8])
 }
 
 func copyRegistrationRecipe(message *application.RegisterAgent) application.RegisterAgent {

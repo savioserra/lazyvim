@@ -38,6 +38,7 @@ const (
 	outboxBaseRetryDelay     = 50 * time.Millisecond
 	outboxMaxRetryDelay      = 2 * time.Second
 	taskCreditLease          = 5 * time.Second
+	hostedRuntimeActorPrefix = "hosted-pi-runtime-"
 	// taskCreditRequestTimeout bounds the single-flight wait for a credit
 	// grant: one request per outbox item is in flight for at most this window,
 	// after which a lost request or grant may be re-requested. It must stay
@@ -1780,22 +1781,28 @@ func actorRefFromPID(agentID string, pid *actor.PID) application.DurableActorRef
 	return ref
 }
 
-// actorRefMatchesSender enforces full address equality against the reserved
-// ActorRef: canonical address, host, port, and name must all match. A sender
-// that merely reuses the reserved address string while living at a different
-// node or path is rejected fail-closed.
+// actorRefMatchesSender binds logical agent refs to their owning AgentActor.
+// Hosted runtime children are incarnation-scoped and must never authenticate a
+// credit/task/completion origin: a stale durable child path is accepted only
+// when the reply comes from the stable owner name on the recorded actor node.
+// Anonymous and non-runtime legacy refs retain exact full-address matching.
 func actorRefMatchesSender(ref *application.DurableActorRef, sender *actor.PID) bool {
 	if ref == nil || sender == nil || ref.Address == "" || ref.Host == "" || ref.Name == "" {
 		return false
 	}
-	if sender.ID() != ref.Address {
-		return false
-	}
 	path := sender.Path()
-	if path == nil {
+	if path == nil || path.Host() != ref.Host || path.Port() != ref.Port {
 		return false
 	}
-	return path.Host() == ref.Host && path.Port() == ref.Port && path.Name() == ref.Name
+	if ref.AgentID != "" {
+		if path.Name() == stableAgentActorName(ref.AgentID) {
+			return true
+		}
+		if strings.HasPrefix(ref.Name, hostedRuntimeActorPrefix) {
+			return false
+		}
+	}
+	return sender.ID() == ref.Address && path.Name() == ref.Name
 }
 
 // cachedActorRef returns the live PID for a previously resolved durable
@@ -1840,35 +1847,51 @@ func lookupActorRef(system actor.ActorSystem, ref application.DurableActorRef) *
 	}
 	resolveCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	var pid *actor.PID
-	// Port 0 only occurs for refs materialized on a daemon without remoting
-	// enabled: they are local by construction regardless of the recorded host
-	// spelling (loopback literal vs system hostname). Refs from remoting nodes
-	// always carry a real actor-plane port.
-	if ref.Port == 0 || (ref.Host == system.Host() && ref.Port == system.Port()) {
-		if resolved, err := system.ActorOf(resolveCtx, ref.Name); err == nil {
-			pid = resolved
+
+	// Durable task refs identify a logical agent, not its incarnation-scoped
+	// hosted runtime child. Resolve the stable owner first on both local and
+	// remote nodes. A recorded hosted-pi-runtime-* path is migration evidence
+	// only and is never a delivery fallback; this prevents credit requests from
+	// cycling forever against a dead runtime name after a bounce.
+	actorName := ref.Name
+	if ref.AgentID != "" {
+		actorName = stableAgentActorName(ref.AgentID)
+	}
+	lookup := func(name string) *actor.PID {
+		// Port 0 only occurs for refs materialized on a daemon without remoting
+		// enabled: they are local by construction regardless of the recorded host
+		// spelling (loopback literal vs system hostname). Refs from remoting nodes
+		// always carry a real actor-plane port.
+		if ref.Port == 0 || (ref.Host == system.Host() && ref.Port == system.Port()) {
+			resolved, err := system.ActorOf(resolveCtx, name)
+			if err == nil {
+				return resolved
+			}
+			return nil
 		}
-		// Stale refs recorded before deterministic naming carry a retired
-		// per-registration name; fall back to the stable name derived from the
-		// logical agent id so retained outbox/correlation state still resolves.
-		if pid == nil && ref.AgentID != "" {
-			stable := "agent-" + hex.EncodeToString(stableAgentNameDigest(ref.AgentID))
-			if resolved, err := system.ActorOf(resolveCtx, stable); err == nil {
-				pid = resolved
+		if noSender := system.NoSender(); noSender != nil {
+			resolved, err := noSender.RemoteLookup(resolveCtx, ref.Host, ref.Port, name)
+			if err == nil {
+				return resolved
 			}
 		}
-	} else if noSender := system.NoSender(); noSender != nil {
-		if resolved, err := noSender.RemoteLookup(resolveCtx, ref.Host, ref.Port, ref.Name); err == nil {
-			pid = resolved
-		}
+		return nil
 	}
-	return pid
+	if pid := lookup(actorName); pid != nil {
+		return pid
+	}
+	// Preserve exact routing for anonymous refs and synthetic/legacy non-runtime
+	// actors. Logical refs that recorded a runtime child fail closed instead of
+	// delivering lifecycle traffic to that child.
+	if actorName != ref.Name && !strings.HasPrefix(ref.Name, hostedRuntimeActorPrefix) {
+		return lookup(ref.Name)
+	}
+	return nil
 }
 
-func stableAgentNameDigest(agentID string) []byte {
+func stableAgentActorName(agentID string) string {
 	digest := sha256.Sum256([]byte(agentID))
-	return digest[:8]
+	return "agent-" + hex.EncodeToString(digest[:8])
 }
 
 // actorRefResolved is the async continuation of resolveActorRefAsync: cache
@@ -1913,6 +1936,13 @@ func (a *AgentActor) actorRefResolved(ctx *actor.ReceiveContext, message *actorR
 
 func (a *AgentActor) requestOutboxCredit(ctx *actor.ReceiveContext, target *actor.PID, item application.DurableActorTaskOutboxItem) {
 	if target == nil || time.Now().After(item.Deadline) {
+		return
+	}
+	// A caller may carry a retained runtime-child PID from an older admission.
+	// Never send task protocol messages to lifecycle children: resolve the
+	// logical owner and let the next bounded tick use the cached AgentActor.
+	if item.TargetRef.AgentID != "" && strings.HasPrefix(target.Name(), hostedRuntimeActorPrefix) {
+		a.resolveActorRefAsync(ctx, item.TargetRef)
 		return
 	}
 	// Mark the single in-flight request before sending: every retry tick that

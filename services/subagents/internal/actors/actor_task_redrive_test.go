@@ -2,6 +2,8 @@ package actors_test
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"testing"
 	"time"
 
@@ -65,6 +67,11 @@ func actorRefOf(agentID string, pid *goakt.PID) application.DurableActorRef {
 	}
 	ref.Address = pid.ID()
 	return ref
+}
+
+func stableAgentActorName(agentID string) string {
+	digest := sha256.Sum256([]byte(agentID))
+	return "agent-" + hex.EncodeToString(digest[:8])
 }
 
 // A terminal completion whose cross-actor Tell failed is retained durably and
@@ -253,6 +260,93 @@ func TestOutboxRedriveReRequestsCreditAfterRepeatedLoss(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("replay receipt missing")
 	}
+}
+
+// A durable outbox entry can outlive the hosted runtime PID it was admitted
+// against. Runtime children are incarnation-scoped, so redrive must route by
+// the logical AgentID to the retained owner AgentActor and accept that owner's
+// grant; comparing the grant to the stale child path leaves the item in
+// pending_credit forever even though the replacement bridge is ready.
+func TestOutboxPendingCreditRoutesStaleRuntimeRefThroughReplacementOwner(t *testing.T) {
+	ctx := context.Background()
+	system, err := goakt.NewActorSystem("outbox-runtime-bounce", goakt.WithPubSub(), goakt.WithMessageRetention(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = system.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		stop, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		_ = system.Stop(stop)
+	})
+
+	oldRuntime, err := system.Spawn(ctx, "hosted-pi-runtime-old-incarnation", &inertRuntimeActor{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	staleTarget := actorRefOf("bravo", oldRuntime)
+	if err = oldRuntime.Stop(ctx, oldRuntime); err != nil {
+		t.Fatal(err)
+	}
+
+	binding := application.InactiveHostedPiRuntimeBinding()
+	binding.State, binding.RuntimeID, binding.Incarnation, binding.BridgeReady = application.HostedPiRuntimeReady, "runtime-bravo-new", 2, true
+	targetRegistration := &application.RegisterAgent{AgentID: "bravo", AuthorityBinding: application.AuthorityBinding{Kind: application.AuthorityBindingHostedOwned, HostedRuntimeID: binding.RuntimeID}, HostedPiRuntime: binding, AllowedCapability: []string{"hosted_bridge", "send"}, Retention: "explicit", Recovery: "owned"}
+	target, err := system.Spawn(ctx, stableAgentActorName("bravo"), actors.NewAgentActor(targetRegistration))
+	if err != nil {
+		t.Fatal(err)
+	}
+	newRuntime, err := system.Spawn(ctx, "hosted-pi-runtime-new-incarnation", &inertRuntimeActor{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = system.NoSender().Tell(ctx, target, &application.BindHostedPiRuntimeActor{PID: newRuntime}); err != nil {
+		t.Fatal(err)
+	}
+
+	attachedValue, err := system.NoSender().Ask(ctx, target, &application.AttachAgent{SessionID: "session-bravo", GenerationID: "generation-bravo", Principal: "hosted:bravo", AgentID: "bravo", RequestedCapabilities: targetRegistration.AllowedCapability, IssuedHandle: "handle-bravo"}, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attached := attachedValue.(*application.AttachResult)
+	if !attached.Completed {
+		t.Fatalf("replacement owner attach failed: %#v", attached)
+	}
+	connectedValue, err := system.NoSender().Ask(ctx, target, &application.BridgeConnect{SessionID: "session-bravo", GenerationID: "generation-bravo", Principal: "hosted:bravo", AgentID: "bravo", Handle: attached.Handle, Fence: attached.Fence, RuntimeID: binding.RuntimeID, Incarnation: binding.Incarnation, PiSessionID: "pi-bravo-new"}, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if connected := connectedValue.(*application.BridgeResult); !connected.Accepted {
+		t.Fatalf("replacement owner bridge connect failed: %#v", connected)
+	}
+
+	payload := []byte("deliver after runtime bounce")
+	digest := sha256.Sum256(payload)
+	item := application.DurableActorTaskOutboxItem{TaskID: "alpha:bounce:chain:1", Target: application.CommunicationPeer{StableID: "bravo"}, TargetRef: staleTarget, RequestID: "request-bounce", DedupeID: "bounce", ChainID: "chain", RequiredCapability: "send", SourceMutationSequence: 1, Deadline: time.Now().Add(time.Minute), HopLimit: 4, Mode: application.BridgeMessageTell, Payload: payload, PayloadDigest: digest, State: "pending_credit"}
+	sourceBinding := application.InactiveHostedPiRuntimeBinding()
+	sourceRecord := application.DurableHostedRecord{SchemaVersion: application.DurableHostedSchemaVersion, AgentID: "alpha", AuthorityBinding: application.AuthorityBinding{Kind: application.AuthorityBindingPhaseOneObservedUpstream, ObservedUpstreamRunID: "alpha"}, Binding: sourceBinding, AgentState: application.DurableAgentState{SourceOutbox: []application.DurableActorTaskOutboxItem{item}}}
+	if _, err = system.Spawn(ctx, stableAgentActorName("alpha"), actors.NewAgentActor(&application.RegisterAgent{AgentID: "alpha", AuthorityBinding: sourceRecord.AuthorityBinding, HostedPiRuntime: sourceBinding, AllowedCapability: []string{"send"}, Retention: "bounded", Recovery: "terminal-reattach", DurableRecord: &sourceRecord})); err != nil {
+		t.Fatal(err)
+	}
+
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		polledValue, askErr := system.NoSender().Ask(ctx, target, &application.PollBridge{SessionID: "session-bravo", GenerationID: "generation-bravo", Principal: "hosted:bravo", Handle: attached.Handle, Fence: attached.Fence, MaxItems: 64}, time.Second)
+		if askErr != nil {
+			t.Fatal(askErr)
+		}
+		deliveries := polledValue.(*application.BridgePollResult).Deliveries
+		if len(deliveries) == 1 {
+			if deliveries[0].SourceAgentID != "alpha" || string(deliveries[0].Payload) != string(payload) {
+				t.Fatalf("replacement owner queued the wrong delivery: %#v", deliveries[0])
+			}
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("pending credit never granted through the replacement owner after runtime bounce")
 }
 
 func TestOutboxRestartRedriveReRequestsCreditAndFailsExpired(t *testing.T) {
