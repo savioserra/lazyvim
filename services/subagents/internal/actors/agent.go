@@ -326,12 +326,22 @@ func (a *AgentActor) Receive(ctx *actor.ReceiveContext) {
 			}
 			capabilities[capability] = struct{}{}
 		}
+		key := generationKey(message.SessionID, message.GenerationID)
+		if current, exists := a.attachments[key]; exists {
+			if current.principal != message.Principal {
+				respondAttach(ctx, message.Result, &application.AttachResult{Reason: "stale agent fence"})
+				return
+			}
+			if capabilitySuperset(current.capabilities, capabilities) {
+				respondAttach(ctx, message.Result, &application.AttachResult{Completed: true, Handle: current.handle, Fence: current.fence})
+				return
+			}
+		}
 		if a.durablePending != nil || a.durableFailed != nil {
 			respondAttach(ctx, message.Result, &application.AttachResult{Reason: "durable persistence is busy"})
 			return
 		}
 		old := a.durableState()
-		key := generationKey(message.SessionID, message.GenerationID)
 		if current, exists := a.attachments[key]; exists {
 			a.pruneRevokedMutationScope(message.SessionID, message.GenerationID, current.principal, current.fence)
 		}
@@ -3496,6 +3506,15 @@ func deliverOperationResult(target chan<- application.OperationResult, result ap
 	case target <- result:
 	default:
 	}
+}
+
+func capabilitySuperset(existing, requested map[string]struct{}) bool {
+	for capability := range requested {
+		if _, ok := existing[capability]; !ok {
+			return false
+		}
+	}
+	return true
 }
 
 func (a *AgentActor) validHandle(sessionID, generationID, principal, handle string, fence uint64, capability string) bool {

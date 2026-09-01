@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-01 23:14'
-updated_date: '2026-09-01 23:37'
+updated_date: '2026-09-01 23:44'
 labels: []
 dependencies: []
 modified_files:
@@ -35,9 +35,7 @@ Hosted Pi runtimes restart with their extension-local ClientMutationSequencer hi
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-1. Audit bridge connect/reconnect protocol and mutation-scope high-water retention for hosted actor messages. 2. Add authenticated authoritative message mutation high-water to BridgeConnectResponse and service/application mapping. 3. Teach hosted-pi-bridge ClientMutationSequencer to adopt server high-water before actor message allocation while preserving immutable replay/concurrent serialization. 4. Add focused daemon/extension tests for fresh process after retained sequence, consecutive/concurrent sends, reconnect replay, daemon restart, and runtime bounce where practical. 5. Run focused/full gates available, update TASK-15, report in pane and attempt actor-tell without commit/push/deploy.
-
-6. Fix hosted-pi-bridge target attachment fences to request minimal per-operation capabilities, cache fences by target plus capability set, and add fresh-process regression for messaging-only agents plus control authorization behavior.
+1. Locate AttachAgent server path and existing actor/service tests.\n2. Add idempotent subset reattach before durable busy/fence rotation: require same generation key and principal, requested capabilities subset of existing; return existing handle/fence without persistence.\n3. Add regressions for durable-busy subset reattach success, wrong principal fail-closed, and broader capability request not silently broadened.\n4. Run targeted actors/service tests and record evidence.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
@@ -50,4 +48,6 @@ Actor-tell evidence: attempted PM report to client:01a04959-c544-7a2a-8533-1031c
 Post-review hardening: accepted immutable replay no longer lowers a scope if reconnect adoption has already observed a higher authoritative high-water. Re-ran hosted-pi-bridge node tests via tsx loader: 35/35 pass; git diff --check remains clean.
 
 Live attach fix: hosted-pi-bridge now requests operation-minimal target fences (tell=observe+send, ask=observe+ask, abort/shutdown=observe+specific control), caches by target plus normalized capability set so messaging fences are not reused for control, and preserves the self bridge fence separately for hosted bridge lifecycle/polling. Added hosted bridge regression for capability-set scoped keys and absence of overbroad control capabilities in actor_tell. Validation: NODE_OPTIONS='--import ./services/subagents/node_modules/tsx/dist/loader.mjs' node --test tests/hosted-pi-bridge/*.mjs (36/36 pass); git diff --check.
+
+Idempotent target reattach fix: AgentActor AttachAgent now checks existing generation attachments before durable-busy/fence rotation. Same generation/principal with existing capabilities covering requested capabilities returns the persisted handle/fence without mutation or persistence; principal mismatch fails closed; broader capability requests continue to normal fenced replacement/busy behavior and do not silently broaden. Added TestAttachAgentIdempotentSubsetReattachBypassesDurableBusy covering restored attachment fence 5, blocked durable persistence, subset reattach success, wrong principal rejection before busy, and broader cap rejection. Validation: cd services/subagents && PATH=/home/shyylol/.local/opt/go/bin:/home/shyylol/.pi/agent/bin:/home/shyylol/.local/opt/nvm/versions/node/v24.19.0/bin:/home/shyylol/.local/bin:/usr/local/bin:/usr/bin:/bin go test -race ./internal/actors ./internal/service; git diff --check. No commit/push/deploy.
 <!-- SECTION:NOTES:END -->

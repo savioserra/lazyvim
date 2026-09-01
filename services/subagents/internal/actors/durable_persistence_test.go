@@ -93,6 +93,74 @@ func TestDurableMutationReceiptWaitsForAsyncFsyncAndReceiveStaysNonblocking(t *t
 	}
 }
 
+func TestAttachAgentIdempotentSubsetReattachBypassesDurableBusy(t *testing.T) {
+	ctx := context.Background()
+	system, err := actor.NewActorSystem("attach-idempotent-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = system.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer system.Stop(ctx)
+	store := &blockingStore{started: make(chan application.DurableHostedRecord, 1), release: make(chan error, 1)}
+	writer, err := system.Spawn(ctx, "writer", &HostedStateWriterActor{Store: store})
+	if err != nil {
+		t.Fatal(err)
+	}
+	binding := application.InactiveHostedPiRuntimeBinding()
+	state := application.DurableAgentState{Fence: 5, Attachments: []application.DurableAttachment{{SessionID: "session", GenerationID: "generation", Principal: "hosted:source", Handle: "persisted-handle", Fence: 5, Capabilities: []string{"ask", "observe", "send"}}}}
+	record := application.DurableHostedRecord{SchemaVersion: application.DurableHostedSchemaVersion, AgentID: "target", Binding: binding, AgentState: state}
+	pid, err := system.Spawn(ctx, "agent", NewAgentActor(&application.RegisterAgent{AgentID: "target", HostedPiRuntime: binding, AllowedCapability: []string{"ask", "control_abort", "observe", "send"}, PersistencePID: writer, DurableRecord: &record}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pendingAttach := make(chan application.AttachResult, 1)
+	if err = system.NoSender().Tell(ctx, pid, &application.AttachAgent{SessionID: "other-session", GenerationID: "other-generation", Principal: "hosted:source", RequestedCapabilities: []string{"observe", "send"}, IssuedHandle: "other-handle", Result: pendingAttach}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-store.started:
+	case <-time.After(time.Second):
+		t.Fatal("attach mutation did not enter pending durable state")
+	}
+
+	value, err := system.NoSender().Ask(ctx, pid, &application.AttachAgent{SessionID: "session", GenerationID: "generation", Principal: "hosted:source", RequestedCapabilities: []string{"observe", "send"}, IssuedHandle: "fresh-handle"}, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attached := value.(*application.AttachResult)
+	if !attached.Completed || attached.Handle != "persisted-handle" || attached.Fence != 5 {
+		t.Fatalf("subset reattach did not return existing fence: %#v", attached)
+	}
+
+	value, err = system.NoSender().Ask(ctx, pid, &application.AttachAgent{SessionID: "session", GenerationID: "generation", Principal: "hosted:other", RequestedCapabilities: []string{"observe", "send"}, IssuedHandle: "wrong-principal"}, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result := value.(*application.AttachResult); result.Completed || result.Reason == "durable persistence is busy" || result.Reason == "" {
+		t.Fatalf("wrong-principal reattach did not fail closed before durable busy: %#v", result)
+	}
+
+	value, err = system.NoSender().Ask(ctx, pid, &application.AttachAgent{SessionID: "session", GenerationID: "generation", Principal: "hosted:source", RequestedCapabilities: []string{"observe", "send", "control_abort"}, IssuedHandle: "broader-handle"}, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result := value.(*application.AttachResult); result.Completed {
+		t.Fatalf("broader capability attach silently reused existing fence: %#v", result)
+	}
+
+	store.release <- nil
+	select {
+	case result := <-pendingAttach:
+		if !result.Completed {
+			t.Fatalf("pending attach rejected after release: %#v", result)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("pending attach result missing after release")
+	}
+}
+
 func TestDurableMutationFailureRestoresDiskBeforeRejectingReceipt(t *testing.T) {
 	ctx := context.Background()
 	system, err := actor.NewActorSystem("durable-rollback-test")
