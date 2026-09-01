@@ -245,7 +245,10 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
     const existing = targetFences.get(target);
     if (existing && capabilitySetIncludes(existing.capabilities, normalized)) return existing.fence;
     const response = await requiredClient(client).request("attachRequest", AttachRequestSchema, { agentId: target, requestedCapabilities: normalized });
-    if (response.payload.case !== "attachResponse" || !response.payload.value.agentHandle) throw new Error("target attach rejected");
+    if (response.payload.case !== "attachResponse" || !response.payload.value.agentHandle) {
+      const reason = response.payload.case === "attachResponse" ? boundedPublic(response.payload.value.reason || "unspecified", 96) : "unexpected response";
+      throw new Error(`target attach rejected · ${reason}`);
+    }
     const fence = { handle: response.payload.value.agentHandle, fence: response.payload.value.fence };
     targetFences.set(target, { fence, capabilities: normalized });
     return fence;
