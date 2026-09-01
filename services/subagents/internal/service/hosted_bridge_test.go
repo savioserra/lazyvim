@@ -277,6 +277,14 @@ func TestDeterministicHostedBridgeGatewayAndClientIndependence(t *testing.T) {
 	if !askReplay.Accepted || !askReplay.Completed {
 		t.Fatalf("completed ASK exact retry did not return immediately: %#v", askReplay)
 	}
+	freshProcessConnect := request(t, path, base(&subagentsv1.Envelope_BridgeConnectRequest{BridgeConnectRequest: &subagentsv1.BridgeConnectRequest{AgentId: "agent-one", RuntimeId: "runtime-one", Incarnation: 1, PiSessionId: "pi-session"}})).GetBridgeConnectResponse()
+	if !freshProcessConnect.Accepted || freshProcessConnect.ActorMessageHighWater != 2 {
+		t.Fatalf("fresh bridge process did not receive authoritative actor-message high-water: %#v", freshProcessConnect)
+	}
+	adoptedNext := request(t, path, fencedBase(&subagentsv1.Envelope_ActorMessageRequest{ActorMessageRequest: &subagentsv1.ActorMessageRequest{Mode: subagentsv1.ActorMessageRequest_MODE_TELL, Target: "agent-one", BoundedPayload: []byte("fresh-process-next"), DedupeId: "fresh-next", HopLimit: 8, ChainId: "fresh-chain", SourceMutationSequence: freshProcessConnect.ActorMessageHighWater + 1}})).GetActorMessageResponse()
+	if !adoptedNext.Accepted {
+		t.Fatalf("fresh bridge process next sequence was not accepted after high-water adoption: %#v", adoptedNext)
+	}
 	duplicate := request(t, path, fencedBase(&subagentsv1.Envelope_ActorMessageRequest{ActorMessageRequest: &subagentsv1.ActorMessageRequest{Mode: subagentsv1.ActorMessageRequest_MODE_TELL, Target: "agent-one", BoundedPayload: []byte("changed"), DedupeId: "changed", HopLimit: 8, ChainId: "changed", SourceMutationSequence: 1}})).GetActorMessageResponse()
 	if duplicate.Accepted || !strings.Contains(duplicate.Reason, "collision") {
 		t.Fatalf("sequence collision did not fail closed: %#v", duplicate)

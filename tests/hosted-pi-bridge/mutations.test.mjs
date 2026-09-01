@@ -75,6 +75,17 @@ test("a true sequence collision fails loud without retry and keeps the high-wate
   assert.equal(next.accepted, true, "an un-admitted sequence stays available after a loud failure");
 });
 
+test("fresh hosted bridge process adopts daemon high-water before first allocation", async () => {
+  const sequencer = new ClientMutationSequencer(fast);
+  sequencer.adoptHighWater(messageScope, 7n);
+  const receipt = await sequencer.run(messageScope, message, async (logical) => ({ accepted: true, sequence: logical.value.sourceMutationSequence }), async () => {});
+  assert.equal(receipt.accepted, true);
+  assert.equal(receipt.sequence, 8n);
+  sequencer.adoptHighWater(messageScope, 3n);
+  const next = await sequencer.run(messageScope, message, async (logical) => ({ accepted: true, sequence: logical.value.sourceMutationSequence }), async () => {});
+  assert.equal(next.sequence, 9n, "adoption must never lower an existing high-water");
+});
+
 test("control scopes stay per-target while messages share one namespace", async () => {
   const sequencer = new ClientMutationSequencer(fast);
   const control = (sequence) => ({ requestId: `control-${sequence}`, value: { intent: 1, sourceMutationSequence: sequence } });

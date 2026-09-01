@@ -784,11 +784,12 @@ type BridgeHeartbeat struct {
 	Result                                                         chan<- BridgeResult
 }
 type BridgeResult struct {
-	Accepted    bool
-	NeedsAttach bool
-	Handle      string
-	Fence       uint64
-	Reason      string
+	Accepted              bool
+	NeedsAttach           bool
+	Handle                string
+	Fence                 uint64
+	Reason                string
+	ActorMessageHighWater uint64
 }
 type BridgeMessageMode uint8
 

@@ -2033,7 +2033,7 @@ func (s *Service) dispatch(request *subagentsv1.Envelope) *subagentsv1.Envelope 
 			s.hostedMu.Unlock()
 			fmt.Fprintln(os.Stderr, "hosted bridge connect rejected:", reason)
 		}
-		response.Payload = &subagentsv1.Envelope_BridgeConnectResponse{BridgeConnectResponse: &subagentsv1.BridgeConnectResponse{Accepted: result.Accepted, AgentHandle: result.Handle, Fence: result.Fence, Reason: result.Reason}}
+		response.Payload = &subagentsv1.Envelope_BridgeConnectResponse{BridgeConnectResponse: &subagentsv1.BridgeConnectResponse{Accepted: result.Accepted, AgentHandle: result.Handle, Fence: result.Fence, Reason: result.Reason, ActorMessageHighWater: result.ActorMessageHighWater}}
 	case *subagentsv1.Envelope_BridgeReplaceRequest:
 		route, err := s.authorizeAgent(ctx, request, payload.BridgeReplaceRequest.AgentId, []string{"hosted_bridge", "observe"})
 		if err != nil || !route.Allowed {
@@ -2047,7 +2047,7 @@ func (s *Service) dispatch(request *subagentsv1.Envelope) *subagentsv1.Envelope 
 		if err != nil {
 			return internalError(response)
 		}
-		response.Payload = &subagentsv1.Envelope_BridgeConnectResponse{BridgeConnectResponse: &subagentsv1.BridgeConnectResponse{Accepted: result.Accepted, AgentHandle: result.Handle, Fence: result.Fence, Reason: result.Reason}}
+		response.Payload = &subagentsv1.Envelope_BridgeConnectResponse{BridgeConnectResponse: &subagentsv1.BridgeConnectResponse{Accepted: result.Accepted, AgentHandle: result.Handle, Fence: result.Fence, Reason: result.Reason, ActorMessageHighWater: result.ActorMessageHighWater}}
 	case *subagentsv1.Envelope_BridgeLifecycleRequest:
 		route, err := s.authorizeAgent(ctx, request, payload.BridgeLifecycleRequest.AgentId, []string{"hosted_bridge"})
 		if err != nil || !route.Allowed {

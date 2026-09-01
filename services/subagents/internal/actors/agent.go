@@ -627,7 +627,7 @@ func (a *AgentActor) bridgeConnect(ctx *actor.ReceiveContext, message *applicati
 	if a.bridgeSession != "" {
 		if a.bridgeSession == message.SessionID && a.bridgeGeneration == message.GenerationID && a.bridgePrincipal == message.Principal && a.bridgePiSession == message.PiSessionID && a.validHandle(message.SessionID, message.GenerationID, message.Principal, a.bridgeHandle, a.bridgeFence, "hosted_bridge") {
 			a.renewBridgeLease(ctx)
-			respondBridge(ctx, message.Result, &application.BridgeResult{Accepted: true, Handle: a.bridgeHandle, Fence: a.bridgeFence})
+			respondBridge(ctx, message.Result, &application.BridgeResult{Accepted: true, Handle: a.bridgeHandle, Fence: a.bridgeFence, ActorMessageHighWater: a.actorMessageHighWater()})
 			return
 		}
 		respondBridge(ctx, message.Result, &application.BridgeResult{Reason: "hosted bridge replacement requires an explicit fenced transition"})
@@ -653,7 +653,7 @@ func (a *AgentActor) bridgeConnect(ctx *actor.ReceiveContext, message *applicati
 	// never validate, and the contiguous baseline resets to the live queue.
 	a.rebaseAckCursor(true)
 	a.renewBridgeLease(ctx)
-	result := application.BridgeResult{Accepted: true, Handle: a.bridgeHandle, Fence: a.bridgeFence}
+	result := application.BridgeResult{Accepted: true, Handle: a.bridgeHandle, Fence: a.bridgeFence, ActorMessageHighWater: a.actorMessageHighWater()}
 	if a.beginDurablePersist(ctx, &pendingDurableReceipt{old: old, bridge: &result, bridgeCompletion: message.Result}) {
 		return
 	}
@@ -687,7 +687,7 @@ func (a *AgentActor) bridgeReplace(ctx *actor.ReceiveContext, message *applicati
 	if a.runtimePID != nil {
 		_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), a.runtimePID, &application.HostedPiBridgeReadiness{Ready: false})
 	}
-	result := application.BridgeResult{Accepted: true, Handle: current.handle, Fence: current.fence}
+	result := application.BridgeResult{Accepted: true, Handle: current.handle, Fence: current.fence, ActorMessageHighWater: a.actorMessageHighWater()}
 	if a.beginDurablePersist(ctx, &pendingDurableReceipt{old: old, bridge: &result, bridgeCompletion: message.Result}) {
 		return
 	}
@@ -1343,6 +1343,26 @@ func (a *AgentActor) durableBarrier(ctx *actor.ReceiveContext) {
 	if !a.beginDurablePersist(ctx, &pendingDurableReceipt{sender: ctx.Sender(), old: old}) {
 		ctx.Response(&application.OperationResult{Completed: true})
 	}
+}
+
+func (a *AgentActor) actorMessageHighWater() uint64 {
+	var highWater uint64
+	for _, item := range a.sourceOutbox {
+		if item.SourceMutationSequence > highWater {
+			highWater = item.SourceMutationSequence
+		}
+	}
+	for _, completion := range a.sourceTaskHistory {
+		if completion.SourceMutationSequence > highWater {
+			highWater = completion.SourceMutationSequence
+		}
+	}
+	for _, completion := range a.taskCompletions {
+		if completion.SourceMutationSequence > highWater {
+			highWater = completion.SourceMutationSequence
+		}
+	}
+	return highWater
 }
 
 func (a *AgentActor) sendActorTask(ctx *actor.ReceiveContext, message *application.SendActorTask) {

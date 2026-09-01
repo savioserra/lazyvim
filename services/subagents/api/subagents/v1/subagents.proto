@@ -251,6 +251,8 @@ message BridgeConnectResponse {
   string agent_handle = 2;
   uint64 fence = 3;
   string reason = 4;
+  // Authoritative actor-message mutation high-water for this hosted source.
+  uint64 actor_message_high_water = 5;
 }
 
 message ActorMessageRequest {

@@ -3281,13 +3281,15 @@ func (x *BridgeConnectRequest) GetLastAckedSequence() uint64 {
 }
 
 type BridgeConnectResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Accepted      bool                   `protobuf:"varint,1,opt,name=accepted,proto3" json:"accepted,omitempty"`
-	AgentHandle   string                 `protobuf:"bytes,2,opt,name=agent_handle,json=agentHandle,proto3" json:"agent_handle,omitempty"`
-	Fence         uint64                 `protobuf:"varint,3,opt,name=fence,proto3" json:"fence,omitempty"`
-	Reason        string                 `protobuf:"bytes,4,opt,name=reason,proto3" json:"reason,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Accepted    bool                   `protobuf:"varint,1,opt,name=accepted,proto3" json:"accepted,omitempty"`
+	AgentHandle string                 `protobuf:"bytes,2,opt,name=agent_handle,json=agentHandle,proto3" json:"agent_handle,omitempty"`
+	Fence       uint64                 `protobuf:"varint,3,opt,name=fence,proto3" json:"fence,omitempty"`
+	Reason      string                 `protobuf:"bytes,4,opt,name=reason,proto3" json:"reason,omitempty"`
+	// Authoritative actor-message mutation high-water for this hosted source.
+	ActorMessageHighWater uint64 `protobuf:"varint,5,opt,name=actor_message_high_water,json=actorMessageHighWater,proto3" json:"actor_message_high_water,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *BridgeConnectResponse) Reset() {
@@ -3346,6 +3348,13 @@ func (x *BridgeConnectResponse) GetReason() string {
 		return x.Reason
 	}
 	return ""
+}
+
+func (x *BridgeConnectResponse) GetActorMessageHighWater() uint64 {
+	if x != nil {
+		return x.ActorMessageHighWater
+	}
+	return 0
 }
 
 type ActorMessageRequest struct {
@@ -5714,12 +5723,13 @@ const file_api_subagents_v1_subagents_proto_rawDesc = "" +
 	"runtime_id\x18\x02 \x01(\tR\truntimeId\x12 \n" +
 	"\vincarnation\x18\x03 \x01(\x04R\vincarnation\x12\"\n" +
 	"\rpi_session_id\x18\x04 \x01(\tR\vpiSessionId\x12.\n" +
-	"\x13last_acked_sequence\x18\x05 \x01(\x04R\x11lastAckedSequence\"\x84\x01\n" +
+	"\x13last_acked_sequence\x18\x05 \x01(\x04R\x11lastAckedSequence\"\xbd\x01\n" +
 	"\x15BridgeConnectResponse\x12\x1a\n" +
 	"\baccepted\x18\x01 \x01(\bR\baccepted\x12!\n" +
 	"\fagent_handle\x18\x02 \x01(\tR\vagentHandle\x12\x14\n" +
 	"\x05fence\x18\x03 \x01(\x04R\x05fence\x12\x16\n" +
-	"\x06reason\x18\x04 \x01(\tR\x06reason\"\xf4\x02\n" +
+	"\x06reason\x18\x04 \x01(\tR\x06reason\x127\n" +
+	"\x18actor_message_high_water\x18\x05 \x01(\x04R\x15actorMessageHighWater\"\xf4\x02\n" +
 	"\x13ActorMessageRequest\x12F\n" +
 	"\x04mode\x18\x01 \x01(\x0e22.workstation.subagents.v1.ActorMessageRequest.ModeR\x04mode\x12\x16\n" +
 	"\x06target\x18\x03 \x01(\tR\x06target\x12'\n" +

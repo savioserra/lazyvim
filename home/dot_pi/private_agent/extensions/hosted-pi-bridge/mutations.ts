@@ -7,21 +7,21 @@
 // reuse fails closed with "source mutation sequence collision"). Control
 // intents instead remain scoped per (session, target fence) on the target.
 // The allocator below therefore uses ONE monotonic message namespace per
-// bridge binding across all message targets, allocates the next sequence only
-// after the previous mutation settled, queues concurrent mutations, retains
-// the immutable unresolved mutation across reconnects so the same logical
-// request replays after reconcile (the daemon replays the retained admission
-// by request/dedupe/chain/sequence identity — this is how the bridge adopts
-// the server high-water instead of reusing an admitted sequence), retries
-// transport failures with a bounded cooldown, and fails loud on true sequence
-// collisions instead of silently burning slots.
+// bridge binding across all message targets, adopts the daemon-authenticated
+// high-water returned by bridge connect before allocation, allocates the next
+// sequence only after the previous mutation settled, queues concurrent
+// mutations, retains the immutable unresolved mutation across reconnects so the
+// same logical request replays after reconcile (the daemon replays the retained
+// admission by request/dedupe/chain/sequence identity), retries transport
+// failures with a bounded cooldown, and fails loud on true sequence collisions
+// instead of silently burning slots.
 //
 // The bridge binding is process-stable (loaded once from the hosted
 // environment), so reconnects keep the namespace and continue at the
-// high-water; scopes retire only at session shutdown. A fresh process restarts
-// at sequence 1 and fails loud if the daemon still retains prior sequences for
-// the same source agent — the daemon-side scope fix (ADR 0005 tuple) is the
-// durable resolution for that window.
+// high-water; scopes retire only at session shutdown. A fresh process floors
+// this allocator from the authoritative bridge handshake before the first actor
+// message, closing the restart window where sequence 1 collided with retained
+// daemon history for the same source agent.
 //
 // This module is deliberately extension-local: the regular actor-client
 // extension carries an equivalent copy so no cross-extension imports appear.
@@ -76,6 +76,16 @@ export class ClientMutationSequencer {
     scope.tail = operation.then(() => undefined, () => undefined);
     return operation;
   }
+  // adoptHighWater floors a scope's allocator from daemon bridge-handshake
+  // evidence. It never lowers an existing high-water and refuses to disturb an
+  // unresolved replay; callers invoke it during connect/reconnect before new
+  // actor messages are allocated.
+  adoptHighWater(scopeKey: string, floor: bigint): void {
+    if (floor <= 0n) return;
+    const scope = this.scopes.get(scopeKey);
+    if (!scope) { this.scopes.set(scopeKey, { highWater: floor, tail: Promise.resolve() }); return; }
+    if (floor > scope.highWater) scope.highWater = floor;
+  }
   // retireScopes drops every scope under a retired bridge session token (used
   // at session shutdown after fences are detached). Scopes that are not
   // retired keep their high-water so reconnects continue where they left off.
@@ -90,7 +100,7 @@ export class ClientMutationSequencer {
       try {
         const receipt = await unresolved.attempt(unresolved.logical);
         if (scope.unresolved === unresolved) scope.unresolved = undefined;
-        if (receipt.accepted) { scope.highWater = unresolved.sequence; return receipt; }
+        if (receipt.accepted) { if (unresolved.sequence > scope.highWater) scope.highWater = unresolved.sequence; return receipt; }
         if (isClientSequenceFailure(receipt.reason)) throw new ClientMutationSequenceError(scopeKey, unresolved.sequence, String(receipt.reason));
         // A non-sequence rejection is terminal and stores nothing daemon-side:
         // the sequence was never admitted and stays available to the next

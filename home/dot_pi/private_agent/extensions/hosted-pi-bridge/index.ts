@@ -318,6 +318,7 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
     piSessionId = ctx.sessionManager.getSessionId();
     if (!piSessionId) throw new Error("hosted Pi session identity is empty");
     const response = await connectBridgeWithRetry(client, binding, piSessionId, lastAckedSequence, BridgeConnectRequestSchema);
+    adoptBridgeMutationHighWater(binding, response.payload.value.actorMessageHighWater ?? 0n);
     selfFence = { handle: response.payload.value.agentHandle, fence: response.payload.value.fence };
     fences.set(binding.agentId, selfFence);
     for (const frame of pendingPushFrames.splice(0)) schedulePush(ctx, frame);
@@ -521,6 +522,12 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
     logBridgeDiagnostic(`prompt ${event.stage} · sequence=${event.sequence} · dedupeId=${boundedPublic(event.dedupeId, 48)} · ${boundedPublic(event.detail, 120)}`, event.stage === "failed" || event.stage === "expired");
   }
 
+  function adoptBridgeMutationHighWater(current: Binding, highWater: bigint) {
+    if (highWater <= 0n) return;
+    mutations.adoptHighWater(bridgeMessageScopeKey(current), highWater);
+    logBridgeDiagnostic(`mutation high-water adopted · agent=${boundedPublic(current.agentId, 48)} · sequence=${highWater}`);
+  }
+
   function reconnect(ctx: ExtensionContext) {
     if (reconnecting) return reconnecting;
     reconnecting = (async () => {
@@ -534,6 +541,7 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
           await client.open();
           const response = await client.request("bridgeConnectRequest", BridgeConnectRequestSchema, { agentId: current.agentId, runtimeId: current.runtimeId, incarnation: current.incarnation, piSessionId, lastAckedSequence });
           if (response.payload.case !== "bridgeConnectResponse" || !response.payload.value.accepted) throw new Error("hosted bridge reconnect rejected");
+          adoptBridgeMutationHighWater(current, response.payload.value.actorMessageHighWater ?? 0n);
           const replacement = { handle: response.payload.value.agentHandle, fence: response.payload.value.fence };
           if (selfFence && (replacement.handle !== selfFence.handle || replacement.fence !== selfFence.fence)) throw new Error("idempotent reconnect unexpectedly rotated bridge fence");
           selfFence = replacement; fences.set(current.agentId, replacement);

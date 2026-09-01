@@ -13,6 +13,63 @@ import (
 	goakt "github.com/tochemey/goakt/v4/actor"
 )
 
+func TestBridgeConnectReturnsActorMessageHighWaterFromDurableSourceHistory(t *testing.T) {
+	ctx := context.Background()
+	system, err := goakt.NewActorSystem("bridge-message-high-water")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := system.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		stop, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		_ = system.Stop(stop)
+	})
+	binding := application.HostedPiRuntimeBinding{State: application.HostedPiRuntimeReady, RuntimeID: "runtime", Incarnation: 2, BridgeReady: true}
+	state := application.DurableAgentState{
+		SourceOutbox:      []application.DurableActorTaskOutboxItem{{TaskID: "source:pending:chain:4", SourceMutationSequence: 4}},
+		SourceTaskHistory: []application.ActorTaskCompleted{{OriginalRequestID: "request-done", DedupeID: "done", ChainID: "chain", SourceMutationSequence: 7}},
+	}
+	record := application.DurableHostedRecord{SchemaVersion: application.DurableHostedSchemaVersion, AgentID: "source", Binding: binding, AgentState: state}
+	registration := &application.RegisterAgent{AgentID: "source", HostedPiRuntime: binding, AllowedCapability: []string{"hosted_bridge", "observe", "send"}, Retention: "explicit", Recovery: "owned", DurableRecord: &record}
+	pid, err := system.Spawn(ctx, "high-water-agent", actors.NewAgentActor(registration))
+	if err != nil {
+		t.Fatal(err)
+	}
+	taskResult := make(chan application.BridgeIntentResult, 1)
+	if err := system.NoSender().Tell(ctx, pid, &application.SendActorTask{TargetPID: pid, TargetPeer: application.CommunicationPeer{StableID: "source"}, RequestID: "request-low", DedupeID: "low", ChainID: "chain-low", RequiredCapability: "send", SourceMutationSequence: 4, Deadline: time.Now().Add(time.Minute), HopLimit: 8, Mode: application.BridgeMessageTell, Payload: []byte("low"), Receipt: taskResult}); err != nil {
+		t.Fatal(err)
+	}
+	if result := <-taskResult; result.Accepted || !strings.Contains(result.Reason, "collision") {
+		t.Fatalf("daemon did not retain prior source mutation sequence: %#v", result)
+	}
+	taskResult = make(chan application.BridgeIntentResult, 1)
+	if err := system.NoSender().Tell(ctx, pid, &application.SendActorTask{TargetPID: pid, TargetPeer: application.CommunicationPeer{StableID: "source"}, RequestID: "request-next", DedupeID: "next", ChainID: "chain-next", RequiredCapability: "send", SourceMutationSequence: 8, Deadline: time.Now().Add(time.Minute), HopLimit: 8, Mode: application.BridgeMessageTell, Payload: []byte("next"), Receipt: taskResult}); err != nil {
+		t.Fatal(err)
+	}
+	if result := <-taskResult; !result.Accepted {
+		t.Fatalf("daemon rejected adopted next source mutation sequence: %#v", result)
+	}
+	attached := make(chan application.AttachResult, 1)
+	if err := system.NoSender().Tell(ctx, pid, &application.AttachAgent{SessionID: "session", GenerationID: "generation", Principal: "hosted:source", RequestedCapabilities: registration.AllowedCapability, IssuedHandle: "handle", Result: attached}); err != nil {
+		t.Fatal(err)
+	}
+	attachment := <-attached
+	if !attachment.Completed {
+		t.Fatalf("attach failed: %#v", attachment)
+	}
+	connected := make(chan application.BridgeResult, 1)
+	if err := system.NoSender().Tell(ctx, pid, &application.BridgeConnect{SessionID: "session", GenerationID: "generation", Principal: "hosted:source", AgentID: "source", Handle: attachment.Handle, Fence: attachment.Fence, RuntimeID: "runtime", Incarnation: 2, PiSessionID: "pi", Result: connected}); err != nil {
+		t.Fatal(err)
+	}
+	connect := <-connected
+	if !connect.Accepted || connect.ActorMessageHighWater != 8 {
+		t.Fatalf("bridge connect did not return authoritative actor-message high-water: %#v", connect)
+	}
+}
+
 func TestHostedMutationScopesAreExactPerAuthenticatedSource(t *testing.T) {
 	ctx := context.Background()
 	system, err := goakt.NewActorSystem("hosted-source-scopes")
