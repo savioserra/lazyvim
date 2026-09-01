@@ -865,6 +865,10 @@ func (a *AgentActor) restoreDurableState(state application.DurableAgentState) {
 	}
 	a.sourceOutbox = make(map[string]application.DurableActorTaskOutboxItem, len(state.SourceOutbox))
 	a.sourceOutboxOrder = nil
+	// Restored or rolled-back state starts with no in-flight credit request:
+	// a single-flight latch that survived a durable rollback or reload must
+	// never suppress the first post-expiry re-request after a respawn.
+	a.outboxCreditAwaited = make(map[string]time.Time)
 	for _, item := range state.SourceOutbox {
 		a.sourceOutbox[item.TaskID] = item
 		a.sourceOutboxOrder = append(a.sourceOutboxOrder, item.TaskID)
@@ -1435,6 +1439,10 @@ func (a *AgentActor) taskCreditGranted(ctx *actor.ReceiveContext, message *appli
 	}
 	item, ok := a.sourceOutbox[message.Credit.TaskID]
 	if !ok || item.PayloadDigest != message.Credit.PayloadDigest || time.Now().After(message.Credit.ExpiresAt) || time.Now().After(item.Deadline) {
+		// A refused grant (expired lease, elapsed deadline, wrong digest) ends
+		// the single-flight wait so the next bounded tick re-requests instead
+		// of staying suppressed behind a dead grant for the window's remainder.
+		delete(a.outboxCreditAwaited, message.Credit.TaskID)
 		return
 	}
 	// Only the exact target agent this outbox entry requested credit from may
@@ -1622,6 +1630,19 @@ func (a *AgentActor) retrySourceOutbox(ctx *actor.ReceiveContext) {
 		if target == nil {
 			a.resolveActorRefAsync(ctx, item.TargetRef)
 			continue
+		}
+		// A held credit past its lease is dead: discard it durably, return the
+		// item to pending_credit, and end any awaited single-flight so this very
+		// tick re-requests. Without this, an item restored from durable state
+		// with an expired credit (state label still "sent" from the broken
+		// window) carries the dead credit forever while every tick either
+		// suppresses behind a stale latch or re-sends nothing at all.
+		if item.Credit.CreditID != "" && now.After(item.Credit.ExpiresAt) {
+			item.Credit = application.TaskCredit{}
+			item.State = "pending_credit"
+			delete(a.outboxCreditAwaited, taskID)
+			a.sourceOutbox[taskID] = item
+			changed = true
 		}
 		// The item still sits in the outbox, so a held unexpired credit is by
 		// definition unconsumed: spend it instead of rotating a fresh target
