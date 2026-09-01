@@ -77,8 +77,9 @@ type DurableActorTaskOutboxItem struct {
 }
 
 type DurableTaskCreditReservation struct {
-	Credit TaskCredit `json:"credit"`
-	Source string     `json:"source"`
+	Credit    TaskCredit      `json:"credit"`
+	Source    string          `json:"source"`
+	SourceRef DurableActorRef `json:"source_ref"`
 }
 
 type DurableActorRef struct {

@@ -583,6 +583,7 @@ type TaskCredit struct {
 
 type RequestTaskCredit struct {
 	TaskID, RequestID, DedupeID, ChainID string
+	SourcePeer                           CommunicationPeer
 	Deadline                             time.Time
 	PayloadDigest                        [32]byte
 }
@@ -888,6 +889,7 @@ type BridgeDelivery struct {
 func (d BridgeDelivery) AckIdentityComplete() bool {
 	return d.SourceScope != "" && d.CompletionKey != ""
 }
+
 type BridgeEvent struct {
 	Sequence, Revision uint64
 	AgentID, Operation string

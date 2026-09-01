@@ -60,6 +60,7 @@ type closeProjection struct{}
 type retryProjectionPubSub struct{}
 type retrySourceOutbox struct{}
 type retryCompletionTells struct{}
+type retryTaskCreditGrants struct{}
 type retryOutboxSchedule struct{}
 
 // actorRefResolved is the async continuation of resolveActorRefAsync: the
@@ -85,9 +86,10 @@ type ackCommitEffect struct {
 }
 
 type taskCreditReservation struct {
-	credit  application.TaskCredit
-	source  string
-	replyTo *actor.PID
+	credit    application.TaskCredit
+	source    string
+	sourceRef application.DurableActorRef
+	replyTo   *actor.PID
 }
 type retryProjectionClose struct{ sessionID, generationID string }
 type restoreDurableTimers struct{}
@@ -140,6 +142,8 @@ type pendingDurableReceipt struct {
 	taskAccepted                *application.ActorTaskAccepted
 	sourceCreditTarget          *actor.PID
 	sourceCreditItem            *application.DurableActorTaskOutboxItem
+	sourceTaskTarget            *actor.PID
+	sourceTask                  *application.ActorTask
 	taskCompletionPublish       *application.ActorTaskCompleted
 	targetTaskCommitted         *application.TargetTaskCommitted
 	attach                      *application.AttachResult
@@ -248,10 +252,11 @@ type AgentActor struct {
 	outboxCreditAwaited    map[string]time.Time
 	taskCreditEpoch        uint64
 	taskCreditReservations map[string]taskCreditReservation
-	// taskRejectLogs bounds target-side ActorTask reject logging and
-	// taskRejectLog is its sink (nil falls back to stderr; tests substitute it
-	// to observe rejects deterministically).
+	// taskRejectLogs bounds target-side ActorTask/source-side grant reject logging
+	// and taskRejectLog is its sink (nil falls back to stderr; tests substitute
+	// it to observe rejects deterministically).
 	taskRejectLogs        int
+	taskCreditRejectLogs  int
 	taskRejectLog         func(format string, args ...any)
 	mutationScopes        map[string]*mutationScope
 	persistencePID        *actor.PID
@@ -489,6 +494,8 @@ func (a *AgentActor) Receive(ctx *actor.ReceiveContext) {
 		a.retrySourceOutbox(ctx)
 	case *retryCompletionTells:
 		a.retryCompletionTells(ctx)
+	case *retryTaskCreditGrants:
+		a.retryTaskCreditGrants(ctx)
 	case *retryOutboxSchedule:
 		a.scheduleOutboxRetry(ctx)
 	case *actorRefResolved:
@@ -789,8 +796,8 @@ func (a *AgentActor) durableState() application.DurableAgentState {
 		}
 	}
 	state.TaskCreditEpoch = a.taskCreditEpoch
-	for source, reservation := range a.taskCreditReservations {
-		state.TaskCreditReservations = append(state.TaskCreditReservations, application.DurableTaskCreditReservation{Credit: reservation.credit, Source: source})
+	for _, reservation := range a.taskCreditReservations {
+		state.TaskCreditReservations = append(state.TaskCreditReservations, application.DurableTaskCreditReservation{Credit: reservation.credit, Source: reservation.source, SourceRef: reservation.sourceRef})
 	}
 	for sequence, ref := range a.durableTaskSources {
 		if _, retained := a.taskSources[sequence]; !retained {
@@ -890,7 +897,7 @@ func (a *AgentActor) restoreDurableState(state application.DurableAgentState) {
 	a.taskCreditEpoch = state.TaskCreditEpoch
 	a.taskCreditReservations = make(map[string]taskCreditReservation, len(state.TaskCreditReservations))
 	for _, item := range state.TaskCreditReservations {
-		a.taskCreditReservations[item.Credit.CreditID] = taskCreditReservation{credit: item.Credit, source: item.Source}
+		a.taskCreditReservations[item.Credit.CreditID] = taskCreditReservation{credit: item.Credit, source: item.Source, sourceRef: item.SourceRef}
 	}
 	a.durableTaskSources = make(map[uint64]application.DurableActorRef, len(state.TaskSources))
 	for sequence, ref := range state.TaskSources {
@@ -1195,12 +1202,16 @@ func (a *AgentActor) completeDurableReceipt(ctx *actor.ReceiveContext, pending *
 		a.scheduleCompletionRetry(ctx)
 		if pending.sender != nil && pending.taskCreditGrant != nil {
 			_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), pending.sender, pending.taskCreditGrant)
+			_ = ctx.ActorSystem().ScheduleOnce(context.WithoutCancel(ctx.Context()), &retryTaskCreditGrants{}, ctx.Self(), outboxBaseRetryDelay)
 		}
 		if pending.sender != nil && pending.taskAccepted != nil {
 			_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), pending.sender, pending.taskAccepted)
 		}
 		if pending.sourceCreditTarget != nil && pending.sourceCreditItem != nil {
 			a.requestOutboxCredit(ctx, pending.sourceCreditTarget, *pending.sourceCreditItem)
+		}
+		if pending.sourceTaskTarget != nil && pending.sourceTask != nil {
+			_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), pending.sourceTaskTarget, pending.sourceTask)
 		}
 		if pending.taskCompletionPublish != nil {
 			a.publishTaskCompletion(ctx, pending.taskCompletionPublish)
@@ -1307,6 +1318,7 @@ func (a *AgentActor) restoreDurableTimers(ctx *actor.ReceiveContext) {
 		a.resumePendingWork = false
 		_ = ctx.ActorSystem().ScheduleOnce(context.WithoutCancel(ctx.Context()), &retrySourceOutbox{}, ctx.Self(), outboxBaseRetryDelay)
 		_ = ctx.ActorSystem().ScheduleOnce(context.WithoutCancel(ctx.Context()), &retryCompletionTells{}, ctx.Self(), outboxBaseRetryDelay)
+		_ = ctx.ActorSystem().ScheduleOnce(context.WithoutCancel(ctx.Context()), &retryTaskCreditGrants{}, ctx.Self(), outboxBaseRetryDelay)
 	}
 }
 
@@ -1426,10 +1438,13 @@ func (a *AgentActor) requestTaskCredit(ctx *actor.ReceiveContext, message *appli
 	old := a.durableState()
 	a.taskCreditEpoch++
 	credit := application.TaskCredit{TaskID: message.TaskID, CreditID: taskCreditID(a.id, message.TaskID, a.taskCreditEpoch), TargetEpoch: a.taskCreditEpoch, ExpiresAt: minTime(time.Now().Add(taskCreditLease), message.Deadline), PayloadDigest: message.PayloadDigest}
-	a.taskCreditReservations[credit.CreditID] = taskCreditReservation{credit: credit, source: sender.Name(), replyTo: sender}
+	sourceAgentID := message.SourcePeer.StableID
+	sourceRef := actorRefFromPID(sourceAgentID, sender)
+	a.taskCreditReservations[credit.CreditID] = taskCreditReservation{credit: credit, source: sender.Name(), sourceRef: sourceRef, replyTo: sender}
 	granted := &application.TaskCreditGranted{Credit: credit}
 	if !a.beginDurablePersist(ctx, &pendingDurableReceipt{sender: sender, old: old, taskCreditGrant: granted}) {
 		_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), sender, granted)
+		_ = ctx.ActorSystem().ScheduleOnce(context.WithoutCancel(ctx.Context()), &retryTaskCreditGrants{}, ctx.Self(), outboxBaseRetryDelay)
 	}
 	_ = ctx.ActorSystem().ScheduleOnce(context.WithoutCancel(ctx.Context()), &application.TaskBackpressured{TaskID: credit.TaskID, TargetEpoch: credit.TargetEpoch, Reason: "credit expired"}, ctx.Self(), max(time.Until(credit.ExpiresAt), time.Millisecond))
 }
@@ -1440,6 +1455,7 @@ func (a *AgentActor) taskCreditGranted(ctx *actor.ReceiveContext, message *appli
 	}
 	item, ok := a.sourceOutbox[message.Credit.TaskID]
 	if !ok || item.PayloadDigest != message.Credit.PayloadDigest || time.Now().After(message.Credit.ExpiresAt) || time.Now().After(item.Deadline) {
+		a.logTaskCreditGrantReject(ctx, "invalid_expired_or_unknown", message.Credit, ctx.Sender(), nil)
 		// A refused grant (expired lease, elapsed deadline, wrong digest) ends
 		// the single-flight wait so the next bounded tick re-requests instead
 		// of staying suppressed behind a dead grant for the window's remainder.
@@ -1450,8 +1466,10 @@ func (a *AgentActor) taskCreditGranted(ctx *actor.ReceiveContext, message *appli
 	// hand the credit back; any other origin is fail-closed before effects.
 	sender := ctx.Sender()
 	if sender == nil || isNoSender(ctx, sender) || !actorRefMatchesSender(&item.TargetRef, sender) {
+		a.logTaskCreditGrantReject(ctx, "sender_identity_rejected", message.Credit, sender, &item)
 		return
 	}
+	old := a.durableState()
 	item.Credit = message.Credit
 	item.State = "sent"
 	a.sourceOutbox[item.TaskID] = item
@@ -1459,7 +1477,10 @@ func (a *AgentActor) taskCreditGranted(ctx *actor.ReceiveContext, message *appli
 	// of staying suppressed or re-requesting.
 	delete(a.outboxCreditAwaited, item.TaskID)
 	task := &application.ActorTask{Credit: message.Credit, SourcePeer: a.communicationPeer(), TargetPeer: item.Target, RequestID: item.RequestID, DedupeID: item.DedupeID, ChainID: item.ChainID, RequiredCapability: item.RequiredCapability, SourceMutationSequence: item.SourceMutationSequence, Deadline: item.Deadline, HopLimit: item.HopLimit, Mode: item.Mode, Payload: append([]byte(nil), item.Payload...)}
-	if sender := ctx.Sender(); sender != nil {
+	if a.beginDurablePersist(ctx, &pendingDurableReceipt{old: old, sourceTaskTarget: sender, sourceTask: task}) {
+		return
+	}
+	if sender != nil {
 		_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), sender, task)
 	}
 }
@@ -1495,7 +1516,7 @@ func (a *AgentActor) actorTask(ctx *actor.ReceiveContext, message *application.A
 	}
 	// The task may only spend a credit that this actor reserved for the exact
 	// requesting sender; forged or rebound origins are rejected fail-closed.
-	if reservation.replyTo == nil || !replyTo.Equals(reservation.replyTo) {
+	if (reservation.replyTo == nil || !replyTo.Equals(reservation.replyTo)) && (reservation.source == "" || replyTo.Name() != reservation.source) && !actorRefMatchesSender(&reservation.sourceRef, replyTo) {
 		a.logActorTaskReject("sender_identity_rejected", message.Credit, replyTo, &reservation)
 		_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), replyTo, &application.ActorTaskAccepted{TaskID: message.Credit.TaskID, CreditID: message.Credit.CreditID, TargetAgentID: a.id, Reason: "task credit sender identity rejected"})
 		return
@@ -1721,6 +1742,31 @@ func (a *AgentActor) deferCompletionTell(ctx *actor.ReceiveContext, effect *ackC
 	_ = err
 }
 
+func (a *AgentActor) retryTaskCreditGrants(ctx *actor.ReceiveContext) {
+	now := time.Now()
+	pending := false
+	for _, reservation := range a.taskCreditReservations {
+		if reservation.credit.CreditID == "" || now.After(reservation.credit.ExpiresAt) {
+			continue
+		}
+		pending = true
+		target := reservation.replyTo
+		if reservation.sourceRef.Address != "" {
+			target = a.cachedActorRef(reservation.sourceRef.Address)
+			if target == nil {
+				a.resolveActorRefAsync(ctx, reservation.sourceRef)
+				continue
+			}
+		}
+		if target != nil {
+			_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), target, &application.TaskCreditGranted{Credit: reservation.credit})
+		}
+	}
+	if pending {
+		_ = ctx.ActorSystem().ScheduleOnce(context.WithoutCancel(ctx.Context()), &retryTaskCreditGrants{}, ctx.Self(), outboxRetryDelay(2))
+	}
+}
+
 func (a *AgentActor) retryCompletionTells(ctx *actor.ReceiveContext) {
 	if a.durablePending != nil || a.durableFailed != nil {
 		_ = ctx.ActorSystem().ScheduleOnce(context.WithoutCancel(ctx.Context()), &retryCompletionTells{}, ctx.Self(), outboxBaseRetryDelay)
@@ -1786,12 +1832,41 @@ func actorRefFromPID(agentID string, pid *actor.PID) application.DurableActorRef
 // credit/task/completion origin: a stale durable child path is accepted only
 // when the reply comes from the stable owner name on the recorded actor node.
 // Anonymous and non-runtime legacy refs retain exact full-address matching.
+func (a *AgentActor) logTaskCreditGrantReject(ctx *actor.ReceiveContext, detail string, credit application.TaskCredit, sender *actor.PID, item *application.DurableActorTaskOutboxItem) {
+	if a.taskCreditRejectLogs >= maxActorTaskRejectLogs {
+		return
+	}
+	a.taskCreditRejectLogs++
+	senderName, senderHost, senderPort := "", "", 0
+	if sender != nil {
+		senderName = sender.Name()
+		if path := sender.Path(); path != nil {
+			senderHost, senderPort = path.Host(), path.Port()
+		}
+	}
+	targetAgent, targetName, targetHost, targetPort := "", "", "", 0
+	if item != nil {
+		targetAgent, targetName, targetHost, targetPort = item.TargetRef.AgentID, item.TargetRef.Name, item.TargetRef.Host, item.TargetRef.Port
+	}
+	logger := func(format string, args ...any) { ctx.ActorSystem().Logger().Warnf(format, args...) }
+	if a.taskRejectLog != nil {
+		logger = a.taskRejectLog
+	}
+	logger("component=agent_actor event=task_credit_grant_rejected agent_id=%s task_id=%s credit_id=%s detail=%s sender_name=%s sender_host=%s sender_port=%d target_agent_id=%s target_name=%s target_host=%s target_port=%d", a.id, credit.TaskID, credit.CreditID, detail, senderName, senderHost, senderPort, targetAgent, targetName, targetHost, targetPort)
+}
+
 func actorRefMatchesSender(ref *application.DurableActorRef, sender *actor.PID) bool {
 	if ref == nil || sender == nil || ref.Address == "" || ref.Host == "" || ref.Name == "" {
 		return false
 	}
 	path := sender.Path()
-	if path == nil || path.Host() != ref.Host || path.Port() != ref.Port {
+	if path == nil {
+		return false
+	}
+	if ref.AgentID != "" && ref.Port == 0 && path.Name() == stableAgentActorName(ref.AgentID) {
+		return true
+	}
+	if path.Port() != ref.Port || path.Host() != ref.Host {
 		return false
 	}
 	if ref.AgentID != "" {
@@ -1948,7 +2023,7 @@ func (a *AgentActor) requestOutboxCredit(ctx *actor.ReceiveContext, target *acto
 	// Mark the single in-flight request before sending: every retry tick that
 	// fires before the grant (or the bounded window elapses) stays silent.
 	a.outboxCreditAwaited[item.TaskID] = time.Now()
-	request := &application.RequestTaskCredit{TaskID: item.TaskID, RequestID: item.RequestID, DedupeID: item.DedupeID, ChainID: item.ChainID, Deadline: item.Deadline, PayloadDigest: item.PayloadDigest}
+	request := &application.RequestTaskCredit{TaskID: item.TaskID, RequestID: item.RequestID, DedupeID: item.DedupeID, ChainID: item.ChainID, SourcePeer: a.communicationPeer(), Deadline: item.Deadline, PayloadDigest: item.PayloadDigest}
 	_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), target, request)
 }
 
