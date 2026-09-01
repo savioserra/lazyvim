@@ -38,7 +38,16 @@ const (
 	outboxBaseRetryDelay     = 50 * time.Millisecond
 	outboxMaxRetryDelay      = 2 * time.Second
 	taskCreditLease          = 5 * time.Second
-	taskRetryDelay           = 50 * time.Millisecond
+	// taskCreditRequestTimeout bounds the single-flight wait for a credit
+	// grant: one request per outbox item is in flight for at most this window,
+	// after which a lost request or grant may be re-requested. It must stay
+	// far below taskCreditLease so a granted credit never expires while a
+	// suppressed retry still believes its request is in flight.
+	taskCreditRequestTimeout = 500 * time.Millisecond
+	// maxActorTaskRejectLogs bounds target-side reject logging: a churny source
+	// redriving a dead credit must not flood operator logs.
+	maxActorTaskRejectLogs = 32
+	taskRetryDelay         = 50 * time.Millisecond
 )
 
 type projectionSubscribed struct{ sessionID, generationID string }
@@ -232,15 +241,28 @@ type AgentActor struct {
 	sourceTaskHistoryOrder []string
 	sourceOutbox           map[string]application.DurableActorTaskOutboxItem
 	sourceOutboxOrder      []string
+	// outboxCreditAwaited tracks the single in-flight credit request per
+	// outbox item (taskID -> when the request was fired) so overlapping retry
+	// ticks cannot rotate the target credit epoch while a grant is awaited.
+	outboxCreditAwaited    map[string]time.Time
 	taskCreditEpoch        uint64
 	taskCreditReservations map[string]taskCreditReservation
-	mutationScopes         map[string]*mutationScope
-	persistencePID         *actor.PID
-	persistenceSupervisor  *actor.PID
-	durableRecord          *application.DurableHostedRecord
-	durableCorrelation     uint64
-	durablePending         *pendingDurableReceipt
-	durableFailed          error
+	// taskRejectLogs bounds target-side ActorTask reject logging and
+	// taskRejectLog is its sink (nil falls back to stderr; tests substitute it
+	// to observe rejects deterministically).
+	taskRejectLogs        int
+	taskRejectLog         func(format string, args ...any)
+	mutationScopes        map[string]*mutationScope
+	persistencePID        *actor.PID
+	persistenceSupervisor *actor.PID
+	durableRecord         *application.DurableHostedRecord
+	durableCorrelation    uint64
+	durablePending        *pendingDurableReceipt
+	durableFailed         error
+	// resumePendingWork marks a restored record that still owns outbox items
+	// or undelivered completion tells so PostStart schedules their bounded
+	// retry loops instead of freezing until an unrelated admission.
+	resumePendingWork bool
 }
 
 func NewAgentActor(registration *application.RegisterAgent, registry ...*actor.PID) *AgentActor {
@@ -251,9 +273,16 @@ func NewAgentActor(registration *application.RegisterAgent, registry ...*actor.P
 	metadataBinding := registration.HostedPiRuntime
 	metadataBinding.DisplayName = registration.DisplayName
 	metadataBinding.Role = registration.Role
-	value := &AgentActor{id: registration.AgentID, authorityBinding: registration.AuthorityBinding, hostedPiRuntime: metadataBinding, retention: registration.Retention, recovery: registration.Recovery, allowed: allowed, attachments: make(map[string]attachment), revoked: make(map[string]struct{}), revision: 1, commandResults: make(map[string]commandRecord), projections: make(map[string]*projectionLifecycle), deliverySources: make(map[uint64]string), taskSources: make(map[uint64]*actor.PID), durableTaskSources: make(map[uint64]application.DurableActorRef), resolvedRefs: make(map[string]*actor.PID), resolvingRefs: make(map[string]struct{}), scopeTokens: make(map[string]string), completionTellPending: make(map[string]application.DurablePendingCompletion), ackGaps: make(map[uint64]application.BridgeDeliveryAck), committedAcks: make(map[uint64]application.DurableBridgeAckRecord), taskCompletions: make(map[string]application.ActorTaskCompleted), sourceTaskHistory: make(map[string]application.ActorTaskCompleted), sourceOutbox: make(map[string]application.DurableActorTaskOutboxItem), taskCreditReservations: make(map[string]taskCreditReservation), mutationScopes: make(map[string]*mutationScope), persistencePID: registration.PersistencePID, persistenceSupervisor: registration.PersistenceSupervisor, durableRecord: registration.DurableRecord}
+	value := &AgentActor{id: registration.AgentID, authorityBinding: registration.AuthorityBinding, hostedPiRuntime: metadataBinding, retention: registration.Retention, recovery: registration.Recovery, allowed: allowed, attachments: make(map[string]attachment), revoked: make(map[string]struct{}), revision: 1, commandResults: make(map[string]commandRecord), projections: make(map[string]*projectionLifecycle), deliverySources: make(map[uint64]string), taskSources: make(map[uint64]*actor.PID), durableTaskSources: make(map[uint64]application.DurableActorRef), resolvedRefs: make(map[string]*actor.PID), resolvingRefs: make(map[string]struct{}), scopeTokens: make(map[string]string), completionTellPending: make(map[string]application.DurablePendingCompletion), ackGaps: make(map[uint64]application.BridgeDeliveryAck), committedAcks: make(map[uint64]application.DurableBridgeAckRecord), taskCompletions: make(map[string]application.ActorTaskCompleted), sourceTaskHistory: make(map[string]application.ActorTaskCompleted), sourceOutbox: make(map[string]application.DurableActorTaskOutboxItem), outboxCreditAwaited: make(map[string]time.Time), taskCreditReservations: make(map[string]taskCreditReservation), mutationScopes: make(map[string]*mutationScope), persistencePID: registration.PersistencePID, persistenceSupervisor: registration.PersistenceSupervisor, durableRecord: registration.DurableRecord}
 	if registration.DurableRecord != nil {
 		value.restoreDurableState(registration.DurableRecord.AgentState)
+		// Pending outbox work and undelivered completion tells must resume on
+		// daemon restart: schedule their bounded retry loops so restored tasks
+		// re-request credit and re-drive completion Tells instead of freezing
+		// until an unrelated admission happens to schedule them.
+		if len(value.sourceOutbox) > 0 || len(value.completionTellPending) > 0 {
+			value.resumePendingWork = true
+		}
 		if registration.AdoptedProcess != nil {
 			// Readiness is a live fenced lease, never a restart-persistent fact.
 			// The exact bridge must reconnect after daemon adoption.
@@ -1269,7 +1298,8 @@ func (a *AgentActor) restoreDurableTimers(ctx *actor.ReceiveContext) {
 		// that no bridge client can ever acknowledge.
 		a.rebaseAckCursor(false)
 	}
-	if len(a.sourceOutbox) != 0 || len(a.completionTellPending) != 0 {
+	if a.resumePendingWork {
+		a.resumePendingWork = false
 		_ = ctx.ActorSystem().ScheduleOnce(context.WithoutCancel(ctx.Context()), &retrySourceOutbox{}, ctx.Self(), outboxBaseRetryDelay)
 		_ = ctx.ActorSystem().ScheduleOnce(context.WithoutCancel(ctx.Context()), &retryCompletionTells{}, ctx.Self(), outboxBaseRetryDelay)
 	}
@@ -1359,6 +1389,10 @@ func (a *AgentActor) sendActorTask(ctx *actor.ReceiveContext, message *applicati
 	item.TargetRef = actorRefFromPID(message.TargetPeer.StableID, message.TargetPID)
 	a.sourceOutbox[taskID] = item
 	a.sourceOutboxOrder = append(a.sourceOutboxOrder, taskID)
+	// A freshly admitted item owns its bounded retry loop immediately: a lost
+	// or backpressured initial credit request must re-drive without waiting
+	// for a daemon restart to schedule the loop.
+	a.scheduleOutboxRetry(ctx)
 	persisting := a.beginDurablePersist(ctx, &pendingDurableReceipt{old: old, intent: &application.BridgeIntentResult{Accepted: true, AwaitingAck: true, Reason: "stored_pending_credit"}, intentCompletion: message.Receipt, sourceCreditTarget: message.TargetPID, sourceCreditItem: &item})
 	if !persisting {
 		respondBridgeIntent(ctx, message.Receipt, &application.BridgeIntentResult{Accepted: true, AwaitingAck: true, Reason: "stored_pending_credit"})
@@ -1412,6 +1446,9 @@ func (a *AgentActor) taskCreditGranted(ctx *actor.ReceiveContext, message *appli
 	item.Credit = message.Credit
 	item.State = "sent"
 	a.sourceOutbox[item.TaskID] = item
+	// The awaited grant arrived: the next tick spends the held credit instead
+	// of staying suppressed or re-requesting.
+	delete(a.outboxCreditAwaited, item.TaskID)
 	task := &application.ActorTask{Credit: message.Credit, SourcePeer: a.communicationPeer(), TargetPeer: item.Target, RequestID: item.RequestID, DedupeID: item.DedupeID, ChainID: item.ChainID, RequiredCapability: item.RequiredCapability, SourceMutationSequence: item.SourceMutationSequence, Deadline: item.Deadline, HopLimit: item.HopLimit, Mode: item.Mode, Payload: append([]byte(nil), item.Payload...)}
 	if sender := ctx.Sender(); sender != nil {
 		_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), sender, task)
@@ -1422,6 +1459,10 @@ func (a *AgentActor) taskBackpressured(ctx *actor.ReceiveContext, message *appli
 	if message == nil {
 		return
 	}
+	// An explicit refusal ends the single-flight wait so the next bounded tick
+	// may re-request; a stale reply for an older overlapping request must not
+	// discard a credit the item still holds (the send path re-checks expiry).
+	delete(a.outboxCreditAwaited, message.TaskID)
 	if item, ok := a.sourceOutbox[message.TaskID]; ok && time.Now().Before(item.Deadline) {
 		item.State = "pending_credit"
 		a.sourceOutbox[message.TaskID] = item
@@ -1435,12 +1476,18 @@ func (a *AgentActor) actorTask(ctx *actor.ReceiveContext, message *application.A
 	}
 	reservation, ok := a.taskCreditReservations[message.Credit.CreditID]
 	if !ok || reservation.credit.TaskID != message.Credit.TaskID || reservation.credit.TargetEpoch != message.Credit.TargetEpoch || reservation.credit.PayloadDigest != sha256.Sum256(message.Payload) || time.Now().After(reservation.credit.ExpiresAt) || message.Credit.PayloadDigest != reservation.credit.PayloadDigest {
+		var reserved *taskCreditReservation
+		if ok {
+			reserved = &reservation
+		}
+		a.logActorTaskReject(actorTaskRejectDetail(reservation, ok, message), message.Credit, replyTo, reserved)
 		_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), replyTo, &application.ActorTaskAccepted{TaskID: message.Credit.TaskID, CreditID: message.Credit.CreditID, TargetAgentID: a.id, Reason: "invalid, expired, duplicate, or stale task credit"})
 		return
 	}
 	// The task may only spend a credit that this actor reserved for the exact
 	// requesting sender; forged or rebound origins are rejected fail-closed.
 	if reservation.replyTo == nil || !replyTo.Equals(reservation.replyTo) {
+		a.logActorTaskReject("sender_identity_rejected", message.Credit, replyTo, &reservation)
 		_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), replyTo, &application.ActorTaskAccepted{TaskID: message.Credit.TaskID, CreditID: message.Credit.CreditID, TargetAgentID: a.id, Reason: "task credit sender identity rejected"})
 		return
 	}
@@ -1454,6 +1501,50 @@ func (a *AgentActor) actorTask(ctx *actor.ReceiveContext, message *application.A
 	if !a.acceptActorTaskWithCredit(ctx, intent, replyTo, message.SourcePeer, old) {
 		_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), replyTo, &application.ActorTaskAccepted{TaskID: message.Credit.TaskID, CreditID: message.Credit.CreditID, TargetAgentID: a.id, Reason: "actor task rejected"})
 	}
+}
+
+// actorTaskRejectDetail names the first failing credit check so the bounded
+// reject log distinguishes missing reservations, stale epochs, digest
+// mismatches, and expiry instead of one opaque reason.
+func actorTaskRejectDetail(reservation taskCreditReservation, reserved bool, message *application.ActorTask) string {
+	if !reserved {
+		return "credit_reservation_missing"
+	}
+	switch {
+	case reservation.credit.TaskID != message.Credit.TaskID:
+		return "credit_task_mismatch"
+	case reservation.credit.TargetEpoch != message.Credit.TargetEpoch:
+		return "credit_epoch_mismatch"
+	case reservation.credit.PayloadDigest != sha256.Sum256(message.Payload):
+		return "payload_digest_mismatch"
+	case time.Now().After(reservation.credit.ExpiresAt):
+		return "credit_expired"
+	case message.Credit.PayloadDigest != reservation.credit.PayloadDigest:
+		return "credit_digest_mismatch"
+	}
+	return "credit_rejected"
+}
+
+// logActorTaskReject emits one bounded operator-visible line per rejected
+// ActorTask Tell. Logging stops after maxActorTaskRejectLogs lines so a churny
+// source redriving a dead credit cannot flood the daemon log.
+func (a *AgentActor) logActorTaskReject(detail string, credit application.TaskCredit, replyTo *actor.PID, reservation *taskCreditReservation) {
+	if a.taskRejectLogs >= maxActorTaskRejectLogs {
+		return
+	}
+	a.taskRejectLogs++
+	log := a.taskRejectLog
+	if log == nil {
+		log = func(format string, args ...any) { fmt.Fprintf(os.Stderr, format, args...) }
+	}
+	reservedEpoch, expiresAt, senderOK := uint64(0), time.Time{}, false
+	if reservation != nil {
+		reservedEpoch = reservation.credit.TargetEpoch
+		expiresAt = reservation.credit.ExpiresAt
+		senderOK = reservation.replyTo != nil && replyTo != nil && replyTo.Equals(reservation.replyTo)
+	}
+	log("actor task rejected: agent=%s task=%s credit=%s epoch=%d target_epoch=%d reserved_epoch=%d reserved=%t expired=%t sender_ok=%t reason=%s\n",
+		boundedActorLogAtom(a.id, 64), boundedActorLogAtom(credit.TaskID, 96), boundedActorLogAtom(credit.CreditID, 40), credit.TargetEpoch, a.taskCreditEpoch, reservedEpoch, reservation != nil, !expiresAt.IsZero() && time.Now().After(expiresAt), senderOK, detail)
 }
 
 func (a *AgentActor) actorTaskAccepted(ctx *actor.ReceiveContext, message *application.ActorTaskAccepted) {
@@ -1475,6 +1566,7 @@ func (a *AgentActor) actorTaskAccepted(ctx *actor.ReceiveContext, message *appli
 	}
 	old := a.durableState()
 	delete(a.sourceOutbox, message.TaskID)
+	delete(a.outboxCreditAwaited, message.TaskID)
 	a.sourceOutboxOrder = slices.DeleteFunc(a.sourceOutboxOrder, func(id string) bool { return id == message.TaskID })
 	committed := &application.TargetTaskCommitted{TaskID: message.TaskID, TargetAgentID: message.TargetAgentID}
 	if a.beginDurablePersist(ctx, &pendingDurableReceipt{old: old, targetTaskCommitted: committed}) {
@@ -1503,6 +1595,7 @@ func (a *AgentActor) retrySourceOutbox(ctx *actor.ReceiveContext) {
 			failed := application.ActorTaskCompleted{CompletionKey: taskID, OriginalRequestID: item.RequestID, DedupeID: item.DedupeID, ChainID: item.ChainID, SourceMutationSequence: item.SourceMutationSequence, Terminal: application.BridgeIntentResult{Reason: "actor task deadline expired before delivery"}, Source: a.communicationPeer(), Target: item.Target, Kind: application.BridgeDeliveryNotification}
 			a.retainSourceCompletion(taskID, failed)
 			delete(a.sourceOutbox, taskID)
+			delete(a.outboxCreditAwaited, taskID)
 			a.sourceOutboxOrder = slices.DeleteFunc(a.sourceOutboxOrder, func(id string) bool { return id == taskID })
 			changed = true
 			continue
@@ -1524,11 +1617,22 @@ func (a *AgentActor) retrySourceOutbox(ctx *actor.ReceiveContext) {
 			a.resolveActorRefAsync(ctx, item.TargetRef)
 			continue
 		}
-		if item.State == "sent" && item.Credit.CreditID != "" && now.Before(item.Credit.ExpiresAt) {
+		// The item still sits in the outbox, so a held unexpired credit is by
+		// definition unconsumed: spend it instead of rotating a fresh target
+		// epoch. The state label is advisory only — a stale backpressure reply
+		// must never discard a live credit into a re-request churn.
+		if item.Credit.CreditID != "" && now.Before(item.Credit.ExpiresAt) {
 			_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), target, &application.ActorTask{Credit: item.Credit, SourcePeer: a.communicationPeer(), TargetPeer: item.Target, RequestID: item.RequestID, DedupeID: item.DedupeID, ChainID: item.ChainID, RequiredCapability: item.RequiredCapability, SourceMutationSequence: item.SourceMutationSequence, Deadline: item.Deadline, HopLimit: item.HopLimit, Mode: item.Mode, Payload: append([]byte(nil), item.Payload...)})
-		} else {
-			a.requestOutboxCredit(ctx, target, item)
+			continue
 		}
+		// One in-flight credit request per item: while a grant is awaited
+		// within the bounded window, this tick sends nothing. Overlapping
+		// requests would rotate the target epoch and every task Tell would
+		// then carry a stale-epoch credit.
+		if awaited, waiting := a.outboxCreditAwaited[taskID]; waiting && now.Sub(awaited) < taskCreditRequestTimeout {
+			continue
+		}
+		a.requestOutboxCredit(ctx, target, item)
 	}
 	// Every pending item keeps one bounded backoff tick scheduled until it is
 	// accepted or terminal: a pure redrive send (no durable state change) must
@@ -1724,7 +1828,7 @@ func lookupActorRef(system actor.ActorSystem, ref application.DurableActorRef) *
 		if pid == nil && ref.AgentID != "" {
 			stable := "agent-" + hex.EncodeToString(stableAgentNameDigest(ref.AgentID))
 			if resolved, err := system.ActorOf(resolveCtx, stable); err == nil {
-			pid = resolved
+				pid = resolved
 			}
 		}
 	} else if noSender := system.NoSender(); noSender != nil {
@@ -1784,6 +1888,9 @@ func (a *AgentActor) requestOutboxCredit(ctx *actor.ReceiveContext, target *acto
 	if target == nil || time.Now().After(item.Deadline) {
 		return
 	}
+	// Mark the single in-flight request before sending: every retry tick that
+	// fires before the grant (or the bounded window elapses) stays silent.
+	a.outboxCreditAwaited[item.TaskID] = time.Now()
 	request := &application.RequestTaskCredit{TaskID: item.TaskID, RequestID: item.RequestID, DedupeID: item.DedupeID, ChainID: item.ChainID, Deadline: item.Deadline, PayloadDigest: item.PayloadDigest}
 	_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), target, request)
 }
