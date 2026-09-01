@@ -30,6 +30,7 @@ type Binding = {
   credential: Uint8Array;
 };
 type TargetFence = { handle: string; fence: bigint };
+type CachedTargetFence = { fence: TargetFence; capabilities: string[] };
 
 class FramedClient {
   private socket?: WebSocket;
@@ -157,7 +158,10 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
   let pollClient: FramedClient | undefined;
   let binding: Binding | undefined;
   let selfFence: TargetFence | undefined;
-  const fences = new Map<string, TargetFence>();
+  // AttachAgent maintains one authoritative fence per source session and target.
+  // Capability changes therefore replace this entry instead of retaining
+  // multiple capability-keyed fences that the daemon has already invalidated.
+  const targetFences = new Map<string, CachedTargetFence>();
   const subscriptions = new Set<string>();
   const delivered = new Set<string>();
   let piSessionId = "";
@@ -236,18 +240,21 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
     return { reachable: Boolean(resolved.agent) && !resolved.ambiguous, latencyMs: Date.now() - started, ...resolved };
   };
 
-  const ensureFence = async (target: string): Promise<TargetFence> => {
-    const existing = fences.get(target);
-    if (existing) return existing;
-    const response = await requiredClient(client).request("attachRequest", AttachRequestSchema, { agentId: target, requestedCapabilities: ["observe", "send", "ask", "control_abort", "control_shutdown"] });
+  const ensureTargetFence = async (target: string, capabilities: readonly string[]): Promise<TargetFence> => {
+    const normalized = normalizedCapabilitySet(capabilities);
+    const existing = targetFences.get(target);
+    if (existing && capabilitySetIncludes(existing.capabilities, normalized)) return existing.fence;
+    const response = await requiredClient(client).request("attachRequest", AttachRequestSchema, { agentId: target, requestedCapabilities: normalized });
     if (response.payload.case !== "attachResponse" || !response.payload.value.agentHandle) throw new Error("target attach rejected");
     const fence = { handle: response.payload.value.agentHandle, fence: response.payload.value.fence };
-    fences.set(target, fence);
+    targetFences.set(target, { fence, capabilities: normalized });
     return fence;
   };
 
+  const pollingFence = async (target: string): Promise<TargetFence> => target === requiredBinding(binding).agentId ? requiredFence(selfFence) : ensureTargetFence(target, ["observe"]);
+
   const message = async (mode: ActorMessageRequest_Mode, target: string | undefined, text: string) => {
-    const current = requiredBinding(binding); const destination = target?.trim() || current.agentId; const fence = await ensureFence(destination);
+    const current = requiredBinding(binding); const destination = target?.trim() || current.agentId; const fence = await ensureTargetFence(destination, actorMessageCapabilities(mode));
     const messageScope = bridgeMessageScopeKey(current);
     const inherited = prompts.active()?.delivery;
     if (inherited && inherited.hopLimit < 1) throw new Error("inherited prompt hop budget exhausted");
@@ -259,7 +266,7 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
   };
 
   const control = async (intent: ActorControlRequest_Intent, target?: string) => {
-    const current=requiredBinding(binding);const destination=target?.trim()||current.agentId;const fence=await ensureFence(destination);
+    const current=requiredBinding(binding);const destination=target?.trim()||current.agentId;const fence=await ensureTargetFence(destination, actorControlCapabilities(intent));
     const inherited = prompts.active()?.delivery;
     if (inherited && inherited.hopLimit < 1) throw new Error("inherited prompt hop budget exhausted");
     return mutations.run(bridgeControlScopeKey(current,fence),
@@ -270,7 +277,7 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
 
   const subscribe = async (target?: string) => {
     const destination = target?.trim() || requiredBinding(binding).agentId;
-    const fence = await ensureFence(destination);
+    const fence = await ensureTargetFence(destination, ["observe"]);
     const response = await requiredClient(client).request("subscribeAgentRequest", SubscribeAgentRequestSchema, { agentId: destination, afterRevision: 0n }, fence);
     if (response.payload.case !== "agentOperationResponse") throw new Error("unexpected subscribe response");
     if (response.payload.value.completed) subscriptions.add(destination);
@@ -279,7 +286,7 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
 
   const unsubscribe = async (target?: string) => {
     const destination = target?.trim() || requiredBinding(binding).agentId;
-    const fence = await ensureFence(destination);
+    const fence = await ensureTargetFence(destination, ["observe"]);
     const response = await requiredClient(client).request("unsubscribeAgentRequest", UnsubscribeAgentRequestSchema, { agentId: destination }, fence);
     if (response.payload.case !== "agentOperationResponse") throw new Error("unexpected unsubscribe response");
     if (response.payload.value.completed) subscriptions.delete(destination);
@@ -320,7 +327,6 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
     const response = await connectBridgeWithRetry(client, binding, piSessionId, lastAckedSequence, BridgeConnectRequestSchema);
     adoptBridgeMutationHighWater(binding, response.payload.value.actorMessageHighWater ?? 0n);
     selfFence = { handle: response.payload.value.agentHandle, fence: response.payload.value.fence };
-    fences.set(binding.agentId, selfFence);
     for (const frame of pendingPushFrames.splice(0)) schedulePush(ctx, frame);
     await pushTail;
     await lifecycle(BridgeLifecycleRequest_Event.SESSION_START);
@@ -356,12 +362,12 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
     pollTimer = undefined;
     try { await prompts.shutdown(); } catch { /* server timeout remains authoritative */ }
     try { await lifecycle(BridgeLifecycleRequest_Event.SESSION_SHUTDOWN); } catch { /* shutdown remains best effort */ }
-    for (const [target, fence] of fences) {
+    for (const [target, cached] of targetFences) {
       try {
-        await client?.request("detachAgentRequest",DetachAgentRequestSchema,{agentId:target},fence);
+        await client?.request("detachAgentRequest",DetachAgentRequestSchema,{agentId:target},cached.fence);
       } catch { /* daemon fencing performs final cleanup */ }
     }
-    fences.clear();
+    targetFences.clear();
     subscriptions.clear();
     if (binding) mutations.retireScopes(bridgeSessionToken(binding));
     await client?.close();
@@ -403,7 +409,7 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
     for (const event of frame.events) ctx.ui.setStatus("hosted-pi-event", `${boundedPublic(event.agentId)}: ${boundedPublic(event.operation)} @${event.revision}`);
     const current = requiredBinding(binding);
     if (frame.agentId !== current.agentId) return;
-    const fence = requiredFence(fences.get(frame.agentId));
+    const fence = await pollingFence(frame.agentId);
     for (const delivery of frame.deliveries) await deliverAndAcknowledge(ctx, delivery, fence);
   }
 
@@ -417,7 +423,7 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
     catch (error) { reportBridgeDegraded(ctx, error); }
     const targets = new Set([current.agentId, ...subscriptions]);
     for (const target of targets) {
-      const fence = requiredFence(fences.get(target));
+      const fence = await pollingFence(target);
       const cursor = await drainPages(pollSequences.get(target) ?? 0n,
         async (afterSequence) => {
           const response = await requiredClient(pollClient).request("bridgePollRequest", BridgePollRequestSchema, { afterSequence, maxItems: 64, agentId: target }, fence);
@@ -544,7 +550,7 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
           adoptBridgeMutationHighWater(current, response.payload.value.actorMessageHighWater ?? 0n);
           const replacement = { handle: response.payload.value.agentHandle, fence: response.payload.value.fence };
           if (selfFence && (replacement.handle !== selfFence.handle || replacement.fence !== selfFence.fence)) throw new Error("idempotent reconnect unexpectedly rotated bridge fence");
-          selfFence = replacement; fences.set(current.agentId, replacement);
+          selfFence = replacement;
           await lifecycle(BridgeLifecycleRequest_Event.READY);
           await prompts.retryCompletion();
           await poll(ctx);
@@ -587,6 +593,29 @@ export function consumeReconnect(operation: () => Promise<unknown>): void {
 function bridgeSessionToken(value:Binding):string{return `${value.sessionId}\0${value.generationId}\0${value.caller}\0${value.agentId}`;}
 function bridgeMessageScopeKey(value:Binding):string{return `${bridgeSessionToken(value)}\0messages`;}
 function bridgeControlScopeKey(value:Binding,fence:TargetFence):string{return `${bridgeSessionToken(value)}\0control\0${fence.handle}\0${fence.fence}`;}
+
+export function normalizedCapabilitySet(capabilities: readonly string[]): string[] {
+  const normalized = [...new Set(capabilities.map((capability) => capability.trim()).filter(Boolean))].sort();
+  if (normalized.length === 0) throw new Error("target attach requires at least one capability");
+  return normalized;
+}
+
+export function capabilitySetIncludes(granted: readonly string[], requested: readonly string[]): boolean {
+  const available = new Set(normalizedCapabilitySet(granted));
+  return normalizedCapabilitySet(requested).every((capability) => available.has(capability));
+}
+
+export function actorMessageCapabilities(mode: number): string[] {
+  if (mode === 1) return ["observe", "send"];
+  if (mode === 2) return ["observe", "ask"];
+  throw new Error("unsupported actor message mode");
+}
+
+export function actorControlCapabilities(intent: number): string[] {
+  if (intent === 1) return ["observe", "control_abort"];
+  if (intent === 2) return ["observe", "control_shutdown"];
+  throw new Error("unsupported actor control intent");
+}
 
 async function loadBinding(): Promise<Binding> {
   const endpoint = requiredEnv("WS_SUBAGENTS_ENDPOINT");

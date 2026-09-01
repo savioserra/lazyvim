@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { buildActorControl, buildActorMessage, buildIdentityDeliveryAck, bridgeErrorClass, communicationKey, communicationLine, CommunicationTimeline, completeHostedEnvironment, ExactMutationSequencer, PromptTaskCoordinator, deliveryAction, deliveryKindLabel, destroyOnFramingFailure, drainPages, executeTypedDelivery, invokeTypedDeliveryForAck, missingAckIdentity, parseTargetMessage, registerHostedHandlers, requireExplicitModelTarget } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/handlers.ts";
 import { bridgeDiagnostic, incomingNote, incomingRequestText, outgoingExchange, renderCommunicationCard, compactToolCall, compactToolResult, modelResultContent } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/communication-ui.ts";
-import { actorMessageModelResult, connectBridgeWithRetry, consumeReconnect, degradedBridgeStatus } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/index.ts";
+import { actorControlCapabilities, actorMessageCapabilities, actorMessageModelResult, capabilitySetIncludes, connectBridgeWithRetry, consumeReconnect, degradedBridgeStatus } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/index.ts";
 
 const complete = { WS_SUBAGENTS_ENDPOINT: "ws://127.0.0.1:17213/actors", WS_SUBAGENTS_CREDENTIAL_FILE: "/state/credential", WS_SUBAGENTS_SESSION_ID: "session", WS_SUBAGENTS_GENERATION_ID: "generation", WS_SUBAGENTS_CALLER: "hosted:agent", WS_SUBAGENTS_AGENT_ID: "agent", WS_SUBAGENTS_RUNTIME_ID: "runtime", WS_SUBAGENTS_INCARNATION: "1" };
 
@@ -49,6 +49,17 @@ test("pagination drains every page and advances only through emitted cursors", a
   const cursor = await drainPages(0n, async () => pages.shift(), async (page) => { consumed += page.values; });
   assert.equal(cursor, 130n); assert.equal(consumed, 130);
   await assert.rejects(() => drainPages(5n, async () => ({ latestSequence: 5n, more: true }), async () => {}), /did not advance/);
+});
+
+test("target attachment fences are operation-minimal and capability-set scoped", () => {
+  assert.deepEqual(actorMessageCapabilities(1), ["observe", "send"]);
+  assert.deepEqual(actorMessageCapabilities(2), ["observe", "ask"]);
+  assert.deepEqual(actorControlCapabilities(1), ["observe", "control_abort"]);
+  assert.deepEqual(actorControlCapabilities(2), ["observe", "control_shutdown"]);
+  assert.equal(capabilitySetIncludes(["send", "observe"], actorMessageCapabilities(1)), true, "an existing messaging fence may be reused regardless of capability order");
+  assert.equal(capabilitySetIncludes(actorMessageCapabilities(1), actorControlCapabilities(1)), false, "messaging-only fences must be replaced for a control operation");
+  assert.doesNotMatch(actorMessageCapabilities(1).join(" "), /control_abort|control_shutdown/, "actor_tell must never request control capabilities");
+  assert.throws(() => actorControlCapabilities(99), /unsupported actor control intent/);
 });
 
 test("actual registered command and tool callbacks invoke every hosted operation", async () => {
