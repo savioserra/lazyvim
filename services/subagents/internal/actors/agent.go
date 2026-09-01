@@ -1499,6 +1499,12 @@ func (a *AgentActor) actorTask(ctx *actor.ReceiveContext, message *application.A
 	delete(a.taskCreditReservations, message.Credit.CreditID)
 	intent := &application.BridgeIntent{SessionID: "actor", GenerationID: "actor", Principal: message.SourcePeer.StableID, Handle: "actor", SourceAgentID: message.SourcePeer.StableID, TargetAgentID: a.id, RequestID: message.RequestID, RequiredCapability: message.RequiredCapability, DedupeID: message.DedupeID, ChainID: message.ChainID, SourceMutationSequence: message.SourceMutationSequence, Deadline: message.Deadline, HopLimit: message.HopLimit, Mode: message.Mode, Payload: append([]byte(nil), message.Payload...)}
 	if !a.acceptActorTaskWithCredit(ctx, intent, replyTo, message.SourcePeer, old) {
+		// A refused task must not burn its credit: the source outbox still
+		// holds the granted credit and redrives it within the lease, so the
+		// reservation survives until its lease expiry or a successful
+		// acceptance consumes it. Burning it here turned every redrive into a
+		// credit_reservation_missing reject that hid the real refusal reason.
+		a.taskCreditReservations[message.Credit.CreditID] = reservation
 		_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), replyTo, &application.ActorTaskAccepted{TaskID: message.Credit.TaskID, CreditID: message.Credit.CreditID, TargetAgentID: a.id, Reason: "actor task rejected"})
 	}
 }
