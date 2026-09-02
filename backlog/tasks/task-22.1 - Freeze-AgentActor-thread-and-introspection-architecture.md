@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 06:10'
-updated_date: '2026-09-02 06:13'
+updated_date: '2026-09-02 06:45'
 labels: []
 dependencies: []
 parent_task_id: TASK-22
@@ -38,4 +38,6 @@ Convert Ask 89 into a concise ADR, challenge identity/completion/privacy assumpt
 
 <!-- SECTION:NOTES:BEGIN -->
 Added ADR 0006 draft as implementation-authoritative durable thread/introspection contract and updated docs/subagents plus roadmap cross-references. No runtime code implemented.
+
+Notification-fix deployment interrupted ADR correction only after architect commit was safely present in its retained git worktree. Actor was explicitly restarted at operator request and recreated against the same worktree; correction commit remains available for integration.
 <!-- SECTION:NOTES:END -->
