@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 04:30'
-updated_date: '2026-09-02 04:52'
+updated_date: '2026-09-02 04:56'
 labels: []
 dependencies: []
 references:
@@ -38,6 +38,9 @@ A full `go test -race ./...` run intermittently failed `TestRemoteHostedOrdinary
 3. Ensure remote forwarding retries and concurrent duplicates cannot bypass the single source-owner idempotency boundary or admit twice.
 4. Add deterministic concurrent/sequential/reconnect regressions and stabilize authorization setup.
 5. Run focused tests repeatedly under race detection and the full service/repository gates.
+
+6. Close the terminal-history gap before integration: retain a durable immutable source mutation fingerprint and authoritative receipt across target acceptance/outbox retirement and terminal completion; include request, dedupe, chain, sequence, target, mode, capability, and payload digest.
+7. Prove identical and changed-payload duplicates both before completion and after terminal retention/restart, including legacy records whose fingerprint cannot be proven.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
@@ -46,4 +49,6 @@ A full `go test -race ./...` run intermittently failed `TestRemoteHostedOrdinary
 Independent QA sequence 56 reproduced the release blocker on origin/main 89e77ee: first remote duplicate response accepted/stored_pending_credit, second identical response rejected source mutation sequence must advance exactly once. A focused attempt also exposed intermittent attach authorization setup failure. TASK-20 blocks deployment of the Tell/Ask UX change.
 
 Writer sequence 60 produced commit 9c08c38 with pending/in-flight duplicate convergence, collision rejection, fixture stabilization, concurrent remote tests, and reported focused -race count=20/full gates. Not integrated or finalized pending independent review sequence 63, specifically terminal sourceTaskHistory digest fencing, post-restart behavior, legacy zero-digest history, and complete immutable identity comparison.
+
+PM code audit of a21b62b found the implementation only validates payload while sourceOutbox is retained. Exact sourceTaskHistory matches return terminal results without digest comparison, and sameSourceOutboxMutation omits dedupe/chain checks. A post-terminal changed-payload regression is required before integration.
 <!-- SECTION:NOTES:END -->
