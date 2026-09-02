@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 03:03'
-updated_date: '2026-09-02 03:52'
+updated_date: '2026-09-02 03:53'
 labels: []
 dependencies: []
 references:
@@ -68,4 +68,6 @@ Correction applied: rejected hardcoded PROJECT MANAGER/TERMINAL PI presentation 
 Correction validation: capabilities passed; actor-client passed 41/41; hosted-pi-bridge passed 37/37; service gate passed npm ci, codegen verify, go test -race ./..., go vet ./..., npm test; git diff --check passed. Host blockers unchanged: stylua missing, scratch chezmoi blocked by missing tmux, tmux-subagents 93/97 with spawn tmux ENOENT.
 
 Writer sequences 43/44 completed and were integrated: canonical client identity and reply alias/fence handling landed first, then all hardcoded PROJECT MANAGER and TERMINAL PI metadata was removed. ClientSessionRequest now carries optional authenticated display_name/role; registry updates metadata durably without identity/fence rotation; communicationPeer resolves current AgentActor metadata with neutral role-free fallback; display names cannot route. Writer gates passed actor-client 41/41, hosted bridge 37/37, service codegen/race/vet/protocol, capabilities, and diff.
+
+PM post-integration gates on 7d1ac9e passed: actor-client 41/41, hosted bridge 37/37, capabilities, service codegen/go race/vet/protocol 6/6, git diff check, and scratch chezmoi dry-run. Independent architecture/security review sequence 45 and QA sequence 46 are active before the operator-requested fresh deployment reset.
 <!-- SECTION:NOTES:END -->
