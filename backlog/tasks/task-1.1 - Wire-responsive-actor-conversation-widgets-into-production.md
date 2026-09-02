@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 02:56'
-updated_date: '2026-09-02 05:41'
+updated_date: '2026-09-02 05:42'
 labels: []
 dependencies:
   - TASK-6
@@ -40,6 +40,8 @@ Replace the actor-client's remaining legacy communication renderer path with pro
 1. Add schema-versioned actor-client render envelopes plus read-only legacy CommunicationView/line migration adapters. 2. Wire index entry/message renderers and tool renderers to actor-client widgets from XState snapshots, preserving model-visible correlation content. 3. Make conversation/status widgets width-aware/theme-invalidating and selector-driven without append-on-resize/theme. 4. Add adapter, migration, restore/replay/collision, tool, redaction, and narrow/wide tests; run relevant gates and commit.
 
 5. Close the production intent gap: hosted `actor_tell` must use TELL admission semantics and display delivered/failure states; add a distinct `actor_ask` command/tool for request/reply semantics, preserving model correlation and compatibility documentation.
+
+6. Separate terminal completion presentation by protocol intent: Tell acknowledgement may update a TUI-only delivered/failure projection but must never create an Actor Ask reply, trigger a model turn, or expose delivery acknowledged as an answer; Ask alone owns model-visible reply completion.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
@@ -88,4 +90,6 @@ Operator-authorized deployment completed: exactly stopped five hosted UI actors,
 Operator deployment correction: Pi `/reload` is not sufficient for actor-client releases. Treat actor-client command/tool registrations, loaded closures, protobuf/runtime modules, and XState/session projections as process-lifetime state. Deployment acceptance requires exiting and starting a new terminal Pi process (continuing the intended native Pi session explicitly where supported), then proving the new process exposes current Tell/Ask semantics and UI.
 
 Fresh terminal Pi process after deployment now exposes true TELL semantics: actor_tell sequences 68-70 returned kind=Tell and rendered ✓ delivered rather than pending/replied. This proves full-process restart activated the new tool registration; remaining live matrix still needs Ask/reply and incoming/failure cases.
+
+Fresh-process live sequence 69 exposed a new blocker: initial actor_tell correctly rendered ✓ delivered/kind=Tell, but its terminal delivery ACK later entered the generic actorMessageReplyFrame path and rendered `Actor Ask replied` with answer `delivery acknowledged`. Tell terminal ACKs must not use actor-client-ask-completion or replied semantics.
 <!-- SECTION:NOTES:END -->

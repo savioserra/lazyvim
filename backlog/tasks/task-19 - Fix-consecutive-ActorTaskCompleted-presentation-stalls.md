@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 03:03'
-updated_date: '2026-09-02 05:37'
+updated_date: '2026-09-02 05:42'
 labels: []
 dependencies: []
 references:
@@ -86,4 +86,6 @@ Writer sequence 50 integrated release-gate regressions: three consecutive comple
 Deployment/reset evidence: five hosted sessions were exactly stopped and recreated after daemon rebuild; all five authenticated bridges report available and BridgeReady. Fresh records exposed separate lifecycle projection defect BridgeReady=true with state=starting, tracked as TASK-21. Live consecutive Tell/Ask matrix must resume after current terminal `/reload`; this deployment does not waive that acceptance gate.
 
 Operator confirmed `/reload` did not fully activate the deployed actor-client behavior. Remaining delivery E2E must run from a newly started terminal Pi process, not a reloaded process; hosted bridge changes still require hosted runtime reincarnation.
+
+Live post-deployment Tell sequence 69 automatically pushed a terminal frame, but frontend misclassified it as an Ask reply (`Actor Ask replied`, answer `delivery acknowledged`). Automatic push works in this case; intent-specific presentation is wrong. Tell ACK must reconcile a TUI-only delivered/failure state exactly once without model follow-up.
 <!-- SECTION:NOTES:END -->
