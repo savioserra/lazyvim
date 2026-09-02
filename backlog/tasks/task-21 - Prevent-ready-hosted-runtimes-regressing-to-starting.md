@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 05:34'
-updated_date: '2026-09-02 13:15'
+updated_date: '2026-09-02 13:35'
 labels: []
 dependencies: []
 references:
@@ -40,4 +40,6 @@ QA post-fix matrix: actor-local early-readiness merge passes; still require same
 Reviewer confirms same-incarnation runtimeProjectionAdvances accepts every projection in agent_registry and AgentActor, allowing stale starting to overwrite ready/BridgeReady. Require monotonic projection advancement with bridge readiness independent.
 
 Implemented same-incarnation lifecycle lattice: ready cannot regress to starting, degraded cannot revive in place, stopped is terminal, and recovery must pass degraded -> next-incarnation starting. Bridge loss now clears BridgeReady without changing a live process back to starting; AgentActor preserves a newer fenced bridge-ready declaration over delayed ready snapshots. Added transition-table and bridge disconnect/reconnect tests; actor race suite passes.
+
+Corrected shutdown/quiescence interaction: direct authoritative Ready=false now clears the AgentActor bridge declaration before forwarding, so stale-ready preservation cannot defeat service quiescence. Remote integration cleanup proof passes.
 <!-- SECTION:NOTES:END -->

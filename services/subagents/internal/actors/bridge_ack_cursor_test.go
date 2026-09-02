@@ -158,7 +158,7 @@ func TestBufferedAckSurvivesRestartAndDrainsAfterCursorCatchUp(t *testing.T) {
 	binding := application.InactiveHostedPiRuntimeBinding()
 	binding.State, binding.BridgeReady, binding.RuntimeID, binding.Incarnation = application.HostedPiRuntimeReady, true, "runtime-bravo", 1
 	record := application.DurableHostedRecord{SchemaVersion: application.DurableHostedSchemaVersion, AgentID: "bravo", Binding: binding, AgentState: application.DurableAgentState{BridgeReady: true}}
-	pid, err := system.Spawn(ctx, "cursor-agent", actors.NewAgentActor(&application.RegisterAgent{AgentID: "bravo", HostedPiRuntime: binding, AllowedCapability: []string{"send", "ask", "hosted_bridge"}, PersistencePID: writer, DurableRecord: &record}))
+	pid, err := system.Spawn(ctx, "cursor-agent", actors.NewBridgeDeliveryFixtureAgent(&application.RegisterAgent{AgentID: "bravo", HostedPiRuntime: binding, AllowedCapability: []string{"send", "ask", "hosted_bridge"}, PersistencePID: writer, DurableRecord: &record}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -224,7 +224,7 @@ func TestBufferedAckSurvivesRestartAndDrainsAfterCursorCatchUp(t *testing.T) {
 	// retained deliveries must restore, and the missing contiguous
 	// acknowledgement then drains the buffered one.
 	persisted.Binding = binding
-	reloaded, err := system.Spawn(ctx, "cursor-agent-reloaded", actors.NewAgentActor(&application.RegisterAgent{AgentID: "bravo", HostedPiRuntime: binding, AllowedCapability: []string{"send", "ask", "hosted_bridge"}, DurableRecord: &persisted}))
+	reloaded, err := system.Spawn(ctx, "cursor-agent-reloaded", actors.NewBridgeDeliveryFixtureAgent(&application.RegisterAgent{AgentID: "bravo", HostedPiRuntime: binding, AllowedCapability: []string{"send", "ask", "hosted_bridge"}, DurableRecord: &persisted}))
 	if err != nil {
 		t.Fatal(err)
 	}

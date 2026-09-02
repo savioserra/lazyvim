@@ -46,7 +46,7 @@ func TestAckCursorRebasesPastLegacyRetiredSequences(t *testing.T) {
 	binding := application.InactiveHostedPiRuntimeBinding()
 	binding.State, binding.BridgeReady, binding.RuntimeID, binding.Incarnation = application.HostedPiRuntimeReady, true, "runtime-bravo", 1
 	record := application.DurableHostedRecord{SchemaVersion: application.DurableHostedSchemaVersion, AgentID: "bravo", Binding: binding, AgentState: application.DurableAgentState{BridgeReady: true}}
-	pid, err := system.Spawn(ctx, "legacy-rebase-agent", actors.NewAgentActor(&application.RegisterAgent{AgentID: "bravo", HostedPiRuntime: binding, AllowedCapability: []string{"send", "ask", "hosted_bridge"}, PersistencePID: writer, DurableRecord: &record}))
+	pid, err := system.Spawn(ctx, "legacy-rebase-agent", actors.NewBridgeDeliveryFixtureAgent(&application.RegisterAgent{AgentID: "bravo", HostedPiRuntime: binding, AllowedCapability: []string{"send", "ask", "hosted_bridge"}, PersistencePID: writer, DurableRecord: &record}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +106,7 @@ func TestAckCursorRebasesPastLegacyRetiredSequences(t *testing.T) {
 	persisted.AgentState.DeliverySources = nil
 	persisted.AgentState.AckCursor = 0
 	persisted.AgentState.AckGapBuffer = nil
-	reloaded, err := system.Spawn(ctx, "legacy-rebase-reloaded", actors.NewAgentActor(&application.RegisterAgent{AgentID: "bravo", HostedPiRuntime: binding, AllowedCapability: []string{"send", "ask", "hosted_bridge"}, DurableRecord: &persisted}))
+	reloaded, err := system.Spawn(ctx, "legacy-rebase-reloaded", actors.NewBridgeDeliveryFixtureAgent(&application.RegisterAgent{AgentID: "bravo", HostedPiRuntime: binding, AllowedCapability: []string{"send", "ask", "hosted_bridge"}, DurableRecord: &persisted}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -193,7 +193,7 @@ func TestAckCursorRebasesAcrossIncarnationChangeMidQueue(t *testing.T) {
 	binding := application.InactiveHostedPiRuntimeBinding()
 	binding.State, binding.BridgeReady, binding.RuntimeID, binding.Incarnation = application.HostedPiRuntimeDegraded, true, "runtime-bravo", 1
 	record := application.DurableHostedRecord{SchemaVersion: application.DurableHostedSchemaVersion, AgentID: "bravo", Binding: binding, AgentState: application.DurableAgentState{BridgeReady: true}}
-	pid, err := system.Spawn(ctx, "incarnation-rebase-agent", actors.NewAgentActor(&application.RegisterAgent{AgentID: "bravo", HostedPiRuntime: binding, AllowedCapability: []string{"send", "ask", "hosted_bridge"}, PersistencePID: writer, DurableRecord: &record}))
+	pid, err := system.Spawn(ctx, "incarnation-rebase-agent", actors.NewBridgeDeliveryFixtureAgent(&application.RegisterAgent{AgentID: "bravo", HostedPiRuntime: binding, AllowedCapability: []string{"send", "ask", "hosted_bridge"}, PersistencePID: writer, DurableRecord: &record}))
 	if err != nil {
 		t.Fatal(err)
 	}

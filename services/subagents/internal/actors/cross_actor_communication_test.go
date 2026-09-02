@@ -37,7 +37,7 @@ func newBridgeHarness(t *testing.T, name, agent, source string) *bridgeHarness {
 		_ = system.Stop(stop)
 	})
 	registration := &application.RegisterAgent{AgentID: agent, AuthorityBinding: application.AuthorityBinding{Kind: application.AuthorityBindingHostedOwned, HostedRuntimeID: "runtime-" + agent}, HostedPiRuntime: application.HostedPiRuntimeBinding{State: application.HostedPiRuntimeReady, RuntimeID: "runtime-" + agent, Incarnation: 1, BridgeReady: true}, AllowedCapability: []string{"observe", "hosted_bridge", "send", "ask", "prompt"}, Retention: "explicit", Recovery: "owned"}
-	pid, err := system.Spawn(ctx, "agent-"+agent, actors.NewAgentActor(registration))
+	pid, err := system.Spawn(ctx, "agent-"+agent, actors.NewBridgeDeliveryFixtureAgent(registration))
 	if err != nil {
 		t.Fatal(err)
 	}

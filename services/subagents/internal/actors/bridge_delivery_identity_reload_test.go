@@ -38,7 +38,7 @@ func TestLegacyIdentitylessDeliveryReloadWithholdsRetiresAndUnblocks(t *testing.
 	binding := application.InactiveHostedPiRuntimeBinding()
 	binding.State, binding.BridgeReady, binding.RuntimeID, binding.Incarnation = application.HostedPiRuntimeReady, true, "runtime-bravo", 1
 	record := application.DurableHostedRecord{SchemaVersion: application.DurableHostedSchemaVersion, AgentID: "bravo", Binding: binding, AgentState: application.DurableAgentState{BridgeReady: true}}
-	pid, err := system.Spawn(ctx, "legacy-agent", actors.NewAgentActor(&application.RegisterAgent{AgentID: "bravo", HostedPiRuntime: binding, AllowedCapability: []string{"send", "ask", "hosted_bridge"}, PersistencePID: writer, DurableRecord: &record}))
+	pid, err := system.Spawn(ctx, "legacy-agent", actors.NewBridgeDeliveryFixtureAgent(&application.RegisterAgent{AgentID: "bravo", HostedPiRuntime: binding, AllowedCapability: []string{"send", "ask", "hosted_bridge"}, PersistencePID: writer, DurableRecord: &record}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +85,7 @@ func TestLegacyIdentitylessDeliveryReloadWithholdsRetiresAndUnblocks(t *testing.
 	persisted.AgentState.BridgeDeliveries[0].SourceScope = ""
 	persisted.AgentState.BridgeDeliveries[0].CompletionKey = ""
 	persisted.AgentState.BridgeDeliveries[0].Deadline = time.Now().Add(time.Hour)
-	reloaded, err := system.Spawn(ctx, "legacy-agent-reloaded", actors.NewAgentActor(&application.RegisterAgent{AgentID: "bravo", HostedPiRuntime: binding, AllowedCapability: []string{"send", "ask", "hosted_bridge"}, DurableRecord: &persisted}))
+	reloaded, err := system.Spawn(ctx, "legacy-agent-reloaded", actors.NewBridgeDeliveryFixtureAgent(&application.RegisterAgent{AgentID: "bravo", HostedPiRuntime: binding, AllowedCapability: []string{"send", "ask", "hosted_bridge"}, DurableRecord: &persisted}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,7 +158,7 @@ func TestLegacyIdentitylessDeliveryWithUnresolvedScopeIsDroppedAtRestore(t *test
 	binding := application.InactiveHostedPiRuntimeBinding()
 	binding.State, binding.BridgeReady, binding.RuntimeID, binding.Incarnation = application.HostedPiRuntimeReady, true, "runtime-orphan", 1
 	record := application.DurableHostedRecord{SchemaVersion: application.DurableHostedSchemaVersion, AgentID: "orphan", Binding: binding, AgentState: application.DurableAgentState{BridgeReady: true}}
-	pid, err := system.Spawn(ctx, "orphan-agent", actors.NewAgentActor(&application.RegisterAgent{AgentID: "orphan", HostedPiRuntime: binding, AllowedCapability: []string{"send", "ask", "hosted_bridge"}, PersistencePID: writer, DurableRecord: &record}))
+	pid, err := system.Spawn(ctx, "orphan-agent", actors.NewBridgeDeliveryFixtureAgent(&application.RegisterAgent{AgentID: "orphan", HostedPiRuntime: binding, AllowedCapability: []string{"send", "ask", "hosted_bridge"}, PersistencePID: writer, DurableRecord: &record}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -191,7 +191,7 @@ func TestLegacyIdentitylessDeliveryWithUnresolvedScopeIsDroppedAtRestore(t *test
 	persisted.AgentState.BridgeDeliveries[0].SourceScope = ""
 	persisted.AgentState.BridgeDeliveries[0].CompletionKey = ""
 	persisted.AgentState.DeliverySources = nil
-	reloaded, err := system.Spawn(ctx, "orphan-agent-reloaded", actors.NewAgentActor(&application.RegisterAgent{AgentID: "orphan", HostedPiRuntime: binding, AllowedCapability: []string{"send", "ask", "hosted_bridge"}, DurableRecord: &persisted}))
+	reloaded, err := system.Spawn(ctx, "orphan-agent-reloaded", actors.NewBridgeDeliveryFixtureAgent(&application.RegisterAgent{AgentID: "orphan", HostedPiRuntime: binding, AllowedCapability: []string{"send", "ask", "hosted_bridge"}, DurableRecord: &persisted}))
 	if err != nil {
 		t.Fatal(err)
 	}

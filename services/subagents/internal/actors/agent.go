@@ -285,16 +285,17 @@ type AgentActor struct {
 	// taskRejectLogs bounds target-side ActorTask/source-side grant reject logging
 	// and taskRejectLog is its sink (nil falls back to stderr; tests substitute
 	// it to observe rejects deterministically).
-	taskRejectLogs        int
-	taskCreditRejectLogs  int
-	taskRejectLog         func(format string, args ...any)
-	mutationScopes        map[string]*mutationScope
-	persistencePID        *actor.PID
-	persistenceSupervisor *actor.PID
-	durableRecord         *application.DurableHostedRecord
-	durableCorrelation    uint64
-	durablePending        *pendingDurableReceipt
-	durableFailed         error
+	taskRejectLogs                    int
+	taskCreditRejectLogs              int
+	taskRejectLog                     func(format string, args ...any)
+	allowDirectModelIntentTestFixture bool
+	mutationScopes                    map[string]*mutationScope
+	persistencePID                    *actor.PID
+	persistenceSupervisor             *actor.PID
+	durableRecord                     *application.DurableHostedRecord
+	durableCorrelation                uint64
+	durablePending                    *pendingDurableReceipt
+	durableFailed                     error
 	// resumePendingWork marks a restored record that still owns outbox items
 	// or undelivered completion tells so PostStart schedules their bounded
 	// retry loops instead of freezing until an unrelated admission.
@@ -484,6 +485,12 @@ func (a *AgentActor) Receive(ctx *actor.ReceiveContext) {
 			respondOperation(ctx, message.Accepted, &application.OperationResult{Reason: a.runtimeFailure})
 		}
 	case *application.HostedPiBridgeReadiness:
+		if !message.Ready {
+			// Owner/service quiescence is itself an authoritative readiness
+			// withdrawal. Clear the declaration before the runtime projection
+			// returns so a same-incarnation Ready snapshot cannot restore it.
+			a.bridgeDeclaredReady = false
+		}
 		if a.runtimePID != nil {
 			_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), a.runtimePID, message)
 		}
@@ -518,6 +525,10 @@ func (a *AgentActor) Receive(ctx *actor.ReceiveContext) {
 	case *application.HostedPiBridgeLeaseExpired:
 		a.bridgeLeaseExpired(ctx, message)
 	case *application.RemoteBridgeIntent:
+		if application.ModelBearingBridgeMode(message.Mode) && !a.allowDirectModelIntentTestFixture {
+			ctx.Response(&application.BridgeIntentResult{Reason: "model-bearing bridge intent retired; use actor task"})
+			return
+		}
 		var completion chan application.BridgeIntentResult
 		if message.ReplyTopic != "" && message.Mode == application.BridgeMessageAsk {
 			completion = make(chan application.BridgeIntentResult, 1)
@@ -565,6 +576,10 @@ func (a *AgentActor) Receive(ctx *actor.ReceiveContext) {
 	case *application.DrainReceivedTaskCompletions:
 		a.drainTaskCompletions(message)
 	case *application.BridgeIntent:
+		if application.ModelBearingBridgeMode(message.Mode) && !a.allowDirectModelIntentTestFixture {
+			respondBridgeIntent(ctx, message.Receipt, &application.BridgeIntentResult{Reason: "model-bearing bridge intent retired; use actor task"})
+			return
+		}
 		a.bridgeIntent(ctx, message)
 	case *application.BridgeControl:
 		a.bridgeControl(ctx, message)

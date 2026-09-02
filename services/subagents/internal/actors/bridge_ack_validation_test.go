@@ -25,7 +25,7 @@ func TestBridgeDeliveryAckValidationRetainsPromptDelivery(t *testing.T) {
 		_ = system.Stop(stop)
 	})
 	registration := &application.RegisterAgent{AgentID: "target", HostedPiRuntime: application.HostedPiRuntimeBinding{State: application.HostedPiRuntimeReady, RuntimeID: "runtime", Incarnation: 1, BridgeReady: true}, AllowedCapability: []string{"hosted_bridge", "prompt"}}
-	pid, err := system.Spawn(ctx, "ack-agent", actors.NewAgentActor(registration))
+	pid, err := system.Spawn(ctx, "ack-agent", actors.NewBridgeDeliveryFixtureAgent(registration))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +83,7 @@ func TestNilBridgeDeliveryAckDoesNotPanic(t *testing.T) {
 		defer cancel()
 		_ = system.Stop(stop)
 	})
-	pid, err := system.Spawn(ctx, "nil-ack-agent", actors.NewAgentActor(&application.RegisterAgent{AgentID: "target"}))
+	pid, err := system.Spawn(ctx, "nil-ack-agent", actors.NewBridgeDeliveryFixtureAgent(&application.RegisterAgent{AgentID: "target"}))
 	if err != nil {
 		t.Fatal(err)
 	}

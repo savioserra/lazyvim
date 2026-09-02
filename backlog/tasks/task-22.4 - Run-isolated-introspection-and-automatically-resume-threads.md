@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 06:10'
-updated_date: '2026-09-02 13:09'
+updated_date: '2026-09-02 13:35'
 labels: []
 dependencies:
   - TASK-22.3
@@ -64,6 +64,8 @@ Fresh deployed live proof succeeded after WebSocket runner initialization: UI QA
 Post-fix reviewer Ask sequence 17 exposed a second real-output policy defect: the classifier correctly described a generic stale-fence refresh finding, but output validation rejected every occurrence of the words fence/handle as if it were a secret value. Narrowed policy to reject only fence/handle identifiers, tokens, values, or assigned raw values while permitting generic security concepts. Added allow/deny regression cases; actual credentials and identities remain forbidden.
 
 Reopened on current review: internal RemoteBridgeIntent/raw BridgeIntent receive paths can still admit model-bearing Ask/Prompt directly into bridge deliveries, bypassing ActorTask credits, target-authoritative threads, settlement, and introspection. Public legacy endpoints are retired, but actor-plane injection remains a mandatory authority gap.
+
+Closed internal model-bearing bypass: AgentActor rejects raw and Remote BridgeIntent Ask/Prompt before effects; placement authority rejects before resolution/forwarding. Production Tell remains temporarily for non-model notification mechanics. Added actor/placement fail-closed tests. Legacy bridge ACK mechanics use an explicit test-only fixture constructor; production constructors cannot enable direct model intents.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

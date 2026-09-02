@@ -32,6 +32,9 @@ func (a *hostedPlacementAuthority) remoteAttach(ctx context.Context, message *ap
 // Actor messages do not use this path: they follow the credit/task protocol
 // addressed directly to the agent actor.
 func (a *hostedPlacementAuthority) remoteBridgeIntent(ctx context.Context, message *application.RemoteBridgeIntent) *application.BridgeIntentResult {
+	if message == nil || application.ModelBearingBridgeMode(message.Mode) {
+		return &application.BridgeIntentResult{Reason: "model-bearing bridge intent retired; use actor task"}
+	}
 	pid, err := a.localAgentPID(ctx, message.TargetAgentID)
 	if err != nil {
 		return &application.BridgeIntentResult{Reason: err.Error()}

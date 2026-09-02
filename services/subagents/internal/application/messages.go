@@ -815,6 +815,10 @@ const (
 	BridgeMessagePrompt
 )
 
+func ModelBearingBridgeMode(mode BridgeMessageMode) bool {
+	return mode == BridgeMessageAsk || mode == BridgeMessagePrompt
+}
+
 type BridgeIntent struct {
 	SessionID, GenerationID, Principal, Handle, SourceAgentID, TargetAgentID, RequestID, RequiredCapability, DedupeID, ChainID string
 	Fence, SourceMutationSequence                                                                                              uint64
