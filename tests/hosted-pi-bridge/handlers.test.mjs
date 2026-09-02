@@ -429,6 +429,18 @@ test("prompt delivery injects followUp, correlates the settled answer, and ignor
   for (const event of events) { assert.equal(typeof event.sequence,"bigint"); assert.ok(!/[\r\n\t]/.test(event.detail)); }
 });
 
+test("durably admitted nested Ask suspends the parent as a successful waiting turn", async () => {
+  const acknowledgements=[];
+  const coordinator=new PromptTaskCoordinator(async()=>{},async(_pending,delivered,answer,reason,settlement)=>acknowledgements.push({delivered,answer,reason,settlement}));
+  const delivery={dedupeId:"parent",boundedPayload:new TextEncoder().encode("parent task"),hopLimit:4,deadlineUnixMillis:BigInt(Date.now()+1000),chainId:"chain",sequence:8n};
+  await coordinator.deliver(delivery,{handle:"h",fence:8n});
+  assert.equal(coordinator.suspendForChild(),true);
+  coordinator.agentEnd([{role:"user",content:"parent task"}]);
+  await coordinator.settled();
+  assert.deepEqual(acknowledgements,[{delivered:true,answer:"Waiting for exact child completion.",reason:"",settlement:{bridgeRunCounter:1n,agentEndObserved:true,agentSettledObserved:true}}]);
+  assert.equal(coordinator.active(),undefined);
+});
+
 test("prompt completion ignores stale agent_start and binds the queued prompt run exactly", async () => {
   const acknowledgements=[];
   const coordinator=new PromptTaskCoordinator(async()=>{},async(_pending,delivered,answer,_reason,settlement)=>acknowledgements.push({delivered,answer,settlement}));
