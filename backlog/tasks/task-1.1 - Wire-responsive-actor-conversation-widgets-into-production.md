@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 02:56'
-updated_date: '2026-09-02 05:34'
+updated_date: '2026-09-02 05:37'
 labels: []
 dependencies:
   - TASK-6
@@ -31,6 +31,7 @@ Replace the actor-client's remaining legacy communication renderer path with pro
 - [x] #3 Wide and narrow layouts use Pi TUI components and theme tokens, stay within width, invalidate on theme changes, and preserve semantics on resize
 - [ ] #4 Collapsed/expanded tool rendering is compact for humans while model-visible content retains required correlation and next-action fields
 - [ ] #5 Automated and live fresh-runtime E2E cover Actor UX acceptance items 1-10 and 12 except typed productive phase, which is tracked separately
+- [ ] #6 Deployment documentation and live acceptance require a full terminal Pi process restart for actor-client changes; `/reload` alone is explicitly insufficient
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -83,4 +84,6 @@ PM verification on integrated main 862a9fc: hosted-pi-bridge suite passed 38/38 
 Deployment verify found stale lifecycle expectations for removed actor-send command. Updated subagents verifier to require the current actor-connect/list/resolve/health/tell/ask/create/stop/control/subscription command surface and confirm hosted bridge registers none outside hosted runtime; direct source verifier passed.
 
 Operator-authorized deployment completed: exactly stopped five hosted UI actors, ran chezmoi source apply, rebuilt/restarted daemon, recreated all five fresh hosted runtimes from their worktrees with current display/role metadata, and confirmed deployed actor-client/hosted bridge files match source. Workstation verify passed after fixing the stale command-surface verifier. Current interactive Pi still requires `/reload` to load the deployed actor-client code.
+
+Operator deployment correction: Pi `/reload` is not sufficient for actor-client releases. Treat actor-client command/tool registrations, loaded closures, protobuf/runtime modules, and XState/session projections as process-lifetime state. Deployment acceptance requires exiting and starting a new terminal Pi process (continuing the intended native Pi session explicitly where supported), then proving the new process exposes current Tell/Ask semantics and UI.
 <!-- SECTION:NOTES:END -->

@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 03:03'
-updated_date: '2026-09-02 05:34'
+updated_date: '2026-09-02 05:37'
 labels: []
 dependencies: []
 references:
@@ -84,4 +84,6 @@ The remaining TASK-19 release gates will be closed together with the production 
 Writer sequence 50 integrated release-gate regressions: three consecutive completion reply frames without another request, real-wire stale-fence ACK rotation, and canonical reply-to-source Tell/Ask with display metadata rejected for routing. Task remains open for independent review and live Tell/Ask/fence evidence.
 
 Deployment/reset evidence: five hosted sessions were exactly stopped and recreated after daemon rebuild; all five authenticated bridges report available and BridgeReady. Fresh records exposed separate lifecycle projection defect BridgeReady=true with state=starting, tracked as TASK-21. Live consecutive Tell/Ask matrix must resume after current terminal `/reload`; this deployment does not waive that acceptance gate.
+
+Operator confirmed `/reload` did not fully activate the deployed actor-client behavior. Remaining delivery E2E must run from a newly started terminal Pi process, not a reloaded process; hosted bridge changes still require hosted runtime reincarnation.
 <!-- SECTION:NOTES:END -->
