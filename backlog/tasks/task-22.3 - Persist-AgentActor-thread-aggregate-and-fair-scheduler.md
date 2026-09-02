@@ -5,6 +5,7 @@ status: To Do
 assignee:
   - '@pi'
 created_date: '2026-09-02 06:10'
+updated_date: '2026-09-02 07:22'
 labels: []
 dependencies:
   - TASK-22.2
@@ -26,3 +27,9 @@ Persist target-authoritative thread records and a one-active-thread scheduler so
 - [ ] #2 Thread and scheduler state commits before acceptance, dispatch, status, or completion effects
 - [ ] #3 Queue, resumable, waiting, blocked, terminal tombstone, bounds, fairness, migration, crash, restart, and race tests pass
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+QA reconnaissance Ask 100 froze the deterministic proof matrix and reusable seams: config/runner parser tables; atomic v2-to-v3 migration and quarantine; exact duplicate and collision admission; two-new-task fairness; injectable clock/backoff; ACK/settlement/introspection crash gates; restart/compaction redrive; owner-private projection; and push-only A-to-B-to-resume-A E2E with no BridgePollRequest or pane inspection. Existing bridge harnesses, blocking stores, ACK cursor/restart tests, and actor reply push tests should be reused.
+<!-- SECTION:NOTES:END -->
