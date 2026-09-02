@@ -276,7 +276,7 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
     const messageScope = bridgeMessageScopeKey(current);
     return mutations.run(messageScope,
       (sequence)=>({requestId:randomUUID(),value:buildActorMessage(mode,destination,text,randomUUID(),inherited?.chainId ?? randomUUID(),sequence,inherited?.hopLimit ?? 8,inherited?.threadId ? inherited as any : undefined)}),
-      async (logical)=>{const started=Date.now();const active=requiredClient(client);const response=await active.request("actorMessageRequest",ActorMessageRequestSchema,logical.value,fence,logical.requestId,SHORT_REQUEST_TIMEOUT_MS);if(response.payload.case!=="actorMessageResponse"){active.invalidate(new Error("unexpected actor message response"));throw new Error("unexpected actor message response")};const result=actorMessageModelResult(logical,response.payload.value);const view=outgoingExchange({key:`request:${logical.requestId}`,target:response.payload.value.target,body:text,accepted:response.payload.value.accepted,completed:response.payload.value.completed,mode:mode===ActorMessageRequest_Mode.ASK?"ask":"tell",reason:response.payload.value.reason,durationMillis:Date.now()-started});appendCommunicationView(view);return {...result,communicationView:view,renderEnvelope:communicationEnvelope(view)}},
+      async (logical)=>{const started=Date.now();const active=requiredClient(client);const response=await active.request("actorMessageRequest",ActorMessageRequestSchema,logical.value,fence,logical.requestId,SHORT_REQUEST_TIMEOUT_MS);if(response.payload.case!=="actorMessageResponse"){active.invalidate(new Error("unexpected actor message response"));throw new Error("unexpected actor message response")};const result=actorMessageModelResult(logical,response.payload.value);const view=outgoingExchange({key:`request:${logical.requestId}`,target:response.payload.value.target,body:text,accepted:response.payload.value.accepted,completed:response.payload.value.completed,mode:mode===ActorMessageRequest_Mode.ASK?"ask":"tell",reason:response.payload.value.reason,durationMillis:Date.now()-started});appendCommunicationView(view);if(pendingAskRequiresParentSuspend(mode,response.payload.value))requiredContext(extensionContext).abort();return {...result,communicationView:view,renderEnvelope:communicationEnvelope(view)}},
 
       async()=>reconnect(requiredContext(extensionContext)));
   };
@@ -706,6 +706,10 @@ function maxBigInt(a: bigint, b: bigint) { return a > b ? a : b; }
 function deliveryKindName(kind: number) { return kind === 1 ? "Tell" : kind === 2 ? "Abort" : kind === 3 ? "Shutdown" : kind === 4 ? "Prompt" : "Unknown"; }
 function boundedPublic(value: string, max = 80) { const clean = value.replace(/[\r\n\t\x00]/g, " "); return clean.length > max ? `${clean.slice(0, Math.max(0, max - 1))}…` : clean; }
 function safeText(bytes: Uint8Array): string { if (bytes.byteLength > MAX_TEXT) throw new Error("daemon payload exceeds bridge bound"); return textDecoder.decode(bytes); }
+
+export function pendingAskRequiresParentSuspend(mode: number, value: { accepted?: boolean; completed?: boolean }): boolean {
+  return mode === 2 && value.accepted === true && value.completed !== true;
+}
 
 export function actorMessageModelResult(logical: { requestId: string; value: { dedupeId: string; chainId: string; sourceMutationSequence: bigint } }, value: any) {
   const requestId = requiredIdentifier(logical.requestId, "requestId");

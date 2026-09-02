@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { buildActorControl, buildActorMessage, buildIdentityDeliveryAck, bridgeErrorClass, communicationKey, communicationLine, CommunicationTimeline, completeHostedEnvironment, ExactMutationSequencer, PromptTaskCoordinator, deliveryAction, deliveryKindLabel, destroyOnFramingFailure, drainPages, executeTypedDelivery, invokeTypedDeliveryForAck, missingAckIdentity, parseTargetMessage, registerHostedHandlers, requireExplicitModelTarget } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/handlers.ts";
 import { bridgeDiagnostic, communicationEnvelope, envelopeCommunicationView, incomingNote, incomingRequestText, outgoingExchange, renderCommunicationCard, compactToolCall, compactToolResult, modelResultContent, renderHostedCommunicationEnvelope, renderToolResult } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/communication-ui.ts";
-import { actorControlCapabilities, actorMessageCapabilities, actorMessageModelResult, capabilitySetIncludes, connectBridgeWithRetry, consumeReconnect, degradedBridgeStatus, isTransientLifecycleBusyResponse, reportLifecycleWithBusyRetry, requestDeliveryAckWithFenceRefresh, resolveHostedMessageDestination } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/index.ts";
+import { actorControlCapabilities, actorMessageCapabilities, actorMessageModelResult, capabilitySetIncludes, connectBridgeWithRetry, consumeReconnect, degradedBridgeStatus, isTransientLifecycleBusyResponse, pendingAskRequiresParentSuspend, reportLifecycleWithBusyRetry, requestDeliveryAckWithFenceRefresh, resolveHostedMessageDestination } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/index.ts";
 
 const complete = { WS_SUBAGENTS_ENDPOINT: "ws://127.0.0.1:17213/actors", WS_SUBAGENTS_CREDENTIAL_FILE: "/state/credential", WS_SUBAGENTS_SESSION_ID: "session", WS_SUBAGENTS_GENERATION_ID: "generation", WS_SUBAGENTS_CALLER: "hosted:agent", WS_SUBAGENTS_AGENT_ID: "agent", WS_SUBAGENTS_RUNTIME_ID: "runtime", WS_SUBAGENTS_INCARNATION: "1" };
 
@@ -145,6 +145,9 @@ test("protobuf request builders preserve typed modes, fences inputs, ACK outcome
   const parent = { sequence: 99n, dedupeId: "parent-dedupe", kind: 4, threadId: "parent-thread", schedulerEpoch: 3n, activeLease: 4n, threadTurn: 5n };
   const tell = buildActorMessage(1, "target", "hello", "dedupe", "chain", 41n, 7, parent); assert.equal(tell.mode, 1); assert.equal(tell.target, "target"); assert.equal(tell.hopLimit, 7); assert.equal(tell.sourceMutationSequence, 41n); assert.equal("sourceAgentId" in tell, false); assert.equal("requiredCapability" in tell, false); assert.equal(tell.parentContinuation, undefined);
   const childAsk = buildActorMessage(2, "target", "hello", "dedupe", "chain", 43n, 7, parent); assert.deepEqual(childAsk.parentContinuation, { threadId: "parent-thread", schedulerEpoch: 3n, activeLease: 4n, threadTurn: 5n, deliverySequence: 99n });
+  assert.equal(pendingAskRequiresParentSuspend(2, { accepted: true, completed: false }), true);
+  assert.equal(pendingAskRequiresParentSuspend(2, { accepted: true, completed: true }), false);
+  assert.equal(pendingAskRequiresParentSuspend(1, { accepted: true, completed: false }), false);
   const control = buildActorControl(1, "target", "control-dedupe", "control-chain", 42n); assert.equal(control.intent, 1); assert.equal(control.hopLimit, 2); assert.equal(control.sourceMutationSequence, 42n);
   const identity = { runtimeId: "runtime-9", incarnation: 2n, piSessionId: "pi-9" };
   const ackable = { sequence: 9n, dedupeId: "d", kind: 1, sourceScope: "scope-key", completionKey: "completion-key" };
