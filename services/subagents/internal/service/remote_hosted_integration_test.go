@@ -44,13 +44,14 @@ func TestRemoteHostedOrdinaryServicePath(t *testing.T) {
 	admin := application.OpenSession{Credential: local.adminCredential}
 	client := openClientSession(t, local, admin)
 	time.Sleep(50 * time.Millisecond)
+	createEnvelope := local.dispatch(env(local, admin, &subagentsv1.Envelope_HostedAdminRequest{HostedAdminRequest: &subagentsv1.HostedAdminRequest{Operation: subagentsv1.HostedAdminRequest_OPERATION_START, AgentId: "ui_remote_qa", ProjectDirectory: filepath.Join(root, "project"), TrustProject: true, DisplayName: "Remote QA", Role: "qa", TargetNode: "node-b"}}, "create-qa-fixture", "", 0))
+	created := createEnvelope.GetHostedAdminResponse()
+	if created == nil || !created.Accepted || created.GetRuntime().GetState() == subagentsv1.HostedPiRuntimeBinding_STATE_UNSPECIFIED {
+		t.Fatalf("remote fixture create failed: %#v err=%#v envelope=%#v", created, createEnvelope.GetProtocolError(), createEnvelope)
+	}
+	waitRemoteDeterminate(t, local, client, "ui_remote_qa")
 
 	t.Run("targetNode remote create yields full remote hosted AgentActor reference", func(t *testing.T) {
-		createEnvelope := local.dispatch(env(local, admin, &subagentsv1.Envelope_HostedAdminRequest{HostedAdminRequest: &subagentsv1.HostedAdminRequest{Operation: subagentsv1.HostedAdminRequest_OPERATION_START, AgentId: "ui_remote_qa", ProjectDirectory: filepath.Join(root, "project"), TrustProject: true, DisplayName: "Remote QA", Role: "qa", TargetNode: "node-b"}}, "create-1", "", 0))
-		created := createEnvelope.GetHostedAdminResponse()
-		if created == nil || !created.Accepted || created.GetRuntime().GetState() == subagentsv1.HostedPiRuntimeBinding_STATE_UNSPECIFIED {
-			t.Fatalf("remote create failed: %#v err=%#v envelope=%#v", created, createEnvelope.GetProtocolError(), createEnvelope)
-		}
 		resolved := resolveAgent(t, local, client, "ui_remote_qa")
 		if resolved.Agent.GetAgentId() != "ui_remote_qa" || resolved.Agent.GetDisplayName() != "Remote QA" || resolved.Agent.GetHostedPiRuntime().GetAggregateId() != "ui_remote_qa" {
 			t.Fatalf("remote metadata not public/stable: %#v", resolved.Agent)
@@ -125,12 +126,32 @@ func TestRemoteHostedOrdinaryServicePath(t *testing.T) {
 		waitRemoteDeterminate(t, local, client, "ui_remote_qa")
 		duplicate := &subagentsv1.ActorMessageRequest{Mode: subagentsv1.ActorMessageRequest_MODE_TELL, Target: "ui_remote_qa", BoundedPayload: []byte("dup notify"), DedupeId: "dup-d", ChainId: "dup-c", HopLimit: 4, SourceMutationSequence: 4}
 		first := local.dispatch(env(local, client, &subagentsv1.Envelope_ActorMessageRequest{ActorMessageRequest: duplicate}, "dup-1", handle, fence)).GetActorMessageResponse()
-		second := askUntilDeterminate(t, local, client, handle, fence, duplicate)
+		second := local.dispatch(env(local, client, &subagentsv1.Envelope_ActorMessageRequest{ActorMessageRequest: duplicate}, "dup-1", handle, fence)).GetActorMessageResponse()
 		if first == nil || second == nil || !first.Accepted || !second.Accepted {
 			t.Fatalf("duplicate remote tell not idempotent: %#v %#v", first, second)
 		}
-		if second.Completed || second.Reason != "stored_pending_credit" {
-			t.Fatalf("duplicate remote tell must replay the stored pending credit receipt: %#v", second)
+		if first.Reason != "stored_pending_credit" || second.Completed || second.Reason != first.Reason {
+			t.Fatalf("duplicate remote tell must replay the stored pending credit receipt: %#v %#v", first, second)
+		}
+		collision := local.dispatch(env(local, client, &subagentsv1.Envelope_ActorMessageRequest{ActorMessageRequest: &subagentsv1.ActorMessageRequest{Mode: subagentsv1.ActorMessageRequest_MODE_TELL, Target: "ui_remote_qa", BoundedPayload: []byte("changed dup notify"), DedupeId: "dup-d", ChainId: "dup-c", HopLimit: 4, SourceMutationSequence: 4}}, "dup-collision", handle, fence)).GetActorMessageResponse()
+		if collision == nil || collision.Accepted || collision.Reason != "source mutation sequence collision" {
+			t.Fatalf("changed duplicate did not fail closed: %#v", collision)
+		}
+	})
+
+	t.Run("concurrent remote duplicate actor messages converge", func(t *testing.T) {
+		waitRemoteDeterminate(t, local, client, "ui_remote_qa")
+		duplicate := &subagentsv1.ActorMessageRequest{Mode: subagentsv1.ActorMessageRequest_MODE_TELL, Target: "ui_remote_qa", BoundedPayload: []byte("concurrent dup notify"), DedupeId: "dup-concurrent-d", ChainId: "dup-concurrent-c", HopLimit: 4, SourceMutationSequence: 5}
+		responses := make(chan *subagentsv1.ActorMessageResponse, 2)
+		for i := 0; i < 2; i++ {
+			go func(index int) {
+				_ = index
+				responses <- local.dispatch(env(local, client, &subagentsv1.Envelope_ActorMessageRequest{ActorMessageRequest: duplicate}, "dup-concurrent", handle, fence)).GetActorMessageResponse()
+			}(i)
+		}
+		first, second := <-responses, <-responses
+		if first == nil || second == nil || !first.Accepted || !second.Accepted || first.Reason != "stored_pending_credit" || second.Reason != first.Reason {
+			t.Fatalf("concurrent duplicate remote tell did not converge: %#v %#v", first, second)
 		}
 	})
 
@@ -144,7 +165,7 @@ func TestRemoteHostedOrdinaryServicePath(t *testing.T) {
 		if err != nil || value == nil {
 			t.Fatalf("stale directory record creation failed: %v %#v", err, value)
 		}
-		staleEnvelope := local.dispatch(env(local, client, &subagentsv1.Envelope_ActorMessageRequest{ActorMessageRequest: &subagentsv1.ActorMessageRequest{Mode: subagentsv1.ActorMessageRequest_MODE_TELL, Target: "stale_remote", BoundedPayload: []byte("stale"), DedupeId: "stale-d", ChainId: "stale-c", HopLimit: 4, SourceMutationSequence: 5}}, "stale-1", handle, fence))
+		staleEnvelope := local.dispatch(env(local, client, &subagentsv1.Envelope_ActorMessageRequest{ActorMessageRequest: &subagentsv1.ActorMessageRequest{Mode: subagentsv1.ActorMessageRequest_MODE_TELL, Target: "stale_remote", BoundedPayload: []byte("stale"), DedupeId: "stale-d", ChainId: "stale-c", HopLimit: 4, SourceMutationSequence: 6}}, "stale-1", handle, fence))
 		if failed := staleEnvelope.GetActorMessageResponse(); failed != nil && failed.Accepted {
 			t.Fatalf("stale remote target was not rejected: %#v", failed)
 		} else if staleEnvelope.GetProtocolError() == nil {

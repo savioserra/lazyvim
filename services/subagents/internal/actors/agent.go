@@ -1397,32 +1397,46 @@ func (a *AgentActor) sendActorTask(ctx *actor.ReceiveContext, message *applicati
 		respondBridgeIntent(ctx, message.Receipt, &application.BridgeIntentResult{Reason: "invalid, expired, or stale actor task"})
 		return
 	}
-	if a.durablePending != nil || a.durableFailed != nil {
-		respondBridgeIntent(ctx, message.Receipt, &application.BridgeIntentResult{Reason: "durable persistence is busy"})
-		return
-	}
+	payloadDigest := sha256.Sum256(message.Payload)
 	taskID := actorTaskID(a.id, message.RequestID, message.DedupeID, message.ChainID, message.SourceMutationSequence)
 	if completion, ok := a.sourceTaskHistory[taskID]; ok {
 		result := completion.Terminal
 		respondBridgeIntent(ctx, message.Receipt, &result)
 		return
 	}
-	if _, exists := a.sourceOutbox[taskID]; exists {
+	if item, exists := a.sourceOutbox[taskID]; exists {
+		if !sameSourceOutboxMutation(item, message, payloadDigest) {
+			respondBridgeIntent(ctx, message.Receipt, &application.BridgeIntentResult{Reason: "source mutation sequence collision"})
+			return
+		}
 		respondBridgeIntent(ctx, message.Receipt, &application.BridgeIntentResult{Accepted: true, AwaitingAck: true, Reason: "stored_pending_credit"})
 		return
 	}
 	sequenceSuffix := fmt.Sprintf(":%d", message.SourceMutationSequence)
-	for key := range a.sourceTaskHistory {
+	for key, completion := range a.sourceTaskHistory {
 		if strings.HasPrefix(key, a.id+":") && strings.HasSuffix(key, sequenceSuffix) {
+			if completion.DedupeID == message.DedupeID && completion.ChainID == message.ChainID && completion.SourceMutationSequence == message.SourceMutationSequence {
+				result := completion.Terminal
+				respondBridgeIntent(ctx, message.Receipt, &result)
+				return
+			}
 			respondBridgeIntent(ctx, message.Receipt, &application.BridgeIntentResult{Reason: "source mutation sequence collision"})
 			return
 		}
 	}
-	for key := range a.sourceOutbox {
-		if key != taskID && strings.HasPrefix(key, a.id+":") && strings.HasSuffix(key, sequenceSuffix) {
+	for key, item := range a.sourceOutbox {
+		if strings.HasPrefix(key, a.id+":") && strings.HasSuffix(key, sequenceSuffix) {
+			if sameSourceOutboxMutation(item, message, payloadDigest) {
+				respondBridgeIntent(ctx, message.Receipt, &application.BridgeIntentResult{Accepted: true, AwaitingAck: true, Reason: "stored_pending_credit"})
+				return
+			}
 			respondBridgeIntent(ctx, message.Receipt, &application.BridgeIntentResult{Reason: "source mutation sequence collision"})
 			return
 		}
+	}
+	if a.durablePending != nil || a.durableFailed != nil {
+		respondBridgeIntent(ctx, message.Receipt, &application.BridgeIntentResult{Reason: "durable persistence is busy"})
+		return
 	}
 	for _, completion := range a.taskCompletions {
 		if completion.OriginalRequestID == message.RequestID && completion.DedupeID == message.DedupeID && completion.ChainID == message.ChainID && completion.SourceMutationSequence == message.SourceMutationSequence {
@@ -1451,7 +1465,7 @@ func (a *AgentActor) sendActorTask(ctx *actor.ReceiveContext, message *applicati
 	}
 	old := a.durableState()
 	a.sourceMutationHighWater = message.SourceMutationSequence
-	item := application.DurableActorTaskOutboxItem{TaskID: taskID, Target: message.TargetPeer, RequestID: message.RequestID, DedupeID: message.DedupeID, ChainID: message.ChainID, RequiredCapability: message.RequiredCapability, SourceMutationSequence: message.SourceMutationSequence, Deadline: message.Deadline, HopLimit: message.HopLimit, Mode: message.Mode, Payload: append([]byte(nil), message.Payload...), PayloadDigest: sha256.Sum256(message.Payload), State: "pending_credit"}
+	item := application.DurableActorTaskOutboxItem{TaskID: taskID, Target: message.TargetPeer, RequestID: message.RequestID, DedupeID: message.DedupeID, ChainID: message.ChainID, RequiredCapability: message.RequiredCapability, SourceMutationSequence: message.SourceMutationSequence, Deadline: message.Deadline, HopLimit: message.HopLimit, Mode: message.Mode, Payload: append([]byte(nil), message.Payload...), PayloadDigest: payloadDigest, State: "pending_credit"}
 	item.TargetRef = actorRefFromPID(message.TargetPeer.StableID, message.TargetPID)
 	a.sourceOutbox[taskID] = item
 	a.sourceOutboxOrder = append(a.sourceOutboxOrder, taskID)
@@ -1464,6 +1478,17 @@ func (a *AgentActor) sendActorTask(ctx *actor.ReceiveContext, message *applicati
 		respondBridgeIntent(ctx, message.Receipt, &application.BridgeIntentResult{Accepted: true, AwaitingAck: true, Reason: "stored_pending_credit"})
 		a.requestOutboxCredit(ctx, message.TargetPID, item)
 	}
+}
+
+func sameSourceOutboxMutation(item application.DurableActorTaskOutboxItem, message *application.SendActorTask, payloadDigest [32]byte) bool {
+	if message == nil {
+		return false
+	}
+	itemDigest := item.PayloadDigest
+	if itemDigest == ([32]byte{}) && len(item.Payload) > 0 {
+		itemDigest = sha256.Sum256(item.Payload)
+	}
+	return item.RequestID == message.RequestID && item.SourceMutationSequence == message.SourceMutationSequence && item.RequiredCapability == message.RequiredCapability && item.Mode == message.Mode && item.Target.StableID == message.TargetPeer.StableID && itemDigest == payloadDigest
 }
 
 func (a *AgentActor) requestTaskCredit(ctx *actor.ReceiveContext, message *application.RequestTaskCredit) {
