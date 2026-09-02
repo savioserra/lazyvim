@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 02:56'
-updated_date: '2026-09-02 13:41'
+updated_date: '2026-09-02 13:57'
 labels: []
 dependencies:
   - TASK-6
@@ -109,4 +109,6 @@ QA post-fix matrix: unit coverage is strong; remaining acceptance is fresh-termi
 Reviewer found hosted production still registers/appends legacy CommunicationView/renderCommunicationCard paths rather than schema-versioned render envelopes/widgets. Assigned follow-up implementation with no cross-extension runtime imports.
 
 Implemented hosted production schema-v1 local render envelopes and expanded conversation widget parity without cross-extension runtime imports (babc3a3). Actor message tool results now carry communicationView plus renderEnvelope. Fresh live acceptance remains.
+
+Fresh terminal restart live proof after 3d68ca2+: outgoing Tell sequence 29 rendered one compact delivered result and produced no model-visible Ask completion; outgoing Ask sequence 30 returned ASK_UI_OK exactly once through the Ask completion card. This verifies the Tell/Ask split for the two canonical outgoing cases; incoming/busy/failure and full copy hierarchy matrix remain.
 <!-- SECTION:NOTES:END -->
