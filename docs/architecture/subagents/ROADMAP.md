@@ -35,7 +35,7 @@ Current managed entry point: restart an ordinary globally discovered `pi`; the `
 ## Next three deliverables
 
 1. Complete `TASK-1.1`: wire the shipped XState render snapshots and responsive Pi TUI widgets into the production actor-client renderers, then pass the non-phase Actor UX acceptance matrix.
-2. Complete `TASK-1.2`: publish typed AgentActor/WorkflowActor productive phases and consume them through authenticated topic projections without liveness inference or polling.
+2. Complete `TASK-1.2`: publish typed AgentActor/WorkflowActor productive phases; consume them through authenticated actor-client projections and an owner-bound hosted Pi runtime subscription that updates only exactly owned tmux UI, without liveness inference, polling, or scraping.
 3. Complete `TASK-1.3`: drive worker -> reviewer -> QA -> correction and a durable user decision through WorkflowActor without PM UI dependence.
 
 The actor-native Ask path is live. After apply/reload, retained completions 30-32 replayed once in order and a fresh sequence 33 completed automatically with `ACTOR_UI_E2E_OK`. The production follow-through remains tracked under the `TASK-1` initiative; deprecation and parity-gated removal of the legacy Pi packages are `TASK-17` and `TASK-18`. Immediate same-name/session reincarnation and terminal roster hygiene remain independently tracked rather than being hidden inside UI work.
