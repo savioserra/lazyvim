@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 04:30'
-updated_date: '2026-09-02 04:32'
+updated_date: '2026-09-02 04:52'
 labels: []
 dependencies: []
 references:
@@ -44,4 +44,6 @@ A full `go test -race ./...` run intermittently failed `TestRemoteHostedOrdinary
 
 <!-- SECTION:NOTES:BEGIN -->
 Independent QA sequence 56 reproduced the release blocker on origin/main 89e77ee: first remote duplicate response accepted/stored_pending_credit, second identical response rejected source mutation sequence must advance exactly once. A focused attempt also exposed intermittent attach authorization setup failure. TASK-20 blocks deployment of the Tell/Ask UX change.
+
+Writer sequence 60 produced commit 9c08c38 with pending/in-flight duplicate convergence, collision rejection, fixture stabilization, concurrent remote tests, and reported focused -race count=20/full gates. Not integrated or finalized pending independent review sequence 63, specifically terminal sourceTaskHistory digest fencing, post-restart behavior, legacy zero-digest history, and complete immutable identity comparison.
 <!-- SECTION:NOTES:END -->
