@@ -112,6 +112,8 @@ test("protobuf request builders preserve typed modes, fences inputs, ACK outcome
   const ackable = { sequence: 9n, dedupeId: "d", kind: 1, sourceScope: "scope-key", completionKey: "completion-key" };
   assert.deepEqual(buildIdentityDeliveryAck("agent", identity, ackable, true, ""), { agentId: "agent", sequence: 9n, dedupeId: "d", delivered: true, reason: "", boundedResult: new Uint8Array(), runtimeId: "runtime-9", incarnation: 2n, piSessionId: "pi-9", kind: "notification", sourceScope: "scope-key", completionKey: "completion-key" });
   assert.equal(buildIdentityDeliveryAck("agent", identity, ackable, false, "failed").delivered, false);
+  const threadAck = buildIdentityDeliveryAck("agent", identity, { ...ackable, threadId: "thread-1", schedulerEpoch: 3n, activeLease: 4n, threadTurn: 5n }, true, "", new Uint8Array(), { bridgeRunCounter: 6n, agentEndObserved: true, agentSettledObserved: true });
+  assert.deepEqual({ threadId: threadAck.threadId, schedulerEpoch: threadAck.schedulerEpoch, activeLease: threadAck.activeLease, threadTurn: threadAck.threadTurn, bridgeRunCounter: threadAck.bridgeRunCounter, agentEndObserved: threadAck.agentEndObserved, agentSettledObserved: threadAck.agentSettledObserved }, { threadId: "thread-1", schedulerEpoch: 3n, activeLease: 4n, threadTurn: 5n, bridgeRunCounter: 6n, agentEndObserved: true, agentSettledObserved: true });
   assert.equal(deliveryKindLabel(1), "notification"); assert.equal(deliveryKindLabel(4), "prompt");
   assert.throws(() => buildIdentityDeliveryAck("agent", identity, { sequence: 9n, dedupeId: "d", kind: 1 }, true, ""), /identity is missing/);
   assert.throws(() => deliveryKindLabel(9), /unsupported/);
@@ -342,13 +344,14 @@ test("prompt delivery injects followUp, correlates the settled answer, and ignor
 
 test("prompt completion correlates the answer only when the session settles", async () => {
   const acknowledgements=[];
-  const coordinator=new PromptTaskCoordinator(async()=>{},async(_pending,delivered,answer,reason)=>acknowledgements.push({delivered,answer,reason}));
+  const coordinator=new PromptTaskCoordinator(async()=>{},async(_pending,delivered,answer,reason,settlement)=>acknowledgements.push({delivered,answer,reason,settlement}));
   const delivery={dedupeId:"d-answer",boundedPayload:new TextEncoder().encode("task"),hopLimit:4,deadlineUnixMillis:BigInt(Date.now()+1000),chainId:"chain",sequence:5n};
   await coordinator.deliver(delivery,{handle:"h",fence:5n});
   await coordinator.agentEnd([{role:"assistant",content:[{type:"text",text:"partial"}]}]);
   assert.equal(acknowledgements.length,0,"agent_end alone must never acknowledge");
   await coordinator.settled();
   assert.equal(acknowledgements.length,1);assert.equal(acknowledgements[0].delivered,true);assert.equal(acknowledgements[0].answer,"partial");
+  assert.deepEqual(acknowledgements[0].settlement,{bridgeRunCounter:1n,agentEndObserved:true,agentSettledObserved:true});
   assert.equal(coordinator.active(),undefined);
 });
 

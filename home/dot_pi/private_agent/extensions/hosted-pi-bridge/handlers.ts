@@ -178,7 +178,8 @@ export function buildActorControl(intent: number, target: string, dedupeId: stri
   return { intent, target, dedupeId, hopLimit, chainId, sourceMutationSequence };
 }
 export type BridgeSessionIdentity = { runtimeId: string; incarnation: bigint; piSessionId: string };
-export type AckableDelivery = { sequence: bigint; dedupeId: string; kind: number; sourceScope?: string; completionKey?: string };
+export type AckableDelivery = { sequence: bigint; dedupeId: string; kind: number; sourceScope?: string; completionKey?: string; threadId?: string; schedulerEpoch?: bigint; activeLease?: bigint; threadTurn?: bigint };
+export type ThreadSettlementEvidence = { bridgeRunCounter: bigint; agentEndObserved: boolean; agentSettledObserved: boolean };
 
 export function deliveryKindLabel(kind: number): string {
   if (kind === 1) return "notification";
@@ -188,9 +189,10 @@ export function deliveryKindLabel(kind: number): string {
   throw new Error("unsupported typed delivery kind");
 }
 
-export function buildIdentityDeliveryAck(agentId: string, identity: BridgeSessionIdentity, delivery: AckableDelivery, delivered: boolean, reason: string, boundedResult = new Uint8Array()) {
+export function buildIdentityDeliveryAck(agentId: string, identity: BridgeSessionIdentity, delivery: AckableDelivery, delivered: boolean, reason: string, boundedResult = new Uint8Array(), settlement?: ThreadSettlementEvidence) {
   if (!delivery.sourceScope || !delivery.completionKey) throw new Error("delivery acknowledgement identity is missing");
-  return { agentId, sequence: delivery.sequence, dedupeId: delivery.dedupeId, delivered, reason, boundedResult, runtimeId: identity.runtimeId, incarnation: identity.incarnation, piSessionId: identity.piSessionId, kind: deliveryKindLabel(delivery.kind), sourceScope: delivery.sourceScope, completionKey: delivery.completionKey };
+  const thread = delivery.threadId ? { threadId: delivery.threadId, schedulerEpoch: delivery.schedulerEpoch ?? 0n, activeLease: delivery.activeLease ?? 0n, threadTurn: delivery.threadTurn ?? 0n, bridgeRunCounter: settlement?.bridgeRunCounter ?? 0n, agentEndObserved: settlement?.agentEndObserved ?? false, agentSettledObserved: settlement?.agentSettledObserved ?? false } : {};
+  return { agentId, sequence: delivery.sequence, dedupeId: delivery.dedupeId, delivered, reason, boundedResult, runtimeId: identity.runtimeId, incarnation: identity.incarnation, piSessionId: identity.piSessionId, kind: deliveryKindLabel(delivery.kind), sourceScope: delivery.sourceScope, completionKey: delivery.completionKey, ...thread };
 }
 
 // missingAckIdentity returns the bounded degraded reason when a delivered
@@ -228,7 +230,7 @@ export function executeTypedDelivery(ctx: { abort(): void; shutdown(): void; ui:
   else ctx.ui.notify(text.slice(0, 1024), "info");
 }
 
-export type PromptDelivery = { dedupeId: string; boundedPayload: Uint8Array; hopLimit: number; deadlineUnixMillis: bigint; chainId: string; sequence: bigint; kind: number; sourceScope?: string; completionKey?: string };
+export type PromptDelivery = AckableDelivery & { boundedPayload: Uint8Array; hopLimit: number; deadlineUnixMillis: bigint; chainId: string };
 
 export type PromptTaskStage = "injected" | "completed" | "failed" | "expired";
 export type PromptTaskLifecycleEvent = { stage: PromptTaskStage; sequence: bigint; dedupeId: string; detail: string };
@@ -258,12 +260,14 @@ export function bridgeErrorClass(error: unknown): string {
 // Pi runtime, where the rejection is unobservable from the extension.
 export class PromptTaskCoordinator<TFence> {
   private pending?: { delivery: PromptDelivery; fence: TFence };
-  private outcome?: { delivered: boolean; answer: string; reason: string };
+  private outcome?: { delivered: boolean; answer: string; reason: string; settlement: ThreadSettlementEvidence };
   private lastRunMessages: unknown[] = [];
+  private bridgeRunCounter = 0n;
+  private lastRunCounter = 0n;
   private readonly sendUserMessage: (text: string) => void | Promise<void>;
-  private readonly acknowledge: (pending: { delivery: PromptDelivery; fence: TFence }, delivered: boolean, answer: string, reason: string) => Promise<void>;
+  private readonly acknowledge: (pending: { delivery: PromptDelivery; fence: TFence }, delivered: boolean, answer: string, reason: string, settlement: ThreadSettlementEvidence) => Promise<void>;
   private readonly lifecycle?: (event: PromptTaskLifecycleEvent) => void;
-  constructor(sendUserMessage: (text: string) => void | Promise<void>, acknowledge: (pending: { delivery: PromptDelivery; fence: TFence }, delivered: boolean, answer: string, reason: string) => Promise<void>, lifecycle?: (event: PromptTaskLifecycleEvent) => void) { this.sendUserMessage=sendUserMessage;this.acknowledge=acknowledge;this.lifecycle=lifecycle; }
+  constructor(sendUserMessage: (text: string) => void | Promise<void>, acknowledge: (pending: { delivery: PromptDelivery; fence: TFence }, delivered: boolean, answer: string, reason: string, settlement: ThreadSettlementEvidence) => Promise<void>, lifecycle?: (event: PromptTaskLifecycleEvent) => void) { this.sendUserMessage=sendUserMessage;this.acknowledge=acknowledge;this.lifecycle=lifecycle; }
   active() { return this.pending; }
   async retryCompletion() { if (this.pending && this.outcome) await this.flush(); }
   // abandon drops a task whose delivery the daemon no longer retains: retrying
@@ -280,6 +284,7 @@ export class PromptTaskCoordinator<TFence> {
     if (!text) throw new Error("prompt is empty");
     this.pending = { delivery, fence };
     this.lastRunMessages = [];
+    this.lastRunCounter = 0n;
     try {
       await this.sendUserMessage(text);
       this.lifecycle?.({ stage: "injected", sequence: delivery.sequence, dedupeId: delivery.dedupeId, detail: "prompt injected into the hosted Pi runtime" });
@@ -289,11 +294,11 @@ export class PromptTaskCoordinator<TFence> {
       await this.finish(false, "", reason);
     }
   }
-  agentEnd(messages: unknown[]) { if (this.pending && !this.outcome) this.lastRunMessages = messages ?? []; }
+  agentEnd(messages: unknown[]) { this.bridgeRunCounter += 1n; if (this.pending && !this.outcome) { this.lastRunMessages = messages ?? []; this.lastRunCounter = this.bridgeRunCounter; } }
   async settled() {
     if (!this.pending || this.outcome) return;
     const answer = boundedAssistantAnswer(this.lastRunMessages);
-    await this.finish(Boolean(answer), answer, answer ? "" : "prompt run ended without an assistant answer");
+    await this.finish(Boolean(answer), answer, answer ? "" : "prompt run ended without an assistant answer", { bridgeRunCounter: this.lastRunCounter, agentEndObserved: this.lastRunCounter > 0n, agentSettledObserved: true });
   }
   // expireStalled terminally fails a task whose deadline passed before its run
   // completed, so a prompt whose turn never started cannot wedge the
@@ -306,8 +311,8 @@ export class PromptTaskCoordinator<TFence> {
     return true;
   }
   async shutdown() { if (this.pending) await this.finish(false,"","hosted Pi session shut down before prompt completion"); }
-  private async finish(delivered:boolean,answer:string,reason:string){if(!this.pending)return;this.outcome={delivered,answer,reason};this.lifecycle?.({stage:delivered?"completed":"failed",sequence:this.pending.delivery.sequence,dedupeId:this.pending.delivery.dedupeId,detail:reason?`${reason} (class ${bridgeErrorClass(reason)})`:"assistant answer correlated"});await this.flush();}
-  private async flush(){const pending=this.pending,outcome=this.outcome;if(!pending||!outcome)return;await this.acknowledge(pending,outcome.delivered,outcome.answer,outcome.reason);if(this.pending===pending){this.pending=undefined;this.outcome=undefined;this.lastRunMessages=[];}}
+  private async finish(delivered:boolean,answer:string,reason:string,settlement:ThreadSettlementEvidence={bridgeRunCounter:0n,agentEndObserved:false,agentSettledObserved:false}){if(!this.pending)return;this.outcome={delivered,answer,reason,settlement};this.lifecycle?.({stage:delivered?"completed":"failed",sequence:this.pending.delivery.sequence,dedupeId:this.pending.delivery.dedupeId,detail:reason?`${reason} (class ${bridgeErrorClass(reason)})`:"assistant answer correlated"});await this.flush();}
+  private async flush(){const pending=this.pending,outcome=this.outcome;if(!pending||!outcome)return;await this.acknowledge(pending,outcome.delivered,outcome.answer,outcome.reason,outcome.settlement);if(this.pending===pending){this.pending=undefined;this.outcome=undefined;this.lastRunMessages=[];this.lastRunCounter=0n;}}
 }
 export function boundedAssistantAnswer(messages: unknown[]): string {
   for (let index=messages.length-1;index>=0;index--){const message=messages[index] as {role?:string;content?:unknown};if(message?.role!=="assistant")continue;let text="";if(typeof message.content==="string")text=message.content;else if(Array.isArray(message.content))text=message.content.filter((part):part is {type:string;text:string}=>Boolean(part)&&typeof part==="object"&&(part as any).type==="text"&&typeof (part as any).text==="string").map((part)=>part.text).join("\n");text=text.trim();while(text&&new TextEncoder().encode(text).byteLength>16*1024)text=text.slice(0,Math.floor(text.length*0.9));return text;}return "";

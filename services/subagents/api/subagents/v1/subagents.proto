@@ -65,6 +65,7 @@ message Envelope {
 }
 
 message ActorMessageReplyFrame {
+  string thread_id = 13;
   string completion_key = 12;
   string original_request_id = 1;
   string dedupe_id = 2;
@@ -342,6 +343,10 @@ message BridgeDelivery {
   CommunicationPeer target = 13;
   string source_scope = 14;
   string completion_key = 15;
+  string thread_id = 16;
+  uint64 scheduler_epoch = 17;
+  uint64 active_lease = 18;
+  uint64 thread_turn = 19;
 }
 
 message BridgePollResponse {
@@ -373,6 +378,13 @@ message BridgeDeliveryAckRequest {
   string kind = 10;
   string source_scope = 11;
   string completion_key = 12;
+  string thread_id = 13;
+  uint64 scheduler_epoch = 14;
+  uint64 active_lease = 15;
+  uint64 thread_turn = 16;
+  uint64 bridge_run_counter = 17;
+  bool agent_end_observed = 18;
+  bool agent_settled_observed = 19;
 }
 message BridgeDeliveryAckResponse {
   bool accepted = 1;
@@ -476,6 +488,7 @@ message PromptTaskResponse {
   bool completed = 2;
   bytes bounded_answer = 3;
   string reason = 4;
+  string thread_id = 5;
 }
 message TaskLifecycleRequest {
   enum Operation {
@@ -510,6 +523,7 @@ message TaskLifecycleResponse {
   bool terminal = 4;
   bytes bounded_answer = 5;
   string reason = 6;
+  string thread_id = 7;
 }
 
 message AgentOperationResponse {

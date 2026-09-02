@@ -1904,6 +1904,7 @@ func (*Envelope_ActorMessageReplyFrame) isEnvelope_Payload() {}
 
 type ActorMessageReplyFrame struct {
 	state                  protoimpl.MessageState `protogen:"open.v1"`
+	ThreadId               string                 `protobuf:"bytes,13,opt,name=thread_id,json=threadId,proto3" json:"thread_id,omitempty"`
 	CompletionKey          string                 `protobuf:"bytes,12,opt,name=completion_key,json=completionKey,proto3" json:"completion_key,omitempty"`
 	OriginalRequestId      string                 `protobuf:"bytes,1,opt,name=original_request_id,json=originalRequestId,proto3" json:"original_request_id,omitempty"`
 	DedupeId               string                 `protobuf:"bytes,2,opt,name=dedupe_id,json=dedupeId,proto3" json:"dedupe_id,omitempty"`
@@ -1948,6 +1949,13 @@ func (x *ActorMessageReplyFrame) ProtoReflect() protoreflect.Message {
 // Deprecated: Use ActorMessageReplyFrame.ProtoReflect.Descriptor instead.
 func (*ActorMessageReplyFrame) Descriptor() ([]byte, []int) {
 	return file_api_subagents_v1_subagents_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *ActorMessageReplyFrame) GetThreadId() string {
+	if x != nil {
+		return x.ThreadId
+	}
+	return ""
 }
 
 func (x *ActorMessageReplyFrame) GetCompletionKey() string {
@@ -3830,6 +3838,10 @@ type BridgeDelivery struct {
 	Target             *CommunicationPeer     `protobuf:"bytes,13,opt,name=target,proto3" json:"target,omitempty"`
 	SourceScope        string                 `protobuf:"bytes,14,opt,name=source_scope,json=sourceScope,proto3" json:"source_scope,omitempty"`
 	CompletionKey      string                 `protobuf:"bytes,15,opt,name=completion_key,json=completionKey,proto3" json:"completion_key,omitempty"`
+	ThreadId           string                 `protobuf:"bytes,16,opt,name=thread_id,json=threadId,proto3" json:"thread_id,omitempty"`
+	SchedulerEpoch     uint64                 `protobuf:"varint,17,opt,name=scheduler_epoch,json=schedulerEpoch,proto3" json:"scheduler_epoch,omitempty"`
+	ActiveLease        uint64                 `protobuf:"varint,18,opt,name=active_lease,json=activeLease,proto3" json:"active_lease,omitempty"`
+	ThreadTurn         uint64                 `protobuf:"varint,19,opt,name=thread_turn,json=threadTurn,proto3" json:"thread_turn,omitempty"`
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
@@ -3967,6 +3979,34 @@ func (x *BridgeDelivery) GetCompletionKey() string {
 		return x.CompletionKey
 	}
 	return ""
+}
+
+func (x *BridgeDelivery) GetThreadId() string {
+	if x != nil {
+		return x.ThreadId
+	}
+	return ""
+}
+
+func (x *BridgeDelivery) GetSchedulerEpoch() uint64 {
+	if x != nil {
+		return x.SchedulerEpoch
+	}
+	return 0
+}
+
+func (x *BridgeDelivery) GetActiveLease() uint64 {
+	if x != nil {
+		return x.ActiveLease
+	}
+	return 0
+}
+
+func (x *BridgeDelivery) GetThreadTurn() uint64 {
+	if x != nil {
+		return x.ThreadTurn
+	}
+	return 0
 }
 
 type BridgePollResponse struct {
@@ -4115,21 +4155,28 @@ func (x *BridgePushFrame) GetReason() string {
 }
 
 type BridgeDeliveryAckRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	AgentId       string                 `protobuf:"bytes,1,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
-	Sequence      uint64                 `protobuf:"varint,2,opt,name=sequence,proto3" json:"sequence,omitempty"`
-	DedupeId      string                 `protobuf:"bytes,3,opt,name=dedupe_id,json=dedupeId,proto3" json:"dedupe_id,omitempty"`
-	Delivered     bool                   `protobuf:"varint,4,opt,name=delivered,proto3" json:"delivered,omitempty"`
-	Reason        string                 `protobuf:"bytes,5,opt,name=reason,proto3" json:"reason,omitempty"`
-	BoundedResult []byte                 `protobuf:"bytes,6,opt,name=bounded_result,json=boundedResult,proto3" json:"bounded_result,omitempty"`
-	RuntimeId     string                 `protobuf:"bytes,7,opt,name=runtime_id,json=runtimeId,proto3" json:"runtime_id,omitempty"`
-	Incarnation   uint64                 `protobuf:"varint,8,opt,name=incarnation,proto3" json:"incarnation,omitempty"`
-	PiSessionId   string                 `protobuf:"bytes,9,opt,name=pi_session_id,json=piSessionId,proto3" json:"pi_session_id,omitempty"`
-	Kind          string                 `protobuf:"bytes,10,opt,name=kind,proto3" json:"kind,omitempty"`
-	SourceScope   string                 `protobuf:"bytes,11,opt,name=source_scope,json=sourceScope,proto3" json:"source_scope,omitempty"`
-	CompletionKey string                 `protobuf:"bytes,12,opt,name=completion_key,json=completionKey,proto3" json:"completion_key,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                protoimpl.MessageState `protogen:"open.v1"`
+	AgentId              string                 `protobuf:"bytes,1,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
+	Sequence             uint64                 `protobuf:"varint,2,opt,name=sequence,proto3" json:"sequence,omitempty"`
+	DedupeId             string                 `protobuf:"bytes,3,opt,name=dedupe_id,json=dedupeId,proto3" json:"dedupe_id,omitempty"`
+	Delivered            bool                   `protobuf:"varint,4,opt,name=delivered,proto3" json:"delivered,omitempty"`
+	Reason               string                 `protobuf:"bytes,5,opt,name=reason,proto3" json:"reason,omitempty"`
+	BoundedResult        []byte                 `protobuf:"bytes,6,opt,name=bounded_result,json=boundedResult,proto3" json:"bounded_result,omitempty"`
+	RuntimeId            string                 `protobuf:"bytes,7,opt,name=runtime_id,json=runtimeId,proto3" json:"runtime_id,omitempty"`
+	Incarnation          uint64                 `protobuf:"varint,8,opt,name=incarnation,proto3" json:"incarnation,omitempty"`
+	PiSessionId          string                 `protobuf:"bytes,9,opt,name=pi_session_id,json=piSessionId,proto3" json:"pi_session_id,omitempty"`
+	Kind                 string                 `protobuf:"bytes,10,opt,name=kind,proto3" json:"kind,omitempty"`
+	SourceScope          string                 `protobuf:"bytes,11,opt,name=source_scope,json=sourceScope,proto3" json:"source_scope,omitempty"`
+	CompletionKey        string                 `protobuf:"bytes,12,opt,name=completion_key,json=completionKey,proto3" json:"completion_key,omitempty"`
+	ThreadId             string                 `protobuf:"bytes,13,opt,name=thread_id,json=threadId,proto3" json:"thread_id,omitempty"`
+	SchedulerEpoch       uint64                 `protobuf:"varint,14,opt,name=scheduler_epoch,json=schedulerEpoch,proto3" json:"scheduler_epoch,omitempty"`
+	ActiveLease          uint64                 `protobuf:"varint,15,opt,name=active_lease,json=activeLease,proto3" json:"active_lease,omitempty"`
+	ThreadTurn           uint64                 `protobuf:"varint,16,opt,name=thread_turn,json=threadTurn,proto3" json:"thread_turn,omitempty"`
+	BridgeRunCounter     uint64                 `protobuf:"varint,17,opt,name=bridge_run_counter,json=bridgeRunCounter,proto3" json:"bridge_run_counter,omitempty"`
+	AgentEndObserved     bool                   `protobuf:"varint,18,opt,name=agent_end_observed,json=agentEndObserved,proto3" json:"agent_end_observed,omitempty"`
+	AgentSettledObserved bool                   `protobuf:"varint,19,opt,name=agent_settled_observed,json=agentSettledObserved,proto3" json:"agent_settled_observed,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *BridgeDeliveryAckRequest) Reset() {
@@ -4244,6 +4291,55 @@ func (x *BridgeDeliveryAckRequest) GetCompletionKey() string {
 		return x.CompletionKey
 	}
 	return ""
+}
+
+func (x *BridgeDeliveryAckRequest) GetThreadId() string {
+	if x != nil {
+		return x.ThreadId
+	}
+	return ""
+}
+
+func (x *BridgeDeliveryAckRequest) GetSchedulerEpoch() uint64 {
+	if x != nil {
+		return x.SchedulerEpoch
+	}
+	return 0
+}
+
+func (x *BridgeDeliveryAckRequest) GetActiveLease() uint64 {
+	if x != nil {
+		return x.ActiveLease
+	}
+	return 0
+}
+
+func (x *BridgeDeliveryAckRequest) GetThreadTurn() uint64 {
+	if x != nil {
+		return x.ThreadTurn
+	}
+	return 0
+}
+
+func (x *BridgeDeliveryAckRequest) GetBridgeRunCounter() uint64 {
+	if x != nil {
+		return x.BridgeRunCounter
+	}
+	return 0
+}
+
+func (x *BridgeDeliveryAckRequest) GetAgentEndObserved() bool {
+	if x != nil {
+		return x.AgentEndObserved
+	}
+	return false
+}
+
+func (x *BridgeDeliveryAckRequest) GetAgentSettledObserved() bool {
+	if x != nil {
+		return x.AgentSettledObserved
+	}
+	return false
 }
 
 type BridgeDeliveryAckResponse struct {
@@ -4939,6 +5035,7 @@ type PromptTaskResponse struct {
 	Completed     bool                   `protobuf:"varint,2,opt,name=completed,proto3" json:"completed,omitempty"`
 	BoundedAnswer []byte                 `protobuf:"bytes,3,opt,name=bounded_answer,json=boundedAnswer,proto3" json:"bounded_answer,omitempty"`
 	Reason        string                 `protobuf:"bytes,4,opt,name=reason,proto3" json:"reason,omitempty"`
+	ThreadId      string                 `protobuf:"bytes,5,opt,name=thread_id,json=threadId,proto3" json:"thread_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4997,6 +5094,13 @@ func (x *PromptTaskResponse) GetBoundedAnswer() []byte {
 func (x *PromptTaskResponse) GetReason() string {
 	if x != nil {
 		return x.Reason
+	}
+	return ""
+}
+
+func (x *PromptTaskResponse) GetThreadId() string {
+	if x != nil {
+		return x.ThreadId
 	}
 	return ""
 }
@@ -5117,6 +5221,7 @@ type TaskLifecycleResponse struct {
 	Terminal      bool                        `protobuf:"varint,4,opt,name=terminal,proto3" json:"terminal,omitempty"`
 	BoundedAnswer []byte                      `protobuf:"bytes,5,opt,name=bounded_answer,json=boundedAnswer,proto3" json:"bounded_answer,omitempty"`
 	Reason        string                      `protobuf:"bytes,6,opt,name=reason,proto3" json:"reason,omitempty"`
+	ThreadId      string                      `protobuf:"bytes,7,opt,name=thread_id,json=threadId,proto3" json:"thread_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -5189,6 +5294,13 @@ func (x *TaskLifecycleResponse) GetBoundedAnswer() []byte {
 func (x *TaskLifecycleResponse) GetReason() string {
 	if x != nil {
 		return x.Reason
+	}
+	return ""
+}
+
+func (x *TaskLifecycleResponse) GetThreadId() string {
+	if x != nil {
+		return x.ThreadId
 	}
 	return ""
 }
@@ -5609,8 +5721,9 @@ const file_api_subagents_v1_subagents_proto_rawDesc = "" +
 	"\x1bclient_agent_roster_request\x18< \x01(\v22.workstation.subagents.v1.ClientAgentRosterRequestH\x00R\x18clientAgentRosterRequest\x12m\n" +
 	"\x19client_agent_roster_frame\x18= \x01(\v20.workstation.subagents.v1.ClientAgentRosterFrameH\x00R\x16clientAgentRosterFrame\x12m\n" +
 	"\x19actor_message_reply_frame\x18> \x01(\v20.workstation.subagents.v1.ActorMessageReplyFrameH\x00R\x16actorMessageReplyFrameB\t\n" +
-	"\apayload\"\xf8\x03\n" +
-	"\x16ActorMessageReplyFrame\x12%\n" +
+	"\apayload\"\x95\x04\n" +
+	"\x16ActorMessageReplyFrame\x12\x1b\n" +
+	"\tthread_id\x18\r \x01(\tR\bthreadId\x12%\n" +
 	"\x0ecompletion_key\x18\f \x01(\tR\rcompletionKey\x12.\n" +
 	"\x13original_request_id\x18\x01 \x01(\tR\x11originalRequestId\x12\x1b\n" +
 	"\tdedupe_id\x18\x02 \x01(\tR\bdedupeId\x12\x19\n" +
@@ -5801,7 +5914,7 @@ const file_api_subagents_v1_subagents_proto_rawDesc = "" +
 	"\bsequence\x18\x01 \x01(\x04R\bsequence\x12\x19\n" +
 	"\bagent_id\x18\x02 \x01(\tR\aagentId\x12\x1a\n" +
 	"\brevision\x18\x03 \x01(\x04R\brevision\x12\x1c\n" +
-	"\toperation\x18\x04 \x01(\tR\toperation\"\x86\a\n" +
+	"\toperation\x18\x04 \x01(\tR\toperation\"\x90\b\n" +
 	"\x0eBridgeDelivery\x12\x1a\n" +
 	"\bsequence\x18\x01 \x01(\x04R\bsequence\x12&\n" +
 	"\x0fsource_agent_id\x18\x02 \x01(\tR\rsourceAgentId\x12&\n" +
@@ -5819,7 +5932,12 @@ const file_api_subagents_v1_subagents_proto_rawDesc = "" +
 	"\x06source\x18\f \x01(\v2+.workstation.subagents.v1.CommunicationPeerR\x06source\x12C\n" +
 	"\x06target\x18\r \x01(\v2+.workstation.subagents.v1.CommunicationPeerR\x06target\x12!\n" +
 	"\fsource_scope\x18\x0e \x01(\tR\vsourceScope\x12%\n" +
-	"\x0ecompletion_key\x18\x0f \x01(\tR\rcompletionKey\"g\n" +
+	"\x0ecompletion_key\x18\x0f \x01(\tR\rcompletionKey\x12\x1b\n" +
+	"\tthread_id\x18\x10 \x01(\tR\bthreadId\x12'\n" +
+	"\x0fscheduler_epoch\x18\x11 \x01(\x04R\x0eschedulerEpoch\x12!\n" +
+	"\factive_lease\x18\x12 \x01(\x04R\vactiveLease\x12\x1f\n" +
+	"\vthread_turn\x18\x13 \x01(\x04R\n" +
+	"threadTurn\"g\n" +
 	"\x04Kind\x12\x14\n" +
 	"\x10KIND_UNSPECIFIED\x10\x00\x12\x15\n" +
 	"\x11KIND_NOTIFICATION\x10\x01\x12\x0e\n" +
@@ -5845,7 +5963,7 @@ const file_api_subagents_v1_subagents_proto_rawDesc = "" +
 	"deliveries\x18\x03 \x03(\v2(.workstation.subagents.v1.BridgeDeliveryR\n" +
 	"deliveries\x12'\n" +
 	"\x0flatest_sequence\x18\x04 \x01(\x04R\x0elatestSequence\x12\x16\n" +
-	"\x06reason\x18\x05 \x01(\tR\x06reason\"\x8e\x03\n" +
+	"\x06reason\x18\x05 \x01(\tR\x06reason\"\xaa\x05\n" +
 	"\x18BridgeDeliveryAckRequest\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12\x1a\n" +
 	"\bsequence\x18\x02 \x01(\x04R\bsequence\x12\x1b\n" +
@@ -5860,7 +5978,15 @@ const file_api_subagents_v1_subagents_proto_rawDesc = "" +
 	"\x04kind\x18\n" +
 	" \x01(\tR\x04kind\x12!\n" +
 	"\fsource_scope\x18\v \x01(\tR\vsourceScope\x12%\n" +
-	"\x0ecompletion_key\x18\f \x01(\tR\rcompletionKey\"g\n" +
+	"\x0ecompletion_key\x18\f \x01(\tR\rcompletionKey\x12\x1b\n" +
+	"\tthread_id\x18\r \x01(\tR\bthreadId\x12'\n" +
+	"\x0fscheduler_epoch\x18\x0e \x01(\x04R\x0eschedulerEpoch\x12!\n" +
+	"\factive_lease\x18\x0f \x01(\x04R\vactiveLease\x12\x1f\n" +
+	"\vthread_turn\x18\x10 \x01(\x04R\n" +
+	"threadTurn\x12,\n" +
+	"\x12bridge_run_counter\x18\x11 \x01(\x04R\x10bridgeRunCounter\x12,\n" +
+	"\x12agent_end_observed\x18\x12 \x01(\bR\x10agentEndObserved\x124\n" +
+	"\x16agent_settled_observed\x18\x13 \x01(\bR\x14agentSettledObserved\"g\n" +
 	"\x19BridgeDeliveryAckResponse\x12\x1a\n" +
 	"\baccepted\x18\x01 \x01(\bR\baccepted\x12\x16\n" +
 	"\x06reason\x18\x02 \x01(\tR\x06reason\x12\x16\n" +
@@ -5933,12 +6059,13 @@ const file_api_subagents_v1_subagents_proto_rawDesc = "" +
 	"\tdedupe_id\x18\x03 \x01(\tR\bdedupeId\x12\x19\n" +
 	"\bchain_id\x18\x04 \x01(\tR\achainId\x12\x1b\n" +
 	"\thop_limit\x18\x05 \x01(\rR\bhopLimit\x128\n" +
-	"\x18source_mutation_sequence\x18\x06 \x01(\x04R\x16sourceMutationSequence\"\x8d\x01\n" +
+	"\x18source_mutation_sequence\x18\x06 \x01(\x04R\x16sourceMutationSequence\"\xaa\x01\n" +
 	"\x12PromptTaskResponse\x12\x1a\n" +
 	"\baccepted\x18\x01 \x01(\bR\baccepted\x12\x1c\n" +
 	"\tcompleted\x18\x02 \x01(\bR\tcompleted\x12%\n" +
 	"\x0ebounded_answer\x18\x03 \x01(\fR\rboundedAnswer\x12\x16\n" +
-	"\x06reason\x18\x04 \x01(\tR\x06reason\"\xe7\x03\n" +
+	"\x06reason\x18\x04 \x01(\tR\x06reason\x12\x1b\n" +
+	"\tthread_id\x18\x05 \x01(\tR\bthreadId\"\xe7\x03\n" +
 	"\x14TaskLifecycleRequest\x12V\n" +
 	"\toperation\x18\x01 \x01(\x0e28.workstation.subagents.v1.TaskLifecycleRequest.OperationR\toperation\x12!\n" +
 	"\flifecycle_id\x18\x02 \x01(\tR\vlifecycleId\x12\x16\n" +
@@ -5954,14 +6081,15 @@ const file_api_subagents_v1_subagents_proto_rawDesc = "" +
 	"\x15OPERATION_UNSPECIFIED\x10\x00\x12\x13\n" +
 	"\x0fOPERATION_START\x10\x01\x12\x14\n" +
 	"\x10OPERATION_STATUS\x10\x02\x12\x12\n" +
-	"\x0eOPERATION_WAIT\x10\x03\"\x9c\x03\n" +
+	"\x0eOPERATION_WAIT\x10\x03\"\xb9\x03\n" +
 	"\x15TaskLifecycleResponse\x12\x1a\n" +
 	"\baccepted\x18\x01 \x01(\bR\baccepted\x12!\n" +
 	"\flifecycle_id\x18\x02 \x01(\tR\vlifecycleId\x12K\n" +
 	"\x05state\x18\x03 \x01(\x0e25.workstation.subagents.v1.TaskLifecycleResponse.StateR\x05state\x12\x1a\n" +
 	"\bterminal\x18\x04 \x01(\bR\bterminal\x12%\n" +
 	"\x0ebounded_answer\x18\x05 \x01(\fR\rboundedAnswer\x12\x16\n" +
-	"\x06reason\x18\x06 \x01(\tR\x06reason\"\x9b\x01\n" +
+	"\x06reason\x18\x06 \x01(\tR\x06reason\x12\x1b\n" +
+	"\tthread_id\x18\a \x01(\tR\bthreadId\"\x9b\x01\n" +
 	"\x05State\x12\x15\n" +
 	"\x11STATE_UNSPECIFIED\x10\x00\x12\x12\n" +
 	"\x0eSTATE_ACCEPTED\x10\x01\x12\x17\n" +

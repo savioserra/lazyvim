@@ -616,6 +616,7 @@ const TargetTaskCommittedTopic = "subagents.target-task-committed"
 type ActorTaskAccepted struct {
 	TaskID, CreditID string
 	TargetAgentID    string
+	ThreadID         string
 	Accepted         bool
 	Reason           string
 }
@@ -625,7 +626,7 @@ type TargetTaskCommitted struct {
 }
 
 type ActorTaskCompleted struct {
-	CompletionKey                        string
+	CompletionKey, ThreadID              string
 	OriginalRequestID, DedupeID, ChainID string
 	SourceMutationSequence               uint64
 	Terminal                             BridgeIntentResult
@@ -652,9 +653,10 @@ type CommitBridgeDelivery struct {
 
 type BridgeDeliveryAckEvidence struct {
 	SessionID, GenerationID, Principal, Handle, RuntimeID, PiSessionID, DedupeID, SourceScope, Reason string
-	Fence, Incarnation, Sequence                                                                      uint64
+	ThreadID                                                                                          string
+	Fence, Incarnation, Sequence, SchedulerEpoch, ActiveLease, ThreadTurn, BridgeRunCounter           uint64
 	Kind                                                                                              BridgeDeliveryKind
-	Delivered                                                                                         bool
+	Delivered, AgentEndObserved, AgentSettledObserved                                                 bool
 	Result                                                                                            []byte
 	Completion                                                                                        chan<- BridgeDeliveryAckResult
 }
@@ -665,7 +667,7 @@ type CompleteAskCorrelation struct {
 }
 
 type RouteActorMessageReply struct {
-	CompletionKey                                              string
+	CompletionKey, ThreadID                                    string
 	OriginalRequestID, DedupeID, ChainID                       string
 	SourceMutationSequence                                     uint64
 	Terminal                                                   BridgeIntentResult
@@ -879,8 +881,9 @@ func BridgeDeliveryKindLabel(kind BridgeDeliveryKind) string {
 }
 
 type BridgeDelivery struct {
-	Sequence                                                   uint64
+	Sequence, SchedulerEpoch, ActiveLease, ThreadTurn          uint64
 	SourceAgentID, TargetAgentID, RequestID, DedupeID, ChainID string
+	ThreadID                                                   string
 	Source, Target                                             CommunicationPeer
 	Deadline                                                   time.Time
 	HopLimit                                                   uint32
@@ -910,8 +913,10 @@ type PollBridge struct {
 }
 type BridgeDeliveryAck struct {
 	SessionID, GenerationID, Principal, Handle, DedupeID, Reason string
-	Fence, Sequence                                              uint64
-	Delivered                                                    bool
+	ThreadID                                                     string
+	Fence, Sequence, SchedulerEpoch, ActiveLease, ThreadTurn     uint64
+	BridgeRunCounter                                             uint64
+	Delivered, AgentEndObserved, AgentSettledObserved            bool
 	Result                                                       []byte
 	RuntimeID, PiSessionID, Kind, SourceScope, CompletionKey     string
 	Incarnation                                                  uint64

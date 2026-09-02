@@ -59,6 +59,7 @@ type HostedAdminConfig struct {
 	IntrospectionModel                                                                                    string
 	TrustProject                                                                                          bool
 	RuntimeFactory                                                                                        func(hostedpi.Config) application.HostedPiRuntime
+	IntrospectionRunner                                                                                   application.ThreadIntrospectionRunner
 }
 type hostedRegistration struct{ sessionID, credentialFile string }
 type registrationPlaceholder struct {
@@ -135,6 +136,7 @@ type Service struct {
 	registrationTimeout      time.Duration
 	durableStore             *durablestate.Store
 	persistencePID           *actor.PID
+	introspectionRunner      application.ThreadIntrospectionRunner
 	persistenceSupervisor    *actor.PID
 	hostedIndeterminate      map[string]application.HostedPiRuntimeBinding
 	taskLifecycleMu          sync.Mutex
@@ -223,6 +225,13 @@ func Start(ctx context.Context, socketPath string) (*Service, error) {
 func StartConfigured(ctx context.Context, socketPath string, hosted HostedAdminConfig, runtime ...*remoting.Runtime) (*Service, error) {
 	if err := validateHostedAdminConfig(hosted); err != nil {
 		return nil, err
+	}
+	if hosted.Enabled && hosted.IntrospectionRunner == nil && hosted.IntrospectionModel != "" {
+		runner, err := hostedpi.NewIntrospectionRunner(hostedpi.IntrospectionConfig{PiBinary: hosted.PiBinary, Model: hosted.IntrospectionModel})
+		if err != nil {
+			return nil, err
+		}
+		hosted.IntrospectionRunner = runner
 	}
 	listener, err := workstationsocket.Listen(socketPath)
 	if err != nil {
@@ -379,7 +388,7 @@ func startWithListener(ctx context.Context, listener net.Listener, options ...an
 	}
 	service := &Service{
 		system: system, guardian: guardian, sessionRegistry: sessions, agentRegistry: agents, sessionCoordinator: coordinator, hostedSupervisor: hostedSupervisor, workflowRegistry: workflowRegistry, taskCoordinator: taskCoordinator, publicDirectory: publicDirectory, persistenceSupervisor: persistenceSupervisor, listener: listener, actorPlane: actorPlane,
-		connectionSlots: make(chan struct{}, maxConnections), activeConnections: make(map[net.Conn]struct{}), requestResults: make(map[string]requestRecord), hostedRuntimes: make(map[string]*actor.PID), hostedRegistrations: make(map[string]hostedRegistration), hostedTerminal: make(map[string]application.HostedPiRuntimeBinding), hostedStartupFailure: make(map[string]string), hostedCleanup: make(map[string]hostedRegistration), hostedProjects: make(map[string]string), hostedStarting: make(map[string]int), registrationPlaceholders: make(map[string]*registrationPlaceholder), registrationCleanups: make(map[string]*registrationCleanup), hostedAdmin: hosted, socketPath: socketPath, hostedOperationCancels: make(map[uint64]context.CancelFunc), hostedAgentLocks: make(map[string]*sync.Mutex), registrationTimeout: requestTimeout, durableStore: durableStore, persistencePID: persistencePID, hostedIndeterminate: make(map[string]application.HostedPiRuntimeBinding), taskLifecycles: make(map[string]*taskLifecycle), clientSessions: make(map[string]*actor.PID), publicSessionGenerations: make(map[string]string), pushSessions: make(map[*bridgePushSession]*actor.PID), rosterSessions: make(map[*clientRosterSession]*actor.PID), actorReplySessions: make(map[string]*actorReplySession), actorReplies: make(map[string][]actorReplyRecord), actorReplyNext: make(map[string]uint64),
+		connectionSlots: make(chan struct{}, maxConnections), activeConnections: make(map[net.Conn]struct{}), requestResults: make(map[string]requestRecord), hostedRuntimes: make(map[string]*actor.PID), hostedRegistrations: make(map[string]hostedRegistration), hostedTerminal: make(map[string]application.HostedPiRuntimeBinding), hostedStartupFailure: make(map[string]string), hostedCleanup: make(map[string]hostedRegistration), hostedProjects: make(map[string]string), hostedStarting: make(map[string]int), registrationPlaceholders: make(map[string]*registrationPlaceholder), registrationCleanups: make(map[string]*registrationCleanup), hostedAdmin: hosted, socketPath: socketPath, hostedOperationCancels: make(map[uint64]context.CancelFunc), hostedAgentLocks: make(map[string]*sync.Mutex), registrationTimeout: requestTimeout, durableStore: durableStore, persistencePID: persistencePID, introspectionRunner: hosted.IntrospectionRunner, hostedIndeterminate: make(map[string]application.HostedPiRuntimeBinding), taskLifecycles: make(map[string]*taskLifecycle), clientSessions: make(map[string]*actor.PID), publicSessionGenerations: make(map[string]string), pushSessions: make(map[*bridgePushSession]*actor.PID), rosterSessions: make(map[*clientRosterSession]*actor.PID), actorReplySessions: make(map[string]*actorReplySession), actorReplies: make(map[string][]actorReplyRecord), actorReplyNext: make(map[string]uint64),
 	}
 	if actorPlane != nil {
 		placementAuthority := placementAuthorityName(actorPlane.NodeIdentity)
@@ -1601,7 +1610,7 @@ func (s *Service) flushActorReplies(session *actorReplySession) bool {
 			continue
 		}
 		s.actorReplyNext[key]++
-		frame := &subagentsv1.Envelope{ProtocolMajor: protocol.ProtocolMajor, ProtocolMinor: protocol.ProtocolMinor, SessionId: session.sessionID, GenerationId: session.generationID, RequestId: completion.OriginalRequestID, CallerIdentity: session.principal, Sequence: s.actorReplyNext[key], Payload: &subagentsv1.Envelope_ActorMessageReplyFrame{ActorMessageReplyFrame: &subagentsv1.ActorMessageReplyFrame{CompletionKey: completion.CompletionKey, OriginalRequestId: completion.OriginalRequestID, DedupeId: completion.DedupeID, ChainId: completion.ChainID, SourceMutationSequence: completion.SourceMutationSequence, Accepted: completion.Terminal.Accepted, Completed: completion.Terminal.Completed, BoundedResult: append([]byte(nil), completion.Terminal.Result...), Reason: completion.Terminal.Reason, Source: protoCommunicationPeer(completion.Source), Target: protoCommunicationPeer(completion.Target), Kind: bridgeDeliveryKindLabel(completion.Kind)}}}
+		frame := &subagentsv1.Envelope{ProtocolMajor: protocol.ProtocolMajor, ProtocolMinor: protocol.ProtocolMinor, SessionId: session.sessionID, GenerationId: session.generationID, RequestId: completion.OriginalRequestID, CallerIdentity: session.principal, Sequence: s.actorReplyNext[key], Payload: &subagentsv1.Envelope_ActorMessageReplyFrame{ActorMessageReplyFrame: &subagentsv1.ActorMessageReplyFrame{ThreadId: completion.ThreadID, CompletionKey: completion.CompletionKey, OriginalRequestId: completion.OriginalRequestID, DedupeId: completion.DedupeID, ChainId: completion.ChainID, SourceMutationSequence: completion.SourceMutationSequence, Accepted: completion.Terminal.Accepted, Completed: completion.Terminal.Completed, BoundedResult: append([]byte(nil), completion.Terminal.Result...), Reason: completion.Terminal.Reason, Source: protoCommunicationPeer(completion.Source), Target: protoCommunicationPeer(completion.Target), Kind: bridgeDeliveryKindLabel(completion.Kind)}}}
 		s.actorReplyMu.Unlock()
 		select {
 		case <-session.closed:
@@ -2292,7 +2301,7 @@ func (s *Service) dispatch(request *subagentsv1.Envelope) *subagentsv1.Envelope 
 			return errorResponse(request, subagentsv1.ProtocolError_CODE_SESSION_MISMATCH, "delivery acknowledgement authorization denied")
 		}
 		completion := make(chan application.BridgeDeliveryAckResult, 1)
-		ack := &application.BridgeDeliveryAck{SessionID: request.SessionId, GenerationID: route.GenerationID, Principal: route.Principal, Handle: request.AgentHandle, Fence: request.AgentFence, Sequence: payload.BridgeDeliveryAckRequest.Sequence, DedupeID: payload.BridgeDeliveryAckRequest.DedupeId, Delivered: payload.BridgeDeliveryAckRequest.Delivered, Reason: payload.BridgeDeliveryAckRequest.Reason, Result: append([]byte(nil), payload.BridgeDeliveryAckRequest.BoundedResult...), RuntimeID: payload.BridgeDeliveryAckRequest.RuntimeId, Incarnation: payload.BridgeDeliveryAckRequest.Incarnation, PiSessionID: payload.BridgeDeliveryAckRequest.PiSessionId, Kind: payload.BridgeDeliveryAckRequest.Kind, SourceScope: payload.BridgeDeliveryAckRequest.SourceScope, CompletionKey: payload.BridgeDeliveryAckRequest.CompletionKey, Completion: completion}
+		ack := &application.BridgeDeliveryAck{SessionID: request.SessionId, GenerationID: route.GenerationID, Principal: route.Principal, Handle: request.AgentHandle, Fence: request.AgentFence, Sequence: payload.BridgeDeliveryAckRequest.Sequence, DedupeID: payload.BridgeDeliveryAckRequest.DedupeId, Delivered: payload.BridgeDeliveryAckRequest.Delivered, Reason: payload.BridgeDeliveryAckRequest.Reason, Result: append([]byte(nil), payload.BridgeDeliveryAckRequest.BoundedResult...), RuntimeID: payload.BridgeDeliveryAckRequest.RuntimeId, Incarnation: payload.BridgeDeliveryAckRequest.Incarnation, PiSessionID: payload.BridgeDeliveryAckRequest.PiSessionId, Kind: payload.BridgeDeliveryAckRequest.Kind, SourceScope: payload.BridgeDeliveryAckRequest.SourceScope, CompletionKey: payload.BridgeDeliveryAckRequest.CompletionKey, ThreadID: payload.BridgeDeliveryAckRequest.ThreadId, SchedulerEpoch: payload.BridgeDeliveryAckRequest.SchedulerEpoch, ActiveLease: payload.BridgeDeliveryAckRequest.ActiveLease, ThreadTurn: payload.BridgeDeliveryAckRequest.ThreadTurn, BridgeRunCounter: payload.BridgeDeliveryAckRequest.BridgeRunCounter, AgentEndObserved: payload.BridgeDeliveryAckRequest.AgentEndObserved, AgentSettledObserved: payload.BridgeDeliveryAckRequest.AgentSettledObserved, Completion: completion}
 		if err := s.system.NoSender().Tell(ctx, route.PID, ack); err != nil {
 			return internalError(response)
 		}
@@ -2364,7 +2373,7 @@ func (s *Service) protoBridgeDeliveries(ctx context.Context, deliveries []applic
 		if target.StableID == "" {
 			target = s.communicationPeer(ctx, delivery.TargetAgentID)
 		}
-		result = append(result, &subagentsv1.BridgeDelivery{Sequence: delivery.Sequence, SourceAgentId: delivery.SourceAgentID, TargetAgentId: delivery.TargetAgentID, RequestId: delivery.RequestID, DeadlineUnixMillis: delivery.Deadline.UnixMilli(), DedupeId: delivery.DedupeID, HopLimit: delivery.HopLimit, BoundedPayload: delivery.Payload, Policy: subagentsv1.BridgeDelivery_Policy(delivery.Policy), Kind: subagentsv1.BridgeDelivery_Kind(delivery.Kind), ChainId: delivery.ChainID, Source: protoCommunicationPeer(source), Target: protoCommunicationPeer(target), SourceScope: delivery.SourceScope, CompletionKey: delivery.CompletionKey})
+		result = append(result, &subagentsv1.BridgeDelivery{Sequence: delivery.Sequence, SourceAgentId: delivery.SourceAgentID, TargetAgentId: delivery.TargetAgentID, RequestId: delivery.RequestID, DeadlineUnixMillis: delivery.Deadline.UnixMilli(), DedupeId: delivery.DedupeID, HopLimit: delivery.HopLimit, BoundedPayload: delivery.Payload, Policy: subagentsv1.BridgeDelivery_Policy(delivery.Policy), Kind: subagentsv1.BridgeDelivery_Kind(delivery.Kind), ChainId: delivery.ChainID, Source: protoCommunicationPeer(source), Target: protoCommunicationPeer(target), SourceScope: delivery.SourceScope, CompletionKey: delivery.CompletionKey, ThreadId: delivery.ThreadID, SchedulerEpoch: delivery.SchedulerEpoch, ActiveLease: delivery.ActiveLease, ThreadTurn: delivery.ThreadTurn})
 	}
 	return result
 }

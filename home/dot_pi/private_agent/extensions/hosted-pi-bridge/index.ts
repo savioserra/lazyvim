@@ -189,11 +189,11 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
   // unobservable from the extension (pi.sendUserMessage swallows it). An
   // unobserved rejection left the task pending forever with no turn, no
   // acknowledgement, and no degraded status.
-  const prompts = new PromptTaskCoordinator<TargetFence>((text) => { requiredContext(extensionContext); pi.sendUserMessage(text, { deliverAs: "followUp" }); }, async (pending, deliveredSuccessfully, answer, reason) => {
+  const prompts = new PromptTaskCoordinator<TargetFence>((text) => { requiredContext(extensionContext); pi.sendUserMessage(text, { deliverAs: "followUp" }); }, async (pending, deliveredSuccessfully, answer, reason, settlement) => {
     const encoded = new TextEncoder().encode(answer);
     if (encoded.byteLength > MAX_TEXT) throw new Error("assistant answer exceeds bridge bound");
     const current = requiredBinding(binding);
-    const ack = buildIdentityDeliveryAck(current.agentId, { runtimeId: current.runtimeId, incarnation: current.incarnation, piSessionId }, pending.delivery, deliveredSuccessfully, reason, encoded);
+    const ack = buildIdentityDeliveryAck(current.agentId, { runtimeId: current.runtimeId, incarnation: current.incarnation, piSessionId }, pending.delivery, deliveredSuccessfully, reason, encoded, settlement);
     let response: Envelope;
     try {
       response = await requiredClient(client).request("bridgeDeliveryAckRequest", BridgeDeliveryAckRequestSchema, ack, pending.fence);
