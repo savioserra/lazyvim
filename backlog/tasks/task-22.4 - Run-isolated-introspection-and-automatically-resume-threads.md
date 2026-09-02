@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 06:10'
-updated_date: '2026-09-02 10:16'
+updated_date: '2026-09-02 12:56'
 labels: []
 dependencies:
   - TASK-22.3
@@ -56,6 +56,8 @@ Closed the mandatory-authority bypass identified from the architect map: legacy 
 Re-finalization gates after bypass retirement: full go test -race ./..., go vet ./..., codegen verify, protocol npm test, capabilities test, and diff check all pass. Legacy model-task requests are tested fail-closed locally and across nodes.
 
 Live deployed Ask to ui_qa failed as thread introspection exhausted. Reproduced with the real managed Pi runner: the model emitted numeric confidence and an unsupported reason_class because the classifier system prompt named only state literals. Strengthened the prompt to require exactly seven keys, string-only values, all confidence/reason literals, and exact per-state combinations. A real openai-codex/gpt-5.6-sol runner probe now passes strict parsing; added prompt-contract regression assertions.
+
+Second live comms root cause found: production uses StartWebSocketConfigured, but only the retired Unix-socket StartConfigured path initialized hosted.IntrospectionRunner from introspection_model. Every real thread therefore ran with runner_unavailable and exhausted after three attempts; the model answers themselves were delivered correctly. Centralized runner initialization and wired it into WebSocket startup before listener effects; added a production-start regression test.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

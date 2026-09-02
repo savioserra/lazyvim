@@ -20,6 +20,14 @@ const actorWebSocketPath = "/actors"
 type websocketTransport struct{}
 
 func StartWebSocketConfigured(ctx context.Context, listenAddress string, hosted HostedAdminConfig, runtime ...*remoting.Runtime) (*Service, error) {
+	if err := validateHostedAdminConfig(hosted); err != nil {
+		return nil, err
+	}
+	var err error
+	hosted, err = initializeHostedIntrospection(hosted)
+	if err != nil {
+		return nil, err
+	}
 	listener, err := net.Listen("tcp", listenAddress)
 	if err != nil {
 		return nil, fmt.Errorf("listen actor websocket endpoint: %w", err)

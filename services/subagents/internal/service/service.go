@@ -209,16 +209,26 @@ func Start(ctx context.Context, socketPath string) (*Service, error) {
 	return StartConfigured(ctx, socketPath, HostedAdminConfig{})
 }
 
+func initializeHostedIntrospection(hosted HostedAdminConfig) (HostedAdminConfig, error) {
+	if !hosted.Enabled || hosted.IntrospectionRunner != nil || hosted.IntrospectionModel == "" {
+		return hosted, nil
+	}
+	runner, err := hostedpi.NewIntrospectionRunner(hostedpi.IntrospectionConfig{PiBinary: hosted.PiBinary, Model: hosted.IntrospectionModel})
+	if err != nil {
+		return HostedAdminConfig{}, err
+	}
+	hosted.IntrospectionRunner = runner
+	return hosted, nil
+}
+
 func StartConfigured(ctx context.Context, socketPath string, hosted HostedAdminConfig, runtime ...*remoting.Runtime) (*Service, error) {
 	if err := validateHostedAdminConfig(hosted); err != nil {
 		return nil, err
 	}
-	if hosted.Enabled && hosted.IntrospectionRunner == nil && hosted.IntrospectionModel != "" {
-		runner, err := hostedpi.NewIntrospectionRunner(hostedpi.IntrospectionConfig{PiBinary: hosted.PiBinary, Model: hosted.IntrospectionModel})
-		if err != nil {
-			return nil, err
-		}
-		hosted.IntrospectionRunner = runner
+	var err error
+	hosted, err = initializeHostedIntrospection(hosted)
+	if err != nil {
+		return nil, err
 	}
 	listener, err := workstationsocket.Listen(socketPath)
 	if err != nil {
