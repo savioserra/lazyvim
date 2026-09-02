@@ -323,11 +323,12 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
       if (entry.customType === "hosted-pi-delivery-marker") {
         const data = entry.data as Partial<DeliveryMarker> | undefined;
         if (typeof data?.dedupeId === "string") {
-          delivered.add(data.dedupeId);
+          const markerKey = deliveryMarkerKey(data.dedupeId, data.sequence ?? "0");
+          delivered.add(markerKey);
           try { lastAckedSequence = maxBigInt(lastAckedSequence, BigInt(data.sequence ?? "0")); } catch { /* ignore malformed legacy marker */ }
           try {
             const bridgeRunCounter = BigInt(data.bridgeRunCounter ?? "0");
-            if (bridgeRunCounter > 0n && data.agentEndObserved === true && data.agentSettledObserved === true) promptSettlements.set(data.dedupeId, { bridgeRunCounter, agentEndObserved: true, agentSettledObserved: true });
+            if (bridgeRunCounter > 0n && data.agentEndObserved === true && data.agentSettledObserved === true) promptSettlements.set(markerKey, { bridgeRunCounter, agentEndObserved: true, agentSettledObserved: true });
           } catch { /* malformed settlement evidence cannot authorize replay */ }
         }
         continue;
@@ -465,7 +466,8 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
     // stall. The status persists because every poll cycle re-reports it.
     const missingIdentity = missingAckIdentity(delivery);
     if (missingIdentity) { reportBridgeDegraded(ctx, new Error(missingIdentity)); return; }
-    const duplicate = delivered.has(delivery.dedupeId);
+    const markerKey = deliveryMarkerKey(delivery.dedupeId, delivery.sequence);
+    const duplicate = delivered.has(markerKey);
     if (delivery.kind === 4) {
       if (!duplicate) { await prompts.deliver({ ...delivery, boundedPayload: new TextEncoder().encode(incomingRequestText(delivery)) }, fence); return; }
       // A prompt this runtime already delivered and acknowledged may still be
@@ -485,7 +487,7 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
       if (BigInt(Date.now()) > delivery.deadlineUnixMillis) throw new Error("delivery deadline expired");
       if (!duplicate) {
         if (delivery.kind !== 1) executeTypedDelivery(ctx, delivery.kind, safeText(delivery.boundedPayload));
-        delivered.add(delivery.dedupeId);
+        delivered.add(markerKey);
         if (delivered.size > 512) delivered.delete(delivered.values().next().value!);
       }
     });
@@ -511,8 +513,9 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
   }
 
   function deliveredPrompt(dedupeId: string, sequence: bigint, settlement: ThreadSettlementEvidence) {
-    delivered.add(dedupeId);
-    promptSettlements.set(dedupeId, settlement);
+    const markerKey = deliveryMarkerKey(dedupeId, sequence);
+    delivered.add(markerKey);
+    promptSettlements.set(markerKey, settlement);
     lastAckedSequence = maxBigInt(lastAckedSequence, sequence);
     if (delivered.size > 512) delivered.delete(delivered.values().next().value!);
     appendDeliveryMarker(dedupeId, sequence, 4, settlement);
@@ -520,7 +523,7 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
 
   async function acknowledgeReplayedPrompt(delivery: any, fence: TargetFence) {
     const current = requiredBinding(binding);
-    const settlement = promptSettlements.get(delivery.dedupeId);
+    const settlement = promptSettlements.get(deliveryMarkerKey(delivery.dedupeId, delivery.sequence));
     if (delivery.threadId && !settlement) throw new Error("thread prompt replay settlement evidence is unavailable");
     const ack = buildIdentityDeliveryAck(current.agentId, { runtimeId: current.runtimeId, incarnation: current.incarnation, piSessionId }, delivery, true, "prompt replayed after successful acknowledgement", new Uint8Array(), settlement);
     const response = await requestBridgeDeliveryAckWithFenceRefresh(requiredContext(extensionContext), ack, fence);
@@ -539,7 +542,7 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
   function restoreDeliveryMarkerFromKey(key: string) {
     const [dedupeId, sequence] = key.split("\0");
     if (!dedupeId) return;
-    delivered.add(dedupeId);
+    delivered.add(deliveryMarkerKey(dedupeId, sequence || "0"));
     try { lastAckedSequence = maxBigInt(lastAckedSequence, BigInt(sequence)); } catch { /* legacy entries may not include a sequence */ }
   }
 
@@ -714,6 +717,7 @@ export async function reportLifecycleWithBusyRetry<TResponse extends { payload?:
 }
 
 function delay(milliseconds: number) { return new Promise<void>((resolve) => setTimeout(resolve, milliseconds)); }
+export function deliveryMarkerKey(dedupeId: string, sequence: bigint | string): string { return `${dedupeId}\0${String(sequence)}`; }
 function maxBigInt(a: bigint, b: bigint) { return a > b ? a : b; }
 function deliveryKindName(kind: number) { return kind === 1 ? "Tell" : kind === 2 ? "Abort" : kind === 3 ? "Shutdown" : kind === 4 ? "Prompt" : "Unknown"; }
 function boundedPublic(value: string, max = 80) { const clean = value.replace(/[\r\n\t\x00]/g, " "); return clean.length > max ? `${clean.slice(0, Math.max(0, max - 1))}…` : clean; }
