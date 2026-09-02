@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { buildActorControl, buildActorMessage, buildIdentityDeliveryAck, bridgeErrorClass, communicationKey, communicationLine, CommunicationTimeline, completeHostedEnvironment, ExactMutationSequencer, PromptTaskCoordinator, deliveryAction, deliveryKindLabel, destroyOnFramingFailure, drainPages, executeTypedDelivery, invokeTypedDeliveryForAck, missingAckIdentity, parseTargetMessage, registerHostedHandlers, requireExplicitModelTarget } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/handlers.ts";
 import { bridgeDiagnostic, communicationEnvelope, envelopeCommunicationView, incomingNote, incomingRequestText, outgoingExchange, renderCommunicationCard, compactToolCall, compactToolResult, modelResultContent, renderHostedCommunicationEnvelope, renderToolResult } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/communication-ui.ts";
-import { actorControlCapabilities, actorMessageCapabilities, actorMessageModelResult, capabilitySetIncludes, connectBridgeWithRetry, consumeReconnect, degradedBridgeStatus, requestDeliveryAckWithFenceRefresh, resolveHostedMessageDestination } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/index.ts";
+import { actorControlCapabilities, actorMessageCapabilities, actorMessageModelResult, capabilitySetIncludes, connectBridgeWithRetry, consumeReconnect, degradedBridgeStatus, isTransientLifecycleBusyResponse, reportLifecycleWithBusyRetry, requestDeliveryAckWithFenceRefresh, resolveHostedMessageDestination } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/index.ts";
 
 const complete = { WS_SUBAGENTS_ENDPOINT: "ws://127.0.0.1:17213/actors", WS_SUBAGENTS_CREDENTIAL_FILE: "/state/credential", WS_SUBAGENTS_SESSION_ID: "session", WS_SUBAGENTS_GENERATION_ID: "generation", WS_SUBAGENTS_CALLER: "hosted:agent", WS_SUBAGENTS_AGENT_ID: "agent", WS_SUBAGENTS_RUNTIME_ID: "runtime", WS_SUBAGENTS_INCARNATION: "1" };
 
@@ -19,6 +19,42 @@ test("bridge startup passes the dynamically imported connect schema explicitly",
   const response = await connectBridgeWithRetry(client, binding, "pi-session", 0n, schema, 1, async () => {});
   assert.equal(observed, schema);
   assert.equal(response.payload.value.accepted, true);
+});
+
+test("lifecycle READY retries only transient durable busy with identical payload and fence", async () => {
+  const schema = { typeName: "test.BridgeLifecycleRequest" };
+  const binding = { agentId: "agent", runtimeId: "runtime", incarnation: 3n };
+  const fence = { handle: "handle", fence: 4n };
+  const calls = [];
+  const client = { request: async (payloadCase, passedSchema, value, target) => {
+    calls.push({ payloadCase, passedSchema, value: structuredClone(value), target: structuredClone(target) });
+    if (calls.length < 3) return { payload: { case: "bridgeLifecycleResponse", value: { accepted: false, reason: "durable persistence is busy" } } };
+    return { payload: { case: "bridgeLifecycleResponse", value: { accepted: true } } };
+  } };
+  const response = await reportLifecycleWithBusyRetry(client, schema, binding, fence, 2, 4, () => 0);
+  assert.equal(response.payload.value.accepted, true);
+  assert.equal(calls.length, 3);
+  for (const call of calls) assert.deepEqual(call, calls[0], "lifecycle retry must not rotate payload, schema, or fence identity");
+  assert.equal(isTransientLifecycleBusyResponse({ payload: { case: "bridgeLifecycleResponse", value: { accepted: false, reason: "durable persistence is busy" } } }), true);
+});
+
+test("lifecycle retry exhaustion and non-busy rejections stay fatal", async () => {
+  const schema = { typeName: "test.BridgeLifecycleRequest" };
+  const binding = { agentId: "agent", runtimeId: "runtime", incarnation: 3n };
+  const fence = { handle: "handle", fence: 4n };
+  let attempts = 0;
+  await assert.rejects(
+    () => reportLifecycleWithBusyRetry({ request: async () => { attempts++; return { payload: { case: "bridgeLifecycleResponse", value: { accepted: false, reason: "durable persistence is busy" } } }; } }, schema, binding, fence, 2, 2, () => 0),
+    /durable persistence is busy/,
+  );
+  assert.equal(attempts, 2);
+  attempts = 0;
+  await assert.rejects(
+    () => reportLifecycleWithBusyRetry({ request: async () => { attempts++; return { payload: { case: "bridgeLifecycleResponse", value: { accepted: false, reason: "hosted bridge fence rejected" } } }; } }, schema, binding, fence, 2, 6, () => 0),
+    /hosted bridge lifecycle report rejected/,
+  );
+  assert.equal(attempts, 1, "non-busy lifecycle errors must not retry");
+  assert.equal(isTransientLifecycleBusyResponse({ payload: { case: "bridgeLifecycleResponse", value: { accepted: false, reason: "hosted bridge fence rejected" } } }), false);
 });
 
 test("extension registration requires the complete hosted environment", () => {

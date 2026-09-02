@@ -93,6 +93,111 @@ func TestDurableMutationReceiptWaitsForAsyncFsyncAndReceiveStaysNonblocking(t *t
 	}
 }
 
+func TestBridgeLifecycleReadyReturnsTransientBusyDuringDurableMutationAndConverges(t *testing.T) {
+	ctx := context.Background()
+	system, err := actor.NewActorSystem("lifecycle-busy-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = system.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer system.Stop(ctx)
+	store := &blockingStore{started: make(chan application.DurableHostedRecord, 1), release: make(chan error, 1)}
+	writer, err := system.Spawn(ctx, "writer", &HostedStateWriterActor{Store: store}, actor.WithSupervisor(supervisor.NewSupervisor(supervisor.WithAnyErrorDirective(supervisor.RestartDirective))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	binding := application.InactiveHostedPiRuntimeBinding()
+	binding.State = application.HostedPiRuntimeReady
+	binding.BridgeReady = true
+	binding.RuntimeID = "runtime"
+	binding.Incarnation = 1
+	state := application.DurableAgentState{Fence: 1, BridgeFence: 1, BridgeReady: true, BridgeDeclaredReady: true, BridgeSession: "session", BridgeGeneration: "generation", BridgePrincipal: "hosted:target", BridgeHandle: "handle", BridgePiSession: "pi", Attachments: []application.DurableAttachment{{SessionID: "session", GenerationID: "generation", Principal: "hosted:target", Handle: "handle", Fence: 1, Capabilities: []string{"send", "hosted_bridge"}}}}
+	record := application.DurableHostedRecord{SchemaVersion: application.DurableHostedSchemaVersion, AgentID: "target", Binding: binding, AgentState: state}
+	registration := &application.RegisterAgent{AgentID: "target", AuthorityBinding: application.AuthorityBinding{Kind: application.AuthorityBindingHostedOwned, HostedRuntimeID: "runtime"}, HostedPiRuntime: binding, AllowedCapability: []string{"send", "hosted_bridge"}, PersistencePID: writer, DurableRecord: &record}
+	pid, err := system.Spawn(ctx, "agent", NewAgentActor(registration))
+	if err != nil {
+		t.Fatal(err)
+	}
+	intentReceipt := make(chan application.BridgeIntentResult, 1)
+	intent := &application.BridgeIntent{SessionID: "session", GenerationID: "generation", Principal: "hosted:target", Handle: "handle", Fence: 1, SourceAgentID: "source", TargetAgentID: "target", RequestID: "request", RequiredCapability: "send", DedupeID: "dedupe", ChainID: "chain", Deadline: time.Now().Add(time.Minute), HopLimit: 2, SourceMutationSequence: 1, Mode: application.BridgeMessageTell, Payload: []byte("payload"), Receipt: intentReceipt}
+	if err = system.NoSender().Tell(ctx, pid, intent); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-store.started:
+	case result := <-intentReceipt:
+		t.Fatalf("intent completed before durable busy window: %#v", result)
+	case <-time.After(time.Second):
+		t.Fatal("intent persistence did not start")
+	}
+	busy := make(chan application.BridgeResult, 1)
+	ready := &application.BridgeLifecycle{SessionID: "session", GenerationID: "generation", Principal: "hosted:target", AgentID: "target", Handle: "handle", Fence: 1, RuntimeID: "runtime", Incarnation: 1, Event: application.BridgeLifecycleReady, Result: busy}
+	if err = system.NoSender().Tell(ctx, pid, ready); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case result := <-busy:
+		if result.Accepted || result.Reason != "durable persistence is busy" {
+			t.Fatalf("READY race was not classified transient busy: %#v", result)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("READY race did not return while persistence was busy")
+	}
+	store.release <- nil
+	select {
+	case result := <-intentReceipt:
+		if !result.Accepted {
+			t.Fatalf("intent did not commit after release: %#v", result)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("intent receipt missing after release")
+	}
+	settled := make(chan application.BridgeResult, 1)
+	retry := *ready
+	retry.Result = settled
+	if err = system.NoSender().Tell(ctx, pid, &retry); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-store.started:
+		store.release <- nil
+	case result := <-settled:
+		if !result.Accepted {
+			t.Fatalf("READY retry did not converge: %#v", result)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("READY retry persistence did not start")
+	}
+	select {
+	case result := <-settled:
+		if !result.Accepted {
+			t.Fatalf("READY retry did not converge: %#v", result)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("READY retry did not complete")
+	}
+	if !record.Binding.BridgeReady || record.Binding.State != application.HostedPiRuntimeReady {
+		t.Fatalf("READY retry regressed runtime binding: %#v", record.Binding)
+	}
+	failed := make(chan application.BridgeResult, 1)
+	bad := retry
+	bad.Event = application.BridgeLifecycleEvent(99)
+	bad.Result = failed
+	if err = system.NoSender().Tell(ctx, pid, &bad); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case result := <-failed:
+		if result.Accepted || result.Reason != "unknown hosted bridge lifecycle event" {
+			t.Fatalf("non-busy lifecycle error did not fail closed: %#v", result)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("non-busy lifecycle error did not respond")
+	}
+}
+
 func TestAttachAgentIdempotentSubsetReattachBypassesDurableBusy(t *testing.T) {
 	ctx := context.Background()
 	system, err := actor.NewActorSystem("attach-idempotent-test")

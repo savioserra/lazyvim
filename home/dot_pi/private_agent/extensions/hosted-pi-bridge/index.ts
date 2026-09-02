@@ -14,6 +14,7 @@ const MAX_FRAME = 64 * 1024;
 const MAX_TEXT = 16 * 1024;
 const REQUEST_TIMEOUT_MS = 6 * 60 * 60_000;
 const SHORT_REQUEST_TIMEOUT_MS = 2_000;
+const LIFECYCLE_BUSY_RETRY_ATTEMPTS = 6;
 const textDecoder = new TextDecoder("utf-8", { fatal: true });
 
 type CredentialFile = { credential_b64: string };
@@ -405,10 +406,7 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
   }
 
   async function lifecycle(event: BridgeLifecycleRequest_Event) {
-    const current = requiredBinding(binding);
-    const fence = requiredFence(selfFence);
-    const response = await requiredClient(client).request("bridgeLifecycleRequest", BridgeLifecycleRequestSchema, { agentId: current.agentId, runtimeId: current.runtimeId, incarnation: current.incarnation, event }, fence);
-    if (response.payload.case !== "bridgeLifecycleResponse" || !response.payload.value.accepted) throw new Error("hosted bridge lifecycle report rejected");
+    await reportLifecycleWithBusyRetry(requiredClient(client), BridgeLifecycleRequestSchema, requiredBinding(binding), requiredFence(selfFence), event);
   }
 
   function schedulePush(ctx: ExtensionContext, envelope: Envelope) {
@@ -681,6 +679,26 @@ export async function connectBridgeWithRetry(client: Pick<FramedClient, "request
     if (attempt < attempts - 1) await wait(100);
   }
   throw new Error(`hosted bridge binding rejected: ${reason}`);
+}
+
+export function isTransientLifecycleBusyResponse(response: { payload?: { case?: string; value?: { accepted?: boolean; reason?: string } } }): boolean {
+  // Compatibility constraint: the current protobuf surface has only a coarse
+  // accepted/reason response for lifecycle reports. Retry exactly the daemon's
+  // durable-persistence mutex reason and no other authorization, fence,
+  // incarnation, lifecycle, or terminal rejection.
+  return response.payload?.case === "bridgeLifecycleResponse" && response.payload.value?.accepted === false && response.payload.value?.reason === "durable persistence is busy";
+}
+
+export async function reportLifecycleWithBusyRetry<TResponse extends { payload?: { case?: string; value?: { accepted?: boolean; reason?: string } } }>(client: { request(payloadCase: string, schema: DescMessage, value: unknown, target?: TargetFence, requestId?: string, timeoutMillis?: number): Promise<TResponse> }, schema: DescMessage, binding: Pick<Binding, "agentId" | "runtimeId" | "incarnation">, fence: TargetFence, event: number, attempts = LIFECYCLE_BUSY_RETRY_ATTEMPTS, backoffMs = (attempt: number) => Math.min(250, 20 * 2 ** attempt)): Promise<TResponse> {
+  const payload = { agentId: binding.agentId, runtimeId: binding.runtimeId, incarnation: binding.incarnation, event };
+  let response: TResponse | undefined;
+  for (let attempt = 0; attempt < Math.max(1, attempts); attempt++) {
+    response = await client.request("bridgeLifecycleRequest", schema, payload, fence, undefined, SHORT_REQUEST_TIMEOUT_MS);
+    if (response.payload?.case === "bridgeLifecycleResponse" && response.payload.value?.accepted) return response;
+    if (!isTransientLifecycleBusyResponse(response)) throw new Error("hosted bridge lifecycle report rejected");
+    if (attempt + 1 < Math.max(1, attempts)) await delay(backoffMs(attempt));
+  }
+  throw new Error(`hosted bridge lifecycle report rejected: ${boundedPublic(String(response?.payload?.value?.reason || "retry exhausted"), 80)}`);
 }
 
 function delay(milliseconds: number) { return new Promise<void>((resolve) => setTimeout(resolve, milliseconds)); }

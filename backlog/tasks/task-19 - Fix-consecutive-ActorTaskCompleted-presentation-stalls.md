@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 03:03'
-updated_date: '2026-09-02 14:14'
+updated_date: '2026-09-02 14:26'
 labels: []
 dependencies: []
 references:
@@ -50,6 +50,10 @@ Terminal actor delivery remains unreliable in two related live paths. First, con
 8. Fix the regression with durable-before-effects semantics for hosted source identity/session rotation/stable ActorRefs/credit redrive without re-enabling raw or RemoteBridgeIntent Ask/Prompt.
 
 9. Add race-safe Go and actor-client/extension regressions for hosted A→B Tell and Ask across fresh runtime rotation and exactly-once completion; run codegen, race, vet, npm, and focused gates.
+
+10. Make hosted-pi-bridge lifecycle READY retry only exact transient durable-persistence-busy responses with bounded backoff and identical lifecycle payload/identity; keep auth/incarnation/non-busy rejection fatal.
+
+11. Add extension and Go regressions for READY racing durable persistence, reconnect eventual Ready convergence, retry exhaustion, non-busy fail-closed, and no same-incarnation ready-to-starting regression; run relevant gates.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
@@ -116,4 +120,6 @@ Reviewer found prompt completion ACK and replay-prompt ACK directly reuse pendin
 Implemented prompt completion and replay-prompt ACK through the common fence-refresh path with identical payload and one bounded retry (babc3a3). Added exactly-once stale/fresh fence regression. Fresh hosted-to-source live acceptance remains.
 
 Hosted A→B ActorMessageRequest regression reproduced on origin/main a57222a path: alpha attached to bravo, alpha Tell/Ask admitted through service ActorMessageRequest -> SendActorTask -> credit -> ActorTask, bravo received Tell and Ask/thread, bravo ACK completed the Ask, but alpha's fresh request-id completion retry failed with source mutation sequence collision. Fixed source AgentActor replay to accept durable retained source mutations by logical dedupe/chain/sequence/target/mode/capability/payload fingerprint even when the transport request_id rotates; raw BridgeIntent and retired Prompt/TaskLifecycle remain rejected. Added hosted A→B service regression and hosted bridge sequencer fresh-process no-duplicate coverage. Gates: go test ./internal/actors ./internal/service; service npm ci/codegen verify/go test -race ./.../go vet ./.../npm test; hosted-pi-bridge npm ci + npm test; git diff --check. Initial service npm test failed before extension dependencies were installed; rerun passed after npm ci in hosted-pi-bridge.
+
+Follow-up lifecycle fix: hosted-pi-bridge lifecycle reporting now retries only BridgeLifecycleResponse accepted=false reason exactly 'durable persistence is busy' with bounded backoff, identical lifecycle payload, and identical fence/identity. Protocol has no typed rejection code for lifecycle responses, so the classifier is deliberately bound to the exact existing daemon reason and documents that compatibility constraint. Authorization/fence/incarnation/unknown-event/non-busy lifecycle rejections remain fatal. Added extension retry/exhaustion/non-busy tests and actor durable-persistence race test proving READY receives transient busy during an in-flight durable mutation, identical READY retry converges after fsync, and same-incarnation ready binding does not regress from Ready/BridgeReady. Gates passed: services/subagents npm ci/codegen verify/go test -race ./.../go vet ./.../npm test; hosted-pi-bridge npm ci + npm test 43/43; git diff --check.
 <!-- SECTION:NOTES:END -->
