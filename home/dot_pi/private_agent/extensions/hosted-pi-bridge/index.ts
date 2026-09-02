@@ -717,11 +717,16 @@ export function actorMessageModelResult(logical: { requestId: string; value: { d
   const target = peerView(value.target);
   const sourceStableId = stablePeerId(value.source);
   const targetStableId = stablePeerId(value.target);
+  const accepted = Boolean(value.accepted);
+  const completed = Boolean(value.completed);
+  const awaitingTerminal = accepted && !completed && (kind === "ask" || kind === "prompt");
+  const reason = String(value.reason ?? "");
   return {
-    accepted: Boolean(value.accepted),
-    completed: Boolean(value.completed),
-    result: safeText(value.boundedResult ?? new Uint8Array()),
-    reason: String(value.reason ?? ""),
+    accepted,
+    completed,
+    awaitingTerminal,
+    result: awaitingTerminal ? "" : safeText(value.boundedResult ?? new Uint8Array()),
+    reason: awaitingTerminal ? `${reason || "stored_pending_credit"}; terminal result will resume this same thread automatically; do not treat admission as the requested result` : reason,
     requestId,
     dedupeId,
     chainId,

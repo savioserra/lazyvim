@@ -259,6 +259,10 @@ test("actor_tell model results expose exact stable correlation only", () => {
   assert.equal(details.source, "source-actor");
   assert.equal(details.target, "target-actor");
   assert.equal(details.kind, "ask");
+  const pending = actorMessageModelResult(logical, { accepted: true, completed: false, boundedResult: new TextEncoder().encode("not-terminal"), reason: "stored_pending_credit", source: { stableId: "source-actor" }, target: { stableId: "target-actor" }, kind: "ask" });
+  assert.equal(pending.awaitingTerminal, true);
+  assert.equal(pending.result, "");
+  assert.match(pending.reason, /do not treat admission as the requested result/);
   const visible = modelResultContent("actor_tell", details);
   for (const required of ["requestId=request-1", "dedupeId=dedupe-1", "chainId=chain-1", "sourceMutationSequence=7", "source=source-actor", "target=target-actor", "kind=ask"]) assert.match(visible, new RegExp(required));
   assert.doesNotMatch(visible, /session-secret|handle-secret/);
@@ -418,6 +422,21 @@ test("prompt delivery injects followUp, correlates the settled answer, and ignor
   assert.equal(acknowledgements.length,1,"duplicate agent_end acknowledged twice");
   assert.deepEqual(events.map((event)=>event.stage),["injected","failed"]);
   for (const event of events) { assert.equal(typeof event.sequence,"bigint"); assert.ok(!/[\r\n\t]/.test(event.detail)); }
+});
+
+test("prompt completion ignores stale agent_start and binds the queued prompt run exactly", async () => {
+  const acknowledgements=[];
+  const coordinator=new PromptTaskCoordinator(async()=>{},async(_pending,delivered,answer,_reason,settlement)=>acknowledgements.push({delivered,answer,settlement}));
+  coordinator.agentStart();
+  const delivery={dedupeId:"d-queued",boundedPayload:new TextEncoder().encode("queued exact task"),hopLimit:4,deadlineUnixMillis:BigInt(Date.now()+1000),chainId:"chain",sequence:14n};
+  await coordinator.deliver(delivery,{handle:"h",fence:14n});
+  coordinator.agentEnd([{role:"assistant",content:"stale active answer"}]);
+  await coordinator.settled();
+  assert.equal(acknowledgements.length,0,"stale active run claimed queued prompt");
+  coordinator.agentStart();
+  coordinator.agentEnd([{role:"user",content:"queued exact task"},{role:"assistant",content:"queued answer"}]);
+  await coordinator.settled();
+  assert.deepEqual(acknowledgements,[{delivered:true,answer:"queued answer",settlement:{bridgeRunCounter:2n,agentEndObserved:true,agentSettledObserved:true}}]);
 });
 
 test("prompt completion binds an omitted agent_start only to the exact injected run", async () => {

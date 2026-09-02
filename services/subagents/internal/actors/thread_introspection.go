@@ -176,6 +176,17 @@ func (a *AgentActor) applyThreadIntrospectionClassification(thread *application.
 		a.threadScheduler.Resumable = append(a.threadScheduler.Resumable, thread.ThreadID)
 		return threadClassificationResume
 	case application.ThreadIntrospectionWaiting:
+		if completion, ok := a.findCompletionForParentThread(*thread); ok {
+			thread.PendingPrompt = parentThreadCompletionPrompt(completion)
+			thread.State = application.AgentThreadResumable
+			thread.ResumeAttempts++
+			thread.NextAttempt = time.Time{}
+			appendThreadEvent(thread, application.DurableThreadEvent{Kind: "actor_task_completion_continued", At: now, Digest: sha256.Sum256(completion.Terminal.Result)})
+			a.threadScheduler.ActiveThreadID = ""
+			a.removeThreadFromSchedulerQueues(thread.ThreadID)
+			a.threadScheduler.Resumable = append(a.threadScheduler.Resumable, thread.ThreadID)
+			return threadClassificationResume
+		}
 		thread.State = application.AgentThreadWaiting
 		a.threadScheduler.ActiveThreadID = ""
 		a.threadScheduler.Waiting = append(a.threadScheduler.Waiting, thread.ThreadID)

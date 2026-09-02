@@ -1789,8 +1789,20 @@ func (a *AgentActor) taskCreditGranted(ctx *actor.ReceiveContext, message *appli
 		return
 	}
 	item, ok := a.sourceOutbox[message.Credit.TaskID]
-	if !ok || item.PayloadDigest != message.Credit.PayloadDigest || time.Now().After(message.Credit.ExpiresAt) || time.Now().After(item.Deadline) {
-		a.logTaskCreditGrantReject(ctx, "invalid_expired_or_unknown", message.Credit, ctx.Sender(), nil)
+	if !ok {
+		if receipt, retained := a.sourceMutationReceipts[message.Credit.TaskID]; retained && !activeSourceMutationReceipt(receipt.Result) {
+			// A duplicate/stale grant that arrives after the logical outbox item
+			// retired is a bounded idempotent replay: the terminal receipt is the
+			// durable authority and no warning/retry storm is useful or safe.
+			delete(a.outboxCreditAwaited, message.Credit.TaskID)
+			return
+		}
+		a.logTaskCreditGrantReject(ctx, "unknown_task", message.Credit, ctx.Sender(), nil)
+		delete(a.outboxCreditAwaited, message.Credit.TaskID)
+		return
+	}
+	if item.PayloadDigest != message.Credit.PayloadDigest || time.Now().After(message.Credit.ExpiresAt) || time.Now().After(item.Deadline) {
+		a.logTaskCreditGrantReject(ctx, "invalid_expired_or_mismatched", message.Credit, ctx.Sender(), &item)
 		// A refused grant (expired lease, elapsed deadline, wrong digest) ends
 		// the single-flight wait so the next bounded tick re-requests instead
 		// of staying suppressed behind a dead grant for the window's remainder.
@@ -2581,13 +2593,82 @@ func (a *AgentActor) actorTaskCompletedFrom(ctx *actor.ReceiveContext, message *
 	} else if receiptKey, receipt, ok := a.findSourceMutationReceiptForCompletion(copy); ok {
 		a.retainSourceMutationReceipt(receiptKey, receipt.Fingerprint, copy.Terminal)
 	}
-	if a.beginDurablePersist(ctx, &pendingDurableReceipt{old: old, taskCompletionPublish: &copy, taskCompletionAckTarget: sender, taskCompletionAck: ack}) {
+	threadWoken := a.continueParentThreadWithCompletion(copy)
+	if a.beginDurablePersist(ctx, &pendingDurableReceipt{old: old, taskCompletionPublish: &copy, taskCompletionAckTarget: sender, taskCompletionAck: ack, threadSchedule: threadWoken}) {
 		return
 	}
 	a.publishTaskCompletion(ctx, &copy)
+	if threadWoken {
+		_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), ctx.Self(), &scheduleThreadTick{})
+	}
 	if sender != nil && !isNoSender(ctx, sender) && message.ThreadID != "" {
 		_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), sender, ack)
 	}
+}
+
+func (a *AgentActor) continueParentThreadWithCompletion(completion application.ActorTaskCompleted) bool {
+	if completion.ChainID == "" || completion.SourceMutationSequence == 0 {
+		return false
+	}
+	for _, threadID := range append([]string(nil), a.threadOrder...) {
+		thread, exists := a.threads[threadID]
+		if !exists || thread.CompletionKey == completion.CompletionKey || thread.ChainID != completion.ChainID || thread.Target.StableID != a.id {
+			continue
+		}
+		if thread.State != application.AgentThreadWaiting && thread.State != application.AgentThreadBlocked && thread.State != application.AgentThreadResumable && thread.State != application.AgentThreadSettled {
+			continue
+		}
+		thread.PendingPrompt = parentThreadCompletionPrompt(completion)
+		thread.State = application.AgentThreadResumable
+		thread.NextAttempt = time.Time{}
+		thread.ResumeAttempts++
+		appendThreadEvent(&thread, application.DurableThreadEvent{Kind: "actor_task_completion_continued", At: a.threadNow(), Digest: sha256.Sum256(completion.Terminal.Result)})
+		a.threads[thread.ThreadID] = thread
+		a.removeThreadFromSchedulerQueues(thread.ThreadID)
+		a.threadScheduler.Resumable = append(a.threadScheduler.Resumable, thread.ThreadID)
+		return true
+	}
+	return false
+}
+
+func (a *AgentActor) removeThreadFromSchedulerQueues(threadID string) {
+	a.threadScheduler.Queue = slices.DeleteFunc(a.threadScheduler.Queue, func(id string) bool { return id == threadID })
+	a.threadScheduler.Resumable = slices.DeleteFunc(a.threadScheduler.Resumable, func(id string) bool { return id == threadID })
+	a.threadScheduler.Waiting = slices.DeleteFunc(a.threadScheduler.Waiting, func(id string) bool { return id == threadID })
+	a.threadScheduler.Blocked = slices.DeleteFunc(a.threadScheduler.Blocked, func(id string) bool { return id == threadID })
+}
+
+func (a *AgentActor) findCompletionForParentThread(thread application.DurableAgentThread) (application.ActorTaskCompleted, bool) {
+	if thread.ChainID == "" {
+		return application.ActorTaskCompleted{}, false
+	}
+	for _, key := range a.taskCompletionOrder {
+		completion, exists := a.taskCompletions[key]
+		if !exists || completion.ChainID != thread.ChainID || completion.CompletionKey == thread.CompletionKey {
+			continue
+		}
+		return completion, true
+	}
+	return application.ActorTaskCompleted{}, false
+}
+
+func parentThreadCompletionPrompt(completion application.ActorTaskCompleted) []byte {
+	status := "failed"
+	if completion.Terminal.Accepted && completion.Terminal.Completed {
+		status = "completed"
+	}
+	result := strings.TrimSpace(string(completion.Terminal.Result))
+	if result == "" {
+		result = strings.TrimSpace(completion.Terminal.Reason)
+	}
+	if result == "" {
+		result = status
+	}
+	text := fmt.Sprintf("The actor_ask to %s has %s. Continue this same request using this terminal result exactly once; do not treat any earlier admission or pending response as the answer.\n\n%s", completion.Target.StableID, status, result)
+	if len(text) > maxBridgePayloadBytes {
+		text = text[:maxBridgePayloadBytes]
+	}
+	return []byte(text)
 }
 
 func (a *AgentActor) actorTaskCompletionCommitted(ctx *actor.ReceiveContext, message *application.ActorTaskCompletionCommitted) {

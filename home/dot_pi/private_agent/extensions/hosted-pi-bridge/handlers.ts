@@ -266,6 +266,7 @@ export class PromptTaskCoordinator<TFence> {
   private activeRunCounter = 0n;
   private pendingRunCounter = 0n;
   private lastRunCounter = 0n;
+  private deliveredAfterRunCounter = 0n;
   private readonly sendUserMessage: (text: string) => void | Promise<void>;
   private readonly acknowledge: (pending: { delivery: PromptDelivery; fence: TFence }, delivered: boolean, answer: string, reason: string, settlement: ThreadSettlementEvidence) => Promise<void>;
   private readonly lifecycle?: (event: PromptTaskLifecycleEvent) => void;
@@ -275,7 +276,7 @@ export class PromptTaskCoordinator<TFence> {
   // abandon drops a task whose delivery the daemon no longer retains: retrying
   // such an acknowledgement can never succeed, so retaining it would wedge the
   // coordinator and every later prompt behind it.
-  abandon(reason: string): boolean { if (!this.pending) return false; this.pending = undefined; this.outcome = undefined; this.lastRunMessages = []; this.pendingRunCounter = 0n; this.lastRunCounter = 0n; void reason; return true; }
+  abandon(reason: string): boolean { if (!this.pending) return false; this.pending = undefined; this.outcome = undefined; this.lastRunMessages = []; this.pendingRunCounter = 0n; this.lastRunCounter = 0n; this.deliveredAfterRunCounter = 0n; void reason; return true; }
   async deliver(delivery: PromptDelivery, fence: TFence) {
     if (this.pending) {
       if (this.pending.delivery.dedupeId !== delivery.dedupeId) throw new Error("a different prompt task is already active");
@@ -288,6 +289,7 @@ export class PromptTaskCoordinator<TFence> {
     this.lastRunMessages = [];
     this.pendingRunCounter = 0n;
     this.lastRunCounter = 0n;
+    this.deliveredAfterRunCounter = this.activeRunCounter;
     try {
       await this.sendUserMessage(text);
       this.lifecycle?.({ stage: "injected", sequence: delivery.sequence, dedupeId: delivery.dedupeId, detail: "prompt injected into the hosted Pi runtime" });
@@ -300,7 +302,7 @@ export class PromptTaskCoordinator<TFence> {
   agentStart() {
     this.bridgeRunCounter += 1n;
     this.activeRunCounter = this.bridgeRunCounter;
-    if (this.pending && !this.outcome && this.pendingRunCounter === 0n) this.pendingRunCounter = this.activeRunCounter;
+    if (this.pending && !this.outcome && this.pendingRunCounter === 0n && this.activeRunCounter > this.deliveredAfterRunCounter) this.pendingRunCounter = this.activeRunCounter;
   }
   agentEnd(messages: unknown[]) {
     if (!this.pending || this.outcome) return;
@@ -338,7 +340,7 @@ export class PromptTaskCoordinator<TFence> {
   }
   async shutdown() { if (this.pending) await this.finish(false,"","hosted Pi session shut down before prompt completion"); }
   private async finish(delivered:boolean,answer:string,reason:string,settlement:ThreadSettlementEvidence={bridgeRunCounter:0n,agentEndObserved:false,agentSettledObserved:false}){if(!this.pending)return;this.outcome={delivered,answer,reason,settlement};this.lifecycle?.({stage:delivered?"completed":"failed",sequence:this.pending.delivery.sequence,dedupeId:this.pending.delivery.dedupeId,detail:reason?`${reason} (class ${bridgeErrorClass(reason)})`:"assistant answer correlated"});await this.flush();}
-  private async flush(){const pending=this.pending,outcome=this.outcome;if(!pending||!outcome)return;await this.acknowledge(pending,outcome.delivered,outcome.answer,outcome.reason,outcome.settlement);if(this.pending===pending){this.pending=undefined;this.outcome=undefined;this.lastRunMessages=[];this.pendingRunCounter=0n;this.lastRunCounter=0n;}}
+  private async flush(){const pending=this.pending,outcome=this.outcome;if(!pending||!outcome)return;await this.acknowledge(pending,outcome.delivered,outcome.answer,outcome.reason,outcome.settlement);if(this.pending===pending){this.pending=undefined;this.outcome=undefined;this.lastRunMessages=[];this.pendingRunCounter=0n;this.lastRunCounter=0n;this.deliveredAfterRunCounter=0n;}}
 }
 export function runContainsInjectedPrompt(messages: unknown[], injectedText: string): boolean {
   if (!injectedText) return false;
