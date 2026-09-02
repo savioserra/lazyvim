@@ -1501,6 +1501,10 @@ func (a *AgentActor) sendActorTask(ctx *actor.ReceiveContext, message *applicati
 		respondBridgeIntent(ctx, message.Receipt, &application.BridgeIntentResult{Reason: "source actor task outbox is full"})
 		return
 	}
+	if !a.canRetainNewSourceMutationReceipt() {
+		respondBridgeIntent(ctx, message.Receipt, &application.BridgeIntentResult{Reason: "source mutation receipt capacity is full"})
+		return
+	}
 	old := a.durableState()
 	a.sourceMutationHighWater = message.SourceMutationSequence
 	item := application.DurableActorTaskOutboxItem{TaskID: taskID, Target: message.TargetPeer, RequestID: message.RequestID, DedupeID: message.DedupeID, ChainID: message.ChainID, RequiredCapability: message.RequiredCapability, SourceMutationSequence: message.SourceMutationSequence, Deadline: message.Deadline, HopLimit: message.HopLimit, Mode: message.Mode, Payload: append([]byte(nil), message.Payload...), PayloadDigest: payloadDigest, State: "pending_credit"}
@@ -1570,19 +1574,54 @@ func (a *AgentActor) findSourceMutationReceiptForCompletion(completion applicati
 	return "", application.DurableSourceMutationReceipt{}, false
 }
 
-func (a *AgentActor) retainSourceMutationReceipt(taskID string, fingerprint application.SourceMutationFingerprint, result application.BridgeIntentResult) {
+func activeSourceMutationReceipt(result application.BridgeIntentResult) bool {
+	return result.Accepted && result.AwaitingAck && !result.Completed
+}
+
+func (a *AgentActor) canRetainNewSourceMutationReceipt() bool {
+	if len(a.sourceMutationReceipts) < maxCommandResults {
+		return true
+	}
+	for _, taskID := range a.sourceMutationOrder {
+		if receipt, ok := a.sourceMutationReceipts[taskID]; ok && !activeSourceMutationReceipt(receipt.Result) {
+			return true
+		}
+	}
+	return false
+}
+
+func (a *AgentActor) retainSourceMutationReceipt(taskID string, fingerprint application.SourceMutationFingerprint, result application.BridgeIntentResult) bool {
 	if taskID == "" || !validSourceMutationFingerprint(fingerprint) {
-		return
+		return false
 	}
 	if _, exists := a.sourceMutationReceipts[taskID]; !exists {
+		if !a.canRetainNewSourceMutationReceipt() {
+			return false
+		}
 		a.sourceMutationOrder = append(a.sourceMutationOrder, taskID)
 	}
 	a.sourceMutationReceipts[taskID] = application.DurableSourceMutationReceipt{TaskID: taskID, Fingerprint: fingerprint, Result: result}
-	for len(a.sourceMutationOrder) > maxCommandResults {
-		oldest := a.sourceMutationOrder[0]
-		a.sourceMutationOrder = a.sourceMutationOrder[1:]
-		delete(a.sourceMutationReceipts, oldest)
+	a.evictTerminalSourceMutationReceipts()
+	return true
+}
+
+func (a *AgentActor) evictTerminalSourceMutationReceipts() {
+	if len(a.sourceMutationReceipts) <= maxCommandResults {
+		return
 	}
+	retained := a.sourceMutationOrder[:0]
+	for _, taskID := range a.sourceMutationOrder {
+		receipt, ok := a.sourceMutationReceipts[taskID]
+		if !ok {
+			continue
+		}
+		if len(a.sourceMutationReceipts) > maxCommandResults && !activeSourceMutationReceipt(receipt.Result) {
+			delete(a.sourceMutationReceipts, taskID)
+			continue
+		}
+		retained = append(retained, taskID)
+	}
+	a.sourceMutationOrder = retained
 }
 
 func (a *AgentActor) requestTaskCredit(ctx *actor.ReceiveContext, message *application.RequestTaskCredit) {

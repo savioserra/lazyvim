@@ -3,6 +3,7 @@ package actors_test
 import (
 	"context"
 	"crypto/sha256"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -261,6 +262,74 @@ func TestSourceMutationReceiptsFencePendingAcceptedTerminalAndLegacyHistory(t *t
 		assertCollision("legacy history without fingerprint", result)
 	case <-time.After(time.Second):
 		t.Fatal("legacy receipt missing")
+	}
+}
+
+func TestSourceMutationReceiptCapacityPinsActiveAndEvictsTerminalOnly(t *testing.T) {
+	ctx := context.Background()
+	system, err := goakt.NewActorSystem("source-mutation-receipt-capacity")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = system.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = system.Stop(ctx) })
+	target := spawnTaskPeer(t, ctx, system, "capacity-target")
+	receipts := make([]application.DurableSourceMutationReceipt, 0, 1024)
+	for sequence := uint64(1); sequence <= 1024; sequence++ {
+		payload := []byte(fmt.Sprintf("payload-%d", sequence))
+		receipts = append(receipts, application.DurableSourceMutationReceipt{TaskID: fmt.Sprintf("client:capacity:dedupe-%d:chain-%d:%d", sequence, sequence, sequence), Fingerprint: application.SourceMutationFingerprint{RequestID: fmt.Sprintf("request-%d", sequence), DedupeID: fmt.Sprintf("dedupe-%d", sequence), ChainID: fmt.Sprintf("chain-%d", sequence), SourceMutationSequence: sequence, TargetStableID: "target-agent", RequiredCapability: "send", Mode: application.BridgeMessageTell, PayloadDigest: sha256.Sum256(payload)}, Result: application.BridgeIntentResult{Accepted: true, AwaitingAck: true, Reason: "stored_pending_credit"}})
+	}
+	record := application.DurableHostedRecord{SchemaVersion: application.DurableHostedSchemaVersion, AgentID: "client:capacity", AuthorityBinding: application.AuthorityBinding{Kind: application.AuthorityBindingPhaseOneObservedUpstream, ObservedUpstreamRunID: "client:capacity"}, Binding: application.InactiveHostedPiRuntimeBinding(), AgentState: application.DurableAgentState{ActorMessageHighWater: 1024, SourceMutationReceipts: receipts}}
+	source, err := system.Spawn(ctx, "capacity-source", actors.NewAgentActor(&application.RegisterAgent{AgentID: "client:capacity", AuthorityBinding: record.AuthorityBinding, HostedPiRuntime: application.InactiveHostedPiRuntimeBinding(), AllowedCapability: []string{"send"}, Retention: "bounded", Recovery: "terminal-reattach", DurableRecord: &record}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	send := func(sequence uint64) application.BridgeIntentResult {
+		receipt := make(chan application.BridgeIntentResult, 1)
+		payload := []byte(fmt.Sprintf("payload-%d", sequence))
+		if err := system.NoSender().Tell(ctx, source, &application.SendActorTask{TargetPID: target.pid, TargetPeer: application.CommunicationPeer{StableID: "target-agent"}, RequestID: fmt.Sprintf("request-%d", sequence), DedupeID: fmt.Sprintf("dedupe-%d", sequence), ChainID: fmt.Sprintf("chain-%d", sequence), RequiredCapability: "send", SourceMutationSequence: sequence, Deadline: time.Now().Add(time.Minute), HopLimit: 8, Mode: application.BridgeMessageTell, Payload: payload, Receipt: receipt}); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case result := <-receipt:
+			return result
+		case <-time.After(time.Second):
+			t.Fatalf("receipt missing for %d", sequence)
+		}
+		return application.BridgeIntentResult{}
+	}
+	complete := func(sequence uint64, value string) {
+		completed := application.ActorTaskCompleted{CompletionKey: fmt.Sprintf("complete-%d", sequence), OriginalRequestID: fmt.Sprintf("request-%d", sequence), DedupeID: fmt.Sprintf("dedupe-%d", sequence), ChainID: fmt.Sprintf("chain-%d", sequence), SourceMutationSequence: sequence, Terminal: application.BridgeIntentResult{Accepted: true, Completed: true, Result: []byte(value)}, Source: application.CommunicationPeer{StableID: "client:capacity"}, Target: application.CommunicationPeer{StableID: "target-agent"}, Kind: application.BridgeDeliveryNotification}
+		if err := system.NoSender().Tell(ctx, source, &completed); err != nil {
+			t.Fatal(err)
+		}
+	}
+	oldest := send(1)
+	if !oldest.Accepted || !oldest.AwaitingAck || oldest.Reason != "stored_pending_credit" {
+		t.Fatalf("oldest active receipt was not replayed at capacity: %#v", oldest)
+	}
+	backpressured := send(1025)
+	if backpressured.Accepted || backpressured.Reason != "source mutation receipt capacity is full" {
+		t.Fatalf("all-active capacity did not apply bounded backpressure before admission: %#v", backpressured)
+	}
+	complete(1, "done-1")
+	terminal := send(1)
+	if !terminal.Accepted || !terminal.Completed || string(terminal.Result) != "done-1" {
+		t.Fatalf("terminal update did not replay oldest receipt: %#v", terminal)
+	}
+	recovered := send(1025)
+	if !recovered.Accepted || recovered.Reason != "stored_pending_credit" {
+		t.Fatalf("terminal receipt did not restore capacity for next admission: %#v", recovered)
+	}
+	stillPinned := send(2)
+	if !stillPinned.Accepted || !stillPinned.AwaitingAck || stillPinned.Reason != "stored_pending_credit" {
+		t.Fatalf("active receipt was evicted before terminal completion: %#v", stillPinned)
+	}
+	evictedTerminal := send(1)
+	if evictedTerminal.Accepted || evictedTerminal.Reason != "source mutation sequence collision" {
+		t.Fatalf("terminal-first eviction did not retire the completed oldest receipt: %#v", evictedTerminal)
 	}
 }
 
