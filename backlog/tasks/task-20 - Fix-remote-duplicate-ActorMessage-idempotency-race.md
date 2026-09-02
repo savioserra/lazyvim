@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 04:30'
-updated_date: '2026-09-02 04:56'
+updated_date: '2026-09-02 05:16'
 labels: []
 dependencies: []
 references:
@@ -53,4 +53,6 @@ Writer sequence 60 produced commit 9c08c38 with pending/in-flight duplicate conv
 PM code audit of a21b62b found the implementation only validates payload while sourceOutbox is retained. Exact sourceTaskHistory matches return terminal results without digest comparison, and sameSourceOutboxMutation omits dedupe/chain checks. A post-terminal changed-payload regression is required before integration.
 
 Independent review sequence 63 rejected 9c08c38/a21b62b with two High findings: terminal sourceTaskHistory replays before comparing immutable fingerprint and actorTaskID omits request ID; sameSourceOutboxMutation omits dedupe/chain. Medium test gap: no post-terminal, restart, changed-request, changed-dedupe/chain, or exactly-once placement delivery proof; shared remote fixture also weakens isolation. These findings match the PM audit and are mandatory inputs to correction sequence 64.
+
+Corrected writer implementation integrated on main as 88d603c and 013adc7. Durable SourceMutationReceipts now retain full request/dedupe/chain/sequence/target/mode/capability/payload fingerprint plus authoritative result across outbox retirement and terminal/restart; legacy digest-less history fails closed. PM verification passed actor receipt -race count=20, state bound -race count=20, remote duplicate/concurrent -race count=20, hosted gateway -race count=20, full codegen/go race/vet/protocol, actor/bridge 79/79, capabilities, diff, and scratch apply. Independent final review sequence 66 remains open; task not finalized.
 <!-- SECTION:NOTES:END -->
