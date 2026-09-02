@@ -1,11 +1,11 @@
 ---
 id: TASK-5
 title: Implement XState client projections slice
-status: In Progress
+status: Done
 assignee:
   - '@pi'
 created_date: '2026-08-31 21:41'
-updated_date: '2026-09-02 02:17'
+updated_date: '2026-09-02 02:21'
 labels: []
 dependencies:
   - TASK-4
@@ -45,6 +45,8 @@ Implement xstate 5.20.2 client actors as the actor-client projection data layer 
 TASK-4 synthesis is complete and reviewed. UI Projection Implementer is the sole writer in /home/shyylol/dev/lazyvim-ui-projections; implementation must begin by rebasing work/ui-projections onto shared main and follow the frozen TASK-4 contract.
 
 Implemented actor-client projection modules with an XState 5.20.2 root machine, exact package/lock integrity pin, lifecycle verification, responsive bounded projection widgets, canonical completion dedupe/collision tests, and adapter-confirmed completion presentation guard. Focused actor-client tests pass; tmux/dry-run blockers are environment-missing tmux/stylua as documented in final report.
+
+Independent PM verification after cherry-pick: actor-client clean install and all 30 tests passed; capabilities package verification passed; git diff --check passed; main remained clean.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

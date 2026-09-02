@@ -1,11 +1,11 @@
 ---
 id: TASK-6
 title: Review and QA gates for UI slice
-status: To Do
+status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-08-31 21:41'
-updated_date: '2026-09-02 01:06'
+updated_date: '2026-09-02 02:21'
 labels: []
 dependencies:
   - TASK-5
@@ -35,3 +35,9 @@ Perform independent architecture review and QA of the XState projection and rich
 3. Return findings to the implementation writer for fixes; repeat until clean.
 4. Perform local reload and live actor conversation E2E before finalization.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Implementation commit fb812f4 was cherry-picked to main as a3c32c5. Independent review and QA are assigned read-only in isolated worktrees; all findings must be returned through ActorTaskCompleted before reload/live E2E.
+<!-- SECTION:NOTES:END -->
