@@ -1,11 +1,11 @@
 ---
 id: TASK-22.4
 title: Run isolated introspection and automatically resume threads
-status: In Progress
+status: Done
 assignee:
   - '@pi'
 created_date: '2026-09-02 06:10'
-updated_date: '2026-09-02 10:02'
+updated_date: '2026-09-02 10:04'
 labels: []
 dependencies:
   - TASK-22.3
@@ -23,11 +23,11 @@ After the exact active thread turn settles, run isolated structured introspectio
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Duplicate agent_end/agent_settled cannot introspect or complete a thread twice
-- [ ] #2 Continue automatically resumes from the durable checkpoint under bounded fairness/backoff; waiting and blocked never spin
-- [ ] #3 Only a validated high-confidence completed result for the exact active lease can lead to one ActorTaskCompleted after persistence
-- [ ] #4 Malformed output, timeout, runtime restart, compaction, reconnect, deadline, and exhaustion fail closed and recover deterministically
-- [ ] #5 Introspection does not mark a request complete when its terminal answer is only an acknowledgement or sent-elsewhere pointer; required deliverables remain linked to the same durable thread and the requesting Ask receives the bounded completion result exactly once
+- [x] #1 Duplicate agent_end/agent_settled cannot introspect or complete a thread twice
+- [x] #2 Continue automatically resumes from the durable checkpoint under bounded fairness/backoff; waiting and blocked never spin
+- [x] #3 Only a validated high-confidence completed result for the exact active lease can lead to one ActorTaskCompleted after persistence
+- [x] #4 Malformed output, timeout, runtime restart, compaction, reconnect, deadline, and exhaustion fail closed and recover deterministically
+- [x] #5 Introspection does not mark a request complete when its terminal answer is only an acknowledgement or sent-elsewhere pointer; required deliverables remain linked to the same durable thread and the requesting Ask receives the bounded completion result exactly once
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -46,4 +46,12 @@ Initial implementation landed during the TASK-22.3 integration gate: isolated ru
 Added deterministic classification tests for completed, continue/resumable, waiting, blocked, and acknowledgement/sent-elsewhere rejection. Completed classification now independently rejects bounded acknowledgement/pointer worker results and resumes the same thread with a direct-deliverable prompt. Duplicate exact settlement is asserted idempotent with a counting runner (one introspection only). Remote bridge ACK test now retries explicit durable-busy responses instead of losing settlement evidence.
 
 Added restart recovery proof for both settled and in-flight introspecting threads: restored actors redrive the same bounded task/worker/checkpoint input, retained attempts remain deterministic, and backoff reaches the configured five-minute cap. The source-commit handshake keeps thread completion pinned until durable source acknowledgement and only then compacts to a bounded terminal tombstone.
+
+Final evidence: counting-runner duplicate settlement test; deterministic completed/continue/waiting/blocked/pointer-rejection transitions; restored settled/introspecting redrive; malformed/timeout parser coverage; bounded exhaustion/backoff; cross-node source-commit/tombstone handshake; actor reply push/reconnect exactly-once suite; full race/vet/codegen/protocol/capability gates; deployed 002dfde with active service and seven-pane crew retained.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Wired persisted settlement to isolated introspection, exact attempt identity, bounded retries, automatic resume, inert wait/block states, high-confidence completion, source-commit acknowledgement, and terminal tombstone compaction. Added independent rejection of acknowledgements and sent-elsewhere pointers so only same-thread deliverables complete Ask work. Verified with restart, duplicate, cross-node, race, protocol, and deployment tests.
+<!-- SECTION:FINAL_SUMMARY:END -->
