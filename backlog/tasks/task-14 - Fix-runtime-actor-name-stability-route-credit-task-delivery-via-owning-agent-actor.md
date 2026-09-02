@@ -3,11 +3,11 @@ id: TASK-14
 title: >-
   Fix runtime actor name stability: route credit/task/delivery via owning agent
   actor
-status: In Progress
+status: Done
 assignee:
   - '@pi'
 created_date: '2026-09-01 22:23'
-updated_date: '2026-09-01 23:10'
+updated_date: '2026-09-02 02:59'
 labels: []
 dependencies: []
 modified_files:
@@ -55,6 +55,8 @@ Live acceptance after deploying 66a65c1 failed on the return leg: all five targe
 Return-leg diagnosis: target reservations persisted but grants were only best-effort Tells to the request sender PID; if that PID was stale or the source restarted, the grant could vanish while the source stayed pending_credit. Source-side grant processing also advanced to ActorTask before durably recording the held credit. Implemented retained SourceRef on TaskCreditReservation, bounded retryTaskCreditGrants redrive after durable reservation commits/restores, source-side durable grant persistence before ActorTask Tell, stable SourcePeer on RequestTaskCredit, reincarnated-source sender authentication, and bounded sanitized TaskCreditGranted rejection logs. Focused gates pass: go test -race ./internal/actors -run 'TestOutboxPendingCreditRoutesStaleRuntimeRefThroughReplacementOwner|TestActorTaskGrantAndAcceptanceRequireReservedTargetOrigin|TestActorRefPathFieldsMustMatchReservedTargetRef|TestSlowTargetDeliversActorTaskExactlyOnce'; go test ./internal/actors; git diff --check.
 
 PM pane report attempted via actor_tell to client:01a04959-c544-7a2a-8533-1031c0b36c56 but still failed with source mutation sequence collision at sequence 1; no commit/push/deploy.
+
+Final PM verification: all acceptance criteria remain satisfied in current main; service codegen, go test -race, go vet, protocol tests, and live sparse multi-target delivery/completion sequences passed after deployment.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

@@ -1,15 +1,22 @@
 ---
 id: TASK-7
 title: Fix actor-client per-scope mutation sequence allocation
-status: In Progress
+status: Done
 assignee:
   - '@dev-actor-client'
 created_date: '2026-08-31 21:49'
-updated_date: '2026-08-31 22:07'
+updated_date: '2026-09-02 02:59'
 labels: []
 dependencies: []
 ordinal: 7000
 ---
+
+## Acceptance Criteria
+<!-- AC:BEGIN -->
+- [x] #1 Actor-client allocates one dense message sequence across targets, serializes concurrent sends, and replays unresolved immutable mutations before advancing
+- [x] #2 Control mutation scopes remain target-fence-specific and terminal reconnect adopts the daemon-authoritative high-water without collision
+- [x] #3 Focused actor-client sequencing/reconnect/collision tests and full relevant repository gates pass
+<!-- AC:END -->
 
 ## Implementation Plan
 
@@ -25,4 +32,12 @@ Implemented: new home/dot_pi/private_agent/extensions/actor-client/mutations.ts 
 MIRROR-CHECK (hosted-pi-bridge): same defect class confirmed by reading. hosted-pi-bridge/index.ts message()/control() scope sequences per target via mutationScopeKey(fence, incarnation), but its actorMessageRequest payloads traverse the identical daemon path (service.go routes them through SendActorTask on the HOSTED source agent, whose collision scan is global per source agent across targets). Single-target use is safe; a hosted actor messaging two peers allocates sequence 1 twice and the second fails closed with 'source mutation sequence collision'. Not fixed here (out of TASK-7 scope; needs its own task aligned with the daemon fix below). DAEMON FINDINGS from a temporary Go probe (run, evidence captured, probe deleted): (1) source-side namespace global per source agent across targets — seq1 to target A then seq1 to target B returns 'source mutation sequence collision'; (2) target-side acceptActorTaskWithCredit scopes sequences per (target, source agent) with exactly-one-increase, so seq2 as the FIRST message to target B is admitted by the source but never delivered to B (B demands exactly 1) and terminally fails at deadline; (3) burned sequences stay collision-locked even after terminal failure (seq2 to A after B's seq2 failed still collides) — therefore one client peer can currently deliver to exactly ONE target per namespace and NO client-side allocator alone restores multi-target coordination; a daemon change aligning sendActorTask's scan and the target-side actorTaskScope with ADR 0005's (session, generation, principal, target fence) scope tuple is required as a follow-up; (4) fail-open race observed once: a same-sequence reuse slipped through the source-side scan while the first task's outbox item was still in flight — the client-side settle-before-allocate serialization closes this for the fixed client, but the daemon scan remains racy.
 
 Correction: final actor-client suite is 16 tests / 15 pass / 1 fail, where the single failure is the pre-existing ACTOR_ASK_COMPLETION_TIMEOUT contract mismatch (6h code vs 30min test) that predates TASK-7 and awaits the PM decision. All 8 new mutations tests pass.
+
+Final verification supersedes the early timeout mismatch: post-UI correction actor-client suite passed 34/34, including sequencing, high-water adoption, collision, retry, scope retirement, and reconnect cases; service race/vet/protocol and live sequences 30-33 also passed.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Implemented durable actor-client mutation sequencing with one cross-target message namespace, target-fenced controls, serialized immutable replay, bounded retry/collision handling, session retirement, and daemon high-water adoption. Verified by 34/34 actor-client tests and live post-reload sequences 30-33.
+<!-- SECTION:FINAL_SUMMARY:END -->

@@ -1,11 +1,11 @@
 ---
 id: TASK-15
 title: Fix hosted bridge mutation sequence adoption across runtime restart
-status: In Progress
+status: Done
 assignee:
   - '@pi'
 created_date: '2026-09-01 23:14'
-updated_date: '2026-09-02 01:46'
+updated_date: '2026-09-02 02:59'
 labels: []
 dependencies: []
 modified_files:
@@ -25,11 +25,11 @@ Hosted Pi runtimes restart with their extension-local ClientMutationSequencer hi
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A fresh hosted bridge process re-handshakes and adopts an authoritative next mutation sequence (or an equivalently fenced new namespace) before issuing any actor message
-- [ ] #2 Runtime restart, daemon restart, and bridge reconnect each permit the first and consecutive actor-tell operations without collision
-- [ ] #3 Immutable replay, concurrent-send serialization, exactly-once admission, and fail-closed identity checks remain intact
-- [ ] #4 Regression covers a durable prior sequence, fresh extension sequencer, re-handshake/adoption, and a different next payload
-- [ ] #5 Live E2E bounces the worker runtime and delivers its actor-tell report to Project Manager automatically without pane inspection
+- [x] #1 A fresh hosted bridge process re-handshakes and adopts an authoritative next mutation sequence (or an equivalently fenced new namespace) before issuing any actor message
+- [x] #2 Runtime restart, daemon restart, and bridge reconnect each permit the first and consecutive actor-tell operations without collision
+- [x] #3 Immutable replay, concurrent-send serialization, exactly-once admission, and fail-closed identity checks remain intact
+- [x] #4 Regression covers a durable prior sequence, fresh extension sequencer, re-handshake/adoption, and a different next payload
+- [x] #5 Live E2E bounces the worker runtime and delivers its actor-tell report to Project Manager automatically without pane inspection
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -64,4 +64,12 @@ Terminal actor-tell reload collision root cause: hosted bridge adopted daemon hi
 Live root cause confirmed from redacted durable state: the PM source had valid global sequences 10-20 and matching credits, but each target ActorTask scope started at high-water 0 and applied dense +1 bridge semantics. Thus a target's first sparse global sequence (for example 15) was rejected before delivery, the source retained/redrove the credit until expiry, and target runtime reincarnations accumulated empty incarnation-scoped actor-task scopes. Fix separates ActorTask sparse replay semantics, makes its scope stable across target runtime reincarnation, enforces dense admission at the source owner, and serializes each target's outbox subsequence.
 
 Operator-approved clean-state deployment completed. Exact-owner hosted actors were retired before clearing only the configured daemon actor-state directory. Live proof on final daemon: terminal source adopted first post-reset sequence 21, then admitted consecutive 22-24; target-first sequence 24 was accepted as a sparse per-target subsequence; PM source outbox drained to zero; UI UX target committed and ACKed its delivery (cursor 2, queue zero); PM durably retained the correlated completion (source history 1, received completions 1). During recovery, also fixed explicit ActorMessageHighWater retention between target acceptance and completion, excluded incoming target history from source handshake high-water, allowed arbitrary positive first sequence after explicit state reset, and invalidated stopped local ActorRef cache entries before same-name owner re-resolution.
+
+Final live evidence: clean-state sequences 21-24 proved sparse per-target admission and automatic completion; post-apply/reload retained sequences 30-32 replayed exactly once in order and fresh sequence 33 returned ACTOR_UI_E2E_OK automatically. Current gates passed: actor-client 34/34, hosted bridge 36/36, service codegen/race/vet/protocol, capabilities, tmux legacy 97/97, diff, and scratch apply.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Fixed hosted and terminal mutation high-water adoption, stable sparse ActorTask replay scope, per-target outbox ordering, durable regular-terminal delivery, and replay-safe completion presentation. Verified with clean-state live sequences 21-24 and post-reload replay/fresh sequence 30-33 without pane inspection or result polling.
+<!-- SECTION:FINAL_SUMMARY:END -->
