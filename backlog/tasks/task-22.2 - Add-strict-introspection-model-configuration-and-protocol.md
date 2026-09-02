@@ -1,11 +1,11 @@
 ---
 id: TASK-22.2
 title: Add strict introspection model configuration and protocol
-status: In Progress
+status: Done
 assignee:
   - '@pi'
 created_date: '2026-09-02 06:10'
-updated_date: '2026-09-02 07:41'
+updated_date: '2026-09-02 09:05'
 labels: []
 dependencies:
   - TASK-22.1
@@ -23,9 +23,9 @@ Add the exact private introspection model setting and typed bounded daemon/hoste
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Private config requires and validates an exact introspection_model when hosted Pi is enabled and passes it only to the isolated introspection path
-- [ ] #2 Typed protocol messages carry opaque thread/turn/lease identity and bounded structured results without exposing credentials, runtime IDs, prompts, or answers publicly
-- [ ] #3 Codegen, config, redaction, malformed-result, compatibility, and deployment documentation tests pass
+- [x] #1 Private config requires and validates an exact introspection_model when hosted Pi is enabled and passes it only to the isolated introspection path
+- [x] #2 Typed protocol messages carry opaque thread/turn/lease identity and bounded structured results without exposing credentials, runtime IDs, prompts, or answers publicly
+- [x] #3 Codegen, config, redaction, malformed-result, compatibility, and deployment documentation tests pass
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -44,4 +44,12 @@ Implemented second focused slice: additive protobuf thread_id/scheduler_epoch/ac
 Architect readiness Ask 99 arrived after implementation and its five ambiguities were reconciled: actual bounded RPC JSONL is used; exact isolation includes no-session/no-tools/no-extensions/no-skills/no-prompt-templates/no-approve; active lease is monotonic uint64; managed model is openai-codex/gpt-5.6-sol; settlement rides the exact delivery ACK. Follow-up hardening strips inherited actor/bridge/tmux/SSH/provider-key environment while preserving owner Pi HOME/config/auth-file authority, and adds BOM/invalid-UTF8/oversize/credential-path coverage plus capability/service documentation.
 
 Independent review Ask 101 blocked initial implementation. Corrections now enforce exact thread/delivery/epoch/lease/turn settlement identity in AgentActor, require settled evidence and monotonic bridge run counters for delivered thread prompts, persist the full tuple in gap and committed ACK records/high-water, reject duplicate collisions and stale counters, and validate durable gap records against retained deliveries. Hosted replay markers now persist and replay the exact settlement tuple; thread replay fails closed if evidence is missing. RPC drains stdout through EOF after settlement, rejects frames after settlement and multiple assistant finals. Added actor/state collision tests and real bridge wire replay assertions.
+
+Final validation at 78d662f: codegen verify; go test -race ./...; go vet ./...; protocol npm test; 29 hosted bridge handler/integration tests; capabilities test; git diff --check. Actor Thread Architect Ask 102 approved with no High/Critical blockers. Managed source applied successfully; deployed private config contains exact openai-codex/gpt-5.6-sol and workstation-subagents.service restarted active.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Added strict owner-private introspection model configuration, additive bounded thread settlement protocol, isolated Pi RPC classification, strict JSONL/result parsing, environment credential isolation, replay-safe settlement evidence, and daemon identity enforcement. Verified with full Go race/vet/codegen, protocol/bridge, capability, compatibility, and live managed-config deployment checks.
+<!-- SECTION:FINAL_SUMMARY:END -->
