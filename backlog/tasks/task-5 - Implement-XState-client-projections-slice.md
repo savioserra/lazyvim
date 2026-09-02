@@ -1,11 +1,11 @@
 ---
 id: TASK-5
 title: Implement XState client projections slice
-status: To Do
+status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-08-31 21:41'
-updated_date: '2026-09-02 01:06'
+updated_date: '2026-09-02 02:05'
 labels: []
 dependencies:
   - TASK-4
@@ -38,3 +38,9 @@ Implement xstate 5.20.2 client actors as the actor-client projection data layer 
 4. Migrate actor-client wiring incrementally while preserving existing tool/model contracts.
 5. Add deterministic tests and run repository gates.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+TASK-4 synthesis is complete and reviewed. UI Projection Implementer is the sole writer in /home/shyylol/dev/lazyvim-ui-projections; implementation must begin by rebasing work/ui-projections onto shared main and follow the frozen TASK-4 contract.
+<!-- SECTION:NOTES:END -->
