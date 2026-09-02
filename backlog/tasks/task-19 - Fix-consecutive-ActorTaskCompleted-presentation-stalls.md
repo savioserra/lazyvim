@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 03:03'
-updated_date: '2026-09-02 16:49'
+updated_date: '2026-09-02 18:54'
 labels: []
 dependencies: []
 references:
@@ -56,6 +56,8 @@ Terminal actor delivery remains unreliable in two related live paths. First, con
 11. Add extension and Go regressions for READY racing durable persistence, reconnect eventual Ready convergence, retry exhaustion, non-busy fail-closed, and no same-incarnation ready-to-starting regression; run relevant gates.
 
 12. Prevent Pi follow-up turn lifetime from blocking the durable regular-delivery queue: treat the documented sendMessage call as synchronous enqueue, ACK Tell immediately after enqueue, and let Ask ACK only from correlated agent settlement; add a regression with an unresolved follow-up thenable proving later Tell admission/ACK is not head-of-line blocked.
+
+13. Fix hosted ActorTaskCompleted delivery back into the source hosted actor as a durable same-thread continuation, enforce terminal-result barriers before nested orchestration advances, make stale duplicate credit grants idempotent, and harden prompt settlement identity for queued deliveries. Validate first with one client → worker → client Ask, then one client → reviewer → client Ask; do not restart multi-agent orchestration until both converge without warnings.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
@@ -134,4 +136,18 @@ Fresh relay E2E then exposed zero bridge-run-counter ACKs: prompt injection coul
 Cold-start probe still produced run-counter zero because this hosted Pi surface can omit agent_start for injected follow-up work. Added a strict fallback: agent_end may allocate/bind the run counter only when its user-message set contains the exact injected prompt text; unrelated prior runs and stale settlement remain unable to claim the pending thread. Added negative unrelated-run and positive omitted-agent_start coverage; hosted bridge 44/44 passes.
 
 Fresh live relay exposed a remaining queueing defect: client displayed regular deliveries 5 and 6, but AckCursor stayed 4 and relay B remained stored_pending_credit. RegularDeliveryCoordinator awaits sendFollowUp inside its serialized tail; on this Pi surface that thenable spans the triggered model turn, so the active Ask blocks a following Tell's durable ACK despite presentation.
+
+Six-actor TASK-26 dogfood reproduced the simpler blocker: nested hosted actor_ask returns admission/pending to the supervisor model, terminal results are not injected as same-thread continuations, later rounds advance prematurely, and queued prompts enter persistent run-counter ACK rejection. TASK-19 now owns the communication correction before TASK-26 retry.
+
+Simpler dogfood worker completed commit 9926ad9 in task-19-comms-correction, but the requesting client received no terminal ActorTaskCompleted wake and did not automatically advance to review; operator had to report visible completion. This independently reproduces the missing completion wake. After authoritative git evidence was inspected, reviewer Ask sequence 57 was admitted for independent review of 9926ad9.
+
+Worker ActorTaskCompleted for sequence 56 eventually presented with commit 9926ad9725b27db9ada90e019705affe00ec16b9 and full gate evidence, but only after the operator had already observed completion and prompted the client. This confirms current deployed completion wake remains delayed; reviewer sequence 57 was already admitted and remains the active next barrier.
+
+Independent reviewer completed sequence 57 and BLOCKED 9926ad9: continuation correlation lacks an exact durable parent-child identity and consumed-completion marker, so a stale same-chain completion can resume the wrong parent turn. Focused Go/bridge suites passed but do not cover this ambiguity. Finding routed back to retained worker through corrective Ask sequence 58 with required parent epoch/lease/turn/delivery + child completion tuple, consumed-before-wake persistence, and adversarial stale/reordered/restart tests.
+
+Worker corrective commit 2b98ce8 completed sequence 58 with exact persisted parent-child wait identity and adversarial stale/wrong-lease/consumed/restart coverage; worker reports codegen, Go race/vet/protocol, hosted bridge 45/45, and diff gates pass. Independent re-review immediately admitted as sequence 59 over full d7bf506..2b98ce8 diff.
+
+Second independent review BLOCKED 2b98ce8. Completion matching compares persisted wait identity to mutable global scheduler epoch/lease, so unrelated thread scheduling while the parent waits can make the exact child completion permanently unmatchable. Tests remain helper-seeded rather than real nested hosted ActorTask E2E. Corrective worker Ask sequence 60 requires immutable parent dispatch identity, interleaved-scheduler liveness test, full actor/service nested path, and durable one-outstanding-child admission barrier.
+
+After worker prompt ACK sequence 10 entered persistent run-counter rejection, exact worker and stale relay B were stopped as unrecoverable recovery to halt retry storms. Integrated reviewed implementation commits through c5e2f70 and added production service-path nested hosted Ask test: source→parent prompt, typed parent continuation, one-outstanding-child rejection, child terminal ActorTaskCompleted, automatic exact parent continuation, and exactly-one replay assertion. Focused count=3, actor/service race, vet, codegen, protocol 6/6, hosted bridge 45/45, actor-client 44/44, and diff checks pass.
 <!-- SECTION:NOTES:END -->

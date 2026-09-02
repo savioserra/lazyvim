@@ -18,6 +18,39 @@ type hostedBridgeHarness struct {
 	fence                        uint64
 }
 
+type waitingIntrospectionRunner struct{}
+
+func (waitingIntrospectionRunner) Run(context.Context, application.ThreadIntrospectionInput) (application.ThreadIntrospectionResult, error) {
+	return application.ThreadIntrospectionResult{State: application.ThreadIntrospectionWaiting, Confidence: application.ThreadIntrospectionConfidenceHigh, ReasonClass: application.ThreadIntrospectionWaitingOnExternal, Checkpoint: "waiting for exact child completion", WaitCondition: "child completion"}, nil
+}
+
+func registerHostedMessageAgent(t *testing.T, daemon *service.Service, path, agentID, runtimeID, piSession, credentialByte string, runner application.ThreadIntrospectionRunner) hostedBridgeHarness {
+	t.Helper()
+	binding := application.HostedPiRuntimeBinding{State: application.HostedPiRuntimeStarting, Lifetime: application.HostedPiLifetimeGlobalAgent, TmuxOwnership: application.HostedPiTmuxOwnershipExactSession, ControlBoundary: application.HostedPiControlDocumentedBridgeOnly, VisualizationBoundary: application.HostedPiVisualizationTmuxAttach, RuntimeID: runtimeID, Incarnation: 1}
+	process := &deterministicProcess{binding: binding, exit: make(chan error, 1)}
+	registration := application.RegisterAgent{AgentID: agentID, AuthorityBinding: application.AuthorityBinding{Kind: application.AuthorityBindingHostedOwned, HostedRuntimeID: runtimeID}, HostedPiRuntime: binding, AllowedCapability: []string{"observe", "hosted_bridge", "send", "ask", "control_abort", "control_shutdown"}, PhaseTwoOwned: true, Retention: "explicit", Recovery: "owned-binding-v1", Runtime: deterministicRuntime{process}, IntrospectionRunner: runner, LaunchSpec: application.HostedPiLaunchSpec{AgentID: agentID, RuntimeID: runtimeID, Incarnation: 1}}
+	if err := daemon.RegisterAgent(context.Background(), registration); err != nil {
+		t.Fatal(err)
+	}
+	credential := []byte(strings.Repeat(credentialByte, 32))
+	session := application.OpenSession{SessionID: "session-" + agentID, GenerationID: "generation-" + agentID, Caller: "hosted:" + agentID, Credential: credential, Capabilities: []string{"observe", "hosted_bridge", "send", "ask", "control_abort", "control_shutdown"}, ExpiresAt: time.Now().Add(time.Hour)}
+	if err := daemon.OpenSession(context.Background(), session); err != nil {
+		t.Fatal(err)
+	}
+	bridge := hostedBridgeHarness{session: session, credential: credential, runtimeID: runtimeID, piSession: piSession}
+	connect := request(t, path, bridge.envelope(&subagentsv1.Envelope_BridgeConnectRequest{BridgeConnectRequest: &subagentsv1.BridgeConnectRequest{AgentId: agentID, RuntimeId: runtimeID, Incarnation: 1, PiSessionId: piSession}}, "connect-"+agentID, "", 0)).GetBridgeConnectResponse()
+	if !connect.Accepted || connect.AgentHandle == "" || connect.Fence == 0 {
+		t.Fatalf("connect %s: %#v", agentID, connect)
+	}
+	bridge.handle, bridge.fence = connect.AgentHandle, connect.Fence
+	for _, event := range []subagentsv1.BridgeLifecycleRequest_Event{subagentsv1.BridgeLifecycleRequest_EVENT_SESSION_START, subagentsv1.BridgeLifecycleRequest_EVENT_READY} {
+		if got := request(t, path, bridge.envelope(&subagentsv1.Envelope_BridgeLifecycleRequest{BridgeLifecycleRequest: &subagentsv1.BridgeLifecycleRequest{AgentId: agentID, RuntimeId: runtimeID, Incarnation: 1, Event: event}}, "life-"+agentID+event.String(), bridge.handle, bridge.fence)).GetBridgeLifecycleResponse(); !got.Accepted {
+			t.Fatalf("ready %s: %#v", agentID, got)
+		}
+	}
+	return bridge
+}
+
 func (b hostedBridgeHarness) envelope(payload any, requestID, handle string, fence uint64) *subagentsv1.Envelope {
 	envelope := &subagentsv1.Envelope{ProtocolMajor: 1, Sequence: 1, SessionId: b.session.SessionID, GenerationId: b.session.GenerationID, CallerIdentity: b.session.Caller, SessionCredential: b.credential, RequestId: requestID, DeadlineUnixMillis: time.Now().Add(3 * time.Second).UnixMilli(), AgentHandle: handle, AgentFence: fence}
 	switch value := payload.(type) {
@@ -129,5 +162,92 @@ func TestHostedActorCanTellAndAskAnotherHostedActorThroughActorMessageRequest(t 
 	}
 	if completed == nil || !completed.Accepted || !completed.Completed || string(completed.BoundedResult) != "answer from bravo" {
 		t.Fatalf("alpha did not observe exactly completed ask retry: %#v", completed)
+	}
+}
+
+func TestHostedNestedAskDurablyResumesExactParentThread(t *testing.T) {
+	path := privateTempDir(t) + "/control.sock"
+	daemon, err := service.Start(context.Background(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = daemon.Stop(ctx)
+	})
+
+	source := registerHostedMessageAgent(t, daemon, path, "nested-source", "runtime-nested-source", "pi-nested-source", "s", &completedIntrospectionRunner{})
+	parent := registerHostedMessageAgent(t, daemon, path, "nested-parent", "runtime-nested-parent", "pi-nested-parent", "p", waitingIntrospectionRunner{})
+	child := registerHostedMessageAgent(t, daemon, path, "nested-child", "runtime-nested-child", "pi-nested-child", "c", &completedIntrospectionRunner{})
+
+	attach := func(from hostedBridgeHarness, target, requestID string) *subagentsv1.AttachResponse {
+		response := request(t, path, from.envelope(&subagentsv1.Envelope_AttachRequest{AttachRequest: &subagentsv1.AttachRequest{AgentId: target, RequestedCapabilities: []string{"observe", "send", "ask"}}}, requestID, "", 0)).GetAttachResponse()
+		if response.AgentHandle == "" || response.Fence == 0 {
+			t.Fatalf("attach %s rejected: %#v", target, response)
+		}
+		return response
+	}
+	pollPrompt := func(bridge hostedBridgeHarness, agentID string, after uint64) *subagentsv1.BridgeDelivery {
+		deadline := time.Now().Add(4 * time.Second)
+		for time.Now().Before(deadline) {
+			poll := request(t, path, bridge.envelope(&subagentsv1.Envelope_BridgePollRequest{BridgePollRequest: &subagentsv1.BridgePollRequest{AgentId: agentID, MaxItems: 64}}, "poll-"+agentID, bridge.handle, bridge.fence)).GetBridgePollResponse()
+			for _, delivery := range poll.Deliveries {
+				if delivery.Kind == subagentsv1.BridgeDelivery_KIND_PROMPT && delivery.Sequence > after {
+					return delivery
+				}
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		t.Fatalf("%s did not receive prompt after sequence %d", agentID, after)
+		return nil
+	}
+
+	sourceToParent := attach(source, "nested-parent", "source-attach-parent")
+	admission := request(t, path, source.envelope(&subagentsv1.Envelope_ActorMessageRequest{ActorMessageRequest: &subagentsv1.ActorMessageRequest{Mode: subagentsv1.ActorMessageRequest_MODE_ASK, Target: "nested-parent", BoundedPayload: []byte("coordinate one exact child ask"), DedupeId: "source-parent-ask", ChainId: "nested-chain", HopLimit: 8, SourceMutationSequence: 1}}, "source-parent-ask", sourceToParent.AgentHandle, sourceToParent.Fence)).GetActorMessageResponse()
+	if admission == nil || !admission.Accepted || admission.Completed {
+		t.Fatalf("parent admission wrong: %#v", admission)
+	}
+	parentDelivery := pollPrompt(parent, "nested-parent", 0)
+	if parentDelivery.ThreadId == "" || parentDelivery.SchedulerEpoch == 0 || parentDelivery.ActiveLease == 0 || parentDelivery.ThreadTurn == 0 {
+		t.Fatalf("parent continuation identity incomplete: %#v", parentDelivery)
+	}
+
+	parentToChild := attach(parent, "nested-child", "parent-attach-child")
+	continuation := &subagentsv1.ParentThreadContinuation{ThreadId: parentDelivery.ThreadId, SchedulerEpoch: parentDelivery.SchedulerEpoch, ActiveLease: parentDelivery.ActiveLease, ThreadTurn: parentDelivery.ThreadTurn, DeliverySequence: parentDelivery.Sequence}
+	nested := request(t, path, parent.envelope(&subagentsv1.Envelope_ActorMessageRequest{ActorMessageRequest: &subagentsv1.ActorMessageRequest{Mode: subagentsv1.ActorMessageRequest_MODE_ASK, Target: "nested-child", BoundedPayload: []byte("return exact child result"), DedupeId: "parent-child-ask", ChainId: "nested-chain", HopLimit: 7, SourceMutationSequence: 1, ParentContinuation: continuation}}, "parent-child-ask", parentToChild.AgentHandle, parentToChild.Fence)).GetActorMessageResponse()
+	if nested == nil || !nested.Accepted || nested.Completed {
+		t.Fatalf("nested child admission wrong: %#v", nested)
+	}
+	second := request(t, path, parent.envelope(&subagentsv1.Envelope_ActorMessageRequest{ActorMessageRequest: &subagentsv1.ActorMessageRequest{Mode: subagentsv1.ActorMessageRequest_MODE_ASK, Target: "nested-child", BoundedPayload: []byte("must be rejected while child wait is active"), DedupeId: "second-child-ask", ChainId: "nested-chain", HopLimit: 7, SourceMutationSequence: 2, ParentContinuation: continuation}}, "second-child-ask", parentToChild.AgentHandle, parentToChild.Fence)).GetActorMessageResponse()
+	if second == nil || second.Accepted || !strings.Contains(second.Reason, "parent continuation identity rejected") {
+		t.Fatalf("second outstanding child ask was not rejected: %#v", second)
+	}
+
+	parentAck := request(t, path, parent.envelope(&subagentsv1.Envelope_BridgeDeliveryAckRequest{BridgeDeliveryAckRequest: identityBridgeAck("nested-parent", parent.runtimeID, parent.piSession, 1, parentDelivery, true, []byte("waiting for exact child completion"))}, "parent-waiting-ack", parent.handle, parent.fence)).GetBridgeDeliveryAckResponse()
+	if parentAck == nil || !parentAck.Accepted {
+		t.Fatalf("parent waiting ack rejected: %#v", parentAck)
+	}
+	childDelivery := pollPrompt(child, "nested-child", 0)
+	childAck := request(t, path, child.envelope(&subagentsv1.Envelope_BridgeDeliveryAckRequest{BridgeDeliveryAckRequest: identityBridgeAck("nested-child", child.runtimeID, child.piSession, 1, childDelivery, true, []byte("EXACT_CHILD_RESULT"))}, "child-terminal-ack", child.handle, child.fence)).GetBridgeDeliveryAckResponse()
+	if childAck == nil || !childAck.Accepted {
+		t.Fatalf("child terminal ack rejected: %#v", childAck)
+	}
+
+	resumed := pollPrompt(parent, "nested-parent", parentDelivery.Sequence)
+	if !strings.Contains(string(resumed.BoundedPayload), "EXACT_CHILD_RESULT") {
+		t.Fatalf("parent continuation omitted exact child result: %q", resumed.BoundedPayload)
+	}
+	// Repeated polling may replay the one unacknowledged continuation, but it
+	// must never create a second continuation delivery.
+	poll := request(t, path, parent.envelope(&subagentsv1.Envelope_BridgePollRequest{BridgePollRequest: &subagentsv1.BridgePollRequest{AgentId: "nested-parent", MaxItems: 64}}, "parent-replay-poll", parent.handle, parent.fence)).GetBridgePollResponse()
+	continuations := 0
+	for _, delivery := range poll.Deliveries {
+		if delivery.Sequence > parentDelivery.Sequence && strings.Contains(string(delivery.BoundedPayload), "EXACT_CHILD_RESULT") {
+			continuations++
+		}
+	}
+	if continuations != 1 {
+		t.Fatalf("expected exactly one durable parent continuation, got %d: %#v", continuations, poll.Deliveries)
 	}
 }
