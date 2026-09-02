@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 03:03'
-updated_date: '2026-09-02 21:44'
+updated_date: '2026-09-02 22:20'
 labels: []
 dependencies: []
 references:
@@ -60,6 +60,8 @@ Terminal actor delivery remains unreliable in two related live paths. First, con
 13. Fix hosted ActorTaskCompleted delivery back into the source hosted actor as a durable same-thread continuation, enforce terminal-result barriers before nested orchestration advances, make stale duplicate credit grants idempotent, and harden prompt settlement identity for queued deliveries. Validate first with one client → worker → client Ask, then one client → reviewer → client Ask; do not restart multi-agent orchestration until both converge without warnings.
 
 14. Replace live-probe-driven repair with a deterministic stale regular-prompt reincarnation harness: injected/unacked marker, rotated self fence, real service/WebSocket replay, abandoned-prior-executor terminal failure, durable-before-ACK settlement, exact transient busy retry, contiguous cursor retirement, later Tell/Ask liveness, and second restart exactly-once proof. Add bounded typed ACK mismatch diagnostics and do not run another live probe until this test passes repeatedly under race plus independent review.
+
+15. Operator-requested production validation: sync reviewed source to the configured VPS using documented chezmoi lifecycle, verify local/remote daemon versions and mTLS/remoting readiness, then run strict terminal barriers for 2–3 rounds of client→local1→local2→client, client→local1→remote2→local-client, and a final critique/report/mediation debate. Abort on any warning, rejected ACK/credit, nonterminal admission, or missing exact completion.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
@@ -166,4 +168,10 @@ Implemented deterministic stale regular-prompt reincarnation correction. Actor-c
 Independent reviewer v16 APPROVED 1cdf3f5 with no findings after actor-client 45/45, hosted bridge 47/47, full service codegen/race/vet/protocol, focused persisted-restart race count=20, capabilities, and diff checks. Built/deployed daemon and atomically applied actor-client plus generated hosted bridge boundary; daemon restarted active. One full terminal Pi process restart is required to load the new marker/rejection-code behavior and retire the existing stale sequence 5 before the final live Tell→Ask gate.
 
 First post-deploy reincarnation exposed the exact missing fixture dimension: sequence 5 passed fresh ACK validation, but commit returned typed `identity_commit` because contiguous draining reached pre-restart buffered ACK 6. Durable AckGapRecord intentionally omits transient session handle/fence, while commitAck incorrectly re-required them after restart and rolled back the valid head ACK. Corrected commit to revalidate only immutable delivery/thread/runtime shape for ACKs already authenticated before durable gap acceptance; scope token and mutation record checks still gate retirement. Expanded the persisted restart test to ACK a later Tell into the gap before daemon restart, then prove the abandoned head plus authenticated gap retire atomically, later same-chain Tell+Ask converge, and second restart replays nothing. Focused race count=20 passes.
+
+Independent reviewer v17 APPROVED da9aecc with no findings. Full codegen/race/vet/protocol, actor-client 45/45, hosted bridge 47/47, and focused persisted-gap restart race count=20 pass. Deployed rebuilt daemon and restarted active; current terminal already runs the 1cdf3f5 actor-client, so daemon replay should consume its durable settled marker and retire sequence 5 plus authenticated gaps without another terminal restart.
+
+After deploying da9aecc, the already-running actor-client remained disconnected from the daemon restart, exposing the final AC3 gap: reconnect occurred only on a later tool call/process restart. Added a bounded 500ms connection reconciler guarded by one bootstrap, stable generation/context fencing, timer cleanup/unref, and full client/session/fence reset. Reviewer v18 APPROVED 88a5f6a; actor-client 46/46 and focused service gates pass. Atomically deployed actor-client. One final terminal process restart loads the reconciler; subsequent daemon restarts no longer require operator intervention.
+
+Lifecycle hardening after cursor recovery: sequence 10 became the active regular Ask, revealing that RegularDeliveryCoordinator.agentEnd previously accepted any subsequent terminal turn. Bound settlement to a message set containing the exact injected user prompt (same strict omitted-agent_start fallback used by hosted prompts); unrelated operator turns no longer settle Actor Ask. Added regression; actor-client 47/47 passes. Deployed source, requiring one terminal restart to load this final correlation guard; restored sequence 10 will then retire as prior-executor abandonment and sequence 12 can be handled as the next exact prompt.
 <!-- SECTION:NOTES:END -->
