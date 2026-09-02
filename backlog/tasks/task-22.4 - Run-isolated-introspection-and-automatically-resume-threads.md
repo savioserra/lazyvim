@@ -1,11 +1,11 @@
 ---
 id: TASK-22.4
 title: Run isolated introspection and automatically resume threads
-status: Done
+status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 06:10'
-updated_date: '2026-09-02 10:12'
+updated_date: '2026-09-02 10:16'
 labels: []
 dependencies:
   - TASK-22.3
@@ -54,6 +54,8 @@ Post-finalization stale-map reconciliation exposed one mandatory-authority block
 Closed the mandatory-authority bypass identified from the architect map: legacy PromptTaskRequest and TaskLifecycleRequest remain wire-decodable but now fail every operation closed with fixed ActorMessage Ask guidance. Removed the disposable TaskLifecycle service map/helpers and updated local/remote tests to prove neither legacy path can route model effects. Added ADR correction and deterministic thread-ID-derived introspection backoff jitter.
 
 Re-finalization gates after bypass retirement: full go test -race ./..., go vet ./..., codegen verify, protocol npm test, capabilities test, and diff check all pass. Legacy model-task requests are tested fail-closed locally and across nodes.
+
+Live deployed Ask to ui_qa failed as thread introspection exhausted. Reproduced with the real managed Pi runner: the model emitted numeric confidence and an unsupported reason_class because the classifier system prompt named only state literals. Strengthened the prompt to require exactly seven keys, string-only values, all confidence/reason literals, and exact per-state combinations. A real openai-codex/gpt-5.6-sol runner probe now passes strict parsing; added prompt-contract regression assertions.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

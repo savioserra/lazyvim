@@ -87,6 +87,10 @@ func TestIntrospectionRunnerUsesIsolatedExactModelRPC(t *testing.T) {
 			t.Fatalf("isolated runner omitted %q: %q", required, gotArgs)
 		}
 	}
+	systemPromptIndex := slices.Index(gotArgs, "--system-prompt")
+	if systemPromptIndex < 0 || systemPromptIndex+1 >= len(gotArgs) || !strings.Contains(gotArgs[systemPromptIndex+1], "Every value must be a JSON string") || !strings.Contains(gotArgs[systemPromptIndex+1], "confidence is exactly one of low, medium, high") || !strings.Contains(gotArgs[systemPromptIndex+1], "blocked_by_error") {
+		t.Fatalf("isolated classifier prompt omitted the strict literal schema: %q", gotArgs)
+	}
 	if spawned == nil || !slices.ContainsFunc(spawned.Env, func(value string) bool { return strings.HasPrefix(value, "HOME=") }) {
 		t.Fatalf("runner did not preserve owner Pi home: %q", spawned.Env)
 	}
