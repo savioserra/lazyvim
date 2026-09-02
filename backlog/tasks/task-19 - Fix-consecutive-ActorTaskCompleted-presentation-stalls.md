@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 03:03'
-updated_date: '2026-09-02 15:06'
+updated_date: '2026-09-02 15:38'
 labels: []
 dependencies: []
 references:
@@ -124,4 +124,6 @@ Hosted A→B ActorMessageRequest regression reproduced on origin/main a57222a pa
 Follow-up lifecycle fix: hosted-pi-bridge lifecycle reporting now retries only BridgeLifecycleResponse accepted=false reason exactly 'durable persistence is busy' with bounded backoff, identical lifecycle payload, and identical fence/identity. Protocol has no typed rejection code for lifecycle responses, so the classifier is deliberately bound to the exact existing daemon reason and documents that compatibility constraint. Authorization/fence/incarnation/unknown-event/non-busy lifecycle rejections remain fatal. Added extension retry/exhaustion/non-busy tests and actor durable-persistence race test proving READY receives transient busy during an in-flight durable mutation, identical READY retry converges after fsync, and same-incarnation ready binding does not regress from Ready/BridgeReady. Gates passed: services/subagents npm ci/codegen verify/go test -race ./.../go vet ./.../npm test; hosted-pi-bridge npm ci + npm test 43/43; git diff --check.
 
 Urgent presentation-ACK fix: added protobuf FrontendCompletionAckRequest/Response and generated Go/TS bindings; actor-client now sends ACK only after conversation.complete returns presented and the projection/custom message succeeds. Service authenticates only client:* source sessions in their current generation, validates exact completion key/request/dedupe/chain/source sequence/frame sequence, and forwards MarkFrontendCompletionDelivered to the source AgentActor. Source AgentActor durably removes the pending completion from ReceivedTaskCompletions before acknowledging; duplicate ACK after durable removal is idempotent, wrong completion identity fails closed. Broker no longer treats WebSocket writer enqueue as delivery authority, so reconnect/restart replay continues until durable frontend ACK. Tests cover enqueue-without-presentation replay on reconnect, duplicate ACK idempotence, forged ACK rejection, three consecutive completions with per-frame durable ACK, actor durable ACK removal, and actor-client exact ACK payload after durable presentation. Gates passed: actor-client npm test 43/43; hosted-pi-bridge npm test 43/43; services/subagents npm ci/codegen verify/go test -race ./.../go vet ./.../npm test; git diff --check.
+
+Live actor1→actor2 E2E exposed a daemon crash at 12:33:48: async bridge push raced connection teardown and sent on a closed per-connection writer channel (Service.pushBridgeToSession, service.go:1771). Fixed by making the connection closed signal own writer-loop shutdown and deliberately leaving the connection-scoped sender channel open, so stale bounded push continuations select closed rather than panicking the process. Focused service race suite and vet pass; fresh post-deploy relay E2E remains required.
 <!-- SECTION:NOTES:END -->

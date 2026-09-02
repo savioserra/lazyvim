@@ -1266,11 +1266,16 @@ func (s *Service) handleConnection(connection net.Conn) {
 	writerDone := make(chan struct{})
 	go func() {
 		defer close(writerDone)
-		for envelope := range writer {
-			_ = connection.SetWriteDeadline(time.Now().Add(30 * time.Second))
-			if err := protocol.WriteEnvelope(connection, envelope); err != nil {
-				_ = connection.Close()
+		for {
+			select {
+			case <-closed:
 				return
+			case envelope := <-writer:
+				_ = connection.SetWriteDeadline(time.Now().Add(30 * time.Second))
+				if err := protocol.WriteEnvelope(connection, envelope); err != nil {
+					_ = connection.Close()
+					return
+				}
 			}
 		}
 	}()
@@ -1285,7 +1290,11 @@ func (s *Service) handleConnection(connection net.Conn) {
 		if actorReplyKey[0] != "" {
 			s.unregisterActorReplySession(actorReplyKey[0], actorReplyKey[1], actorReplyKey[2])
 		}
-		close(writer)
+		// The writer channel deliberately remains open. Push continuations may
+		// hold a connection-scoped sender after unregister races with teardown;
+		// closing it would turn a harmless stale push into a process-wide panic.
+		// Closing `closed` stops the sole receiver and makes every producer's
+		// existing select abandon the stale connection safely.
 		<-writerDone
 		s.connectionMu.Lock()
 		delete(s.activeConnections, connection)
