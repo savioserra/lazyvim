@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 06:00'
-updated_date: '2026-09-02 06:03'
+updated_date: '2026-09-02 06:11'
 labels: []
 dependencies: []
 references:
@@ -53,4 +53,6 @@ Give every hosted AgentActor durable Slack-like task threads so a later mailbox 
 
 <!-- SECTION:NOTES:BEGIN -->
 Crew execution started. Created retained `actor_thread_architect` in isolated read-only architecture worktree `/home/shyylol/dev/lazyvim-thread-arch` with actor-model/GoAkt role and attached its exact hosted session as a seventh live crew panel without pane injection. Architecture Ask 89 is freezing thread identity, durability, scheduling, introspection, failure, and E2E contracts. Read-only implementation reconnaissance Ask 90 is mapping the commit decomposition. PM remains the only main-worktree writer until the architecture contract returns.
+
+Implementation reconnaissance Ask 90 returned actionable file/function mapping. Reuse AgentActor Receive as serialization boundary; beginDurablePersist/durablePersisted as commit/effect gate; acceptActorTaskWithCredit as target thread-admission seam; commitAck as the current immediate-completion seam that must become turn-settled/pending-introspection; existing source completion mailbox/redrive remains completion authority. Use additive protobuf tags after 62, strict config parser/test corpus, bounded DurableAgentState fields under the 1 MiB record cap, and PromptTaskCoordinator agent_end/agent_settled lifecycle shape. Recommended sequential slices match TASK-22.2-.5: config/protocol, schema/migration, admission identity, scheduler, isolated bridge adapter, ACK→introspection wiring, projections, then restart/E2E. Reconnaissance read stale base 8611c9a, so every claimed incidental defect must be rechecked on current main before action.
 <!-- SECTION:NOTES:END -->
