@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 02:56'
-updated_date: '2026-09-02 04:33'
+updated_date: '2026-09-02 04:53'
 labels: []
 dependencies:
   - TASK-6
@@ -75,4 +75,6 @@ Live roadmap audit found the hosted `actor_tell` tool and `/actor-tell` command 
 Writer sequence 50 integrated: hosted /actor-tell and actor_tell now use protocol TELL; distinct /actor-ask and actor_ask use ASK; UI/model wording separates delivered from replied while preserving correlation. Writer gates passed 78 combined actor/bridge tests, service codegen/race/vet/protocol, capabilities, diff, and scratch apply. Task remains open for independent review and live matrix.
 
 Independent review sequence 59 verified Tell/Ask wire modes, regular-client tool semantics, three-consecutive completion regression, stale-fence retry evidence, canonical routing, dynamic metadata authority, and core redaction. One Medium blocker remains: hosted communication-ui renderToolResult fast path maps a pending actor_ask CommunicationView to ✓ delivered. It must render admitted/waiting, and production-path tests must cover the CommunicationView branch.
+
+Writer sequence 61 correction integrated: hosted renderToolResult now presents a pending actor_ask CommunicationView as waiting rather than delivered, with production-path pending/replied/failed Ask and delivered/failed Tell coverage. Original writer commit 1ca7d0d; integrated code commit recorded in Git history. Task remains open for PM verification and independent re-review.
 <!-- SECTION:NOTES:END -->
