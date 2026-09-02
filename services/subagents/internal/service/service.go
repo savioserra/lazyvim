@@ -49,6 +49,7 @@ const (
 	maxRequestIdentities             = 4096
 	maxTemporaryAcceptRetries        = 3
 	maxPromptBytes                   = 16 * 1024
+	actorTaskDeliveryLifetime        = 6 * time.Hour
 )
 
 type HostedAdminConfig struct {
@@ -2222,7 +2223,10 @@ func (s *Service) dispatch(request *subagentsv1.Envelope) *subagentsv1.Envelope 
 			return errorResponse(request, subagentsv1.ProtocolError_CODE_SESSION_MISMATCH, "source actor authorization denied")
 		}
 		receipt := make(chan application.BridgeIntentResult, 1)
-		task := &application.SendActorTask{TargetPID: targetRoute.PID, TargetPeer: s.communicationPeer(ctx, payload.ActorMessageRequest.Target), RequestID: request.RequestId, RequiredCapability: capability, DedupeID: payload.ActorMessageRequest.DedupeId, ChainID: payload.ActorMessageRequest.ChainId, Deadline: time.UnixMilli(request.DeadlineUnixMillis), HopLimit: payload.ActorMessageRequest.HopLimit, SourceMutationSequence: payload.ActorMessageRequest.SourceMutationSequence, Mode: application.BridgeMessageMode(payload.ActorMessageRequest.Mode), Payload: append([]byte(nil), payload.ActorMessageRequest.BoundedPayload...), Receipt: receipt}
+		// The envelope deadline bounds this transport request only. Durable actor
+		// work has an independent bounded lifetime so a hosted bridge's short RPC
+		// timeout cannot expire an admitted task before target credit/persistence.
+		task := &application.SendActorTask{TargetPID: targetRoute.PID, TargetPeer: s.communicationPeer(ctx, payload.ActorMessageRequest.Target), RequestID: request.RequestId, RequiredCapability: capability, DedupeID: payload.ActorMessageRequest.DedupeId, ChainID: payload.ActorMessageRequest.ChainId, Deadline: durableActorTaskDeadline(time.Now()), HopLimit: payload.ActorMessageRequest.HopLimit, SourceMutationSequence: payload.ActorMessageRequest.SourceMutationSequence, Mode: application.BridgeMessageMode(payload.ActorMessageRequest.Mode), Payload: append([]byte(nil), payload.ActorMessageRequest.BoundedPayload...), Receipt: receipt}
 		// Local and remote targets follow the same source-actor credit/task
 		// protocol: the resolved target PID addresses the concrete agent actor
 		// (possibly on another node) and the actor plane preserves the source
@@ -2713,6 +2717,8 @@ func (s *Service) hostedAgentLock(agentID string) *sync.Mutex {
 	}
 	return lock
 }
+
+func durableActorTaskDeadline(now time.Time) time.Time { return now.Add(actorTaskDeliveryLifetime) }
 
 func (s *Service) authorizedAdmin(credential []byte) bool {
 	return s.hostedAdmin.Enabled && len(s.adminCredential) == 32 && len(credential) == 32 && subtle.ConstantTimeCompare(s.adminCredential, credential) == 1
