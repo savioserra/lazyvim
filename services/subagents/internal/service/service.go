@@ -2750,8 +2750,14 @@ func (s *Service) clientSessionResponse(ctx context.Context, request *subagentsv
 		if command.TerminalIdentity != "" {
 			caller = "client:" + command.TerminalIdentity
 		}
+		var actorMessageHighWater uint64
 		if command.TerminalIdentity != "" {
 			if err := s.ensureTerminalAgent(ctx, caller); err != nil {
+				return internalError(response)
+			}
+			var err error
+			actorMessageHighWater, err = s.terminalActorMessageHighWater(ctx, caller)
+			if err != nil {
 				return internalError(response)
 			}
 		}
@@ -2773,7 +2779,7 @@ func (s *Service) clientSessionResponse(ctx context.Context, request *subagentsv
 		s.clientSessionMu.Lock()
 		s.clientSessions[session.SessionID] = clientPID
 		s.clientSessionMu.Unlock()
-		response.Payload = &subagentsv1.Envelope_ClientSessionResponse{ClientSessionResponse: &subagentsv1.ClientSessionResponse{Accepted: true, SessionId: session.SessionID, GenerationId: session.GenerationID, CallerIdentity: session.Caller, SessionCredential: append([]byte(nil), credential...), ExpiresUnixMillis: expires.UnixMilli()}}
+		response.Payload = &subagentsv1.Envelope_ClientSessionResponse{ClientSessionResponse: &subagentsv1.ClientSessionResponse{Accepted: true, SessionId: session.SessionID, GenerationId: session.GenerationID, CallerIdentity: session.Caller, SessionCredential: append([]byte(nil), credential...), ExpiresUnixMillis: expires.UnixMilli(), ActorMessageHighWater: actorMessageHighWater}}
 		return response
 	case subagentsv1.ClientSessionRequest_OPERATION_CLOSE:
 		value, err := s.system.NoSender().Ask(ctx, s.sessionRegistry, &application.SessionAuthorization{SessionID: request.SessionId, GenerationID: request.GenerationId, Caller: request.CallerIdentity, Credential: request.SessionCredential, Capability: "observe"}, requestTimeout)
@@ -3846,6 +3852,26 @@ func (s *Service) ensureTerminalAgent(ctx context.Context, agentID string) error
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+}
+
+func (s *Service) terminalActorMessageHighWater(ctx context.Context, agentID string) (uint64, error) {
+	value, err := s.system.NoSender().Ask(ctx, s.agentRegistry, &application.ResolveAgentControl{AgentID: agentID}, requestTimeout)
+	if err != nil {
+		return 0, err
+	}
+	resolved, ok := value.(*application.AgentControlPID)
+	if !ok || !resolved.Found || resolved.PID == nil {
+		return 0, fmt.Errorf("terminal actor unavailable")
+	}
+	value, err = s.system.NoSender().Ask(ctx, resolved.PID, &application.ActorMessageHighWaterRequest{}, requestTimeout)
+	if err != nil {
+		return 0, err
+	}
+	result, ok := value.(*application.ActorMessageHighWaterResult)
+	if !ok {
+		return 0, fmt.Errorf("terminal actor mutation high-water unavailable")
+	}
+	return result.HighWater, nil
 }
 
 func authenticatedHostedSource(principal string) (string, bool) {

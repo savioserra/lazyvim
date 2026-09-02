@@ -791,6 +791,9 @@ type BridgeResult struct {
 	Reason                string
 	ActorMessageHighWater uint64
 }
+
+type ActorMessageHighWaterRequest struct{}
+type ActorMessageHighWaterResult struct{ HighWater uint64 }
 type BridgeMessageMode uint8
 
 const (

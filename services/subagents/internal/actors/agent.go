@@ -311,6 +311,8 @@ func (a *AgentActor) Receive(ctx *actor.ReceiveContext) {
 		}
 	case *restoreDurableTimers:
 		a.restoreDurableTimers(ctx)
+	case *application.ActorMessageHighWaterRequest:
+		ctx.Response(&application.ActorMessageHighWaterResult{HighWater: a.actorMessageHighWater()})
 	case *application.RemoteAttachAgent:
 		a.remoteAttach(ctx, message)
 	case *application.AttachAgent:

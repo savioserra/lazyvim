@@ -127,6 +127,14 @@ test("adoptHighWater floors the allocator from drained daemon completions", asyn
   assert.equal(receipt.accepted, true);
 });
 
+test("client OPEN adopts the daemon high-water before the first post-reload allocation", async () => {
+  const { adoptClientSessionMutationHighWater, clientMessageScopeKey } = await import("../../home/dot_pi/private_agent/extensions/actor-client/index.ts");
+  const sequencer = new ClientMutationSequencer(fast);
+  adoptClientSessionMutationHighWater(sequencer, "client:term-stable", 10n);
+  const receipt = await sequencer.run(clientMessageScopeKey("client:term-stable"), tell, async (logical) => ({ accepted: true, sequence: logical.value.sourceMutationSequence }), async () => {});
+  assert.equal(receipt.sequence, 11n);
+});
+
 test("message scope keys to the stable terminal caller across session churn", async () => {
   const { clientMessageScopeKey, clientControlScopeKey, terminalClientIdentity } = await import("../../home/dot_pi/private_agent/extensions/actor-client/index.ts");
   const first = { sessionId: "session-a", generationId: "generation-a", caller: "client:term-stable", credential: new Uint8Array() };

@@ -4738,8 +4738,11 @@ type ClientSessionResponse struct {
 	SessionCredential []byte                 `protobuf:"bytes,5,opt,name=session_credential,json=sessionCredential,proto3" json:"session_credential,omitempty"`
 	ExpiresUnixMillis int64                  `protobuf:"varint,6,opt,name=expires_unix_millis,json=expiresUnixMillis,proto3" json:"expires_unix_millis,omitempty"`
 	Reason            string                 `protobuf:"bytes,7,opt,name=reason,proto3" json:"reason,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// Authoritative mutation high-water retained by the stable terminal
+	// AgentActor. A reloaded client adopts this before allocating messages.
+	ActorMessageHighWater uint64 `protobuf:"varint,8,opt,name=actor_message_high_water,json=actorMessageHighWater,proto3" json:"actor_message_high_water,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *ClientSessionResponse) Reset() {
@@ -4819,6 +4822,13 @@ func (x *ClientSessionResponse) GetReason() string {
 		return x.Reason
 	}
 	return ""
+}
+
+func (x *ClientSessionResponse) GetActorMessageHighWater() uint64 {
+	if x != nil {
+		return x.ActorMessageHighWater
+	}
+	return 0
 }
 
 type PromptTaskRequest struct {
@@ -5886,7 +5896,7 @@ const file_api_subagents_v1_subagents_proto_rawDesc = "" +
 	"\tOperation\x12\x19\n" +
 	"\x15OPERATION_UNSPECIFIED\x10\x00\x12\x12\n" +
 	"\x0eOPERATION_OPEN\x10\x01\x12\x13\n" +
-	"\x0fOPERATION_CLOSE\x10\x02\"\x97\x02\n" +
+	"\x0fOPERATION_CLOSE\x10\x02\"\xd0\x02\n" +
 	"\x15ClientSessionResponse\x12\x1a\n" +
 	"\baccepted\x18\x01 \x01(\bR\baccepted\x12\x1d\n" +
 	"\n" +
@@ -5895,7 +5905,8 @@ const file_api_subagents_v1_subagents_proto_rawDesc = "" +
 	"\x0fcaller_identity\x18\x04 \x01(\tR\x0ecallerIdentity\x12-\n" +
 	"\x12session_credential\x18\x05 \x01(\fR\x11sessionCredential\x12.\n" +
 	"\x13expires_unix_millis\x18\x06 \x01(\x03R\x11expiresUnixMillis\x12\x16\n" +
-	"\x06reason\x18\a \x01(\tR\x06reason\"\xe1\x01\n" +
+	"\x06reason\x18\a \x01(\tR\x06reason\x127\n" +
+	"\x18actor_message_high_water\x18\b \x01(\x04R\x15actorMessageHighWater\"\xe1\x01\n" +
 	"\x11PromptTaskRequest\x12\x16\n" +
 	"\x06target\x18\x01 \x01(\tR\x06target\x12%\n" +
 	"\x0ebounded_prompt\x18\x02 \x01(\fR\rboundedPrompt\x12\x1b\n" +

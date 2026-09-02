@@ -46,6 +46,33 @@ func terminalIdentityOpen(t *testing.T, daemon *Service, identity string) *subag
 	return response
 }
 
+func TestClientSessionOpenReturnsStableTerminalActorMessageHighWater(t *testing.T) {
+	daemon, stop := terminalIdentityHarness(t)
+	defer stop()
+
+	agentID := "client:high-water"
+	binding := application.InactiveHostedPiRuntimeBinding()
+	durable := application.DurableHostedRecord{SchemaVersion: application.DurableHostedSchemaVersion, OwnerUID: os.Getuid(), AgentID: agentID, AuthorityBinding: application.AuthorityBinding{Kind: application.AuthorityBindingPhaseOneObservedUpstream, ObservedUpstreamRunID: agentID}, AllowedCapabilities: []string{"observe", "send", "ask", "prompt", "control_abort", "control_shutdown"}, Retention: "bounded", Recovery: "terminal-reattach", Binding: binding, AgentState: application.DurableAgentState{SourceOutbox: []application.DurableActorTaskOutboxItem{{TaskID: "retained-task", SourceMutationSequence: 10, Deadline: time.Now().Add(time.Hour)}}}}
+	registered := make(chan application.RegisterAgentResult, 1)
+	registration := application.RegisterAgent{AgentID: agentID, Role: "TERMINAL PI", DisplayName: "TERMINAL PI", AuthorityBinding: durable.AuthorityBinding, HostedPiRuntime: binding, AllowedCapability: append([]string(nil), durable.AllowedCapabilities...), Retention: durable.Retention, Recovery: durable.Recovery, PersistencePID: daemon.persistencePID, PersistenceSupervisor: daemon.persistenceSupervisor, DurableRecord: &durable}
+	if err := daemon.system.NoSender().Tell(context.Background(), daemon.agentRegistry, &application.CoordinateAgentRegistration{OperationID: "terminal-high-water", Registration: registration, Result: registered}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case result := <-registered:
+		if !result.Created {
+			t.Fatalf("terminal registration failed: %#v", result)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("terminal registration timed out")
+	}
+
+	opened := terminalIdentityOpen(t, daemon, "high-water")
+	if !opened.Accepted || opened.ActorMessageHighWater != 10 {
+		t.Fatalf("client OPEN did not return retained terminal high-water: %#v", opened)
+	}
+}
+
 func terminalIdentityList(t *testing.T, daemon *Service, session application.OpenSession) []*subagentsv1.AgentReference {
 	t.Helper()
 	envelope := &subagentsv1.Envelope{ProtocolMajor: 1, Sequence: 1, RequestId: time.Now().String(), DeadlineUnixMillis: time.Now().Add(5 * time.Second).UnixMilli(), SessionId: session.SessionID, GenerationId: session.GenerationID, CallerIdentity: session.Caller, SessionCredential: session.Credential, Payload: &subagentsv1.Envelope_ListAgentsRequest{ListAgentsRequest: &subagentsv1.ListAgentsRequest{}}}

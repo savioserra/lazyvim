@@ -455,6 +455,9 @@ message ClientSessionResponse {
   bytes session_credential = 5;
   int64 expires_unix_millis = 6;
   string reason = 7;
+  // Authoritative mutation high-water retained by the stable terminal
+  // AgentActor. A reloaded client adopts this before allocating messages.
+  uint64 actor_message_high_water = 8;
 }
 message PromptTaskRequest {
   string target = 1;
