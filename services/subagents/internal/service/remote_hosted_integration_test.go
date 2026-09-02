@@ -119,6 +119,12 @@ func TestRemoteHostedOrdinaryServicePath(t *testing.T) {
 			}
 			time.Sleep(25 * time.Millisecond)
 		}
+		records, _ := remote.durableStore.LoadAll(context.Background())
+		for _, record := range records {
+			if record.AgentID == "ui_remote_qa" {
+				t.Fatalf("unified remote ask completion never reached the source node: threads=%#v scheduler=%#v pending=%#v", record.AgentState.Threads, record.AgentState.ThreadScheduler, record.AgentState.CompletionTellPending)
+			}
+		}
 		t.Fatal("unified remote ask completion never reached the source node")
 	})
 
@@ -247,7 +253,7 @@ func startIntegrationService(t *testing.T, ctx context.Context, root string, run
 		t.Fatal(err)
 	}
 	process := &clientProcess{binding: application.HostedPiRuntimeBinding{State: application.HostedPiRuntimeStarting, TmuxSessionID: "$x", TmuxWindowID: "@x", TmuxPane: "%x", PanePID: 42, ProcessStartToken: "start", TTY: "/dev/pts/1"}, done: make(chan error, 1)}
-	svc, err := startWithListener(ctx, listener, HostedAdminConfig{Enabled: true, TmuxBinary: "/tmux", PiBinary: "/pi", BridgeExtension: "/bridge", StateDirectory: filepath.Join(root, "state"), PiSessionDirectory: filepath.Join(root, "sessions"), CredentialDirectory: filepath.Join(root, "credentials"), AdminCredentialFile: filepath.Join(root, "admin.json"), DefaultProjectDirectory: filepath.Join(root, "project"), TrustProject: true, RuntimeFactory: func(hostedpi.Config) application.HostedPiRuntime { return clientRuntime{process: process} }}, listener.Addr().String(), runtime)
+	svc, err := startWithListener(ctx, listener, HostedAdminConfig{Enabled: true, TmuxBinary: "/tmux", PiBinary: "/pi", BridgeExtension: "/bridge", StateDirectory: filepath.Join(root, "state"), PiSessionDirectory: filepath.Join(root, "sessions"), CredentialDirectory: filepath.Join(root, "credentials"), AdminCredentialFile: filepath.Join(root, "admin.json"), DefaultProjectDirectory: filepath.Join(root, "project"), TrustProject: true, IntrospectionRunner: testCompletedIntrospectionRunner{}, RuntimeFactory: func(hostedpi.Config) application.HostedPiRuntime { return clientRuntime{process: process} }}, listener.Addr().String(), runtime)
 	if err != nil {
 		t.Fatal(err)
 	}

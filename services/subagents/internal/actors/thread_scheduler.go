@@ -1,10 +1,12 @@
 package actors
 
 import (
+	"context"
 	"errors"
 	"time"
 
 	"github.com/savioserra/lazyvim/services/subagents/internal/application"
+	"github.com/tochemey/goakt/v4/actor"
 )
 
 var (
@@ -114,6 +116,71 @@ func (a *AgentActor) activateThreadDelivery(thread application.DurableAgentThrea
 	a.bridgeDeliveries = append(a.bridgeDeliveries, delivery)
 	a.deliverySources[delivery.Sequence] = thread.DeliverySourceKey
 	return delivery, nil
+}
+
+func (a *AgentActor) scheduleThread(ctx *actor.ReceiveContext) {
+	if a.durableFailed != nil {
+		return
+	}
+	if a.durablePending != nil {
+		_ = ctx.ActorSystem().ScheduleOnce(context.WithoutCancel(ctx.Context()), &scheduleThreadTick{}, ctx.Self(), 10*time.Millisecond)
+		return
+	}
+	now := a.threadNow()
+	old := a.durableState()
+	thread, selected := a.chooseNextThread(now)
+	if !selected {
+		if delay, ok := a.nextResumableDelay(now); ok {
+			_ = ctx.ActorSystem().ScheduleOnce(context.WithoutCancel(ctx.Context()), &scheduleThreadTick{}, ctx.Self(), max(delay, time.Millisecond))
+		}
+		return
+	}
+	oldSequence := thread.ActiveDeliverySequence
+	if oldSequence == 0 || oldSequence <= a.ackCursor {
+		a.bridgeSequence++
+		thread.ActiveDeliverySequence = a.bridgeSequence
+		a.threads[thread.ThreadID] = thread
+	}
+	if oldSequence != thread.ActiveDeliverySequence {
+		if pid, ok := a.taskSources[oldSequence]; ok {
+			a.taskSources[thread.ActiveDeliverySequence] = pid
+			delete(a.taskSources, oldSequence)
+		}
+		if ref, ok := a.durableTaskSources[oldSequence]; ok {
+			a.durableTaskSources[thread.ActiveDeliverySequence] = ref
+			delete(a.durableTaskSources, oldSequence)
+		}
+		if scope := a.mutationScopes[thread.DeliverySourceKey]; scope != nil {
+			record := scope.dedupe[thread.DedupeID]
+			record.sequence = thread.ActiveDeliverySequence
+			scope.dedupe[thread.DedupeID] = record
+		}
+	}
+	if _, err := a.activateThreadDelivery(thread); err != nil {
+		a.restoreDurableState(old)
+		return
+	}
+	_ = a.beginDurablePersist(ctx, &pendingDurableReceipt{old: old})
+}
+
+func (a *AgentActor) nextResumableDelay(now time.Time) (time.Duration, bool) {
+	var earliest time.Time
+	for _, threadID := range a.threadScheduler.Resumable {
+		thread, ok := a.threads[threadID]
+		if !ok || thread.State != application.AgentThreadResumable {
+			continue
+		}
+		if thread.NextAttempt.IsZero() || !now.Before(thread.NextAttempt) {
+			return 0, true
+		}
+		if earliest.IsZero() || thread.NextAttempt.Before(earliest) {
+			earliest = thread.NextAttempt
+		}
+	}
+	if earliest.IsZero() {
+		return 0, false
+	}
+	return earliest.Sub(now), true
 }
 
 func (a *AgentActor) popEligibleResumable(now time.Time) string {

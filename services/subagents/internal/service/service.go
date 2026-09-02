@@ -516,7 +516,7 @@ func (s *Service) reconcileDurableRecord(ctx context.Context, record application
 		// restart and crash-loops on "invalid agent registration".
 		role, displayName := record.Binding.Role, record.Binding.DisplayName
 		record.Binding = application.InactiveHostedPiRuntimeBinding()
-		registration := application.RegisterAgent{AgentID: record.AgentID, Role: role, DisplayName: displayName, AuthorityBinding: record.AuthorityBinding, HostedPiRuntime: record.Binding, AllowedCapability: append([]string(nil), record.AllowedCapabilities...), Retention: record.Retention, Recovery: record.Recovery, PersistencePID: s.persistencePID, PersistenceSupervisor: s.persistenceSupervisor, DurableRecord: &record}
+		registration := application.RegisterAgent{AgentID: record.AgentID, Role: role, DisplayName: displayName, AuthorityBinding: record.AuthorityBinding, HostedPiRuntime: record.Binding, AllowedCapability: append([]string(nil), record.AllowedCapabilities...), Retention: record.Retention, Recovery: record.Recovery, PersistencePID: s.persistencePID, PersistenceSupervisor: s.persistenceSupervisor, IntrospectionRunner: s.introspectionRunner, DurableRecord: &record}
 		if _, err := s.registerAgent(ctx, registration, hostedRegistration{}); err != nil {
 			return fmt.Errorf("register durable terminal agent %s: %w", record.AgentID, err)
 		}
@@ -584,7 +584,7 @@ func (s *Service) reconcileDurableRecord(ctx context.Context, record application
 	if err := s.OpenSession(ctx, session); err != nil {
 		return fmt.Errorf("reopen durable hosted session %s: %w", record.AgentID, err)
 	}
-	registration := application.RegisterAgent{AgentID: record.AgentID, Role: binding.Role, DisplayName: binding.DisplayName, AuthorityBinding: record.AuthorityBinding, HostedPiRuntime: binding, AllowedCapability: append([]string(nil), record.AllowedCapabilities...), PhaseTwoOwned: true, Retention: record.Retention, Recovery: record.Recovery, Runtime: runtime, LaunchSpec: record.LaunchSpec, RuntimeStartTimeout: requestTimeout, AdoptedProcess: process, PersistencePID: s.persistencePID, PersistenceSupervisor: s.persistenceSupervisor, DurableRecord: &record}
+	registration := application.RegisterAgent{AgentID: record.AgentID, Role: binding.Role, DisplayName: binding.DisplayName, AuthorityBinding: record.AuthorityBinding, HostedPiRuntime: binding, AllowedCapability: append([]string(nil), record.AllowedCapabilities...), PhaseTwoOwned: true, Retention: record.Retention, Recovery: record.Recovery, Runtime: runtime, LaunchSpec: record.LaunchSpec, RuntimeStartTimeout: requestTimeout, AdoptedProcess: process, PersistencePID: s.persistencePID, PersistenceSupervisor: s.persistenceSupervisor, IntrospectionRunner: s.introspectionRunner, DurableRecord: &record}
 	result, err := s.registerAgent(ctx, registration, hostedRegistration{sessionID: session.SessionID, credentialFile: record.Session.CredentialFile})
 	if err != nil {
 		return fmt.Errorf("register adopted hosted agent %s: %w", record.AgentID, err)
@@ -3208,7 +3208,7 @@ func (s *Service) startHostedAgentOnce(ctx context.Context, command *subagentsv1
 		rollback()
 		return application.HostedPiRuntimeBinding{}, fmt.Errorf("persist hosted registration before launch: %w", err)
 	}
-	registration := application.RegisterAgent{AgentID: command.AgentId, Role: command.Role, DisplayName: command.DisplayName, AuthorityBinding: durable.AuthorityBinding, HostedPiRuntime: inactive, AllowedCapability: append([]string(nil), session.Capabilities...), PhaseTwoOwned: true, Retention: durable.Retention, Recovery: durable.Recovery, Runtime: runtime, LaunchSpec: spec, RuntimeStartTimeout: 10 * time.Second, PersistencePID: s.persistencePID, DurableRecord: &durable}
+	registration := application.RegisterAgent{AgentID: command.AgentId, Role: command.Role, DisplayName: command.DisplayName, AuthorityBinding: durable.AuthorityBinding, HostedPiRuntime: inactive, AllowedCapability: append([]string(nil), session.Capabilities...), PhaseTwoOwned: true, Retention: durable.Retention, Recovery: durable.Recovery, Runtime: runtime, LaunchSpec: spec, RuntimeStartTimeout: 10 * time.Second, PersistencePID: s.persistencePID, IntrospectionRunner: s.introspectionRunner, DurableRecord: &durable}
 	metadata := hostedRegistration{sessionID: sessionID, credentialFile: credentialFile}
 	registerCtx, registerCancel := context.WithTimeout(context.Background(), requestTimeout)
 	result, registerErr := s.registerAgent(registerCtx, registration, metadata)
@@ -3912,7 +3912,7 @@ func (s *Service) ensureTerminalAgent(ctx context.Context, agentID string, displ
 	durable := application.DurableHostedRecord{SchemaVersion: application.DurableHostedSchemaVersion, OwnerUID: os.Getuid(), AgentID: agentID, AuthorityBinding: application.AuthorityBinding{Kind: application.AuthorityBindingPhaseOneObservedUpstream, ObservedUpstreamRunID: agentID}, AllowedCapabilities: []string{"observe", "send", "ask", "prompt", "control_abort", "control_shutdown"}, Retention: "bounded", Recovery: "terminal-reattach", Binding: application.InactiveHostedPiRuntimeBinding()}
 	durable.Binding.DisplayName = displayName
 	durable.Binding.Role = role
-	registration := application.RegisterAgent{AgentID: agentID, Role: role, DisplayName: displayName, AuthorityBinding: durable.AuthorityBinding, HostedPiRuntime: durable.Binding, AllowedCapability: append([]string(nil), durable.AllowedCapabilities...), Retention: durable.Retention, Recovery: durable.Recovery, PersistencePID: s.persistencePID, PersistenceSupervisor: s.persistenceSupervisor, DurableRecord: &durable}
+	registration := application.RegisterAgent{AgentID: agentID, Role: role, DisplayName: displayName, AuthorityBinding: durable.AuthorityBinding, HostedPiRuntime: durable.Binding, AllowedCapability: append([]string(nil), durable.AllowedCapabilities...), Retention: durable.Retention, Recovery: durable.Recovery, PersistencePID: s.persistencePID, PersistenceSupervisor: s.persistenceSupervisor, IntrospectionRunner: s.introspectionRunner, DurableRecord: &durable}
 	if err := s.system.NoSender().Tell(ctx, s.agentRegistry, &application.CoordinateAgentRegistration{OperationID: "terminal-agent-" + agentID, Registration: registration, Result: registered}); err != nil {
 		return err
 	}

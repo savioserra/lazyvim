@@ -266,6 +266,7 @@ type RegisterAgent struct {
 	AdoptedProcess        HostedPiOwnedProcess
 	PersistencePID        *actor.PID
 	PersistenceSupervisor *actor.PID
+	IntrospectionRunner   ThreadIntrospectionRunner
 	DurableRecord         *DurableHostedRecord
 }
 type RegisterAgentResult struct {

@@ -14,6 +14,12 @@ import (
 
 type deterministicRuntime struct{ process *deterministicProcess }
 
+type completedIntrospectionRunner struct{}
+
+func (completedIntrospectionRunner) Run(context.Context, application.ThreadIntrospectionInput) (application.ThreadIntrospectionResult, error) {
+	return application.ThreadIntrospectionResult{State: application.ThreadIntrospectionCompleted, Confidence: application.ThreadIntrospectionConfidenceHigh, ReasonClass: application.ThreadIntrospectionDone, Checkpoint: "done", CompletionSummary: "completed"}, nil
+}
+
 func (r deterministicRuntime) Start(context.Context, application.HostedPiLaunchSpec) (application.HostedPiOwnedProcess, error) {
 	return r.process, nil
 }
@@ -47,7 +53,7 @@ func TestDeterministicHostedBridgeGatewayAndClientIndependence(t *testing.T) {
 
 	binding := application.HostedPiRuntimeBinding{State: application.HostedPiRuntimeStarting, Lifetime: application.HostedPiLifetimeGlobalAgent, TmuxOwnership: application.HostedPiTmuxOwnershipExactSession, ControlBoundary: application.HostedPiControlDocumentedBridgeOnly, VisualizationBoundary: application.HostedPiVisualizationTmuxAttach, RuntimeID: "runtime-one", Incarnation: 1}
 	process := &deterministicProcess{binding: binding, exit: make(chan error, 1)}
-	registration := application.RegisterAgent{AgentID: "agent-one", AuthorityBinding: application.AuthorityBinding{Kind: application.AuthorityBindingHostedOwned, HostedRuntimeID: binding.RuntimeID}, HostedPiRuntime: binding, AllowedCapability: []string{"observe", "hosted_bridge", "send", "ask", "control_abort", "control_shutdown"}, PhaseTwoOwned: true, Retention: "explicit", Recovery: "owned-binding-v1", Runtime: deterministicRuntime{process}, LaunchSpec: application.HostedPiLaunchSpec{AgentID: "agent-one", RuntimeID: binding.RuntimeID, Incarnation: 1}}
+	registration := application.RegisterAgent{AgentID: "agent-one", AuthorityBinding: application.AuthorityBinding{Kind: application.AuthorityBindingHostedOwned, HostedRuntimeID: binding.RuntimeID}, HostedPiRuntime: binding, AllowedCapability: []string{"observe", "hosted_bridge", "send", "ask", "control_abort", "control_shutdown"}, PhaseTwoOwned: true, Retention: "explicit", Recovery: "owned-binding-v1", Runtime: deterministicRuntime{process}, IntrospectionRunner: completedIntrospectionRunner{}, LaunchSpec: application.HostedPiLaunchSpec{AgentID: "agent-one", RuntimeID: binding.RuntimeID, Incarnation: 1}}
 	if err := daemon.RegisterAgent(context.Background(), registration); err != nil {
 		t.Fatal(err)
 	}
@@ -275,11 +281,19 @@ func TestDeterministicHostedBridgeGatewayAndClientIndependence(t *testing.T) {
 			t.Fatalf("delivery ack rejected: %#v", ack)
 		}
 	}
-	askReplayEnvelope := fencedBase(&subagentsv1.Envelope_ActorMessageRequest{ActorMessageRequest: &subagentsv1.ActorMessageRequest{Mode: subagentsv1.ActorMessageRequest_MODE_ASK, Target: "agent-one", BoundedPayload: []byte("ask-message"), DedupeId: "ask", HopLimit: 8, ChainId: "chain-ask", SourceMutationSequence: 2}})
-	askReplayEnvelope.RequestId = "ask-request"
-	askReplay := request(t, path, askReplayEnvelope).GetActorMessageResponse()
-	if !askReplay.Accepted || !askReplay.Completed {
-		t.Fatalf("completed ASK exact retry did not return immediately: %#v", askReplay)
+	var askReplay *subagentsv1.ActorMessageResponse
+	deadline = time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		askReplayEnvelope := fencedBase(&subagentsv1.Envelope_ActorMessageRequest{ActorMessageRequest: &subagentsv1.ActorMessageRequest{Mode: subagentsv1.ActorMessageRequest_MODE_ASK, Target: "agent-one", BoundedPayload: []byte("ask-message"), DedupeId: "ask", HopLimit: 8, ChainId: "chain-ask", SourceMutationSequence: 2}})
+		askReplayEnvelope.RequestId = "ask-request"
+		askReplay = request(t, path, askReplayEnvelope).GetActorMessageResponse()
+		if askReplay.Accepted && askReplay.Completed {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if askReplay == nil || !askReplay.Accepted || !askReplay.Completed {
+		t.Fatalf("completed ASK exact retry did not converge after introspection: %#v", askReplay)
 	}
 	freshProcessConnect := request(t, path, base(&subagentsv1.Envelope_BridgeConnectRequest{BridgeConnectRequest: &subagentsv1.BridgeConnectRequest{AgentId: "agent-one", RuntimeId: "runtime-one", Incarnation: 1, PiSessionId: "pi-session"}})).GetBridgeConnectResponse()
 	if !freshProcessConnect.Accepted || freshProcessConnect.ActorMessageHighWater != 2 {

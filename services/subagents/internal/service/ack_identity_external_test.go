@@ -18,5 +18,11 @@ func identityBridgeAck(agentID, runtimeID, piSessionID string, incarnation uint6
 	case subagentsv1.BridgeDelivery_KIND_PROMPT:
 		kind = "prompt"
 	}
-	return &subagentsv1.BridgeDeliveryAckRequest{AgentId: agentID, Sequence: delivery.Sequence, DedupeId: delivery.DedupeId, Delivered: delivered, BoundedResult: result, RuntimeId: runtimeID, Incarnation: incarnation, PiSessionId: piSessionID, Kind: kind, SourceScope: delivery.SourceScope, CompletionKey: delivery.CompletionKey}
+	request := &subagentsv1.BridgeDeliveryAckRequest{AgentId: agentID, Sequence: delivery.Sequence, DedupeId: delivery.DedupeId, Delivered: delivered, BoundedResult: result, RuntimeId: runtimeID, Incarnation: incarnation, PiSessionId: piSessionID, Kind: kind, SourceScope: delivery.SourceScope, CompletionKey: delivery.CompletionKey, ThreadId: delivery.ThreadId, SchedulerEpoch: delivery.SchedulerEpoch, ActiveLease: delivery.ActiveLease, ThreadTurn: delivery.ThreadTurn}
+	if delivery.ThreadId != "" {
+		request.BridgeRunCounter = delivery.Sequence
+		request.AgentEndObserved = delivered
+		request.AgentSettledObserved = delivered
+	}
+	return request
 }

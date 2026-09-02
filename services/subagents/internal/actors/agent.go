@@ -62,6 +62,11 @@ type retrySourceOutbox struct{}
 type retryCompletionTells struct{}
 type retryTaskCreditGrants struct{}
 type retryOutboxSchedule struct{}
+type scheduleThreadTick struct{}
+type beginThreadIntrospection struct{ threadID string }
+type threadIntrospectionFinished struct {
+	outcome application.ThreadIntrospectionOutcome
+}
 
 // actorRefResolved is the async continuation of resolveActorRefAsync: the
 // background lookup reports its result back to the agent mailbox so Receive
@@ -72,9 +77,11 @@ type actorRefResolved struct {
 }
 
 type ackBurstReceipt struct {
-	response chan<- application.BridgeDeliveryAckResult
-	result   application.BridgeDeliveryAckResult
-	commits  []ackCommitEffect
+	response            chan<- application.BridgeDeliveryAckResult
+	result              application.BridgeDeliveryAckResult
+	commits             []ackCommitEffect
+	threadSchedule      bool
+	introspectionThread string
 }
 
 type ackCommitEffect struct {
@@ -157,6 +164,10 @@ type pendingDurableReceipt struct {
 	askResult                   *application.BridgeIntentResult
 	removeAskOnFailure          bool
 	retryTimeout                bool
+	threadSchedule              bool
+	introspectionStart          *application.ThreadIntrospectionAttempt
+	introspectionRetryThread    string
+	introspectionRetryDelay     time.Duration
 	// runtimeStateForward carries the incarnation-retirement transition: the
 	// registry projection forward and the bounded retry of the state change
 	// fire only after the retirement batch durably commits.
@@ -231,6 +242,7 @@ type AgentActor struct {
 	threadOrder               []string
 	threadScheduler           application.DurableThreadScheduler
 	threadClock               func() time.Time
+	introspectionRunner       application.ThreadIntrospectionRunner
 	bridgeEvents              []application.BridgeEvent
 	bridgeDeliveries          []application.BridgeDelivery
 	deliverySources           map[uint64]string
@@ -287,7 +299,7 @@ func NewAgentActor(registration *application.RegisterAgent, registry ...*actor.P
 	metadataBinding := registration.HostedPiRuntime
 	metadataBinding.DisplayName = registration.DisplayName
 	metadataBinding.Role = registration.Role
-	value := &AgentActor{id: registration.AgentID, authorityBinding: registration.AuthorityBinding, hostedPiRuntime: metadataBinding, retention: registration.Retention, recovery: registration.Recovery, allowed: allowed, attachments: make(map[string]attachment), revoked: make(map[string]struct{}), revision: 1, commandResults: make(map[string]commandRecord), projections: make(map[string]*projectionLifecycle), deliverySources: make(map[uint64]string), taskSources: make(map[uint64]*actor.PID), durableTaskSources: make(map[uint64]application.DurableActorRef), resolvedRefs: make(map[string]*actor.PID), resolvingRefs: make(map[string]struct{}), scopeTokens: make(map[string]string), completionTellPending: make(map[string]application.DurablePendingCompletion), ackGaps: make(map[uint64]application.BridgeDeliveryAck), committedAcks: make(map[uint64]application.DurableBridgeAckRecord), taskCompletions: make(map[string]application.ActorTaskCompleted), sourceTaskHistory: make(map[string]application.ActorTaskCompleted), sourceMutationReceipts: make(map[string]application.DurableSourceMutationReceipt), sourceOutbox: make(map[string]application.DurableActorTaskOutboxItem), outboxCreditAwaited: make(map[string]time.Time), taskCreditReservations: make(map[string]taskCreditReservation), threads: make(map[string]application.DurableAgentThread), threadScheduler: application.DurableThreadScheduler{SchemaVersion: application.DurableThreadSchedulerSchemaV1, AgentID: registration.AgentID}, mutationScopes: make(map[string]*mutationScope), persistencePID: registration.PersistencePID, persistenceSupervisor: registration.PersistenceSupervisor, durableRecord: registration.DurableRecord}
+	value := &AgentActor{id: registration.AgentID, authorityBinding: registration.AuthorityBinding, hostedPiRuntime: metadataBinding, retention: registration.Retention, recovery: registration.Recovery, allowed: allowed, attachments: make(map[string]attachment), revoked: make(map[string]struct{}), revision: 1, commandResults: make(map[string]commandRecord), projections: make(map[string]*projectionLifecycle), deliverySources: make(map[uint64]string), taskSources: make(map[uint64]*actor.PID), durableTaskSources: make(map[uint64]application.DurableActorRef), resolvedRefs: make(map[string]*actor.PID), resolvingRefs: make(map[string]struct{}), scopeTokens: make(map[string]string), completionTellPending: make(map[string]application.DurablePendingCompletion), ackGaps: make(map[uint64]application.BridgeDeliveryAck), committedAcks: make(map[uint64]application.DurableBridgeAckRecord), taskCompletions: make(map[string]application.ActorTaskCompleted), sourceTaskHistory: make(map[string]application.ActorTaskCompleted), sourceMutationReceipts: make(map[string]application.DurableSourceMutationReceipt), sourceOutbox: make(map[string]application.DurableActorTaskOutboxItem), outboxCreditAwaited: make(map[string]time.Time), taskCreditReservations: make(map[string]taskCreditReservation), threads: make(map[string]application.DurableAgentThread), threadScheduler: application.DurableThreadScheduler{SchemaVersion: application.DurableThreadSchedulerSchemaV1, AgentID: registration.AgentID}, mutationScopes: make(map[string]*mutationScope), persistencePID: registration.PersistencePID, persistenceSupervisor: registration.PersistenceSupervisor, introspectionRunner: registration.IntrospectionRunner, durableRecord: registration.DurableRecord}
 	if registration.DurableRecord != nil {
 		value.restoreDurableState(registration.DurableRecord.AgentState)
 		// Pending outbox work and undelivered completion tells must resume on
@@ -319,6 +331,12 @@ func (a *AgentActor) Receive(ctx *actor.ReceiveContext) {
 		}
 	case *restoreDurableTimers:
 		a.restoreDurableTimers(ctx)
+	case *scheduleThreadTick:
+		a.scheduleThread(ctx)
+	case *beginThreadIntrospection:
+		a.beginThreadIntrospection(ctx, message.threadID)
+	case *threadIntrospectionFinished:
+		a.finishThreadIntrospection(ctx, message.outcome)
 	case *application.ActorMessageHighWaterRequest:
 		ctx.Response(&application.ActorMessageHighWaterResult{HighWater: a.actorMessageHighWater()})
 	case *application.RemoteAttachAgent:
@@ -803,6 +821,7 @@ func (a *AgentActor) durableState() application.DurableAgentState {
 	for _, threadID := range a.threadOrder {
 		if thread, ok := a.threads[threadID]; ok {
 			copy := thread
+			copy.TaskPrompt = append([]byte(nil), thread.TaskPrompt...)
 			copy.PendingPrompt = append([]byte(nil), thread.PendingPrompt...)
 			copy.WorkerResult = append([]byte(nil), thread.WorkerResult...)
 			copy.Events = append([]application.DurableThreadEvent(nil), thread.Events...)
@@ -913,6 +932,7 @@ func (a *AgentActor) restoreDurableState(state application.DurableAgentState) {
 	a.threadOrder = nil
 	for _, thread := range state.Threads {
 		copy := thread
+		copy.TaskPrompt = append([]byte(nil), thread.TaskPrompt...)
 		copy.PendingPrompt = append([]byte(nil), thread.PendingPrompt...)
 		copy.WorkerResult = append([]byte(nil), thread.WorkerResult...)
 		copy.Events = append([]application.DurableThreadEvent(nil), thread.Events...)
@@ -1279,6 +1299,15 @@ func (a *AgentActor) completeDurableReceipt(ctx *actor.ReceiveContext, pending *
 		// A receipt that retained a completion tell during its mutation must
 		// keep the bounded redrive loop alive on the durable path too.
 		a.scheduleCompletionRetry(ctx)
+		if pending.introspectionStart != nil {
+			a.startThreadIntrospection(ctx, *pending.introspectionStart)
+		}
+		if pending.introspectionRetryThread != "" {
+			_ = ctx.ActorSystem().ScheduleOnce(context.WithoutCancel(ctx.Context()), &beginThreadIntrospection{threadID: pending.introspectionRetryThread}, ctx.Self(), max(pending.introspectionRetryDelay, time.Millisecond))
+		}
+		if pending.threadSchedule {
+			_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), ctx.Self(), &scheduleThreadTick{})
+		}
 		if pending.sender != nil && pending.taskCreditGrant != nil {
 			_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), pending.sender, pending.taskCreditGrant)
 			_ = ctx.ActorSystem().ScheduleOnce(context.WithoutCancel(ctx.Context()), &retryTaskCreditGrants{}, ctx.Self(), outboxBaseRetryDelay)
@@ -1398,6 +1427,11 @@ func (a *AgentActor) restoreDurableTimers(ctx *actor.ReceiveContext) {
 		_ = ctx.ActorSystem().ScheduleOnce(context.WithoutCancel(ctx.Context()), &retrySourceOutbox{}, ctx.Self(), outboxBaseRetryDelay)
 		_ = ctx.ActorSystem().ScheduleOnce(context.WithoutCancel(ctx.Context()), &retryCompletionTells{}, ctx.Self(), outboxBaseRetryDelay)
 		_ = ctx.ActorSystem().ScheduleOnce(context.WithoutCancel(ctx.Context()), &retryTaskCreditGrants{}, ctx.Self(), outboxBaseRetryDelay)
+	}
+	if a.threadScheduler.ActiveThreadID == "" && (len(a.threadScheduler.Queue) > 0 || len(a.threadScheduler.Resumable) > 0) {
+		_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), ctx.Self(), &scheduleThreadTick{})
+	} else if thread := a.threads[a.threadScheduler.ActiveThreadID]; thread.State == application.AgentThreadSettled || thread.State == application.AgentThreadIntrospecting {
+		_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), ctx.Self(), &beginThreadIntrospection{threadID: thread.ThreadID})
 	}
 }
 
@@ -2411,7 +2445,7 @@ func (a *AgentActor) acceptActorTaskWithCredit(ctx *actor.ReceiveContext, messag
 	threadID := ""
 	if threaded {
 		threadID = fingerprint.ThreadID()
-		thread := application.DurableAgentThread{SchemaVersion: application.DurableAgentThreadSchemaV1, ThreadID: threadID, Source: sourcePeer, Target: targetPeer, SourceRef: actorRefFromPID(message.SourceAgentID, replyTo), RequestID: message.RequestID, DedupeID: message.DedupeID, ChainID: message.ChainID, SourceMutationSequence: message.SourceMutationSequence, PayloadDigest: fingerprint.PayloadDigest, Mode: message.Mode, RequiredCapability: message.RequiredCapability, SourceScope: token, DeliverySourceKey: key, DeliveryBackend: backend, PendingPrompt: append([]byte(nil), message.Payload...), Deadline: message.Deadline, HopLimit: message.HopLimit, State: application.AgentThreadQueued, ActiveDeliverySequence: sequence, CompletionKey: completionKey, EventCursor: 1, Events: []application.DurableThreadEvent{{Sequence: 1, Kind: "admitted", At: now, Digest: fingerprint.Digest()}}}
+		thread := application.DurableAgentThread{SchemaVersion: application.DurableAgentThreadSchemaV1, ThreadID: threadID, Source: sourcePeer, Target: targetPeer, SourceRef: actorRefFromPID(message.SourceAgentID, replyTo), RequestID: message.RequestID, DedupeID: message.DedupeID, ChainID: message.ChainID, SourceMutationSequence: message.SourceMutationSequence, PayloadDigest: fingerprint.PayloadDigest, Mode: message.Mode, RequiredCapability: message.RequiredCapability, SourceScope: token, DeliverySourceKey: key, DeliveryBackend: backend, TaskPrompt: append([]byte(nil), message.Payload...), PendingPrompt: append([]byte(nil), message.Payload...), Deadline: message.Deadline, HopLimit: message.HopLimit, State: application.AgentThreadQueued, ActiveDeliverySequence: sequence, CompletionKey: completionKey, EventCursor: 1, Events: []application.DurableThreadEvent{{Sequence: 1, Kind: "admitted", At: now, Digest: fingerprint.Digest()}}}
 		if err := a.retainThread(thread); err != nil {
 			a.bridgeSequence--
 			return false
@@ -2459,7 +2493,13 @@ func (a *AgentActor) actorTaskCompleted(ctx *actor.ReceiveContext, message *appl
 	if _, exists := a.taskCompletions[message.CompletionKey]; exists {
 		return
 	}
-	if a.durablePending != nil || a.durableFailed != nil {
+	if a.durableFailed != nil {
+		return
+	}
+	if a.durablePending != nil {
+		copy := *message
+		copy.Terminal.Result = append([]byte(nil), message.Terminal.Result...)
+		_ = ctx.ActorSystem().ScheduleOnce(context.WithoutCancel(ctx.Context()), &copy, ctx.Self(), 10*time.Millisecond)
 		return
 	}
 	old := a.durableState()
@@ -3173,7 +3213,15 @@ func (a *AgentActor) commitAck(ctx *actor.ReceiveContext, message *application.B
 		}
 	}
 	if delivery.ThreadID != "" {
-		return a.commitThreadAck(message, delivery, index, result)
+		committed := a.commitThreadAck(message, delivery, index, result)
+		if committed {
+			if message.Delivered {
+				burst.introspectionThread = delivery.ThreadID
+			} else {
+				burst.threadSchedule = true
+			}
+		}
+		return committed
 	}
 	a.bridgeDeliveries = append(a.bridgeDeliveries[:index], a.bridgeDeliveries[index+1:]...)
 	delete(a.deliverySources, message.Sequence)
@@ -3223,11 +3271,11 @@ func (a *AgentActor) commitThreadAck(message *application.BridgeDeliveryAck, del
 	if !exists || thread.ThreadID != a.threadScheduler.ActiveThreadID || thread.Turn != delivery.ThreadTurn || thread.ActiveDeliverySequence != delivery.Sequence || thread.CompletionKey != delivery.CompletionKey || thread.State != application.AgentThreadAwaitingAgentSettled {
 		return false
 	}
-	thread.PendingPrompt = nil
 	thread.WorkerResult = append([]byte(nil), result.Result...)
 	thread.WorkerResultDigest = sha256.Sum256(thread.WorkerResult)
 	thread.EventCursor++
 	if message.Delivered {
+		thread.PendingPrompt = nil
 		thread.State = application.AgentThreadSettled
 		thread.Events = append(thread.Events, application.DurableThreadEvent{Sequence: thread.EventCursor, Kind: "settled", At: a.threadNow(), DeliverySequence: delivery.Sequence, BridgeRunCounter: message.BridgeRunCounter, Digest: thread.WorkerResultDigest})
 	} else {
@@ -3292,6 +3340,12 @@ func (a *AgentActor) deliverAckBurstEffects(ctx *actor.ReceiveContext, burst *ac
 				a.deferCompletionTell(ctx, effect, err)
 			}
 		}
+	}
+	if burst.threadSchedule {
+		_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), ctx.Self(), &scheduleThreadTick{})
+	}
+	if burst.introspectionThread != "" {
+		_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), ctx.Self(), &beginThreadIntrospection{threadID: burst.introspectionThread})
 	}
 }
 

@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 06:10'
-updated_date: '2026-09-02 09:31'
+updated_date: '2026-09-02 09:48'
 labels: []
 dependencies:
   - TASK-22.2
@@ -42,4 +42,6 @@ QA reconnaissance Ask 100 froze the deterministic proof matrix and reusable seam
 Operator explicitly chose a clean v3 cutover instead of v2-to-v3 record migration. All six retained hosted sessions were explicitly stopped and recreated from clean state; v2 records will fail closed rather than migrate.
 
 Implemented first scheduler aggregate slice: AgentActor persists/restores bounded thread records and scheduler sets; hosted Ask/Prompt admission derives target-authoritative thread IDs, converges exact replays, rejects immutable/source-sequence collisions, queues later prompts instead of overwriting active work, and persists scheduler epoch/lease before dispatch. Added deterministic two-new-task fairness and backoff selection. Thread ACK now atomically retains worker result/settlement without emitting ActorTaskCompleted; failed delivery becomes resumable. Strict state validation covers scheduler references, state sets, tombstones, bounds, and thread fingerprints. Focused actor/state race tests pass.
+
+Implemented durable post-ACK thread execution: settlement commit now triggers isolated injected introspection only after persistence; attempt identity/state/result/checkpoint/digests are retained; completed classification preserves the worker answer in ActorTaskCompleted; continue becomes resumable with deterministic backoff; waiting/blocked remain inert; runner failure retries three times then exhausts fail-closed. Source ActorTaskCompleted received during another persistence transaction is locally redriven instead of dropped. Cross-node Ask completion, push/reconnect, full service, full Go race, vet, codegen, protocol, and capability suites pass.
 <!-- SECTION:NOTES:END -->

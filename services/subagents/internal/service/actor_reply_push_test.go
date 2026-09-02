@@ -43,7 +43,7 @@ func TestActorAskAdmissionThenPushedReplyAndReconnectReplayOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	process := &clientProcess{binding: application.HostedPiRuntimeBinding{State: application.HostedPiRuntimeStarting, TmuxSessionID: "$reply", TmuxWindowID: "@reply", TmuxPane: "%reply", PanePID: 45, ProcessStartToken: "reply", TTY: "/dev/pts/45"}, done: make(chan error, 1)}
-	daemon, err := startWithListener(context.Background(), listener, HostedAdminConfig{Enabled: true, TmuxBinary: "/tmux", PiBinary: "/pi", BridgeExtension: "/bridge", StateDirectory: filepath.Join(root, "state"), PiSessionDirectory: filepath.Join(root, "sessions"), CredentialDirectory: filepath.Join(root, "credentials"), AdminCredentialFile: filepath.Join(root, "admin.json"), DefaultProjectDirectory: root, TrustProject: true, RuntimeFactory: func(hostedpi.Config) application.HostedPiRuntime { return clientRuntime{process: process} }}, filepath.Join(root, "control.sock"))
+	daemon, err := startWithListener(context.Background(), listener, HostedAdminConfig{Enabled: true, TmuxBinary: "/tmux", PiBinary: "/pi", BridgeExtension: "/bridge", StateDirectory: filepath.Join(root, "state"), PiSessionDirectory: filepath.Join(root, "sessions"), CredentialDirectory: filepath.Join(root, "credentials"), AdminCredentialFile: filepath.Join(root, "admin.json"), DefaultProjectDirectory: root, TrustProject: true, IntrospectionRunner: testCompletedIntrospectionRunner{}, RuntimeFactory: func(hostedpi.Config) application.HostedPiRuntime { return clientRuntime{process: process} }}, filepath.Join(root, "control.sock"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,7 +179,7 @@ func TestActorAskAdmissionThenPushedReplyAndReconnectReplayOnce(t *testing.T) {
 	if wrongSession == nil || wrongSession.Accepted {
 		t.Fatalf("wrong Pi session identity was accepted: %#v", wrongSession)
 	}
-	ack := request(hostConn, host, &subagentsv1.Envelope_BridgeDeliveryAckRequest{BridgeDeliveryAckRequest: &subagentsv1.BridgeDeliveryAckRequest{AgentId: "alpha", Sequence: delivery.Sequence, DedupeId: delivery.DedupeId, Delivered: true, BoundedResult: []byte("answer"), RuntimeId: records[0].LaunchSpec.RuntimeID, Incarnation: 1, PiSessionId: "pi", Kind: deliveryKindLabel(delivery.Kind), SourceScope: delivery.SourceScope, CompletionKey: delivery.CompletionKey}}, connected.AgentHandle, connected.Fence, "ack").GetBridgeDeliveryAckResponse()
+	ack := request(hostConn, host, &subagentsv1.Envelope_BridgeDeliveryAckRequest{BridgeDeliveryAckRequest: identityBridgeAck("alpha", records[0].LaunchSpec.RuntimeID, "pi", 1, delivery, true, []byte("answer"))}, connected.AgentHandle, connected.Fence, "ack").GetBridgeDeliveryAckResponse()
 	if ack == nil || !ack.Accepted {
 		t.Fatalf("ack: %#v", ack)
 	}
