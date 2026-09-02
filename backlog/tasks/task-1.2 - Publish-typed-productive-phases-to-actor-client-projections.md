@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@pi'
 created_date: '2026-09-02 02:56'
-updated_date: '2026-09-02 04:32'
+updated_date: '2026-09-02 04:33'
 labels: []
 dependencies:
   - TASK-1.1
@@ -43,4 +43,6 @@ User requirement: treat the tmux-hosted Pi runtime as an actor-bound subscriber 
 User correction: productive phase values are domain/workflow metadata, not a hardcoded enum and not derived from dynamic actor roles. Reviewing/testing/correcting are examples a workflow may publish, never daemon-wide constants.
 
 Corrected UX report received directly at sequence 58. Frozen human contract: render lifecycle/availability, dynamic activity, role, access mode, and visibility health as independent facts. Activity envelope supports set/clear/reset, authoritative owner, monotonic revision, opaque bounded key, optional label/detail, and actor-vs-workflow ownership. Unknown keys render via sanitized label or naturalized key; absent/cleared activity removes only that segment and never invents idle. Status is one-line bounded with +N; roster/pane layouts prioritize display name, lifecycle, then activity and collapse safely. Role/activity never imply each other. Visibility failure cannot alter activity. Required E2E covers unknown/unsafe values, clear, role/activity independence, same-role differences, lifecycle separation, stale fencing, reconnect replay, owner-bound runtime subscription, exact tmux ownership, narrow bounds, and no polling/scraping/injection.
+
+Corrected architecture report received directly at sequence 57. Accepted core: typed additive ActivityProjection envelope with opaque bounded key, optional label/details/failure class, authoritative AgentActor/WorkflowActor source, owner semantics, epoch/revision, durable clear marker, lifecycle separation, and no domain enum or role inference. Persist before publication; stale revisions are rejected; same revision/different digest quarantines activity only; resets preserve clear fencing. HostedPiRuntimeActor subscribes to an owner-bound topic, validates the full owned tmux/runtime/process tuple, and may update only pane/window title/border/status; failure degrades visibility only. Migration is additive and old records mean no activity. Implementation correction: retain the existing actor-client projections/ root machine and typed event transaction rather than creating a second machines/ topology. Runtime subscription should use a bounded owner-private activity/identity topic, not expose private ownership fields through the public roster topic. Existing TopicActor/event-log authority and explicit registry/service projection boundaries remain; do not add a domain subscriber map.
 <!-- SECTION:NOTES:END -->
