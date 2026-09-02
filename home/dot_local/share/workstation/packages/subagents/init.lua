@@ -19,8 +19,8 @@ local function actor_client_root(context)
 	return extension_root(context, "actor-client")
 end
 
-local function dependency_version(context, root)
-	local manifest = context.paths.join(root, "node_modules", "@bufbuild", "protobuf", "package.json")
+local function dependency_version(context, root, dependency)
+	local manifest = context.paths.join(root, "node_modules", dependency, "package.json")
 	if not context.paths.exists(manifest) then
 		return nil
 	end
@@ -53,8 +53,15 @@ local function owner_uid(context)
 	return assert(home_stat.uid, "home owner uid is unavailable")
 end
 
-local function install_node_dependencies(context, root)
-	if dependency_version(context, root) ~= "2.11.0" then
+local function install_node_dependencies(context, root, expected)
+	local missing = false
+	for dependency, version in pairs(expected) do
+		if dependency_version(context, root, dependency) ~= version then
+			missing = true
+			break
+		end
+	end
+	if missing then
 		commands.execute(
 			managed_node.executable(context, "npm"),
 			{ "ci", "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund" },
@@ -105,8 +112,12 @@ return function()
 		requires = { "go", "pi" },
 		supported_hosts = { linux = true, darwin = true },
 		setup = function(context)
-			install_node_dependencies(context, bridge_root(context))
-			install_node_dependencies(context, actor_client_root(context))
+			install_node_dependencies(context, bridge_root(context), { ["@bufbuild/protobuf"] = "2.11.0" })
+			install_node_dependencies(
+				context,
+				actor_client_root(context),
+				{ ["@bufbuild/protobuf"] = "2.11.0", xstate = "5.20.2" }
+			)
 			install_daemon_binaries(context)
 			activate_service(context)
 		end,
@@ -139,12 +150,16 @@ return function()
 			assert(paths.exists(daemon), "subagents daemon executable is missing")
 			assert(paths.exists(clientctl), "subagents client executable is missing")
 			assert(
-				dependency_version(context, bridge_root(context)) == "2.11.0",
+				dependency_version(context, bridge_root(context), "@bufbuild/protobuf") == "2.11.0",
 				"hosted Pi bridge protobuf runtime is not installed"
 			)
 			assert(
-				dependency_version(context, actor_client_root(context)) == "2.11.0",
+				dependency_version(context, actor_client_root(context), "@bufbuild/protobuf") == "2.11.0",
 				"actor client protobuf runtime is not installed"
+			)
+			assert(
+				dependency_version(context, actor_client_root(context), "xstate") == "5.20.2",
+				"actor client XState runtime is not installed"
 			)
 			local lock =
 				vim.json.decode(context.paths.read(context.paths.join(bridge_root(context), "package-lock.json")))
@@ -154,6 +169,18 @@ return function()
 				protobuf.integrity
 					== "sha512-sBXGT13cpmPR5BMgHE6UEEfEaShh5Ror6rfN3yEK5si7QVrtZg8LEPQb0VVhiLRUslD2yLnXtnRzG035J/mZXQ==",
 				"unexpected hosted Pi bridge protobuf lock integrity"
+			)
+			local actor_client_lock =
+				vim.json.decode(context.paths.read(context.paths.join(actor_client_root(context), "package-lock.json")))
+			local actor_client_xstate = actor_client_lock.packages and actor_client_lock.packages["node_modules/xstate"]
+			assert(
+				actor_client_xstate and actor_client_xstate.version == "5.20.2",
+				"unexpected actor client XState lock version"
+			)
+			assert(
+				actor_client_xstate.integrity
+					== "sha512-GZmLmc+WPKfFRxuTDAxCg0cUhS/ZnWaRD86DO8MKizeK4a050jd5k7UNnIQ2jJDWRig2/r0tmVXeezUNIhoz5Q==",
+				"unexpected actor client XState lock integrity"
 			)
 			local npm_root = commands.capture(managed_node.executable(context, "npm"), { "root", "--global" })
 			local pi_root = context.paths.join(npm_root, "@earendil-works", "pi-coding-agent")

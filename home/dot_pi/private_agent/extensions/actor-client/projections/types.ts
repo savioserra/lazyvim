@@ -1,0 +1,11 @@
+export type ConnectionStatus = "disconnected" | "connecting" | "authenticating" | "subscribingRoster" | "connected" | "reconnecting" | "degraded" | "closing";
+export type PeerMetadata = { stableId?: string; displayName: string; role?: string; authoritative: boolean };
+export type ActorRosterItem = { agentId: string; displayName: string; role?: string; lifecycle: string; revision: bigint };
+export type RosterProjection = { epoch: bigint; sequence: bigint; agents: Map<string, ActorRosterItem>; overflow: number; degradedReason?: string };
+export type PendingInteraction = { key: string; requestId: string; dedupeId: string; chainId: string; sourceMutationSequence: string; source?: string; target?: string; kind: string; prompt: string; targetPeer?: PeerMetadata; hidden: true };
+export type ConversationState = "pending" | "delivered" | "replied" | "failed";
+export type ConversationIntent = "note" | "request" | "reply" | "control" | "failure";
+export type ConversationCard = { key: string; direction: "incoming" | "outgoing"; intent: ConversationIntent; state: ConversationState; peerDisplayName: string; peerRole: string; body: string; reply?: string; durationMillis?: number; terminalDigest?: string };
+export type RenderSnapshot = { connection: ConnectionStatus; statusLine?: string; pendingLine?: string; cards: ConversationCard[]; width: number; overflow: number; themeRevision: number };
+export type ProjectionContext = { sessionGeneration: number; connection: ConnectionStatus; roster: RosterProjection; pending: Map<string, PendingInteraction>; cards: Map<string, ConversationCard>; completions: Map<string, string>; presented: Set<string>; snapshot: RenderSnapshot; maxCards: number };
+export type EffectIntent = { type: "PRESENT_COMPLETION"; key: string; digest: string; card: ConversationCard } | { type: "REQUEST_ROSTER_REPLAY"; epoch: bigint; sequence: bigint } | { type: "SET_STATUS"; key: string; value?: string };
