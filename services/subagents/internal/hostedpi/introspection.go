@@ -27,7 +27,7 @@ const (
 
 var (
 	exactIntrospectionModelPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._@+-]{0,62}/[A-Za-z0-9][A-Za-z0-9._@+-]{0,62}$`)
-	introspectionPolicyPattern     = regexp.MustCompile(`(?i)(api[_ -]?key|authorization|bearer[ :]|credential|secret|access[_ -]?token|runtime[_ -]?id|session[_ -]?id|process[_ -]?id|\bpid\b|\btty\b|\b(?:fence|handle)[_ -]?(?:id|token|value)\b|\b(?:fence|handle)\s*[:=]\s*[^\s,;]+|https?://|wss?://|spiffe://|/home/|/run/user/|BEGIN[ _-]PROMPT|END[ _-]PROMPT|<\|)`)
+	introspectionPolicyPattern     = regexp.MustCompile(`(?i)(api[_ -]?key\s*[:=]\s*[^\s,;]+|authorization\s*[:=]\s*[^\s,;]+|bearer[ :]\s*[^\s,;]+|credential(?:[_ -]?(?:id|path|file|value|token))?\s*[:=]\s*[^\s,;]+|secret(?:[_ -]?(?:id|path|file|value|token))?\s*[:=]\s*[^\s,;]+|access[_ -]?token\s*[:=]\s*[^\s,;]+|(?:runtime|session|process)[_ -]?id\s*[:=]\s*[^\s,;]+|\bpid\s*[:=]\s*[0-9]+|\btty\s*[:=]\s*[^\s,;]+|\b(?:fence|handle)[_ -]?(?:id|token|value)\s*[:=]\s*[^\s,;]+|\b(?:fence|handle)\s*[:=]\s*[^\s,;]+|https?://|wss?://|spiffe://|/home/|/run/user/|BEGIN[ _-]PROMPT|END[ _-]PROMPT|<\|)`)
 )
 
 var ErrIntrospectionUnavailable = errors.New("introspection runner unavailable")

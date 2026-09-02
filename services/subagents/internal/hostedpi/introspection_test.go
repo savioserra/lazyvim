@@ -20,7 +20,7 @@ func TestParseThreadIntrospectionResultStrictSchema(t *testing.T) {
 		accepted    bool
 	}{
 		{name: "completed", value: validCompletedIntrospection, accepted: true},
-		{name: "generic fence concept", value: strings.Replace(validCompletedIntrospection, "deliverable verified", "stale fence refresh was fixed", 1), accepted: true},
+		{name: "generic security concepts", value: strings.Replace(validCompletedIntrospection, "deliverable verified", "authorization fencing and credential isolation were verified", 1), accepted: true},
 		{name: "continue", value: `{"state":"continue","confidence":"medium","reason_class":"needs_more_work","checkpoint":"tests still fail","next_prompt":"fix remaining tests","wait_condition":"","completion_summary":""}`, accepted: true},
 		{name: "waiting", value: `{"state":"waiting","confidence":"medium","reason_class":"waiting_on_user","checkpoint":"choice required","next_prompt":"","wait_condition":"user chooses option","completion_summary":""}`, accepted: true},
 		{name: "blocked", value: `{"state":"blocked","confidence":"low","reason_class":"blocked_by_error","checkpoint":"dependency unavailable","next_prompt":"","wait_condition":"dependency becomes available","completion_summary":""}`, accepted: true},
@@ -33,7 +33,8 @@ func TestParseThreadIntrospectionResultStrictSchema(t *testing.T) {
 		{name: "oversize checkpoint", value: strings.Replace(validCompletedIntrospection, "deliverable verified", strings.Repeat("x", application.MaxThreadCheckpointBytes+1), 1)},
 		{name: "low terminal", value: strings.Replace(validCompletedIntrospection, `"confidence":"high"`, `"confidence":"low"`, 1)},
 		{name: "wrong terminal class", value: strings.Replace(validCompletedIntrospection, `"reason_class":"done"`, `"reason_class":"needs_more_work"`, 1)},
-		{name: "policy runtime identity", value: strings.Replace(validCompletedIntrospection, "deliverable verified", "runtime_id was verified", 1)},
+		{name: "policy runtime identity", value: strings.Replace(validCompletedIntrospection, "deliverable verified", "runtime_id=raw-runtime", 1)},
+		{name: "policy authorization value", value: strings.Replace(validCompletedIntrospection, "deliverable verified", "authorization=raw-token", 1)},
 		{name: "policy fence value", value: strings.Replace(validCompletedIntrospection, "deliverable verified", "fence=secret-value", 1)},
 		{name: "policy credential path", value: strings.Replace(validCompletedIntrospection, "deliverable verified", "credential at /home/operator/auth.json", 1)},
 		{name: "policy host", value: strings.Replace(validCompletedIntrospection, "deliverable verified", "host 127.0.0.1 verified", 1)},

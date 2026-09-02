@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 06:10'
-updated_date: '2026-09-02 13:35'
+updated_date: '2026-09-02 13:39'
 labels: []
 dependencies:
   - TASK-22.3
@@ -66,6 +66,8 @@ Post-fix reviewer Ask sequence 17 exposed a second real-output policy defect: th
 Reopened on current review: internal RemoteBridgeIntent/raw BridgeIntent receive paths can still admit model-bearing Ask/Prompt directly into bridge deliveries, bypassing ActorTask credits, target-authoritative threads, settlement, and introspection. Public legacy endpoints are retired, but actor-plane injection remains a mandatory authority gap.
 
 Closed internal model-bearing bypass: AgentActor rejects raw and Remote BridgeIntent Ask/Prompt before effects; placement authority rejects before resolution/forwarding. Production Tell remains temporarily for non-model notification mechanics. Added actor/placement fail-closed tests. Legacy bridge ACK mechanics use an explicit test-only fixture constructor; production constructors cannot enable direct model intents.
+
+Sequence 25 exposed another classifier policy false positive: generic architecture phrases containing authorization or credential were treated as leaked values. Reworked output policy to reject assigned/raw values and identities (authorization=, credential/path/value, runtime/session/process id values, PID/TTY/fence/handle values, URLs/paths) while permitting generic security concepts. Added generic-allow and concrete-value deny regressions.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
