@@ -108,4 +108,35 @@ func TestActorAskReturnsRegularTerminalModelAnswerToSource(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("source completion timed out")
 	}
+
+	// A later distinct mutation in the same durable parent chain is new work,
+	// not a replay. Regular interactive targets must support ordered Tell/Ask
+	// exchanges while dedupe and mutation sequence retain replay authority.
+	secondDeadline := time.Now().Add(2 * time.Second)
+	for {
+		secondReceipt := make(chan application.BridgeIntentResult, 1)
+		if err := system.NoSender().Tell(ctx, source, &application.SendActorTask{TargetPID: target, TargetPeer: application.CommunicationPeer{StableID: "client:terminal"}, RequestID: "regular-request-2", RequiredCapability: "send", DedupeID: "regular-dedupe-2", ChainID: "regular-chain", Deadline: time.Now().Add(5 * time.Second), HopLimit: 8, SourceMutationSequence: 2, Mode: application.BridgeMessageTell, Payload: []byte("same-chain follow-up"), Receipt: secondReceipt}); err != nil {
+			t.Fatal(err)
+		}
+		result := <-secondReceipt
+		if result.Accepted {
+			break
+		}
+		if result.Reason != "durable persistence is busy" || time.Now().After(secondDeadline) {
+			t.Fatalf("same-chain regular follow-up rejected: %#v", result)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	deadline = time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		value, err := system.NoSender().Ask(ctx, target, &application.PollBridge{SessionID: "terminal-session", GenerationID: "terminal-generation", Principal: "client:terminal", Handle: fence.Handle, Fence: fence.Fence, AfterSequence: delivery.Sequence, MaxItems: 8}, time.Second)
+		if err == nil {
+			poll := value.(*application.BridgePollResult)
+			if len(poll.Deliveries) == 1 && string(poll.Deliveries[0].Payload) == "same-chain follow-up" {
+				return
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("same-chain regular follow-up was not delivered")
 }

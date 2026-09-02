@@ -2512,7 +2512,12 @@ func (a *AgentActor) acceptActorTaskWithCredit(ctx *actor.ReceiveContext, messag
 	if _, duplicate := scope.dedupe[message.DedupeID]; duplicate {
 		return false
 	}
-	if !threaded {
+	// Hosted bridge provenance retains the historical one-mutation-per-chain
+	// guard. A regular interactive target must accept an ordered Tell followed
+	// by Ask from the same durable parent chain; request/dedupe/mutation identity
+	// remains authoritative for replay rejection.
+	enforceUniqueChain := backend == "hosted" && !threaded
+	if enforceUniqueChain {
 		if _, repeated := scope.chains[message.ChainID]; repeated {
 			return false
 		}
@@ -2558,7 +2563,7 @@ func (a *AgentActor) acceptActorTaskWithCredit(ctx *actor.ReceiveContext, messag
 	a.taskSources[sequence] = replyTo
 	a.durableTaskSources[sequence] = actorRefFromPID(message.SourceAgentID, replyTo)
 	scope.dedupe[message.DedupeID] = bridgeDedupeRecord{sequence: sequence, mutationSequence: message.SourceMutationSequence, chainID: message.ChainID}
-	if !threaded {
+	if enforceUniqueChain {
 		scope.chains[message.ChainID] = struct{}{}
 	}
 	result := application.BridgeIntentResult{Accepted: true, AwaitingAck: resultBearing}

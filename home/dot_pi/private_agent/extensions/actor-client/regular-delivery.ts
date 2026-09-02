@@ -39,13 +39,29 @@ export function regularDeliveryKey(delivery: Pick<RegularDelivery, "completionKe
   return delivery.completionKey || `${delivery.dedupeId}\0${delivery.sequence}`;
 }
 
+const ACK_BUSY_RETRIES = 5;
+const ACK_BUSY_DELAY_MS = 25;
+
+async function acknowledgeAfterPersistence(fence: RegularFence, attempt: (fence: RegularFence) => Promise<void>): Promise<void> {
+  for (let retry = 0; ; retry++) {
+    try { await attempt(fence); return; }
+    catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message !== "durable persistence is busy" || retry >= ACK_BUSY_RETRIES) throw error;
+      await new Promise((resolve) => setTimeout(resolve, ACK_BUSY_DELAY_MS * (retry + 1)));
+    }
+  }
+}
+
 export async function acknowledgeWithFenceRefresh(fence: RegularFence, attempt: (fence: RegularFence) => Promise<void>, refresh: () => Promise<RegularFence>): Promise<void> {
-  try { await attempt(fence); return; }
+  try { await acknowledgeAfterPersistence(fence, attempt); return; }
   catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (!/fence rejected|authorization denied/.test(message)) throw error;
   }
-  await attempt(await refresh());
+  // Reattach itself is a durable mutation. Retry only its exact transient-busy
+  // successor so a fresh fence cannot enter an endless replay/reject loop.
+  await acknowledgeAfterPersistence(await refresh(), attempt);
 }
 
 function peerFromDelivery(peer: RegularDelivery["source"]) {

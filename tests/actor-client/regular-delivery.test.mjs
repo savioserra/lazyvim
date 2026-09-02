@@ -29,6 +29,19 @@ test("regular delivery ack refreshes stale self fence once with identical delive
   assert.deepEqual(calls, [stale, fresh]);
 });
 
+test("regular delivery ack retries exact persistence busy after fresh fence", async () => {
+  const stale={handle:"old",fence:1n};
+  const fresh={handle:"new",fence:2n};
+  const calls=[];
+  await acknowledgeWithFenceRefresh(stale, async (fence) => {
+    calls.push(fence);
+    if (calls.length === 1) throw new Error("delivery acknowledgement fence rejected");
+    if (calls.length < 4) throw new Error("durable persistence is busy");
+  }, async () => fresh);
+  assert.deepEqual(calls, [stale, fresh, fresh, fresh]);
+  await assert.rejects(() => acknowledgeWithFenceRefresh(fresh, async () => { throw new Error("authorization denied permanently"); }, async () => fresh), /authorization denied permanently/);
+});
+
 test("bridge push projects incoming tell through root before one render-envelope message",async()=>{
   let projection=initialProjectionContext();
   const messages=[];const markers=[];const acks=[];
