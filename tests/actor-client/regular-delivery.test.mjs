@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { REGULAR_DELIVERY_MARKER, RegularDeliveryCoordinator } from "../../home/dot_pi/private_agent/extensions/actor-client/regular-delivery.ts";
+import { REGULAR_DELIVERY_MARKER, RegularDeliveryCoordinator, acknowledgeWithFenceRefresh } from "../../home/dot_pi/private_agent/extensions/actor-client/regular-delivery.ts";
 import { projectIncomingRegularDelivery } from "../../home/dot_pi/private_agent/extensions/actor-client/index.ts";
 import { initialProjectionContext } from "../../home/dot_pi/private_agent/extensions/actor-client/projections/machine.ts";
 
@@ -14,6 +14,20 @@ function harness(entries=[]) {
   return {coordinator,markers,messages,acks};
 }
 const fence={handle:"regular",fence:1n};
+
+test("regular delivery ack refreshes stale self fence once with identical delivery payload", async () => {
+  const calls=[];
+  const stale={handle:"old",fence:1n};
+  const fresh={handle:"new",fence:2n};
+  await acknowledgeWithFenceRefresh(stale, async (fence) => {
+    calls.push(fence);
+    if (calls.length === 1) throw new Error("delivery acknowledgement fence rejected");
+  }, async () => fresh);
+  assert.deepEqual(calls, [stale, fresh]);
+  calls.length = 0;
+  await assert.rejects(() => acknowledgeWithFenceRefresh(stale, async (fence) => { calls.push(fence); throw new Error("delivery acknowledgement fence rejected"); }, async () => fresh), /fence rejected/);
+  assert.deepEqual(calls, [stale, fresh]);
+});
 
 test("bridge push projects incoming tell through root before one render-envelope message",async()=>{
   let projection=initialProjectionContext();

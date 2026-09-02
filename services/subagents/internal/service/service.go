@@ -2374,7 +2374,7 @@ func protoCommunicationPeer(peer application.CommunicationPeer) *subagentsv1.Com
 
 func (s *Service) communicationPeer(ctx context.Context, stableID string) application.CommunicationPeer {
 	if strings.HasPrefix(stableID, "client:") {
-		return application.CommunicationPeer{StableID: "project-manager", DisplayName: "PROJECT MANAGER", Role: "PROJECT MANAGER"}
+		return application.CommunicationPeer{StableID: stableID, DisplayName: "PROJECT MANAGER", Role: "PROJECT MANAGER"}
 	}
 	value, err := s.system.NoSender().Ask(ctx, s.agentRegistry, &application.ResolveAgentControl{AgentID: stableID}, min(requestTimeout, boundedRemaining(ctx, requestTimeout)))
 	if err == nil {

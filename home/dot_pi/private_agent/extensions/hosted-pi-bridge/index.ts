@@ -257,10 +257,12 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
   const pollingFence = async (target: string): Promise<TargetFence> => target === requiredBinding(binding).agentId ? requiredFence(selfFence) : ensureTargetFence(target, ["observe"]);
 
   const message = async (mode: ActorMessageRequest_Mode, target: string | undefined, text: string) => {
-    const current = requiredBinding(binding); const destination = target?.trim() || current.agentId; const fence = await ensureTargetFence(destination, actorMessageCapabilities(mode));
-    const messageScope = bridgeMessageScopeKey(current);
+    const current = requiredBinding(binding);
     const inherited = prompts.active()?.delivery;
     if (inherited && inherited.hopLimit < 1) throw new Error("inherited prompt hop budget exhausted");
+    const destination = resolveHostedMessageDestination(target, current.agentId, inherited);
+    const fence = await ensureTargetFence(destination, actorMessageCapabilities(mode));
+    const messageScope = bridgeMessageScopeKey(current);
     return mutations.run(messageScope,
       (sequence)=>({requestId:randomUUID(),value:buildActorMessage(mode,destination,text,randomUUID(),inherited?.chainId ?? randomUUID(),sequence,inherited?.hopLimit ?? 8)}),
       async (logical)=>{const started=Date.now();const active=requiredClient(client);const response=await active.request("actorMessageRequest",ActorMessageRequestSchema,logical.value,fence,logical.requestId,SHORT_REQUEST_TIMEOUT_MS);if(response.payload.case!=="actorMessageResponse"){active.invalidate(new Error("unexpected actor message response"));throw new Error("unexpected actor message response")};const result=actorMessageModelResult(logical,response.payload.value);appendCommunicationView(outgoingExchange({key:`request:${logical.requestId}`,target:response.payload.value.target,body:text,accepted:response.payload.value.accepted,completed:response.payload.value.completed,mode:mode===ActorMessageRequest_Mode.ASK?"ask":"tell",reason:response.payload.value.reason,durationMillis:Date.now()-started}));return result},
@@ -699,3 +701,14 @@ function requiredClient(value?: FramedClient): FramedClient { if (!value) throw 
 function requiredBinding(value?: Binding): Binding { if (!value) throw new Error("hosted bridge is not bound"); return value; }
 function requiredFence(value?: TargetFence): TargetFence { if (!value) throw new Error("hosted bridge fence is unavailable"); return value; }
 function requiredContext(value?: ExtensionContext): ExtensionContext { if (!value) throw new Error("hosted bridge context is unavailable"); return value; }
+export function resolveHostedMessageDestination(target: string | undefined, self: string, inherited?: { source?: { stableId?: string; displayName?: string } }): string {
+  const value = target?.trim();
+  if (!value) return self;
+  const folded = value.toLowerCase().replace(/[\s_-]+/g, "-");
+  const sourceStable = inherited?.source?.stableId?.trim();
+  if (folded === "source" || folded === "reply-source" || folded === "reply-to-source" || folded === "project-manager" || folded === "pm") {
+    if (sourceStable?.startsWith("client:")) return sourceStable;
+    throw new Error("project manager alias is not an authoritative reply target");
+  }
+  return value;
+}

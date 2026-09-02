@@ -39,6 +39,15 @@ export function regularDeliveryKey(delivery: Pick<RegularDelivery, "completionKe
   return delivery.completionKey || `${delivery.dedupeId}\0${delivery.sequence}`;
 }
 
+export async function acknowledgeWithFenceRefresh(fence: RegularFence, attempt: (fence: RegularFence) => Promise<void>, refresh: () => Promise<RegularFence>): Promise<void> {
+  try { await attempt(fence); return; }
+  catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!/fence rejected|authorization denied/.test(message)) throw error;
+  }
+  await attempt(await refresh());
+}
+
 function peerFromDelivery(peer: RegularDelivery["source"]) {
   if (!peer?.displayName) return undefined;
   return { stableId: peer.stableId, displayName: peer.displayName, role: peer.role, authoritative: true };

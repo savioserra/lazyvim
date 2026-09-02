@@ -892,6 +892,7 @@ func (a *AgentActor) restoreDurableState(state application.DurableAgentState) {
 	// never suppress the first post-expiry re-request after a respawn.
 	a.outboxCreditAwaited = make(map[string]time.Time)
 	for _, item := range state.SourceOutbox {
+		item = repairRestoredSourceOutboxItem(item)
 		a.sourceOutbox[item.TaskID] = item
 		a.sourceOutboxOrder = append(a.sourceOutboxOrder, item.TaskID)
 	}
@@ -1678,6 +1679,15 @@ func (a *AgentActor) retrySourceOutbox(ctx *actor.ReceiveContext) {
 			continue
 		}
 		activeTargets[targetKey] = struct{}{}
+		if item.State == "quarantined_alias_target" {
+			failed := application.ActorTaskCompleted{CompletionKey: taskID, OriginalRequestID: item.RequestID, DedupeID: item.DedupeID, ChainID: item.ChainID, SourceMutationSequence: item.SourceMutationSequence, Terminal: application.BridgeIntentResult{Reason: "actor task outbox target identity quarantined"}, Source: a.communicationPeer(), Target: item.Target, Kind: application.BridgeDeliveryNotification}
+			a.retainSourceCompletion(taskID, failed)
+			delete(a.sourceOutbox, taskID)
+			delete(a.outboxCreditAwaited, taskID)
+			a.sourceOutboxOrder = slices.DeleteFunc(a.sourceOutboxOrder, func(id string) bool { return id == taskID })
+			changed = true
+			continue
+		}
 		if now.After(item.Deadline) {
 			// Deadline failure for lost credit/task/acceptance: retain a
 			// terminal failure result, publish it to the source mailbox, and
@@ -2066,6 +2076,21 @@ func (a *AgentActor) actorRefResolved(ctx *actor.ReceiveContext, message *actorR
 	if a.beginDurablePersist(ctx, &pendingDurableReceipt{old: old}) {
 		return
 	}
+}
+
+func repairRestoredSourceOutboxItem(item application.DurableActorTaskOutboxItem) application.DurableActorTaskOutboxItem {
+	if item.Target.StableID != "project-manager" {
+		return item
+	}
+	if strings.HasPrefix(item.TargetRef.AgentID, "client:") {
+		item.Target.StableID = item.TargetRef.AgentID
+		item.Credit = application.TaskCredit{}
+		item.State = "pending_credit"
+		return item
+	}
+	item.Credit = application.TaskCredit{}
+	item.State = "quarantined_alias_target"
+	return item
 }
 
 func outboxTargetKey(item application.DurableActorTaskOutboxItem) string {

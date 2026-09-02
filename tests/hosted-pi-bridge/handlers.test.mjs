@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { buildActorControl, buildActorMessage, buildIdentityDeliveryAck, bridgeErrorClass, communicationKey, communicationLine, CommunicationTimeline, completeHostedEnvironment, ExactMutationSequencer, PromptTaskCoordinator, deliveryAction, deliveryKindLabel, destroyOnFramingFailure, drainPages, executeTypedDelivery, invokeTypedDeliveryForAck, missingAckIdentity, parseTargetMessage, registerHostedHandlers, requireExplicitModelTarget } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/handlers.ts";
 import { bridgeDiagnostic, incomingNote, incomingRequestText, outgoingExchange, renderCommunicationCard, compactToolCall, compactToolResult, modelResultContent } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/communication-ui.ts";
-import { actorControlCapabilities, actorMessageCapabilities, actorMessageModelResult, capabilitySetIncludes, connectBridgeWithRetry, consumeReconnect, degradedBridgeStatus } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/index.ts";
+import { actorControlCapabilities, actorMessageCapabilities, actorMessageModelResult, capabilitySetIncludes, connectBridgeWithRetry, consumeReconnect, degradedBridgeStatus, resolveHostedMessageDestination } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/index.ts";
 
 const complete = { WS_SUBAGENTS_ENDPOINT: "ws://127.0.0.1:17213/actors", WS_SUBAGENTS_CREDENTIAL_FILE: "/state/credential", WS_SUBAGENTS_SESSION_ID: "session", WS_SUBAGENTS_GENERATION_ID: "generation", WS_SUBAGENTS_CALLER: "hosted:agent", WS_SUBAGENTS_AGENT_ID: "agent", WS_SUBAGENTS_RUNTIME_ID: "runtime", WS_SUBAGENTS_INCARNATION: "1" };
 
@@ -49,6 +49,15 @@ test("pagination drains every page and advances only through emitted cursors", a
   const cursor = await drainPages(0n, async () => pages.shift(), async (page) => { consumed += page.values; });
   assert.equal(cursor, 130n); assert.equal(consumed, 130);
   await assert.rejects(() => drainPages(5n, async () => ({ latestSequence: 5n, more: true }), async () => {}), /did not advance/);
+});
+
+test("hosted reply target aliases resolve only to authoritative source", () => {
+  const delivery = { source: { stableId: "client:terminal-1", displayName: "PROJECT MANAGER" } };
+  assert.equal(resolveHostedMessageDestination("Project Manager", "worker", delivery), "client:terminal-1");
+  assert.equal(resolveHostedMessageDestination("reply-to-source", "worker", delivery), "client:terminal-1");
+  assert.equal(resolveHostedMessageDestination("worker-two", "worker", delivery), "worker-two");
+  assert.throws(() => resolveHostedMessageDestination("project-manager", "worker"), /not an authoritative reply target/);
+  assert.throws(() => resolveHostedMessageDestination("pm", "worker", { source: { stableId: "project-manager" } }), /not an authoritative reply target/);
 });
 
 test("target attachment fences are operation-minimal and capability-set scoped", () => {
