@@ -171,7 +171,9 @@ export function buildActorMessage(mode: number, target: string, text: string, de
   const boundedPayload = new TextEncoder().encode(text);
   if (!text || boundedPayload.byteLength > 16 * 1024) throw new Error("message must be non-empty and within the 16 KiB bound");
   if (sourceMutationSequence <= 0n || hopLimit < 1) throw new Error("source mutation sequence and hop limit must be positive");
-  const parentContinuation = parent?.threadId ? { threadId: parent.threadId, schedulerEpoch: parent.schedulerEpoch ?? 0n, activeLease: parent.activeLease ?? 0n, threadTurn: parent.threadTurn ?? 0n, deliverySequence: parent.sequence } : undefined;
+  // Only result-bearing Ask creates a parent/child wait. Tell remains an
+  // independent fire-and-forget mutation even when issued inside a prompt.
+  const parentContinuation = mode === 2 && parent?.threadId ? { threadId: parent.threadId, schedulerEpoch: parent.schedulerEpoch ?? 0n, activeLease: parent.activeLease ?? 0n, threadTurn: parent.threadTurn ?? 0n, deliverySequence: parent.sequence } : undefined;
   return { mode, target, boundedPayload, dedupeId, hopLimit, chainId, sourceMutationSequence, parentContinuation };
 }
 export function buildActorControl(intent: number, target: string, dedupeId: string, chainId: string, sourceMutationSequence: bigint, hopLimit = 2) {

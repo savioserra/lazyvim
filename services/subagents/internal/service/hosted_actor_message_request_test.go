@@ -234,6 +234,19 @@ func TestHostedNestedAskDurablyResumesExactParentThread(t *testing.T) {
 		t.Fatalf("child terminal ack rejected: %#v", childAck)
 	}
 
+	// Rotate the bridge connection after the child terminal commit but before
+	// observing the parent continuation. The durable AgentActor wait, not the
+	// transient bridge handle, owns continuation recovery.
+	shutdown := request(t, path, parent.envelope(&subagentsv1.Envelope_BridgeLifecycleRequest{BridgeLifecycleRequest: &subagentsv1.BridgeLifecycleRequest{AgentId: "nested-parent", RuntimeId: parent.runtimeID, Incarnation: 1, Event: subagentsv1.BridgeLifecycleRequest_EVENT_SESSION_SHUTDOWN}}, "parent-session-shutdown", parent.handle, parent.fence)).GetBridgeLifecycleResponse()
+	if shutdown == nil || !shutdown.Accepted {
+		t.Fatalf("parent fenced bridge shutdown failed: %#v", shutdown)
+	}
+	reconnected := request(t, path, parent.envelope(&subagentsv1.Envelope_BridgeConnectRequest{BridgeConnectRequest: &subagentsv1.BridgeConnectRequest{AgentId: "nested-parent", RuntimeId: parent.runtimeID, Incarnation: 1, PiSessionId: "pi-nested-parent-reconnected", LastAckedSequence: parentDelivery.Sequence}}, "parent-reconnect", "", 0)).GetBridgeConnectResponse()
+	if reconnected == nil || !reconnected.Accepted || reconnected.AgentHandle == "" || reconnected.Fence == 0 {
+		t.Fatalf("parent bridge reconnect failed: %#v", reconnected)
+	}
+	parent.handle, parent.fence, parent.piSession = reconnected.AgentHandle, reconnected.Fence, "pi-nested-parent-reconnected"
+
 	resumed := pollPrompt(parent, "nested-parent", parentDelivery.Sequence)
 	if !strings.Contains(string(resumed.BoundedPayload), "EXACT_CHILD_RESULT") {
 		t.Fatalf("parent continuation omitted exact child result: %q", resumed.BoundedPayload)

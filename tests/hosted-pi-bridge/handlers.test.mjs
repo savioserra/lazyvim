@@ -142,8 +142,9 @@ test("actual registered command and tool callbacks invoke every hosted operation
 });
 
 test("protobuf request builders preserve typed modes, fences inputs, ACK outcomes and no client authority", () => {
-  const tell = buildActorMessage(1, "target", "hello", "dedupe", "chain", 41n); assert.equal(tell.mode, 1); assert.equal(tell.target, "target"); assert.equal(tell.hopLimit, 8); assert.equal(tell.sourceMutationSequence, 41n); assert.equal("sourceAgentId" in tell, false); assert.equal("requiredCapability" in tell, false); assert.equal(tell.parentContinuation, undefined);
-  const childAsk = buildActorMessage(2, "target", "hello", "dedupe", "chain", 43n, 7, { sequence: 99n, dedupeId: "parent-dedupe", kind: 4, threadId: "parent-thread", schedulerEpoch: 3n, activeLease: 4n, threadTurn: 5n }); assert.deepEqual(childAsk.parentContinuation, { threadId: "parent-thread", schedulerEpoch: 3n, activeLease: 4n, threadTurn: 5n, deliverySequence: 99n });
+  const parent = { sequence: 99n, dedupeId: "parent-dedupe", kind: 4, threadId: "parent-thread", schedulerEpoch: 3n, activeLease: 4n, threadTurn: 5n };
+  const tell = buildActorMessage(1, "target", "hello", "dedupe", "chain", 41n, 7, parent); assert.equal(tell.mode, 1); assert.equal(tell.target, "target"); assert.equal(tell.hopLimit, 7); assert.equal(tell.sourceMutationSequence, 41n); assert.equal("sourceAgentId" in tell, false); assert.equal("requiredCapability" in tell, false); assert.equal(tell.parentContinuation, undefined);
+  const childAsk = buildActorMessage(2, "target", "hello", "dedupe", "chain", 43n, 7, parent); assert.deepEqual(childAsk.parentContinuation, { threadId: "parent-thread", schedulerEpoch: 3n, activeLease: 4n, threadTurn: 5n, deliverySequence: 99n });
   const control = buildActorControl(1, "target", "control-dedupe", "control-chain", 42n); assert.equal(control.intent, 1); assert.equal(control.hopLimit, 2); assert.equal(control.sourceMutationSequence, 42n);
   const identity = { runtimeId: "runtime-9", incarnation: 2n, piSessionId: "pi-9" };
   const ackable = { sequence: 9n, dedupeId: "d", kind: 1, sourceScope: "scope-key", completionKey: "completion-key" };
