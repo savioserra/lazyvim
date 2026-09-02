@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 03:03'
-updated_date: '2026-09-02 06:47'
+updated_date: '2026-09-02 06:48'
 labels: []
 dependencies: []
 references:
@@ -100,4 +100,6 @@ ASAP correction implemented on main: actorReplyBroker now uses a bounded blockin
 Deployed commit 9b4fc95 after full source chezmoi apply/sync. User explicitly requested full session restart: exactly stopped all six hosted crew actors, applied source, rebuilt daemon, restarted systemd-user service, recreated all six retained logical actors/runtimes from their worktrees, and rebuilt the seven-pane crew view while preserving the PM pane. Deployed binary contains actorReplyBroker.scheduleReconcile and service is active. Fresh live automatic completion proof is still required before finalization.
 
 First post-deploy live evidence: pre-restart durable Ask 94 automatically arrived after daemon and all hosted runtime reincarnations, without a reminder, manual request, or pane inspection. This proves the new broker reconciliation recovers a completion whose topic wake/presentation was previously stalled across restart. It was presented once. Fresh post-deploy probes 95-97 remain pending for consecutive acceptance.
+
+Fresh post-deploy consecutive acceptance passed: Ask 95, 96, and 97 were admitted together and automatically presented exact NOTIFY_RECONCILE_1/2/3 results without another operator reminder, pane inspection, or durable-state read. Delivery order reflected completion order (97, 96, 95), each exactly once. Combined with pre-restart recovery 94 and focused lost-topic regression, reply reconciliation is live. TASK-19 remains open only for its broader canonical hosted-to-source Ask/Tell, stale-fence, and intent-specific presentation ACs.
 <!-- SECTION:NOTES:END -->
