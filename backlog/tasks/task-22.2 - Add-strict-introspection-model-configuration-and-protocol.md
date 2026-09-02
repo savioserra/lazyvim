@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 06:10'
-updated_date: '2026-09-02 07:21'
+updated_date: '2026-09-02 07:26'
 labels: []
 dependencies:
   - TASK-22.1
@@ -40,4 +40,6 @@ Add the exact private introspection model setting and typed bounded daemon/hoste
 Implemented first focused slice on main: required exact provider/model validation in the production owner-private config loader; managed template pins openai-codex/gpt-5.6-sol; Lua managed-config verification enforces the same bounded shape; daemon service config receives the value without adding it to hosted worker runtime launch arguments. Added accepted-corpus and malformed/missing/bare/control/extra-slash coverage. Config/cmd race tests and capability tests pass.
 
 Implemented second focused slice: additive protobuf thread_id/scheduler_epoch/active_lease/thread_turn on deliveries and settlement evidence on ACKs; hosted bridge echoes daemon thread identity and commits a bridge-local monotonic run counter with exact agent_end/agent_settled evidence; legacy wire frames remain decodable. Added daemon-local typed attempt/outcome contracts and an injectable Pi RPC runner with exact model, no session/tools/extensions/skills/templates/project trust, proper long-lived stdin through agent_settled, bounded RPC transport, strict duplicate/unknown/missing/trailing-key rejection, state/confidence/class validation, policy redaction, timeout, and process cleanup. Full service race/vet/codegen/protocol and 28 hosted handler tests pass. Extra root actor/bridge tests pass except known environment-only tmux smoke renderer launch and a direct Node TypeScript-enum loader invocation; canonical tsx protocol/bridge suites pass.
+
+Architect readiness Ask 99 arrived after implementation and its five ambiguities were reconciled: actual bounded RPC JSONL is used; exact isolation includes no-session/no-tools/no-extensions/no-skills/no-prompt-templates/no-approve; active lease is monotonic uint64; managed model is openai-codex/gpt-5.6-sol; settlement rides the exact delivery ACK. Follow-up hardening strips inherited actor/bridge/tmux/SSH/provider-key environment while preserving owner Pi HOME/config/auth-file authority, and adds BOM/invalid-UTF8/oversize/credential-path coverage plus capability/service documentation.
 <!-- SECTION:NOTES:END -->

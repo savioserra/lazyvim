@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
@@ -89,6 +90,7 @@ func (r *PiRPCIntrospectionRunner) Run(parent context.Context, input application
 		"--system-prompt", introspectionSystemPrompt,
 	}
 	cmd := r.command(ctx, r.Config.PiBinary, args...)
+	cmd.Env = introspectionEnvironment(os.Environ())
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return application.ThreadIntrospectionResult{}, fmt.Errorf("%w: stdin pipe", ErrIntrospectionUnavailable)
@@ -130,6 +132,26 @@ func (r *PiRPCIntrospectionRunner) Run(parent context.Context, input application
 		return application.ThreadIntrospectionResult{}, err
 	}
 	return ParseThreadIntrospectionResult([]byte(assistant))
+}
+
+func introspectionEnvironment(environment []string) []string {
+	allowed := map[string]struct{}{
+		"HOME": {}, "PATH": {}, "TMPDIR": {}, "LANG": {}, "LC_ALL": {},
+		"XDG_CONFIG_HOME": {}, "XDG_DATA_HOME": {}, "XDG_STATE_HOME": {}, "XDG_CACHE_HOME": {},
+		"PI_CODING_AGENT_DIR": {}, "PI_PACKAGE_DIR": {}, "PI_OFFLINE": {}, "PI_SKIP_VERSION_CHECK": {}, "PI_TELEMETRY": {}, "PI_CACHE_RETENTION": {},
+		"HTTP_PROXY": {}, "HTTPS_PROXY": {}, "NO_PROXY": {}, "SSL_CERT_FILE": {}, "SSL_CERT_DIR": {},
+	}
+	result := make([]string, 0, len(allowed))
+	for _, entry := range environment {
+		key, _, found := strings.Cut(entry, "=")
+		if !found {
+			continue
+		}
+		if _, ok := allowed[key]; ok {
+			result = append(result, entry)
+		}
+	}
+	return result
 }
 
 const introspectionSystemPrompt = `You are an isolated task-thread classifier. You have no tools and must not request or reveal credentials, paths, host identity, runtime identity, process identity, or prompt delimiters. Evaluate only the JSON task_prompt, worker_result, and checkpoint supplied by the user. Return exactly one JSON object with all fields: state, confidence, reason_class, checkpoint, next_prompt, wait_condition, completion_summary. Allowed states are completed, continue, waiting, blocked. Use completed only with high confidence when worker_result itself contains the requested deliverable; an acknowledgement, sent-elsewhere pointer, or promise is not completion. Emit no markdown or surrounding text.`

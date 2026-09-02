@@ -28,9 +28,12 @@ func TestParseThreadIntrospectionResultStrictSchema(t *testing.T) {
 		{name: "missing", value: `{"state":"completed","confidence":"high","reason_class":"done","checkpoint":"x","next_prompt":"","wait_condition":""}`},
 		{name: "trailing", value: validCompletedIntrospection + ` {}`},
 		{name: "markdown", value: "```json\n" + validCompletedIntrospection + "\n```"},
+		{name: "bom", value: "\ufeff" + validCompletedIntrospection},
+		{name: "oversize checkpoint", value: strings.Replace(validCompletedIntrospection, "deliverable verified", strings.Repeat("x", application.MaxThreadCheckpointBytes+1), 1)},
 		{name: "low terminal", value: strings.Replace(validCompletedIntrospection, `"confidence":"high"`, `"confidence":"low"`, 1)},
 		{name: "wrong terminal class", value: strings.Replace(validCompletedIntrospection, `"reason_class":"done"`, `"reason_class":"needs_more_work"`, 1)},
 		{name: "policy runtime identity", value: strings.Replace(validCompletedIntrospection, "deliverable verified", "runtime_id was verified", 1)},
+		{name: "policy credential path", value: strings.Replace(validCompletedIntrospection, "deliverable verified", "credential at /home/operator/auth.json", 1)},
 		{name: "policy host", value: strings.Replace(validCompletedIntrospection, "deliverable verified", "host 127.0.0.1 verified", 1)},
 		{name: "control", value: strings.Replace(validCompletedIntrospection, "deliverable verified", `bad\u0001text`, 1)},
 	}
@@ -45,11 +48,19 @@ func TestParseThreadIntrospectionResultStrictSchema(t *testing.T) {
 			}
 		})
 	}
+	invalidUTF8 := append([]byte(nil), []byte(validCompletedIntrospection)...)
+	invalidUTF8[len(invalidUTF8)/2] = 0xff
+	if _, err := ParseThreadIntrospectionResult(invalidUTF8); !errors.Is(err, ErrIntrospectionInvalidOutput) {
+		t.Fatalf("invalid UTF-8 was accepted: %v", err)
+	}
 }
 
 func TestIntrospectionRunnerUsesIsolatedExactModelRPC(t *testing.T) {
+	t.Setenv("WS_SUBAGENTS_CREDENTIAL_FILE", "/run/user/credential.json")
+	t.Setenv("OPENAI_API_KEY", "must-not-be-inherited")
 	var gotBinary string
 	var gotArgs []string
+	var spawned *exec.Cmd
 	runner, err := NewIntrospectionRunner(IntrospectionConfig{PiBinary: "/managed/pi", Model: "openai-codex/gpt-5.6-sol", Timeout: time.Second})
 	if err != nil {
 		t.Fatal(err)
@@ -61,7 +72,8 @@ func TestIntrospectionRunnerUsesIsolatedExactModelRPC(t *testing.T) {
 			`{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":` + shellSingleQuoteJSON(validCompletedIntrospection) + `}],"stopReason":"stop"}}` + "\n" +
 			`{"type":"agent_end","messages":[],"willRetry":false}` + "\n" +
 			`{"type":"agent_settled"}` + "\n"
-		return exec.CommandContext(ctx, "/bin/sh", "-c", "IFS= read -r prompt; test -n \"$prompt\"; printf %s "+shellQuote(output)+"; cat >/dev/null")
+		spawned = exec.CommandContext(ctx, "/bin/sh", "-c", "IFS= read -r prompt; test -n \"$prompt\"; printf %s "+shellQuote(output)+"; cat >/dev/null")
+		return spawned
 	}
 	result, err := runner.Run(context.Background(), application.ThreadIntrospectionInput{TaskPrompt: "implement thread scheduler", WorkerResult: "implemented and tested", Checkpoint: "ready"})
 	if err != nil {
@@ -73,6 +85,14 @@ func TestIntrospectionRunnerUsesIsolatedExactModelRPC(t *testing.T) {
 	for _, required := range []string{"--mode", "rpc", "--model", "openai-codex/gpt-5.6-sol", "--no-session", "--no-tools", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-approve", "--system-prompt"} {
 		if !slices.Contains(gotArgs, required) {
 			t.Fatalf("isolated runner omitted %q: %q", required, gotArgs)
+		}
+	}
+	if spawned == nil || !slices.ContainsFunc(spawned.Env, func(value string) bool { return strings.HasPrefix(value, "HOME=") }) {
+		t.Fatalf("runner did not preserve owner Pi home: %q", spawned.Env)
+	}
+	for _, value := range spawned.Env {
+		if strings.HasPrefix(value, "WS_SUBAGENTS_") || strings.HasPrefix(value, "OPENAI_API_KEY=") || strings.HasPrefix(value, "TMUX=") || strings.HasPrefix(value, "SSH_AUTH_SOCK=") {
+			t.Fatalf("runner inherited non-Pi credential/control environment: %q", value)
 		}
 	}
 }
