@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 03:03'
-updated_date: '2026-09-02 16:05'
+updated_date: '2026-09-02 16:28'
 labels: []
 dependencies: []
 references:
@@ -128,4 +128,6 @@ Urgent presentation-ACK fix: added protobuf FrontendCompletionAckRequest/Respons
 Live actor1→actor2 E2E exposed a daemon crash at 12:33:48: async bridge push raced connection teardown and sent on a closed per-connection writer channel (Service.pushBridgeToSession, service.go:1771). Fixed by making the connection closed signal own writer-loop shutdown and deliberately leaving the connection-scoped sender channel open, so stale bounded push continuations select closed rather than panicking the process. Focused service race suite and vet pass; fresh post-deploy relay E2E remains required.
 
 Fresh relay E2E then exposed zero bridge-run-counter ACKs: prompt injection could receive a stale agent_settled from the prior run before its follow-up agent_start, causing PromptTaskCoordinator to finalize with run counter 0 and fail exact thread ACK identity forever. Coordinator now binds pending work only to the first post-injection agent_start, records agent_end only for that run, and ignores stale settlement until the correlated run ends. Added coarse payload-free ACK mismatch-class diagnostics and integration coverage for start/end/settled ordering. Hosted bridge 43/43 passes; fresh live relay remains required after runtime reincarnation.
+
+Cold-start probe still produced run-counter zero because this hosted Pi surface can omit agent_start for injected follow-up work. Added a strict fallback: agent_end may allocate/bind the run counter only when its user-message set contains the exact injected prompt text; unrelated prior runs and stale settlement remain unable to claim the pending thread. Added negative unrelated-run and positive omitted-agent_start coverage; hosted bridge 44/44 passes.
 <!-- SECTION:NOTES:END -->

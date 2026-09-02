@@ -259,7 +259,7 @@ export function bridgeErrorClass(error: unknown): string {
 // while the agent is streaming queues cleanly instead of failing inside the
 // Pi runtime, where the rejection is unobservable from the extension.
 export class PromptTaskCoordinator<TFence> {
-  private pending?: { delivery: PromptDelivery; fence: TFence };
+  private pending?: { delivery: PromptDelivery; fence: TFence; injectedText: string };
   private outcome?: { delivered: boolean; answer: string; reason: string; settlement: ThreadSettlementEvidence };
   private lastRunMessages: unknown[] = [];
   private bridgeRunCounter = 0n;
@@ -284,7 +284,7 @@ export class PromptTaskCoordinator<TFence> {
     if (delivery.hopLimit < 1 || BigInt(Date.now()) > delivery.deadlineUnixMillis) throw new Error("prompt hop budget or deadline expired");
     const text = new TextDecoder("utf-8", { fatal: true }).decode(delivery.boundedPayload);
     if (!text) throw new Error("prompt is empty");
-    this.pending = { delivery, fence };
+    this.pending = { delivery, fence, injectedText: text };
     this.lastRunMessages = [];
     this.pendingRunCounter = 0n;
     this.lastRunCounter = 0n;
@@ -303,7 +303,17 @@ export class PromptTaskCoordinator<TFence> {
     if (this.pending && !this.outcome && this.pendingRunCounter === 0n) this.pendingRunCounter = this.activeRunCounter;
   }
   agentEnd(messages: unknown[]) {
-    if (this.pending && !this.outcome && this.pendingRunCounter > 0n && this.pendingRunCounter === this.activeRunCounter) {
+    if (!this.pending || this.outcome) return;
+    // Some hosted Pi surfaces omit agent_start for a follow-up run while still
+    // emitting agent_end/agent_settled. Bind that run only when its message set
+    // contains the exact injected user text; an unrelated prior run cannot
+    // claim the pending thread merely because it ended after injection.
+    if (this.pendingRunCounter === 0n && runContainsInjectedPrompt(messages, this.pending.injectedText)) {
+      this.bridgeRunCounter += 1n;
+      this.activeRunCounter = this.bridgeRunCounter;
+      this.pendingRunCounter = this.activeRunCounter;
+    }
+    if (this.pendingRunCounter > 0n && this.pendingRunCounter === this.activeRunCounter) {
       this.lastRunMessages = messages ?? [];
       this.lastRunCounter = this.activeRunCounter;
     }
@@ -330,6 +340,17 @@ export class PromptTaskCoordinator<TFence> {
   private async finish(delivered:boolean,answer:string,reason:string,settlement:ThreadSettlementEvidence={bridgeRunCounter:0n,agentEndObserved:false,agentSettledObserved:false}){if(!this.pending)return;this.outcome={delivered,answer,reason,settlement};this.lifecycle?.({stage:delivered?"completed":"failed",sequence:this.pending.delivery.sequence,dedupeId:this.pending.delivery.dedupeId,detail:reason?`${reason} (class ${bridgeErrorClass(reason)})`:"assistant answer correlated"});await this.flush();}
   private async flush(){const pending=this.pending,outcome=this.outcome;if(!pending||!outcome)return;await this.acknowledge(pending,outcome.delivered,outcome.answer,outcome.reason,outcome.settlement);if(this.pending===pending){this.pending=undefined;this.outcome=undefined;this.lastRunMessages=[];this.pendingRunCounter=0n;this.lastRunCounter=0n;}}
 }
+export function runContainsInjectedPrompt(messages: unknown[], injectedText: string): boolean {
+  if (!injectedText) return false;
+  return messages.some((value) => {
+    const message = value as { role?: string; content?: unknown };
+    if (message?.role !== "user") return false;
+    if (typeof message.content === "string") return message.content.includes(injectedText);
+    if (!Array.isArray(message.content)) return false;
+    return message.content.some((part) => Boolean(part) && typeof part === "object" && (part as any).type === "text" && typeof (part as any).text === "string" && (part as any).text.includes(injectedText));
+  });
+}
+
 export function boundedAssistantAnswer(messages: unknown[]): string {
   for (let index=messages.length-1;index>=0;index--){const message=messages[index] as {role?:string;content?:unknown};if(message?.role!=="assistant")continue;let text="";if(typeof message.content==="string")text=message.content;else if(Array.isArray(message.content))text=message.content.filter((part):part is {type:string;text:string}=>Boolean(part)&&typeof part==="object"&&(part as any).type==="text"&&typeof (part as any).text==="string").map((part)=>part.text).join("\n");text=text.trim();while(text&&new TextEncoder().encode(text).byteLength>16*1024)text=text.slice(0,Math.floor(text.length*0.9));return text;}return "";
 }

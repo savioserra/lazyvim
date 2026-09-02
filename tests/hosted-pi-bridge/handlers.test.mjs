@@ -420,6 +420,19 @@ test("prompt delivery injects followUp, correlates the settled answer, and ignor
   for (const event of events) { assert.equal(typeof event.sequence,"bigint"); assert.ok(!/[\r\n\t]/.test(event.detail)); }
 });
 
+test("prompt completion binds an omitted agent_start only to the exact injected run", async () => {
+  const acknowledgements=[];
+  const coordinator=new PromptTaskCoordinator(async()=>{},async(_pending,delivered,answer,_reason,settlement)=>acknowledgements.push({delivered,answer,settlement}));
+  const delivery={dedupeId:"d-no-start",boundedPayload:new TextEncoder().encode("exact injected task"),hopLimit:4,deadlineUnixMillis:BigInt(Date.now()+1000),chainId:"chain",sequence:4n};
+  await coordinator.deliver(delivery,{handle:"h",fence:4n});
+  coordinator.agentEnd([{role:"user",content:"unrelated prior run"},{role:"assistant",content:"wrong"}]);
+  await coordinator.settled();
+  assert.equal(acknowledgements.length,0,"unrelated run claimed pending prompt");
+  coordinator.agentEnd([{role:"user",content:[{type:"text",text:"exact injected task"}]},{role:"assistant",content:"correlated answer"}]);
+  await coordinator.settled();
+  assert.deepEqual(acknowledgements,[{delivered:true,answer:"correlated answer",settlement:{bridgeRunCounter:1n,agentEndObserved:true,agentSettledObserved:true}}]);
+});
+
 test("prompt completion correlates the answer only when the session settles", async () => {
   const acknowledgements=[];
   const coordinator=new PromptTaskCoordinator(async()=>{},async(_pending,delivered,answer,reason,settlement)=>acknowledgements.push({delivered,answer,reason,settlement}));
