@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 02:56'
-updated_date: '2026-09-02 02:58'
+updated_date: '2026-09-02 03:02'
 labels: []
 dependencies:
   - TASK-6
@@ -46,4 +46,6 @@ Replace the actor-client's remaining legacy communication renderer path with pro
 
 <!-- SECTION:NOTES:BEGIN -->
 Initial PM audit after TASK-6: XState projection modules and widgets exist, but production renderer registration in actor-client/index.ts still calls the hosted-pi-bridge legacy renderCommunicationCard helper; the new renderProjectionConversationCard/renderActorStatusWidget are not the production conversation path. TASK-1.1 closes this integration gap. UX and architecture audits were assigned through owned actor sequences 34 and 35 before the sole writer starts.
+
+Architecture audit sequence 35 returned the frozen production integration contract. Root projection remains the only state transaction; Pi renderers consume a schema-versioned actor-client render envelope and prefer renderSnapshot.card, with a read-only legacy CommunicationView adapter for persisted sessions. Add projections/{legacy,render-envelope}.ts and widgets/tool-renderers.ts; wire index.ts/handlers.ts; derive pending status from selectors; replace fixed width 100 with width-aware render/invalidate; preserve model correlation content; restore pending then terminal so terminal wins; never append on width/theme changes; add production adapter, migration, tool, width, theme, restore, replay, collision, and redaction tests. UX sequence 34 confirmed it returned its audit but omitted the matrix payload; the approved ACTOR-UX-DESIGN-SYSTEM remains the exact wording and acceptance authority, so implementation need not wait on another UX round.
 <!-- SECTION:NOTES:END -->
