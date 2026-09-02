@@ -1,10 +1,13 @@
-import type { ConversationCard, PendingInteraction, PeerMetadata } from "./types.ts";
+import type { ActorActivityFrame, ConversationCard, PendingInteraction, PeerMetadata } from "./types.ts";
 export type ActorClientProjectionEvent =
   | { type: "SESSION.START"; generation: number }
   | { type: "SESSION.RESET"; generation: number }
   | { type: "TRANSPORT.CONNECTING" | "TRANSPORT.AUTHENTICATING" | "TRANSPORT.SUBSCRIBING_ROSTER" | "TRANSPORT.CONNECTED" | "TRANSPORT.RECONNECTING" | "TRANSPORT.CLOSING" | "TRANSPORT.DISCONNECTED" }
   | { type: "TRANSPORT.DEGRADED"; reason: string }
   | { type: "ROSTER.FRAME"; frame: any }
+  | { type: "ACTIVITY.FRAME"; frame: ActorActivityFrame | any }
+  | { type: "ACTIVITY.CLEAR"; agentId?: string; threadId?: string; epoch?: bigint; sequence?: bigint }
+  | { type: "ACTIVITY.GAP"; reason: string }
   | { type: "TASK.ADMITTED"; pending: PendingInteraction }
   | { type: "TASK.BACKPRESSURED"; key: string; target?: PeerMetadata | string; reason: string }
   | { type: "TASK.COMPLETED"; key: string; reply: string; completed: boolean; reason?: string; source?: PeerMetadata; target?: PeerMetadata | string; kind?: string; requestId?: string; dedupeId?: string; chainId?: string; sourceMutationSequence?: string }

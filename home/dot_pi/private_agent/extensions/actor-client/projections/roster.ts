@@ -29,10 +29,12 @@ export function reduceRoster(state: RosterProjection, event: RosterEvent): Roste
 }
 
 export function renderRosterStatus(connection: string, roster: RosterProjection, max = 120): { line?: string; overflow: number } {
-  if (connection === "connecting" || connection === "authenticating" || connection === "subscribingRoster") return { line: "actors connecting", overflow: 0 };
+  if (connection === "connecting" || connection === "authenticating") return { line: "actors connecting", overflow: 0 };
+  if (connection === "subscribingRoster") return { line: "actors subscribing", overflow: 0 };
   if (connection === "reconnecting") return { line: "actors reconnecting", overflow: 0 };
   if (connection === "degraded" || roster.degradedReason) return { line: `actors degraded${roster.degradedReason ? ` · ${roster.degradedReason}` : ""}`.slice(0, max), overflow: 0 };
-  if (connection !== "connected") return { line: undefined, overflow: 0 };
+  if (connection === "closing") return { line: "actors closing", overflow: 0 };
+  if (connection !== "connected") return { line: "actors disconnected", overflow: 0 };
   const parts = [...roster.agents.values()].sort((a, b) => a.agentId.localeCompare(b.agentId)).map((item) => `${item.displayName}:${item.lifecycle}`);
   let overflow = 0;
   let output = parts.length ? `actors ${parts.join(" ")}` : "actors none";
@@ -51,8 +53,8 @@ export function rosterItemFromFrame(frame: any): ActorRosterItem | undefined {
 
 function rosterLifecycle(status: unknown, agent: any): string {
   const value = sanitizeLabel(status, 24);
-  if (value) return `[redacted] ${value}`;
+  if (value) return value;
   const state = Number(agent?.hostedPiRuntime?.state ?? 0);
   const names: Record<number, string> = { 1: "inactive", 2: "starting", 3: "ready", 4: "degraded", 5: "stopping", 6: "stopped" };
-  return `[redacted] ${names[state] ?? "registered"}`;
+  return names[state] ?? "registered";
 }

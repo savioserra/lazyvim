@@ -1,4 +1,5 @@
 import { assign, setup } from "xstate";
+import { initialActivityProjection, reduceActivity } from "./activity.ts";
 import { incomingCard, outgoingCard, completeAsk } from "./conversation.ts";
 import { digestPresentation, rememberCompletion } from "./dedupe.ts";
 import type { ActorClientProjectionEvent } from "./events.ts";
@@ -9,14 +10,14 @@ import { sanitizeText } from "./sanitize.ts";
 import type { ProjectionContext } from "./types.ts";
 
 export function initialProjectionContext(): ProjectionContext {
-  const context: ProjectionContext = { sessionGeneration: 0, connection: "disconnected", roster: initialRosterProjection(), pending: new Map(), cards: new Map(), completions: new Map(), presented: new Set(), snapshot: { connection: "disconnected", cards: [], width: 80, overflow: 0, themeRevision: 0 }, maxCards: 512 };
+  const context: ProjectionContext = { sessionGeneration: 0, connection: "disconnected", roster: initialRosterProjection(), activity: initialActivityProjection(), pending: new Map(), cards: new Map(), completions: new Map(), presented: new Set(), snapshot: { connection: "disconnected", cards: [], width: 80, overflow: 0, themeRevision: 0, actorStatus: { connection: "disconnected", rows: [], overflow: 0, width: 80, themeRevision: 0, revision: 0 } }, maxCards: 512, revision: 0 };
   context.snapshot = projectSnapshot(context, 80, 0);
   return context;
 }
 
 export function reduceProjection(context: ProjectionContext, event: ActorClientProjectionEvent): ProjectionContext {
   let next: ProjectionContext = context;
-  const withSnapshot = (value: ProjectionContext) => ({ ...value, snapshot: projectSnapshot(value) });
+  const withSnapshot = (value: ProjectionContext) => { const versioned = { ...value, revision: value.revision + 1 }; return { ...versioned, snapshot: projectSnapshot(versioned) }; };
   switch (event.type) {
     case "SESSION.START": return withSnapshot({ ...initialProjectionContext(), sessionGeneration: event.generation });
     case "SESSION.RESET": return withSnapshot({ ...initialProjectionContext(), sessionGeneration: event.generation });
@@ -24,11 +25,19 @@ export function reduceProjection(context: ProjectionContext, event: ActorClientP
     case "TRANSPORT.AUTHENTICATING": return withSnapshot({ ...context, connection: "authenticating" });
     case "TRANSPORT.SUBSCRIBING_ROSTER": return withSnapshot({ ...context, connection: "subscribingRoster" });
     case "TRANSPORT.CONNECTED": return withSnapshot({ ...context, connection: "connected" });
-    case "TRANSPORT.RECONNECTING": return withSnapshot({ ...context, connection: "reconnecting" });
+    case "TRANSPORT.RECONNECTING": return withSnapshot({ ...context, connection: "reconnecting", activity: initialActivityProjection() });
     case "TRANSPORT.CLOSING": return withSnapshot({ ...context, connection: "closing" });
     case "TRANSPORT.DISCONNECTED": return withSnapshot({ ...context, connection: "disconnected" });
     case "TRANSPORT.DEGRADED": return withSnapshot({ ...context, connection: "degraded", roster: { ...context.roster, degradedReason: sanitizeText(event.reason, 120) } });
-    case "ROSTER.FRAME": return withSnapshot({ ...context, connection: "connected", roster: reduceRoster(context.roster, event) });
+    case "ROSTER.FRAME": {
+      const roster = reduceRoster(context.roster, event);
+      const accepted = roster.epoch !== context.roster.epoch || roster.sequence !== context.roster.sequence;
+      const activity = accepted && Number(event.frame?.operation) === 2 ? initialActivityProjection() : context.activity;
+      return withSnapshot({ ...context, connection: accepted ? "connected" : context.connection, roster, activity });
+    }
+    case "ACTIVITY.FRAME": return withSnapshot({ ...context, activity: reduceActivity(context.activity, event) });
+    case "ACTIVITY.CLEAR": return withSnapshot({ ...context, activity: reduceActivity(context.activity, event) });
+    case "ACTIVITY.GAP": return withSnapshot({ ...context, connection: "degraded", activity: reduceActivity(context.activity, event) });
     case "TASK.ADMITTED": return withSnapshot({ ...context, pending: restorePending(context.pending, event.pending) });
     case "TASK.BACKPRESSURED": {
       const cards = new Map(context.cards); cards.set(event.key, outgoingCard({ key: event.key, target: event.target, body: "", accepted: false, mode: "ask", reason: event.reason }));

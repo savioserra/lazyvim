@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { publicAgentView, registerClientHandlers } from "../../home/dot_pi/private_agent/extensions/actor-client/handlers.ts";
-import { ACTOR_ASK_COMPLETION_TIMEOUT, ActorClientConversationLog, actorAskCompletionContent, actorReplyFramePresentationIntent, initialActorClientRosterState, reduceActorClientRoster, validateRemoteProject } from "../../home/dot_pi/private_agent/extensions/actor-client/index.ts";
+import { ACTOR_ASK_COMPLETION_TIMEOUT, ActorClientConversationLog, actorAskCompletionContent, actorReplyFramePresentationIntent, initialActorClientRosterState, reduceActorClientRoster, renderActorClientStatus, validateRemoteProject } from "../../home/dot_pi/private_agent/extensions/actor-client/index.ts";
 import { outgoingExchange } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/communication-ui.ts";
 
 test("remote project validation is syntax-only and does not require a local path", () => {
@@ -16,15 +16,24 @@ test("actor-client public views use display metadata and suppress raw runtime in
   for (const forbidden of ["raw-runtime","tmux","panePid","123","hosted-raw","attachTarget","sessionId","handle","fence"]) assert.doesNotMatch(encoded,new RegExp(forbidden,"i"));
 });
 
-test("actor-client roster reducer fences frames and renders redacted lifecycle", () => {
+test("actor-client roster reducer fences frames and renders lifecycle without redaction prefix", () => {
   let state = initialActorClientRosterState();
   state = reduceActorClientRoster(state, { type: "CONNECTED" });
   state = reduceActorClientRoster(state, { type: "ROSTER_FRAME", frame: { operation: 2, epoch: 10n, sequence: 1n } });
   state = reduceActorClientRoster(state, { type: "ROSTER_FRAME", frame: { operation: 3, epoch: 10n, sequence: 2n, status: "ready\n\u001b[31m", agentId: "alpha", agent: { agentId: "alpha", displayName: "Alpha\nReviewer", role: "QA", lifecycleRevision: 7n } } });
-  assert.match(state.render, /^actors Alpha Reviewer:\[redacted\] ready/);
+  assert.match(state.render, /^actors Alpha Reviewer:ready/);
+  assert.equal(renderActorClientStatus(state), state.render);
+  assert.equal(state.projection.snapshot.actorStatus.rows[0].lifecycle, "ready");
   assert.doesNotMatch(state.render, /\u001b|working|idle|tmux|pid/i);
-  const fenced = reduceActorClientRoster(state, { type: "ROSTER_FRAME", frame: { operation: 4, epoch: 9n, sequence: 99n, agentId: "alpha" } });
+  const subscribing = reduceActorClientRoster(state, { type: "SUBSCRIBING_ROSTER" });
+  assert.equal(subscribing.render, "actors subscribing");
+  assert.equal(subscribing.projection.snapshot.actorStatus.rows[0].lifecycle, "subscribing");
+  const fenced = reduceActorClientRoster(subscribing, { type: "ROSTER_FRAME", frame: { operation: 4, epoch: 9n, sequence: 99n, agentId: "alpha" } });
   assert.equal(fenced.agents.has("alpha"), true);
+  assert.equal(fenced.render, "actors subscribing");
+  state = reduceActorClientRoster(state, { type: "RECONNECTING" });
+  assert.equal(state.render, "actors reconnecting");
+  assert.equal(state.projection.snapshot.actorStatus.rows[0].lifecycle, "reconnecting");
   state = reduceActorClientRoster(state, { type: "ROSTER_FRAME", frame: { operation: 4, epoch: 10n, sequence: 3n, agentId: "alpha" } });
   assert.equal(state.agents.size, 0);
 });
