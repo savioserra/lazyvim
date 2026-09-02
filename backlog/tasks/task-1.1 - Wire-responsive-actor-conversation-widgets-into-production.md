@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 02:56'
-updated_date: '2026-09-02 04:28'
+updated_date: '2026-09-02 04:33'
 labels: []
 dependencies:
   - TASK-6
@@ -73,4 +73,6 @@ Fresh deployment reset completed with new service/frontend files applied and a r
 Live roadmap audit found the hosted `actor_tell` tool and `/actor-tell` command still call message mode 2 (ASK), despite their Tell labels. Synthetic projection tests do not prove production Tell semantics. AC 2 and 4 are reopened until true Tell and distinct Ask tools/cards pass live E2E.
 
 Writer sequence 50 integrated: hosted /actor-tell and actor_tell now use protocol TELL; distinct /actor-ask and actor_ask use ASK; UI/model wording separates delivered from replied while preserving correlation. Writer gates passed 78 combined actor/bridge tests, service codegen/race/vet/protocol, capabilities, diff, and scratch apply. Task remains open for independent review and live matrix.
+
+Independent review sequence 59 verified Tell/Ask wire modes, regular-client tool semantics, three-consecutive completion regression, stale-fence retry evidence, canonical routing, dynamic metadata authority, and core redaction. One Medium blocker remains: hosted communication-ui renderToolResult fast path maps a pending actor_ask CommunicationView to ✓ delivered. It must render admitted/waiting, and production-path tests must cover the CommunicationView branch.
 <!-- SECTION:NOTES:END -->
