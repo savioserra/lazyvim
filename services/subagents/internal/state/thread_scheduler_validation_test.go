@@ -34,4 +34,30 @@ func TestStoreValidatesThreadSchedulerReferencesAndBounds(t *testing.T) {
 	if err := store.Save(context.Background(), record); err == nil {
 		t.Fatal("thread present in two scheduler sets was accepted")
 	}
+	for name, state := range map[string]application.AgentThreadState{"waiting": application.AgentThreadWaiting, "blocked": application.AgentThreadBlocked} {
+		t.Run(name, func(t *testing.T) {
+			candidate := record
+			candidate.AgentState.Threads = append([]application.DurableAgentThread(nil), record.AgentState.Threads...)
+			candidate.AgentState.Threads[0].State = state
+			candidate.AgentState.ThreadScheduler.Queue = nil
+			candidate.AgentState.ThreadScheduler.Blocked = nil
+			if state == application.AgentThreadWaiting {
+				candidate.AgentState.ThreadScheduler.Waiting = []string{thread.ThreadID}
+			} else {
+				candidate.AgentState.ThreadScheduler.Waiting = nil
+				candidate.AgentState.ThreadScheduler.Blocked = []string{thread.ThreadID}
+			}
+			if err := store.Save(context.Background(), candidate); err != nil {
+				t.Fatalf("valid %s thread rejected: %v", name, err)
+			}
+		})
+	}
+	tombstoned := record
+	tombstoned.AgentState.Threads = nil
+	tombstoned.AgentState.ThreadScheduler.Queue = nil
+	tombstoned.AgentState.ThreadScheduler.Blocked = nil
+	tombstoned.AgentState.ThreadScheduler.Tombstones = []application.DurableThreadTombstone{{ThreadID: thread.ThreadID, State: application.AgentThreadCompleted, CompletionKey: thread.CompletionKey}}
+	if err := store.Save(context.Background(), tombstoned); err != nil {
+		t.Fatalf("valid terminal tombstone rejected: %v", err)
+	}
 }

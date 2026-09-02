@@ -115,15 +115,24 @@ func TestRemoteHostedOrdinaryServicePath(t *testing.T) {
 				if string(completed.BoundedResult) != "unified answer" {
 					t.Fatalf("unified remote ask completion carried the wrong terminal: %#v", completed)
 				}
-				return
+				commitDeadline := time.Now().Add(time.Second)
+				for time.Now().Before(commitDeadline) {
+					records, _ := remote.durableStore.LoadAll(context.Background())
+					for _, record := range records {
+						if record.AgentID != "ui_remote_qa" {
+							continue
+						}
+						for _, tombstone := range record.AgentState.ThreadScheduler.Tombstones {
+							if strings.Contains(tombstone.CompletionKey, ":unified-d:") {
+								return
+							}
+						}
+					}
+					time.Sleep(10 * time.Millisecond)
+				}
+				t.Fatal("source commit did not compact the target thread to a tombstone")
 			}
 			time.Sleep(25 * time.Millisecond)
-		}
-		records, _ := remote.durableStore.LoadAll(context.Background())
-		for _, record := range records {
-			if record.AgentID == "ui_remote_qa" {
-				t.Fatalf("unified remote ask completion never reached the source node: threads=%#v scheduler=%#v pending=%#v", record.AgentState.Threads, record.AgentState.ThreadScheduler, record.AgentState.CompletionTellPending)
-			}
 		}
 		t.Fatal("unified remote ask completion never reached the source node")
 	})

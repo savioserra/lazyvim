@@ -626,6 +626,11 @@ type TargetTaskCommitted struct {
 	TaskID, TargetAgentID string
 }
 
+type ActorTaskCompletionCommitted struct {
+	CompletionKey string
+	ThreadID      string
+}
+
 type ActorTaskCompleted struct {
 	CompletionKey, ThreadID              string
 	OriginalRequestID, DedupeID, ChainID string

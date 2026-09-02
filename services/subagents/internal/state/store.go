@@ -353,7 +353,7 @@ func validateRecord(r application.DurableHostedRecord) error {
 		return errors.New("durable hosted record owner mismatch")
 	}
 	if r.AuthorityBinding.Kind != application.AuthorityBindingHostedOwned {
-		if r.AgentID == "" || len(r.AgentID) > 64 || len(r.AllowedCapabilities) > 16 || len(r.AgentState.Attachments) > 4096 || len(r.AgentState.Revoked) > 4096 || len(r.AgentState.MutationScopes) > 256 || len(r.AgentState.SourceOutbox) > 256 || len(r.AgentState.SourceTaskHistory) > 1024 || len(r.AgentState.SourceMutationReceipts) > 1024 || len(r.AgentState.ReceivedTaskCompletions) > 1024 || len(r.AgentState.TaskCreditReservations) > 256 || len(r.AgentState.AckGapBuffer) > 64 || len(r.AgentState.CommittedAcks) > 64 {
+		if r.AgentID == "" || len(r.AgentID) > 64 || len(r.AllowedCapabilities) > 16 || len(r.AgentState.Attachments) > 4096 || len(r.AgentState.Revoked) > 4096 || len(r.AgentState.MutationScopes) > 256 || len(r.AgentState.SourceOutbox) > 256 || len(r.AgentState.SourceTaskHistory) > 1024 || len(r.AgentState.SourceMutationReceipts) > 1024 || len(r.AgentState.ReceivedTaskCompletions) > 1024 || len(r.AgentState.TaskCreditReservations) > 256 || len(r.AgentState.AckGapBuffer) > 64 || len(r.AgentState.CommittedAcks) > 64 || len(r.AgentState.CompletionTellPending) > application.MaxDurableAgentThreads {
 			return errors.New("durable terminal record bound or identity mismatch")
 		}
 		for _, value := range []string{r.AgentID, r.AuthorityBinding.ObservedUpstreamRunID} {
@@ -366,7 +366,7 @@ func validateRecord(r application.DurableHostedRecord) error {
 	if r.AgentID == "" || len(r.AgentID) > 64 || r.Session.SessionID == "" || r.Session.GenerationID == "" || r.Session.Caller != "hosted:"+r.AgentID || !r.Session.Persistent || !r.Session.ExpiresAt.IsZero() || r.LaunchSpec.AgentID != r.AgentID || r.Binding.RuntimeID != r.LaunchSpec.RuntimeID || r.Binding.Incarnation != r.LaunchSpec.Incarnation {
 		return errors.New("durable hosted record identity mismatch")
 	}
-	if len(r.AllowedCapabilities) > 16 || len(r.Session.Capabilities) > 16 || len(r.AgentState.Attachments) > 4096 || len(r.AgentState.Revoked) > 4096 || len(r.AgentState.BridgeDeliveries) > 256 || len(r.AgentState.DeliverySources) > 256 || len(r.AgentState.MutationScopes) > 256 || len(r.AgentState.SourceOutbox) > 256 || len(r.AgentState.SourceTaskHistory) > 1024 || len(r.AgentState.SourceMutationReceipts) > 1024 || len(r.AgentState.ReceivedTaskCompletions) > 1024 || len(r.AgentState.TaskCreditReservations) > 256 || len(r.AgentState.AckGapBuffer) > 64 || len(r.AgentState.CommittedAcks) > 64 || len(r.AgentState.Threads) > application.MaxDurableAgentThreads {
+	if len(r.AllowedCapabilities) > 16 || len(r.Session.Capabilities) > 16 || len(r.AgentState.Attachments) > 4096 || len(r.AgentState.Revoked) > 4096 || len(r.AgentState.BridgeDeliveries) > 256 || len(r.AgentState.DeliverySources) > 256 || len(r.AgentState.MutationScopes) > 256 || len(r.AgentState.SourceOutbox) > 256 || len(r.AgentState.SourceTaskHistory) > 1024 || len(r.AgentState.SourceMutationReceipts) > 1024 || len(r.AgentState.ReceivedTaskCompletions) > 1024 || len(r.AgentState.TaskCreditReservations) > 256 || len(r.AgentState.AckGapBuffer) > 64 || len(r.AgentState.CommittedAcks) > 64 || len(r.AgentState.CompletionTellPending) > application.MaxDurableAgentThreads || len(r.AgentState.Threads) > application.MaxDurableAgentThreads {
 		return errors.New("durable hosted record collection bound exceeded")
 	}
 	if err := validateThreadScheduler(r.AgentID, r.AgentState); err != nil {
@@ -476,7 +476,7 @@ func validateThreadScheduler(agentID string, state application.DurableAgentState
 	}
 	tombstones := make(map[string]struct{}, len(scheduler.Tombstones))
 	for _, tombstone := range scheduler.Tombstones {
-		if tombstone.ThreadID == "" || tombstone.CompletionKey == "" {
+		if tombstone.ThreadID == "" || tombstone.CompletionKey == "" || (tombstone.State != application.AgentThreadCompleted && tombstone.State != application.AgentThreadFailed && tombstone.State != application.AgentThreadExhausted) {
 			return errors.New("durable thread tombstone identity is incomplete")
 		}
 		if _, exists := threads[tombstone.ThreadID]; exists {

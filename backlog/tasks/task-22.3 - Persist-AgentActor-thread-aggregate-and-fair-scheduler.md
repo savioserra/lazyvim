@@ -1,11 +1,11 @@
 ---
 id: TASK-22.3
 title: Persist AgentActor thread aggregate and fair scheduler
-status: In Progress
+status: Done
 assignee:
   - '@pi'
 created_date: '2026-09-02 06:10'
-updated_date: '2026-09-02 09:48'
+updated_date: '2026-09-02 09:56'
 labels: []
 dependencies:
   - TASK-22.2
@@ -23,9 +23,9 @@ Persist target-authoritative thread records and a one-active-thread scheduler so
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Exact duplicate admission converges on one thread and immutable mismatch fails closed
-- [ ] #2 Thread and scheduler state commits before acceptance, dispatch, status, or completion effects
-- [ ] #3 Queue, resumable, waiting, blocked, terminal tombstone, bounds, fairness, clean-cutover, crash, restart, and race tests pass
+- [x] #1 Exact duplicate admission converges on one thread and immutable mismatch fails closed
+- [x] #2 Thread and scheduler state commits before acceptance, dispatch, status, or completion effects
+- [x] #3 Queue, resumable, waiting, blocked, terminal tombstone, bounds, fairness, clean-cutover, crash, restart, and race tests pass
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -44,4 +44,12 @@ Operator explicitly chose a clean v3 cutover instead of v2-to-v3 record migratio
 Implemented first scheduler aggregate slice: AgentActor persists/restores bounded thread records and scheduler sets; hosted Ask/Prompt admission derives target-authoritative thread IDs, converges exact replays, rejects immutable/source-sequence collisions, queues later prompts instead of overwriting active work, and persists scheduler epoch/lease before dispatch. Added deterministic two-new-task fairness and backoff selection. Thread ACK now atomically retains worker result/settlement without emitting ActorTaskCompleted; failed delivery becomes resumable. Strict state validation covers scheduler references, state sets, tombstones, bounds, and thread fingerprints. Focused actor/state race tests pass.
 
 Implemented durable post-ACK thread execution: settlement commit now triggers isolated injected introspection only after persistence; attempt identity/state/result/checkpoint/digests are retained; completed classification preserves the worker answer in ActorTaskCompleted; continue becomes resumable with deterministic backoff; waiting/blocked remain inert; runner failure retries three times then exhausts fail-closed. Source ActorTaskCompleted received during another persistence transaction is locally redriven instead of dropped. Cross-node Ask completion, push/reconnect, full service, full Go race, vet, codegen, protocol, and capability suites pass.
+
+Final TASK-22.3 evidence: deterministic identity/collision and fairness tests; strict persisted queue/resumable/waiting/blocked/tombstone validation; ACK settlement and worker-result tests; cross-node completion-to-source commit handshake with target tombstone compaction; clean v2 rejection; full go test -race ./..., go vet ./..., codegen verify, protocol npm test, capability tests, and live deployment checks.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Added schema-v3 durable AgentActor threads, exact target-authoritative admission, one-active fair scheduling, settlement persistence, bounded retry/backoff, restart restoration, source-commit tombstone compaction, and fail-closed validation. Verified with focused crash/replay/state tests, cross-node Ask completion, and full race/vet/codegen/protocol suites.
+<!-- SECTION:FINAL_SUMMARY:END -->

@@ -30,7 +30,7 @@ const (
 	maxTargetTaskQueueItems  = 256
 	maxAckGapBuffer          = 64
 	maxCommittedAcks         = 64
-	maxCompletionTells       = 64
+	maxCompletionTells       = application.MaxDurableAgentThreads
 	maxCompletionAttempts    = 8
 	maxScopeTokens           = 4096
 	scopeTokenBytes          = 16
@@ -100,6 +100,14 @@ type taskCreditReservation struct {
 }
 type retryProjectionClose struct{ sessionID, generationID string }
 type restoreDurableTimers struct{}
+type deferredActorTaskCompleted struct {
+	message *application.ActorTaskCompleted
+	sender  *actor.PID
+}
+type deferredTaskCompletionCommitted struct {
+	message *application.ActorTaskCompletionCommitted
+	sender  *actor.PID
+}
 type projectionDrop struct {
 	message application.DropSession
 }
@@ -152,6 +160,8 @@ type pendingDurableReceipt struct {
 	sourceTaskTarget            *actor.PID
 	sourceTask                  *application.ActorTask
 	taskCompletionPublish       *application.ActorTaskCompleted
+	taskCompletionAckTarget     *actor.PID
+	taskCompletionAck           *application.ActorTaskCompletionCommitted
 	targetTaskCommitted         *application.TargetTaskCommitted
 	attach                      *application.AttachResult
 	attachCompletion            chan<- application.AttachResult
@@ -540,6 +550,12 @@ func (a *AgentActor) Receive(ctx *actor.ReceiveContext) {
 		a.actorRefResolved(ctx, message)
 	case *application.ActorTaskCompleted:
 		a.actorTaskCompleted(ctx, message)
+	case *application.ActorTaskCompletionCommitted:
+		a.actorTaskCompletionCommitted(ctx, message)
+	case *deferredActorTaskCompleted:
+		a.actorTaskCompletedFrom(ctx, message.message, message.sender)
+	case *deferredTaskCompletionCommitted:
+		a.actorTaskCompletionCommittedFrom(ctx, message.message, message.sender)
 	case *application.DrainReceivedTaskCompletions:
 		a.drainTaskCompletions(message)
 	case *application.BridgeIntent:
@@ -1324,6 +1340,9 @@ func (a *AgentActor) completeDurableReceipt(ctx *actor.ReceiveContext, pending *
 		if pending.taskCompletionPublish != nil {
 			a.publishTaskCompletion(ctx, pending.taskCompletionPublish)
 		}
+		if pending.taskCompletionAckTarget != nil && pending.taskCompletionAck != nil {
+			_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), pending.taskCompletionAckTarget, pending.taskCompletionAck)
+		}
 		if pending.targetTaskCommitted != nil {
 			a.publishTargetTaskCommitted(ctx, pending.targetTaskCommitted)
 		}
@@ -2082,20 +2101,21 @@ func (a *AgentActor) retryCompletionTells(ctx *actor.ReceiveContext) {
 			a.resolveActorRefAsync(ctx, pending.Source)
 			continue
 		}
-		if err := ctx.Self().Tell(context.WithoutCancel(ctx.Context()), target, &pending.Completed); err != nil {
-			pending.Attempts++
-			a.completionTellPending[key] = pending
-			changed = true
+		err := ctx.Self().Tell(context.WithoutCancel(ctx.Context()), target, &pending.Completed)
+		if err == nil && pending.Completed.ThreadID == "" {
+			delete(a.completionTellPending, key)
+			a.completionTellOrder = slices.DeleteFunc(a.completionTellOrder, func(id string) bool { return id == key })
 		} else {
-			delete(a.completionTellPending, key)
-			a.completionTellOrder = slices.DeleteFunc(a.completionTellOrder, func(id string) bool { return id == key })
-			changed = true
+			pending.Attempts++
+			if pending.Attempts >= maxCompletionAttempts && pending.Completed.ThreadID == "" {
+				delete(a.completionTellPending, key)
+				a.completionTellOrder = slices.DeleteFunc(a.completionTellOrder, func(id string) bool { return id == key })
+			} else {
+				pending.Attempts = min(pending.Attempts, maxCompletionAttempts)
+				a.completionTellPending[key] = pending
+			}
 		}
-		if pending.Attempts >= maxCompletionAttempts {
-			delete(a.completionTellPending, key)
-			a.completionTellOrder = slices.DeleteFunc(a.completionTellOrder, func(id string) bool { return id == key })
-			changed = true
-		}
+		changed = true
 	}
 	// Keep the bounded retry loop alive across resolution windows: pending
 	// completions always schedule their next tick until delivered or terminal.
@@ -2293,10 +2313,11 @@ func (a *AgentActor) actorRefResolved(ctx *actor.ReceiveContext, message *actorR
 			continue
 		}
 		pending.Attempts++
-		if pending.Attempts >= maxCompletionAttempts {
+		if pending.Attempts >= maxCompletionAttempts && pending.Completed.ThreadID == "" {
 			delete(a.completionTellPending, key)
 			a.completionTellOrder = slices.DeleteFunc(a.completionTellOrder, func(id string) bool { return id == key })
 		} else {
+			pending.Attempts = min(pending.Attempts, maxCompletionAttempts)
 			a.completionTellPending[key] = pending
 		}
 		changed = true
@@ -2487,10 +2508,18 @@ func (a *AgentActor) acceptActorTaskWithCredit(ctx *actor.ReceiveContext, messag
 }
 
 func (a *AgentActor) actorTaskCompleted(ctx *actor.ReceiveContext, message *application.ActorTaskCompleted) {
+	a.actorTaskCompletedFrom(ctx, message, ctx.Sender())
+}
+
+func (a *AgentActor) actorTaskCompletedFrom(ctx *actor.ReceiveContext, message *application.ActorTaskCompleted, sender *actor.PID) {
 	if message == nil || message.CompletionKey == "" {
 		return
 	}
+	ack := &application.ActorTaskCompletionCommitted{CompletionKey: message.CompletionKey, ThreadID: message.ThreadID}
 	if _, exists := a.taskCompletions[message.CompletionKey]; exists {
+		if sender != nil && !isNoSender(ctx, sender) && message.ThreadID != "" {
+			_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), sender, ack)
+		}
 		return
 	}
 	if a.durableFailed != nil {
@@ -2499,7 +2528,7 @@ func (a *AgentActor) actorTaskCompleted(ctx *actor.ReceiveContext, message *appl
 	if a.durablePending != nil {
 		copy := *message
 		copy.Terminal.Result = append([]byte(nil), message.Terminal.Result...)
-		_ = ctx.ActorSystem().ScheduleOnce(context.WithoutCancel(ctx.Context()), &copy, ctx.Self(), 10*time.Millisecond)
+		_ = ctx.ActorSystem().ScheduleOnce(context.WithoutCancel(ctx.Context()), &deferredActorTaskCompleted{message: &copy, sender: sender}, ctx.Self(), 10*time.Millisecond)
 		return
 	}
 	old := a.durableState()
@@ -2512,10 +2541,42 @@ func (a *AgentActor) actorTaskCompleted(ctx *actor.ReceiveContext, message *appl
 	} else if receiptKey, receipt, ok := a.findSourceMutationReceiptForCompletion(copy); ok {
 		a.retainSourceMutationReceipt(receiptKey, receipt.Fingerprint, copy.Terminal)
 	}
-	if a.beginDurablePersist(ctx, &pendingDurableReceipt{old: old, taskCompletionPublish: &copy}) {
+	if a.beginDurablePersist(ctx, &pendingDurableReceipt{old: old, taskCompletionPublish: &copy, taskCompletionAckTarget: sender, taskCompletionAck: ack}) {
 		return
 	}
 	a.publishTaskCompletion(ctx, &copy)
+	if sender != nil && !isNoSender(ctx, sender) && message.ThreadID != "" {
+		_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), sender, ack)
+	}
+}
+
+func (a *AgentActor) actorTaskCompletionCommitted(ctx *actor.ReceiveContext, message *application.ActorTaskCompletionCommitted) {
+	a.actorTaskCompletionCommittedFrom(ctx, message, ctx.Sender())
+}
+
+func (a *AgentActor) actorTaskCompletionCommittedFrom(ctx *actor.ReceiveContext, message *application.ActorTaskCompletionCommitted, sender *actor.PID) {
+	if message == nil || message.ThreadID == "" || message.CompletionKey == "" || a.durableFailed != nil {
+		return
+	}
+	thread, exists := a.threads[message.ThreadID]
+	if !exists || thread.CompletionKey != message.CompletionKey || (thread.State != application.AgentThreadCompleted && thread.State != application.AgentThreadFailed && thread.State != application.AgentThreadExhausted) || sender == nil || isNoSender(ctx, sender) || !actorRefMatchesSender(&thread.SourceRef, sender) {
+		return
+	}
+	if a.durablePending != nil {
+		copy := *message
+		_ = ctx.ActorSystem().ScheduleOnce(context.WithoutCancel(ctx.Context()), &deferredTaskCompletionCommitted{message: &copy, sender: sender}, ctx.Self(), 10*time.Millisecond)
+		return
+	}
+	old := a.durableState()
+	delete(a.threads, thread.ThreadID)
+	a.threadOrder = slices.DeleteFunc(a.threadOrder, func(id string) bool { return id == thread.ThreadID })
+	delete(a.completionTellPending, thread.CompletionKey)
+	a.completionTellOrder = slices.DeleteFunc(a.completionTellOrder, func(id string) bool { return id == thread.CompletionKey })
+	a.threadScheduler.Tombstones = append(a.threadScheduler.Tombstones, application.DurableThreadTombstone{ThreadID: thread.ThreadID, State: thread.State, CompletionKey: thread.CompletionKey, ResultDigest: thread.WorkerResultDigest, ExpiresAt: a.threadNow().Add(24 * time.Hour)})
+	if len(a.threadScheduler.Tombstones) > application.MaxDurableAgentThreads {
+		a.threadScheduler.Tombstones = append([]application.DurableThreadTombstone(nil), a.threadScheduler.Tombstones[len(a.threadScheduler.Tombstones)-application.MaxDurableAgentThreads:]...)
+	}
+	_ = a.beginDurablePersist(ctx, &pendingDurableReceipt{old: old})
 }
 
 func (a *AgentActor) retainSourceCompletion(historyKey string, completion application.ActorTaskCompleted) {

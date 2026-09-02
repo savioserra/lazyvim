@@ -30,6 +30,7 @@ func PublicAgentSerializers() []remote.Option {
 		remote.WithSerializers(new(application.ActorTask), cbor),
 		remote.WithSerializers(new(application.ActorTaskAccepted), cbor),
 		remote.WithSerializers(new(application.ActorTaskCompleted), cbor),
+		remote.WithSerializers(new(application.ActorTaskCompletionCommitted), cbor),
 		remote.WithSerializers(new(application.AgentReference), cbor),
 		remote.WithSerializers(new(application.AuthorityBinding), cbor),
 		remote.WithSerializers(new(application.HostedPiRuntimeBinding), cbor),
