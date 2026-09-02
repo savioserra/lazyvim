@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-01 23:14'
-updated_date: '2026-09-02 01:19'
+updated_date: '2026-09-02 01:46'
 labels: []
 dependencies: []
 modified_files:
@@ -62,4 +62,6 @@ PM review blocker fixes: moved authoritative regular push to actorReplyBroker Ta
 Terminal actor-tell reload collision root cause: hosted bridge adopted daemon high-water, but regular actor-client OPEN did not. Added authoritative actor_message_high_water to ClientSessionResponse, queried from the stable terminal AgentActor before session issuance, and adopted it in actor-client before opening the regular message path. Regression seeds retained sequence 10 and proves OPEN returns 10 and first post-reload allocation is 11.
 
 Live root cause confirmed from redacted durable state: the PM source had valid global sequences 10-20 and matching credits, but each target ActorTask scope started at high-water 0 and applied dense +1 bridge semantics. Thus a target's first sparse global sequence (for example 15) was rejected before delivery, the source retained/redrove the credit until expiry, and target runtime reincarnations accumulated empty incarnation-scoped actor-task scopes. Fix separates ActorTask sparse replay semantics, makes its scope stable across target runtime reincarnation, enforces dense admission at the source owner, and serializes each target's outbox subsequence.
+
+Operator-approved clean-state deployment completed. Exact-owner hosted actors were retired before clearing only the configured daemon actor-state directory. Live proof on final daemon: terminal source adopted first post-reset sequence 21, then admitted consecutive 22-24; target-first sequence 24 was accepted as a sparse per-target subsequence; PM source outbox drained to zero; UI UX target committed and ACKed its delivery (cursor 2, queue zero); PM durably retained the correlated completion (source history 1, received completions 1). During recovery, also fixed explicit ActorMessageHighWater retention between target acceptance and completion, excluded incoming target history from source handshake high-water, allowed arbitrary positive first sequence after explicit state reset, and invalidated stopped local ActorRef cache entries before same-name owner re-resolution.
 <!-- SECTION:NOTES:END -->
