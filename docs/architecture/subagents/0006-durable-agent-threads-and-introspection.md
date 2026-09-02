@@ -1,6 +1,6 @@
 # ADR 0006: Durable AgentActor threads and introspective resumption
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Scope:** TASK-22/TASK-22.1 hosted `AgentActor` model-task durability, scheduling, settlement evidence, introspection, migration, and compatibility cutover
 
 ## Context
