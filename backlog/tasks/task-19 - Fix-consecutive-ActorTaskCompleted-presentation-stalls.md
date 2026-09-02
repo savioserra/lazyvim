@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 03:03'
-updated_date: '2026-09-02 05:43'
+updated_date: '2026-09-02 06:24'
 labels: []
 dependencies: []
 references:
@@ -90,4 +90,6 @@ Operator confirmed `/reload` did not fully activate the deployed actor-client be
 Live post-deployment Tell sequence 69 automatically pushed a terminal frame, but frontend misclassified it as an Ask reply (`Actor Ask replied`, answer `delivery acknowledged`). Automatic push works in this case; intent-specific presentation is wrong. Tell ACK must reconcile a TUI-only delivered/failure state exactly once without model follow-up.
 
 Sequence 70 provided a second automatic Tell completion push misrendered as Ask reply/delivery acknowledged; push delivery is consecutive, presentation intent remains wrong.
+
+New live failure after compaction/thread work: reviewer completed TASK-22.1 Ask 92 in its hosted runtime, but the requesting terminal received no completion notification. Operator observed all agents finished while PM remained waiting. Recovery required a second Ask 93 requesting the already-completed review, violating automatic exactly-once completion presentation and causing duplicate task pressure. This is independent of the Tell-as-Ask UI misclassification and confirms TASK-19 remains a runtime blocker.
 <!-- SECTION:NOTES:END -->
