@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 02:56'
-updated_date: '2026-09-02 05:37'
+updated_date: '2026-09-02 05:41'
 labels: []
 dependencies:
   - TASK-6
@@ -86,4 +86,6 @@ Deployment verify found stale lifecycle expectations for removed actor-send comm
 Operator-authorized deployment completed: exactly stopped five hosted UI actors, ran chezmoi source apply, rebuilt/restarted daemon, recreated all five fresh hosted runtimes from their worktrees with current display/role metadata, and confirmed deployed actor-client/hosted bridge files match source. Workstation verify passed after fixing the stale command-surface verifier. Current interactive Pi still requires `/reload` to load the deployed actor-client code.
 
 Operator deployment correction: Pi `/reload` is not sufficient for actor-client releases. Treat actor-client command/tool registrations, loaded closures, protobuf/runtime modules, and XState/session projections as process-lifetime state. Deployment acceptance requires exiting and starting a new terminal Pi process (continuing the intended native Pi session explicitly where supported), then proving the new process exposes current Tell/Ask semantics and UI.
+
+Fresh terminal Pi process after deployment now exposes true TELL semantics: actor_tell sequences 68-70 returned kind=Tell and rendered ✓ delivered rather than pending/replied. This proves full-process restart activated the new tool registration; remaining live matrix still needs Ask/reply and incoming/failure cases.
 <!-- SECTION:NOTES:END -->
