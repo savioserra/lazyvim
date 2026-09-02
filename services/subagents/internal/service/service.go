@@ -394,7 +394,7 @@ func startWithListener(ctx context.Context, listener net.Listener, options ...an
 		return fail(err)
 	}
 	service.bridgeWatcher = bridgeWatcher
-	if _, err := guardian.SpawnChild(ctx, "actor-reply-projection", &actorReplyBroker{service: service}, actor.WithMailbox(actor.NewNonBlockingBoundedMailbox(256)), actor.WithPassivationStrategy(passivation.NewLongLivedStrategy())); err != nil {
+	if _, err := guardian.SpawnChild(ctx, "actor-reply-projection", &actorReplyBroker{service: service}, actor.WithMailbox(actor.NewBoundedMailbox(256)), actor.WithPassivationStrategy(passivation.NewLongLivedStrategy())); err != nil {
 		return fail(err)
 	}
 	service.closeHostedSession = service.CloseSession

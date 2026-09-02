@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 03:03'
-updated_date: '2026-09-02 06:26'
+updated_date: '2026-09-02 06:43'
 labels: []
 dependencies: []
 references:
@@ -94,4 +94,6 @@ Sequence 70 provided a second automatic Tell completion push misrendered as Ask 
 New live failure after compaction/thread work: reviewer completed TASK-22.1 Ask 92 in its hosted runtime, but the requesting terminal received no completion notification. Operator observed all agents finished while PM remained waiting. Recovery required a second Ask 93 requesting the already-completed review, violating automatic exactly-once completion presentation and causing duplicate task pressure. This is independent of the Tell-as-Ask UI misclassification and confirms TASK-19 remains a runtime blocker.
 
 PM state inspection after operator report localized the missing-notification failure: Ask 92 and recovery Ask 93 were both already durably present in the terminal AgentActor SourceTaskHistory and ReceivedTaskCompletions with Completed=true; source outbox and completion-Tell pending were empty. Neither result reached the actor-client presentation path. The stall is therefore after source durable commit/completion receipt, in reply broker/topic push/client delivery or presentation, not unfinished agent work. PM recovered review 92 from authorized owner-private durable state without pane inspection.
+
+ASAP correction implemented on main: actorReplyBroker now uses a bounded blocking mailbox so authoritative completion wake projections cannot be silently dropped at capacity, and a 250ms server-side reconciliation tick drains each connected terminal source AgentActor durable ReceivedTaskCompletions as loss recovery. Event push remains primary; there is no actor_list/client/UI/pane polling. Regression unsubscribes the broker from ActorMessageReplyTopic and proves a completed Ask still pushes automatically without another client request. Focused service race count=20, full Go race/vet/codegen/protocol, capabilities, 87 non-real-tmux observer tests, diff, and scratch apply passed.
 <!-- SECTION:NOTES:END -->

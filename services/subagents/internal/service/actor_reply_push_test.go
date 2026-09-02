@@ -12,6 +12,7 @@ import (
 	"github.com/savioserra/lazyvim/services/subagents/internal/application"
 	"github.com/savioserra/lazyvim/services/subagents/internal/hostedpi"
 	"github.com/savioserra/lazyvim/services/subagents/internal/protocol"
+	"github.com/tochemey/goakt/v4/actor"
 )
 
 func deliveryKindLabel(kind subagentsv1.BridgeDelivery_Kind) string {
@@ -128,6 +129,28 @@ func TestActorAskAdmissionThenPushedReplyAndReconnectReplayOnce(t *testing.T) {
 		}
 	}
 	_ = request(clientConn, client, &subagentsv1.Envelope_ListAgentsRequest{ListAgentsRequest: &subagentsv1.ListAgentsRequest{}}, "", 0, "prime")
+	// Completion topics are an immediate projection trigger, not reliable
+	// delivery authority. Simulate a missed subscription event and prove the
+	// broker reconciles the source AgentActor's durable completion mailbox
+	// without another client request.
+	var replyBroker *actor.PID
+	actors, actorsErr := daemon.system.Actors(context.Background(), time.Second)
+	if actorsErr != nil {
+		t.Fatal(actorsErr)
+	}
+	for _, pid := range actors {
+		if pid.Name() == "actor-reply-projection" {
+			replyBroker = pid
+			break
+		}
+	}
+	if replyBroker == nil {
+		t.Fatal("actor reply broker not found")
+	}
+	if err := replyBroker.Tell(context.Background(), daemon.system.TopicActor(), actor.NewUnsubscribe(application.ActorMessageReplyTopic)); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(50 * time.Millisecond)
 	admit := request(clientConn, client, &subagentsv1.Envelope_ActorMessageRequest{ActorMessageRequest: &subagentsv1.ActorMessageRequest{Mode: subagentsv1.ActorMessageRequest_MODE_ASK, Target: "alpha", BoundedPayload: []byte("question"), DedupeId: "dedupe", ChainId: "chain", HopLimit: 8, SourceMutationSequence: 1}}, attached.AgentHandle, attached.Fence, "ask").GetActorMessageResponse()
 	if admit == nil || !admit.Accepted || admit.Completed {
 		t.Fatalf("admission: %#v", admit)
