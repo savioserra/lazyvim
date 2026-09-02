@@ -1,11 +1,11 @@
 ---
 id: TASK-22.4
 title: Run isolated introspection and automatically resume threads
-status: In Progress
+status: Done
 assignee:
   - '@pi'
 created_date: '2026-09-02 06:10'
-updated_date: '2026-09-02 13:39'
+updated_date: '2026-09-02 13:58'
 labels: []
 dependencies:
   - TASK-22.3
@@ -68,6 +68,8 @@ Reopened on current review: internal RemoteBridgeIntent/raw BridgeIntent receive
 Closed internal model-bearing bypass: AgentActor rejects raw and Remote BridgeIntent Ask/Prompt before effects; placement authority rejects before resolution/forwarding. Production Tell remains temporarily for non-model notification mechanics. Added actor/placement fail-closed tests. Legacy bridge ACK mechanics use an explicit test-only fixture constructor; production constructors cannot enable direct model intents.
 
 Sequence 25 exposed another classifier policy false positive: generic architecture phrases containing authorization or credential were treated as leaked values. Reworked output policy to reject assigned/raw values and identities (authorization=, credential/path/value, runtime/session/process id values, PID/TTY/fence/handle values, URLs/paths) while permitting generic security concepts. Added generic-allow and concrete-value deny regressions.
+
+Fresh post-authority deployment/reincarnation proof succeeded: Actor Thread Architect Ask request 9c311e41-ae6d-4521-9960-55edafd0adba, source mutation sequence 27, returned ACTOR_TASK_ONLY_OK through the exclusive ActorTask/thread path. Full race/vet/codegen/protocol, actor-client 42/42, hosted bridge 40/40, capabilities, and diff gates pass.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
@@ -78,4 +80,6 @@ Wired persisted settlement to isolated introspection, exact attempt identity, bo
 Legacy PromptTask and TaskLifecycle bypasses were retired so ActorMessage Ask and durable ActorTask threads are now the exclusive model-work authority.
 
 Production WebSocket startup now constructs the managed introspection runner; fresh live Ask sequence 13 proves end-to-end completion.
+
+Direct model-bearing bridge intents fail closed; a fresh deployed/reincarnated sequence-27 Ask proves exclusive ActorTask completion with managed introspection.
 <!-- SECTION:FINAL_SUMMARY:END -->
