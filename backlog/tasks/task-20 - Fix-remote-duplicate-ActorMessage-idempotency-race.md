@@ -51,4 +51,6 @@ Independent QA sequence 56 reproduced the release blocker on origin/main 89e77ee
 Writer sequence 60 produced commit 9c08c38 with pending/in-flight duplicate convergence, collision rejection, fixture stabilization, concurrent remote tests, and reported focused -race count=20/full gates. Not integrated or finalized pending independent review sequence 63, specifically terminal sourceTaskHistory digest fencing, post-restart behavior, legacy zero-digest history, and complete immutable identity comparison.
 
 PM code audit of a21b62b found the implementation only validates payload while sourceOutbox is retained. Exact sourceTaskHistory matches return terminal results without digest comparison, and sameSourceOutboxMutation omits dedupe/chain checks. A post-terminal changed-payload regression is required before integration.
+
+Independent review sequence 63 rejected 9c08c38/a21b62b with two High findings: terminal sourceTaskHistory replays before comparing immutable fingerprint and actorTaskID omits request ID; sameSourceOutboxMutation omits dedupe/chain. Medium test gap: no post-terminal, restart, changed-request, changed-dedupe/chain, or exactly-once placement delivery proof; shared remote fixture also weakens isolation. These findings match the PM audit and are mandatory inputs to correction sequence 64.
 <!-- SECTION:NOTES:END -->
