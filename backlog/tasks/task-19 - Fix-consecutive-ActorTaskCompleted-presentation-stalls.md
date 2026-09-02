@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 03:03'
-updated_date: '2026-09-02 06:45'
+updated_date: '2026-09-02 06:47'
 labels: []
 dependencies: []
 references:
@@ -98,4 +98,6 @@ PM state inspection after operator report localized the missing-notification fai
 ASAP correction implemented on main: actorReplyBroker now uses a bounded blocking mailbox so authoritative completion wake projections cannot be silently dropped at capacity, and a 250ms server-side reconciliation tick drains each connected terminal source AgentActor durable ReceivedTaskCompletions as loss recovery. Event push remains primary; there is no actor_list/client/UI/pane polling. Regression unsubscribes the broker from ActorMessageReplyTopic and proves a completed Ask still pushes automatically without another client request. Focused service race count=20, full Go race/vet/codegen/protocol, capabilities, 87 non-real-tmux observer tests, diff, and scratch apply passed.
 
 Deployed commit 9b4fc95 after full source chezmoi apply/sync. User explicitly requested full session restart: exactly stopped all six hosted crew actors, applied source, rebuilt daemon, restarted systemd-user service, recreated all six retained logical actors/runtimes from their worktrees, and rebuilt the seven-pane crew view while preserving the PM pane. Deployed binary contains actorReplyBroker.scheduleReconcile and service is active. Fresh live automatic completion proof is still required before finalization.
+
+First post-deploy live evidence: pre-restart durable Ask 94 automatically arrived after daemon and all hosted runtime reincarnations, without a reminder, manual request, or pane inspection. This proves the new broker reconciliation recovers a completion whose topic wake/presentation was previously stalled across restart. It was presented once. Fresh post-deploy probes 95-97 remain pending for consecutive acceptance.
 <!-- SECTION:NOTES:END -->
