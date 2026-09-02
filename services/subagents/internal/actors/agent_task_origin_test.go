@@ -163,6 +163,9 @@ func TestTaskCreditAndTaskRequestsRejectNoSenderSentinel(t *testing.T) {
 	}
 }
 
+// The source starts at 21 to model an explicit daemon-state reset while a
+// connected client retains its monotonic allocator. A fresh durable namespace
+// may adopt any positive first sequence; every later admission is dense.
 func TestForgedTargetOriginCannotGrantCreditRetireOutboxOrPublishCommit(t *testing.T) {
 	ctx := context.Background()
 	system, err := goakt.NewActorSystem("task-origin-source", goakt.WithPubSub())
@@ -195,7 +198,7 @@ func TestForgedTargetOriginCannotGrantCreditRetireOutboxOrPublishCommit(t *testi
 	payload := []byte("outbox payload")
 	digest := sha256.Sum256(payload)
 	receipt := make(chan application.BridgeIntentResult, 1)
-	send := &application.SendActorTask{TargetPID: reserved.pid, TargetPeer: application.CommunicationPeer{StableID: "target-agent"}, RequestID: "request-1", DedupeID: "dedupe-1", ChainID: "chain-1", RequiredCapability: "send", SourceMutationSequence: 1, Deadline: time.Now().Add(time.Minute), HopLimit: 8, Mode: application.BridgeMessageTell, Payload: payload, Receipt: receipt}
+	send := &application.SendActorTask{TargetPID: reserved.pid, TargetPeer: application.CommunicationPeer{StableID: "target-agent"}, RequestID: "request-1", DedupeID: "dedupe-1", ChainID: "chain-1", RequiredCapability: "send", SourceMutationSequence: 21, Deadline: time.Now().Add(time.Minute), HopLimit: 8, Mode: application.BridgeMessageTell, Payload: payload, Receipt: receipt}
 	if err = system.NoSender().Tell(ctx, source, send); err != nil {
 		t.Fatal(err)
 	}
@@ -207,7 +210,7 @@ func TestForgedTargetOriginCannotGrantCreditRetireOutboxOrPublishCommit(t *testi
 	case <-time.After(time.Second):
 		t.Fatal("source outbox admission receipt missing")
 	}
-	taskID := "client:pm:dedupe-1:chain-1:1"
+	taskID := "client:pm:dedupe-1:chain-1:21"
 	credit := application.TaskCredit{TaskID: taskID, CreditID: "credit-1", TargetEpoch: 1, ExpiresAt: time.Now().Add(time.Minute), PayloadDigest: digest}
 	// A rogue agent answering the credit request must not receive the task.
 	if err = rogue.tell(ctx, source, &application.TaskCreditGranted{Credit: credit}); err != nil {

@@ -1439,7 +1439,8 @@ func (a *AgentActor) sendActorTask(ctx *actor.ReceiveContext, message *applicati
 			}
 		}
 	}
-	if message.SourceMutationSequence != a.actorMessageHighWater()+1 {
+	highWater := a.actorMessageHighWater()
+	if highWater != 0 && message.SourceMutationSequence != highWater+1 {
 		respondBridgeIntent(ctx, message.Receipt, &application.BridgeIntentResult{Reason: "source mutation sequence must advance exactly once"})
 		return
 	}
