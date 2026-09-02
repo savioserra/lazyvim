@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 02:56'
-updated_date: '2026-09-02 13:11'
+updated_date: '2026-09-02 13:41'
 labels: []
 dependencies:
   - TASK-6
@@ -107,4 +107,6 @@ UI-only origin/main correction implemented in isolated worktree: actorMessageRep
 QA post-fix matrix: unit coverage is strong; remaining acceptance is fresh-terminal live proof that Tell yields one private delivered/failed card and never an Ask reply or model-visible delivery acknowledgement, followed by one real Ask reply. Full Pi restart required.
 
 Reviewer found hosted production still registers/appends legacy CommunicationView/renderCommunicationCard paths rather than schema-versioned render envelopes/widgets. Assigned follow-up implementation with no cross-extension runtime imports.
+
+Implemented hosted production schema-v1 local render envelopes and expanded conversation widget parity without cross-extension runtime imports (babc3a3). Actor message tool results now carry communicationView plus renderEnvelope. Fresh live acceptance remains.
 <!-- SECTION:NOTES:END -->

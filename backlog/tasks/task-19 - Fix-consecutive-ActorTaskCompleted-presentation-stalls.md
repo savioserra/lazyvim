@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 03:03'
-updated_date: '2026-09-02 13:11'
+updated_date: '2026-09-02 13:41'
 labels: []
 dependencies: []
 references:
@@ -106,4 +106,6 @@ Fresh post-deploy consecutive acceptance passed: Ask 95, 96, and 97 were admitte
 QA post-fix matrix: remaining live gap is canonical hosted-to-source Tell then Ask under real fence rotation; Tell must reconcile delivered-only once, Ask reply once, and stale-fence retry must not duplicate.
 
 Reviewer found prompt completion ACK and replay-prompt ACK directly reuse pending stale fence instead of requestDeliveryAckWithFenceRefresh. Assigned implementation and exactly-once identical-payload tests.
+
+Implemented prompt completion and replay-prompt ACK through the common fence-refresh path with identical payload and one bounded retry (babc3a3). Added exactly-once stale/fresh fence regression. Fresh hosted-to-source live acceptance remains.
 <!-- SECTION:NOTES:END -->
