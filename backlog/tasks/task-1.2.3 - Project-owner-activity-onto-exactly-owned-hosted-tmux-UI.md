@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@pi'
 created_date: '2026-09-02 05:40'
-updated_date: '2026-09-02 05:40'
+updated_date: '2026-09-02 05:47'
 labels: []
 dependencies:
   - TASK-1.2.1
@@ -34,3 +34,9 @@ Bind each HostedPiRuntimeActor to its owner-private topic and render sanitized i
 - [ ] #4 Renderer or tmux failure updates visibility health only and cannot modify authoritative identity, lifecycle, activity, routing, or tasks
 - [ ] #5 Tests cover set/clear/replay, stale frames, replacement attacks, tmux disappearance, narrow bounds, redaction, restart adoption, and no foreign mutation
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Post-restart operator reported missing crew panels. Existing crew window retained live PM pane plus five proven-dead observer panes. Recovery removed only those dead panes and created five fresh foreground tmux clients attached to the exact owned hosted sessions, tiled 3x2, with remain-on-exit disabled; no send-keys, respawn-pane, pane-body mutation, or actor stop was used. This is manual recovery evidence, not the final automatic owner-topic panel feature.
+<!-- SECTION:NOTES:END -->
