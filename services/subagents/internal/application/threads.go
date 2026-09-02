@@ -84,6 +84,8 @@ type DurableAgentThread struct {
 	HopLimit               uint32                    `json:"hop_limit"`
 	State                  AgentThreadState          `json:"state"`
 	Turn                   uint64                    `json:"turn"`
+	DispatchSchedulerEpoch uint64                    `json:"dispatch_scheduler_epoch,omitempty"`
+	DispatchActiveLease    uint64                    `json:"dispatch_active_lease,omitempty"`
 	ActiveDeliverySequence uint64                    `json:"active_delivery_sequence,omitempty"`
 	CompletionKey          string                    `json:"completion_key"`
 	RetryCount             uint32                    `json:"retry_count,omitempty"`

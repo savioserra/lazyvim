@@ -109,6 +109,8 @@ func (a *AgentActor) activateThreadDelivery(thread application.DurableAgentThrea
 	if !delivery.AckIdentityComplete() {
 		return application.BridgeDelivery{}, errors.New("active thread acknowledgement identity is incomplete")
 	}
+	thread.DispatchSchedulerEpoch = a.threadScheduler.Epoch
+	thread.DispatchActiveLease = a.threadScheduler.ActiveLease
 	thread.State = application.AgentThreadAwaitingAgentSettled
 	thread.EventCursor++
 	thread.Events = append(thread.Events, application.DurableThreadEvent{Sequence: thread.EventCursor, Kind: "dispatched", At: a.threadNow(), DeliverySequence: delivery.Sequence, Digest: thread.Fingerprint().Digest()})

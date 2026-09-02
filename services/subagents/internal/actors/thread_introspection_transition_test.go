@@ -16,7 +16,7 @@ func TestThreadIntrospectionCompletionContinuationWakesWaitingParent(t *testing.
 		taskCompletionOrder: []string{"worker-completion"},
 		threadScheduler:     application.DurableThreadScheduler{ActiveThreadID: "parent", Epoch: 3, ActiveLease: 4},
 	}
-	thread := application.DurableAgentThread{ThreadID: "parent", Target: application.CommunicationPeer{StableID: "supervisor"}, ChainID: "chain", CompletionKey: "parent-completion", State: application.AgentThreadIntrospecting, WorkerResult: []byte("waiting for worker"), IntrospectionAttempts: 1, ActiveDeliverySequence: 7, Turn: 5, ChildContinuation: &application.DurableChildContinuation{ParentThreadID: "parent", ParentSchedulerEpoch: 3, ParentActiveLease: 4, ParentThreadTurn: 5, ParentDeliverySequence: 7, ChildTaskID: "child-task", ChildRequestID: "child-request", ChildDedupeID: "child-dedupe", ChildChainID: "chain", ChildMutationSequence: 2, ChildTarget: application.CommunicationPeer{StableID: "worker"}, ExpectedKind: application.BridgeDeliveryPrompt}}
+	thread := application.DurableAgentThread{ThreadID: "parent", Target: application.CommunicationPeer{StableID: "supervisor"}, ChainID: "chain", CompletionKey: "parent-completion", State: application.AgentThreadIntrospecting, WorkerResult: []byte("waiting for worker"), IntrospectionAttempts: 1, ActiveDeliverySequence: 7, Turn: 5, DispatchSchedulerEpoch: 3, DispatchActiveLease: 4, ChildContinuation: &application.DurableChildContinuation{ParentThreadID: "parent", ParentSchedulerEpoch: 3, ParentActiveLease: 4, ParentThreadTurn: 5, ParentDeliverySequence: 7, ChildTaskID: "child-task", ChildRequestID: "child-request", ChildDedupeID: "child-dedupe", ChildChainID: "chain", ChildMutationSequence: 2, ChildTarget: application.CommunicationPeer{StableID: "worker"}, ExpectedKind: application.BridgeDeliveryPrompt}}
 	a.threadOrder = []string{thread.ThreadID}
 	a.threads = map[string]application.DurableAgentThread{thread.ThreadID: thread}
 	action := a.applyThreadIntrospectionClassification(&thread, application.ThreadIntrospectionResult{State: application.ThreadIntrospectionWaiting}, now)
@@ -33,7 +33,7 @@ func TestThreadIntrospectionCompletionContinuationWakesWaitingParent(t *testing.
 
 func TestParentChildWaitRecordedWithExactDispatchIdentity(t *testing.T) {
 	targetRef := application.DurableActorRef{AgentID: "worker", Address: "addr", Host: "host", Port: 1, Name: "agent-worker"}
-	a := &AgentActor{id: "supervisor", threadScheduler: application.DurableThreadScheduler{ActiveThreadID: "parent", Epoch: 10, ActiveLease: 20}, threads: map[string]application.DurableAgentThread{"parent": {ThreadID: "parent", Target: application.CommunicationPeer{StableID: "supervisor"}, Turn: 30, ActiveDeliverySequence: 40}}}
+	a := &AgentActor{id: "supervisor", threadScheduler: application.DurableThreadScheduler{ActiveThreadID: "parent", Epoch: 10, ActiveLease: 20}, threads: map[string]application.DurableAgentThread{"parent": {ThreadID: "parent", Target: application.CommunicationPeer{StableID: "supervisor"}, Turn: 30, DispatchSchedulerEpoch: 10, DispatchActiveLease: 20, ActiveDeliverySequence: 40}}}
 	message := &application.SendActorTask{Mode: application.BridgeMessageAsk, RequestID: "request-child", DedupeID: "dedupe-child", ChainID: "chain", SourceMutationSequence: 2, ParentContinuation: application.ParentContinuationIdentity{ThreadID: "parent", SchedulerEpoch: 10, ActiveLease: 20, ThreadTurn: 30, DeliverySequence: 40}}
 	item := application.DurableActorTaskOutboxItem{TaskID: "task-child", Target: application.CommunicationPeer{StableID: "worker"}, TargetRef: targetRef}
 	if !a.recordParentChildWait(message, item, item.TaskID) {
@@ -52,7 +52,7 @@ func TestParentChildWaitRecordedWithExactDispatchIdentity(t *testing.T) {
 func TestChildContinuationRequiresExactTupleAndConsumption(t *testing.T) {
 	a := &AgentActor{id: "supervisor", threadScheduler: application.DurableThreadScheduler{ActiveThreadID: "parent", Epoch: 10, ActiveLease: 20}}
 	baseWait := application.DurableChildContinuation{ParentThreadID: "parent", ParentSchedulerEpoch: 10, ParentActiveLease: 20, ParentThreadTurn: 30, ParentDeliverySequence: 40, ChildTaskID: "task-child-1", ChildRequestID: "request-child-1", ChildDedupeID: "dedupe-child-1", ChildChainID: "chain", ChildMutationSequence: 2, ChildTarget: application.CommunicationPeer{StableID: "worker"}, ExpectedKind: application.BridgeDeliveryPrompt}
-	thread := application.DurableAgentThread{ThreadID: "parent", Target: application.CommunicationPeer{StableID: "supervisor"}, State: application.AgentThreadWaiting, Turn: 30, ActiveDeliverySequence: 40, ChildContinuation: &baseWait}
+	thread := application.DurableAgentThread{ThreadID: "parent", Target: application.CommunicationPeer{StableID: "supervisor"}, State: application.AgentThreadWaiting, Turn: 30, DispatchSchedulerEpoch: 10, DispatchActiveLease: 20, ActiveDeliverySequence: 40, ChildContinuation: &baseWait}
 	a.threadOrder = []string{"parent"}
 	a.threads = map[string]application.DurableAgentThread{"parent": thread}
 	completion := application.ActorTaskCompleted{CompletionKey: "completion-child-1", OriginalRequestID: "request-child-1", DedupeID: "dedupe-child-1", ChainID: "chain", SourceMutationSequence: 2, Kind: application.BridgeDeliveryPrompt, Terminal: application.BridgeIntentResult{Accepted: true, Completed: true, Result: []byte("answer 1")}, Target: application.CommunicationPeer{StableID: "worker"}}
@@ -61,13 +61,10 @@ func TestChildContinuationRequiresExactTupleAndConsumption(t *testing.T) {
 	if a.continueParentThreadWithCompletion(wrong) {
 		t.Fatal("wrong child completion resumed parent")
 	}
+	a.threadScheduler.Epoch = 11
 	a.threadScheduler.ActiveLease = 21
-	if a.continueParentThreadWithCompletion(completion) {
-		t.Fatal("wrong parent lease resumed parent")
-	}
-	a.threadScheduler.ActiveLease = 20
 	if !a.continueParentThreadWithCompletion(completion) {
-		t.Fatal("exact child completion did not resume parent")
+		t.Fatal("interleaved scheduler advance prevented exact child completion")
 	}
 	resumed := a.threads["parent"]
 	if resumed.ChildContinuation == nil || !resumed.ChildContinuation.Consumed || resumed.ChildContinuation.AppliedCompletionKey != "completion-child-1" {
@@ -82,6 +79,13 @@ func TestChildContinuationRequiresExactTupleAndConsumption(t *testing.T) {
 	staleSameChain.SourceMutationSequence = 3
 	if a.continueParentThreadWithCompletion(staleSameChain) {
 		t.Fatal("stale same-chain completion resumed a later turn")
+	}
+	wrongPersisted := thread
+	wrongWait := baseWait
+	wrongWait.ParentActiveLease = 99
+	wrongPersisted.ChildContinuation = &wrongWait
+	if a.childCompletionMatchesWait(wrongPersisted, completion) {
+		t.Fatal("wrong persisted parent dispatch identity accepted")
 	}
 }
 

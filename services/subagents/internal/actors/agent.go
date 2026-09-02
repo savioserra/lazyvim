@@ -2631,7 +2631,7 @@ func (a *AgentActor) recordParentChildWait(message *application.SendActorTask, i
 		return false
 	}
 	thread, exists := a.threads[parent.ThreadID]
-	if !exists || thread.ThreadID != parent.ThreadID || thread.Target.StableID != a.id || thread.Turn != parent.ThreadTurn || thread.ActiveDeliverySequence != parent.DeliverySequence || a.threadScheduler.ActiveThreadID != parent.ThreadID || a.threadScheduler.Epoch != parent.SchedulerEpoch || a.threadScheduler.ActiveLease != parent.ActiveLease {
+	if !exists || thread.ThreadID != parent.ThreadID || thread.Target.StableID != a.id || thread.Turn != parent.ThreadTurn || thread.ActiveDeliverySequence != parent.DeliverySequence || thread.DispatchSchedulerEpoch != parent.SchedulerEpoch || thread.DispatchActiveLease != parent.ActiveLease || a.threadScheduler.ActiveThreadID != parent.ThreadID || a.threadScheduler.Epoch != parent.SchedulerEpoch || a.threadScheduler.ActiveLease != parent.ActiveLease {
 		return false
 	}
 	wait := application.DurableChildContinuation{ParentThreadID: parent.ThreadID, ParentSchedulerEpoch: parent.SchedulerEpoch, ParentActiveLease: parent.ActiveLease, ParentThreadTurn: parent.ThreadTurn, ParentDeliverySequence: parent.DeliverySequence, ChildTaskID: taskID, ChildRequestID: message.RequestID, ChildDedupeID: message.DedupeID, ChildChainID: message.ChainID, ChildMutationSequence: message.SourceMutationSequence, ChildTarget: item.Target, ChildTargetRef: item.TargetRef, ExpectedKind: application.BridgeDeliveryPrompt}
@@ -2677,7 +2677,7 @@ func (a *AgentActor) continueParentThreadWithCompletion(completion application.A
 
 func (a *AgentActor) childCompletionMatchesWait(thread application.DurableAgentThread, completion application.ActorTaskCompleted) bool {
 	wait := thread.ChildContinuation
-	if wait == nil || wait.Consumed || wait.ParentThreadID != thread.ThreadID || wait.ParentSchedulerEpoch != a.threadScheduler.Epoch || wait.ParentActiveLease != a.threadScheduler.ActiveLease || wait.ParentThreadTurn != thread.Turn || wait.ParentDeliverySequence != thread.ActiveDeliverySequence {
+	if wait == nil || wait.Consumed || wait.ParentThreadID != thread.ThreadID || wait.ParentSchedulerEpoch != thread.DispatchSchedulerEpoch || wait.ParentActiveLease != thread.DispatchActiveLease || wait.ParentThreadTurn != thread.Turn || wait.ParentDeliverySequence != thread.ActiveDeliverySequence {
 		return false
 	}
 	if wait.ChildRequestID != completion.OriginalRequestID || wait.ChildDedupeID != completion.DedupeID || wait.ChildChainID != completion.ChainID || wait.ChildMutationSequence != completion.SourceMutationSequence || wait.ExpectedKind != completion.Kind {

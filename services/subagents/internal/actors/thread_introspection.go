@@ -154,6 +154,27 @@ const (
 func (a *AgentActor) applyThreadIntrospectionClassification(thread *application.DurableAgentThread, result application.ThreadIntrospectionResult, now time.Time) threadClassificationAction {
 	switch result.State {
 	case application.ThreadIntrospectionCompleted:
+		if thread.ChildContinuation != nil && !thread.ChildContinuation.Consumed {
+			if completion, ok := a.findCompletionForParentThread(*thread); ok {
+				thread.PendingPrompt = parentThreadCompletionPrompt(completion)
+				thread.State = application.AgentThreadResumable
+				thread.ResumeAttempts++
+				thread.NextAttempt = time.Time{}
+				thread.ChildContinuation.Consumed = true
+				thread.ChildContinuation.AppliedCompletionKey = completion.CompletionKey
+				appendThreadEvent(thread, application.DurableThreadEvent{Kind: "actor_task_completion_continued", At: now, Digest: sha256.Sum256(completion.Terminal.Result)})
+				a.threadScheduler.ActiveThreadID = ""
+				a.removeThreadFromSchedulerQueues(thread.ThreadID)
+				a.threadScheduler.Resumable = append(a.threadScheduler.Resumable, thread.ThreadID)
+				return threadClassificationResume
+			}
+			thread.State = application.AgentThreadWaiting
+			a.threadScheduler.ActiveThreadID = ""
+			a.removeThreadFromSchedulerQueues(thread.ThreadID)
+			a.threadScheduler.Waiting = append(a.threadScheduler.Waiting, thread.ThreadID)
+			appendThreadEvent(thread, application.DurableThreadEvent{Kind: "child_continuation_waiting", At: now, Reason: "child terminal result not consumed"})
+			return threadClassificationInert
+		}
 		if !workerResultContainsDeliverable(thread.WorkerResult) {
 			thread.State = application.AgentThreadResumable
 			thread.ResumeAttempts++
