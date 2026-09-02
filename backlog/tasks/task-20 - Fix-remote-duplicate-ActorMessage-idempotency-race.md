@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 04:30'
-updated_date: '2026-09-02 05:35'
+updated_date: '2026-09-02 05:47'
 labels: []
 dependencies: []
 references:
@@ -60,4 +60,6 @@ Independent review sequence 63 rejected 9c08c38/a21b62b with two High findings: 
 Corrected writer implementation integrated on main as 88d603c and 013adc7. Durable SourceMutationReceipts now retain full request/dedupe/chain/sequence/target/mode/capability/payload fingerprint plus authoritative result across outbox retirement and terminal/restart; legacy digest-less history fails closed. PM verification passed actor receipt -race count=20, state bound -race count=20, remote duplicate/concurrent -race count=20, hosted gateway -race count=20, full codegen/go race/vet/protocol, actor/bridge 79/79, capabilities, diff, and scratch apply. Independent final review sequence 66 remains open; task not finalized.
 
 Final independent review sequence 66 closed all prior High findings but rejected final approval on one Medium issue: retainSourceMutationReceipt blindly FIFO-evicts accepted AwaitingAck receipts at maxCommandResults. An active receipt must remain replayable until terminal; boundedness requires terminal-only eviction plus admission backpressure when every retained receipt is active.
+
+Final active-receipt correction integrated as main commit 1ec84c0. Admission now backpressures before mutation when all 1024 receipts are active; terminal-only eviction pins accepted AwaitingAck receipts and terminal completion restores capacity. PM focused TestSourceMutationReceipt race count=20 passed. Independent final re-review still required before checking AC/finalization.
 <!-- SECTION:NOTES:END -->
