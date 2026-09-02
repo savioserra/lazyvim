@@ -10,7 +10,7 @@ This file is the canonical delivery roadmap. ADRs in this directory define archi
 | 1. Hosted Pi runtime | Approved | Full Pi TUI in exactly owned tmux; dynamic actor lifecycle; bridge commands/tools |
 | 2. Self-hosting client MVP | Live, managed | Normal Pi creates dynamic actors, sends a real prompt, receives the correlated model answer, and delegates a repository task through the owned system |
 | 3. Actor-native push stabilization | Live, migration hardening | ADR 0005 durable delivery, recovery-safe Ask completion, ACK replay, authenticated roster push, epoch/sequence fencing, and XState client projections are live; retire the remaining migration adapters only after replay parity evidence |
-| 4. Client stabilization | Current in parallel | Finish production widget wiring, typed productive phases, same-name/session reincarnation fixes, and owned WorkflowActor UX through isolated worktrees |
+| 4. Client stabilization | Current in parallel | Finish production widget wiring, dynamic actor activity projections, same-name/session reincarnation fixes, and owned WorkflowActor UX through isolated worktrees |
 | 5. Authority cutover | Deferred | Owned execution parity proven; disable third-party authority without dual writers; retain bounded rollback window |
 | 6. Legacy removal | Deferred | Remove `pi-subagents`, old XState/Terminal Kit observer, superseded tests/docs/packages |
 | 7. Managed deployment | Live | Reviewed binary provisioning and active systemd-user/LaunchAgent transition; Linux/WSL/macOS validation |
@@ -35,7 +35,7 @@ Current managed entry point: restart an ordinary globally discovered `pi`; the `
 ## Next three deliverables
 
 1. Complete `TASK-1.1`: wire the shipped XState render snapshots and responsive Pi TUI widgets into the production actor-client renderers, then pass the non-phase Actor UX acceptance matrix.
-2. Complete `TASK-1.2`: publish typed AgentActor/WorkflowActor productive phases; consume them through authenticated actor-client projections and an owner-bound hosted Pi runtime subscription that updates only exactly owned tmux UI, without liveness inference, polling, or scraping.
+2. Complete `TASK-1.2`: publish revision-fenced, workflow-defined actor activity metadata; consume it through authenticated actor-client projections and an owner-bound hosted Pi runtime subscription that updates only exactly owned tmux UI, without fixed domain enums, role inference, liveness inference, polling, or scraping.
 3. Complete `TASK-1.3`: drive worker -> reviewer -> QA -> correction and a durable user decision through WorkflowActor without PM UI dependence.
 
 The actor-native Ask path is live. After apply/reload, retained completions 30-32 replayed once in order and a fresh sequence 33 completed automatically with `ACTOR_UI_E2E_OK`. The production follow-through remains tracked under the `TASK-1` initiative; deprecation and parity-gated removal of the legacy Pi packages are `TASK-17` and `TASK-18`. Immediate same-name/session reincarnation and terminal roster hygiene remain independently tracked rather than being hidden inside UI work.

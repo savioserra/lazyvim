@@ -6,7 +6,7 @@ Status: approved UX contract for implementation. This document is the exact visu
 
 | Layer | Purpose | Allowed content |
 |---|---|---|
-| Realtime status | Temporary current state only | Authenticated connection plus daemon-published actor lifecycle; productive labels only after AgentActor/WorkflowActor exposes a typed productive phase |
+| Realtime status | Temporary current state only | Authenticated connection plus daemon-published actor lifecycle; activity labels only after AgentActor/WorkflowActor publishes revision-fenced dynamic activity metadata |
 | Conversation flow | Durable human-readable interaction | Received notes, requests, sent messages, replies, decisions, and failures |
 | Expanded details | Optional operational context | Dynamic role, duration, delivery state, evidence summary |
 
@@ -173,7 +173,7 @@ Actors
 ● UX QA                ready
 ```
 
-The fixed Pi status bar uses the same authority but a compact one-line form, for example `actors UX Implementer:[redacted] ready Architecture Review:[redacted] degraded +2`. It is length-bounded, sanitized, and shows an overflow count instead of wrapping. Until a typed productive phase is added by AgentActor/WorkflowActor, the status bar intentionally prefixes lifecycle as `[redacted]` and never shows `working`, `testing`, or similar productive activity.
+The fixed Pi status bar uses the same authority but a compact one-line form, for example `actors UX Implementer:[redacted] ready Architecture Review:[redacted] degraded +2`. It is length-bounded, sanitized, and shows an overflow count instead of wrapping. Until revision-fenced dynamic activity metadata is published by AgentActor/WorkflowActor, the status bar intentionally prefixes lifecycle as `[redacted]` and never invents `working`, `testing`, or similar activity.
 
 ## 6. Layout and responsive behavior
 
@@ -206,23 +206,16 @@ Example titles:
 ● UX Delivery Manager · coordination · waiting for decision
 ```
 
-Truthful phases:
+Dynamic activity contract:
 
-- idle
-- working
-- waiting
-- reviewing
-- testing
-- correcting
-- failed
-- degraded
-
-Rules:
-
-- Productive phase comes from AgentActor or WorkflowActor state.
-- Process, Pi, tmux, or heartbeat liveness is never productive progress.
+- Activity values are opaque, bounded keys and optional human labels published by the owning AgentActor or WorkflowActor.
+- Values such as `reviewing`, `testing`, or `correcting` are workflow/domain examples only; they are not a daemon/client enum.
+- Role and activity are independent. A role never implies an activity, identical roles may have different activity, and a role change does not synthesize a phase transition.
+- Unknown/new activity keys remain renderable after sanitization without a daemon, client, or renderer release.
+- Lifecycle/availability remains a separate authoritative projection; clearing activity does not fabricate `idle`.
+- Process, Pi, tmux, heartbeat, tool output, or elapsed time never implies productive progress.
 - Runtime authority validates exact ownership before updating a pane.
-- Ordinary client roster UI consumes authenticated daemon push (`ClientAgentRosterFrame`) with epoch/sequence fencing. It must not poll `ListAgentsRequest` for fixed status-bar refresh.
+- Ordinary client roster UI consumes authenticated daemon push (`ClientAgentRosterFrame`) with epoch/sequence and activity-revision fencing. It must not poll `ListAgentsRequest` for fixed status-bar refresh.
 - No foreign tmux resources may be modified.
 
 ## 9. Scrolling
