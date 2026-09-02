@@ -1,11 +1,11 @@
 ---
 id: TASK-22.4
 title: Run isolated introspection and automatically resume threads
-status: In Progress
+status: Done
 assignee:
   - '@pi'
 created_date: '2026-09-02 06:10'
-updated_date: '2026-09-02 12:56'
+updated_date: '2026-09-02 13:00'
 labels: []
 dependencies:
   - TASK-22.3
@@ -58,6 +58,8 @@ Re-finalization gates after bypass retirement: full go test -race ./..., go vet 
 Live deployed Ask to ui_qa failed as thread introspection exhausted. Reproduced with the real managed Pi runner: the model emitted numeric confidence and an unsupported reason_class because the classifier system prompt named only state literals. Strengthened the prompt to require exactly seven keys, string-only values, all confidence/reason literals, and exact per-state combinations. A real openai-codex/gpt-5.6-sol runner probe now passes strict parsing; added prompt-contract regression assertions.
 
 Second live comms root cause found: production uses StartWebSocketConfigured, but only the retired Unix-socket StartConfigured path initialized hosted.IntrospectionRunner from introspection_model. Every real thread therefore ran with runner_unavailable and exhausted after three attempts; the model answers themselves were delivered correctly. Centralized runner initialization and wired it into WebSocket startup before listener effects; added a production-start regression test.
+
+Fresh deployed live proof succeeded after WebSocket runner initialization: UI QA Ask request a1425f90-a54a-48c2-8d5f-6625e7432002, source mutation sequence 13, returned COMMS_OK through durable ActorTask, settlement, real isolated introspection, completion push, and source commit. Full race/vet/codegen/protocol/capabilities gates pass.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
@@ -66,4 +68,6 @@ Second live comms root cause found: production uses StartWebSocketConfigured, bu
 Wired persisted settlement to isolated introspection, exact attempt identity, bounded retries, automatic resume, inert wait/block states, high-confidence completion, source-commit acknowledgement, and terminal tombstone compaction. Added independent rejection of acknowledgements and sent-elsewhere pointers so only same-thread deliverables complete Ask work. Verified with restart, duplicate, cross-node, race, protocol, and deployment tests.
 
 Legacy PromptTask and TaskLifecycle bypasses were retired so ActorMessage Ask and durable ActorTask threads are now the exclusive model-work authority.
+
+Production WebSocket startup now constructs the managed introspection runner; fresh live Ask sequence 13 proves end-to-end completion.
 <!-- SECTION:FINAL_SUMMARY:END -->
