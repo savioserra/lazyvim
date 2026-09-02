@@ -166,6 +166,104 @@ func TestTaskCreditAndTaskRequestsRejectNoSenderSentinel(t *testing.T) {
 // The source starts at 21 to model an explicit daemon-state reset while a
 // connected client retains its monotonic allocator. A fresh durable namespace
 // may adopt any positive first sequence; every later admission is dense.
+
+func TestSourceMutationReceiptsFencePendingAcceptedTerminalAndLegacyHistory(t *testing.T) {
+	ctx := context.Background()
+	system, err := goakt.NewActorSystem("source-mutation-receipts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = system.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = system.Stop(ctx) })
+	target := spawnTaskPeer(t, ctx, system, "receipt-target")
+	source, err := system.Spawn(ctx, "receipt-source", actors.NewAgentActor(&application.RegisterAgent{AgentID: "client:pm", AuthorityBinding: application.AuthorityBinding{Kind: application.AuthorityBindingPhaseOneObservedUpstream, ObservedUpstreamRunID: "client:pm"}, HostedPiRuntime: application.InactiveHostedPiRuntimeBinding(), AllowedCapability: []string{"send", "ask"}, Retention: "bounded", Recovery: "terminal-reattach"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	send := func(requestID, dedupeID, chainID, targetID, capability string, sequence uint64, mode application.BridgeMessageMode, payload string) application.BridgeIntentResult {
+		receipt := make(chan application.BridgeIntentResult, 1)
+		if err := system.NoSender().Tell(ctx, source, &application.SendActorTask{TargetPID: target.pid, TargetPeer: application.CommunicationPeer{StableID: targetID}, RequestID: requestID, DedupeID: dedupeID, ChainID: chainID, RequiredCapability: capability, SourceMutationSequence: sequence, Deadline: time.Now().Add(time.Minute), HopLimit: 8, Mode: mode, Payload: []byte(payload), Receipt: receipt}); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case result := <-receipt:
+			return result
+		case <-time.After(time.Second):
+			t.Fatalf("receipt missing for %s", requestID)
+		}
+		return application.BridgeIntentResult{}
+	}
+	assertStored := func(result application.BridgeIntentResult) {
+		if !result.Accepted || result.Reason != "stored_pending_credit" {
+			t.Fatalf("expected stored pending credit, got %#v", result)
+		}
+	}
+	assertCollision := func(label string, result application.BridgeIntentResult) {
+		if result.Accepted || result.Reason != "source mutation sequence collision" {
+			t.Fatalf("%s did not fail closed: %#v", label, result)
+		}
+	}
+	assertStored(send("request", "dedupe", "chain", "target-agent", "send", 1, application.BridgeMessageTell, "payload"))
+	assertStored(send("request", "dedupe", "chain", "target-agent", "send", 1, application.BridgeMessageTell, "payload"))
+	assertCollision("payload", send("request", "dedupe", "chain", "target-agent", "send", 1, application.BridgeMessageTell, "changed"))
+	assertCollision("dedupe", send("request", "other-dedupe", "chain", "target-agent", "send", 1, application.BridgeMessageTell, "payload"))
+	assertCollision("chain", send("request", "dedupe", "other-chain", "target-agent", "send", 1, application.BridgeMessageTell, "payload"))
+	assertCollision("target", send("request", "dedupe", "chain", "other-target", "send", 1, application.BridgeMessageTell, "payload"))
+	assertCollision("mode", send("request", "dedupe", "chain", "target-agent", "ask", 1, application.BridgeMessageAsk, "payload"))
+	assertCollision("capability", send("request", "dedupe", "chain", "target-agent", "ask", 1, application.BridgeMessageTell, "payload"))
+	if err := target.tell(ctx, source, &application.ActorTaskAccepted{TaskID: "client:pm:dedupe:chain:1", TargetAgentID: "target-agent", Accepted: true}); err != nil {
+		t.Fatal(err)
+	}
+	assertStored(send("request", "dedupe", "chain", "target-agent", "send", 1, application.BridgeMessageTell, "payload"))
+	completed := application.ActorTaskCompleted{CompletionKey: "completion", OriginalRequestID: "request", DedupeID: "dedupe", ChainID: "chain", SourceMutationSequence: 1, Terminal: application.BridgeIntentResult{Accepted: true, Completed: true, Result: []byte("done")}, Source: application.CommunicationPeer{StableID: "client:pm"}, Target: application.CommunicationPeer{StableID: "target-agent"}, Kind: application.BridgeDeliveryNotification}
+	if err := system.NoSender().Tell(ctx, source, &completed); err != nil {
+		t.Fatal(err)
+	}
+	terminal := send("request", "dedupe", "chain", "target-agent", "send", 1, application.BridgeMessageTell, "payload")
+	if !terminal.Accepted || !terminal.Completed || string(terminal.Result) != "done" {
+		t.Fatalf("terminal receipt not replayed: %#v", terminal)
+	}
+	assertCollision("terminal payload", send("request", "dedupe", "chain", "target-agent", "send", 1, application.BridgeMessageTell, "changed"))
+
+	restartDigest := sha256.Sum256([]byte("restart payload"))
+	restartFingerprint := application.SourceMutationFingerprint{RequestID: "request", DedupeID: "dedupe", ChainID: "chain", SourceMutationSequence: 1, TargetStableID: "target-agent", RequiredCapability: "send", Mode: application.BridgeMessageTell, PayloadDigest: restartDigest}
+	restartRecord := application.DurableHostedRecord{SchemaVersion: application.DurableHostedSchemaVersion, AgentID: "client:restart", AuthorityBinding: application.AuthorityBinding{Kind: application.AuthorityBindingPhaseOneObservedUpstream, ObservedUpstreamRunID: "client:restart"}, Binding: application.InactiveHostedPiRuntimeBinding(), AgentState: application.DurableAgentState{ActorMessageHighWater: 1, SourceMutationReceipts: []application.DurableSourceMutationReceipt{{TaskID: "client:restart:dedupe:chain:1", Fingerprint: restartFingerprint, Result: application.BridgeIntentResult{Accepted: true, Completed: true, Result: []byte("restart done")}}}}}
+	restarted, err := system.Spawn(ctx, "restart-source", actors.NewAgentActor(&application.RegisterAgent{AgentID: "client:restart", AuthorityBinding: restartRecord.AuthorityBinding, HostedPiRuntime: application.InactiveHostedPiRuntimeBinding(), AllowedCapability: []string{"send"}, Retention: "bounded", Recovery: "terminal-reattach", DurableRecord: &restartRecord}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	restartReceipt := make(chan application.BridgeIntentResult, 1)
+	if err := system.NoSender().Tell(ctx, restarted, &application.SendActorTask{TargetPID: target.pid, TargetPeer: application.CommunicationPeer{StableID: "target-agent"}, RequestID: "request", DedupeID: "dedupe", ChainID: "chain", RequiredCapability: "send", SourceMutationSequence: 1, Deadline: time.Now().Add(time.Minute), HopLimit: 8, Mode: application.BridgeMessageTell, Payload: []byte("restart payload"), Receipt: restartReceipt}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case result := <-restartReceipt:
+		if !result.Accepted || !result.Completed || string(result.Result) != "restart done" {
+			t.Fatalf("restart receipt not replayed: %#v", result)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("restart receipt missing")
+	}
+
+	legacyRecord := application.DurableHostedRecord{SchemaVersion: application.DurableHostedSchemaVersion, AgentID: "client:legacy", AuthorityBinding: application.AuthorityBinding{Kind: application.AuthorityBindingPhaseOneObservedUpstream, ObservedUpstreamRunID: "client:legacy"}, Binding: application.InactiveHostedPiRuntimeBinding(), AgentState: application.DurableAgentState{ActorMessageHighWater: 1, SourceTaskHistory: []application.ActorTaskCompleted{{CompletionKey: "legacy", OriginalRequestID: "request", DedupeID: "dedupe", ChainID: "chain", SourceMutationSequence: 1, Terminal: application.BridgeIntentResult{Accepted: true, Completed: true, Result: []byte("legacy")}, Source: application.CommunicationPeer{StableID: "client:legacy"}, Target: application.CommunicationPeer{StableID: "target-agent"}, Kind: application.BridgeDeliveryNotification}}}}
+	legacy, err := system.Spawn(ctx, "legacy-source", actors.NewAgentActor(&application.RegisterAgent{AgentID: "client:legacy", AuthorityBinding: legacyRecord.AuthorityBinding, HostedPiRuntime: application.InactiveHostedPiRuntimeBinding(), AllowedCapability: []string{"send"}, Retention: "bounded", Recovery: "terminal-reattach", DurableRecord: &legacyRecord}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyReceipt := make(chan application.BridgeIntentResult, 1)
+	if err := system.NoSender().Tell(ctx, legacy, &application.SendActorTask{TargetPID: target.pid, TargetPeer: application.CommunicationPeer{StableID: "target-agent"}, RequestID: "request", DedupeID: "dedupe", ChainID: "chain", RequiredCapability: "send", SourceMutationSequence: 1, Deadline: time.Now().Add(time.Minute), HopLimit: 8, Mode: application.BridgeMessageTell, Payload: []byte("changed"), Receipt: legacyReceipt}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case result := <-legacyReceipt:
+		assertCollision("legacy history without fingerprint", result)
+	case <-time.After(time.Second):
+		t.Fatal("legacy receipt missing")
+	}
+}
+
 func TestForgedTargetOriginCannotGrantCreditRetireOutboxOrPublishCommit(t *testing.T) {
 	ctx := context.Background()
 	system, err := goakt.NewActorSystem("task-origin-source", goakt.WithPubSub())

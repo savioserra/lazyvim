@@ -247,7 +247,9 @@ func TestDeterministicHostedBridgeGatewayAndClientIndependence(t *testing.T) {
 	if !tell.GetActorMessageResponse().Accepted {
 		t.Fatalf("tell admission rejected: %#v", tell)
 	}
-	askAdmission := request(t, path, fencedBase(&subagentsv1.Envelope_ActorMessageRequest{ActorMessageRequest: &subagentsv1.ActorMessageRequest{Mode: subagentsv1.ActorMessageRequest_MODE_ASK, Target: "agent-one", BoundedPayload: []byte("ask-message"), DedupeId: "ask", HopLimit: 8, ChainId: "chain-ask", SourceMutationSequence: 2}})).GetActorMessageResponse()
+	askEnvelope := fencedBase(&subagentsv1.Envelope_ActorMessageRequest{ActorMessageRequest: &subagentsv1.ActorMessageRequest{Mode: subagentsv1.ActorMessageRequest_MODE_ASK, Target: "agent-one", BoundedPayload: []byte("ask-message"), DedupeId: "ask", HopLimit: 8, ChainId: "chain-ask", SourceMutationSequence: 2}})
+	askEnvelope.RequestId = "ask-request"
+	askAdmission := request(t, path, askEnvelope).GetActorMessageResponse()
 	if !askAdmission.Accepted || askAdmission.Completed {
 		t.Fatalf("ask admission should be asynchronous: %#v", askAdmission)
 	}
@@ -273,7 +275,9 @@ func TestDeterministicHostedBridgeGatewayAndClientIndependence(t *testing.T) {
 			t.Fatalf("delivery ack rejected: %#v", ack)
 		}
 	}
-	askReplay := request(t, path, fencedBase(&subagentsv1.Envelope_ActorMessageRequest{ActorMessageRequest: &subagentsv1.ActorMessageRequest{Mode: subagentsv1.ActorMessageRequest_MODE_ASK, Target: "agent-one", BoundedPayload: []byte("ask-message"), DedupeId: "ask", HopLimit: 8, ChainId: "chain-ask", SourceMutationSequence: 2}})).GetActorMessageResponse()
+	askReplayEnvelope := fencedBase(&subagentsv1.Envelope_ActorMessageRequest{ActorMessageRequest: &subagentsv1.ActorMessageRequest{Mode: subagentsv1.ActorMessageRequest_MODE_ASK, Target: "agent-one", BoundedPayload: []byte("ask-message"), DedupeId: "ask", HopLimit: 8, ChainId: "chain-ask", SourceMutationSequence: 2}})
+	askReplayEnvelope.RequestId = "ask-request"
+	askReplay := request(t, path, askReplayEnvelope).GetActorMessageResponse()
 	if !askReplay.Accepted || !askReplay.Completed {
 		t.Fatalf("completed ASK exact retry did not return immediately: %#v", askReplay)
 	}

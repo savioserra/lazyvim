@@ -15,6 +15,23 @@ import (
 func testRecord(root string) application.DurableHostedRecord {
 	return application.DurableHostedRecord{SchemaVersion: application.DurableHostedSchemaVersion, OwnerUID: os.Getuid(), AgentID: "agent", AuthorityBinding: application.AuthorityBinding{Kind: application.AuthorityBindingHostedOwned, HostedRuntimeID: "runtime"}, AllowedCapabilities: []string{"send"}, Retention: "explicit", Recovery: "owned-binding-v2", Session: application.DurableHostedSession{SessionID: "session", GenerationID: "generation", Caller: "hosted:agent", Capabilities: []string{"send"}, Persistent: true, CredentialFile: filepath.Join(root, "credentials", "agent.json")}, LaunchSpec: application.HostedPiLaunchSpec{AgentID: "agent", RuntimeID: "runtime", Incarnation: 1, TmuxSession: "tmux", TmuxWindow: "pi", PiSessionDirectory: filepath.Join(root, "sessions", "agent"), PiSessionName: "hosted-agent"}, RuntimeConfig: application.DurableRuntimeConfig{ProjectDirectory: root}, Binding: application.HostedPiRuntimeBinding{RuntimeID: "runtime", Incarnation: 1}}
 }
+func TestSourceMutationReceiptRetentionBoundIsDurablyEnforced(t *testing.T) {
+	root := t.TempDir()
+	_ = os.Chmod(filepath.Dir(root), 0o700)
+	_ = os.Chmod(root, 0o700)
+	s, err := New(filepath.Join(root, "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := testRecord(root)
+	for i := 0; i < 1025; i++ {
+		record.AgentState.SourceMutationReceipts = append(record.AgentState.SourceMutationReceipts, application.DurableSourceMutationReceipt{TaskID: "task"})
+	}
+	if err := s.Save(context.Background(), record); err == nil {
+		t.Fatal("oversized source mutation receipt retention was accepted")
+	}
+}
+
 func TestStoreAtomicCrashPointsAndSecureEnumeration(t *testing.T) {
 	for _, point := range []CrashPoint{CrashBeforeRename, CrashAfterRename, CrashBeforeReceipt} {
 		t.Run(string(point), func(t *testing.T) {

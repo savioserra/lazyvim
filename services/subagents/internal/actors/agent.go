@@ -244,6 +244,8 @@ type AgentActor struct {
 	taskCompletionOrder     []string
 	sourceTaskHistory       map[string]application.ActorTaskCompleted
 	sourceTaskHistoryOrder  []string
+	sourceMutationReceipts  map[string]application.DurableSourceMutationReceipt
+	sourceMutationOrder     []string
 	sourceMutationHighWater uint64
 	sourceOutbox            map[string]application.DurableActorTaskOutboxItem
 	sourceOutboxOrder       []string
@@ -280,7 +282,7 @@ func NewAgentActor(registration *application.RegisterAgent, registry ...*actor.P
 	metadataBinding := registration.HostedPiRuntime
 	metadataBinding.DisplayName = registration.DisplayName
 	metadataBinding.Role = registration.Role
-	value := &AgentActor{id: registration.AgentID, authorityBinding: registration.AuthorityBinding, hostedPiRuntime: metadataBinding, retention: registration.Retention, recovery: registration.Recovery, allowed: allowed, attachments: make(map[string]attachment), revoked: make(map[string]struct{}), revision: 1, commandResults: make(map[string]commandRecord), projections: make(map[string]*projectionLifecycle), deliverySources: make(map[uint64]string), taskSources: make(map[uint64]*actor.PID), durableTaskSources: make(map[uint64]application.DurableActorRef), resolvedRefs: make(map[string]*actor.PID), resolvingRefs: make(map[string]struct{}), scopeTokens: make(map[string]string), completionTellPending: make(map[string]application.DurablePendingCompletion), ackGaps: make(map[uint64]application.BridgeDeliveryAck), committedAcks: make(map[uint64]application.DurableBridgeAckRecord), taskCompletions: make(map[string]application.ActorTaskCompleted), sourceTaskHistory: make(map[string]application.ActorTaskCompleted), sourceOutbox: make(map[string]application.DurableActorTaskOutboxItem), outboxCreditAwaited: make(map[string]time.Time), taskCreditReservations: make(map[string]taskCreditReservation), mutationScopes: make(map[string]*mutationScope), persistencePID: registration.PersistencePID, persistenceSupervisor: registration.PersistenceSupervisor, durableRecord: registration.DurableRecord}
+	value := &AgentActor{id: registration.AgentID, authorityBinding: registration.AuthorityBinding, hostedPiRuntime: metadataBinding, retention: registration.Retention, recovery: registration.Recovery, allowed: allowed, attachments: make(map[string]attachment), revoked: make(map[string]struct{}), revision: 1, commandResults: make(map[string]commandRecord), projections: make(map[string]*projectionLifecycle), deliverySources: make(map[uint64]string), taskSources: make(map[uint64]*actor.PID), durableTaskSources: make(map[uint64]application.DurableActorRef), resolvedRefs: make(map[string]*actor.PID), resolvingRefs: make(map[string]struct{}), scopeTokens: make(map[string]string), completionTellPending: make(map[string]application.DurablePendingCompletion), ackGaps: make(map[uint64]application.BridgeDeliveryAck), committedAcks: make(map[uint64]application.DurableBridgeAckRecord), taskCompletions: make(map[string]application.ActorTaskCompleted), sourceTaskHistory: make(map[string]application.ActorTaskCompleted), sourceMutationReceipts: make(map[string]application.DurableSourceMutationReceipt), sourceOutbox: make(map[string]application.DurableActorTaskOutboxItem), outboxCreditAwaited: make(map[string]time.Time), taskCreditReservations: make(map[string]taskCreditReservation), mutationScopes: make(map[string]*mutationScope), persistencePID: registration.PersistencePID, persistenceSupervisor: registration.PersistenceSupervisor, durableRecord: registration.DurableRecord}
 	if registration.DurableRecord != nil {
 		value.restoreDurableState(registration.DurableRecord.AgentState)
 		// Pending outbox work and undelivered completion tells must resume on
@@ -803,6 +805,11 @@ func (a *AgentActor) durableState() application.DurableAgentState {
 			state.SourceTaskHistory = append(state.SourceTaskHistory, item)
 		}
 	}
+	for _, key := range a.sourceMutationOrder {
+		if item, ok := a.sourceMutationReceipts[key]; ok {
+			state.SourceMutationReceipts = append(state.SourceMutationReceipts, item)
+		}
+	}
 	for _, key := range a.taskCompletionOrder {
 		if item, ok := a.taskCompletions[key]; ok {
 			state.ReceivedTaskCompletions = append(state.ReceivedTaskCompletions, item)
@@ -906,6 +913,22 @@ func (a *AgentActor) restoreDurableState(state application.DurableAgentState) {
 		key := actorTaskID(sourceAgentID, item.OriginalRequestID, item.DedupeID, item.ChainID, item.SourceMutationSequence)
 		a.sourceTaskHistory[key] = item
 		a.sourceTaskHistoryOrder = append(a.sourceTaskHistoryOrder, key)
+	}
+	a.sourceMutationReceipts = make(map[string]application.DurableSourceMutationReceipt, len(state.SourceMutationReceipts))
+	a.sourceMutationOrder = nil
+	for _, receipt := range state.SourceMutationReceipts {
+		if validSourceMutationFingerprint(receipt.Fingerprint) && receipt.TaskID != "" {
+			a.sourceMutationReceipts[receipt.TaskID] = receipt
+			a.sourceMutationOrder = append(a.sourceMutationOrder, receipt.TaskID)
+		}
+	}
+	for _, taskID := range a.sourceOutboxOrder {
+		if _, exists := a.sourceMutationReceipts[taskID]; exists {
+			continue
+		}
+		if item, ok := a.sourceOutbox[taskID]; ok {
+			a.retainSourceMutationReceipt(taskID, sourceMutationFingerprintFromOutbox(item), application.BridgeIntentResult{Accepted: true, AwaitingAck: true, Reason: "stored_pending_credit"})
+		}
 	}
 	a.taskCompletions = make(map[string]application.ActorTaskCompleted, len(state.ReceivedTaskCompletions))
 	a.taskCompletionOrder = nil
@@ -1398,9 +1421,14 @@ func (a *AgentActor) sendActorTask(ctx *actor.ReceiveContext, message *applicati
 		return
 	}
 	payloadDigest := sha256.Sum256(message.Payload)
+	fingerprint := sourceMutationFingerprintFromTask(message, payloadDigest)
 	taskID := actorTaskID(a.id, message.RequestID, message.DedupeID, message.ChainID, message.SourceMutationSequence)
-	if completion, ok := a.sourceTaskHistory[taskID]; ok {
-		result := completion.Terminal
+	if receipt, ok := a.sourceMutationReceipts[taskID]; ok {
+		if !sameSourceMutationFingerprint(receipt.Fingerprint, fingerprint) {
+			respondBridgeIntent(ctx, message.Receipt, &application.BridgeIntentResult{Reason: "source mutation sequence collision"})
+			return
+		}
+		result := receipt.Result
 		respondBridgeIntent(ctx, message.Receipt, &result)
 		return
 	}
@@ -1413,10 +1441,10 @@ func (a *AgentActor) sendActorTask(ctx *actor.ReceiveContext, message *applicati
 		return
 	}
 	sequenceSuffix := fmt.Sprintf(":%d", message.SourceMutationSequence)
-	for key, completion := range a.sourceTaskHistory {
+	for key, receipt := range a.sourceMutationReceipts {
 		if strings.HasPrefix(key, a.id+":") && strings.HasSuffix(key, sequenceSuffix) {
-			if completion.DedupeID == message.DedupeID && completion.ChainID == message.ChainID && completion.SourceMutationSequence == message.SourceMutationSequence {
-				result := completion.Terminal
+			if sameSourceMutationFingerprint(receipt.Fingerprint, fingerprint) {
+				result := receipt.Result
 				respondBridgeIntent(ctx, message.Receipt, &result)
 				return
 			}
@@ -1430,6 +1458,16 @@ func (a *AgentActor) sendActorTask(ctx *actor.ReceiveContext, message *applicati
 				respondBridgeIntent(ctx, message.Receipt, &application.BridgeIntentResult{Accepted: true, AwaitingAck: true, Reason: "stored_pending_credit"})
 				return
 			}
+			respondBridgeIntent(ctx, message.Receipt, &application.BridgeIntentResult{Reason: "source mutation sequence collision"})
+			return
+		}
+	}
+	if _, legacy := a.sourceTaskHistory[taskID]; legacy {
+		respondBridgeIntent(ctx, message.Receipt, &application.BridgeIntentResult{Reason: "source mutation sequence collision"})
+		return
+	}
+	for key := range a.sourceTaskHistory {
+		if strings.HasPrefix(key, a.id+":") && strings.HasSuffix(key, sequenceSuffix) {
 			respondBridgeIntent(ctx, message.Receipt, &application.BridgeIntentResult{Reason: "source mutation sequence collision"})
 			return
 		}
@@ -1469,6 +1507,7 @@ func (a *AgentActor) sendActorTask(ctx *actor.ReceiveContext, message *applicati
 	item.TargetRef = actorRefFromPID(message.TargetPeer.StableID, message.TargetPID)
 	a.sourceOutbox[taskID] = item
 	a.sourceOutboxOrder = append(a.sourceOutboxOrder, taskID)
+	a.retainSourceMutationReceipt(taskID, fingerprint, application.BridgeIntentResult{Accepted: true, AwaitingAck: true, Reason: "stored_pending_credit"})
 	// A freshly admitted item owns its bounded retry loop immediately: a lost
 	// or backpressured initial credit request must re-drive without waiting
 	// for a daemon restart to schedule the loop.
@@ -1480,15 +1519,70 @@ func (a *AgentActor) sendActorTask(ctx *actor.ReceiveContext, message *applicati
 	}
 }
 
+func sourceMutationFingerprintFromTask(message *application.SendActorTask, payloadDigest [32]byte) application.SourceMutationFingerprint {
+	return application.SourceMutationFingerprint{RequestID: message.RequestID, DedupeID: message.DedupeID, ChainID: message.ChainID, SourceMutationSequence: message.SourceMutationSequence, TargetStableID: message.TargetPeer.StableID, Mode: message.Mode, RequiredCapability: message.RequiredCapability, PayloadDigest: payloadDigest}
+}
+
+func sourceMutationFingerprintFromOutbox(item application.DurableActorTaskOutboxItem) application.SourceMutationFingerprint {
+	digest := item.PayloadDigest
+	if digest == ([32]byte{}) && len(item.Payload) > 0 {
+		digest = sha256.Sum256(item.Payload)
+	}
+	return application.SourceMutationFingerprint{RequestID: item.RequestID, DedupeID: item.DedupeID, ChainID: item.ChainID, SourceMutationSequence: item.SourceMutationSequence, TargetStableID: item.Target.StableID, Mode: item.Mode, RequiredCapability: item.RequiredCapability, PayloadDigest: digest}
+}
+
+func validSourceMutationFingerprint(value application.SourceMutationFingerprint) bool {
+	return value.RequestID != "" && value.DedupeID != "" && value.ChainID != "" && value.SourceMutationSequence != 0 && value.TargetStableID != "" && value.Mode != application.BridgeMessageUnspecified && value.RequiredCapability != "" && value.PayloadDigest != ([32]byte{})
+}
+
+func sameSourceMutationFingerprint(left, right application.SourceMutationFingerprint) bool {
+	return validSourceMutationFingerprint(left) && validSourceMutationFingerprint(right) && left == right
+}
+
 func sameSourceOutboxMutation(item application.DurableActorTaskOutboxItem, message *application.SendActorTask, payloadDigest [32]byte) bool {
 	if message == nil {
 		return false
 	}
-	itemDigest := item.PayloadDigest
-	if itemDigest == ([32]byte{}) && len(item.Payload) > 0 {
-		itemDigest = sha256.Sum256(item.Payload)
+	return sameSourceMutationFingerprint(sourceMutationFingerprintFromOutbox(item), sourceMutationFingerprintFromTask(message, payloadDigest))
+}
+
+func (a *AgentActor) findSourceMutationReceiptForCompletion(completion application.ActorTaskCompleted) (string, application.DurableSourceMutationReceipt, bool) {
+	for _, taskID := range a.sourceMutationOrder {
+		receipt, ok := a.sourceMutationReceipts[taskID]
+		if !ok || !validSourceMutationFingerprint(receipt.Fingerprint) {
+			continue
+		}
+		fingerprint := receipt.Fingerprint
+		if fingerprint.SourceMutationSequence != completion.SourceMutationSequence || fingerprint.TargetStableID != completion.Target.StableID {
+			continue
+		}
+		if completion.OriginalRequestID != "" && fingerprint.RequestID != completion.OriginalRequestID {
+			continue
+		}
+		if completion.DedupeID != "" && fingerprint.DedupeID != completion.DedupeID {
+			continue
+		}
+		if completion.ChainID != "" && fingerprint.ChainID != completion.ChainID {
+			continue
+		}
+		return taskID, receipt, true
 	}
-	return item.RequestID == message.RequestID && item.SourceMutationSequence == message.SourceMutationSequence && item.RequiredCapability == message.RequiredCapability && item.Mode == message.Mode && item.Target.StableID == message.TargetPeer.StableID && itemDigest == payloadDigest
+	return "", application.DurableSourceMutationReceipt{}, false
+}
+
+func (a *AgentActor) retainSourceMutationReceipt(taskID string, fingerprint application.SourceMutationFingerprint, result application.BridgeIntentResult) {
+	if taskID == "" || !validSourceMutationFingerprint(fingerprint) {
+		return
+	}
+	if _, exists := a.sourceMutationReceipts[taskID]; !exists {
+		a.sourceMutationOrder = append(a.sourceMutationOrder, taskID)
+	}
+	a.sourceMutationReceipts[taskID] = application.DurableSourceMutationReceipt{TaskID: taskID, Fingerprint: fingerprint, Result: result}
+	for len(a.sourceMutationOrder) > maxCommandResults {
+		oldest := a.sourceMutationOrder[0]
+		a.sourceMutationOrder = a.sourceMutationOrder[1:]
+		delete(a.sourceMutationReceipts, oldest)
+	}
 }
 
 func (a *AgentActor) requestTaskCredit(ctx *actor.ReceiveContext, message *application.RequestTaskCredit) {
@@ -1707,6 +1801,7 @@ func (a *AgentActor) retrySourceOutbox(ctx *actor.ReceiveContext) {
 		if item.State == "quarantined_alias_target" {
 			failed := application.ActorTaskCompleted{CompletionKey: taskID, OriginalRequestID: item.RequestID, DedupeID: item.DedupeID, ChainID: item.ChainID, SourceMutationSequence: item.SourceMutationSequence, Terminal: application.BridgeIntentResult{Reason: "actor task outbox target identity quarantined"}, Source: a.communicationPeer(), Target: item.Target, Kind: application.BridgeDeliveryNotification}
 			a.retainSourceCompletion(taskID, failed)
+			a.retainSourceMutationReceipt(taskID, sourceMutationFingerprintFromOutbox(item), failed.Terminal)
 			delete(a.sourceOutbox, taskID)
 			delete(a.outboxCreditAwaited, taskID)
 			a.sourceOutboxOrder = slices.DeleteFunc(a.sourceOutboxOrder, func(id string) bool { return id == taskID })
@@ -1719,6 +1814,7 @@ func (a *AgentActor) retrySourceOutbox(ctx *actor.ReceiveContext) {
 			// retire the outbox entry.
 			failed := application.ActorTaskCompleted{CompletionKey: taskID, OriginalRequestID: item.RequestID, DedupeID: item.DedupeID, ChainID: item.ChainID, SourceMutationSequence: item.SourceMutationSequence, Terminal: application.BridgeIntentResult{Reason: "actor task deadline expired before delivery"}, Source: a.communicationPeer(), Target: item.Target, Kind: application.BridgeDeliveryNotification}
 			a.retainSourceCompletion(taskID, failed)
+			a.retainSourceMutationReceipt(taskID, sourceMutationFingerprintFromOutbox(item), failed.Terminal)
 			delete(a.sourceOutbox, taskID)
 			delete(a.outboxCreditAwaited, taskID)
 			a.sourceOutboxOrder = slices.DeleteFunc(a.sourceOutboxOrder, func(id string) bool { return id == taskID })
@@ -2257,6 +2353,11 @@ func (a *AgentActor) actorTaskCompleted(ctx *actor.ReceiveContext, message *appl
 	copy.Terminal.Result = append([]byte(nil), message.Terminal.Result...)
 	historyKey := actorTaskID(a.id, message.OriginalRequestID, message.DedupeID, message.ChainID, message.SourceMutationSequence)
 	a.retainSourceCompletion(historyKey, copy)
+	if receipt, ok := a.sourceMutationReceipts[historyKey]; ok {
+		a.retainSourceMutationReceipt(historyKey, receipt.Fingerprint, copy.Terminal)
+	} else if receiptKey, receipt, ok := a.findSourceMutationReceiptForCompletion(copy); ok {
+		a.retainSourceMutationReceipt(receiptKey, receipt.Fingerprint, copy.Terminal)
+	}
 	if a.beginDurablePersist(ctx, &pendingDurableReceipt{old: old, taskCompletionPublish: &copy}) {
 		return
 	}

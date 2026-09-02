@@ -59,6 +59,19 @@ type DurableDedupeRecord struct {
 	Sequence, MutationSequence uint64
 	ChainID                    string
 }
+type SourceMutationFingerprint struct {
+	RequestID, DedupeID, ChainID, TargetStableID, RequiredCapability string
+	SourceMutationSequence                                           uint64
+	Mode                                                             BridgeMessageMode
+	PayloadDigest                                                    [32]byte
+}
+
+type DurableSourceMutationReceipt struct {
+	TaskID      string                    `json:"task_id"`
+	Fingerprint SourceMutationFingerprint `json:"fingerprint"`
+	Result      BridgeIntentResult        `json:"result"`
+}
+
 type DurableActorTaskOutboxItem struct {
 	TaskID                                           string            `json:"task_id"`
 	Target                                           CommunicationPeer `json:"target"`
@@ -109,6 +122,7 @@ type DurableAgentState struct {
 	ActorMessageHighWater                                                           uint64
 	SourceOutbox                                                                    []DurableActorTaskOutboxItem
 	SourceTaskHistory                                                               []ActorTaskCompleted
+	SourceMutationReceipts                                                          []DurableSourceMutationReceipt
 	ReceivedTaskCompletions                                                         []ActorTaskCompleted
 	TaskCreditEpoch                                                                 uint64
 	TaskCreditReservations                                                          []DurableTaskCreditReservation
