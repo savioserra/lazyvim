@@ -5,9 +5,10 @@ status: To Do
 assignee:
   - '@pi'
 created_date: '2026-09-02 02:56'
+updated_date: '2026-09-02 02:56'
 labels: []
 dependencies:
-  - TASK-1
+  - TASK-1.1
 references:
   - docs/architecture/subagents/ACTOR-UX-DESIGN-SYSTEM.md
 parent_task_id: TASK-1

@@ -5,9 +5,10 @@ status: To Do
 assignee:
   - '@pi'
 created_date: '2026-09-02 02:56'
+updated_date: '2026-09-02 02:56'
 labels: []
 dependencies:
-  - TASK-1
+  - TASK-1.2
 references:
   - docs/architecture/subagents/ROADMAP.md
   - docs/architecture/subagents/ACTOR-UX-DESIGN-SYSTEM.md
