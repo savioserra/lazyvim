@@ -304,6 +304,7 @@ test("the real bridge delivery path acknowledges prompts end to end", async (t) 
   assert.equal(sentUserMessages[0].options?.deliverAs, "followUp", "prompt injection must queue as followUp so a streaming agent cannot silently reject it");
   assert.match(sentUserMessages[0].content, /PROJECT MANAGER · project manager asked you/);
   assert.match(sentUserMessages[0].content, /Reply exactly WAKE-INTEGRATION-OK/);
+  await fire("agent_start", { type: "agent_start" });
   await fire("agent_end", { type: "agent_end", messages: [
     { role: "user", content: [{ type: "text", text: "Reply exactly WAKE-INTEGRATION-OK" }] },
     { role: "assistant", content: [{ type: "text", text: "WAKE-INTEGRATION-OK" }] },
@@ -334,6 +335,7 @@ test("the real bridge delivery path acknowledges prompts end to end", async (t) 
   // the task with exactly one failed acknowledgement so the cursor advances.
   daemon.deliveries.push(promptDelivery(2, "dedupe-2", "Reply exactly NEVER-ANSWERED"));
   await waitFor(() => sentUserMessages.length === 2, "the second prompt to be injected");
+  await fire("agent_start", { type: "agent_start" });
   await fire("agent_end", { type: "agent_end", messages: [{ role: "user", content: [{ type: "text", text: "Reply exactly NEVER-ANSWERED" }] }] });
   await fire("agent_settled", { type: "agent_settled" });
   await waitFor(() => daemon.acks.filter((ack) => ack.sequence === 2n).length === 1, "the failed prompt acknowledgement");

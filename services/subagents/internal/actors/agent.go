@@ -3186,7 +3186,10 @@ func (a *AgentActor) bridgeDeliveryAck(ctx *actor.ReceiveContext, message *appli
 	// Fail-closed identity enforcement before any effects: the acknowledgement
 	// must name the exact runtime, incarnation, Pi session, delivery kind,
 	// source scope, sequence, dedupe identity, and completion key.
-	if !a.validAckIdentity(message, &delivery) {
+	if rejection := a.ackIdentityRejection(message, &delivery); rejection != "" {
+		// Log only the bounded mismatch class plus public logical actor/sequence;
+		// never emit handles, fences, runtime/session identity, or payload data.
+		fmt.Fprintf(os.Stderr, "bridge delivery ack identity mismatch: agent=%s sequence=%d class=%s\n", a.id, message.Sequence, rejection)
 		respondBridgeAck(ctx, message.Completion, &application.BridgeDeliveryAckResult{Reason: "delivery acknowledgement identity rejected"})
 		return
 	}
@@ -3255,25 +3258,41 @@ func bridgeAckMatchesRecord(message *application.BridgeDeliveryAck, record appli
 }
 
 func (a *AgentActor) validAckIdentity(message *application.BridgeDeliveryAck, delivery *application.BridgeDelivery) bool {
-	// SourceScope is the opaque server-issued scope token: equality proves the
-	// acknowledgement names the exact scope that issued the delivery without
-	// exposing the underlying identity tuple.
-	if delivery.SourceScope == "" || delivery.CompletionKey == "" || message.Sequence != delivery.Sequence || message.DedupeID != delivery.DedupeID || message.Kind != application.BridgeDeliveryKindLabel(delivery.Kind) || message.SourceScope != delivery.SourceScope || message.CompletionKey != delivery.CompletionKey {
-		return false
+	return a.ackIdentityRejection(message, delivery) == ""
+}
+
+func (a *AgentActor) ackIdentityRejection(message *application.BridgeDeliveryAck, delivery *application.BridgeDelivery) string {
+	if message == nil || delivery == nil || delivery.SourceScope == "" || delivery.CompletionKey == "" || message.Sequence != delivery.Sequence || message.DedupeID != delivery.DedupeID || message.Kind != application.BridgeDeliveryKindLabel(delivery.Kind) || message.SourceScope != delivery.SourceScope || message.CompletionKey != delivery.CompletionKey {
+		return "delivery"
 	}
 	if delivery.ThreadID == "" {
 		if message.ThreadID != "" || message.SchedulerEpoch != 0 || message.ActiveLease != 0 || message.ThreadTurn != 0 || message.BridgeRunCounter != 0 || message.AgentEndObserved || message.AgentSettledObserved {
-			return false
+			return "unexpected-thread"
 		}
-	} else if message.ThreadID != delivery.ThreadID || message.SchedulerEpoch != delivery.SchedulerEpoch || message.ActiveLease != delivery.ActiveLease || message.ThreadTurn != delivery.ThreadTurn || message.ThreadID != a.threadScheduler.ActiveThreadID || message.SchedulerEpoch != a.threadScheduler.Epoch || message.ActiveLease != a.threadScheduler.ActiveLease || message.BridgeRunCounter == 0 || message.BridgeRunCounter <= a.bridgeRunCounterHighWater || (message.Delivered && (!message.AgentEndObserved || !message.AgentSettledObserved)) {
-		return false
+	} else {
+		if message.ThreadID != delivery.ThreadID || message.SchedulerEpoch != delivery.SchedulerEpoch || message.ActiveLease != delivery.ActiveLease || message.ThreadTurn != delivery.ThreadTurn {
+			return "thread-tuple"
+		}
+		if message.ThreadID != a.threadScheduler.ActiveThreadID || message.SchedulerEpoch != a.threadScheduler.Epoch || message.ActiveLease != a.threadScheduler.ActiveLease {
+			return "active-lease"
+		}
+		if message.BridgeRunCounter == 0 || message.BridgeRunCounter <= a.bridgeRunCounterHighWater {
+			return "run-counter"
+		}
+		if message.Delivered && (!message.AgentEndObserved || !message.AgentSettledObserved) {
+			return "settlement"
+		}
 	}
 	if delivery.DeliveryBackend == "regular" {
-		return message.RuntimeID == "" && message.Incarnation == 0 && message.PiSessionID == "" && message.Principal == a.id && a.validHandle(message.SessionID, message.GenerationID, message.Principal, message.Handle, message.Fence, "observe")
+		if message.RuntimeID != "" || message.Incarnation != 0 || message.PiSessionID != "" || message.Principal != a.id || !a.validHandle(message.SessionID, message.GenerationID, message.Principal, message.Handle, message.Fence, "observe") {
+			return "regular-binding"
+		}
+		return ""
 	}
-	return message.RuntimeID == a.hostedPiRuntime.RuntimeID &&
-		message.Incarnation == a.hostedPiRuntime.Incarnation &&
-		message.PiSessionID == a.bridgePiSession
+	if message.RuntimeID != a.hostedPiRuntime.RuntimeID || message.Incarnation != a.hostedPiRuntime.Incarnation || message.PiSessionID != a.bridgePiSession {
+		return "hosted-binding"
+	}
+	return ""
 }
 
 // commitContiguousAcks commits the triggering acknowledgement when it extends

@@ -360,7 +360,7 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
     ctx.ui.setStatus("hosted-pi-bridge", "hosted bridge ready");
   });
 
-  pi.on("agent_start", async () => { await lifecycle(BridgeLifecycleRequest_Event.AGENT_START); });
+  pi.on("agent_start", async () => { prompts.agentStart(); await lifecycle(BridgeLifecycleRequest_Event.AGENT_START); });
   // agent_end only records the finished run's messages: the answer is
   // correlated when the session settles, so a run that started before the
   // prompt was injected can never be mistaken for the prompt's answer and a

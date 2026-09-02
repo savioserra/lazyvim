@@ -402,11 +402,14 @@ test("prompt delivery injects followUp, correlates the settled answer, and ignor
   const delivery={dedupeId:"d1",boundedPayload:new TextEncoder().encode("implement next task"),hopLimit:7,deadlineUnixMillis:BigInt(Date.now()+1000),chainId:"chain",sequence:1n};
   await coordinator.deliver(delivery,{handle:"h",fence:1n});
   assert.deepEqual(sent,["implement next task"]);
-  // An agent_end from a run that never included the prompt carries no
-  // correlated answer and must not acknowledge.
-  await coordinator.agentEnd([{role:"user",content:"unrelated"}]);
+  // A stale settlement from before the injected follow-up starts must not
+  // manufacture zero-counter evidence or acknowledge the pending prompt.
   await coordinator.settled();
-  assert.equal(acknowledgements.length,1,"run without an assistant answer acknowledged exactly once as failed");
+  assert.equal(acknowledgements.length,0);
+  coordinator.agentStart();
+  coordinator.agentEnd([{role:"user",content:"unrelated"}]);
+  await coordinator.settled();
+  assert.equal(acknowledgements.length,1,"correlated run without an assistant answer acknowledged exactly once as failed");
   assert.equal(acknowledgements[0].delivered,false);
   assert.match(acknowledgements[0].reason,/without an assistant answer/);
   assert.equal(coordinator.active(),undefined);
@@ -422,6 +425,7 @@ test("prompt completion correlates the answer only when the session settles", as
   const coordinator=new PromptTaskCoordinator(async()=>{},async(_pending,delivered,answer,reason,settlement)=>acknowledgements.push({delivered,answer,reason,settlement}));
   const delivery={dedupeId:"d-answer",boundedPayload:new TextEncoder().encode("task"),hopLimit:4,deadlineUnixMillis:BigInt(Date.now()+1000),chainId:"chain",sequence:5n};
   await coordinator.deliver(delivery,{handle:"h",fence:5n});
+  coordinator.agentStart();
   await coordinator.agentEnd([{role:"assistant",content:[{type:"text",text:"partial"}]}]);
   assert.equal(acknowledgements.length,0,"agent_end alone must never acknowledge");
   await coordinator.settled();
@@ -481,6 +485,7 @@ test("prompt completion survives acknowledgement response loss and reconnect", a
   const coordinator=new PromptTaskCoordinator((text)=>sent.push(text),async(_pending,_delivered,answer)=>{attempts++;assert.equal(answer,"durable answer");if(attempts===1)throw new Error("response lost");});
   const delivery={dedupeId:"d2",boundedPayload:new TextEncoder().encode("task"),hopLimit:4,deadlineUnixMillis:BigInt(Date.now()+1000),chainId:"chain-2",sequence:2n};
   await coordinator.deliver(delivery,{handle:"h",fence:2n});
+  coordinator.agentStart();
   await coordinator.agentEnd([{role:"assistant",content:"durable answer"}]);
   await assert.rejects(()=>coordinator.settled(),/response lost/);
   assert.ok(coordinator.active(),"response loss discarded prompt completion");

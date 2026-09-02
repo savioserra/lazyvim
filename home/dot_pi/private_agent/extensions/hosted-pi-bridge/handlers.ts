@@ -263,6 +263,8 @@ export class PromptTaskCoordinator<TFence> {
   private outcome?: { delivered: boolean; answer: string; reason: string; settlement: ThreadSettlementEvidence };
   private lastRunMessages: unknown[] = [];
   private bridgeRunCounter = 0n;
+  private activeRunCounter = 0n;
+  private pendingRunCounter = 0n;
   private lastRunCounter = 0n;
   private readonly sendUserMessage: (text: string) => void | Promise<void>;
   private readonly acknowledge: (pending: { delivery: PromptDelivery; fence: TFence }, delivered: boolean, answer: string, reason: string, settlement: ThreadSettlementEvidence) => Promise<void>;
@@ -273,7 +275,7 @@ export class PromptTaskCoordinator<TFence> {
   // abandon drops a task whose delivery the daemon no longer retains: retrying
   // such an acknowledgement can never succeed, so retaining it would wedge the
   // coordinator and every later prompt behind it.
-  abandon(reason: string): boolean { if (!this.pending) return false; this.pending = undefined; this.outcome = undefined; this.lastRunMessages = []; void reason; return true; }
+  abandon(reason: string): boolean { if (!this.pending) return false; this.pending = undefined; this.outcome = undefined; this.lastRunMessages = []; this.pendingRunCounter = 0n; this.lastRunCounter = 0n; void reason; return true; }
   async deliver(delivery: PromptDelivery, fence: TFence) {
     if (this.pending) {
       if (this.pending.delivery.dedupeId !== delivery.dedupeId) throw new Error("a different prompt task is already active");
@@ -284,6 +286,7 @@ export class PromptTaskCoordinator<TFence> {
     if (!text) throw new Error("prompt is empty");
     this.pending = { delivery, fence };
     this.lastRunMessages = [];
+    this.pendingRunCounter = 0n;
     this.lastRunCounter = 0n;
     try {
       await this.sendUserMessage(text);
@@ -294,11 +297,24 @@ export class PromptTaskCoordinator<TFence> {
       await this.finish(false, "", reason);
     }
   }
-  agentEnd(messages: unknown[]) { this.bridgeRunCounter += 1n; if (this.pending && !this.outcome) { this.lastRunMessages = messages ?? []; this.lastRunCounter = this.bridgeRunCounter; } }
+  agentStart() {
+    this.bridgeRunCounter += 1n;
+    this.activeRunCounter = this.bridgeRunCounter;
+    if (this.pending && !this.outcome && this.pendingRunCounter === 0n) this.pendingRunCounter = this.activeRunCounter;
+  }
+  agentEnd(messages: unknown[]) {
+    if (this.pending && !this.outcome && this.pendingRunCounter > 0n && this.pendingRunCounter === this.activeRunCounter) {
+      this.lastRunMessages = messages ?? [];
+      this.lastRunCounter = this.activeRunCounter;
+    }
+  }
   async settled() {
-    if (!this.pending || this.outcome) return;
+    // A stale agent_settled can arrive after prompt injection but before the
+    // follow-up run starts. It is evidence for the previous run and must not
+    // manufacture a zero-counter settlement for the newly pending task.
+    if (!this.pending || this.outcome || this.pendingRunCounter === 0n || this.lastRunCounter !== this.pendingRunCounter) return;
     const answer = boundedAssistantAnswer(this.lastRunMessages);
-    await this.finish(Boolean(answer), answer, answer ? "" : "prompt run ended without an assistant answer", { bridgeRunCounter: this.lastRunCounter, agentEndObserved: this.lastRunCounter > 0n, agentSettledObserved: true });
+    await this.finish(Boolean(answer), answer, answer ? "" : "prompt run ended without an assistant answer", { bridgeRunCounter: this.lastRunCounter, agentEndObserved: true, agentSettledObserved: true });
   }
   // expireStalled terminally fails a task whose deadline passed before its run
   // completed, so a prompt whose turn never started cannot wedge the
@@ -312,7 +328,7 @@ export class PromptTaskCoordinator<TFence> {
   }
   async shutdown() { if (this.pending) await this.finish(false,"","hosted Pi session shut down before prompt completion"); }
   private async finish(delivered:boolean,answer:string,reason:string,settlement:ThreadSettlementEvidence={bridgeRunCounter:0n,agentEndObserved:false,agentSettledObserved:false}){if(!this.pending)return;this.outcome={delivered,answer,reason,settlement};this.lifecycle?.({stage:delivered?"completed":"failed",sequence:this.pending.delivery.sequence,dedupeId:this.pending.delivery.dedupeId,detail:reason?`${reason} (class ${bridgeErrorClass(reason)})`:"assistant answer correlated"});await this.flush();}
-  private async flush(){const pending=this.pending,outcome=this.outcome;if(!pending||!outcome)return;await this.acknowledge(pending,outcome.delivered,outcome.answer,outcome.reason,outcome.settlement);if(this.pending===pending){this.pending=undefined;this.outcome=undefined;this.lastRunMessages=[];this.lastRunCounter=0n;}}
+  private async flush(){const pending=this.pending,outcome=this.outcome;if(!pending||!outcome)return;await this.acknowledge(pending,outcome.delivered,outcome.answer,outcome.reason,outcome.settlement);if(this.pending===pending){this.pending=undefined;this.outcome=undefined;this.lastRunMessages=[];this.pendingRunCounter=0n;this.lastRunCounter=0n;}}
 }
 export function boundedAssistantAnswer(messages: unknown[]): string {
   for (let index=messages.length-1;index>=0;index--){const message=messages[index] as {role?:string;content?:unknown};if(message?.role!=="assistant")continue;let text="";if(typeof message.content==="string")text=message.content;else if(Array.isArray(message.content))text=message.content.filter((part):part is {type:string;text:string}=>Boolean(part)&&typeof part==="object"&&(part as any).type==="text"&&typeof (part as any).text==="string").map((part)=>part.text).join("\n");text=text.trim();while(text&&new TextEncoder().encode(text).byteLength>16*1024)text=text.slice(0,Math.floor(text.length*0.9));return text;}return "";

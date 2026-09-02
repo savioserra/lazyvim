@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 03:03'
-updated_date: '2026-09-02 15:38'
+updated_date: '2026-09-02 16:05'
 labels: []
 dependencies: []
 references:
@@ -126,4 +126,6 @@ Follow-up lifecycle fix: hosted-pi-bridge lifecycle reporting now retries only B
 Urgent presentation-ACK fix: added protobuf FrontendCompletionAckRequest/Response and generated Go/TS bindings; actor-client now sends ACK only after conversation.complete returns presented and the projection/custom message succeeds. Service authenticates only client:* source sessions in their current generation, validates exact completion key/request/dedupe/chain/source sequence/frame sequence, and forwards MarkFrontendCompletionDelivered to the source AgentActor. Source AgentActor durably removes the pending completion from ReceivedTaskCompletions before acknowledging; duplicate ACK after durable removal is idempotent, wrong completion identity fails closed. Broker no longer treats WebSocket writer enqueue as delivery authority, so reconnect/restart replay continues until durable frontend ACK. Tests cover enqueue-without-presentation replay on reconnect, duplicate ACK idempotence, forged ACK rejection, three consecutive completions with per-frame durable ACK, actor durable ACK removal, and actor-client exact ACK payload after durable presentation. Gates passed: actor-client npm test 43/43; hosted-pi-bridge npm test 43/43; services/subagents npm ci/codegen verify/go test -race ./.../go vet ./.../npm test; git diff --check.
 
 Live actor1→actor2 E2E exposed a daemon crash at 12:33:48: async bridge push raced connection teardown and sent on a closed per-connection writer channel (Service.pushBridgeToSession, service.go:1771). Fixed by making the connection closed signal own writer-loop shutdown and deliberately leaving the connection-scoped sender channel open, so stale bounded push continuations select closed rather than panicking the process. Focused service race suite and vet pass; fresh post-deploy relay E2E remains required.
+
+Fresh relay E2E then exposed zero bridge-run-counter ACKs: prompt injection could receive a stale agent_settled from the prior run before its follow-up agent_start, causing PromptTaskCoordinator to finalize with run counter 0 and fail exact thread ACK identity forever. Coordinator now binds pending work only to the first post-injection agent_start, records agent_end only for that run, and ignores stale settlement until the correlated run ends. Added coarse payload-free ACK mismatch-class diagnostics and integration coverage for start/end/settled ordering. Hosted bridge 43/43 passes; fresh live relay remains required after runtime reincarnation.
 <!-- SECTION:NOTES:END -->
