@@ -194,19 +194,11 @@ func TestRemoteHostedOrdinaryServicePath(t *testing.T) {
 		}
 	})
 
-	t.Run("typed prompt lifecycle reaches remote bridge correlation boundary", func(t *testing.T) {
+	t.Run("legacy task lifecycle cannot bypass durable ActorTask threads", func(t *testing.T) {
 		waitRemoteDeterminate(t, local, client, "ui_remote_qa")
-		go ackNextPrompt(t, remote, "ui_remote_qa", []byte("life-answer"))
-		// Unified actor messaging advanced the tell/ask mutations in the
-		// per-source actor task scope, so this prompt lifecycle is the first
-		// client-session-scope mutation on the remote target.
-		started := local.dispatch(env(local, client, &subagentsv1.Envelope_TaskLifecycleRequest{TaskLifecycleRequest: &subagentsv1.TaskLifecycleRequest{Operation: subagentsv1.TaskLifecycleRequest_OPERATION_START, LifecycleId: "life-1", Target: "ui_remote_qa", BoundedPrompt: []byte("do work"), DedupeId: "life-d", ChainId: "life-c", HopLimit: 4, SourceMutationSequence: 1}}, "life-req", handle, fence)).GetTaskLifecycleResponse()
-		if started == nil || !started.Accepted || started.LifecycleId != "life-1" {
-			t.Fatalf("lifecycle start failed: %#v", started)
-		}
-		waited := local.dispatch(env(local, client, &subagentsv1.Envelope_TaskLifecycleRequest{TaskLifecycleRequest: &subagentsv1.TaskLifecycleRequest{Operation: subagentsv1.TaskLifecycleRequest_OPERATION_WAIT, LifecycleId: "life-1", Target: "ui_remote_qa", WaitMillis: 1000}}, "life-wait", handle, fence)).GetTaskLifecycleResponse()
-		if waited == nil || !waited.Terminal || string(waited.BoundedAnswer) != "life-answer" {
-			t.Fatalf("lifecycle wait failed: %#v", waited)
+		retired := local.dispatch(env(local, client, &subagentsv1.Envelope_TaskLifecycleRequest{TaskLifecycleRequest: &subagentsv1.TaskLifecycleRequest{Operation: subagentsv1.TaskLifecycleRequest_OPERATION_START, LifecycleId: "life-1", Target: "ui_remote_qa", BoundedPrompt: []byte("do work"), DedupeId: "life-d", ChainId: "life-c", HopLimit: 4, SourceMutationSequence: 1}}, "life-req", handle, fence))
+		if failure := retired.GetProtocolError(); failure == nil || failure.Message != "task lifecycle retired; use actor message ask" {
+			t.Fatalf("legacy lifecycle bypass was not retired fail-closed: %#v", retired)
 		}
 	})
 

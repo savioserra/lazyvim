@@ -1,11 +1,11 @@
 ---
 id: TASK-22.4
 title: Run isolated introspection and automatically resume threads
-status: Done
+status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 06:10'
-updated_date: '2026-09-02 10:04'
+updated_date: '2026-09-02 10:11'
 labels: []
 dependencies:
   - TASK-22.3
@@ -48,6 +48,10 @@ Added deterministic classification tests for completed, continue/resumable, wait
 Added restart recovery proof for both settled and in-flight introspecting threads: restored actors redrive the same bounded task/worker/checkpoint input, retained attempts remain deterministic, and backoff reaches the configured five-minute cap. The source-commit handshake keeps thread completion pinned until durable source acknowledgement and only then compacts to a bounded terminal tombstone.
 
 Final evidence: counting-runner duplicate settlement test; deterministic completed/continue/waiting/blocked/pointer-rejection transitions; restored settled/introspecting redrive; malformed/timeout parser coverage; bounded exhaustion/backoff; cross-node source-commit/tombstone handshake; actor reply push/reconnect exactly-once suite; full race/vet/codegen/protocol/capability gates; deployed 002dfde with active service and seven-pane crew retained.
+
+Post-finalization stale-map reconciliation exposed one mandatory-authority blocker: legacy TaskLifecycle START still constructs BridgeIntent directly and keeps lifecycle state in memory, bypassing ActorTask credit/thread/introspection authority. Reopened TASK-22.4 to fail this legacy path closed and require ActorMessage Ask/ActorTask for model-bearing work.
+
+Closed the mandatory-authority bypass identified from the architect map: legacy PromptTaskRequest and TaskLifecycleRequest remain wire-decodable but now fail every operation closed with fixed ActorMessage Ask guidance. Removed the disposable TaskLifecycle service map/helpers and updated local/remote tests to prove neither legacy path can route model effects. Added ADR correction and deterministic thread-ID-derived introspection backoff jitter.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

@@ -74,7 +74,8 @@ func TestThreadAttemptIdentityAndBackoffAreDeterministic(t *testing.T) {
 	if first == threadAttemptID(thread, scheduler, 1) {
 		t.Fatal("active lease was omitted from attempt identity")
 	}
-	if threadIntrospectionBackoff(1) != time.Second || threadIntrospectionBackoff(32) != 5*time.Minute {
-		t.Fatal("introspection backoff bounds changed")
+	firstDelay := threadIntrospectionBackoff("thread", 1)
+	if firstDelay != threadIntrospectionBackoff("thread", 1) || firstDelay < time.Second || firstDelay > 1250*time.Millisecond || threadIntrospectionBackoff("thread", 32) != 5*time.Minute {
+		t.Fatal("introspection backoff bounds or deterministic jitter changed")
 	}
 }

@@ -139,9 +139,6 @@ type Service struct {
 	introspectionRunner      application.ThreadIntrospectionRunner
 	persistenceSupervisor    *actor.PID
 	hostedIndeterminate      map[string]application.HostedPiRuntimeBinding
-	taskLifecycleMu          sync.Mutex
-	taskLifecycles           map[string]*taskLifecycle
-	taskLifecycleOrder       []string
 	clientSessionMu          sync.Mutex
 	clientSessions           map[string]*actor.PID
 	publicSessionGenerations map[string]string
@@ -166,16 +163,6 @@ type requestRecord struct {
 type sequenceRecord struct {
 	digest   [32]byte
 	response *subagentsv1.Envelope
-}
-
-type taskLifecycle struct {
-	id      string
-	state   subagentsv1.TaskLifecycleResponse_State
-	answer  []byte
-	reason  string
-	done    chan struct{}
-	once    sync.Once
-	created time.Time
 }
 
 type connectionReplay struct {
@@ -388,7 +375,7 @@ func startWithListener(ctx context.Context, listener net.Listener, options ...an
 	}
 	service := &Service{
 		system: system, guardian: guardian, sessionRegistry: sessions, agentRegistry: agents, sessionCoordinator: coordinator, hostedSupervisor: hostedSupervisor, workflowRegistry: workflowRegistry, taskCoordinator: taskCoordinator, publicDirectory: publicDirectory, persistenceSupervisor: persistenceSupervisor, listener: listener, actorPlane: actorPlane,
-		connectionSlots: make(chan struct{}, maxConnections), activeConnections: make(map[net.Conn]struct{}), requestResults: make(map[string]requestRecord), hostedRuntimes: make(map[string]*actor.PID), hostedRegistrations: make(map[string]hostedRegistration), hostedTerminal: make(map[string]application.HostedPiRuntimeBinding), hostedStartupFailure: make(map[string]string), hostedCleanup: make(map[string]hostedRegistration), hostedProjects: make(map[string]string), hostedStarting: make(map[string]int), registrationPlaceholders: make(map[string]*registrationPlaceholder), registrationCleanups: make(map[string]*registrationCleanup), hostedAdmin: hosted, socketPath: socketPath, hostedOperationCancels: make(map[uint64]context.CancelFunc), hostedAgentLocks: make(map[string]*sync.Mutex), registrationTimeout: requestTimeout, durableStore: durableStore, persistencePID: persistencePID, introspectionRunner: hosted.IntrospectionRunner, hostedIndeterminate: make(map[string]application.HostedPiRuntimeBinding), taskLifecycles: make(map[string]*taskLifecycle), clientSessions: make(map[string]*actor.PID), publicSessionGenerations: make(map[string]string), pushSessions: make(map[*bridgePushSession]*actor.PID), rosterSessions: make(map[*clientRosterSession]*actor.PID), actorReplySessions: make(map[string]*actorReplySession), actorReplies: make(map[string][]actorReplyRecord), actorReplyNext: make(map[string]uint64),
+		connectionSlots: make(chan struct{}, maxConnections), activeConnections: make(map[net.Conn]struct{}), requestResults: make(map[string]requestRecord), hostedRuntimes: make(map[string]*actor.PID), hostedRegistrations: make(map[string]hostedRegistration), hostedTerminal: make(map[string]application.HostedPiRuntimeBinding), hostedStartupFailure: make(map[string]string), hostedCleanup: make(map[string]hostedRegistration), hostedProjects: make(map[string]string), hostedStarting: make(map[string]int), registrationPlaceholders: make(map[string]*registrationPlaceholder), registrationCleanups: make(map[string]*registrationCleanup), hostedAdmin: hosted, socketPath: socketPath, hostedOperationCancels: make(map[uint64]context.CancelFunc), hostedAgentLocks: make(map[string]*sync.Mutex), registrationTimeout: requestTimeout, durableStore: durableStore, persistencePID: persistencePID, introspectionRunner: hosted.IntrospectionRunner, hostedIndeterminate: make(map[string]application.HostedPiRuntimeBinding), clientSessions: make(map[string]*actor.PID), publicSessionGenerations: make(map[string]string), pushSessions: make(map[*bridgePushSession]*actor.PID), rosterSessions: make(map[*clientRosterSession]*actor.PID), actorReplySessions: make(map[string]*actorReplySession), actorReplies: make(map[string][]actorReplyRecord), actorReplyNext: make(map[string]uint64),
 	}
 	if actorPlane != nil {
 		placementAuthority := placementAuthorityName(actorPlane.NodeIdentity)
@@ -2167,49 +2154,10 @@ func (s *Service) dispatch(request *subagentsv1.Envelope) *subagentsv1.Envelope 
 	case *subagentsv1.Envelope_TaskLifecycleRequest:
 		return s.taskLifecycleResponse(ctx, request, payload.TaskLifecycleRequest)
 	case *subagentsv1.Envelope_PromptTaskRequest:
-		source, validSource := authenticatedClientSource(request.CallerIdentity)
-		if !validSource || len(payload.PromptTaskRequest.BoundedPrompt) == 0 || len(payload.PromptTaskRequest.BoundedPrompt) > maxPromptBytes || payload.PromptTaskRequest.SourceMutationSequence == 0 || payload.PromptTaskRequest.HopLimit == 0 {
-			return errorResponse(request, subagentsv1.ProtocolError_CODE_INVALID_REQUEST, "task prompt identity or payload is invalid")
-		}
-		route, err := s.authorizeAgent(ctx, request, payload.PromptTaskRequest.Target, []string{"prompt"})
-		if err != nil || !route.Allowed {
-			return errorResponse(request, subagentsv1.ProtocolError_CODE_SESSION_MISMATCH, "task prompt authorization denied")
-		}
-		receipt := make(chan application.BridgeIntentResult, 1)
-		completion := make(chan application.BridgeIntentResult, 1)
-		intent := &application.BridgeIntent{SessionID: request.SessionId, GenerationID: route.GenerationID, Principal: route.Principal, Handle: request.AgentHandle, Fence: request.AgentFence, SourceAgentID: source, TargetAgentID: payload.PromptTaskRequest.Target, RequestID: request.RequestId, RequiredCapability: "prompt", DedupeID: payload.PromptTaskRequest.DedupeId, ChainID: payload.PromptTaskRequest.ChainId, Deadline: time.UnixMilli(request.DeadlineUnixMillis), HopLimit: payload.PromptTaskRequest.HopLimit, SourceMutationSequence: payload.PromptTaskRequest.SourceMutationSequence, Mode: application.BridgeMessagePrompt, Payload: append([]byte(nil), payload.PromptTaskRequest.BoundedPrompt...), Receipt: receipt, Completion: completion}
-		var result application.BridgeIntentResult
-		if route.PID.IsRemote() {
-			reply, err := s.system.NoSender().Ask(ctx, route.PID, remoteBridgeIntent(intent), requestTimeout)
-			if err != nil {
-				return internalError(response)
-			}
-			value, ok := reply.(*application.BridgeIntentResult)
-			if !ok {
-				return internalError(response)
-			}
-			result = *value
-		} else {
-			if err := s.system.NoSender().Tell(ctx, route.PID, intent); err != nil {
-				return internalError(response)
-			}
-			select {
-			case result = <-receipt:
-			case <-ctx.Done():
-				return errorResponse(request, subagentsv1.ProtocolError_CODE_DEADLINE_EXCEEDED, "task prompt admission deadline expired")
-			}
-		}
-		if result.Accepted {
-			s.pushBridgeUpdate(payload.PromptTaskRequest.Target, "prompt delivery admitted")
-		}
-		if result.Accepted && result.AwaitingAck {
-			select {
-			case result = <-completion:
-			case <-ctx.Done():
-				return errorResponse(request, subagentsv1.ProtocolError_CODE_DEADLINE_EXCEEDED, "task prompt completion deadline expired")
-			}
-		}
-		response.Payload = &subagentsv1.Envelope_PromptTaskResponse{PromptTaskResponse: &subagentsv1.PromptTaskResponse{Accepted: result.Accepted, Completed: result.Completed, BoundedAnswer: append([]byte(nil), result.Result...), Reason: result.Reason}}
+		// PromptTask was the synchronous predecessor to ActorMessage Ask and
+		// delivered BridgeIntent directly. Retain wire compatibility but reject
+		// the bypass before routing or model effects.
+		return errorResponse(request, subagentsv1.ProtocolError_CODE_INVALID_REQUEST, "prompt task retired; use actor message ask")
 	case *subagentsv1.Envelope_ActorMessageRequest:
 		capability, validMode := actorModeCapability(payload.ActorMessageRequest.Mode)
 		source, validSource := authenticatedHostedSource(request.CallerIdentity)
@@ -2817,225 +2765,13 @@ func (s *Service) clientSessionResponse(ctx context.Context, request *subagentsv
 	}
 }
 
-func (s *Service) taskLifecycleResponse(ctx context.Context, request *subagentsv1.Envelope, command *subagentsv1.TaskLifecycleRequest) *subagentsv1.Envelope {
-	response := responseEnvelope(request)
-	if command == nil || !validTaskLifecycleID(command.LifecycleId) || !validAgentID(command.Target) {
-		return errorResponse(request, subagentsv1.ProtocolError_CODE_INVALID_REQUEST, "task lifecycle identity is invalid")
-	}
-	source, validSource := authenticatedClientSource(request.CallerIdentity)
-	if !validSource {
-		return errorResponse(request, subagentsv1.ProtocolError_CODE_INVALID_REQUEST, "task lifecycle source is invalid")
-	}
-	switch command.Operation {
-	case subagentsv1.TaskLifecycleRequest_OPERATION_START:
-		return s.startTaskLifecycle(ctx, request, command, source, response)
-	case subagentsv1.TaskLifecycleRequest_OPERATION_STATUS:
-		return s.observeTaskLifecycle(ctx, request, command, response, false)
-	case subagentsv1.TaskLifecycleRequest_OPERATION_WAIT:
-		return s.observeTaskLifecycle(ctx, request, command, response, true)
-	default:
-		return errorResponse(request, subagentsv1.ProtocolError_CODE_INVALID_REQUEST, "task lifecycle operation is invalid")
-	}
-}
-
-func (s *Service) startTaskLifecycle(ctx context.Context, request *subagentsv1.Envelope, command *subagentsv1.TaskLifecycleRequest, source string, response *subagentsv1.Envelope) *subagentsv1.Envelope {
-	if len(command.BoundedPrompt) == 0 || len(command.BoundedPrompt) > maxPromptBytes || command.SourceMutationSequence == 0 || command.HopLimit == 0 {
-		return errorResponse(request, subagentsv1.ProtocolError_CODE_INVALID_REQUEST, "task lifecycle payload is invalid")
-	}
-	route, err := s.authorizeAgent(ctx, request, command.Target, []string{"prompt"})
-	if err != nil || !route.Allowed {
-		return errorResponse(request, subagentsv1.ProtocolError_CODE_SESSION_MISMATCH, "task lifecycle authorization denied")
-	}
-	lifecycle, created := s.createTaskLifecycle(command.LifecycleId)
-	if !created {
-		response.Payload = &subagentsv1.Envelope_TaskLifecycleResponse{TaskLifecycleResponse: s.protoTaskLifecycle(lifecycle)}
-		return response
-	}
-	receipt := make(chan application.BridgeIntentResult, 1)
-	runnerReceipt := make(chan application.BridgeIntentResult, 1)
-	completion := make(chan application.BridgeIntentResult, 1)
-	intent := &application.BridgeIntent{SessionID: request.SessionId, GenerationID: route.GenerationID, Principal: route.Principal, Handle: request.AgentHandle, Fence: request.AgentFence, SourceAgentID: source, TargetAgentID: command.Target, RequestID: request.RequestId, RequiredCapability: "prompt", DedupeID: command.DedupeId, ChainID: command.ChainId, Deadline: time.UnixMilli(request.DeadlineUnixMillis), HopLimit: command.HopLimit, SourceMutationSequence: command.SourceMutationSequence, Mode: application.BridgeMessagePrompt, Payload: append([]byte(nil), command.BoundedPrompt...), Receipt: receipt, Completion: completion}
-	if route.PID.IsRemote() {
-		go func() {
-			for {
-				reply, err := s.system.NoSender().Ask(context.Background(), route.PID, remoteBridgeIntent(intent), time.Until(intent.Deadline))
-				if err != nil {
-					runnerReceipt <- application.BridgeIntentResult{Reason: err.Error()}
-					return
-				}
-				result, ok := reply.(*application.BridgeIntentResult)
-				if !ok {
-					runnerReceipt <- application.BridgeIntentResult{Reason: "unexpected remote lifecycle response"}
-					return
-				}
-				// A busy target persistence window is transient: retry the
-				// intent until the deadline instead of failing the lifecycle.
-				if !result.Accepted && result.Reason == "durable persistence is busy" && time.Now().Before(intent.Deadline) {
-					time.Sleep(25 * time.Millisecond)
-					continue
-				}
-				runnerReceipt <- *result
-				return
-			}
-		}()
-	} else {
-		if err := s.system.NoSender().Tell(ctx, route.PID, intent); err != nil {
-			s.finishTaskLifecycle(lifecycle, subagentsv1.TaskLifecycleResponse_STATE_ACTOR_LOST, nil, "actor lost before prompt delivery")
-			response.Payload = &subagentsv1.Envelope_TaskLifecycleResponse{TaskLifecycleResponse: s.protoTaskLifecycle(lifecycle)}
-			return response
-		}
-		go func() {
-			select {
-			case result := <-receipt:
-				if result.Accepted {
-					s.pushBridgeUpdate(command.Target, "task delivery admitted")
-				}
-				runnerReceipt <- result
-			case <-time.After(time.Until(intent.Deadline)):
-			}
-		}()
-	}
-	go s.runTaskLifecycle(lifecycle, runnerReceipt, completion, intent.Deadline)
-	response.Payload = &subagentsv1.Envelope_TaskLifecycleResponse{TaskLifecycleResponse: s.protoTaskLifecycle(lifecycle)}
-	return response
-}
-
-func (s *Service) observeTaskLifecycle(ctx context.Context, request *subagentsv1.Envelope, command *subagentsv1.TaskLifecycleRequest, response *subagentsv1.Envelope, wait bool) *subagentsv1.Envelope {
-	route, err := s.authorizeAgent(ctx, request, command.Target, []string{"prompt"})
-	if err != nil || !route.Allowed {
-		return errorResponse(request, subagentsv1.ProtocolError_CODE_SESSION_MISMATCH, "task lifecycle authorization denied")
-	}
-	lifecycle := s.getTaskLifecycle(command.LifecycleId)
-	if lifecycle == nil {
-		return errorResponse(request, subagentsv1.ProtocolError_CODE_INVALID_REQUEST, "task lifecycle not found")
-	}
-	if wait {
-		waitMillis := command.WaitMillis
-		if waitMillis == 0 || waitMillis > 30000 {
-			waitMillis = 30000
-		}
-		timer := time.NewTimer(time.Duration(waitMillis) * time.Millisecond)
-		select {
-		case <-lifecycle.done:
-		case <-timer.C:
-		case <-ctx.Done():
-			if !timer.Stop() {
-				<-timer.C
-			}
-			return errorResponse(request, subagentsv1.ProtocolError_CODE_DEADLINE_EXCEEDED, "task lifecycle wait deadline expired")
-		}
-		if !timer.Stop() {
-			select {
-			case <-timer.C:
-			default:
-			}
-		}
-	}
-	response.Payload = &subagentsv1.Envelope_TaskLifecycleResponse{TaskLifecycleResponse: s.protoTaskLifecycle(lifecycle)}
-	return response
-}
-
-func (s *Service) createTaskLifecycle(id string) (*taskLifecycle, bool) {
-	s.taskLifecycleMu.Lock()
-	defer s.taskLifecycleMu.Unlock()
-	if lifecycle := s.taskLifecycles[id]; lifecycle != nil {
-		return lifecycle, false
-	}
-	for len(s.taskLifecycleOrder) >= 256 {
-		oldest := s.taskLifecycleOrder[0]
-		s.taskLifecycleOrder = s.taskLifecycleOrder[1:]
-		if current := s.taskLifecycles[oldest]; current != nil && taskLifecycleTerminal(current.state) {
-			delete(s.taskLifecycles, oldest)
-			continue
-		}
-		s.taskLifecycleOrder = append(s.taskLifecycleOrder, oldest)
-		break
-	}
-	lifecycle := &taskLifecycle{id: id, state: subagentsv1.TaskLifecycleResponse_STATE_ACCEPTED, done: make(chan struct{}), created: time.Now()}
-	s.taskLifecycles[id] = lifecycle
-	s.taskLifecycleOrder = append(s.taskLifecycleOrder, id)
-	return lifecycle, true
-}
-
-func (s *Service) getTaskLifecycle(id string) *taskLifecycle {
-	s.taskLifecycleMu.Lock()
-	defer s.taskLifecycleMu.Unlock()
-	return s.taskLifecycles[id]
-}
-
-func (s *Service) runTaskLifecycle(lifecycle *taskLifecycle, receipt, completion <-chan application.BridgeIntentResult, deadline time.Time) {
-	timer := time.NewTimer(time.Until(deadline))
-	defer timer.Stop()
-	var result application.BridgeIntentResult
-	select {
-	case result = <-receipt:
-	case <-timer.C:
-		s.finishTaskLifecycle(lifecycle, subagentsv1.TaskLifecycleResponse_STATE_TIMEOUT, nil, "task lifecycle admission deadline expired")
-		return
-	}
-	if !result.Accepted {
-		s.finishTaskLifecycle(lifecycle, taskLifecycleFailureState(result.Reason), result.Result, result.Reason)
-		return
-	}
-	if !result.AwaitingAck {
-		s.finishTaskLifecycle(lifecycle, subagentsv1.TaskLifecycleResponse_STATE_COMPLETED, result.Result, result.Reason)
-		return
-	}
-	select {
-	case result = <-completion:
-	case <-timer.C:
-		s.finishTaskLifecycle(lifecycle, subagentsv1.TaskLifecycleResponse_STATE_TIMEOUT, nil, "task lifecycle completion deadline expired")
-		return
-	}
-	if result.Completed {
-		s.finishTaskLifecycle(lifecycle, subagentsv1.TaskLifecycleResponse_STATE_COMPLETED, result.Result, result.Reason)
-		return
-	}
-	s.finishTaskLifecycle(lifecycle, taskLifecycleFailureState(result.Reason), result.Result, result.Reason)
-}
-
-func (s *Service) finishTaskLifecycle(lifecycle *taskLifecycle, state subagentsv1.TaskLifecycleResponse_State, answer []byte, reason string) {
-	s.taskLifecycleMu.Lock()
-	lifecycle.state = state
-	lifecycle.answer = append([]byte(nil), answer...)
-	lifecycle.reason = redactedLifecycleReason("task lifecycle", errors.New(reason))
-	s.taskLifecycleMu.Unlock()
-	lifecycle.once.Do(func() { close(lifecycle.done) })
-}
-
-func (s *Service) protoTaskLifecycle(lifecycle *taskLifecycle) *subagentsv1.TaskLifecycleResponse {
-	s.taskLifecycleMu.Lock()
-	defer s.taskLifecycleMu.Unlock()
-	return &subagentsv1.TaskLifecycleResponse{Accepted: lifecycle.state == subagentsv1.TaskLifecycleResponse_STATE_ACCEPTED || lifecycle.state == subagentsv1.TaskLifecycleResponse_STATE_MODEL_RUNNING || lifecycle.state == subagentsv1.TaskLifecycleResponse_STATE_COMPLETED, LifecycleId: lifecycle.id, State: lifecycle.state, Terminal: taskLifecycleTerminal(lifecycle.state), BoundedAnswer: append([]byte(nil), lifecycle.answer...), Reason: lifecycle.reason}
-}
-
-func taskLifecycleTerminal(state subagentsv1.TaskLifecycleResponse_State) bool {
-	return state == subagentsv1.TaskLifecycleResponse_STATE_COMPLETED || state == subagentsv1.TaskLifecycleResponse_STATE_FAILED || state == subagentsv1.TaskLifecycleResponse_STATE_TIMEOUT || state == subagentsv1.TaskLifecycleResponse_STATE_ACTOR_LOST
-}
-
-func validTaskLifecycleID(value string) bool {
-	if value == "" || len(value) > 128 {
-		return false
-	}
-	for _, r := range value {
-		if (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '_' || r == '-' || r == '.' || r == ':' {
-			continue
-		}
-		return false
-	}
-	return true
-}
-
-func taskLifecycleFailureState(reason string) subagentsv1.TaskLifecycleResponse_State {
-	lower := strings.ToLower(reason)
-	switch {
-	case strings.Contains(lower, "timeout") || strings.Contains(lower, "deadline"):
-		return subagentsv1.TaskLifecycleResponse_STATE_TIMEOUT
-	case strings.Contains(lower, "lost") || strings.Contains(lower, "not alive") || strings.Contains(lower, "unavailable"):
-		return subagentsv1.TaskLifecycleResponse_STATE_ACTOR_LOST
-	default:
-		return subagentsv1.TaskLifecycleResponse_STATE_FAILED
-	}
+func (s *Service) taskLifecycleResponse(_ context.Context, request *subagentsv1.Envelope, _ *subagentsv1.TaskLifecycleRequest) *subagentsv1.Envelope {
+	// The legacy lifecycle endpoint kept completion authority in a disposable
+	// service map and delivered BridgeIntent directly, bypassing ActorTask
+	// credit, durable thread identity, settlement, and introspection. Keep the
+	// additive wire shape decodable but fail every operation closed; all
+	// model-bearing work must use ActorMessage Ask -> ActorTask -> thread.
+	return errorResponse(request, subagentsv1.ProtocolError_CODE_INVALID_REQUEST, "task lifecycle retired; use actor message ask")
 }
 
 func (s *Service) hostedAdminResponse(ctx context.Context, request *subagentsv1.Envelope, command *subagentsv1.HostedAdminRequest) *subagentsv1.Envelope {

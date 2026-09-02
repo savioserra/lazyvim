@@ -111,7 +111,7 @@ func (a *AgentActor) finishThreadIntrospection(ctx *actor.ReceiveContext, outcom
 			return
 		}
 		thread.State = application.AgentThreadSettled
-		thread.NextAttempt = now.Add(threadIntrospectionBackoff(thread.IntrospectionAttempts))
+		thread.NextAttempt = now.Add(threadIntrospectionBackoff(thread.ThreadID, thread.IntrospectionAttempts))
 		a.threads[thread.ThreadID] = thread
 		delay := thread.NextAttempt.Sub(now)
 		a.persistThreadTransition(ctx, &pendingDurableReceipt{old: old, introspectionRetryThread: thread.ThreadID, introspectionRetryDelay: delay})
@@ -158,7 +158,7 @@ func (a *AgentActor) applyThreadIntrospectionClassification(thread *application.
 			thread.State = application.AgentThreadResumable
 			thread.ResumeAttempts++
 			thread.PendingPrompt = []byte("Return the requested deliverable directly in this thread. Do not reply with an acknowledgement, promise, or sent-elsewhere pointer.")
-			thread.NextAttempt = now.Add(threadIntrospectionBackoff(thread.IntrospectionAttempts))
+			thread.NextAttempt = now.Add(threadIntrospectionBackoff(thread.ThreadID, thread.IntrospectionAttempts))
 			appendThreadEvent(thread, application.DurableThreadEvent{Kind: "completion_pointer_rejected", At: now, DeliverySequence: thread.ActiveDeliverySequence, Reason: "deliverable_missing"})
 			a.threadScheduler.ActiveThreadID = ""
 			a.threadScheduler.Resumable = append(a.threadScheduler.Resumable, thread.ThreadID)
@@ -171,7 +171,7 @@ func (a *AgentActor) applyThreadIntrospectionClassification(thread *application.
 		thread.State = application.AgentThreadResumable
 		thread.ResumeAttempts++
 		thread.PendingPrompt = []byte(result.NextPrompt)
-		thread.NextAttempt = now.Add(threadIntrospectionBackoff(thread.IntrospectionAttempts))
+		thread.NextAttempt = now.Add(threadIntrospectionBackoff(thread.ThreadID, thread.IntrospectionAttempts))
 		a.threadScheduler.ActiveThreadID = ""
 		a.threadScheduler.Resumable = append(a.threadScheduler.Resumable, thread.ThreadID)
 		return threadClassificationResume
@@ -269,7 +269,13 @@ func workerResultContainsDeliverable(result []byte) bool {
 	return true
 }
 
-func threadIntrospectionBackoff(attempt uint32) time.Duration {
-	delay := time.Second << min(attempt-1, 9)
-	return min(delay, 5*time.Minute)
+func threadIntrospectionBackoff(threadID string, attempt uint32) time.Duration {
+	base := time.Second << min(attempt-1, 9)
+	if base >= 5*time.Minute {
+		return 5 * time.Minute
+	}
+	digest := sha256.Sum256([]byte(threadID + "\x00" + strconv.FormatUint(uint64(attempt), 10)))
+	jitterWindow := base / 4
+	jitter := jitterWindow * time.Duration(digest[0]) / 255
+	return min(base+jitter, 5*time.Minute)
 }

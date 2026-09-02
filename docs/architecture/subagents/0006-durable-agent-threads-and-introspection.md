@@ -257,19 +257,9 @@ Backoff is exponential with deterministic jitter derived from the thread ID dige
 
 ## Legacy lifecycle compatibility
 
-Legacy `PromptTaskRequest` and `TaskLifecycleRequest` map to the thread scheduler:
+The protobuf shapes for `PromptTaskRequest` and `TaskLifecycleRequest` remain decodable, but every operation fails closed with a fixed retirement error directing callers to `ActorMessage Ask`. These legacy endpoints delivered `BridgeIntent` directly or kept completion authority in a disposable service map, so mapping them after admission would still bypass ActorTask credit, target-authoritative thread identity, settlement, and introspection.
 
-| Legacy state/surface | Thread mapping |
-| --- | --- |
-| `OPERATION_START` accepted | thread created as `queued` or returns existing exact thread. |
-| `STATE_ACCEPTED` | thread `queued`, `resumable`, or waiting for delivery. |
-| `STATE_MODEL_RUNNING` | thread `active`, `awaiting_agent_end`, `awaiting_agent_settled`, `settled`, or `introspecting`. |
-| `STATE_COMPLETED` | thread `completed`; answer is worker `Terminal.Result`. |
-| `STATE_FAILED` | thread `failed`, `blocked` after policy failure, or `exhausted`. |
-| `STATE_TIMEOUT` | thread deadline expired. |
-| `STATE_ACTOR_LOST` | target/source actor reference unrecoverable within bounded retry. |
-
-Compatibility responses may include optional `thread_id` for authorized callers. Older clients continue to receive existing admission/completion fields. After one compatibility window, bridge prompt state is no longer model-task authority; bridge records retain runtime delivery/ACK/replay only.
+There is no compatibility model-task authority. All new and existing callers must use `ActorMessage Ask → ActorTask → durable thread → ActorTaskCompleted`. Bridge records retain runtime delivery/ACK/replay only.
 
 ## File-level implementation slices
 

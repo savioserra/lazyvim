@@ -146,66 +146,13 @@ func TestClientBootstrapTwoActorsAndCorrelatedPromptAnswer(t *testing.T) {
 			t.Fatalf("lifecycle failed: %#v", response)
 		}
 	}
-	promptResult := make(chan *subagentsv1.PromptTaskResponse, 1)
-	go func() {
-		response := request(&subagentsv1.Envelope_PromptTaskRequest{PromptTaskRequest: &subagentsv1.PromptTaskRequest{Target: "alpha", BoundedPrompt: []byte("Implement the next task"), DedupeId: "prompt-1", ChainId: "chain-1", HopLimit: 8, SourceMutationSequence: 1}}, client, attached.AgentHandle, attached.Fence)
-		promptResult <- response.GetPromptTaskResponse()
-	}()
-	var delivery *subagentsv1.BridgeDelivery
-	deadline := time.Now().Add(time.Second)
-	for delivery == nil && time.Now().Before(deadline) {
-		poll := request(&subagentsv1.Envelope_BridgePollRequest{BridgePollRequest: &subagentsv1.BridgePollRequest{AgentId: "alpha", MaxItems: 8}}, host, connected.AgentHandle, connected.Fence).GetBridgePollResponse()
-		if poll != nil && len(poll.Deliveries) > 0 {
-			delivery = poll.Deliveries[0]
-		} else {
-			time.Sleep(10 * time.Millisecond)
-		}
+	promptEnvelope := request(&subagentsv1.Envelope_PromptTaskRequest{PromptTaskRequest: &subagentsv1.PromptTaskRequest{Target: "alpha", BoundedPrompt: []byte("Implement the next task"), DedupeId: "prompt-1", ChainId: "chain-1", HopLimit: 8, SourceMutationSequence: 1}}, client, attached.AgentHandle, attached.Fence)
+	if failure := promptEnvelope.GetProtocolError(); failure == nil || failure.Message != "prompt task retired; use actor message ask" {
+		t.Fatalf("legacy prompt bypass was not retired fail-closed: %#v", promptEnvelope)
 	}
-	if delivery == nil || delivery.Kind != subagentsv1.BridgeDelivery_KIND_PROMPT || string(delivery.BoundedPayload) != "Implement the next task" {
-		t.Fatalf("typed prompt not delivered: %#v", delivery)
-	}
-	answer := []byte("Completed the implementation task.")
-	ack := request(&subagentsv1.Envelope_BridgeDeliveryAckRequest{BridgeDeliveryAckRequest: identityBridgeAck("alpha", record.LaunchSpec.RuntimeID, "pi-alpha", 1, delivery, true, answer)}, host, connected.AgentHandle, connected.Fence).GetBridgeDeliveryAckResponse()
-	if ack == nil || !ack.Accepted {
-		t.Fatalf("prompt ACK failed: %#v", ack)
-	}
-	select {
-	case result := <-promptResult:
-		if result == nil || !result.Accepted || !result.Completed || string(result.BoundedAnswer) != string(answer) {
-			t.Fatalf("correlated answer failed: %#v", result)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("prompt answer did not complete")
-	}
-	lifecycleStart := request(&subagentsv1.Envelope_TaskLifecycleRequest{TaskLifecycleRequest: &subagentsv1.TaskLifecycleRequest{Operation: subagentsv1.TaskLifecycleRequest_OPERATION_START, LifecycleId: "life-1", Target: "alpha", BoundedPrompt: []byte("Observe typed lifecycle"), DedupeId: "life-dedupe", ChainId: "life-chain", HopLimit: 8, SourceMutationSequence: 2}}, client, attached.AgentHandle, attached.Fence).GetTaskLifecycleResponse()
-	if lifecycleStart == nil || !lifecycleStart.Accepted || lifecycleStart.Terminal {
-		t.Fatalf("task lifecycle start failed: %#v", lifecycleStart)
-	}
-	var lifecycleDelivery *subagentsv1.BridgeDelivery
-	deadline = time.Now().Add(time.Second)
-	for lifecycleDelivery == nil && time.Now().Before(deadline) {
-		poll := request(&subagentsv1.Envelope_BridgePollRequest{BridgePollRequest: &subagentsv1.BridgePollRequest{AgentId: "alpha", AfterSequence: delivery.Sequence, MaxItems: 8}}, host, connected.AgentHandle, connected.Fence).GetBridgePollResponse()
-		if poll != nil && len(poll.Deliveries) > 0 {
-			lifecycleDelivery = poll.Deliveries[0]
-		} else {
-			time.Sleep(10 * time.Millisecond)
-		}
-	}
-	if lifecycleDelivery == nil || lifecycleDelivery.Kind != subagentsv1.BridgeDelivery_KIND_PROMPT || string(lifecycleDelivery.BoundedPayload) != "Observe typed lifecycle" {
-		t.Fatalf("typed lifecycle prompt not delivered: %#v", lifecycleDelivery)
-	}
-	running := request(&subagentsv1.Envelope_TaskLifecycleRequest{TaskLifecycleRequest: &subagentsv1.TaskLifecycleRequest{Operation: subagentsv1.TaskLifecycleRequest_OPERATION_WAIT, LifecycleId: "life-1", Target: "alpha", WaitMillis: 10}}, client, attached.AgentHandle, attached.Fence).GetTaskLifecycleResponse()
-	if running == nil || running.State != subagentsv1.TaskLifecycleResponse_STATE_ACCEPTED || running.Terminal {
-		t.Fatalf("task lifecycle reported model-running without correlated agent_start: %#v", running)
-	}
-	lifecycleAnswer := []byte("Lifecycle completed.")
-	lifecycleAck := request(&subagentsv1.Envelope_BridgeDeliveryAckRequest{BridgeDeliveryAckRequest: identityBridgeAck("alpha", record.LaunchSpec.RuntimeID, "pi-alpha", 1, lifecycleDelivery, true, lifecycleAnswer)}, host, connected.AgentHandle, connected.Fence).GetBridgeDeliveryAckResponse()
-	if lifecycleAck == nil || !lifecycleAck.Accepted {
-		t.Fatalf("task lifecycle ACK failed: %#v", lifecycleAck)
-	}
-	completed := request(&subagentsv1.Envelope_TaskLifecycleRequest{TaskLifecycleRequest: &subagentsv1.TaskLifecycleRequest{Operation: subagentsv1.TaskLifecycleRequest_OPERATION_WAIT, LifecycleId: "life-1", Target: "alpha", WaitMillis: 1000}}, client, attached.AgentHandle, attached.Fence).GetTaskLifecycleResponse()
-	if completed == nil || !completed.Accepted || completed.State != subagentsv1.TaskLifecycleResponse_STATE_COMPLETED || !completed.Terminal || string(completed.BoundedAnswer) != string(lifecycleAnswer) {
-		t.Fatalf("task lifecycle completion failed: %#v", completed)
+	lifecycleEnvelope := request(&subagentsv1.Envelope_TaskLifecycleRequest{TaskLifecycleRequest: &subagentsv1.TaskLifecycleRequest{Operation: subagentsv1.TaskLifecycleRequest_OPERATION_START, LifecycleId: "life-1", Target: "alpha", BoundedPrompt: []byte("Observe typed lifecycle"), DedupeId: "life-dedupe", ChainId: "life-chain", HopLimit: 8, SourceMutationSequence: 2}}, client, attached.AgentHandle, attached.Fence)
+	if failure := lifecycleEnvelope.GetProtocolError(); failure == nil || failure.Message != "task lifecycle retired; use actor message ask" {
+		t.Fatalf("legacy lifecycle bypass was not retired fail-closed: %#v", lifecycleEnvelope)
 	}
 	closed := request(&subagentsv1.Envelope_ClientSessionRequest{ClientSessionRequest: &subagentsv1.ClientSessionRequest{Operation: subagentsv1.ClientSessionRequest_OPERATION_CLOSE}}, client, "", 0).GetClientSessionResponse()
 	if closed == nil || !closed.Accepted {
