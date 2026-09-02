@@ -1,11 +1,11 @@
 ---
 id: TASK-3
 title: 'Architecture research: roster/status projections and topic contract'
-status: In Progress
+status: Done
 assignee:
   - '@pi'
 created_date: '2026-08-31 21:41'
-updated_date: '2026-09-02 01:49'
+updated_date: '2026-09-02 01:51'
 labels: []
 dependencies: []
 priority: high
@@ -21,9 +21,9 @@ Define the XState v5 frontend data layer for disposable actor-client projections
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Specifies typed XState v5 machines/actors and deterministic event-to-snapshot boundaries
-- [ ] #2 Specifies epoch/sequence fencing, reconnect cursors, replay dedupe, and stale-event rejection
-- [ ] #3 Keeps transport effects and Pi rendering adapters outside pure projection logic
+- [x] #1 Specifies typed XState v5 machines/actors and deterministic event-to-snapshot boundaries
+- [x] #2 Specifies epoch/sequence fencing, reconnect cursors, replay dedupe, and stale-event rejection
+- [x] #3 Keeps transport effects and Pi rendering adapters outside pure projection logic
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -39,3 +39,9 @@ Define the XState v5 frontend data layer for disposable actor-client projections
 <!-- SECTION:NOTES:BEGIN -->
 Frontend Architecture Researcher report received automatically through ActorTaskCompleted at source sequence 24. Contract: pin xstate 5.20.2 and verify it in the subagents package; add projections/{types,app-machine,connection-machine,roster-machine,pending-machine,conversation-machine,render-snapshot-machine,dedupe,sanitize,selectors,ports}.ts; keep index.ts as protobuf/WebSocket/Pi effect adapter; machines own disposable connection, roster cursor, pending, conversation dedupe, and bounded render snapshots only. Daemon remains authoritative for lifecycle, delivery ACK retirement, routing, mutation sequence, runtime state, and productive status. Use typed effect intents/ports rather than WebSocket or Pi calls inside machines. Target first slices: pure sanitization/dedupe/selectors, roster machine, pending/conversation, render snapshot, integration wiring. Required tests cover bounded reconnect, shutdown without actor control, stale cursor rejection/reset, hidden pending markers, exactly-once completions, collision fail-closed, one incoming follow-up/card, resize without append, redaction, bounds, and exact package pin.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Specified typed XState v5 projection boundaries, pure event/snapshot contracts, epoch/sequence fencing, replay/collision behavior, effect ports, selectors, file layout, xstate 5.20.2 pin, migration order, and deterministic tests. Verified by the full Architecture Researcher ActorTaskCompleted report at source sequence 24.
+<!-- SECTION:FINAL_SUMMARY:END -->
