@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 06:10'
-updated_date: '2026-09-02 09:11'
+updated_date: '2026-09-02 09:31'
 labels: []
 dependencies:
   - TASK-22.2
@@ -40,4 +40,6 @@ Persist target-authoritative thread records and a one-active-thread scheduler so
 QA reconnaissance Ask 100 froze the deterministic proof matrix and reusable seams: config/runner parser tables; atomic v2-to-v3 migration and quarantine; exact duplicate and collision admission; two-new-task fairness; injectable clock/backoff; ACK/settlement/introspection crash gates; restart/compaction redrive; owner-private projection; and push-only A-to-B-to-resume-A E2E with no BridgePollRequest or pane inspection. Existing bridge harnesses, blocking stores, ACK cursor/restart tests, and actor reply push tests should be reused.
 
 Operator explicitly chose a clean v3 cutover instead of v2-to-v3 record migration. All six retained hosted sessions were explicitly stopped and recreated from clean state; v2 records will fail closed rather than migrate.
+
+Implemented first scheduler aggregate slice: AgentActor persists/restores bounded thread records and scheduler sets; hosted Ask/Prompt admission derives target-authoritative thread IDs, converges exact replays, rejects immutable/source-sequence collisions, queues later prompts instead of overwriting active work, and persists scheduler epoch/lease before dispatch. Added deterministic two-new-task fairness and backoff selection. Thread ACK now atomically retains worker result/settlement without emitting ActorTaskCompleted; failed delivery becomes resumable. Strict state validation covers scheduler references, state sets, tombstones, bounds, and thread fingerprints. Focused actor/state race tests pass.
 <!-- SECTION:NOTES:END -->

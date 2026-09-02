@@ -57,6 +57,10 @@ type DurableAgentThread struct {
 	PayloadDigest          [32]byte             `json:"payload_digest"`
 	Mode                   BridgeMessageMode    `json:"mode"`
 	RequiredCapability     string               `json:"required_capability,omitempty"`
+	SourceScope            string               `json:"source_scope"`
+	DeliverySourceKey      string               `json:"delivery_source_key"`
+	DeliveryBackend        string               `json:"delivery_backend"`
+	PendingPrompt          []byte               `json:"pending_prompt,omitempty"`
 	Deadline               time.Time            `json:"deadline"`
 	HopLimit               uint32               `json:"hop_limit"`
 	State                  AgentThreadState     `json:"state"`

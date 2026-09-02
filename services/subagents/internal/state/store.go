@@ -366,7 +366,10 @@ func validateRecord(r application.DurableHostedRecord) error {
 	if r.AgentID == "" || len(r.AgentID) > 64 || r.Session.SessionID == "" || r.Session.GenerationID == "" || r.Session.Caller != "hosted:"+r.AgentID || !r.Session.Persistent || !r.Session.ExpiresAt.IsZero() || r.LaunchSpec.AgentID != r.AgentID || r.Binding.RuntimeID != r.LaunchSpec.RuntimeID || r.Binding.Incarnation != r.LaunchSpec.Incarnation {
 		return errors.New("durable hosted record identity mismatch")
 	}
-	if len(r.AllowedCapabilities) > 16 || len(r.Session.Capabilities) > 16 || len(r.AgentState.Attachments) > 4096 || len(r.AgentState.Revoked) > 4096 || len(r.AgentState.BridgeDeliveries) > 256 || len(r.AgentState.DeliverySources) > 256 || len(r.AgentState.MutationScopes) > 256 || len(r.AgentState.SourceOutbox) > 256 || len(r.AgentState.SourceTaskHistory) > 1024 || len(r.AgentState.SourceMutationReceipts) > 1024 || len(r.AgentState.ReceivedTaskCompletions) > 1024 || len(r.AgentState.TaskCreditReservations) > 256 || len(r.AgentState.AckGapBuffer) > 64 || len(r.AgentState.CommittedAcks) > 64 {
+	if len(r.AllowedCapabilities) > 16 || len(r.Session.Capabilities) > 16 || len(r.AgentState.Attachments) > 4096 || len(r.AgentState.Revoked) > 4096 || len(r.AgentState.BridgeDeliveries) > 256 || len(r.AgentState.DeliverySources) > 256 || len(r.AgentState.MutationScopes) > 256 || len(r.AgentState.SourceOutbox) > 256 || len(r.AgentState.SourceTaskHistory) > 1024 || len(r.AgentState.SourceMutationReceipts) > 1024 || len(r.AgentState.ReceivedTaskCompletions) > 1024 || len(r.AgentState.TaskCreditReservations) > 256 || len(r.AgentState.AckGapBuffer) > 64 || len(r.AgentState.CommittedAcks) > 64 || len(r.AgentState.Threads) > application.MaxDurableAgentThreads {
+		return errors.New("durable hosted record collection bound exceeded")
+	}
+	if err := validateThreadScheduler(r.AgentID, r.AgentState); err != nil {
 		return errors.New("durable hosted record collection bound exceeded")
 	}
 	scopeKeys := make(map[string]struct{}, len(r.AgentState.MutationScopes))
@@ -418,6 +421,71 @@ func validateRecord(r application.DurableHostedRecord) error {
 	}
 	if !filepath.IsAbs(r.Session.CredentialFile) || !filepath.IsAbs(r.LaunchSpec.PiSessionDirectory) || !filepath.IsAbs(r.RuntimeConfig.ProjectDirectory) {
 		return errors.New("durable hosted paths must be absolute")
+	}
+	return nil
+}
+
+func validateThreadScheduler(agentID string, state application.DurableAgentState) error {
+	scheduler := state.ThreadScheduler
+	if scheduler.SchemaVersion == 0 {
+		if len(state.Threads) == 0 && scheduler.AgentID == "" && scheduler.ActiveThreadID == "" && len(scheduler.Queue)+len(scheduler.Resumable)+len(scheduler.Waiting)+len(scheduler.Blocked)+len(scheduler.Tombstones) == 0 {
+			return nil
+		}
+		return errors.New("durable thread scheduler is uninitialized")
+	}
+	if scheduler.SchemaVersion != application.DurableThreadSchedulerSchemaV1 || scheduler.AgentID != agentID || len(scheduler.Queue)+len(scheduler.Resumable)+len(scheduler.Waiting)+len(scheduler.Blocked) > application.MaxDurableAgentThreads || len(scheduler.Tombstones) > application.MaxDurableAgentThreads {
+		return errors.New("durable thread scheduler identity or bound mismatch")
+	}
+	threads := make(map[string]application.DurableAgentThread, len(state.Threads))
+	for _, thread := range state.Threads {
+		if thread.SchemaVersion != application.DurableAgentThreadSchemaV1 || thread.ThreadID == "" || thread.ThreadID != thread.Fingerprint().ThreadID() || thread.Source.StableID == "" || thread.Target.StableID != agentID || thread.SourceMutationSequence == 0 || thread.RequestID == "" || thread.DedupeID == "" || thread.ChainID == "" || thread.SourceScope == "" || thread.DeliverySourceKey == "" || (thread.DeliveryBackend != "hosted" && thread.DeliveryBackend != "regular") || thread.HopLimit == 0 || thread.Deadline.IsZero() || thread.CompletionKey == "" || thread.ActiveDeliverySequence == 0 || len(thread.PendingPrompt) > 16*1024 || len(thread.WorkerResult) > 16*1024 || len(thread.Checkpoint) > 4*1024 || len(thread.Events) > application.MaxDurableThreadEvents {
+			return errors.New("durable thread identity or bound mismatch")
+		}
+		if _, duplicate := threads[thread.ThreadID]; duplicate {
+			return errors.New("duplicate durable thread identity")
+		}
+		threads[thread.ThreadID] = thread
+	}
+	members := make(map[string]string, len(state.Threads))
+	for class, values := range map[string][]string{"queue": scheduler.Queue, "resumable": scheduler.Resumable, "waiting": scheduler.Waiting, "blocked": scheduler.Blocked} {
+		for _, threadID := range values {
+			thread, exists := threads[threadID]
+			if !exists {
+				return errors.New("durable scheduler references missing thread")
+			}
+			if prior := members[threadID]; prior != "" {
+				return errors.New("durable thread appears in multiple scheduler sets")
+			}
+			members[threadID] = class
+			expected := map[string]application.AgentThreadState{"queue": application.AgentThreadQueued, "resumable": application.AgentThreadResumable, "waiting": application.AgentThreadWaiting, "blocked": application.AgentThreadBlocked}[class]
+			if thread.State != expected {
+				return errors.New("durable scheduler set and thread state mismatch")
+			}
+		}
+	}
+	if scheduler.ActiveThreadID != "" {
+		thread, exists := threads[scheduler.ActiveThreadID]
+		if !exists || members[scheduler.ActiveThreadID] != "" || scheduler.Epoch == 0 || scheduler.ActiveLease == 0 {
+			return errors.New("durable active thread identity mismatch")
+		}
+		switch thread.State {
+		case application.AgentThreadActive, application.AgentThreadAwaitingAgentEnd, application.AgentThreadAwaitingAgentSettled, application.AgentThreadSettled, application.AgentThreadIntrospecting:
+		default:
+			return errors.New("durable active thread state mismatch")
+		}
+	}
+	tombstones := make(map[string]struct{}, len(scheduler.Tombstones))
+	for _, tombstone := range scheduler.Tombstones {
+		if tombstone.ThreadID == "" || tombstone.CompletionKey == "" {
+			return errors.New("durable thread tombstone identity is incomplete")
+		}
+		if _, exists := threads[tombstone.ThreadID]; exists {
+			return errors.New("durable thread and tombstone identity overlap")
+		}
+		if _, duplicate := tombstones[tombstone.ThreadID]; duplicate {
+			return errors.New("duplicate durable thread tombstone")
+		}
+		tombstones[tombstone.ThreadID] = struct{}{}
 	}
 	return nil
 }

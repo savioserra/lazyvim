@@ -7,7 +7,7 @@ import (
 )
 
 func TestThreadAckIdentityRequiresExactSettlementTuple(t *testing.T) {
-	agent := &AgentActor{hostedPiRuntime: application.HostedPiRuntimeBinding{RuntimeID: "runtime", Incarnation: 2}, bridgePiSession: "pi"}
+	agent := &AgentActor{hostedPiRuntime: application.HostedPiRuntimeBinding{RuntimeID: "runtime", Incarnation: 2}, bridgePiSession: "pi", threadScheduler: application.DurableThreadScheduler{SchemaVersion: application.DurableThreadSchedulerSchemaV1, AgentID: "agent", ActiveThreadID: "thread", Epoch: 3, ActiveLease: 4}}
 	delivery := application.BridgeDelivery{Sequence: 7, DedupeID: "dedupe", Kind: application.BridgeDeliveryPrompt, SourceScope: "scope", CompletionKey: "completion", ThreadID: "thread", SchedulerEpoch: 3, ActiveLease: 4, ThreadTurn: 5}
 	exact := &application.BridgeDeliveryAck{Sequence: 7, DedupeID: "dedupe", Kind: "prompt", SourceScope: "scope", CompletionKey: "completion", RuntimeID: "runtime", Incarnation: 2, PiSessionID: "pi", Delivered: true, ThreadID: "thread", SchedulerEpoch: 3, ActiveLease: 4, ThreadTurn: 5, BridgeRunCounter: 6, AgentEndObserved: true, AgentSettledObserved: true}
 	if !agent.validAckIdentity(exact, &delivery) {
