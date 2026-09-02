@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 02:56'
-updated_date: '2026-09-02 05:42'
+updated_date: '2026-09-02 05:43'
 labels: []
 dependencies:
   - TASK-6
@@ -92,4 +92,6 @@ Operator deployment correction: Pi `/reload` is not sufficient for actor-client 
 Fresh terminal Pi process after deployment now exposes true TELL semantics: actor_tell sequences 68-70 returned kind=Tell and rendered ✓ delivered rather than pending/replied. This proves full-process restart activated the new tool registration; remaining live matrix still needs Ask/reply and incoming/failure cases.
 
 Fresh-process live sequence 69 exposed a new blocker: initial actor_tell correctly rendered ✓ delivered/kind=Tell, but its terminal delivery ACK later entered the generic actorMessageReplyFrame path and rendered `Actor Ask replied` with answer `delivery acknowledged`. Tell terminal ACKs must not use actor-client-ask-completion or replied semantics.
+
+Sequence 70 independently reproduced the same Tell terminal misclassification against UI QA, confirming the defect is deterministic across targets rather than a one-off replay artifact.
 <!-- SECTION:NOTES:END -->
