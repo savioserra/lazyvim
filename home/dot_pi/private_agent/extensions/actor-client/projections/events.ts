@@ -13,6 +13,6 @@ export type ActorClientProjectionEvent =
   | { type: "PRESENTATION.SUCCEEDED"; key: string; digest: string }
   | { type: "PRESENTATION.FAILED"; key: string; reason: string }
   | { type: "RESTORE.PENDING"; pending: PendingInteraction }
-  | { type: "RESTORE.COMPLETION"; key: string; digest: string }
+  | { type: "RESTORE.COMPLETION"; key: string; digest: string; requestId?: string }
   | { type: "VIEW.WIDTH"; width: number }
   | { type: "VIEW.THEME"; revision: number };

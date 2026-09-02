@@ -12,14 +12,16 @@ export function reduceRoster(state: RosterProjection, event: RosterEvent): Roste
   const epoch = BigInt(frame.epoch ?? 0);
   const sequence = BigInt(frame.sequence ?? 0);
   if (epoch < state.epoch || (epoch === state.epoch && sequence <= state.sequence)) return state;
-  const reset = epoch > state.epoch || Number(frame.operation) === 2;
+  const operation = Number(frame.operation);
+  if (epoch > state.epoch && operation !== 2) return { ...state, degradedReason: "higher roster epoch arrived without snapshot reset" };
+  const reset = operation === 2;
   if (!reset && epoch === state.epoch && sequence !== state.sequence + 1n) return { ...state, degradedReason: "roster sequence gap" };
   const agents = new Map(reset ? [] : state.agents);
-  if (Number(frame.operation) === 3) {
+  if (operation === 3) {
     const item = rosterItemFromFrame(frame);
     if (item) agents.set(item.agentId, item);
   }
-  if (Number(frame.operation) === 4) {
+  if (operation === 4) {
     const agentId = sanitizeLabel(frame.agentId || frame.agent?.agentId, 64);
     if (agentId) agents.delete(agentId);
   }

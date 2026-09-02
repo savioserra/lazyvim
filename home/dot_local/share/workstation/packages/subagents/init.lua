@@ -116,7 +116,7 @@ return function()
 			install_node_dependencies(
 				context,
 				actor_client_root(context),
-				{ ["@bufbuild/protobuf"] = "2.11.0", xstate = "5.20.2" }
+				{ ["@bufbuild/protobuf"] = "2.11.0", xstate = context.versions.actor_client_xstate }
 			)
 			install_daemon_binaries(context)
 			activate_service(context)
@@ -158,7 +158,7 @@ return function()
 				"actor client protobuf runtime is not installed"
 			)
 			assert(
-				dependency_version(context, actor_client_root(context), "xstate") == "5.20.2",
+				dependency_version(context, actor_client_root(context), "xstate") == context.versions.actor_client_xstate,
 				"actor client XState runtime is not installed"
 			)
 			local lock =
@@ -174,12 +174,11 @@ return function()
 				vim.json.decode(context.paths.read(context.paths.join(actor_client_root(context), "package-lock.json")))
 			local actor_client_xstate = actor_client_lock.packages and actor_client_lock.packages["node_modules/xstate"]
 			assert(
-				actor_client_xstate and actor_client_xstate.version == "5.20.2",
+				actor_client_xstate and actor_client_xstate.version == context.versions.actor_client_xstate,
 				"unexpected actor client XState lock version"
 			)
 			assert(
-				actor_client_xstate.integrity
-					== "sha512-GZmLmc+WPKfFRxuTDAxCg0cUhS/ZnWaRD86DO8MKizeK4a050jd5k7UNnIQ2jJDWRig2/r0tmVXeezUNIhoz5Q==",
+				actor_client_xstate.integrity == context.versions.actor_client_xstate_integrity,
 				"unexpected actor client XState lock integrity"
 			)
 			local npm_root = commands.capture(managed_node.executable(context, "npm"), { "root", "--global" })

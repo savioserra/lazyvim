@@ -65,6 +65,28 @@ test("actor ask reply sends one model-visible custom message and clears pending"
   assert.deepEqual(statuses, [1, 0]);
 });
 
+test("actor ask completion preserves daemon completionKey and reconciles provisional pending", async () => {
+  const messages=[],statuses=[];
+  const log = new ActorClientConversationLog({ appendEntry: () => {}, sendMessage: (message) => messages.push(message) }, (count) => statuses.push(count));
+  log.recordAskPending({ key: "actor-client:request-42", requestId: "request-42", dedupeId: "dedupe-42", chainId: "chain-42", sourceMutationSequence: "42", target: "Reviewer", kind: "Ask", prompt: "original prompt" });
+  assert.equal(await log.complete({ key: "daemon-completion-key", reply: "answer", completed: true, requestId: "request-42", dedupeId: "dedupe-42", chainId: "chain-42", sourceMutationSequence: "42", target: { displayName: "Reviewer", authoritative: true } }), true);
+  assert.equal(messages[0].details.key, "daemon-completion-key");
+  assert.equal(messages[0].details.prompt, "original prompt");
+  assert.equal(messages[0].details.communicationView.key, "daemon-completion-key");
+  assert.deepEqual(statuses, [1, 0]);
+});
+
+test("actor ask presentation failure remains retryable and consumes rejection", async () => {
+  const messages=[];
+  let fail = true;
+  const log = new ActorClientConversationLog({ appendEntry: () => {}, sendMessage: async (message) => { if (fail) throw new Error("persistence unavailable"); messages.push(message); } });
+  log.recordAskPending({ key: "actor-client:request-fail", requestId: "request-fail", dedupeId: "d", chainId: "c", sourceMutationSequence: "1", target: "Reviewer", kind: "Ask", prompt: "question" });
+  await assert.rejects(log.complete({ key: "canonical-fail", reply: "answer", completed: true, requestId: "request-fail" }), /persistence unavailable/);
+  fail = false;
+  assert.equal(await log.complete({ key: "canonical-fail", reply: "answer", completed: true, requestId: "request-fail" }), true);
+  assert.equal(messages.length, 1);
+});
+
 test("actor ask completion dedupes concurrent pushes and replay restored from custom messages", async () => {
   const concurrent=[];
   const delayed = new ActorClientConversationLog({ appendEntry: () => {}, sendMessage: async (message) => { concurrent.push(message); await new Promise((resolve) => setTimeout(resolve, 10)); } });

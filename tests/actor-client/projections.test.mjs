@@ -4,7 +4,7 @@ import { createActor } from "../../home/dot_pi/private_agent/extensions/actor-cl
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
-import { actorClientProjectionMachine, initialProjectionContext, reduceProjection } from "../../home/dot_pi/private_agent/extensions/actor-client/projections/machine.ts";
+import { actorClientProjectionMachine, initialProjectionContext, reduceProjection, restoreProjectionEntries } from "../../home/dot_pi/private_agent/extensions/actor-client/projections/machine.ts";
 import { canonicalCompletionKey, digestPresentation } from "../../home/dot_pi/private_agent/extensions/actor-client/projections/dedupe.ts";
 import { renderPlainCard } from "../../home/dot_pi/private_agent/extensions/actor-client/projections/layout.ts";
 
@@ -18,6 +18,9 @@ test("actor-client owns exact xstate 5.20.2 package and integrity pin", async ()
   assert.equal(lock.packages[""].dependencies.xstate, "5.20.2");
   assert.equal(lock.packages["node_modules/xstate"].version, "5.20.2");
   assert.equal(lock.packages["node_modules/xstate"].integrity, "sha512-GZmLmc+WPKfFRxuTDAxCg0cUhS/ZnWaRD86DO8MKizeK4a050jd5k7UNnIQ2jJDWRig2/r0tmVXeezUNIhoz5Q==");
+  const versions = JSON.parse(await readFile(resolve(testDir, "../../home/dot_local/share/workstation/versions.json"), "utf8"));
+  assert.equal(versions.actor_client_xstate, "5.20.2");
+  assert.equal(versions.xstate, "5.32.6");
 });
 
 test("root xstate actor applies transactional roster reset duplicate and gap fencing", () => {
@@ -34,14 +37,25 @@ test("root xstate actor applies transactional roster reset duplicate and gap fen
   assert.equal(actor.getSnapshot().context.roster.epoch, 2n);
 });
 
+test("higher roster epoch upsert/remove without reset degrades without applying", () => {
+  let context = reduceProjection(initialProjectionContext(), { type: "TRANSPORT.CONNECTED" });
+  context = reduceProjection(context, { type: "ROSTER.FRAME", frame: { operation: 2, epoch: 1n, sequence: 1n } });
+  context = reduceProjection(context, { type: "ROSTER.FRAME", frame: { operation: 3, epoch: 1n, sequence: 2n, agentId: "a", agent: { agentId: "a", displayName: "Alpha" } } });
+  context = reduceProjection(context, { type: "ROSTER.FRAME", frame: { operation: 3, epoch: 2n, sequence: 1n, agentId: "b", agent: { agentId: "b", displayName: "Beta" } } });
+  assert.equal(context.roster.epoch, 1n);
+  assert.equal(context.roster.agents.has("b"), false);
+  assert.match(context.snapshot.statusLine, /degraded/);
+});
+
 test("completion transaction clears hidden pending and collision fails closed", () => {
   let context = initialProjectionContext();
   context = reduceProjection(context, { type: "TASK.ADMITTED", pending: { key: "k1", requestId: "r1", dedupeId: "d1", chainId: "c1", sourceMutationSequence: "1", target: "Reviewer", kind: "Ask", prompt: "secret credential=abc?", hidden: true } });
   assert.equal(context.pending.size, 1);
-  context = reduceProjection(context, { type: "TASK.COMPLETED", key: "k1", reply: "answer", completed: true, requestId: "r1", dedupeId: "d1", chainId: "c1", sourceMutationSequence: "1", target: "Reviewer" });
+  context = reduceProjection(context, { type: "TASK.COMPLETED", key: "daemon-completion-key", reply: "answer", completed: true, requestId: "r1", dedupeId: "d1", chainId: "c1", sourceMutationSequence: "1", target: "Reviewer" });
   assert.equal(context.pending.size, 0);
-  assert.equal(context.cards.get("k1").state, "replied");
-  assert.throws(() => reduceProjection(context, { type: "TASK.COMPLETED", key: "k1", reply: "different", completed: true, requestId: "r1", dedupeId: "d1", chainId: "c1", sourceMutationSequence: "1", target: "Reviewer" }), /completion key collision/);
+  assert.equal(context.cards.get("daemon-completion-key").state, "replied");
+  assert.equal(context.cards.get("daemon-completion-key").body, "[redacted] [redacted]?");
+  assert.throws(() => reduceProjection(context, { type: "TASK.COMPLETED", key: "daemon-completion-key", reply: "different", completed: true, requestId: "r1", dedupeId: "d1", chainId: "c1", sourceMutationSequence: "1", target: "Reviewer" }), /completion key collision/);
 });
 
 test("admission receipt does not complete; completion authority renders once", () => {
@@ -61,6 +75,15 @@ test("responsive card rendering is bounded and resize idempotent", () => {
   assert.ok(wide.every((line) => line.length <= 90));
   const resized = reduceProjection(context, { type: "VIEW.WIDTH", width: 40 });
   assert.equal(resized.snapshot.cards.length, 1);
+});
+
+test("persisted restore applies terminal-wins order and clears provisional pending", () => {
+  const context = restoreProjectionEntries(initialProjectionContext(), [
+    { type: "message", message: { customType: "actor-client-ask-completion", details: { key: "canonical", requestId: "request-7", terminal: "replied", answer: "done" } } },
+    { type: "custom", customType: "actor-client-ask-pending", data: { key: "actor-client:request-7", requestId: "request-7", dedupeId: "d", chainId: "c", sourceMutationSequence: "7", target: "Reviewer", kind: "Ask", prompt: "old", hidden: true } },
+  ]);
+  assert.equal(context.pending.size, 0);
+  assert.equal(context.completions.has("canonical"), true);
 });
 
 test("canonical completion keys prefer daemon keys and digest migration identity", () => {

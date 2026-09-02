@@ -16,6 +16,8 @@
   "pi_tmux_subagents": "0.2.0",
   "rainfrog": "0.4.4",
   "ripgrep": "15.2.0",
+  "actor_client_xstate": "5.20.2",
+  "actor_client_xstate_integrity": "sha512-GZmLmc+WPKfFRxuTDAxCg0cUhS/ZnWaRD86DO8MKizeK4a050jd5k7UNnIQ2jJDWRig2/r0tmVXeezUNIhoz5Q==",
   "terminal_kit": "3.1.4",
   "terminal_kit_integrity": "sha512-0BfyIa7pY69E+UgV0P655uNk2rjp2eWTA0uZCTMlGzyrgcrH7kO6yZDGdHqB2vNF5uEjQ5+6ZilHfGtzrhLQNg==",
   "tree_sitter": "0.26.11",

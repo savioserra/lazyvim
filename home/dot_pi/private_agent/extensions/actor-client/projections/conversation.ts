@@ -20,14 +20,16 @@ export function outgoingCard(input: { key: string; target?: PeerMetadata | strin
 }
 
 export function completeAsk(input: { cards: Map<string, ConversationCard>; pending: Map<string, PendingInteraction>; completions: Map<string, string>; key: string; reply: string; completed: boolean; reason?: string; source?: PeerMetadata; target?: PeerMetadata | string; kind?: string; requestId?: string; dedupeId?: string; chainId?: string; sourceMutationSequence?: string }): { cards: Map<string, ConversationCard>; pending: Map<string, PendingInteraction>; completions: Map<string, string>; card: ConversationCard; digest: string; duplicate: boolean } {
-  const pending = input.pending.get(input.key);
-  const card = outgoingCard({ key: input.key, target: input.target ?? pending?.targetPeer ?? pending?.target ?? "Unknown actor", body: pending?.prompt ?? `Ask request ${input.requestId ?? pending?.requestId ?? input.key}`, reply: input.reply, accepted: input.completed, completed: input.completed, mode: "ask", reason: input.reason });
+  const pending = input.pending.get(input.key) ?? [...input.pending.values()].find((entry) => entry.requestId === input.requestId);
+  const visibleKey = input.key;
+  const card = outgoingCard({ key: visibleKey, target: input.target ?? pending?.targetPeer ?? pending?.target ?? "Unknown actor", body: pending?.prompt ?? `Ask request ${input.requestId ?? pending?.requestId ?? input.key}`, reply: input.reply, accepted: input.completed, completed: input.completed, mode: "ask", reason: input.reason });
   const digest = digestPresentation({ terminal: input.completed ? "replied" : "failed", reply: input.reply, reason: input.reason ?? "", requestId: input.requestId ?? pending?.requestId ?? "", dedupeId: input.dedupeId ?? pending?.dedupeId ?? "", chainId: input.chainId ?? pending?.chainId ?? "", sourceMutationSequence: input.sourceMutationSequence ?? pending?.sourceMutationSequence ?? "" });
   const completions = rememberCompletion(input.completions, input.key, digest);
   if (input.completions.get(input.key) === digest) return { cards: input.cards, pending: input.pending, completions, card, digest, duplicate: true };
   const nextCards = new Map(input.cards);
-  nextCards.set(input.key, { ...card, terminalDigest: digest });
+  nextCards.set(visibleKey, { ...card, terminalDigest: digest });
   const nextPending = new Map(input.pending);
   nextPending.delete(input.key);
+  if (pending?.key) nextPending.delete(pending.key);
   return { cards: nextCards, pending: nextPending, completions, card, digest, duplicate: false };
 }

@@ -1,6 +1,6 @@
 import { assign, setup } from "xstate";
 import { incomingCard, outgoingCard, completeAsk } from "./conversation.ts";
-import { rememberCompletion } from "./dedupe.ts";
+import { digestPresentation, rememberCompletion } from "./dedupe.ts";
 import type { ActorClientProjectionEvent } from "./events.ts";
 import { projectSnapshot } from "./layout.ts";
 import { restorePending } from "./pending.ts";
@@ -56,11 +56,25 @@ export function reduceProjection(context: ProjectionContext, event: ActorClientP
     }
     case "PRESENTATION.FAILED": return withSnapshot({ ...context, connection: "degraded", roster: { ...context.roster, degradedReason: sanitizeText(event.reason, 120) } });
     case "RESTORE.PENDING": return context.completions.has(event.pending.key) ? context : withSnapshot({ ...context, pending: restorePending(context.pending, event.pending) });
-    case "RESTORE.COMPLETION": return withSnapshot({ ...context, pending: new Map([...context.pending].filter(([key]) => key !== event.key)), completions: rememberCompletion(context.completions, event.key, event.digest) });
+    case "RESTORE.COMPLETION": return withSnapshot({ ...context, pending: new Map([...context.pending].filter(([key, value]) => key !== event.key && value.requestId !== event.requestId)), completions: rememberCompletion(context.completions, event.key, event.digest) });
     case "VIEW.WIDTH": return { ...context, snapshot: projectSnapshot(context, Math.max(20, event.width), context.snapshot.themeRevision) };
     case "VIEW.THEME": return { ...context, snapshot: projectSnapshot(context, context.snapshot.width, event.revision) };
     default: return next;
   }
+}
+
+export function restoreProjectionEntries(context: ProjectionContext, entries: readonly any[]): ProjectionContext {
+  let next = context;
+  const completions: any[] = [];
+  for (const entry of entries) {
+    const message = entry?.message ?? entry;
+    const customType = entry?.customType ?? message?.customType;
+    const data = entry?.data ?? entry?.details ?? message?.details;
+    if (customType === "actor-client-ask-pending" && typeof data?.key === "string") next = reduceProjection(next, { type: "RESTORE.PENDING", pending: { ...data, hidden: true } });
+    if (customType === "actor-client-ask-completion" && typeof data?.key === "string") completions.push(data);
+  }
+  for (const data of completions) next = reduceProjection(next, { type: "RESTORE.COMPLETION", key: data.key, digest: data.terminalDigest ?? digestPresentation(data), requestId: data.requestId });
+  return next;
 }
 
 export const actorClientProjectionMachine = setup({ types: {} as { context: ProjectionContext; events: ActorClientProjectionEvent } }).createMachine({
