@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 03:03'
-updated_date: '2026-09-02 03:32'
+updated_date: '2026-09-02 03:36'
 labels: []
 dependencies: []
 references:
@@ -31,6 +31,7 @@ Terminal actor delivery remains unreliable in two related live paths. First, con
 - [ ] #3 Terminal reconnect/reattach renews the regular-delivery ACK fence consistently, replays committed work exactly once, and cannot loop on fence rejection or credit churn
 - [ ] #4 Optimistic Asking/Sending UI transitions to authoritative admitted, busy, failed, or completed state and never implies delivery before admission
 - [ ] #5 Service and actor-client regressions reproduce consecutive-completion delay plus hosted-agent-to-source Ask under fence rotation, and live E2E proves both without polling or pane inspection
+- [ ] #6 No transport/client prefix maps to a hardcoded Project Manager, worker, reviewer, QA, or other semantic role; terminal display name and role are optional validated dynamic AgentActor metadata with neutral role-free fallback
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -41,6 +42,8 @@ Terminal actor delivery remains unreliable in two related live paths. First, con
 3. Make regular delivery ACK obtain the current self attachment fence and retry exactly once after fenced reattach without reinjection or duplicate presentation.
 4. Wake canonical terminal sessions for every committed completion and add bounded legacy alias repair/quarantine that preserves dedupe and never fabricates success.
 5. Run service/client/security/reconnect regressions and a live multi-message hosted-agent-to-source E2E before finalization.
+
+6. Remove hardcoded PROJECT MANAGER and TERMINAL PI role/display assignments. Add an authenticated terminal metadata registration/update path so communicationPeer resolves canonical AgentActor metadata; presentation labels never become routing identity.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
@@ -57,4 +60,6 @@ TASK-19 implementation is assigned to the retained UI Projection Implementer aft
 Operator deployment decision: after reviewed code is applied, perform an explicit whole-crew recovery teardown. Preserve the active PM until the handoff point; retire each exactly owned hosted actor/runtime, remove observer clients/window, stop the daemon, clear only the configured actor durable state after exact ownership is gone, restart the daemon, reload/reconnect PM, recreate the five logical UI crew actors with fresh Pi runtimes in their clean isolated worktrees, and rebuild the labeled 3x2  tmux window. This explicit operator request authorizes stop/shutdown only for this deployment reset; ordinary phase transitions still retain actors.
 
 Correction to the preceding deployment note: the rebuilt labeled 3x2 tmux window is named `crew`.
+
+Operator correction: Project Manager is a dynamic role, not a terminal actor class or transport alias. The diagnosis recommendation to retain hardcoded PROJECT MANAGER display/role is rejected. communicationPeer and ensureTerminalAgent must not synthesize semantic roles from client:*; terminal identity metadata must be dynamically registered and persisted, and absent metadata must use a neutral role-free fallback.
 <!-- SECTION:NOTES:END -->
