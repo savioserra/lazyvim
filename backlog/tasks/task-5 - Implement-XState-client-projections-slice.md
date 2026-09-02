@@ -2,11 +2,39 @@
 id: TASK-5
 title: Implement XState client projections slice
 status: To Do
-assignee: []
+assignee:
+  - '@pi'
 created_date: '2026-08-31 21:41'
+updated_date: '2026-09-02 01:06'
 labels: []
-dependencies: []
+dependencies:
+  - TASK-4
+priority: high
+type: feature
 ordinal: 5000
 ---
 
+## Description
 
+<!-- SECTION:DESCRIPTION:BEGIN -->
+Implement xstate 5.20.2 client actors as the actor-client projection data layer and derive responsive, theme-aware Pi TUI status and conversation widgets from bounded snapshots.
+<!-- SECTION:DESCRIPTION:END -->
+
+## Acceptance Criteria
+<!-- AC:BEGIN -->
+- [ ] #1 actor-client pins xstate exactly to 5.20.2 in package and lockfile
+- [ ] #2 Typed XState actors cover connection, roster/cursor, pending interactions, conversation cards, replay dedupe, and bounded render snapshots
+- [ ] #3 Rich Pi TUI widgets render Tell, Ask, completion, failure, busy, and status states responsively from projection snapshots
+- [ ] #4 Daemon actors remain authoritative and status remains topic-driven with no actor_list polling
+- [ ] #5 Deterministic unit and integration tests cover replay, reconnect, stale frames, resize, redaction, and model-visible completion behavior
+<!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Add exact xstate dependency and extract typed projection actors/selectors from index.ts.
+2. Adapt websocket, regular-delivery, and Pi lifecycle events into machine events without moving durable authority client-side.
+3. Build reusable Pi TUI status and conversation widgets derived from bounded snapshots.
+4. Migrate actor-client wiring incrementally while preserving existing tool/model contracts.
+5. Add deterministic tests and run repository gates.
+<!-- SECTION:PLAN:END -->
