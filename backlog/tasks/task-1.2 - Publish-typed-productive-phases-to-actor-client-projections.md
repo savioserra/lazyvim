@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@pi'
 created_date: '2026-09-02 02:56'
-updated_date: '2026-09-02 04:26'
+updated_date: '2026-09-02 04:32'
 labels: []
 dependencies:
   - TASK-1.1
@@ -41,4 +41,6 @@ Publish authoritative, revision-fenced dynamic activity metadata from AgentActor
 User requirement: treat the tmux-hosted Pi runtime as an actor-bound subscriber of its owning AgentActor topics so pane UI follows the same authoritative identity/phase projection as actor-client status. This is part of TASK-1.2, not a separate liveness-derived observer authority.
 
 User correction: productive phase values are domain/workflow metadata, not a hardcoded enum and not derived from dynamic actor roles. Reviewing/testing/correcting are examples a workflow may publish, never daemon-wide constants.
+
+Corrected UX report received directly at sequence 58. Frozen human contract: render lifecycle/availability, dynamic activity, role, access mode, and visibility health as independent facts. Activity envelope supports set/clear/reset, authoritative owner, monotonic revision, opaque bounded key, optional label/detail, and actor-vs-workflow ownership. Unknown keys render via sanitized label or naturalized key; absent/cleared activity removes only that segment and never invents idle. Status is one-line bounded with +N; roster/pane layouts prioritize display name, lifecycle, then activity and collapse safely. Role/activity never imply each other. Visibility failure cannot alter activity. Required E2E covers unknown/unsafe values, clear, role/activity independence, same-role differences, lifecycle separation, stale fencing, reconnect replay, owner-bound runtime subscription, exact tmux ownership, narrow bounds, and no polling/scraping/injection.
 <!-- SECTION:NOTES:END -->
