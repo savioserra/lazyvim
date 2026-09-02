@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-08-31 21:41'
-updated_date: '2026-09-02 02:21'
+updated_date: '2026-09-02 02:28'
 labels: []
 dependencies:
   - TASK-5
@@ -40,4 +40,6 @@ Perform independent architecture review and QA of the XState projection and rich
 
 <!-- SECTION:NOTES:BEGIN -->
 Implementation commit fb812f4 was cherry-picked to main as a3c32c5. Independent review and QA are assigned read-only in isolated worktrees; all findings must be returned through ActorTaskCompleted before reload/live E2E.
+
+Independent reviewer returned P0 production-wiring blockers at source sequence 28. Required fixes before approval: preserve daemon completionKey exactly and reconcile provisional pending IDs; wire PRESENTATION.SUCCEEDED/FAILED around awaited Pi adapter persistence so failure remains replayable and degrades without unhandled rejection; require SNAPSHOT_RESET as first frame of every higher epoch; remove legacy selector mutation; prevent ActorMessageResponse admission from projecting terminal completion; restore persisted pending/completion entries into root projection context; add actor-client_xstate 5.20.2 as a distinct managed versions.json key. Existing six focused projection tests pass but miss these production seams.
 <!-- SECTION:NOTES:END -->
