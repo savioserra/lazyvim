@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
@@ -190,6 +191,46 @@ func TestClientTerminalIdentityReattachesAndDrainsAcrossReopens(t *testing.T) {
 	}
 	if matching != 1 {
 		t.Fatalf("stable identity minted %d terminal agents, want exactly 1", matching)
+	}
+}
+
+func TestClientTerminalReceivesThreeConsecutiveCompletionsImmediately(t *testing.T) {
+	daemon, stop := terminalIdentityHarness(t)
+	defer stop()
+
+	opened := terminalIdentityOpen(t, daemon, "term-consecutive")
+	if !opened.Accepted || opened.CallerIdentity != "client:term-consecutive" {
+		t.Fatalf("stable identity open failed: %#v", opened)
+	}
+	if err := daemon.ensureTerminalAgent(context.Background(), opened.CallerIdentity); err != nil {
+		t.Fatalf("terminal agent registration failed: %v", err)
+	}
+	value, err := daemon.system.NoSender().Ask(context.Background(), daemon.agentRegistry, &application.ResolveAgentControl{AgentID: opened.CallerIdentity}, 3*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved, ok := value.(*application.AgentControlPID)
+	if !ok || !resolved.Found || resolved.PID == nil {
+		t.Fatalf("terminal agent missing after registration: %#v", value)
+	}
+	writer := make(chan *subagentsv1.Envelope, 8)
+	closed := make(chan struct{})
+	defer close(closed)
+	daemon.registerActorReplySession(&subagentsv1.Envelope{SessionId: opened.SessionId, GenerationId: opened.GenerationId, CallerIdentity: opened.CallerIdentity, SessionCredential: opened.SessionCredential}, writer, closed)
+
+	for i := 1; i <= 3; i++ {
+		if err := daemon.system.NoSender().Tell(context.Background(), resolved.PID, &application.ActorTaskCompleted{CompletionKey: fmt.Sprintf("completion-%d", i), OriginalRequestID: fmt.Sprintf("request-%d", i), DedupeID: fmt.Sprintf("dedupe-%d", i), ChainID: fmt.Sprintf("chain-%d", i), SourceMutationSequence: uint64(i), Terminal: application.BridgeIntentResult{Accepted: true, Completed: true, Result: []byte(fmt.Sprintf("answer-%d", i))}, Source: application.CommunicationPeer{StableID: opened.CallerIdentity}, Target: application.CommunicationPeer{StableID: "alpha"}, Kind: application.BridgeDeliveryNotification}); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case frame := <-writer:
+			reply := frame.GetActorMessageReplyFrame()
+			if reply == nil || reply.CompletionKey != fmt.Sprintf("completion-%d", i) || reply.OriginalRequestId != fmt.Sprintf("request-%d", i) || string(reply.BoundedResult) != fmt.Sprintf("answer-%d", i) {
+				t.Fatalf("reply %d out of order or mismatched: %#v", i, reply)
+			}
+		case <-time.After(3 * time.Second):
+			t.Fatalf("completion %d did not push without another client request", i)
+		}
 	}
 }
 

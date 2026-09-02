@@ -132,7 +132,8 @@ export function renderCommunicationCard(view: CommunicationView, theme: any) {
 export function compactToolCall(name: string, args: any): string {
   const target = safePreview(args?.target ?? args?.agentId ?? "", 48);
   const prompt = safePreview(args?.message ?? args?.prompt ?? "", 72);
-  if (/tell|ask|send/.test(name)) return `Tell ${target || "actor"}${prompt ? `: ${prompt}` : ""}`;
+  if (/ask/.test(name)) return `Ask ${target || "actor"}${prompt ? `: ${prompt}` : ""}`;
+  if (/tell|send/.test(name)) return `Tell ${target || "actor"}${prompt ? `: ${prompt}` : ""}`;
   if (/list/.test(name)) return "List actors";
   if (/resolve|status/.test(name)) return `Check ${target || "actor"}`;
   if (/create/.test(name)) return `Create ${target || "actor"}`;
@@ -145,7 +146,8 @@ export function compactToolResult(name: string, details: any): string {
   if (Array.isArray(details)) return details.map((item) => actorStatusLine(item)).join("\n") || "No actors";
   if (details?.accepted === false || (details?.reason && details?.accepted !== true)) return `! ${safePreview(details.reason || "request failed", 120)}`;
   if (/send/.test(name)) return details?.accepted ? "Delivered" : "Delivery failed";
-  if (/tell|ask/.test(name)) return details?.accepted ? "Request accepted" : "Delivery failed";
+  if (/ask/.test(name)) return details?.accepted ? (details?.completed ? "Completed" : "Admitted") : "Delivery failed";
+  if (/tell/.test(name)) return details?.accepted ? "Delivered" : "Delivery failed";
   if (/resolve/.test(name)) return actorStatusLine(details?.agent ? { displayName: details.displayName ?? details.agent, role: details.role, state: 3 } : details);
   if (/health|status/.test(name)) return details?.reachable === true ? actorStatusLine(details?.agent ? { displayName: details.displayName ?? details.agent, role: details.role, state: 3 } : details) : actorStatusLine(details);
   return details?.completed === false ? "Waiting" : "Done";
@@ -153,7 +155,8 @@ export function compactToolResult(name: string, details: any): string {
 
 export function renderToolCall(name: string, args: any, theme: any) {
   const target = safePreview(args?.target ?? args?.agentId ?? "actor", 48);
-  if (/tell|ask/.test(name)) return new Text(theme.fg("accent", `↗ Telling ${target}…`), 0, 0);
+  if (/ask/.test(name)) return new Text(theme.fg("accent", `↗ Asking ${target}…`), 0, 0);
+  if (/tell/.test(name)) return new Text(theme.fg("accent", `↑ Sending to ${target}…`), 0, 0);
   if (/send/.test(name)) return new Text(theme.fg("toolTitle", `↑ Sending to ${target}…`), 0, 0);
   return new Text(theme.fg("toolTitle", compactToolCall(name, args)), 0, 0);
 }
@@ -176,7 +179,7 @@ export function naturalResultSummary(name: string, details: any): string {
 
 export function modelResultContent(name: string, details: any): string {
   const summary = naturalResultSummary(name, details);
-  if (/actor_tell/.test(name) && details) {
+  if (/actor_tell|actor_ask/.test(name) && details) {
     const parts = [`${summary}.`];
     for (const field of ["requestId", "dedupeId", "chainId", "sourceMutationSequence", "kind", "source", "target"] as const) {
       if (details[field] !== undefined && details[field] !== "") parts.push(`${field}=${safePreview(String(details[field]), 128)}`);

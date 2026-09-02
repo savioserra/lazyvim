@@ -86,11 +86,12 @@ test("actual registered command and tool callbacks invoke every hosted operation
   const context = { ui: { notify(message) { notices.push(message); } } };
   await commands.get("actor-list").handler("", context); await commands.get("actor-resolve").handler("", context);
   const beforeMessageNotices = notices.length;
-  await commands.get("actor-tell").handler("target -- question", context);
+  await commands.get("actor-tell").handler("target -- notification", context);
+  await commands.get("actor-ask").handler("target -- question", context);
   assert.ok(notices.length>=beforeMessageNotices, "command-driven async messages return receipts");
   await commands.get("actor-abort").handler("target", context); await commands.get("actor-shutdown").handler("target", context);
   await commands.get("actor-subscribe").handler("target", context); await commands.get("actor-unsubscribe").handler("target", context);
-  for (const [name, params] of [["actor_list", {}], ["actor_resolve", { target: "target" }], ["actor_health", { target: "target" }], ["actor_tell", { target: "target", message: "tell async" }], ["actor_abort", { target: "target" }], ["actor_shutdown", { target: "target" }], ["actor_subscribe", { target: "target" }], ["actor_unsubscribe", { target: "target" }]]) {
+  for (const [name, params] of [["actor_list", {}], ["actor_resolve", { target: "target" }], ["actor_health", { target: "target" }], ["actor_tell", { target: "target", message: "tell async" }], ["actor_ask", { target: "target", message: "ask async" }], ["actor_abort", { target: "target" }], ["actor_shutdown", { target: "target" }], ["actor_subscribe", { target: "target" }], ["actor_unsubscribe", { target: "target" }]]) {
     const registration = tools.get(name);
     const result = await registration.execute("id", params);
     assert.equal(typeof registration.renderCall, "function");
@@ -98,8 +99,9 @@ test("actual registered command and tool callbacks invoke every hosted operation
     assert.doesNotMatch(result.content[0].text, /^\s*[\[{]/, `${name} exposed raw JSON as tool content`);
   }
   await assert.rejects(() => tools.get("actor_tell").execute("id", { message: "implicit" }), /explicit target/);
-  assert.equal(commands.size, 8); assert.equal(tools.size, 8);
-  assert.ok(calls.some((call) => call[0] === "message" && call[1] === 2 && call[2] === "target"));
+  assert.equal(commands.size, 9); assert.equal(tools.size, 9);
+  assert.ok(calls.some((call) => call[0] === "message" && call[1] === 1 && call[2] === "target"), "actor_tell must use protocol TELL mode");
+  assert.ok(calls.some((call) => call[0] === "message" && call[1] === 2 && call[2] === "target"), "actor_ask must use protocol ASK mode");
   for (const operation of ["list", "resolve", "health", "message", "control", "subscribe", "unsubscribe"]) assert.ok(calls.some((call) => call[0] === operation), `${operation} handler was not invoked`);
 });
 
@@ -239,8 +241,10 @@ test("bridge diagnostics render bounded payload-free lifecycle cards", () => {
 });
 
 test("actor tool rendering is compact and does not expose raw protocol fields", () => {
-  assert.equal(compactToolCall("actor_tell", { target: "beta", message: "Reply exactly BODY_ASK_CONTENT_OK" }), "Tell beta: Reply exactly BODY_ASK_CONTENT_OK");
-  assert.equal(compactToolResult("actor_tell", { accepted: true, completed: false, sessionId: "raw-session", handle: "raw-handle" }), "Request accepted");
+  assert.equal(compactToolCall("actor_tell", { target: "beta", message: "Notify BODY_TELL_CONTENT_OK" }), "Tell beta: Notify BODY_TELL_CONTENT_OK");
+  assert.equal(compactToolCall("actor_ask", { target: "beta", message: "Reply exactly BODY_ASK_CONTENT_OK" }), "Ask beta: Reply exactly BODY_ASK_CONTENT_OK");
+  assert.equal(compactToolResult("actor_tell", { accepted: true, completed: false, sessionId: "raw-session", handle: "raw-handle" }), "Delivered");
+  assert.equal(compactToolResult("actor_ask", { accepted: true, completed: false, sessionId: "raw-session", handle: "raw-handle" }), "Admitted");
   assert.doesNotMatch(compactToolResult("actor_health", { displayName: "Beta", role: "CODE REVIEWER", state: 3, runtimeId: "raw-runtime", fence: 1n }), /runtime|fence|raw/i);
 });
 

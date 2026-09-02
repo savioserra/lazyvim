@@ -98,7 +98,7 @@ function attachWebSocket(socket, onMessage, onClose) {
 // assertions run against exactly what crossed the wire.
 // ---------------------------------------------------------------------------
 function startMockDaemon() {
-  const daemon = { deliveries: [], acks: [], ackCursor: 0n, sockets: new Set(), pushCount: 0 };
+  const daemon = { deliveries: [], acks: [], ackCursor: 0n, sockets: new Set(), pushCount: 0, currentFence: 31n, staleRejections: 0 };
   const respond = (socket, request, responseCase, schema, value) => {
     const envelope = create(EnvelopeSchema, {
       protocolMajor: 1,
@@ -121,7 +121,7 @@ function startMockDaemon() {
     const value = request.payload.value;
     switch (request.payload.case) {
       case "bridgeConnectRequest":
-        respond(socket, request, "bridgeConnectResponse", BridgeConnectResponseSchema, { accepted: true, agentHandle: "bridge-handle-integration", fence: 31n, reason: "" });
+        respond(socket, request, "bridgeConnectResponse", BridgeConnectResponseSchema, { accepted: true, agentHandle: "bridge-handle-integration", fence: daemon.currentFence, reason: "" });
         return;
       case "bridgeHeartbeatRequest":
         respond(socket, request, "bridgeHeartbeatResponse", BridgeHeartbeatResponseSchema, { accepted: true });
@@ -151,6 +151,11 @@ function startMockDaemon() {
           sourceScope: value.sourceScope,
           completionKey: value.completionKey,
         });
+        if (value.dedupeId === "dedupe-rotated" && request.agentFence !== daemon.currentFence) {
+          daemon.staleRejections += 1;
+          respond(socket, request, "bridgeDeliveryAckResponse", BridgeDeliveryAckResponseSchema, { accepted: false, reason: "stale attachment fence", cursor: daemon.ackCursor });
+          return;
+        }
         if (value.sequence === daemon.ackCursor + 1n) daemon.ackCursor = value.sequence;
         const accepted = value.sequence <= daemon.ackCursor;
         respond(socket, request, "bridgeDeliveryAckResponse", BridgeDeliveryAckResponseSchema, { accepted, reason: accepted ? "" : "acknowledgement buffered behind cursor gap", cursor: daemon.ackCursor });
@@ -184,6 +189,25 @@ function startMockDaemon() {
     for (const socket of daemon.sockets) socket.write(encodeServerFrame(message));
   };
   return daemon;
+}
+
+function regularNotification(sequence, dedupeId, text) {
+  return create(BridgeDeliverySchema, {
+    sequence: BigInt(sequence),
+    sourceAgentId: "terminal:manager",
+    targetAgentId: "hosted-agent-int",
+    requestId: `request-${sequence}`,
+    deadlineUnixMillis: BigInt(Date.now() + 60_000),
+    dedupeId,
+    hopLimit: 8,
+    boundedPayload: new TextEncoder().encode(text),
+    kind: BridgeDelivery_Kind.NOTIFICATION,
+    chainId: `chain-${sequence}`,
+    source: { stableId: "manager-stable", displayName: "[redacted]", role: "" },
+    target: { stableId: "hosted-agent-int", displayName: "Integration Reviewer", role: "CODE REVIEWER" },
+    sourceScope: `scope-token-${sequence}`,
+    completionKey: `hosted-agent-int:${sequence}:terminal:manager:request-${sequence}:${dedupeId}:chain-${sequence}:1`,
+  });
 }
 
 function promptDelivery(sequence, dedupeId, promptText) {
@@ -322,6 +346,25 @@ test("the real bridge delivery path acknowledges prompts end to end", async (t) 
   await new Promise((resolve) => setTimeout(resolve, 120));
   assert.equal(daemon.acks.length, 3, "the replay produced exactly one additional acknowledgement");
 
+  // Scenario D: a regular notification delivered under a stale rotated fence is
+  // rejected once by the daemon, refreshed through reconnect, and acknowledged
+  // exactly once with the same delivery identity. The regular delivery must not
+  // be reinjected or churn duplicate cards while the credential/fence material
+  // remains redacted from human-visible entries.
+  daemon.currentFence = 32n;
+  daemon.pushDelivery(regularNotification(3, "dedupe-rotated", "rotated [redacted] notification"));
+  await waitFor(() => daemon.acks.filter((ack) => ack.dedupeId === "dedupe-rotated").length === 2, "the stale-fence rejection and refreshed acknowledgement");
+  assert.equal(daemon.staleRejections, 1);
+  const rotatedAcks = daemon.acks.filter((ack) => ack.dedupeId === "dedupe-rotated");
+  assert.equal(rotatedAcks[0].delivered, true);
+  assert.equal(rotatedAcks[1].delivered, true);
+  assert.equal(rotatedAcks[0].sourceScope, rotatedAcks[1].sourceScope);
+  assert.equal(rotatedAcks[0].completionKey, rotatedAcks[1].completionKey);
+  assert.equal(daemon.ackCursor, 3n);
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  assert.equal(daemon.acks.filter((ack) => ack.dedupeId === "dedupe-rotated").length, 2, "rotated ACK retry must stop after the accepted refresh");
+  assert.equal(entries.filter((entry) => entry.customType === "hosted-pi-communication" && /dedupe-rotated|rotated \[redacted\] notification/.test(JSON.stringify(entry.data))).length, 1, "rotated delivery rendered one card");
+
   // Diagnostics: every prompt lifecycle transition and acknowledgement outcome
   // must be visible as bounded, payload-free session entries.
   const diagnosticLines = entries.filter((entry) => entry.customType === "hosted-pi-communication").map((entry) => entry.data?.line ?? "");
@@ -333,7 +376,7 @@ test("the real bridge delivery path acknowledges prompts end to end", async (t) 
 
   // Clean shutdown closes the bridge without further wire traffic.
   await fire("session_shutdown", { type: "session_shutdown" });
-  await waitFor(() => daemon.acks.length === 3 && statuses.some((status) => status.key === "hosted-pi-bridge" && status.value === undefined), "bridge shutdown");
+  await waitFor(() => daemon.acks.length === 5 && statuses.some((status) => status.key === "hosted-pi-bridge" && status.value === undefined), "bridge shutdown");
   const bridgeStatuses = statuses.filter((status) => status.key === "hosted-pi-bridge").map((status) => status.value);
   assert.ok(bridgeStatuses.includes("hosted bridge ready"), `bridge never reported ready: ${JSON.stringify(bridgeStatuses)}`);
   for (const status of bridgeStatuses) assert.doesNotMatch(String(status), /degraded/, `the happy-path run must never degrade: ${JSON.stringify(bridgeStatuses)}`);

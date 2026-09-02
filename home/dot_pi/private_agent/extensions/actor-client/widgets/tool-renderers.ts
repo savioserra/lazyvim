@@ -5,8 +5,8 @@ import { sanitizeText } from "../projections/sanitize.ts";
 
 export function compactToolCall(name: string, args: any): string {
   const target = sanitizeText(args?.target ?? args?.agentId ?? "actor", 48);
-  if (/actor_tell/.test(name)) return `↗ Asking ${target}…`;
-  if (/send/.test(name)) return `↑ Sending to ${target}…`;
+  if (/actor_ask/.test(name)) return `↗ Asking ${target}…`;
+  if (/actor_tell|send/.test(name)) return `↑ Sending to ${target}…`;
   if (/list/.test(name)) return "List actors";
   if (/resolve|status|health/.test(name)) return `Check ${target}`;
   if (/create/.test(name)) return `Create ${target}`;
@@ -18,8 +18,8 @@ export function compactToolResult(name: string, details: any): string {
   const view = details?.renderEnvelope?.renderSnapshot?.card ?? details?.communicationView;
   if (view?.state === "replied") return `✓ ${view.peerDisplayName ?? details?.target ?? "Actor"} replied`;
   if (view?.state === "failed" || details?.accepted === false) return `! Couldn’t reach ${view?.peerDisplayName ?? details?.target ?? "actor"}`;
-  if (/actor_tell/.test(name)) return details?.awaitingReply ? `◌ Waiting for ${details?.target ?? "actor"}…` : "✓ request accepted";
-  if (/send/.test(name)) return details?.accepted ? "✓ delivered" : "! delivery failed";
+  if (/actor_ask/.test(name)) return details?.awaitingReply ? `◌ Waiting for ${details?.target ?? "actor"}…` : details?.completed ? "✓ replied" : "✓ admitted";
+  if (/actor_tell|send/.test(name)) return details?.accepted ? "✓ delivered" : "! delivery failed";
   if (Array.isArray(details)) return details.map((item) => `${item.displayName ?? item.agentId ?? "Actor"} ${item.lifecycle ?? "available"}`).join("\n") || "No actors";
   return details?.completed === false ? "Waiting" : "Done";
 }

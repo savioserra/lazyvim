@@ -477,12 +477,22 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
       }
     });
     if (outcome.degraded) { reportBridgeDegraded(ctx, new Error(outcome.degraded)); return; }
-    const response = await requiredClient(client).request("bridgeDeliveryAckRequest", BridgeDeliveryAckRequestSchema, outcome.ack, fence);
+    const response = await requestDeliveryAckWithFenceRefresh(ctx, outcome.ack, fence);
     if (response.payload.case !== "bridgeDeliveryAckResponse" || !response.payload.value.accepted) throw new Error(`delivery acknowledgement rejected: ${boundedPublic(String(response.payload.value?.reason || ""), 80)}`);
     if (outcome.ack.delivered) {
       lastAckedSequence = maxBigInt(lastAckedSequence, delivery.sequence);
       appendDeliveryMarker(delivery.dedupeId, delivery.sequence, delivery.kind);
     }
+  }
+
+  async function requestDeliveryAckWithFenceRefresh(ctx: ExtensionContext, ack: ReturnType<typeof buildIdentityDeliveryAck>, fence: TargetFence): Promise<Envelope> {
+    let response = await requiredClient(client).request("bridgeDeliveryAckRequest", BridgeDeliveryAckRequestSchema, ack, fence);
+    const reason = response.payload.case === "bridgeDeliveryAckResponse" ? String(response.payload.value.reason || "") : "unexpected response";
+    if (response.payload.case === "bridgeDeliveryAckResponse" && !response.payload.value.accepted && /fence|stale|attach|reattach/i.test(reason)) {
+      await reconnect(ctx);
+      response = await requiredClient(client).request("bridgeDeliveryAckRequest", BridgeDeliveryAckRequestSchema, ack, requiredFence(selfFence));
+    }
+    return response;
   }
 
   function deliveredPrompt(dedupeId: string, sequence: bigint) {
@@ -554,7 +564,6 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
           if (response.payload.case !== "bridgeConnectResponse" || !response.payload.value.accepted) throw new Error("hosted bridge reconnect rejected");
           adoptBridgeMutationHighWater(current, response.payload.value.actorMessageHighWater ?? 0n);
           const replacement = { handle: response.payload.value.agentHandle, fence: response.payload.value.fence };
-          if (selfFence && (replacement.handle !== selfFence.handle || replacement.fence !== selfFence.fence)) throw new Error("idempotent reconnect unexpectedly rotated bridge fence");
           selfFence = replacement;
           await lifecycle(BridgeLifecycleRequest_Event.READY);
           await prompts.retryCompletion();
