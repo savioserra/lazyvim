@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 06:10'
-updated_date: '2026-09-02 06:45'
+updated_date: '2026-09-02 06:46'
 labels: []
 dependencies: []
 parent_task_id: TASK-22
@@ -40,4 +40,6 @@ Convert Ask 89 into a concise ADR, challenge identity/completion/privacy assumpt
 Added ADR 0006 draft as implementation-authoritative durable thread/introspection contract and updated docs/subagents plus roadmap cross-references. No runtime code implemented.
 
 Notification-fix deployment interrupted ADR correction only after architect commit was safely present in its retained git worktree. Actor was explicitly restarted at operator request and recreated against the same worktree; correction commit remains available for integration.
+
+Architect correction commit d097e7d resolved review 92. PM integration also repaired sanitizer-corrupted `--no-session`, required unambiguous provider/model syntax, replaced WorkflowActor wording with crew/workflow state plus typed access mode, and specified bounded RPC JSONL framing before strict assistant JSON parsing.
 <!-- SECTION:NOTES:END -->
