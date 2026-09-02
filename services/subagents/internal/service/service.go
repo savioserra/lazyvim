@@ -1647,7 +1647,7 @@ func (s *Service) flushRegularDeliveries(session *actorReplySession, reason stri
 	if len(poll.Events) == 0 && len(deliveries) == 0 {
 		return true
 	}
-	frame := &subagentsv1.Envelope{ProtocolMajor: protocol.ProtocolMajor, ProtocolMinor: protocol.ProtocolMinor, SessionId: session.sessionID, GenerationId: session.generationID, CallerIdentity: session.principal, AgentHandle: session.selfHandle, AgentFence: session.selfFence, Payload: &subagentsv1.Envelope_BridgePushFrame{BridgePushFrame: &subagentsv1.BridgePushFrame{AgentId: session.principal, Events: protoBridgeEvents(poll.Events), Deliveries: deliveries, LatestSequence: poll.LatestSequence, Reason: reason}}}
+	frame := &subagentsv1.Envelope{ProtocolMajor: protocol.ProtocolMajor, ProtocolMinor: protocol.ProtocolMinor, SessionId: session.sessionID, GenerationId: session.generationID, CallerIdentity: session.principal, AgentHandle: session.selfHandle, AgentFence: session.selfFence, Payload: &subagentsv1.Envelope_BridgePushFrame{BridgePushFrame: &subagentsv1.BridgePushFrame{AgentId: session.principal, Events: protoBridgeEvents(poll.Events), Deliveries: deliveries, ActivityFrames: protoAgentActivityFrames(poll.ActivityEvents, true), LatestSequence: poll.LatestSequence, Reason: reason}}}
 	select {
 	case <-session.closed:
 		return false
@@ -1778,7 +1778,7 @@ func (s *Service) pushBridgeToSession(session *bridgePushSession, reason string)
 		return true
 	}
 	deliveries := s.protoBridgeDeliveries(ctx, poll.Deliveries)
-	frame := &subagentsv1.Envelope{ProtocolMajor: protocol.ProtocolMajor, ProtocolMinor: protocol.ProtocolMinor, Payload: &subagentsv1.Envelope_BridgePushFrame{BridgePushFrame: &subagentsv1.BridgePushFrame{AgentId: session.agentID, Events: protoBridgeEvents(poll.Events), Deliveries: deliveries, LatestSequence: poll.LatestSequence, Reason: reason}}}
+	frame := &subagentsv1.Envelope{ProtocolMajor: protocol.ProtocolMajor, ProtocolMinor: protocol.ProtocolMinor, Payload: &subagentsv1.Envelope_BridgePushFrame{BridgePushFrame: &subagentsv1.BridgePushFrame{AgentId: session.agentID, Events: protoBridgeEvents(poll.Events), Deliveries: deliveries, ActivityFrames: protoAgentActivityFrames(poll.ActivityEvents, true), LatestSequence: poll.LatestSequence, Reason: reason}}}
 	select {
 	case <-session.closed:
 		return false
@@ -1869,6 +1869,9 @@ func (s *Service) reauthorizeReplay(request *subagentsv1.Envelope) bool {
 	case *subagentsv1.Envelope_BridgeHeartbeatRequest:
 		agentID = payload.BridgeHeartbeatRequest.AgentId
 		capability = "hosted_bridge"
+	case *subagentsv1.Envelope_AgentActivityMutationRequest:
+		agentID = payload.AgentActivityMutationRequest.AgentId
+		capability = "activity_write"
 	case *subagentsv1.Envelope_ActorMessageRequest:
 		agentID = payload.ActorMessageRequest.Target
 		var ok bool
@@ -2097,7 +2100,7 @@ func (s *Service) dispatch(request *subagentsv1.Envelope) *subagentsv1.Envelope 
 			if err != nil {
 				return internalError(response)
 			}
-			attached, err := s.attachRequest(ctx, route.PID, &application.AttachAgent{SessionID: request.SessionId, GenerationID: route.GenerationID, Principal: route.Principal, AgentID: payload.BridgeConnectRequest.AgentId, RequestedCapabilities: []string{"hosted_bridge", "observe", "send", "ask", "control_abort", "control_shutdown"}, IssuedHandle: handle})
+			attached, err := s.attachRequest(ctx, route.PID, &application.AttachAgent{SessionID: request.SessionId, GenerationID: route.GenerationID, Principal: route.Principal, AgentID: payload.BridgeConnectRequest.AgentId, RequestedCapabilities: []string{"hosted_bridge", "observe", "activity_write", "send", "ask", "control_abort", "control_shutdown"}, IssuedHandle: handle})
 			if err != nil || !attached.Completed {
 				return internalError(response)
 			}
@@ -2168,6 +2171,34 @@ func (s *Service) dispatch(request *subagentsv1.Envelope) *subagentsv1.Envelope 
 		// delivered BridgeIntent directly. Retain wire compatibility but reject
 		// the bypass before routing or model effects.
 		return errorResponse(request, subagentsv1.ProtocolError_CODE_INVALID_REQUEST, "prompt task retired; use actor message ask")
+	case *subagentsv1.Envelope_AgentActivityMutationRequest:
+		source, validSource := authenticatedHostedSource(request.CallerIdentity)
+		if !validSource || source != payload.AgentActivityMutationRequest.AgentId {
+			return errorResponse(request, subagentsv1.ProtocolError_CODE_SESSION_MISMATCH, "activity mutation authorization denied")
+		}
+		route, err := s.authorizeAgent(ctx, request, payload.AgentActivityMutationRequest.AgentId, []string{"activity_write"})
+		if err != nil || !route.Allowed {
+			return errorResponse(request, subagentsv1.ProtocolError_CODE_SESSION_MISMATCH, "activity mutation authorization denied")
+		}
+		digest, err := payloadDigest(request)
+		if err != nil {
+			return internalError(response)
+		}
+		result := make(chan application.AgentActivityMutationResult, 1)
+		message := &application.AgentActivityMutation{SessionID: request.SessionId, GenerationID: route.GenerationID, Principal: route.Principal, AgentID: payload.AgentActivityMutationRequest.AgentId, Handle: request.AgentHandle, Fence: request.AgentFence, Operation: application.AgentActivityOperation(payload.AgentActivityMutationRequest.Operation), ActivityKey: payload.AgentActivityMutationRequest.ActivityKey, Label: payload.AgentActivityMutationRequest.Label, Details: payload.AgentActivityMutationRequest.Details, DedupeID: payload.AgentActivityMutationRequest.DedupeId, CurrentRevision: payload.AgentActivityMutationRequest.CurrentRevision, PayloadDigest: digest, Result: result}
+		if err := s.system.NoSender().Tell(ctx, route.PID, message); err != nil {
+			return internalError(response)
+		}
+		var mutation application.AgentActivityMutationResult
+		select {
+		case mutation = <-result:
+		case <-ctx.Done():
+			return errorResponse(request, subagentsv1.ProtocolError_CODE_DEADLINE_EXCEEDED, "durable activity mutation deadline expired")
+		}
+		if mutation.Accepted {
+			s.pushBridgeUpdate(payload.AgentActivityMutationRequest.AgentId, "activity mutation accepted")
+		}
+		response.Payload = &subagentsv1.Envelope_AgentActivityMutationResponse{AgentActivityMutationResponse: &subagentsv1.AgentActivityMutationResponse{Accepted: mutation.Accepted, Revision: mutation.Revision, ActivityEpoch: mutation.ActivityEpoch, Reason: mutation.Reason}}
 	case *subagentsv1.Envelope_ActorMessageRequest:
 		capability, validMode := actorModeCapability(payload.ActorMessageRequest.Mode)
 		source, validSource := authenticatedHostedSource(request.CallerIdentity)
@@ -2294,11 +2325,27 @@ func (s *Service) dispatch(request *subagentsv1.Envelope) *subagentsv1.Envelope 
 		if !ok {
 			return internalError(response)
 		}
-		response.Payload = &subagentsv1.Envelope_BridgePollResponse{BridgePollResponse: &subagentsv1.BridgePollResponse{Events: protoBridgeEvents(poll.Events), Deliveries: s.protoBridgeDeliveries(ctx, poll.Deliveries), LatestSequence: poll.LatestSequence, More: poll.More}}
+		response.Payload = &subagentsv1.Envelope_BridgePollResponse{BridgePollResponse: &subagentsv1.BridgePollResponse{Events: protoBridgeEvents(poll.Events), Deliveries: s.protoBridgeDeliveries(ctx, poll.Deliveries), ActivityFrames: protoAgentActivityFrames(poll.ActivityEvents, true), LatestSequence: poll.LatestSequence, More: poll.More}}
 	default:
 		response.Payload = protocolError(subagentsv1.ProtocolError_CODE_INVALID_REQUEST, "operation is not implemented in milestone 1")
 	}
 	return response
+}
+
+func protoAgentActivityFrames(events []application.AgentActivityEvent, ownerPrivate bool) []*subagentsv1.AgentActivityFrame {
+	frames := make([]*subagentsv1.AgentActivityFrame, 0, len(events))
+	for _, event := range events {
+		operation := subagentsv1.AgentActivityFrame_OPERATION_UPSERT
+		if event.Activity.Cleared || event.Operation == "activity-clear" {
+			operation = subagentsv1.AgentActivityFrame_OPERATION_CLEAR
+		}
+		details := ""
+		if ownerPrivate {
+			details = event.Activity.Details
+		}
+		frames = append(frames, &subagentsv1.AgentActivityFrame{Operation: operation, Epoch: event.Epoch, Sequence: event.Sequence, AgentId: event.AgentID, Activity: &subagentsv1.AgentActivityValue{ActivityKey: event.Activity.ActivityKey, Label: event.Activity.Label, Details: details, OwnerAgentId: event.Activity.OwnerAgentID, SourceAgentId: event.Activity.SourceAgentID, Revision: event.Activity.Revision, ActivityEpoch: event.Activity.ActivityEpoch, UpdatedUnixMillis: event.Activity.UpdatedUnixMillis, Cleared: event.Activity.Cleared}})
+	}
+	return frames
 }
 
 func protoBridgeEvents(events []application.BridgeEvent) []*subagentsv1.BridgeEvent {
@@ -2933,7 +2980,7 @@ func (s *Service) startHostedAgentOnce(ctx context.Context, command *subagentsv1
 		return application.HostedPiRuntimeBinding{}, fmt.Errorf("bootstrap hosted session credential: %w", err)
 	}
 	rollback := func() { _ = hostedpi.RemoveCredentialFile(credentialFile) }
-	session := application.OpenSession{SessionID: sessionID, GenerationID: generationID, Caller: "hosted:" + command.AgentId, Credential: credential, Capabilities: []string{"observe", "hosted_bridge", "send", "ask", "prompt", "control_abort", "control_shutdown"}, Persistent: true}
+	session := application.OpenSession{SessionID: sessionID, GenerationID: generationID, Caller: "hosted:" + command.AgentId, Credential: credential, Capabilities: []string{"observe", "hosted_bridge", "activity_write", "send", "ask", "prompt", "control_abort", "control_shutdown"}, Persistent: true}
 	if err := s.OpenSession(ctx, session); err != nil {
 		rollback()
 		return application.HostedPiRuntimeBinding{}, err

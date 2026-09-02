@@ -160,7 +160,7 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
   // present and structurally valid. Ownership is revalidated during startup.
   if (!completeHostedEnvironment(process.env)) return;
   const proto = await import("./subagents_pb.ts");
-  const { ActorControlRequestSchema, ActorControlRequest_Intent, ActorMessageRequestSchema, ActorMessageRequest_Mode, AttachRequestSchema, BridgeConnectRequestSchema, BridgeDeliveryAckRequestSchema, BridgeHeartbeatRequestSchema, BridgeLifecycleRequestSchema, BridgeLifecycleRequest_Event, BridgePollRequestSchema, DetachAgentRequestSchema, ListAgentsRequestSchema, ResolveAgentRequestSchema, SubscribeAgentRequestSchema, UnsubscribeAgentRequestSchema } = proto;
+  const { AgentActivityMutationRequestSchema, AgentActivityMutationRequest_Operation, ActorControlRequestSchema, ActorControlRequest_Intent, ActorMessageRequestSchema, ActorMessageRequest_Mode, AttachRequestSchema, BridgeConnectRequestSchema, BridgeDeliveryAckRequestSchema, BridgeHeartbeatRequestSchema, BridgeLifecycleRequestSchema, BridgeLifecycleRequest_Event, BridgePollRequestSchema, DetachAgentRequestSchema, ListAgentsRequestSchema, ResolveAgentRequestSchema, SubscribeAgentRequestSchema, UnsubscribeAgentRequestSchema } = proto;
   EnvelopeSchema = proto.EnvelopeSchema;
 
   let client: FramedClient | undefined;
@@ -308,10 +308,30 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
     return { completed: response.payload.value.completed, revision: response.payload.value.revision.toString(), reason: response.payload.value.reason };
   };
 
+
+  const activityMutate = async (operation: any, activityKey: string, label?: string, details?: string, currentRevision?: string) => {
+    const current = requiredBinding(binding);
+    const fence = requiredFence(selfFence);
+    const response = await requiredClient(client).request("agentActivityMutationRequest", AgentActivityMutationRequestSchema, {
+      agentId: current.agentId,
+      operation,
+      activityKey,
+      label: label ?? "",
+      details: details ?? "",
+      dedupeId: randomUUID(),
+      currentRevision: currentRevision ? BigInt(currentRevision) : 0n,
+    }, fence);
+    if (response.payload.case !== "agentActivityMutationResponse") throw new Error("unexpected activity mutation response");
+    return { accepted: response.payload.value.accepted, revision: response.payload.value.revision.toString(), activityEpoch: response.payload.value.activityEpoch.toString(), reason: response.payload.value.reason };
+  };
+
+  const activitySet = async (activityKey: string, label?: string, details?: string, currentRevision?: string) => activityMutate(AgentActivityMutationRequest_Operation.SET, activityKey, label, details, currentRevision);
+  const activityClear = async (activityKey: string, currentRevision?: string) => activityMutate(AgentActivityMutationRequest_Operation.CLEAR, activityKey, "", "", currentRevision);
+
   const targetSchema = Type.Optional(Type.String({ description: "Stable logical actor ID; omitted means self for human commands" }));
   const modelTargetSchema = Type.Object({ target: Type.String({ minLength: 1, description: "Explicit stable logical actor ID" }) });
   const messageSchema = Type.Object({ target: Type.String({ minLength: 1 }), message: Type.String({ maxLength: MAX_TEXT }) });
-  registerHostedHandlers(pi as any, { list, resolve, health, message: (mode, target, text) => message(mode as ActorMessageRequest_Mode, target, text), control: (intent, target) => control(intent as ActorControlRequest_Intent, target), subscribe, unsubscribe }, { empty: Type.Object({}), target: Type.Object({ target: targetSchema }), modelTarget: modelTargetSchema, message: messageSchema });
+  registerHostedHandlers(pi as any, { list, resolve, health, message: (mode, target, text) => message(mode as ActorMessageRequest_Mode, target, text), activitySet, activityClear, control: (intent, target) => control(intent as ActorControlRequest_Intent, target), subscribe, unsubscribe }, { empty: Type.Object({}), target: Type.Object({ target: targetSchema }), modelTarget: modelTargetSchema, message: messageSchema });
 
   pi.on("session_start", async (_event, ctx) => {
     bridgeShuttingDown = false;

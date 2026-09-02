@@ -344,6 +344,7 @@ type PublicAgentSnapshotRequest struct {
 
 const ClientAgentRosterTopic = "subagents.client.agent_roster"
 const ActorMessageReplyTopic = "subagents.actor.message_replies"
+const AgentActivityTopic = "subagents.agent.activity"
 
 const (
 	HostedPiBridgeActorStableNamePrefix = "agents/"
@@ -365,6 +366,65 @@ const (
 	ClientAgentRosterUpsert        = "upsert"
 	ClientAgentRosterRemove        = "remove"
 )
+
+type AgentActivityOperation uint8
+
+const (
+	AgentActivityOperationUnspecified AgentActivityOperation = iota
+	AgentActivityOperationSet
+	AgentActivityOperationClear
+)
+
+type AgentActivityValue struct {
+	ActivityKey       string
+	Label             string
+	Details           string
+	OwnerAgentID      string
+	SourceAgentID     string
+	Revision          uint64
+	ActivityEpoch     uint64
+	UpdatedUnixMillis int64
+	Cleared           bool
+}
+
+type DurableAgentActivityMutationResult struct {
+	Digest        [32]byte
+	Result        AgentActivityMutationResult
+	ActivityValue AgentActivityValue
+}
+
+type DurableAgentActivityState struct {
+	Epoch     uint64
+	Sequence  uint64
+	Values    []AgentActivityValue
+	Events    []AgentActivityEvent
+	Mutations map[string]DurableAgentActivityMutationResult
+}
+
+type AgentActivityMutation struct {
+	SessionID, GenerationID, Principal, AgentID, Handle string
+	Fence                                               uint64
+	Operation                                           AgentActivityOperation
+	ActivityKey, Label, Details, DedupeID               string
+	CurrentRevision                                     uint64
+	PayloadDigest                                       [32]byte
+	Result                                              chan<- AgentActivityMutationResult
+}
+
+type AgentActivityMutationResult struct {
+	Accepted      bool
+	Revision      uint64
+	ActivityEpoch uint64
+	Reason        string
+}
+
+type AgentActivityEvent struct {
+	Operation string
+	Epoch     uint64
+	Sequence  uint64
+	AgentID   string
+	Activity  AgentActivityValue
+}
 
 type ClientAgentRosterEvent struct {
 	Operation string
@@ -1000,6 +1060,7 @@ type BridgeIntentTimeout struct {
 type BridgePollResult struct {
 	Events         []BridgeEvent
 	Deliveries     []BridgeDelivery
+	ActivityEvents []AgentActivityEvent
 	LatestSequence uint64
 	More           bool
 	Reason         string

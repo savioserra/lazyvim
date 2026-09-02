@@ -61,7 +61,60 @@ message Envelope {
     ClientAgentRosterRequest client_agent_roster_request = 60;
     ClientAgentRosterFrame client_agent_roster_frame = 61;
     ActorMessageReplyFrame actor_message_reply_frame = 62;
+    AgentActivityMutationRequest agent_activity_mutation_request = 63;
+    AgentActivityMutationResponse agent_activity_mutation_response = 64;
+    AgentActivityFrame agent_activity_frame = 65;
   }
+}
+
+
+message AgentActivityMutationRequest {
+  enum Operation {
+    OPERATION_UNSPECIFIED = 0;
+    OPERATION_SET = 1;
+    OPERATION_CLEAR = 2;
+  }
+  string agent_id = 1;
+  Operation operation = 2;
+  string activity_key = 3;
+  string label = 4;
+  string details = 5;
+  string dedupe_id = 6;
+  // Compare-and-set fence only; the server owns accepted revision allocation.
+  uint64 current_revision = 7;
+}
+
+message AgentActivityMutationResponse {
+  bool accepted = 1;
+  uint64 revision = 2;
+  uint64 activity_epoch = 3;
+  string reason = 4;
+}
+
+message AgentActivityValue {
+  string activity_key = 1;
+  string label = 2;
+  string details = 3;
+  string owner_agent_id = 4;
+  string source_agent_id = 5;
+  uint64 revision = 6;
+  uint64 activity_epoch = 7;
+  int64 updated_unix_millis = 8;
+  bool cleared = 9;
+}
+
+message AgentActivityFrame {
+  enum Operation {
+    OPERATION_UNSPECIFIED = 0;
+    OPERATION_SNAPSHOT_RESET = 1;
+    OPERATION_UPSERT = 2;
+    OPERATION_CLEAR = 3;
+  }
+  Operation operation = 1;
+  uint64 epoch = 2;
+  uint64 sequence = 3;
+  string agent_id = 4;
+  AgentActivityValue activity = 5;
 }
 
 message ActorMessageReplyFrame {
@@ -352,6 +405,7 @@ message BridgeDelivery {
 message BridgePollResponse {
   repeated BridgeEvent events = 1;
   repeated BridgeDelivery deliveries = 2;
+  repeated AgentActivityFrame activity_frames = 5;
   // Cursor of the last item emitted in this page, not the queue high-water mark.
   uint64 latest_sequence = 3;
   bool more = 4;
@@ -362,6 +416,7 @@ message BridgePushFrame {
   repeated BridgeEvent events = 2;
   repeated BridgeDelivery deliveries = 3;
   uint64 latest_sequence = 4;
+  repeated AgentActivityFrame activity_frames = 6;
   string reason = 5;
 }
 

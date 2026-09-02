@@ -132,6 +132,7 @@ type DurableAgentState struct {
 	TaskSources                                                                                                map[uint64]DurableActorRef
 	CompletionTellPending                                                                                      []DurablePendingCompletion
 	Threads                                                                                                    []DurableAgentThread
+	Activity                                                                                                   DurableAgentActivityState
 	ThreadScheduler                                                                                            DurableThreadScheduler
 }
 

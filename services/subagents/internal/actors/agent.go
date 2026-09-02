@@ -47,8 +47,12 @@ const (
 	taskCreditRequestTimeout = 500 * time.Millisecond
 	// maxActorTaskRejectLogs bounds target-side reject logging: a churny source
 	// redriving a dead credit must not flood operator logs.
-	maxActorTaskRejectLogs = 32
-	taskRetryDelay         = 50 * time.Millisecond
+	maxActorTaskRejectLogs  = 32
+	taskRetryDelay          = 50 * time.Millisecond
+	maxActivityKeyBytes     = 64
+	maxActivityLabelBytes   = 160
+	maxActivityDetailsBytes = 4096
+	maxActivityMutations    = 1024
 )
 
 type projectionSubscribed struct{ sessionID, generationID string }
@@ -186,10 +190,13 @@ type pendingDurableReceipt struct {
 	// liveTaskSources snapshots the in-memory delivery-to-source PID map before
 	// a mutation retires deliveries: live PIDs are deliberately absent from the
 	// durable state, so a persistence rollback restores them from here.
-	liveTaskSources map[uint64]*actor.PID
-	drop            *projectionDrop
-	rollingBack     bool
-	persistErr      error
+	liveTaskSources  map[uint64]*actor.PID
+	drop             *projectionDrop
+	activityResult   chan<- application.AgentActivityMutationResult
+	activityMutation *application.AgentActivityMutationResult
+	activityEvent    *application.AgentActivityEvent
+	rollingBack      bool
+	persistErr       error
 }
 type pendingBridgeAsk struct {
 	completion chan<- application.BridgeIntentResult
@@ -276,6 +283,13 @@ type AgentActor struct {
 	sourceMutationHighWater   uint64
 	sourceOutbox              map[string]application.DurableActorTaskOutboxItem
 	sourceOutboxOrder         []string
+	activityEpoch             uint64
+	activitySequence          uint64
+	activity                  map[string]application.AgentActivityValue
+	activityOrder             []string
+	activityEvents            []application.AgentActivityEvent
+	activityMutations         map[string]application.DurableAgentActivityMutationResult
+	activityMutationOrder     []string
 	// outboxCreditAwaited tracks the single in-flight credit request per
 	// outbox item (taskID -> when the request was fired) so overlapping retry
 	// ticks cannot rotate the target credit epoch while a grant is awaited.
@@ -307,10 +321,15 @@ func NewAgentActor(registration *application.RegisterAgent, registry ...*actor.P
 	for _, capability := range registration.AllowedCapability {
 		allowed[capability] = struct{}{}
 	}
+	if registration.AuthorityBinding.Kind == application.AuthorityBindingHostedOwned {
+		if _, ok := allowed["hosted_bridge"]; ok {
+			allowed["activity_write"] = struct{}{}
+		}
+	}
 	metadataBinding := registration.HostedPiRuntime
 	metadataBinding.DisplayName = registration.DisplayName
 	metadataBinding.Role = registration.Role
-	value := &AgentActor{id: registration.AgentID, authorityBinding: registration.AuthorityBinding, hostedPiRuntime: metadataBinding, retention: registration.Retention, recovery: registration.Recovery, allowed: allowed, attachments: make(map[string]attachment), revoked: make(map[string]struct{}), revision: 1, commandResults: make(map[string]commandRecord), projections: make(map[string]*projectionLifecycle), deliverySources: make(map[uint64]string), taskSources: make(map[uint64]*actor.PID), durableTaskSources: make(map[uint64]application.DurableActorRef), resolvedRefs: make(map[string]*actor.PID), resolvingRefs: make(map[string]struct{}), scopeTokens: make(map[string]string), completionTellPending: make(map[string]application.DurablePendingCompletion), ackGaps: make(map[uint64]application.BridgeDeliveryAck), committedAcks: make(map[uint64]application.DurableBridgeAckRecord), taskCompletions: make(map[string]application.ActorTaskCompleted), sourceTaskHistory: make(map[string]application.ActorTaskCompleted), sourceMutationReceipts: make(map[string]application.DurableSourceMutationReceipt), sourceOutbox: make(map[string]application.DurableActorTaskOutboxItem), outboxCreditAwaited: make(map[string]time.Time), taskCreditReservations: make(map[string]taskCreditReservation), threads: make(map[string]application.DurableAgentThread), threadScheduler: application.DurableThreadScheduler{SchemaVersion: application.DurableThreadSchedulerSchemaV1, AgentID: registration.AgentID}, mutationScopes: make(map[string]*mutationScope), persistencePID: registration.PersistencePID, persistenceSupervisor: registration.PersistenceSupervisor, introspectionRunner: registration.IntrospectionRunner, durableRecord: registration.DurableRecord}
+	value := &AgentActor{id: registration.AgentID, authorityBinding: registration.AuthorityBinding, hostedPiRuntime: metadataBinding, retention: registration.Retention, recovery: registration.Recovery, allowed: allowed, attachments: make(map[string]attachment), revoked: make(map[string]struct{}), revision: 1, commandResults: make(map[string]commandRecord), projections: make(map[string]*projectionLifecycle), deliverySources: make(map[uint64]string), taskSources: make(map[uint64]*actor.PID), durableTaskSources: make(map[uint64]application.DurableActorRef), resolvedRefs: make(map[string]*actor.PID), resolvingRefs: make(map[string]struct{}), scopeTokens: make(map[string]string), completionTellPending: make(map[string]application.DurablePendingCompletion), ackGaps: make(map[uint64]application.BridgeDeliveryAck), committedAcks: make(map[uint64]application.DurableBridgeAckRecord), taskCompletions: make(map[string]application.ActorTaskCompleted), sourceTaskHistory: make(map[string]application.ActorTaskCompleted), sourceMutationReceipts: make(map[string]application.DurableSourceMutationReceipt), sourceOutbox: make(map[string]application.DurableActorTaskOutboxItem), outboxCreditAwaited: make(map[string]time.Time), taskCreditReservations: make(map[string]taskCreditReservation), activity: make(map[string]application.AgentActivityValue), activityMutations: make(map[string]application.DurableAgentActivityMutationResult), threads: make(map[string]application.DurableAgentThread), threadScheduler: application.DurableThreadScheduler{SchemaVersion: application.DurableThreadSchedulerSchemaV1, AgentID: registration.AgentID}, mutationScopes: make(map[string]*mutationScope), persistencePID: registration.PersistencePID, persistenceSupervisor: registration.PersistenceSupervisor, introspectionRunner: registration.IntrospectionRunner, durableRecord: registration.DurableRecord}
 	if registration.DurableRecord != nil {
 		value.restoreDurableState(registration.DurableRecord.AgentState)
 		// Pending outbox work and undelivered completion tells must resume on
@@ -350,6 +369,8 @@ func (a *AgentActor) Receive(ctx *actor.ReceiveContext) {
 		a.finishThreadIntrospection(ctx, message.outcome)
 	case *application.ActorMessageHighWaterRequest:
 		ctx.Response(&application.ActorMessageHighWaterResult{HighWater: a.actorMessageHighWater()})
+	case *application.AgentActivityMutation:
+		a.activityMutation(ctx, message)
 	case *application.RemoteAttachAgent:
 		a.remoteAttach(ctx, message)
 	case *application.AttachAgent:
@@ -870,6 +891,16 @@ func (a *AgentActor) durableState() application.DurableAgentState {
 	state.ThreadScheduler.Waiting = append([]string(nil), a.threadScheduler.Waiting...)
 	state.ThreadScheduler.Blocked = append([]string(nil), a.threadScheduler.Blocked...)
 	state.ThreadScheduler.Tombstones = append([]application.DurableThreadTombstone(nil), a.threadScheduler.Tombstones...)
+	state.Activity = application.DurableAgentActivityState{Epoch: a.activityEpoch, Sequence: a.activitySequence, Mutations: make(map[string]application.DurableAgentActivityMutationResult, len(a.activityMutations))}
+	for _, key := range a.activityOrder {
+		if value, ok := a.activity[key]; ok {
+			state.Activity.Values = append(state.Activity.Values, value)
+		}
+	}
+	state.Activity.Events = append([]application.AgentActivityEvent(nil), a.activityEvents...)
+	for key, value := range a.activityMutations {
+		state.Activity.Mutations[key] = value
+	}
 	for sequence, key := range a.deliverySources {
 		state.DeliverySources[sequence] = key
 	}
@@ -977,6 +1008,22 @@ func (a *AgentActor) restoreDurableState(state application.DurableAgentState) {
 		a.threadOrder = append(a.threadOrder, thread.ThreadID)
 	}
 	a.threadScheduler = state.ThreadScheduler
+	a.activityEpoch = state.Activity.Epoch
+	a.activitySequence = state.Activity.Sequence
+	a.activity = make(map[string]application.AgentActivityValue, len(state.Activity.Values))
+	a.activityOrder = nil
+	a.activityEvents = append([]application.AgentActivityEvent(nil), state.Activity.Events...)
+	for _, value := range state.Activity.Values {
+		a.activity[value.ActivityKey] = value
+		a.activityOrder = append(a.activityOrder, value.ActivityKey)
+	}
+	a.activityMutations = make(map[string]application.DurableAgentActivityMutationResult, len(state.Activity.Mutations))
+	a.activityMutationOrder = nil
+	for key, value := range state.Activity.Mutations {
+		a.activityMutations[key] = value
+		a.activityMutationOrder = append(a.activityMutationOrder, key)
+	}
+	slices.Sort(a.activityMutationOrder)
 	if a.threadScheduler.SchemaVersion == 0 {
 		a.threadScheduler = application.DurableThreadScheduler{SchemaVersion: application.DurableThreadSchedulerSchemaV1, AgentID: a.id}
 	}
@@ -1380,6 +1427,11 @@ func (a *AgentActor) completeDurableReceipt(ctx *actor.ReceiveContext, pending *
 		deliverBridgeResult(pending.bridgeCompletion, *pending.bridge)
 	} else if pending.intentCompletion != nil && pending.intent != nil {
 		deliverBridgeIntentResult(pending.intentCompletion, *pending.intent)
+	} else if pending.activityResult != nil && pending.activityMutation != nil {
+		if err == nil && pending.activityEvent != nil {
+			a.publishActivityEvent(ctx, *pending.activityEvent)
+		}
+		deliverActivityResult(pending.activityResult, *pending.activityMutation)
 	} else if pending.ackBurst != nil {
 		if pending.ackBurst.response != nil {
 			deliverBridgeAckResult(pending.ackBurst.response, pending.ackBurst.result)
@@ -3761,6 +3813,7 @@ func (a *AgentActor) pollBridge(ctx *actor.ReceiveContext, message *application.
 		sequence uint64
 		event    *application.BridgeEvent
 		delivery *application.BridgeDelivery
+		activity *application.AgentActivityEvent
 	}
 	items := make([]item, 0, len(a.bridgeEvents)+len(a.bridgeDeliveries))
 	plan := a.projections[generationKey(message.SessionID, message.GenerationID)]
@@ -3790,6 +3843,13 @@ func (a *AgentActor) pollBridge(ctx *actor.ReceiveContext, message *application.
 			}
 		}
 	}
+	if exactBridge || regularClient {
+		for index := range a.activityEvents {
+			if a.activityEvents[index].Sequence > message.AfterSequence {
+				items = append(items, item{sequence: a.activityEvents[index].Sequence, activity: &a.activityEvents[index]})
+			}
+		}
+	}
 	slices.SortFunc(items, func(left, right item) int {
 		if left.sequence < right.sequence {
 			return -1
@@ -3803,8 +3863,10 @@ func (a *AgentActor) pollBridge(ctx *actor.ReceiveContext, message *application.
 		result.LatestSequence = candidate.sequence
 		if candidate.event != nil {
 			result.Events = append(result.Events, *candidate.event)
-		} else {
+		} else if candidate.delivery != nil {
 			result.Deliveries = append(result.Deliveries, *candidate.delivery)
+		} else if candidate.activity != nil {
+			result.ActivityEvents = append(result.ActivityEvents, *candidate.activity)
 		}
 	}
 	result.More = len(items) > limit
@@ -4113,6 +4175,135 @@ func agentTopic(agentID string) string { return "subagents.agent." + agentID }
 func projectionName(sessionID, generationID string) string {
 	digest := sha256.Sum256([]byte(generationKey(sessionID, generationID)))
 	return "projection-" + hex.EncodeToString(digest[:8])
+}
+
+func (a *AgentActor) activityMutation(ctx *actor.ReceiveContext, message *application.AgentActivityMutation) {
+	if message == nil || message.AgentID != a.id || message.DedupeID == "" || message.PayloadDigest == ([32]byte{}) {
+		deliverActivityResult(messageResult(message), application.AgentActivityMutationResult{Reason: "activity mutation identity is invalid"})
+		return
+	}
+	if !strings.HasPrefix(message.Principal, "hosted:") || message.Principal != "hosted:"+a.id || !a.validHandle(message.SessionID, message.GenerationID, message.Principal, message.Handle, message.Fence, "activity_write") {
+		deliverActivityResult(message.Result, application.AgentActivityMutationResult{Reason: "activity mutation authorization denied"})
+		return
+	}
+	if message.CurrentRevision != 0 && message.CurrentRevision != a.revision {
+		deliverActivityResult(message.Result, application.AgentActivityMutationResult{Reason: "stale activity revision"})
+		return
+	}
+	key, ok := sanitizeActivityAtom(message.ActivityKey, maxActivityKeyBytes, false)
+	if !ok {
+		deliverActivityResult(message.Result, application.AgentActivityMutationResult{Reason: "activity key is invalid"})
+		return
+	}
+	label, ok := sanitizeActivityAtom(message.Label, maxActivityLabelBytes, true)
+	if !ok {
+		deliverActivityResult(message.Result, application.AgentActivityMutationResult{Reason: "activity label is invalid"})
+		return
+	}
+	details, ok := sanitizeActivityAtom(message.Details, maxActivityDetailsBytes, true)
+	if !ok {
+		deliverActivityResult(message.Result, application.AgentActivityMutationResult{Reason: "activity details are invalid"})
+		return
+	}
+	if record, exists := a.activityMutations[message.DedupeID]; exists {
+		if record.Digest != message.PayloadDigest {
+			deliverActivityResult(message.Result, application.AgentActivityMutationResult{Reason: "activity mutation payload collision"})
+			return
+		}
+		deliverActivityResult(message.Result, record.Result)
+		return
+	}
+	if message.Operation != application.AgentActivityOperationSet && message.Operation != application.AgentActivityOperationClear {
+		deliverActivityResult(message.Result, application.AgentActivityMutationResult{Reason: "activity operation is invalid"})
+		return
+	}
+	if a.durablePending != nil || a.durableFailed != nil {
+		deliverActivityResult(message.Result, application.AgentActivityMutationResult{Reason: "durable persistence is busy"})
+		return
+	}
+	old := a.durableState()
+	a.revision++
+	a.activityEpoch++
+	a.bridgeSequence++
+	a.activitySequence = a.bridgeSequence
+	value := application.AgentActivityValue{ActivityKey: key, Label: label, Details: details, OwnerAgentID: a.id, SourceAgentID: a.id, Revision: a.revision, ActivityEpoch: a.activityEpoch, UpdatedUnixMillis: time.Now().UnixMilli(), Cleared: message.Operation == application.AgentActivityOperationClear}
+	if _, exists := a.activity[key]; !exists {
+		a.activityOrder = append(a.activityOrder, key)
+	}
+	a.activity[key] = value
+	operation := "activity-set"
+	if value.Cleared {
+		operation = "activity-clear"
+	}
+	result := application.AgentActivityMutationResult{Accepted: true, Revision: a.revision, ActivityEpoch: a.activityEpoch}
+	mutation := application.DurableAgentActivityMutationResult{Digest: message.PayloadDigest, Result: result, ActivityValue: value}
+	a.activityMutations[message.DedupeID] = mutation
+	a.activityMutationOrder = append(a.activityMutationOrder, message.DedupeID)
+	for len(a.activityMutationOrder) > maxActivityMutations {
+		oldest := a.activityMutationOrder[0]
+		a.activityMutationOrder = a.activityMutationOrder[1:]
+		delete(a.activityMutations, oldest)
+	}
+	event := application.AgentActivityEvent{Operation: operation, Epoch: a.activityEpoch, Sequence: a.activitySequence, AgentID: a.id, Activity: value}
+	a.recordActivityBridgeEvent(event)
+	if a.beginDurablePersist(ctx, &pendingDurableReceipt{old: old, activityResult: message.Result, activityMutation: &result, activityEvent: &event}) {
+		return
+	}
+	a.publishActivityEvent(ctx, event)
+	deliverActivityResult(message.Result, result)
+}
+
+func messageResult(message *application.AgentActivityMutation) chan<- application.AgentActivityMutationResult {
+	if message == nil {
+		return nil
+	}
+	return message.Result
+}
+
+func (a *AgentActor) publishActivityEvent(ctx *actor.ReceiveContext, event application.AgentActivityEvent) {
+	if topic := ctx.ActorSystem().TopicActor(); topic != nil {
+		_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), topic, actor.NewPublish(fmt.Sprintf("%s:%d", a.id, event.Sequence), application.AgentActivityTopic, &event))
+	}
+}
+
+func (a *AgentActor) recordActivityBridgeEvent(event application.AgentActivityEvent) {
+	a.activityEvents = append(a.activityEvents, event)
+	if len(a.activityEvents) > maxBridgeItems {
+		a.activityEvents = a.activityEvents[1:]
+	}
+	a.bridgeEvents = append(a.bridgeEvents, application.BridgeEvent{Sequence: event.Sequence, AgentID: a.id, Revision: event.Activity.Revision, Operation: event.Operation})
+	if len(a.bridgeEvents) > maxBridgeItems {
+		a.bridgeEvents = a.bridgeEvents[1:]
+	}
+}
+
+func deliverActivityResult(target chan<- application.AgentActivityMutationResult, result application.AgentActivityMutationResult) {
+	if target == nil {
+		return
+	}
+	select {
+	case target <- result:
+	default:
+	}
+}
+
+func sanitizeActivityAtom(value string, maxBytes int, allowEmpty bool) (string, bool) {
+	clean := strings.TrimSpace(strings.Map(func(r rune) rune {
+		if r == 0 || r == '\r' || r == '\n' || r == '\t' {
+			return ' '
+		}
+		return r
+	}, value))
+	if !allowEmpty && clean == "" {
+		return "", false
+	}
+	if len([]byte(clean)) > maxBytes {
+		return "", false
+	}
+	if strings.Contains(strings.ToLower(clean), "[redacted]") {
+		return "", false
+	}
+	return clean, true
 }
 
 type projectionActor struct {

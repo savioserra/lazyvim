@@ -235,6 +235,11 @@ func (a *AgentRegistryActor) stage(message application.OpenSession) bool {
 	for _, capability := range message.Capabilities {
 		capabilities[capability] = struct{}{}
 	}
+	if strings.HasPrefix(message.Caller, "hosted:") {
+		if _, ok := capabilities["hosted_bridge"]; ok {
+			capabilities["activity_write"] = struct{}{}
+		}
+	}
 	a.sessions[message.SessionID] = sessionRecord{generationID: message.GenerationID, caller: message.Caller, credential: append([]byte(nil), message.Credential...), capabilities: capabilities, expiresAt: message.ExpiresAt, persistent: message.Persistent}
 	return true
 }

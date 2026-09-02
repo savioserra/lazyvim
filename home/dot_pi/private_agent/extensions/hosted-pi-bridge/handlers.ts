@@ -1,3 +1,4 @@
+import { Type } from "typebox";
 import { modelResultContent, naturalResultSummary, renderToolCall, renderToolResult } from "./communication-ui.ts";
 
 export const HOSTED_ENVIRONMENT = ["WS_SUBAGENTS_ENDPOINT", "WS_SUBAGENTS_CREDENTIAL_FILE", "WS_SUBAGENTS_SESSION_ID", "WS_SUBAGENTS_GENERATION_ID", "WS_SUBAGENTS_CALLER", "WS_SUBAGENTS_AGENT_ID", "WS_SUBAGENTS_RUNTIME_ID", "WS_SUBAGENTS_INCARNATION"] as const;
@@ -136,6 +137,8 @@ export type HostedHandlerOperations = {
   control(intent: number, target?: string): Promise<unknown>;
   subscribe(target?: string): Promise<unknown>;
   unsubscribe(target?: string): Promise<unknown>;
+  activitySet(activityKey: string, label?: string, details?: string, currentRevision?: string): Promise<unknown>;
+  activityClear(activityKey: string, currentRevision?: string): Promise<unknown>;
 };
 
 type CommandContext = { ui: { notify(message: string, level: string): void } };
@@ -155,6 +158,8 @@ export function registerHostedHandlers(api: RegistrationAPI, operations: HostedH
   api.registerCommand("actor-shutdown", { description: "Shutdown a hosted actor using control_shutdown", handler: async (args, ctx) => notify(ctx, "actor_shutdown", await operations.control(2, args)) });
   api.registerCommand("actor-subscribe", { description: "Subscribe to actor events", handler: async (args, ctx) => notify(ctx, "actor_subscribe", await operations.subscribe(args)) });
   api.registerCommand("actor-unsubscribe", { description: "Unsubscribe from actor events", handler: async (args, ctx) => notify(ctx, "actor_unsubscribe", await operations.unsubscribe(args)) });
+  api.registerCommand("actor-activity-set", { description: "Set this hosted owner activity: key -- label/details", handler: async (args, ctx) => { const [key, text] = parseTargetMessage(args); notify(ctx, "actor_activity_set", await operations.activitySet(requireExplicitModelTarget(key), text, text)); } });
+  api.registerCommand("actor-activity-clear", { description: "Clear this hosted owner activity key", handler: async (args, ctx) => notify(ctx, "actor_activity_clear", await operations.activityClear(requireExplicitModelTarget(args))) });
   const tool = (name: string, description: string, parameters: unknown, execute: (params: any) => Promise<unknown>) => api.registerTool({ name, label: name, description, parameters, async execute(_id, params) { const result = await execute(params); return { content: [{ type: "text", text: modelResultContent(name, result) }], details: result }; }, renderCall(args, theme, context) { return renderToolCall(name, args, theme); }, renderResult(result, options, theme, context) { return renderToolResult(name, result, options, theme); } });
   tool("actor_list", "List authorized logical actors", schemas.empty, async () => operations.list());
   tool("actor_resolve", "Resolve a logical actor", schemas.modelTarget, async (params) => operations.resolve(requireExplicitModelTarget(params.target)));
@@ -165,6 +170,8 @@ export function registerHostedHandlers(api: RegistrationAPI, operations: HostedH
   tool("actor_shutdown", "Shutdown a hosted actor", schemas.modelTarget, async (params) => operations.control(2, requireExplicitModelTarget(params.target)));
   tool("actor_subscribe", "Subscribe to bounded events", schemas.modelTarget, async (params) => operations.subscribe(requireExplicitModelTarget(params.target)));
   tool("actor_unsubscribe", "Unsubscribe from actor events", schemas.modelTarget, async (params) => operations.unsubscribe(requireExplicitModelTarget(params.target)));
+  tool("actor_activity_set", "Set this hosted owner opaque activity", Type.Object({ activityKey: Type.String({ minLength: 1, maxLength: 64 }), label: Type.Optional(Type.String({ maxLength: 160 })), details: Type.Optional(Type.String({ maxLength: 4096 })), currentRevision: Type.Optional(Type.String()) }), async (params) => operations.activitySet(requireExplicitModelTarget(params.activityKey), params.label, params.details, params.currentRevision));
+  tool("actor_activity_clear", "Clear this hosted owner opaque activity", Type.Object({ activityKey: Type.String({ minLength: 1, maxLength: 64 }), currentRevision: Type.Optional(Type.String()) }), async (params) => operations.activityClear(requireExplicitModelTarget(params.activityKey), params.currentRevision));
 }
 
 export function buildActorMessage(mode: number, target: string, text: string, dedupeId: string, chainId: string, sourceMutationSequence: bigint, hopLimit = 8) {
