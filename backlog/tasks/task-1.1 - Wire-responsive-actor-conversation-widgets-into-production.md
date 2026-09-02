@@ -61,4 +61,6 @@ Baseline QA sequence 38 returned a conditional pass but did not exercise the two
 P0 correction 3cc7aab integrated: live regular Tell/request now reduces DELIVERY.INCOMING events through root projection and persists schema-versioned render envelopes; legacy CommunicationView is migration-only; raw themed slicing replaced with Pi TUI truncateToWidth; real ANSI width tests cover 20, 25, 49, and 80 columns. Writer actor-client suite passed 40/40 and full relevant gates.
 
 Focused independent re-review sequence 41 explicitly approved the incoming projection-envelope production path, legacy-only fallback, no duplicate request, ANSI-safe width handling at 20/25/49/80, and 40/40 actor-client tests. AC 1-4 are verified; AC 5 remains open for post-apply/reload live UX matrix, currently gated by TASK-19 terminal delivery reliability.
+
+Correction QA sequence 42 conditionally passed the requested code seams; its hosted environment lacked tmux. PM-host evidence supersedes that environment block: legacy observer 97/97 and scratch chezmoi dry-run passed with /snap/bin/tmux. TASK-1.1 now awaits only the live acceptance matrix after TASK-19.
 <!-- SECTION:NOTES:END -->
