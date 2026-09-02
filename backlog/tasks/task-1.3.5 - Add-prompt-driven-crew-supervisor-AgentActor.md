@@ -5,12 +5,13 @@ status: To Do
 assignee:
   - '@pi'
 created_date: '2026-09-02 05:25'
-updated_date: '2026-09-02 05:26'
+updated_date: '2026-09-02 06:01'
 labels: []
 dependencies:
   - TASK-1.2
   - TASK-1.3.3
   - TASK-16
+  - TASK-22
 references:
   - .crew.toml
   - services/subagents/internal/actors/agent.go
@@ -47,4 +48,6 @@ Support an optional `[crew.supervisor]` manifest section that bootstraps one ret
 
 <!-- SECTION:NOTES:BEGIN -->
 Clarification from operator: the supervisor is not the interactive Pi terminal session. It is an independent hosted background AgentActor/Pi runtime that works in parallel and outlives terminal attachment/disconnect.
+
+Durable prompt-driven supervision depends on TASK-22 threads so later assignments cannot erase incomplete coordination and the supervisor can introspect/resume work after its mailbox drains.
 <!-- SECTION:NOTES:END -->

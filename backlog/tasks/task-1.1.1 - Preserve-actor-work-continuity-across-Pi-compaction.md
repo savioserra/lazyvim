@@ -1,13 +1,14 @@
 ---
 id: TASK-1.1.1
 title: Preserve actor work continuity across Pi compaction
-status: In Progress
+status: To Do
 assignee:
   - '@pi'
 created_date: '2026-09-02 05:52'
-updated_date: '2026-09-02 05:53'
+updated_date: '2026-09-02 06:01'
 labels: []
-dependencies: []
+dependencies:
+  - TASK-22
 references:
   - home/dot_pi/private_agent/extensions/actor-client
   - home/dot_pi/private_agent/extensions/hosted-pi-bridge
@@ -45,4 +46,6 @@ Preserve terminal and hosted actor conversation/work continuity when native Pi c
 
 <!-- SECTION:NOTES:BEGIN -->
 Live observation: after terminal compaction, actor Tell delivery ACKs continued arriving but the PM only classified them and retained agents left requested reports/actions in local panes. Hosted source records showed no outbound report receipts for architecture, UX, QA, or reviewer despite explicit report instructions. Current actor-client and hosted bridge code register no session_before_compact continuity hook. PM took writer ownership on main and explicitly paused the prior UI implementer assignment.
+
+Superseded as the immediate writer focus by TASK-22 durable threads. Terminal projection continuity remains this task; hosted outbound-report obligation and automatic resumption depend on TASK-22 daemon-authoritative thread scheduling.
 <!-- SECTION:NOTES:END -->
