@@ -1,10 +1,11 @@
 ---
 id: TASK-22.2
 title: Add strict introspection model configuration and protocol
-status: To Do
+status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 06:10'
+updated_date: '2026-09-02 06:53'
 labels: []
 dependencies:
   - TASK-22.1
@@ -26,3 +27,9 @@ Add the exact private introspection model setting and typed bounded daemon/hoste
 - [ ] #2 Typed protocol messages carry opaque thread/turn/lease identity and bounded structured results without exposing credentials, runtime IDs, prompts, or answers publicly
 - [ ] #3 Codegen, config, redaction, malformed-result, compatibility, and deployment documentation tests pass
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Add required strict `[hosted_pi].introspection_model` parsing and exact provider/model validation, wire it into the daemon-only introspection configuration, and update the managed private template, recognizer, verification, and docs without changing hosted worker launch arguments.\n2. Add additive typed thread/turn/scheduler-lease/run-counter settlement fields at the bridge protocol boundary plus bounded internal introspection request/result types; preserve compatibility and regenerate Go/TypeScript bindings.\n3. Implement an injectable `hostedpi.IntrospectionRunner` that launches exact-model Pi RPC with `--no-session --no-tools --no-extensions --no-prompt-templates`, bounded JSONL framing, strict final-assistant JSON parsing, duplicate/extra-key rejection, policy redaction, timeout, and process cleanup.\n4. Add deterministic config, protocol/codegen, parser, bounds, isolation-argument, timeout, malformed-output, redaction, and compatibility tests; run focused race tests and all fast repository gates.\n5. Obtain independent read-only review, integrate the reviewed commit, deploy the required managed setting, then finalize TASK-22.2 before starting scheduler persistence.
+<!-- SECTION:PLAN:END -->
