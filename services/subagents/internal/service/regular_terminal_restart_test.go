@@ -108,6 +108,33 @@ func TestRegularPromptRestartRetiresAbandonedExecutorAndUnblocksLaterWork(t *tes
 	if original.Kind != application.BridgeDeliveryPrompt || original.DeliveryBackend != "regular" {
 		t.Fatalf("regular prompt identity missing: %#v", original)
 	}
+	// Commit a later Tell into the durable gap buffer before restart. This is
+	// the production poison case: its transient authenticated fence is not
+	// persisted, but its accepted ACK must remain authoritative when sequence 1
+	// later retires under a fresh terminal incarnation.
+	gapTell := application.SendActorTask{TargetPeer: application.CommunicationPeer{StableID: opened.CallerIdentity}, RequestID: "pre-restart-tell", DedupeID: "pre-restart-tell-dedupe", ChainID: "restart-parent-chain", RequiredCapability: "send", SourceMutationSequence: 2, Deadline: time.Now().Add(time.Hour), HopLimit: 8, Mode: application.BridgeMessageTell, Payload: []byte("tell buffered behind prompt")}
+	sendRegularTaskUntilAdmitted(t, daemon, source, target, gapTell)
+	var gapDelivery application.BridgeDelivery
+	gapDeadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(gapDeadline) {
+		value, pollErr := daemon.system.NoSender().Ask(context.Background(), target.PID, &application.PollBridge{SessionID: opened.SessionId, GenerationID: opened.GenerationId, Principal: opened.CallerIdentity, Handle: attached.AgentHandle, Fence: attached.Fence, AfterSequence: original.Sequence, MaxItems: 64}, time.Second)
+		if pollErr == nil {
+			deliveries := value.(*application.BridgePollResult).Deliveries
+			if len(deliveries) == 1 {
+				gapDelivery = deliveries[0]
+				break
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if gapDelivery.Kind != application.BridgeDeliveryNotification {
+		t.Fatalf("pre-restart gap Tell missing: %#v", gapDelivery)
+	}
+	gapAck := terminalEnvelope(opened, 3, "gap-ack", &subagentsv1.Envelope{Payload: &subagentsv1.Envelope_BridgeDeliveryAckRequest{BridgeDeliveryAckRequest: regularAckRequest(gapDelivery, true, "delivered to terminal")}})
+	gapAck.AgentHandle, gapAck.AgentFence = attached.AgentHandle, attached.Fence
+	if response := daemon.dispatch(gapAck).GetBridgeDeliveryAckResponse(); response == nil || !response.Accepted || response.Cursor != 0 {
+		t.Fatalf("later Tell was not durably buffered behind prompt: %#v", response)
+	}
 
 	// Simulate process loss after the local injected marker was durable but
 	// before any model settlement or ACK. The daemon and actor are reincarnated
@@ -141,8 +168,8 @@ func TestRegularPromptRestartRetiresAbandonedExecutorAndUnblocksLaterWork(t *tes
 		}
 		time.Sleep(25 * time.Millisecond)
 	}
-	if accepted == nil || !accepted.Accepted || accepted.Cursor != replayed.Sequence {
-		t.Fatalf("abandoned prompt did not retire contiguously: %#v", accepted)
+	if accepted == nil || !accepted.Accepted || accepted.Cursor != gapDelivery.Sequence {
+		t.Fatalf("abandoned prompt and authenticated pre-restart gap did not retire contiguously: %#v", accepted)
 	}
 
 	// Later Tell and Ask mutations in one parent chain must now progress in
@@ -163,7 +190,7 @@ func TestRegularPromptRestartRetiresAbandonedExecutorAndUnblocksLaterWork(t *tes
 	var later []application.BridgeDelivery
 	laterDeadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(laterDeadline) {
-		value, pollErr := daemon.system.NoSender().Ask(context.Background(), target.PID, &application.PollBridge{SessionID: reopened.SessionId, GenerationID: reopened.GenerationId, Principal: reopened.CallerIdentity, Handle: fresh.AgentHandle, Fence: fresh.Fence, AfterSequence: replayed.Sequence, MaxItems: 64}, time.Second)
+		value, pollErr := daemon.system.NoSender().Ask(context.Background(), target.PID, &application.PollBridge{SessionID: reopened.SessionId, GenerationID: reopened.GenerationId, Principal: reopened.CallerIdentity, Handle: fresh.AgentHandle, Fence: fresh.Fence, AfterSequence: gapDelivery.Sequence, MaxItems: 64}, time.Second)
 		if pollErr == nil {
 			later = value.(*application.BridgePollResult).Deliveries
 			if len(later) == 2 {

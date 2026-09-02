@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 03:03'
-updated_date: '2026-09-02 21:35'
+updated_date: '2026-09-02 21:44'
 labels: []
 dependencies: []
 references:
@@ -162,4 +162,8 @@ Independent reviewer v13 APPROVED 0dc938f with no findings. Focused/full Go race
 Fresh v15 after an actual terminal Pi restart still failed: stale regular prompt sequence 5 rejected ACK identity, kept AckCursor=4, later Tell/Ask accumulated at sequences 9-12, and Ask redrive hit credit_reservation_missing. v15 was explicitly stopped. The prior test strategy is rejected as insufficient; implementation now requires a real persisted-restart production-path regression before any further live claim.
 
 Implemented deterministic stale regular-prompt reincarnation correction. Actor-client now persists `settled` outcome before ACK; an injected/unsettled marker restored by a new executor is terminally failed as abandoned, never reinjected or fabricated successful, and reuses the identical settlement after response loss/restart. ACK responses now include bounded typed rejection_code; client retry policy uses only typed fence/authorization and exact persistence_busy classes. Added a real persisted daemon restart service test covering old prompt identity, new self attachment, stale fence rejection, bounded busy convergence, contiguous retirement, later same-chain Tell+Ask, second restart no replay; race count=20 passed. Node tests prove durable settlement before failed ACK, identical replay, and second-restart exactly-once. Full Go race rerun passed; initial unrelated known TempDir cleanup race in TestPushedAndPolledAskDeliveriesCarryAcknowledgementIdentity passed on full rerun.
+
+Independent reviewer v16 APPROVED 1cdf3f5 with no findings after actor-client 45/45, hosted bridge 47/47, full service codegen/race/vet/protocol, focused persisted-restart race count=20, capabilities, and diff checks. Built/deployed daemon and atomically applied actor-client plus generated hosted bridge boundary; daemon restarted active. One full terminal Pi process restart is required to load the new marker/rejection-code behavior and retire the existing stale sequence 5 before the final live Tell→Ask gate.
+
+First post-deploy reincarnation exposed the exact missing fixture dimension: sequence 5 passed fresh ACK validation, but commit returned typed `identity_commit` because contiguous draining reached pre-restart buffered ACK 6. Durable AckGapRecord intentionally omits transient session handle/fence, while commitAck incorrectly re-required them after restart and rolled back the valid head ACK. Corrected commit to revalidate only immutable delivery/thread/runtime shape for ACKs already authenticated before durable gap acceptance; scope token and mutation record checks still gate retirement. Expanded the persisted restart test to ACK a later Tell into the gap before daemon restart, then prove the abandoned head plus authenticated gap retire atomically, later same-chain Tell+Ask converge, and second restart replays nothing. Focused race count=20 passes.
 <!-- SECTION:NOTES:END -->

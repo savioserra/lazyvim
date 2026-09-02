@@ -3404,6 +3404,27 @@ func (a *AgentActor) validAckIdentity(message *application.BridgeDeliveryAck, de
 	return a.ackIdentityRejection(message, delivery) == ""
 }
 
+// validCommittedAckIdentity checks only immutable delivery identity. The actor
+// already authenticated a gap ACK before durably accepting it; transient
+// session handles/fences are intentionally not persisted and must not be
+// re-required when that accepted gap becomes contiguous after reincarnation.
+func validCommittedAckIdentity(message *application.BridgeDeliveryAck, delivery *application.BridgeDelivery) bool {
+	if message == nil || delivery == nil || delivery.SourceScope == "" || delivery.CompletionKey == "" || message.Sequence != delivery.Sequence || message.DedupeID != delivery.DedupeID || message.Kind != application.BridgeDeliveryKindLabel(delivery.Kind) || message.SourceScope != delivery.SourceScope || message.CompletionKey != delivery.CompletionKey {
+		return false
+	}
+	if delivery.ThreadID == "" {
+		if message.ThreadID != "" || message.SchedulerEpoch != 0 || message.ActiveLease != 0 || message.ThreadTurn != 0 || message.BridgeRunCounter != 0 || message.AgentEndObserved || message.AgentSettledObserved {
+			return false
+		}
+	} else if message.ThreadID != delivery.ThreadID || message.SchedulerEpoch != delivery.SchedulerEpoch || message.ActiveLease != delivery.ActiveLease || message.ThreadTurn != delivery.ThreadTurn {
+		return false
+	}
+	if delivery.DeliveryBackend == "regular" {
+		return message.RuntimeID == "" && message.Incarnation == 0 && message.PiSessionID == ""
+	}
+	return message.RuntimeID != "" && message.Incarnation != 0 && message.PiSessionID != ""
+}
+
 func (a *AgentActor) ackIdentityRejection(message *application.BridgeDeliveryAck, delivery *application.BridgeDelivery) string {
 	if message == nil || delivery == nil || delivery.SourceScope == "" || delivery.CompletionKey == "" || message.Sequence != delivery.Sequence || message.DedupeID != delivery.DedupeID || message.Kind != application.BridgeDeliveryKindLabel(delivery.Kind) || message.SourceScope != delivery.SourceScope || message.CompletionKey != delivery.CompletionKey {
 		return "delivery"
@@ -3489,7 +3510,7 @@ func (a *AgentActor) commitAck(ctx *actor.ReceiveContext, message *application.B
 		return false
 	}
 	delivery := a.bridgeDeliveries[index]
-	if !a.validAckIdentity(message, &delivery) {
+	if !validCommittedAckIdentity(message, &delivery) {
 		return false
 	}
 	key := a.deliverySources[message.Sequence]
