@@ -77,4 +77,6 @@ Writer sequence 50 integrated: hosted /actor-tell and actor_tell now use protoco
 Independent review sequence 59 verified Tell/Ask wire modes, regular-client tool semantics, three-consecutive completion regression, stale-fence retry evidence, canonical routing, dynamic metadata authority, and core redaction. One Medium blocker remains: hosted communication-ui renderToolResult fast path maps a pending actor_ask CommunicationView to ✓ delivered. It must render admitted/waiting, and production-path tests must cover the CommunicationView branch.
 
 Writer sequence 61 correction integrated: hosted renderToolResult now presents a pending actor_ask CommunicationView as waiting rather than delivered, with production-path pending/replied/failed Ask and delivered/failed Tell coverage. Original writer commit 1ca7d0d; integrated code commit recorded in Git history. Task remains open for PM verification and independent re-review.
+
+PM verification on integrated main 862a9fc: hosted-pi-bridge suite passed 38/38 including production tool result renderer Ask/Tell semantic coverage; git diff --check passed and tree is clean. Independent final review remains required.
 <!-- SECTION:NOTES:END -->
