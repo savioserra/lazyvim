@@ -1,11 +1,11 @@
 ---
 id: TASK-22.4
 title: Run isolated introspection and automatically resume threads
-status: In Progress
+status: Done
 assignee:
   - '@pi'
 created_date: '2026-09-02 06:10'
-updated_date: '2026-09-02 10:11'
+updated_date: '2026-09-02 10:12'
 labels: []
 dependencies:
   - TASK-22.3
@@ -52,10 +52,14 @@ Final evidence: counting-runner duplicate settlement test; deterministic complet
 Post-finalization stale-map reconciliation exposed one mandatory-authority blocker: legacy TaskLifecycle START still constructs BridgeIntent directly and keeps lifecycle state in memory, bypassing ActorTask credit/thread/introspection authority. Reopened TASK-22.4 to fail this legacy path closed and require ActorMessage Ask/ActorTask for model-bearing work.
 
 Closed the mandatory-authority bypass identified from the architect map: legacy PromptTaskRequest and TaskLifecycleRequest remain wire-decodable but now fail every operation closed with fixed ActorMessage Ask guidance. Removed the disposable TaskLifecycle service map/helpers and updated local/remote tests to prove neither legacy path can route model effects. Added ADR correction and deterministic thread-ID-derived introspection backoff jitter.
+
+Re-finalization gates after bypass retirement: full go test -race ./..., go vet ./..., codegen verify, protocol npm test, capabilities test, and diff check all pass. Legacy model-task requests are tested fail-closed locally and across nodes.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
 Wired persisted settlement to isolated introspection, exact attempt identity, bounded retries, automatic resume, inert wait/block states, high-confidence completion, source-commit acknowledgement, and terminal tombstone compaction. Added independent rejection of acknowledgements and sent-elsewhere pointers so only same-thread deliverables complete Ask work. Verified with restart, duplicate, cross-node, race, protocol, and deployment tests.
+
+Legacy PromptTask and TaskLifecycle bypasses were retired so ActorMessage Ask and durable ActorTask threads are now the exclusive model-work authority.
 <!-- SECTION:FINAL_SUMMARY:END -->
