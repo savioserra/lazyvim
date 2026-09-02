@@ -166,9 +166,10 @@ export function renderToolResult(name: string, result: any, options: { isPartial
   if (options.expanded && fullModelAnswer(result?.details) !== undefined) return renderFullAnswerResult(name, result.details, theme);
   if (result?.details?.communicationView) {
     if (options.expanded) return renderCommunicationCard(result.details.communicationView, theme);
-    const peer = result.details.communicationView.peerDisplayName;
-    const line = result.details.communicationView.state === "replied" ? `✓ ${peer} replied` : result.details.communicationView.state === "failed" ? `! Couldn’t reach ${peer}` : `✓ delivered`;
-    return new Text(theme.fg(result.details.communicationView.state === "failed" ? "error" : "success", line), 0, 0);
+    const view = result.details.communicationView;
+    const peer = view.peerDisplayName;
+    const line = view.state === "replied" ? `✓ ${peer} replied` : view.state === "failed" ? `! Couldn’t reach ${peer}` : /ask/.test(name) && view.state === "pending" ? `◌ Waiting for ${peer}…` : `✓ delivered`;
+    return new Text(theme.fg(view.state === "failed" ? "error" : view.state === "pending" ? "warning" : "success", line), 0, 0);
   }
   return new Text(theme.fg(result?.isError ? "error" : "toolOutput", compactToolResult(name, result?.details)), 0, 0);
 }

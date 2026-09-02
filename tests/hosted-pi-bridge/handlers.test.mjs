@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { buildActorControl, buildActorMessage, buildIdentityDeliveryAck, bridgeErrorClass, communicationKey, communicationLine, CommunicationTimeline, completeHostedEnvironment, ExactMutationSequencer, PromptTaskCoordinator, deliveryAction, deliveryKindLabel, destroyOnFramingFailure, drainPages, executeTypedDelivery, invokeTypedDeliveryForAck, missingAckIdentity, parseTargetMessage, registerHostedHandlers, requireExplicitModelTarget } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/handlers.ts";
-import { bridgeDiagnostic, incomingNote, incomingRequestText, outgoingExchange, renderCommunicationCard, compactToolCall, compactToolResult, modelResultContent } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/communication-ui.ts";
+import { bridgeDiagnostic, incomingNote, incomingRequestText, outgoingExchange, renderCommunicationCard, compactToolCall, compactToolResult, modelResultContent, renderToolResult } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/communication-ui.ts";
 import { actorControlCapabilities, actorMessageCapabilities, actorMessageModelResult, capabilitySetIncludes, connectBridgeWithRetry, consumeReconnect, degradedBridgeStatus, resolveHostedMessageDestination } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/index.ts";
 
 const complete = { WS_SUBAGENTS_ENDPOINT: "ws://127.0.0.1:17213/actors", WS_SUBAGENTS_CREDENTIAL_FILE: "/state/credential", WS_SUBAGENTS_SESSION_ID: "session", WS_SUBAGENTS_GENERATION_ID: "generation", WS_SUBAGENTS_CALLER: "hosted:agent", WS_SUBAGENTS_AGENT_ID: "agent", WS_SUBAGENTS_RUNTIME_ID: "runtime", WS_SUBAGENTS_INCARNATION: "1" };
@@ -246,6 +246,23 @@ test("actor tool rendering is compact and does not expose raw protocol fields", 
   assert.equal(compactToolResult("actor_tell", { accepted: true, completed: false, sessionId: "raw-session", handle: "raw-handle" }), "Delivered");
   assert.equal(compactToolResult("actor_ask", { accepted: true, completed: false, sessionId: "raw-session", handle: "raw-handle" }), "Admitted");
   assert.doesNotMatch(compactToolResult("actor_health", { displayName: "Beta", role: "CODE REVIEWER", state: 3, runtimeId: "raw-runtime", fence: 1n }), /runtime|fence|raw/i);
+});
+
+test("production tool result renderer preserves ask pending versus tell delivered semantics", () => {
+  const theme = { fg: (_name, text) => text, bg: (_name, text) => text, bold: (text) => text };
+  const render = (name, view) => renderToolResult(name, { details: { communicationView: view } }, { expanded: false }, theme).render(80).join("\n");
+  const askPending = outgoingExchange({ key: "ask-pending", target: "Beta", body: "question", accepted: true, completed: false, mode: "ask" });
+  assert.equal(askPending.state, "pending");
+  assert.match(render("actor_ask", askPending), /Waiting for Beta/);
+  assert.doesNotMatch(render("actor_ask", askPending), /delivered/i);
+  const askReplied = outgoingExchange({ key: "ask-replied", target: "Beta", body: "question", reply: "answer", accepted: true, completed: true, mode: "ask" });
+  assert.match(render("actor_ask", askReplied), /✓ Beta replied/);
+  const askFailed = outgoingExchange({ key: "ask-failed", target: "Beta", body: "question", accepted: false, mode: "ask", reason: "denied" });
+  assert.match(render("actor_ask", askFailed), /Couldn’t reach Beta/);
+  const tellDelivered = outgoingExchange({ key: "tell-delivered", target: "Beta", body: "note", accepted: true, completed: false, mode: "tell" });
+  assert.match(render("actor_tell", tellDelivered), /✓ delivered/);
+  const tellFailed = outgoingExchange({ key: "tell-failed", target: "Beta", body: "note", accepted: false, mode: "tell", reason: "denied" });
+  assert.match(render("actor_tell", tellFailed), /Couldn’t reach Beta/);
 });
 
 test("typed delivery invokes documented context abort/shutdown and notification methods", async () => {
