@@ -3,6 +3,7 @@ package actors_test
 import (
 	"context"
 	"crypto/sha256"
+	"fmt"
 	"testing"
 	"time"
 
@@ -150,6 +151,30 @@ func TestRejectedActorTaskKeepsReservationAcrossInterleavedCreditRequests(t *tes
 	// the target's own accounting rather than resurrected per delivery.
 	if followUp := requestCredit(t, ctx, source, target, "delta-task-d", "request-d", "dedupe-d", digest); followUp.Credit.TargetEpoch != 3 {
 		t.Fatalf("post-reject grant carried epoch %d, want 3", followUp.Credit.TargetEpoch)
+	}
+}
+
+func TestActorTaskAcceptsSparseGlobalSourceMutationSequences(t *testing.T) {
+	target := newBridgeHarness(t, "credit-sparse-source-sequence", "bravo", "alpha")
+	ctx := context.Background()
+	source := spawnTaskPeer(t, ctx, target.system, "sparse-sequence-source")
+	for index, sequence := range []uint64{15, 20} {
+		payload := []byte("sparse sequence payload")
+		digest := sha256.Sum256(payload)
+		taskID := fmt.Sprintf("bravo-task-sparse-%d", sequence)
+		requestID := fmt.Sprintf("request-sparse-%d", sequence)
+		dedupeID := fmt.Sprintf("dedupe-sparse-%d", sequence)
+		granted := requestCredit(t, ctx, source, target.pid, taskID, requestID, dedupeID, digest)
+		task := &application.ActorTask{Credit: granted.Credit, SourcePeer: application.CommunicationPeer{StableID: "alpha"}, TargetPeer: application.CommunicationPeer{StableID: "bravo"}, RequestID: requestID, DedupeID: dedupeID, ChainID: fmt.Sprintf("chain-sparse-%d", sequence), RequiredCapability: "send", SourceMutationSequence: sequence, Deadline: time.Now().Add(time.Minute), HopLimit: 8, Mode: application.BridgeMessageTell, Payload: payload}
+		if err := source.tell(ctx, target.pid, task); err != nil {
+			t.Fatal(err)
+		}
+		if accepted := nextAccepted(t, source, time.Second); !accepted.Accepted {
+			t.Fatalf("target rejected sparse global source sequence %d: %#v", sequence, accepted)
+		}
+		if deliveries := target.poll().Deliveries; len(deliveries) != index+1 {
+			t.Fatalf("sparse sequence %d produced %d deliveries, want %d", sequence, len(deliveries), index+1)
+		}
 	}
 }
 

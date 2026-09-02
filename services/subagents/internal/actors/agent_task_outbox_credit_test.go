@@ -2,6 +2,8 @@ package actors_test
 
 import (
 	"context"
+	"crypto/sha256"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -144,6 +146,42 @@ func restoredOutboxSource(t *testing.T, ctx context.Context, system goakt.ActorS
 		t.Fatal(err)
 	}
 	return pid
+}
+
+func TestOutboxSerializesSparseSequencesPerTarget(t *testing.T) {
+	ctx := context.Background()
+	system, err := goakt.NewActorSystem("outbox-target-order", goakt.WithPubSub())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = system.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		stop, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		_ = system.Stop(stop)
+	})
+	target := spawnTaskPeer(t, ctx, system, "ordered-target")
+	targetRef := actorRefOf("ordered-target", target.pid)
+	deadline := time.Now().Add(time.Minute)
+	item := func(sequence uint64) application.DurableActorTaskOutboxItem {
+		payload := []byte(fmt.Sprintf("payload-%d", sequence))
+		return application.DurableActorTaskOutboxItem{TaskID: fmt.Sprintf("client:pm:ordered:chain:%d", sequence), Target: application.CommunicationPeer{StableID: "ordered-target"}, TargetRef: targetRef, RequestID: fmt.Sprintf("request-%d", sequence), DedupeID: fmt.Sprintf("dedupe-%d", sequence), ChainID: fmt.Sprintf("chain-%d", sequence), RequiredCapability: "send", SourceMutationSequence: sequence, Deadline: deadline, HopLimit: 4, Mode: application.BridgeMessageTell, Payload: payload, PayloadDigest: sha256.Sum256(payload), State: "pending_credit"}
+	}
+	first, second := item(15), item(20)
+	_ = restoredOutboxSource(t, ctx, system, "ordered-source", first, second)
+	if request, ok := target.waitForCreditRequest(time.Second); !ok || request.TaskID != first.TaskID {
+		t.Fatalf("first target request = %#v, want task %s", request, first.TaskID)
+	}
+	time.Sleep(700 * time.Millisecond)
+	target.mu.Lock()
+	defer target.mu.Unlock()
+	for _, message := range target.received {
+		if request, ok := message.(*application.RequestTaskCredit); ok && request.TaskID == second.TaskID {
+			t.Fatalf("later sparse sequence requested credit before its target predecessor: %#v", request)
+		}
+	}
 }
 
 // TestOutboxHeldUnexpiredCreditIsSentNotReRequested pins PM fix 1: an outbox

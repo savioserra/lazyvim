@@ -214,38 +214,39 @@ type AgentActor struct {
 	projectionSubscriptionDelay time.Duration
 	projectionMailbox           func() actor.Mailbox
 
-	registryPID            *actor.PID
-	runtimePID             *actor.PID
-	runtimeFailure         string
-	bridgeSession          string
-	bridgeGeneration       string
-	bridgePrincipal        string
-	bridgeHandle           string
-	bridgePiSession        string
-	bridgeFence            uint64
-	bridgeLeaseToken       uint64
-	bridgeDeclaredReady    bool
-	bridgeSequence         uint64
-	bridgeEvents           []application.BridgeEvent
-	bridgeDeliveries       []application.BridgeDelivery
-	deliverySources        map[uint64]string
-	taskSources            map[uint64]*actor.PID
-	durableTaskSources     map[uint64]application.DurableActorRef
-	resolvedRefs           map[string]*actor.PID
-	resolvingRefs          map[string]struct{}
-	scopeTokens            map[string]string
-	completionTellPending  map[string]application.DurablePendingCompletion
-	completionTellOrder    []string
-	ackGaps                map[uint64]application.BridgeDeliveryAck
-	committedAcks          map[uint64]application.DurableBridgeAckRecord
-	committedAckOrder      []uint64
-	ackCursor              uint64
-	taskCompletions        map[string]application.ActorTaskCompleted
-	taskCompletionOrder    []string
-	sourceTaskHistory      map[string]application.ActorTaskCompleted
-	sourceTaskHistoryOrder []string
-	sourceOutbox           map[string]application.DurableActorTaskOutboxItem
-	sourceOutboxOrder      []string
+	registryPID             *actor.PID
+	runtimePID              *actor.PID
+	runtimeFailure          string
+	bridgeSession           string
+	bridgeGeneration        string
+	bridgePrincipal         string
+	bridgeHandle            string
+	bridgePiSession         string
+	bridgeFence             uint64
+	bridgeLeaseToken        uint64
+	bridgeDeclaredReady     bool
+	bridgeSequence          uint64
+	bridgeEvents            []application.BridgeEvent
+	bridgeDeliveries        []application.BridgeDelivery
+	deliverySources         map[uint64]string
+	taskSources             map[uint64]*actor.PID
+	durableTaskSources      map[uint64]application.DurableActorRef
+	resolvedRefs            map[string]*actor.PID
+	resolvingRefs           map[string]struct{}
+	scopeTokens             map[string]string
+	completionTellPending   map[string]application.DurablePendingCompletion
+	completionTellOrder     []string
+	ackGaps                 map[uint64]application.BridgeDeliveryAck
+	committedAcks           map[uint64]application.DurableBridgeAckRecord
+	committedAckOrder       []uint64
+	ackCursor               uint64
+	taskCompletions         map[string]application.ActorTaskCompleted
+	taskCompletionOrder     []string
+	sourceTaskHistory       map[string]application.ActorTaskCompleted
+	sourceTaskHistoryOrder  []string
+	sourceMutationHighWater uint64
+	sourceOutbox            map[string]application.DurableActorTaskOutboxItem
+	sourceOutboxOrder       []string
 	// outboxCreditAwaited tracks the single in-flight credit request per
 	// outbox item (taskID -> when the request was fired) so overlapping retry
 	// ticks cannot rotate the target credit epoch while a grant is awaited.
@@ -788,7 +789,7 @@ func (a *AgentActor) bridgeLeaseExpired(ctx *actor.ReceiveContext, message *appl
 }
 
 func (a *AgentActor) durableState() application.DurableAgentState {
-	state := application.DurableAgentState{Revision: a.revision, CommandSequence: a.commandSequence, Fence: a.fence, BridgeFence: a.bridgeFence, BridgeSequence: a.bridgeSequence, BridgeLeaseToken: a.bridgeLeaseToken, BridgeReady: a.hostedPiRuntime.BridgeReady, BridgeDeclaredReady: a.bridgeDeclaredReady, BridgeSession: a.bridgeSession, BridgeGeneration: a.bridgeGeneration, BridgePrincipal: a.bridgePrincipal, BridgeHandle: a.bridgeHandle, BridgePiSession: a.bridgePiSession, BridgeDeliveries: append([]application.BridgeDelivery(nil), a.bridgeDeliveries...), DeliverySources: make(map[uint64]string, len(a.deliverySources)), TaskSources: make(map[uint64]application.DurableActorRef, len(a.durableTaskSources))}
+	state := application.DurableAgentState{Revision: a.revision, CommandSequence: a.commandSequence, Fence: a.fence, BridgeFence: a.bridgeFence, BridgeSequence: a.bridgeSequence, BridgeLeaseToken: a.bridgeLeaseToken, BridgeReady: a.hostedPiRuntime.BridgeReady, BridgeDeclaredReady: a.bridgeDeclaredReady, BridgeSession: a.bridgeSession, BridgeGeneration: a.bridgeGeneration, BridgePrincipal: a.bridgePrincipal, BridgeHandle: a.bridgeHandle, BridgePiSession: a.bridgePiSession, BridgeDeliveries: append([]application.BridgeDelivery(nil), a.bridgeDeliveries...), DeliverySources: make(map[uint64]string, len(a.deliverySources)), TaskSources: make(map[uint64]application.DurableActorRef, len(a.durableTaskSources)), ActorMessageHighWater: a.sourceMutationHighWater}
 	for sequence, key := range a.deliverySources {
 		state.DeliverySources[sequence] = key
 	}
@@ -883,6 +884,7 @@ func (a *AgentActor) restoreDurableState(state application.DurableAgentState) {
 	for sequence, key := range state.DeliverySources {
 		a.deliverySources[sequence] = key
 	}
+	a.sourceMutationHighWater = state.ActorMessageHighWater
 	a.sourceOutbox = make(map[string]application.DurableActorTaskOutboxItem, len(state.SourceOutbox))
 	a.sourceOutboxOrder = nil
 	// Restored or rolled-back state starts with no in-flight credit request:
@@ -896,7 +898,11 @@ func (a *AgentActor) restoreDurableState(state application.DurableAgentState) {
 	a.sourceTaskHistory = make(map[string]application.ActorTaskCompleted, len(state.SourceTaskHistory))
 	a.sourceTaskHistoryOrder = nil
 	for _, item := range state.SourceTaskHistory {
-		key := actorTaskID(a.id, item.OriginalRequestID, item.DedupeID, item.ChainID, item.SourceMutationSequence)
+		sourceAgentID := item.Source.StableID
+		if sourceAgentID == "" {
+			sourceAgentID = a.id
+		}
+		key := actorTaskID(sourceAgentID, item.OriginalRequestID, item.DedupeID, item.ChainID, item.SourceMutationSequence)
 		a.sourceTaskHistory[key] = item
 		a.sourceTaskHistoryOrder = append(a.sourceTaskHistoryOrder, key)
 	}
@@ -1358,14 +1364,18 @@ func (a *AgentActor) durableBarrier(ctx *actor.ReceiveContext) {
 }
 
 func (a *AgentActor) actorMessageHighWater() uint64 {
-	var highWater uint64
+	highWater := a.sourceMutationHighWater
 	for _, item := range a.sourceOutbox {
 		if item.SourceMutationSequence > highWater {
 			highWater = item.SourceMutationSequence
 		}
 	}
-	for _, completion := range a.sourceTaskHistory {
-		if completion.SourceMutationSequence > highWater {
+	for key, completion := range a.sourceTaskHistory {
+		// A target retains completion evidence for every source it serves in the
+		// same bounded history map. Only entries originated by this AgentActor
+		// belong to its outgoing mutation namespace and handshake high-water.
+		owned := completion.Source.StableID == a.id || completion.Source.StableID == "" && strings.HasPrefix(key, a.id+":")
+		if owned && completion.SourceMutationSequence > highWater {
 			highWater = completion.SourceMutationSequence
 		}
 	}
@@ -1396,6 +1406,10 @@ func (a *AgentActor) sendActorTask(ctx *actor.ReceiveContext, message *applicati
 		respondBridgeIntent(ctx, message.Receipt, &result)
 		return
 	}
+	if _, exists := a.sourceOutbox[taskID]; exists {
+		respondBridgeIntent(ctx, message.Receipt, &application.BridgeIntentResult{Accepted: true, AwaitingAck: true, Reason: "stored_pending_credit"})
+		return
+	}
 	sequenceSuffix := fmt.Sprintf(":%d", message.SourceMutationSequence)
 	for key := range a.sourceTaskHistory {
 		if strings.HasPrefix(key, a.id+":") && strings.HasSuffix(key, sequenceSuffix) {
@@ -1417,7 +1431,7 @@ func (a *AgentActor) sendActorTask(ctx *actor.ReceiveContext, message *applicati
 		}
 	}
 	if message.TargetPeer.StableID == a.id {
-		if scope := a.mutationScopes[sourceMutationScopeKey("actor", "actor", a.id, 0, a.hostedPiRuntime.Incarnation)]; scope != nil {
+		if _, scope := a.actorTaskScope(a.id); scope != nil {
 			if record, ok := scope.results[message.SourceMutationSequence]; ok && !record.pending && record.dedupeID == message.DedupeID && record.chainID == message.ChainID {
 				result := record.result
 				respondBridgeIntent(ctx, message.Receipt, &result)
@@ -1425,15 +1439,16 @@ func (a *AgentActor) sendActorTask(ctx *actor.ReceiveContext, message *applicati
 			}
 		}
 	}
+	if message.SourceMutationSequence != a.actorMessageHighWater()+1 {
+		respondBridgeIntent(ctx, message.Receipt, &application.BridgeIntentResult{Reason: "source mutation sequence must advance exactly once"})
+		return
+	}
 	if len(a.sourceOutbox) >= maxSourceOutboxItems {
 		respondBridgeIntent(ctx, message.Receipt, &application.BridgeIntentResult{Reason: "source actor task outbox is full"})
 		return
 	}
-	if _, exists := a.sourceOutbox[taskID]; exists {
-		respondBridgeIntent(ctx, message.Receipt, &application.BridgeIntentResult{Accepted: true, AwaitingAck: true, Reason: "stored_pending_credit"})
-		return
-	}
 	old := a.durableState()
+	a.sourceMutationHighWater = message.SourceMutationSequence
 	item := application.DurableActorTaskOutboxItem{TaskID: taskID, Target: message.TargetPeer, RequestID: message.RequestID, DedupeID: message.DedupeID, ChainID: message.ChainID, RequiredCapability: message.RequiredCapability, SourceMutationSequence: message.SourceMutationSequence, Deadline: message.Deadline, HopLimit: message.HopLimit, Mode: message.Mode, Payload: append([]byte(nil), message.Payload...), PayloadDigest: sha256.Sum256(message.Payload), State: "pending_credit"}
 	item.TargetRef = actorRefFromPID(message.TargetPeer.StableID, message.TargetPID)
 	a.sourceOutbox[taskID] = item
@@ -1651,11 +1666,17 @@ func (a *AgentActor) retrySourceOutbox(ctx *actor.ReceiveContext) {
 	now := time.Now()
 	old := a.durableState()
 	changed := false
+	activeTargets := make(map[string]struct{})
 	for _, taskID := range append([]string(nil), a.sourceOutboxOrder...) {
 		item, exists := a.sourceOutbox[taskID]
 		if !exists {
 			continue
 		}
+		targetKey := outboxTargetKey(item)
+		if _, blocked := activeTargets[targetKey]; blocked {
+			continue
+		}
+		activeTargets[targetKey] = struct{}{}
 		if now.After(item.Deadline) {
 			// Deadline failure for lost credit/task/acceptance: retain a
 			// terminal failure result, publish it to the source mailbox, and
@@ -2041,8 +2062,34 @@ func (a *AgentActor) actorRefResolved(ctx *actor.ReceiveContext, message *actorR
 	}
 }
 
+func outboxTargetKey(item application.DurableActorTaskOutboxItem) string {
+	if item.TargetRef.AgentID != "" {
+		return "agent:" + item.TargetRef.AgentID
+	}
+	if item.Target.StableID != "" {
+		return "peer:" + item.Target.StableID
+	}
+	return "address:" + item.TargetRef.Address
+}
+
+func (a *AgentActor) outboxTargetHead(taskID string) bool {
+	item, exists := a.sourceOutbox[taskID]
+	if !exists {
+		return false
+	}
+	targetKey := outboxTargetKey(item)
+	for _, candidateID := range a.sourceOutboxOrder {
+		candidate, retained := a.sourceOutbox[candidateID]
+		if !retained || outboxTargetKey(candidate) != targetKey {
+			continue
+		}
+		return candidateID == taskID
+	}
+	return false
+}
+
 func (a *AgentActor) requestOutboxCredit(ctx *actor.ReceiveContext, target *actor.PID, item application.DurableActorTaskOutboxItem) {
-	if target == nil || time.Now().After(item.Deadline) {
+	if target == nil || time.Now().After(item.Deadline) || !a.outboxTargetHead(item.TaskID) {
 		return
 	}
 	// A caller may carry a retained runtime-child PID from an older admission.
@@ -2083,7 +2130,7 @@ func (a *AgentActor) acceptActorTaskWithCredit(ctx *actor.ReceiveContext, messag
 	}
 	key, scope := a.actorTaskScope(message.SourceAgentID)
 	digest := bridgeIntentDigest(message)
-	if result, _, handled := replayMutation(scope, message.SourceMutationSequence, digest); handled {
+	if result, _, handled := replayActorTaskMutation(scope, message.SourceMutationSequence, digest); handled {
 		_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), replyTo, &application.ActorTaskAccepted{TaskID: actorTaskID(message.SourceAgentID, message.RequestID, message.DedupeID, message.ChainID, message.SourceMutationSequence), TargetAgentID: a.id, Accepted: result.Accepted, Reason: result.Reason})
 		return result.Accepted
 	}
@@ -2558,14 +2605,37 @@ func (a *AgentActor) controlMutationScope(sessionID, generationID, principal str
 }
 
 func (a *AgentActor) actorTaskScope(sourceAgentID string) (string, *mutationScope) {
-	key := sourceMutationScopeKey("actor", "actor", sourceAgentID, 0, a.hostedPiRuntime.Incarnation)
+	// ActorTask is routed through stable owning AgentActors. Its source sequence
+	// namespace must therefore survive target runtime reincarnations rather
+	// than rotating with an ephemeral hosted Pi child.
+	key := sourceMutationScopeKey("actor", "actor", sourceAgentID, 0, 0)
 	scope := a.mutationScopes[key]
 	if scope == nil {
-		scope = &mutationScope{sessionID: "actor", generationID: "actor", principal: sourceAgentID, incarnation: a.hostedPiRuntime.Incarnation, results: make(map[uint64]mutationRecord), dedupe: make(map[string]bridgeDedupeRecord), chains: make(map[string]struct{}), asks: make(map[string]pendingBridgeAsk)}
+		scope = &mutationScope{sessionID: "actor", generationID: "actor", principal: sourceAgentID, results: make(map[uint64]mutationRecord), dedupe: make(map[string]bridgeDedupeRecord), chains: make(map[string]struct{}), asks: make(map[string]pendingBridgeAsk)}
 		a.mutationScopes[key] = scope
 	}
 	return key, scope
 }
+
+// replayActorTaskMutation differs from an authenticated bridge mutation
+// scope: one source AgentActor allocates a single global sequence across many
+// targets, so any individual target observes a strictly increasing sparse
+// subsequence rather than dense +1 steps. Source admission and per-target
+// outbox ordering enforce monotonicity before this boundary.
+func replayActorTaskMutation(scope *mutationScope, sequence uint64, digest [32]byte) (*application.BridgeIntentResult, bool, bool) {
+	if record, retained := scope.results[sequence]; retained {
+		if record.digest != digest {
+			return &application.BridgeIntentResult{Reason: "source mutation sequence collision"}, false, true
+		}
+		copy := record.result
+		return &copy, record.pending, true
+	}
+	if sequence <= scope.highWater {
+		return &application.BridgeIntentResult{Reason: "source mutation sequence is at or below the retired high-water mark"}, false, true
+	}
+	return nil, false, false
+}
+
 func replayMutation(scope *mutationScope, sequence uint64, digest [32]byte) (*application.BridgeIntentResult, bool, bool) {
 	if sequence > scope.highWater {
 		if sequence != scope.highWater+1 {

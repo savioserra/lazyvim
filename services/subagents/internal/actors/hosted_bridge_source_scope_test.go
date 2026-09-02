@@ -29,8 +29,11 @@ func TestBridgeConnectReturnsActorMessageHighWaterFromDurableSourceHistory(t *te
 	})
 	binding := application.HostedPiRuntimeBinding{State: application.HostedPiRuntimeReady, RuntimeID: "runtime", Incarnation: 2, BridgeReady: true}
 	state := application.DurableAgentState{
-		SourceOutbox:      []application.DurableActorTaskOutboxItem{{TaskID: "source:pending:chain:4", SourceMutationSequence: 4}},
-		SourceTaskHistory: []application.ActorTaskCompleted{{OriginalRequestID: "request-done", DedupeID: "done", ChainID: "chain", SourceMutationSequence: 7}},
+		SourceOutbox: []application.DurableActorTaskOutboxItem{{TaskID: "source:pending:chain:4", SourceMutationSequence: 4}},
+		SourceTaskHistory: []application.ActorTaskCompleted{
+			{OriginalRequestID: "request-done", DedupeID: "done", ChainID: "chain", SourceMutationSequence: 7, Source: application.CommunicationPeer{StableID: "source"}},
+			{OriginalRequestID: "incoming-done", DedupeID: "incoming", ChainID: "incoming-chain", SourceMutationSequence: 99, Source: application.CommunicationPeer{StableID: "another-source"}},
+		},
 	}
 	record := application.DurableHostedRecord{SchemaVersion: application.DurableHostedSchemaVersion, AgentID: "source", Binding: binding, AgentState: state}
 	registration := &application.RegisterAgent{AgentID: "source", HostedPiRuntime: binding, AllowedCapability: []string{"hosted_bridge", "observe", "send"}, Retention: "explicit", Recovery: "owned", DurableRecord: &record}

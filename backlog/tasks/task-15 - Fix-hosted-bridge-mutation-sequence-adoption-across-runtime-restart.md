@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-01 23:14'
-updated_date: '2026-09-02 00:56'
+updated_date: '2026-09-02 01:19'
 labels: []
 dependencies: []
 modified_files:
@@ -36,6 +36,10 @@ Hosted Pi runtimes restart with their extension-local ClientMutationSequencer hi
 
 <!-- SECTION:PLAN:BEGIN -->
 1. Move regular push authority to TargetTaskCommitted so target durable commit strictly precedes websocket push; test no pre-commit push and one post-commit push.\n2. Replace actor-client's fake immediate ACK with an exported regular-delivery coordinator: durable session-entry marker restoration, incoming cards, exactly-once followUp injection, prompt run correlation at agent_end/agent_settled, bounded real answer ACK, and terminal failure/deadline ACK.\n3. Wire session_start restoration and agent lifecycle callbacks without sharing mutable hosted-bridge authority.\n4. Add actor-client tell/ask/replay tests and service-level websocket push regression.\n5. Run full service, Go, TypeScript, repository fast gates; keep TASK-15 active and mark /reload required.
+
+6. Fix target admission: ActorTask observes a sparse subsequence of the source-global mutation namespace, while source admission remains dense and per-target outbox dispatch remains ordered.
+7. Key ActorTask replay scope to stable logical owner identity rather than target runtime incarnation.
+8. Deploy with an explicit clean reset of the configured daemon actor-state directory; legacy state migration is out of scope by operator decision.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
@@ -56,4 +60,6 @@ Implemented regular-terminal delivery backend slice. AgentActor now selects host
 PM review blocker fixes: moved authoritative regular push to actorReplyBroker TargetTaskCommitted (hosted and regular pushers both fire post-target-commit; source admission no longer calls regular pusher). Added a real service socket regression proving no BridgePushFrame before commit and exactly one regular delivery frame after commit. Replaced immediate fake regular ACK with RegularDeliveryCoordinator: durable custom-entry injected/acked markers, incoming note/request cards, model-visible pi.sendMessage followUp with triggerTurn, tell ACK only after injection, prompt ACK only after agent_end + agent_settled with the bounded actual assistant answer, deadline/injection/shutdown terminal failure ACKs, ACK retry retention, and reload/reconnect marker restoration without duplicate injection/ACK. Added actor-client tell/ask/expiry/replay tests and actor Ask regression proving the actual model answer returns to source ActorRef. Full relevant gates passed: service codegen verify, go test -race ./..., go vet ./..., npm test; combined hosted/actor-client 59 tests; nvim capability tests; Stylua via managed Mason binary; git diff --check. tmux-subagents: 93/97 passed, 4 environment-only failures because tmux is absent (spawn tmux ENOENT). chezmoi dry-run likewise blocked because template command -v tmux fails. No commit/push/deploy. actor-client TypeScript changed: PM /reload required.
 
 Terminal actor-tell reload collision root cause: hosted bridge adopted daemon high-water, but regular actor-client OPEN did not. Added authoritative actor_message_high_water to ClientSessionResponse, queried from the stable terminal AgentActor before session issuance, and adopted it in actor-client before opening the regular message path. Regression seeds retained sequence 10 and proves OPEN returns 10 and first post-reload allocation is 11.
+
+Live root cause confirmed from redacted durable state: the PM source had valid global sequences 10-20 and matching credits, but each target ActorTask scope started at high-water 0 and applied dense +1 bridge semantics. Thus a target's first sparse global sequence (for example 15) was rejected before delivery, the source retained/redrove the credit until expiry, and target runtime reincarnations accumulated empty incarnation-scoped actor-task scopes. Fix separates ActorTask sparse replay semantics, makes its scope stable across target runtime reincarnation, enforces dense admission at the source owner, and serializes each target's outbox subsequence.
 <!-- SECTION:NOTES:END -->

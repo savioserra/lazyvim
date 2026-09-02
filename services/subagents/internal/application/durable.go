@@ -106,6 +106,7 @@ type DurableAgentState struct {
 	BridgeDeliveries                                                                []BridgeDelivery
 	DeliverySources                                                                 map[uint64]string
 	MutationScopes                                                                  []DurableMutationScope
+	ActorMessageHighWater                                                           uint64
 	SourceOutbox                                                                    []DurableActorTaskOutboxItem
 	SourceTaskHistory                                                               []ActorTaskCompleted
 	ReceivedTaskCompletions                                                         []ActorTaskCompleted
