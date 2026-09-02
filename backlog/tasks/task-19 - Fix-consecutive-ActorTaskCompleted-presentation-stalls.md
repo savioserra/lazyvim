@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 03:03'
-updated_date: '2026-09-02 22:28'
+updated_date: '2026-09-02 22:35'
 labels: []
 dependencies: []
 references:
@@ -176,4 +176,6 @@ After deploying da9aecc, the already-running actor-client remained disconnected 
 Lifecycle hardening after cursor recovery: sequence 10 became the active regular Ask, revealing that RegularDeliveryCoordinator.agentEnd previously accepted any subsequent terminal turn. Bound settlement to a message set containing the exact injected user prompt (same strict omitted-agent_start fallback used by hosted prompts); unrelated operator turns no longer settle Actor Ask. Added regression; actor-client 47/47 passes. Deployed source, requiring one terminal restart to load this final correlation guard; restored sequence 10 will then retire as prior-executor abandonment and sequence 12 can be handled as the next exact prompt.
 
 Production validation started. Committed and pushed through ebf659b; VPS root@vps fast-forwarded /root/lazyvim and completed explicit chezmoi apply. Remote daemon rebuilt/restarted active at 22:27:23 UTC with commit ebf659b and no deployment-time rejection/panic log matches. Managed local and VPS configs both still correctly have remoting disabled; physical local→remote AgentActor routing therefore requires the documented third node plus owner-private URI-SAN mTLS configuration before that phase can honestly run. Created isolated LOCAL_COMM_1/LOCAL_COMM_2 retained actors in separate detached worktrees and admitted local chain round 1 with strict child terminal barrier; awaiting protocol-pushed ActorTaskCompleted, not polling.
+
+Local production flow evidence completed before machine-format handoff: round 1 nested Ask returned LOCAL_CHAIN_OK_R1; round 2 same-chain Tell then Ask returned LOCAL_CHAIN_OK_R2; round 3 child Tell callback remained independent from the pending nested Ask and returned LOCAL_CHAIN_OK_R3. Opened direct read/interactive tmux attachments for both owned hosted Pi sessions without pane injection. No new ACK, credit, identity, panic, fatal, or degraded log matches. Remote flow and debate were not run: reviewed remoting remains disabled and the cluster contract requires three distinct reachable logical nodes; operator requested current-workstation+VPS only, so no topology bypass was applied. Client durable state still has cursor 11 with sole prompt delivery 12 pending exact correlated settlement.
 <!-- SECTION:NOTES:END -->
