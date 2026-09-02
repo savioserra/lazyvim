@@ -1,6 +1,6 @@
 # Subagents roadmap
 
-This file is the canonical delivery roadmap. ADRs in this directory define architectural decisions; `docs/subagents.md` documents current behavior and operation. The approved visual and interaction contract is the [Actor UX design system](ACTOR-UX-DESIGN-SYSTEM.md). The canonical implementation-ready bridge/frontend architecture, including Ask completion authority, ACK cursor semantics, HostedPiBridgeActor placement, migration, XState package ownership, and remote E2E evidence, is [ADR 0005](0005-daemon-connected-bridge-and-frontend-projections.md).
+This file is the canonical delivery roadmap. ADRs in this directory define architectural decisions; `docs/subagents.md` documents current behavior and operation. The approved visual and interaction contract is the [Actor UX design system](ACTOR-UX-DESIGN-SYSTEM.md). The canonical implementation-ready bridge/frontend architecture, including Ask completion authority, ACK cursor semantics, HostedPiBridgeActor placement, migration, XState package ownership, and remote E2E evidence, is [ADR 0005](0005-daemon-connected-bridge-and-frontend-projections.md). Durable hosted model-task threads, one-active scheduling, and post-settlement introspection are governed by [ADR 0006](0006-durable-agent-threads-and-introspection.md).
 
 ## Status
 
@@ -18,7 +18,7 @@ This file is the canonical delivery roadmap. ADRs in this directory define archi
 
 ## Client MVP definition
 
-The owned client lane means the owned system performs real development work through cross-`AgentActor` communication. A smoke test or manually attached TUI alone does not satisfy this gate.
+The owned client lane means the owned system performs real development work through cross-`AgentActor` communication. A smoke test or manually attached TUI alone does not satisfy this gate. Durable model-task resumption is governed by [ADR 0006](0006-durable-agent-threads-and-introspection.md): every hosted prompt task receives a target-authoritative thread ID, one-active-thread scheduling, and exact post-`agent_settled` structured introspection before completion.
 
 The gate requires:
 
@@ -35,7 +35,7 @@ Current managed entry point: restart an ordinary globally discovered `pi`; the `
 ## Next three deliverables
 
 1. Complete `TASK-1.1`: wire the shipped XState render snapshots and responsive Pi TUI widgets into the production actor-client renderers, then pass the non-phase Actor UX acceptance matrix.
-2. Complete `TASK-1.2`: publish revision-fenced, workflow-defined actor activity metadata; consume it through authenticated actor-client projections and an owner-bound hosted Pi runtime subscription that updates only exactly owned tmux UI, without fixed domain enums, role inference, liveness inference, polling, or scraping.
+2. Complete `TASK-22`: implement ADR 0006 durable AgentActor threads and introspective resumption so incomplete hosted tasks survive later mailbox work, compaction, reconnect, and runtime restart.
 3. Complete `TASK-1.3`: drive worker -> reviewer -> QA -> correction and a durable user decision through WorkflowActor without PM UI dependence.
 
 The actor-native Ask path is live. After apply/reload, retained completions 30-32 replayed once in order and a fresh sequence 33 completed automatically with `ACTOR_UI_E2E_OK`. The production follow-through remains tracked under the `TASK-1` initiative; deprecation and parity-gated removal of the legacy Pi packages are `TASK-17` and `TASK-18`. Immediate same-name/session reincarnation and terminal roster hygiene remain independently tracked rather than being hidden inside UI work.

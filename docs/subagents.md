@@ -9,6 +9,7 @@ Canonical delivery plan and accepted decisions:
 - [ADR 0003: Application plane, routing, peer identity, and persistence](architecture/subagents/0003-application-plane-routing-and-persistence.md)
 - [ADR 0004: Supervisor hierarchy, owned workflow actors, and proposed runtime-owned tmux panel projection](architecture/subagents/0004-supervisor-hierarchy-and-owned-workflows.md)
 - [ADR 0005: Daemon-connected hosted bridge and frontend projections](architecture/subagents/0005-daemon-connected-bridge-and-frontend-projections.md)
+- [ADR 0006: Durable AgentActor threads and introspective resumption](architecture/subagents/0006-durable-agent-threads-and-introspection.md)
 - [Draft strong TOML workflow-template specification](architecture/subagents/WORKFLOW-TEMPLATE-SPEC.md) and [non-runnable dogfood examples](architecture/subagents/examples/)
 
 ## Scope and authority

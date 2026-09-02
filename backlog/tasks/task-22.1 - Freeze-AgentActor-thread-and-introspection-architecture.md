@@ -5,6 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 06:10'
+updated_date: '2026-09-02 06:13'
 labels: []
 dependencies: []
 parent_task_id: TASK-22
@@ -32,3 +33,9 @@ Record the implementation-ready authority, identity, durability, scheduling, int
 <!-- SECTION:PLAN:BEGIN -->
 Convert Ask 89 into a concise ADR, challenge identity/completion/privacy assumptions, review independently, then freeze the contract.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Added ADR 0006 draft as implementation-authoritative durable thread/introspection contract and updated docs/subagents plus roadmap cross-references. No runtime code implemented.
+<!-- SECTION:NOTES:END -->
