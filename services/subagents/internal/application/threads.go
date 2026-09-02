@@ -44,6 +44,24 @@ type DurableThreadEvent struct {
 	Reason           string    `json:"reason,omitempty"`
 }
 
+type DurableChildContinuation struct {
+	ParentThreadID         string             `json:"parent_thread_id"`
+	ParentSchedulerEpoch   uint64             `json:"parent_scheduler_epoch"`
+	ParentActiveLease      uint64             `json:"parent_active_lease"`
+	ParentThreadTurn       uint64             `json:"parent_thread_turn"`
+	ParentDeliverySequence uint64             `json:"parent_delivery_sequence"`
+	ChildTaskID            string             `json:"child_task_id"`
+	ChildRequestID         string             `json:"child_request_id"`
+	ChildDedupeID          string             `json:"child_dedupe_id"`
+	ChildChainID           string             `json:"child_chain_id"`
+	ChildMutationSequence  uint64             `json:"child_mutation_sequence"`
+	ChildTarget            CommunicationPeer  `json:"child_target"`
+	ChildTargetRef         DurableActorRef    `json:"child_target_ref"`
+	ExpectedKind           BridgeDeliveryKind `json:"expected_kind"`
+	Consumed               bool               `json:"consumed,omitempty"`
+	AppliedCompletionKey   string             `json:"applied_completion_key,omitempty"`
+}
+
 type DurableAgentThread struct {
 	SchemaVersion          int                       `json:"schema_version"`
 	ThreadID               string                    `json:"thread_id"`
@@ -79,6 +97,7 @@ type DurableAgentThread struct {
 	IntrospectionAttempts  uint32                    `json:"introspection_attempts,omitempty"`
 	IntrospectionResult    ThreadIntrospectionResult `json:"introspection_result,omitempty"`
 	IntrospectionDigest    [32]byte                  `json:"introspection_digest,omitempty"`
+	ChildContinuation      *DurableChildContinuation `json:"child_continuation,omitempty"`
 	FailureClass           string                    `json:"failure_class,omitempty"`
 	EventCursor            uint64                    `json:"event_cursor"`
 	Events                 []DurableThreadEvent      `json:"events,omitempty"`

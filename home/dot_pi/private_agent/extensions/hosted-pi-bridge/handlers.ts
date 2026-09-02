@@ -167,11 +167,12 @@ export function registerHostedHandlers(api: RegistrationAPI, operations: HostedH
   tool("actor_unsubscribe", "Unsubscribe from actor events", schemas.modelTarget, async (params) => operations.unsubscribe(requireExplicitModelTarget(params.target)));
 }
 
-export function buildActorMessage(mode: number, target: string, text: string, dedupeId: string, chainId: string, sourceMutationSequence: bigint, hopLimit = 8) {
+export function buildActorMessage(mode: number, target: string, text: string, dedupeId: string, chainId: string, sourceMutationSequence: bigint, hopLimit = 8, parent?: ParentContinuationDelivery) {
   const boundedPayload = new TextEncoder().encode(text);
   if (!text || boundedPayload.byteLength > 16 * 1024) throw new Error("message must be non-empty and within the 16 KiB bound");
   if (sourceMutationSequence <= 0n || hopLimit < 1) throw new Error("source mutation sequence and hop limit must be positive");
-  return { mode, target, boundedPayload, dedupeId, hopLimit, chainId, sourceMutationSequence };
+  const parentContinuation = parent?.threadId ? { threadId: parent.threadId, schedulerEpoch: parent.schedulerEpoch ?? 0n, activeLease: parent.activeLease ?? 0n, threadTurn: parent.threadTurn ?? 0n, deliverySequence: parent.sequence } : undefined;
+  return { mode, target, boundedPayload, dedupeId, hopLimit, chainId, sourceMutationSequence, parentContinuation };
 }
 export function buildActorControl(intent: number, target: string, dedupeId: string, chainId: string, sourceMutationSequence: bigint, hopLimit = 2) {
   if (sourceMutationSequence <= 0n || hopLimit < 1) throw new Error("source mutation sequence and hop limit must be positive");
@@ -179,6 +180,7 @@ export function buildActorControl(intent: number, target: string, dedupeId: stri
 }
 export type BridgeSessionIdentity = { runtimeId: string; incarnation: bigint; piSessionId: string };
 export type AckableDelivery = { sequence: bigint; dedupeId: string; kind: number; sourceScope?: string; completionKey?: string; threadId?: string; schedulerEpoch?: bigint; activeLease?: bigint; threadTurn?: bigint };
+export type ParentContinuationDelivery = AckableDelivery & { threadId: string; schedulerEpoch: bigint; activeLease: bigint; threadTurn: bigint };
 export type ThreadSettlementEvidence = { bridgeRunCounter: bigint; agentEndObserved: boolean; agentSettledObserved: boolean };
 
 export function deliveryKindLabel(kind: number): string {

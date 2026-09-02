@@ -567,6 +567,14 @@ type ActorMessageReply struct {
 	Result                                                                                         BridgeIntentResult
 }
 
+type ParentContinuationIdentity struct {
+	ThreadID         string
+	SchedulerEpoch   uint64
+	ActiveLease      uint64
+	ThreadTurn       uint64
+	DeliverySequence uint64
+}
+
 type SendActorTask struct {
 	TargetPID                                        *actor.PID
 	TargetPeer                                       CommunicationPeer
@@ -576,6 +584,7 @@ type SendActorTask struct {
 	HopLimit                                         uint32
 	Mode                                             BridgeMessageMode
 	Payload                                          []byte
+	ParentContinuation                               ParentContinuationIdentity
 	Receipt                                          chan<- BridgeIntentResult
 }
 
@@ -610,6 +619,7 @@ type ActorTask struct {
 	HopLimit                                         uint32
 	Mode                                             BridgeMessageMode
 	Payload                                          []byte
+	ParentContinuation                               ParentContinuationIdentity
 }
 
 const TargetTaskCommittedTopic = "subagents.target-task-committed"

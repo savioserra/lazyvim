@@ -79,14 +79,15 @@ type DurableActorTaskOutboxItem struct {
 	Attempts                                         int               `json:"attempts"`
 	NextAttempt                                      time.Time         `json:"next_attempt"`
 	RequestID, DedupeID, ChainID, RequiredCapability string
-	SourceMutationSequence                           uint64            `json:"source_mutation_sequence"`
-	Deadline                                         time.Time         `json:"deadline"`
-	HopLimit                                         uint32            `json:"hop_limit"`
-	Mode                                             BridgeMessageMode `json:"mode"`
-	Payload                                          []byte            `json:"payload"`
-	PayloadDigest                                    [32]byte          `json:"payload_digest"`
-	Credit                                           TaskCredit        `json:"credit"`
-	State                                            string            `json:"state"`
+	SourceMutationSequence                           uint64                     `json:"source_mutation_sequence"`
+	Deadline                                         time.Time                  `json:"deadline"`
+	HopLimit                                         uint32                     `json:"hop_limit"`
+	Mode                                             BridgeMessageMode          `json:"mode"`
+	Payload                                          []byte                     `json:"payload"`
+	PayloadDigest                                    [32]byte                   `json:"payload_digest"`
+	ParentContinuation                               ParentContinuationIdentity `json:"parent_continuation,omitempty"`
+	Credit                                           TaskCredit                 `json:"credit"`
+	State                                            string                     `json:"state"`
 }
 
 type DurableTaskCreditReservation struct {

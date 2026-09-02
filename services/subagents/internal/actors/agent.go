@@ -863,6 +863,10 @@ func (a *AgentActor) durableState() application.DurableAgentState {
 			copy.TaskPrompt = append([]byte(nil), thread.TaskPrompt...)
 			copy.PendingPrompt = append([]byte(nil), thread.PendingPrompt...)
 			copy.WorkerResult = append([]byte(nil), thread.WorkerResult...)
+			if thread.ChildContinuation != nil {
+				child := *thread.ChildContinuation
+				copy.ChildContinuation = &child
+			}
 			copy.Events = append([]application.DurableThreadEvent(nil), thread.Events...)
 			state.Threads = append(state.Threads, copy)
 		}
@@ -974,6 +978,10 @@ func (a *AgentActor) restoreDurableState(state application.DurableAgentState) {
 		copy.TaskPrompt = append([]byte(nil), thread.TaskPrompt...)
 		copy.PendingPrompt = append([]byte(nil), thread.PendingPrompt...)
 		copy.WorkerResult = append([]byte(nil), thread.WorkerResult...)
+		if thread.ChildContinuation != nil {
+			child := *thread.ChildContinuation
+			copy.ChildContinuation = &child
+		}
 		copy.Events = append([]application.DurableThreadEvent(nil), thread.Events...)
 		a.threads[thread.ThreadID] = copy
 		a.threadOrder = append(a.threadOrder, thread.ThreadID)
@@ -1620,8 +1628,13 @@ func (a *AgentActor) sendActorTask(ctx *actor.ReceiveContext, message *applicati
 	}
 	old := a.durableState()
 	a.sourceMutationHighWater = message.SourceMutationSequence
-	item := application.DurableActorTaskOutboxItem{TaskID: taskID, Target: message.TargetPeer, RequestID: message.RequestID, DedupeID: message.DedupeID, ChainID: message.ChainID, RequiredCapability: message.RequiredCapability, SourceMutationSequence: message.SourceMutationSequence, Deadline: message.Deadline, HopLimit: message.HopLimit, Mode: message.Mode, Payload: append([]byte(nil), message.Payload...), PayloadDigest: payloadDigest, State: "pending_credit"}
+	item := application.DurableActorTaskOutboxItem{TaskID: taskID, Target: message.TargetPeer, RequestID: message.RequestID, DedupeID: message.DedupeID, ChainID: message.ChainID, RequiredCapability: message.RequiredCapability, SourceMutationSequence: message.SourceMutationSequence, Deadline: message.Deadline, HopLimit: message.HopLimit, Mode: message.Mode, Payload: append([]byte(nil), message.Payload...), PayloadDigest: payloadDigest, ParentContinuation: message.ParentContinuation, State: "pending_credit"}
 	item.TargetRef = actorRefFromPID(message.TargetPeer.StableID, message.TargetPID)
+	if !a.recordParentChildWait(message, item, taskID) {
+		a.restoreDurableState(old)
+		respondBridgeIntent(ctx, message.Receipt, &application.BridgeIntentResult{Reason: "parent continuation identity rejected"})
+		return
+	}
 	a.sourceOutbox[taskID] = item
 	a.sourceOutboxOrder = append(a.sourceOutboxOrder, taskID)
 	a.retainSourceMutationReceipt(taskID, fingerprint, application.BridgeIntentResult{Accepted: true, AwaitingAck: true, Reason: "stored_pending_credit"})
@@ -1823,7 +1836,7 @@ func (a *AgentActor) taskCreditGranted(ctx *actor.ReceiveContext, message *appli
 	// The awaited grant arrived: the next tick spends the held credit instead
 	// of staying suppressed or re-requesting.
 	delete(a.outboxCreditAwaited, item.TaskID)
-	task := &application.ActorTask{Credit: message.Credit, SourcePeer: a.communicationPeer(), TargetPeer: item.Target, RequestID: item.RequestID, DedupeID: item.DedupeID, ChainID: item.ChainID, RequiredCapability: item.RequiredCapability, SourceMutationSequence: item.SourceMutationSequence, Deadline: item.Deadline, HopLimit: item.HopLimit, Mode: item.Mode, Payload: append([]byte(nil), item.Payload...)}
+	task := &application.ActorTask{Credit: message.Credit, SourcePeer: a.communicationPeer(), TargetPeer: item.Target, RequestID: item.RequestID, DedupeID: item.DedupeID, ChainID: item.ChainID, RequiredCapability: item.RequiredCapability, SourceMutationSequence: item.SourceMutationSequence, Deadline: item.Deadline, HopLimit: item.HopLimit, Mode: item.Mode, Payload: append([]byte(nil), item.Payload...), ParentContinuation: item.ParentContinuation}
 	if a.beginDurablePersist(ctx, &pendingDurableReceipt{old: old, sourceTaskTarget: sender, sourceTask: task}) {
 		return
 	}
@@ -2037,7 +2050,7 @@ func (a *AgentActor) retrySourceOutbox(ctx *actor.ReceiveContext) {
 		// epoch. The state label is advisory only — a stale backpressure reply
 		// must never discard a live credit into a re-request churn.
 		if item.Credit.CreditID != "" && now.Before(item.Credit.ExpiresAt) {
-			_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), target, &application.ActorTask{Credit: item.Credit, SourcePeer: a.communicationPeer(), TargetPeer: item.Target, RequestID: item.RequestID, DedupeID: item.DedupeID, ChainID: item.ChainID, RequiredCapability: item.RequiredCapability, SourceMutationSequence: item.SourceMutationSequence, Deadline: item.Deadline, HopLimit: item.HopLimit, Mode: item.Mode, Payload: append([]byte(nil), item.Payload...)})
+			_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), target, &application.ActorTask{Credit: item.Credit, SourcePeer: a.communicationPeer(), TargetPeer: item.Target, RequestID: item.RequestID, DedupeID: item.DedupeID, ChainID: item.ChainID, RequiredCapability: item.RequiredCapability, SourceMutationSequence: item.SourceMutationSequence, Deadline: item.Deadline, HopLimit: item.HopLimit, Mode: item.Mode, Payload: append([]byte(nil), item.Payload...), ParentContinuation: item.ParentContinuation})
 			continue
 		}
 		// One in-flight credit request per item: while a grant is awaited
@@ -2606,13 +2619,42 @@ func (a *AgentActor) actorTaskCompletedFrom(ctx *actor.ReceiveContext, message *
 	}
 }
 
-func (a *AgentActor) continueParentThreadWithCompletion(completion application.ActorTaskCompleted) bool {
-	if completion.ChainID == "" || completion.SourceMutationSequence == 0 {
+func (a *AgentActor) recordParentChildWait(message *application.SendActorTask, item application.DurableActorTaskOutboxItem, taskID string) bool {
+	parent := message.ParentContinuation
+	if parent.ThreadID == "" && parent.SchedulerEpoch == 0 && parent.ActiveLease == 0 && parent.ThreadTurn == 0 && parent.DeliverySequence == 0 {
+		return true
+	}
+	if message.Mode != application.BridgeMessageAsk && message.Mode != application.BridgeMessagePrompt {
 		return false
 	}
+	if parent.ThreadID == "" || parent.SchedulerEpoch == 0 || parent.ActiveLease == 0 || parent.ThreadTurn == 0 || parent.DeliverySequence == 0 {
+		return false
+	}
+	thread, exists := a.threads[parent.ThreadID]
+	if !exists || thread.ThreadID != parent.ThreadID || thread.Target.StableID != a.id || thread.Turn != parent.ThreadTurn || thread.ActiveDeliverySequence != parent.DeliverySequence || a.threadScheduler.ActiveThreadID != parent.ThreadID || a.threadScheduler.Epoch != parent.SchedulerEpoch || a.threadScheduler.ActiveLease != parent.ActiveLease {
+		return false
+	}
+	wait := application.DurableChildContinuation{ParentThreadID: parent.ThreadID, ParentSchedulerEpoch: parent.SchedulerEpoch, ParentActiveLease: parent.ActiveLease, ParentThreadTurn: parent.ThreadTurn, ParentDeliverySequence: parent.DeliverySequence, ChildTaskID: taskID, ChildRequestID: message.RequestID, ChildDedupeID: message.DedupeID, ChildChainID: message.ChainID, ChildMutationSequence: message.SourceMutationSequence, ChildTarget: item.Target, ChildTargetRef: item.TargetRef, ExpectedKind: application.BridgeDeliveryPrompt}
+	if thread.ChildContinuation != nil {
+		current := *thread.ChildContinuation
+		if current.Consumed {
+			return false
+		}
+		current.AppliedCompletionKey = ""
+		if current != wait {
+			return false
+		}
+		return true
+	}
+	thread.ChildContinuation = &wait
+	a.threads[thread.ThreadID] = thread
+	return true
+}
+
+func (a *AgentActor) continueParentThreadWithCompletion(completion application.ActorTaskCompleted) bool {
 	for _, threadID := range append([]string(nil), a.threadOrder...) {
 		thread, exists := a.threads[threadID]
-		if !exists || thread.CompletionKey == completion.CompletionKey || thread.ChainID != completion.ChainID || thread.Target.StableID != a.id {
+		if !exists || !a.childCompletionMatchesWait(thread, completion) {
 			continue
 		}
 		if thread.State != application.AgentThreadWaiting && thread.State != application.AgentThreadBlocked && thread.State != application.AgentThreadResumable && thread.State != application.AgentThreadSettled {
@@ -2622,6 +2664,8 @@ func (a *AgentActor) continueParentThreadWithCompletion(completion application.A
 		thread.State = application.AgentThreadResumable
 		thread.NextAttempt = time.Time{}
 		thread.ResumeAttempts++
+		thread.ChildContinuation.Consumed = true
+		thread.ChildContinuation.AppliedCompletionKey = completion.CompletionKey
 		appendThreadEvent(&thread, application.DurableThreadEvent{Kind: "actor_task_completion_continued", At: a.threadNow(), Digest: sha256.Sum256(completion.Terminal.Result)})
 		a.threads[thread.ThreadID] = thread
 		a.removeThreadFromSchedulerQueues(thread.ThreadID)
@@ -2629,6 +2673,20 @@ func (a *AgentActor) continueParentThreadWithCompletion(completion application.A
 		return true
 	}
 	return false
+}
+
+func (a *AgentActor) childCompletionMatchesWait(thread application.DurableAgentThread, completion application.ActorTaskCompleted) bool {
+	wait := thread.ChildContinuation
+	if wait == nil || wait.Consumed || wait.ParentThreadID != thread.ThreadID || wait.ParentSchedulerEpoch != a.threadScheduler.Epoch || wait.ParentActiveLease != a.threadScheduler.ActiveLease || wait.ParentThreadTurn != thread.Turn || wait.ParentDeliverySequence != thread.ActiveDeliverySequence {
+		return false
+	}
+	if wait.ChildRequestID != completion.OriginalRequestID || wait.ChildDedupeID != completion.DedupeID || wait.ChildChainID != completion.ChainID || wait.ChildMutationSequence != completion.SourceMutationSequence || wait.ExpectedKind != completion.Kind {
+		return false
+	}
+	if wait.ChildTarget.StableID != "" && wait.ChildTarget.StableID != completion.Target.StableID {
+		return false
+	}
+	return true
 }
 
 func (a *AgentActor) removeThreadFromSchedulerQueues(threadID string) {
@@ -2639,12 +2697,9 @@ func (a *AgentActor) removeThreadFromSchedulerQueues(threadID string) {
 }
 
 func (a *AgentActor) findCompletionForParentThread(thread application.DurableAgentThread) (application.ActorTaskCompleted, bool) {
-	if thread.ChainID == "" {
-		return application.ActorTaskCompleted{}, false
-	}
 	for _, key := range a.taskCompletionOrder {
 		completion, exists := a.taskCompletions[key]
-		if !exists || completion.ChainID != thread.ChainID || completion.CompletionKey == thread.CompletionKey {
+		if !exists || !a.childCompletionMatchesWait(thread, completion) {
 			continue
 		}
 		return completion, true

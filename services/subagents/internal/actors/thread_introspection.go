@@ -181,6 +181,8 @@ func (a *AgentActor) applyThreadIntrospectionClassification(thread *application.
 			thread.State = application.AgentThreadResumable
 			thread.ResumeAttempts++
 			thread.NextAttempt = time.Time{}
+			thread.ChildContinuation.Consumed = true
+			thread.ChildContinuation.AppliedCompletionKey = completion.CompletionKey
 			appendThreadEvent(thread, application.DurableThreadEvent{Kind: "actor_task_completion_continued", At: now, Digest: sha256.Sum256(completion.Terminal.Result)})
 			a.threadScheduler.ActiveThreadID = ""
 			a.removeThreadFromSchedulerQueues(thread.ThreadID)

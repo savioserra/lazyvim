@@ -2199,7 +2199,11 @@ func (s *Service) dispatch(request *subagentsv1.Envelope) *subagentsv1.Envelope 
 		// The envelope deadline bounds this transport request only. Durable actor
 		// work has an independent bounded lifetime so a hosted bridge's short RPC
 		// timeout cannot expire an admitted task before target credit/persistence.
-		task := &application.SendActorTask{TargetPID: targetRoute.PID, TargetPeer: s.communicationPeer(ctx, payload.ActorMessageRequest.Target), RequestID: request.RequestId, RequiredCapability: capability, DedupeID: payload.ActorMessageRequest.DedupeId, ChainID: payload.ActorMessageRequest.ChainId, Deadline: durableActorTaskDeadline(time.Now()), HopLimit: payload.ActorMessageRequest.HopLimit, SourceMutationSequence: payload.ActorMessageRequest.SourceMutationSequence, Mode: application.BridgeMessageMode(payload.ActorMessageRequest.Mode), Payload: append([]byte(nil), payload.ActorMessageRequest.BoundedPayload...), Receipt: receipt}
+		parent := application.ParentContinuationIdentity{}
+		if protoParent := payload.ActorMessageRequest.GetParentContinuation(); protoParent != nil {
+			parent = application.ParentContinuationIdentity{ThreadID: protoParent.GetThreadId(), SchedulerEpoch: protoParent.GetSchedulerEpoch(), ActiveLease: protoParent.GetActiveLease(), ThreadTurn: protoParent.GetThreadTurn(), DeliverySequence: protoParent.GetDeliverySequence()}
+		}
+		task := &application.SendActorTask{TargetPID: targetRoute.PID, TargetPeer: s.communicationPeer(ctx, payload.ActorMessageRequest.Target), RequestID: request.RequestId, RequiredCapability: capability, DedupeID: payload.ActorMessageRequest.DedupeId, ChainID: payload.ActorMessageRequest.ChainId, Deadline: durableActorTaskDeadline(time.Now()), HopLimit: payload.ActorMessageRequest.HopLimit, SourceMutationSequence: payload.ActorMessageRequest.SourceMutationSequence, Mode: application.BridgeMessageMode(payload.ActorMessageRequest.Mode), Payload: append([]byte(nil), payload.ActorMessageRequest.BoundedPayload...), ParentContinuation: parent, Receipt: receipt}
 		// Local and remote targets follow the same source-actor credit/task
 		// protocol: the resolved target PID addresses the concrete agent actor
 		// (possibly on another node) and the actor plane preserves the source

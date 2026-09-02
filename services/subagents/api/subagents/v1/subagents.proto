@@ -272,6 +272,14 @@ message BridgeConnectResponse {
   uint64 actor_message_high_water = 5;
 }
 
+message ParentThreadContinuation {
+  string thread_id = 1;
+  uint64 scheduler_epoch = 2;
+  uint64 active_lease = 3;
+  uint64 thread_turn = 4;
+  uint64 delivery_sequence = 5;
+}
+
 message ActorMessageRequest {
   enum Mode {
     MODE_UNSPECIFIED = 0;
@@ -286,6 +294,7 @@ message ActorMessageRequest {
   uint32 hop_limit = 7;
   string chain_id = 8;
   uint64 source_mutation_sequence = 9;
+  ParentThreadContinuation parent_continuation = 10;
 }
 
 message ActorControlRequest {
