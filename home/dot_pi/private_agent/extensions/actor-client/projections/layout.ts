@@ -3,7 +3,8 @@ import { renderRosterStatus } from "./roster.ts";
 
 export function projectSnapshot(context: ProjectionContext, width = context.snapshot.width, themeRevision = context.snapshot.themeRevision): RenderSnapshot {
   const roster = renderRosterStatus(context.connection, context.roster, Math.max(24, Math.min(width, 120)));
-  const pending = context.pending.size ? `◌ actor asks ${context.pending.size} pending` : undefined;
+  const firstPending = context.pending.values().next().value;
+  const pending = firstPending ? context.pending.size === 1 ? `◌ Waiting for ${firstPending.target ?? firstPending.targetPeer?.displayName ?? "actor"}…` : `◌ actor asks ${context.pending.size} pending` : undefined;
   const cards = [...context.cards.values()].slice(-context.maxCards);
   return { connection: context.connection, statusLine: roster.line, pendingLine: pending, cards, width, overflow: roster.overflow + Math.max(0, context.cards.size - cards.length), themeRevision };
 }
@@ -31,9 +32,13 @@ export function renderPlainCard(card: ConversationCard, width: number): string[]
   const title = card.state === "failed" ? `Couldn’t reach ${card.peerDisplayName}${role}` : card.direction === "incoming" && card.intent === "request" ? `${card.peerDisplayName}${role} asked you` : card.direction === "incoming" ? `${card.peerDisplayName}${role} sent a note` : card.intent === "request" ? `Asked ${card.peerDisplayName}${role}` : `Sent to ${card.peerDisplayName}${role}`;
   const narrow = width < 50;
   const inner = Math.max(8, narrow ? width - 2 : width - 4);
-  const lines = [`${icon} ${title}`, ...wrapPlain(card.body, inner)];
-  if (card.reply) lines.push("", `↙ ${card.peerDisplayName} replied`, ...wrapPlain(card.reply, inner));
-  lines.push(card.state === "failed" ? "retry available" : card.state === "pending" ? `◌ Waiting for ${card.peerDisplayName}…` : card.state === "replied" ? "✓ replied" : "✓ delivered");
-  if (narrow) return lines.map((line) => line.slice(0, width));
-  return ["╭─ " + lines[0], ...lines.slice(1).map((line) => `│ ${line}`.slice(0, width)), "╰─"].map((line) => line.slice(0, width));
+  const bodyLines = [`${icon} ${title}`, ...wrapPlain(card.body, inner)];
+  if (card.reply) bodyLines.push("", `↙ ${card.peerDisplayName} replied`, ...wrapPlain(card.reply, inner));
+  const footer = card.state === "failed" ? "retry available" : card.state === "pending" ? `◌ Waiting for ${card.peerDisplayName}…` : card.state === "replied" ? `✓ replied${card.durationMillis !== undefined ? ` in ${formatDuration(card.durationMillis)}` : ""}` : "✓ delivered";
+  if (narrow) return [...bodyLines, footer].map((line) => line.slice(0, width));
+  return ["╭─ " + bodyLines[0], ...bodyLines.slice(1).map((line) => `│ ${line}`.slice(0, width)), `╰─ ${footer}`].map((line) => line.slice(0, width));
+}
+
+function formatDuration(milliseconds: number): string {
+  return milliseconds < 1000 ? `${Math.max(1, Math.round(milliseconds))}ms` : `${Math.round(milliseconds / 1000)}s`;
 }

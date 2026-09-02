@@ -62,6 +62,8 @@ test("actor ask reply sends one model-visible custom message and clears pending"
   assert.deepEqual(messages[0].message.details.targetPeer, { displayName: "Reviewer", authoritative: true });
   assert.equal(actorAskCompletionContent(messages[0].message.details), messages[0].message.content);
   assert.equal(messages[0].message.details.communicationView.state, "replied");
+  assert.equal(messages[0].message.details.renderEnvelope.schemaVersion, 1);
+  assert.equal(messages[0].message.details.renderEnvelope.renderSnapshot.card.key, "actor-client:request-1");
   assert.deepEqual(statuses, [1, 0]);
 });
 
@@ -73,6 +75,7 @@ test("actor ask completion preserves daemon completionKey and reconciles provisi
   assert.equal(messages[0].details.key, "daemon-completion-key");
   assert.equal(messages[0].details.prompt, "original prompt");
   assert.equal(messages[0].details.communicationView.key, "daemon-completion-key");
+  assert.equal(messages[0].details.renderEnvelope.renderSnapshot.card.key, "daemon-completion-key");
   assert.deepEqual(statuses, [1, 0]);
 });
 
@@ -121,7 +124,6 @@ test("regular client Pi callbacks register noncolliding commands and tools", asy
   assert.deepEqual([...tools.keys()],["actor_create","actor_list","actor_resolve","actor_tell","actor_health","actor_stop","actor_abort","actor_shutdown","actor_subscribe","actor_unsubscribe"]);
   const notices=[];
   const ctx={ui:{notify(message){notices.push(message);}}};
-  const theme={fg:(_name,text)=>text,bg:(_name,text)=>text,bold:(text)=>text};
   await commands.get("actor-connect").handler("node-b",ctx);
   await commands.get("actor-create").handler("actor42 -- /tmp/worktree -- Release Reviewer -- Review Lead",ctx);
   const noticesAfterCreate=notices.length;
@@ -129,6 +131,12 @@ test("regular client Pi callbacks register noncolliding commands and tools", asy
   assert.ok(notices.length>=noticesAfterCreate,"message commands may return async receipts");
   assert.equal(typeof tools.get("actor_tell").renderCall,"function");
   assert.equal(typeof tools.get("actor_tell").renderResult,"function");
+  const theme={fg:(_name,text)=>text,bg:(_name,text)=>text,bold:(text)=>text};
+  const collapsed=tools.get("actor_tell").renderResult({details:{communicationView:outgoingExchange({key:"request-render",target:"Reviewer",body:"question",reply:"answer",accepted:true,completed:true,mode:"ask"})}}, {expanded:false}, theme).render(60).join("\n");
+  assert.match(collapsed,/✓ Reviewer replied/);
+  const expanded=tools.get("actor_tell").renderResult({details:{communicationView:outgoingExchange({key:"request-render",target:"Reviewer",body:"question",reply:"answer",accepted:true,completed:true,mode:"ask"})}}, {expanded:true}, theme).render(60).join("\n");
+  assert.match(expanded,/Asked Reviewer/);
+  assert.match(expanded,/Reviewer replied/);
   const directAskResult = await tools.get("actor_tell").execute("id",{target:"actor42",message:"direct task"});
   assert.match(directAskResult.content[0].text,/requestId=request-ask/);
   const askResult = await tools.get("actor_tell").execute("id",{target:"actor42",message:"next task"});

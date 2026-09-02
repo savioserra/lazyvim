@@ -7,6 +7,9 @@ import { dirname, resolve } from "node:path";
 import { actorClientProjectionMachine, initialProjectionContext, reduceProjection, restoreProjectionEntries } from "../../home/dot_pi/private_agent/extensions/actor-client/projections/machine.ts";
 import { canonicalCompletionKey, digestPresentation } from "../../home/dot_pi/private_agent/extensions/actor-client/projections/dedupe.ts";
 import { renderPlainCard } from "../../home/dot_pi/private_agent/extensions/actor-client/projections/layout.ts";
+import { conversationEnvelope, envelopeFromLegacy } from "../../home/dot_pi/private_agent/extensions/actor-client/projections/render-envelope.ts";
+import { renderActorClientConversationEnvelope } from "../../home/dot_pi/private_agent/extensions/actor-client/widgets/conversation-card.ts";
+import { selectPendingStatusLine } from "../../home/dot_pi/private_agent/extensions/actor-client/projections/selectors.ts";
 
 const testDir = dirname(fileURLToPath(import.meta.url));
 const root = resolve(testDir, "../../home/dot_pi/private_agent/extensions/actor-client");
@@ -84,6 +87,37 @@ test("persisted restore applies terminal-wins order and clears provisional pendi
   ]);
   assert.equal(context.pending.size, 0);
   assert.equal(context.completions.has("canonical"), true);
+});
+
+test("render envelope widgets are width aware, theme driven, and resize-idempotent", () => {
+  const card = { key: "tell", direction: "outgoing", intent: "note", state: "delivered", peerDisplayName: "Code Reviewer", peerRole: "review", body: "The implementation is ready for review." };
+  const calls = [];
+  const theme = { fg: (name, text) => (calls.push(name), text), bg: (_name, text) => text };
+  const component = renderActorClientConversationEnvelope(conversationEnvelope(card), theme);
+  const narrow = component.render(38);
+  component.invalidate();
+  const wide = component.render(82);
+  assert.ok(narrow.every((line) => line.length <= 38));
+  assert.ok(wide.every((line) => line.length <= 82));
+  assert.match(wide.join("\n"), /↑ Sent to Code Reviewer · review/);
+  assert.match(wide.join("\n"), /╰─ ✓ delivered/);
+  assert.ok(calls.includes("blue") || calls.includes("toolTitle"));
+});
+
+test("legacy communication migration is read-only and renders through envelope widget", () => {
+  const legacy = Object.freeze({ key: "legacy", direction: "incoming", intent: "request", state: "pending", peerDisplayName: "Project Manager", peerRole: "", body: "Review this" });
+  const envelope = envelopeFromLegacy({ communicationView: legacy });
+  assert.equal(envelope.schemaVersion, 1);
+  assert.equal(envelope.renderSnapshot.card.key, "legacy");
+  assert.equal(legacy.state, "pending");
+  const lines = renderActorClientConversationEnvelope(envelope, { fg: (_name, text) => text, bg: (_name, text) => text }).render(50).join("\n");
+  assert.match(lines, /Project Manager asked you/);
+  assert.match(lines, /Waiting for Project Manager…/);
+});
+
+test("pending status selector uses approved single-ask wording", () => {
+  const context = reduceProjection(initialProjectionContext(), { type: "TASK.ADMITTED", pending: { key: "ask", requestId: "r", dedupeId: "d", chainId: "c", sourceMutationSequence: "1", target: "Code Reviewer", kind: "Ask", prompt: "question", hidden: true } });
+  assert.equal(selectPendingStatusLine(context), "◌ Waiting for Code Reviewer…");
 });
 
 test("canonical completion keys prefer daemon keys and digest migration identity", () => {

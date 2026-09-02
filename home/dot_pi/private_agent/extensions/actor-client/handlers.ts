@@ -1,4 +1,4 @@
-import { modelResultContent, naturalResultSummary, renderToolCall, renderToolResult } from "../hosted-pi-bridge/communication-ui.ts";
+import { modelResultContent, naturalResultSummary, renderToolCall, renderToolResult } from "./widgets/tool-renderers.ts";
 
 export function publicAgentView(agent:any){return {agentId:agent.agentId,displayName:agent.displayName,role:agent.role,state:agent.hostedPiRuntime?.state??0,bridgeReady:Boolean(agent.hostedPiRuntime?.bridgeReady),cleanupPending:Boolean(agent.hostedPiRuntime?.cleanupPending)};}
 
