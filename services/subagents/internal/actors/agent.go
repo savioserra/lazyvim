@@ -1940,7 +1940,12 @@ func (a *AgentActor) cachedActorRef(address string) *actor.PID {
 	if address == "" {
 		return nil
 	}
-	return a.resolvedRefs[address]
+	pid := a.resolvedRefs[address]
+	if pid != nil && pid.IsLocal() && !pid.IsRunning() {
+		delete(a.resolvedRefs, address)
+		return nil
+	}
+	return pid
 }
 
 // resolveActorRefAsync enqueues the re-materialization of a durable actor
