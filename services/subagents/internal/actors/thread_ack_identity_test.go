@@ -36,6 +36,26 @@ func TestThreadAckIdentityRequiresExactSettlementTuple(t *testing.T) {
 	if agent.validAckIdentity(exact, &delivery) {
 		t.Fatal("stale bridge run counter was accepted")
 	}
+
+	// Pi surfaces may omit a second agent_start while a same-thread durable
+	// continuation is consumed. Equal run evidence is valid only when a
+	// committed delivered ACK proves the immediately preceding thread turn.
+	agent.committedAcks = map[uint64]application.DurableBridgeAckRecord{7: {Sequence: 7, ThreadID: "thread", ThreadTurn: 5, BridgeRunCounter: 6, Delivered: true}}
+	continuationDelivery := delivery
+	continuationDelivery.Sequence = 8
+	continuationDelivery.ThreadTurn = 6
+	continuationDelivery.CompletionKey = "continuation"
+	continuation := *exact
+	continuation.Sequence = 8
+	continuation.ThreadTurn = 6
+	continuation.CompletionKey = "continuation"
+	if !agent.validAckIdentity(&continuation, &continuationDelivery) {
+		t.Fatal("same-thread next-turn continuation with durable prior run evidence was rejected")
+	}
+	continuation.ThreadID = "other"
+	if agent.validAckIdentity(&continuation, &continuationDelivery) {
+		t.Fatal("equal run counter crossed thread identity")
+	}
 }
 
 func TestThreadAckDuplicateFingerprintIncludesSettlementEvidence(t *testing.T) {

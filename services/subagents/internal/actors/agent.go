@@ -3415,7 +3415,7 @@ func (a *AgentActor) ackIdentityRejection(message *application.BridgeDeliveryAck
 			return "active-lease"
 		}
 		if message.Delivered {
-			if message.BridgeRunCounter == 0 || message.BridgeRunCounter <= a.bridgeRunCounterHighWater {
+			if message.BridgeRunCounter == 0 || message.BridgeRunCounter < a.bridgeRunCounterHighWater || (message.BridgeRunCounter == a.bridgeRunCounterHighWater && !a.bridgeRunCounterContinuesThread(message)) {
 				return "run-counter"
 			}
 			if !message.AgentEndObserved || !message.AgentSettledObserved {
@@ -3428,7 +3428,7 @@ func (a *AgentActor) ackIdentityRejection(message *application.BridgeDeliveryAck
 			if message.AgentEndObserved || message.AgentSettledObserved {
 				return "settlement"
 			}
-		} else if message.BridgeRunCounter <= a.bridgeRunCounterHighWater {
+		} else if message.BridgeRunCounter < a.bridgeRunCounterHighWater || (message.BridgeRunCounter == a.bridgeRunCounterHighWater && !a.bridgeRunCounterContinuesThread(message)) {
 			return "run-counter"
 		} else if message.AgentEndObserved != message.AgentSettledObserved {
 			return "settlement"
@@ -3565,6 +3565,18 @@ func (a *AgentActor) commitAck(ctx *actor.ReceiveContext, message *application.B
 	burst.commits = append(burst.commits, effect)
 	a.retainCommittedAck(message, delivery, result)
 	return true
+}
+
+func (a *AgentActor) bridgeRunCounterContinuesThread(message *application.BridgeDeliveryAck) bool {
+	if message == nil || message.ThreadID == "" || message.ThreadTurn < 2 || message.BridgeRunCounter == 0 {
+		return false
+	}
+	for _, record := range a.committedAcks {
+		if record.Delivered && record.ThreadID == message.ThreadID && record.ThreadTurn+1 == message.ThreadTurn && record.BridgeRunCounter == message.BridgeRunCounter {
+			return true
+		}
+	}
+	return false
 }
 
 func (a *AgentActor) commitThreadAck(message *application.BridgeDeliveryAck, delivery application.BridgeDelivery, deliveryIndex int, result application.BridgeIntentResult) bool {
