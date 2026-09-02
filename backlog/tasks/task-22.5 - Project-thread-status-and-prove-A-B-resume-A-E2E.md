@@ -5,6 +5,7 @@ status: To Do
 assignee:
   - '@pi'
 created_date: '2026-09-02 06:10'
+updated_date: '2026-09-02 13:03'
 labels: []
 dependencies:
   - TASK-22.4
@@ -27,3 +28,9 @@ Expose bounded owner-private thread status through the activity projection and p
 - [ ] #2 Fresh-process E2E forces task A incomplete, admits task B, completes B, automatically resumes A, and completes both exactly once without reminders or pane inspection
 - [ ] #3 Daemon/runtime restart and compaction variants of the E2E pass with sanitized evidence
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Adopted sanitized A→B→resume-A acceptance sequence from UI/UX review: A accepted/resumable, B accepted/completed once, A automatic resume/completed once, including fresh process, daemon/runtime restart, and compaction; no reminder, pane inspection, actor_list polling, duplicate completion, or private leakage.
+<!-- SECTION:NOTES:END -->
