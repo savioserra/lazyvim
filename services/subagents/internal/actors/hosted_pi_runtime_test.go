@@ -124,6 +124,16 @@ func TestHostedPiRuntimeActorRunsEffectsAsTypedCompletionsAndReportsDeath(t *tes
 	if ready.Binding.State != application.HostedPiRuntimeReady || !ready.Binding.BridgeReady {
 		t.Fatalf("runtime did not become ready: %#v", ready)
 	}
+	owner.Send(pid.Name(), &application.HostedPiBridgeReadiness{Ready: false})
+	disconnected := owner.ExpectAnyMessage().(*application.HostedPiRuntimeStateChanged)
+	if disconnected.Binding.State != application.HostedPiRuntimeReady || disconnected.Binding.BridgeReady {
+		t.Fatalf("bridge loss regressed the live runtime to startup: %#v", disconnected)
+	}
+	owner.Send(pid.Name(), &application.HostedPiBridgeReadiness{Ready: true})
+	reconnected := owner.ExpectAnyMessage().(*application.HostedPiRuntimeStateChanged)
+	if reconnected.Binding.State != application.HostedPiRuntimeReady || !reconnected.Binding.BridgeReady {
+		t.Fatalf("runtime did not recover bridge readiness: %#v", reconnected)
+	}
 	owner.Send(pid.Name(), &application.StopHostedPiRuntime{Reason: "test"})
 	stopping := owner.ExpectAnyMessage().(*application.HostedPiRuntimeStateChanged)
 	if stopping.Binding.State != application.HostedPiRuntimeStopping {

@@ -584,10 +584,26 @@ func (a *AgentRegistryActor) publishPublicAgentEvent(ctx *actor.ReceiveContext, 
 }
 
 func validRuntimeProjectionAdvance(current, next application.HostedPiRuntimeBinding) bool {
-	if next.Incarnation == current.Incarnation {
-		return true
+	if next.Incarnation != current.Incarnation {
+		return current.State == application.HostedPiRuntimeDegraded && next.State == application.HostedPiRuntimeStarting && next.Incarnation == current.Incarnation+1
 	}
-	return current.State == application.HostedPiRuntimeDegraded && next.State == application.HostedPiRuntimeStarting && next.Incarnation == current.Incarnation+1
+	if next.State == current.State {
+		return next.State != application.HostedPiRuntimeUnspecified
+	}
+	switch current.State {
+	case application.HostedPiRuntimeInactive:
+		return next.State == application.HostedPiRuntimeStarting || next.State == application.HostedPiRuntimeDegraded || next.State == application.HostedPiRuntimeStopped
+	case application.HostedPiRuntimeStarting:
+		return next.State == application.HostedPiRuntimeReady || next.State == application.HostedPiRuntimeDegraded || next.State == application.HostedPiRuntimeStopping || next.State == application.HostedPiRuntimeStopped
+	case application.HostedPiRuntimeReady:
+		return next.State == application.HostedPiRuntimeDegraded || next.State == application.HostedPiRuntimeStopping || next.State == application.HostedPiRuntimeStopped
+	case application.HostedPiRuntimeDegraded:
+		return next.State == application.HostedPiRuntimeStopping || next.State == application.HostedPiRuntimeStopped
+	case application.HostedPiRuntimeStopping:
+		return next.State == application.HostedPiRuntimeDegraded || next.State == application.HostedPiRuntimeStopped
+	default:
+		return false
+	}
 }
 
 // hostedRuntimeActorName is lifecycle-internal and runtime-registration-scoped. Durable

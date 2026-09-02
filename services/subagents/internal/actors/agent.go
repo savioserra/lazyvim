@@ -496,6 +496,12 @@ func (a *AgentActor) Receive(ctx *actor.ReceiveContext) {
 			a.incarnationRetired(ctx, message, binding)
 			return
 		}
+		if binding.State == application.HostedPiRuntimeReady && a.bridgeDeclaredReady {
+			// Bridge authority is independent of runtime lifecycle projection.
+			// A delayed same-incarnation runtime snapshot cannot erase a newer
+			// fenced ready declaration.
+			binding.BridgeReady = true
+		}
 		a.applyRuntimeBinding(message, binding)
 		a.revision++
 		if a.registryPID != nil {

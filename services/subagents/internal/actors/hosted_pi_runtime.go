@@ -80,7 +80,10 @@ func (a *HostedPiRuntimeActor) Receive(ctx *actor.ReceiveContext) {
 		a.binding.BridgeReady = message.Ready
 		if message.Ready && a.process != nil {
 			a.binding.State = application.HostedPiRuntimeReady
-		} else if a.process != nil {
+		} else if a.process != nil && a.binding.State != application.HostedPiRuntimeReady {
+			// Bridge loss is represented independently by BridgeReady=false.
+			// Never regress a live same-incarnation process from ready to the
+			// startup state; delayed startup projections must remain fenced.
 			a.binding.State = application.HostedPiRuntimeStarting
 		}
 		a.changed(ctx, "")

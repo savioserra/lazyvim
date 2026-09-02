@@ -1,11 +1,11 @@
 ---
 id: TASK-21
 title: Prevent ready hosted runtimes regressing to starting
-status: To Do
+status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 05:34'
-updated_date: '2026-09-02 13:11'
+updated_date: '2026-09-02 13:15'
 labels: []
 dependencies: []
 references:
@@ -38,4 +38,6 @@ Fresh deployment and exact recreation of five hosted agents produced durable/run
 QA post-fix matrix: actor-local early-readiness merge passes; still require same-incarnation stale-starting protection at AgentActor/registry/service/roster, ordering permutation tests, and fresh-runtime convergence proof.
 
 Reviewer confirms same-incarnation runtimeProjectionAdvances accepts every projection in agent_registry and AgentActor, allowing stale starting to overwrite ready/BridgeReady. Require monotonic projection advancement with bridge readiness independent.
+
+Implemented same-incarnation lifecycle lattice: ready cannot regress to starting, degraded cannot revive in place, stopped is terminal, and recovery must pass degraded -> next-incarnation starting. Bridge loss now clears BridgeReady without changing a live process back to starting; AgentActor preserves a newer fenced bridge-ready declaration over delayed ready snapshots. Added transition-table and bridge disconnect/reconnect tests; actor race suite passes.
 <!-- SECTION:NOTES:END -->
