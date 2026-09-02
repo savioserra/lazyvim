@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 03:03'
-updated_date: '2026-09-02 03:31'
+updated_date: '2026-09-02 03:32'
 labels: []
 dependencies: []
 references:
@@ -55,4 +55,6 @@ Architecture diagnosis sequence 39 identified three interacting bugs: communicat
 TASK-19 implementation is assigned to the retained UI Projection Implementer after completion of TASK-1.1 correction writing. It may change service and actor-client code but remains the sole writer in its worktree; independent review/QA remain read-only.
 
 Operator deployment decision: after reviewed code is applied, perform an explicit whole-crew recovery teardown. Preserve the active PM until the handoff point; retire each exactly owned hosted actor/runtime, remove observer clients/window, stop the daemon, clear only the configured actor durable state after exact ownership is gone, restart the daemon, reload/reconnect PM, recreate the five logical UI crew actors with fresh Pi runtimes in their clean isolated worktrees, and rebuild the labeled 3x2  tmux window. This explicit operator request authorizes stop/shutdown only for this deployment reset; ordinary phase transitions still retain actors.
+
+Correction to the preceding deployment note: the rebuilt labeled 3x2 tmux window is named `crew`.
 <!-- SECTION:NOTES:END -->
