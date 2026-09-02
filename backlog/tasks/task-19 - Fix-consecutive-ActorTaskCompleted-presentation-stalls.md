@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 03:03'
-updated_date: '2026-09-02 04:11'
+updated_date: '2026-09-02 04:13'
 labels: []
 dependencies: []
 references:
@@ -26,12 +26,12 @@ Terminal actor delivery remains unreliable in two related live paths. First, con
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Three or more consecutive fresh ActorTaskCompleted results automatically reach and wake the requesting terminal without another user turn, pane inspection, or durable-state polling
+- [x] #1 Three or more consecutive fresh ActorTaskCompleted results automatically reach and wake the requesting terminal without another user turn, pane inspection, or durable-state polling
 - [ ] #2 A hosted actor can Ask and Tell the authoritative source terminal using a canonical reply capability or resolved identity; display-name aliases never create an unroutable pseudo-agent
 - [ ] #3 Terminal reconnect/reattach renews the regular-delivery ACK fence consistently, replays committed work exactly once, and cannot loop on fence rejection or credit churn
 - [ ] #4 Optimistic Asking/Sending UI transitions to authoritative admitted, busy, failed, or completed state and never implies delivery before admission
 - [ ] #5 Service and actor-client regressions reproduce consecutive-completion delay plus hosted-agent-to-source Ask under fence rotation, and live E2E proves both without polling or pane inspection
-- [ ] #6 No transport/client prefix maps to a hardcoded Project Manager, worker, reviewer, QA, or other semantic role; terminal display name and role are optional validated dynamic AgentActor metadata with neutral role-free fallback
+- [x] #6 No transport/client prefix maps to a hardcoded Project Manager, worker, reviewer, QA, or other semantic role; terminal display name and role are optional validated dynamic AgentActor metadata with neutral role-free fallback
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -74,4 +74,6 @@ PM post-integration gates on 7d1ac9e passed: actor-client 41/41, hosted bridge 3
 Independent review sequence 45 found no architecture/security implementation blockers, but two release-gate test gaps: no regression sends three or more consecutive completions and proves immediate reply frames without another request; stale-fence ACK retry is helper-mocked rather than integrated against real daemon fence rejection, reattach, and exactly-once retirement with unchanged delivery identity. QA sequence 46 conditionally passed code but hosted tmux was unavailable; PM scratch evidence supersedes the environment block. TASK-19 remains open until both regressions and live reset E2E pass.
 
 Operator-requested deployment reset executed on main a85c40d/7b7e517 code: chezmoi apply succeeded; five exact hosted actors were stopped; the old crew observer window was removed; daemon stopped; only configured actor state was cleared/recreated mode 0700; five verified leftover hosted Pi PIDs were terminated by exact WS_SUBAGENTS_AGENT_ID match; daemon restarted active; all five logical actors were recreated fresh and report available; labeled 3x2 crew window rebuilt with PM plus five actors. Active PM must /reload to load the new actor-client before live notification E2E.
+
+Fresh post-reset live proof passed: sequences 47, 48, and 49 were admitted consecutively without intervening user input and automatically produced NOTIFY_E2E_1/2/3 in order and exactly once, with no pane inspection or durable-state polling. Fresh cards used neutral  presentation with empty role rather than any hardcoded semantic role, while each target retained its independently registered dynamic metadata.
 <!-- SECTION:NOTES:END -->
