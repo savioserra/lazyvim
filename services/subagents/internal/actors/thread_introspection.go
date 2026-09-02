@@ -270,6 +270,6 @@ func workerResultContainsDeliverable(result []byte) bool {
 }
 
 func threadIntrospectionBackoff(attempt uint32) time.Duration {
-	delay := time.Second << min(attempt-1, 8)
+	delay := time.Second << min(attempt-1, 9)
 	return min(delay, 5*time.Minute)
 }

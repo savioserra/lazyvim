@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 06:10'
-updated_date: '2026-09-02 10:01'
+updated_date: '2026-09-02 10:02'
 labels: []
 dependencies:
   - TASK-22.3
@@ -44,4 +44,6 @@ Live Ask 90 exposed the failure mode: its Ask completion first returned only `re
 Initial implementation landed during the TASK-22.3 integration gate: isolated runner injection, durable attempt identity/result/checkpoint, completed/continue/waiting/blocked/exhaustion transitions, exact active tuple validation, source commit handshake, and cross-node completion tests are present in a635864..b34944b. TASK-22.4 now focuses on the remaining deterministic state/policy/restart tests and live proof.
 
 Added deterministic classification tests for completed, continue/resumable, waiting, blocked, and acknowledgement/sent-elsewhere rejection. Completed classification now independently rejects bounded acknowledgement/pointer worker results and resumes the same thread with a direct-deliverable prompt. Duplicate exact settlement is asserted idempotent with a counting runner (one introspection only). Remote bridge ACK test now retries explicit durable-busy responses instead of losing settlement evidence.
+
+Added restart recovery proof for both settled and in-flight introspecting threads: restored actors redrive the same bounded task/worker/checkpoint input, retained attempts remain deterministic, and backoff reaches the configured five-minute cap. The source-commit handshake keeps thread completion pinned until durable source acknowledgement and only then compacts to a bounded terminal tombstone.
 <!-- SECTION:NOTES:END -->
