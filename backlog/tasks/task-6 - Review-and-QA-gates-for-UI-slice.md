@@ -1,11 +1,11 @@
 ---
 id: TASK-6
 title: Review and QA gates for UI slice
-status: In Progress
+status: Done
 assignee:
   - '@pi'
 created_date: '2026-08-31 21:41'
-updated_date: '2026-09-02 02:50'
+updated_date: '2026-09-02 02:52'
 labels: []
 dependencies:
   - TASK-5
@@ -22,9 +22,9 @@ Perform independent architecture review and QA of the XState projection and rich
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Reviewer verifies authority boundaries, deterministic reducers, exact-once rendering, and redaction
-- [ ] #2 QA verifies reconnect/replay, stale cursors, Tell/Ask/completion cards, busy/failure states, and narrow/wide rendering
-- [ ] #3 All actor-client, hosted bridge, codegen, Go, formatting, and dry-run apply gates pass or have documented environment-only blockers
+- [x] #1 Reviewer verifies authority boundaries, deterministic reducers, exact-once rendering, and redaction
+- [x] #2 QA verifies reconnect/replay, stale cursors, Tell/Ask/completion cards, busy/failure states, and narrow/wide rendering
+- [x] #3 All actor-client, hosted bridge, codegen, Go, formatting, and dry-run apply gates pass or have documented environment-only blockers
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -50,4 +50,12 @@ Correction commit 918dd04 was integrated to main (without replacing concurrent B
 PM post-correction gates on ff4e792: actor-client 34/34 passed; hosted bridge 36/36 passed; tmux-subagents legacy suite 97/97 passed with tmux at /snap/bin/tmux; capabilities passed; service codegen verify, go test -race, go vet, and protocol npm 6/6 passed; git diff --check passed; chezmoi scratch dry-run exited 0. Only stylua remains environment-blocked because no executable is installed in PATH.
 
 Correction re-review sequence 31 explicitly approved with no blockers and actor-client 34/34 passing. Correction QA sequence 32 explicitly passed actor-client, hosted bridge, capabilities, service codegen/race/vet/npm, and clean-worktree gates. Chezmoi apply completed successfully at main e48ab11 and deployed actor-client xstate 5.20.2. Final live reload/reconnect/conversation E2E remains before task finalization; the active Pi must run /reload because loaded TypeScript cannot be replaced in-process.
+
+Live post-apply/reload E2E passed: retained completions 30, 31, and 32 replayed once in order; fresh Ask sequence 33 was admitted, delivered, completed, automatically presented to the PM, and returned exact payload ACTOR_UI_E2E_OK without polling, pane inspection, injection, or duplicate rendering.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Reviewed, corrected, independently approved, deployed, reloaded, and live-tested the XState actor-client UI slice. Automated gates passed (34 actor-client, 36 hosted bridge, 97 legacy observer, service codegen/race/vet, protocol, capabilities, diff, and scratch apply); retained completions replayed once in order and fresh sequence 33 automatically returned ACTOR_UI_E2E_OK.
+<!-- SECTION:FINAL_SUMMARY:END -->
