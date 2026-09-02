@@ -1,8 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { publicAgentView, registerClientHandlers } from "../../home/dot_pi/private_agent/extensions/actor-client/handlers.ts";
-import { ACTOR_ASK_COMPLETION_TIMEOUT, ActorClientConversationLog, actorAskCompletionContent, actorReplyFramePresentationIntent, buildFrontendCompletionAckRequest, frontendCompletionAckReady, initialActorClientRosterState, reduceActorClientRoster, validateRemoteProject } from "../../home/dot_pi/private_agent/extensions/actor-client/index.ts";
+import { ACTOR_ASK_COMPLETION_TIMEOUT, ActorClientConversationLog, actorAskCompletionContent, actorReplyFramePresentationIntent, buildFrontendCompletionAckRequest, frontendCompletionAckReady, initialActorClientRosterState, reduceActorClientRoster, shouldReconnectClient, validateRemoteProject } from "../../home/dot_pi/private_agent/extensions/actor-client/index.ts";
 import { outgoingExchange } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/communication-ui.ts";
+
+test("connection reconciliation restarts whenever either daemon socket or the session is lost",()=>{
+  assert.equal(shouldReconnectClient(true,true,true),false);
+  assert.equal(shouldReconnectClient(false,true,true),true);
+  assert.equal(shouldReconnectClient(true,false,true),true);
+  assert.equal(shouldReconnectClient(true,true,false),true);
+});
 
 test("remote project validation is syntax-only and does not require a local path", () => {
   assert.doesNotThrow(() => validateRemoteProject("/root/lazyvim"));
