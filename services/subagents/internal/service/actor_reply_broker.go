@@ -34,6 +34,7 @@ func (b *actorReplyBroker) Receive(ctx *actor.ReceiveContext) {
 	case *application.TargetTaskCommitted:
 		if b.service != nil {
 			b.service.pushBridgeUpdate(message.TargetAgentID, "actor delivery committed")
+			b.service.pushRegularDeliveryUpdate(message.TargetAgentID, "actor delivery committed")
 		}
 	}
 }

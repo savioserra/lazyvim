@@ -2057,6 +2057,24 @@ func (a *AgentActor) requestOutboxCredit(ctx *actor.ReceiveContext, target *acto
 	_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), target, request)
 }
 
+func (a *AgentActor) regularClientDeliveryReady(requiredCapability string) bool {
+	for _, current := range a.attachments {
+		if current.principal != a.id {
+			continue
+		}
+		if _, ok := current.capabilities["observe"]; !ok {
+			continue
+		}
+		if requiredCapability != "" {
+			if _, ok := current.capabilities[requiredCapability]; !ok {
+				continue
+			}
+		}
+		return true
+	}
+	return false
+}
+
 func (a *AgentActor) acceptActorTaskWithCredit(ctx *actor.ReceiveContext, message *application.BridgeIntent, replyTo *actor.PID, sourcePeer application.CommunicationPeer, oldDurable application.DurableAgentState) bool {
 	if message == nil || replyTo == nil || (message.Mode != application.BridgeMessageTell && message.Mode != application.BridgeMessageAsk && message.Mode != application.BridgeMessagePrompt) || message.SourceMutationSequence == 0 || message.TargetAgentID != a.id || message.SourceAgentID == "" || message.RequestID == "" || message.DedupeID == "" || message.ChainID == "" || message.HopLimit == 0 || time.Now().After(message.Deadline) || len(message.Payload) == 0 || len(message.Payload) > maxBridgePayloadBytes {
 		return false
@@ -2073,7 +2091,14 @@ func (a *AgentActor) acceptActorTaskWithCredit(ctx *actor.ReceiveContext, messag
 	if _, repeated := scope.chains[message.ChainID]; repeated {
 		return false
 	}
-	if a.bridgeSession == "" || !a.hostedPiRuntime.BridgeReady || len(a.bridgeDeliveries) >= maxTargetTaskQueueItems {
+	backend := "hosted"
+	if a.bridgeSession == "" || !a.hostedPiRuntime.BridgeReady {
+		if !a.regularClientDeliveryReady(message.RequiredCapability) {
+			return false
+		}
+		backend = "regular"
+	}
+	if len(a.bridgeDeliveries) >= maxTargetTaskQueueItems {
 		return false
 	}
 	kind, policy := application.BridgeDeliveryNotification, application.BridgeDeliveryIdleElseSteer
@@ -2091,7 +2116,7 @@ func (a *AgentActor) acceptActorTaskWithCredit(ctx *actor.ReceiveContext, messag
 	}
 	a.bridgeSequence++
 	targetPeer := application.CommunicationPeer{StableID: a.id, DisplayName: aggregateDisplayName(a.id, a.hostedPiRuntime.DisplayName), Role: aggregateRole(a.id, a.hostedPiRuntime.Role)}
-	delivery := application.BridgeDelivery{Sequence: a.bridgeSequence, SourceAgentID: message.SourceAgentID, TargetAgentID: a.id, RequestID: message.RequestID, DedupeID: message.DedupeID, ChainID: message.ChainID, Source: sourcePeer, Target: targetPeer, Deadline: message.Deadline, HopLimit: message.HopLimit - 1, Payload: append([]byte(nil), message.Payload...), Policy: policy, Kind: kind, SourceScope: token, CompletionKey: actorTaskCompletionKey(a.id, a.bridgeSequence, message.SourceAgentID, message.RequestID, message.DedupeID, message.ChainID, message.SourceMutationSequence)}
+	delivery := application.BridgeDelivery{Sequence: a.bridgeSequence, SourceAgentID: message.SourceAgentID, TargetAgentID: a.id, RequestID: message.RequestID, DedupeID: message.DedupeID, ChainID: message.ChainID, Source: sourcePeer, Target: targetPeer, Deadline: message.Deadline, HopLimit: message.HopLimit - 1, Payload: append([]byte(nil), message.Payload...), Policy: policy, Kind: kind, SourceScope: token, CompletionKey: actorTaskCompletionKey(a.id, a.bridgeSequence, message.SourceAgentID, message.RequestID, message.DedupeID, message.ChainID, message.SourceMutationSequence), DeliveryBackend: backend}
 	if !delivery.AckIdentityComplete() {
 		return false
 	}
@@ -2594,7 +2619,9 @@ func (a *AgentActor) bridgeDeliveryAck(ctx *actor.ReceiveContext, message *appli
 		respondBridgeAck(ctx, message.Completion, &application.BridgeDeliveryAckResult{Reason: "delivery result exceeds bound"})
 		return
 	}
-	if message.SessionID != a.bridgeSession || message.GenerationID != a.bridgeGeneration || message.Principal != a.bridgePrincipal || message.Handle != a.bridgeHandle || message.Fence != a.bridgeFence || !a.validHandle(message.SessionID, message.GenerationID, message.Principal, message.Handle, message.Fence, "hosted_bridge") {
+	hostedAck := message.SessionID == a.bridgeSession && message.GenerationID == a.bridgeGeneration && message.Principal == a.bridgePrincipal && message.Handle == a.bridgeHandle && message.Fence == a.bridgeFence && a.validHandle(message.SessionID, message.GenerationID, message.Principal, message.Handle, message.Fence, "hosted_bridge")
+	regularAck := !hostedAck && message.Principal == a.id && a.validHandle(message.SessionID, message.GenerationID, message.Principal, message.Handle, message.Fence, "observe")
+	if !hostedAck && !regularAck {
 		respondBridgeAck(ctx, message.Completion, &application.BridgeDeliveryAckResult{Reason: "delivery acknowledgement fence rejected"})
 		return
 	}
@@ -2714,14 +2741,15 @@ func (a *AgentActor) validAckIdentity(message *application.BridgeDeliveryAck, de
 	// SourceScope is the opaque server-issued scope token: equality proves the
 	// acknowledgement names the exact scope that issued the delivery without
 	// exposing the underlying identity tuple.
-	return delivery.SourceScope != "" && delivery.CompletionKey != "" &&
-		message.DedupeID == delivery.DedupeID &&
-		message.RuntimeID == a.hostedPiRuntime.RuntimeID &&
+	if delivery.SourceScope == "" || delivery.CompletionKey == "" || message.DedupeID != delivery.DedupeID || message.Kind != application.BridgeDeliveryKindLabel(delivery.Kind) || message.SourceScope != delivery.SourceScope || message.CompletionKey != delivery.CompletionKey {
+		return false
+	}
+	if delivery.DeliveryBackend == "regular" {
+		return message.RuntimeID == "" && message.Incarnation == 0 && message.PiSessionID == "" && message.Principal == a.id && a.validHandle(message.SessionID, message.GenerationID, message.Principal, message.Handle, message.Fence, "observe")
+	}
+	return message.RuntimeID == a.hostedPiRuntime.RuntimeID &&
 		message.Incarnation == a.hostedPiRuntime.Incarnation &&
-		message.PiSessionID == a.bridgePiSession &&
-		message.Kind == application.BridgeDeliveryKindLabel(delivery.Kind) &&
-		message.SourceScope == delivery.SourceScope &&
-		message.CompletionKey == delivery.CompletionKey
+		message.PiSessionID == a.bridgePiSession
 }
 
 // commitContiguousAcks commits the triggering acknowledgement when it extends
@@ -3219,11 +3247,19 @@ func (a *AgentActor) pollBridge(ctx *actor.ReceiveContext, message *application.
 			}
 		}
 	}
-	if exactBridge {
+	regularClient := !exactBridge && message.Principal == a.id && a.validHandle(message.SessionID, message.GenerationID, message.Principal, message.Handle, message.Fence, "observe")
+	if exactBridge || regularClient {
 		for index := range a.bridgeDeliveries {
 			// Never serve a delivery whose acknowledgement identity is
 			// incomplete: it cannot be acknowledged and would stall the bridge
 			// acknowledgement chain. Legacy records are retired on restore.
+			backend := a.bridgeDeliveries[index].DeliveryBackend
+			if backend == "" {
+				backend = "hosted"
+			}
+			if (exactBridge && backend != "hosted") || (regularClient && backend != "regular") {
+				continue
+			}
 			if a.bridgeDeliveries[index].Sequence > message.AfterSequence && a.bridgeDeliveries[index].AckIdentityComplete() {
 				items = append(items, item{sequence: a.bridgeDeliveries[index].Sequence, delivery: &a.bridgeDeliveries[index]})
 			}

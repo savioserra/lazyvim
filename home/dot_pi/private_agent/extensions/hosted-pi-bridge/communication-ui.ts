@@ -52,6 +52,11 @@ export function incomingNote(key: string, source: CommunicationPeer | undefined,
   return { key, direction: "incoming", intent: "note", state: "delivered", peerDisplayName: peer.displayName, peerRole: peer.role, body: safePreview(body, MAX_BODY_PREVIEW) };
 }
 
+export function incomingRequest(key: string, source: CommunicationPeer | undefined, body: Uint8Array | string): CommunicationView {
+  const peer = peerView(source);
+  return { key, direction: "incoming", intent: "request", state: "pending", peerDisplayName: peer.displayName, peerRole: peer.role, body: safePreview(body, MAX_BODY_PREVIEW) };
+}
+
 export function incomingControl(key: string, source: CommunicationPeer | undefined, action: string): CommunicationView {
   const peer = peerView(source);
   return { key, direction: "incoming", intent: "control", state: "delivered", peerDisplayName: peer.displayName, peerRole: peer.role, body: safePreview(action, MAX_BODY_PREVIEW) };

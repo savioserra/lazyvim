@@ -202,6 +202,8 @@ type actorReplySession struct {
 	mu                                 sync.Mutex
 	sessionID, generationID, principal string
 	credential                         []byte
+	selfHandle                         string
+	selfFence, afterSequence           uint64
 	writer                             chan<- *subagentsv1.Envelope
 	closed                             <-chan struct{}
 }
@@ -1425,12 +1427,30 @@ func (s *Service) registerActorReplySession(request *subagentsv1.Envelope, write
 	if _, ok := authenticatedClientSource(request.CallerIdentity); !ok || request.SessionId == "" || request.GenerationId == "" || len(request.SessionCredential) == 0 {
 		return
 	}
+	key := actorReplySessionKey(request.SessionId, request.GenerationId, request.CallerIdentity)
+	s.actorReplyMu.Lock()
+	existing := s.actorReplySessions[key]
+	s.actorReplyMu.Unlock()
+	if existing != nil && existing.writer == writer {
+		s.flushActorReplies(existing)
+		return
+	}
 	session := &actorReplySession{sessionID: request.SessionId, generationID: request.GenerationId, principal: request.CallerIdentity, credential: append([]byte(nil), request.SessionCredential...), writer: writer, closed: closed}
-	key := actorReplySessionKey(session.sessionID, session.generationID, session.principal)
+	ctx, cancel := context.WithTimeout(context.Background(), requestTimeout)
+	defer cancel()
+	if route, routeErr := s.authorizeAgent(ctx, &subagentsv1.Envelope{SessionId: session.sessionID, GenerationId: session.generationID, CallerIdentity: session.principal, SessionCredential: session.credential}, session.principal, []string{"observe", "send", "ask", "prompt"}); routeErr == nil && route.Allowed {
+		if handle, handleErr := randomHandle(); handleErr == nil {
+			if attached, attachErr := s.attachRequest(ctx, route.PID, &application.AttachAgent{SessionID: session.sessionID, GenerationID: route.GenerationID, Principal: route.Principal, AgentID: session.principal, RequestedCapabilities: []string{"observe", "send", "ask", "prompt"}, IssuedHandle: handle}); attachErr == nil && attached.Completed {
+				session.selfHandle, session.selfFence = attached.Handle, attached.Fence
+			}
+		}
+	}
+	key = actorReplySessionKey(session.sessionID, session.generationID, session.principal)
 	s.actorReplyMu.Lock()
 	s.actorReplySessions[key] = session
 	s.actorReplyMu.Unlock()
 	s.flushActorReplies(session)
+	s.flushRegularDeliveries(session, "regular client attached")
 }
 
 func (s *Service) unregisterActorReplySession(sessionID, generationID, principal string) {
@@ -1520,6 +1540,20 @@ func (s *Service) flushAllActorReplies() {
 	}
 }
 
+func (s *Service) pushRegularDeliveryUpdate(agentID, reason string) {
+	s.actorReplyMu.Lock()
+	sessions := make([]*actorReplySession, 0, len(s.actorReplySessions))
+	for _, session := range s.actorReplySessions {
+		if session.principal == agentID {
+			sessions = append(sessions, session)
+		}
+	}
+	s.actorReplyMu.Unlock()
+	for _, session := range sessions {
+		s.flushRegularDeliveries(session, reason)
+	}
+}
+
 func (s *Service) flushActorReplies(session *actorReplySession) bool {
 	if session == nil {
 		return false
@@ -1579,6 +1613,42 @@ func (s *Service) flushActorReplies(session *actorReplySession) bool {
 		s.actorReplyMu.Unlock()
 	}
 	return true
+}
+
+func (s *Service) flushRegularDeliveries(session *actorReplySession, reason string) bool {
+	if session == nil || session.selfHandle == "" || session.selfFence == 0 {
+		return false
+	}
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), requestTimeout)
+	defer cancel()
+	route, err := s.authorizeAgent(ctx, &subagentsv1.Envelope{SessionId: session.sessionID, GenerationId: session.generationID, CallerIdentity: session.principal, SessionCredential: session.credential, AgentHandle: session.selfHandle, AgentFence: session.selfFence}, session.principal, []string{"observe"})
+	if err != nil || !route.Allowed {
+		return false
+	}
+	value, err := s.system.NoSender().Ask(ctx, route.PID, &application.PollBridge{SessionID: session.sessionID, GenerationID: route.GenerationID, Principal: route.Principal, Handle: session.selfHandle, Fence: session.selfFence, AfterSequence: session.afterSequence, MaxItems: 64}, requestTimeout)
+	if err != nil {
+		return false
+	}
+	poll, ok := value.(*application.BridgePollResult)
+	if !ok {
+		return false
+	}
+	deliveries := s.protoBridgeDeliveries(ctx, poll.Deliveries)
+	if len(poll.Events) == 0 && len(deliveries) == 0 {
+		return true
+	}
+	frame := &subagentsv1.Envelope{ProtocolMajor: protocol.ProtocolMajor, ProtocolMinor: protocol.ProtocolMinor, SessionId: session.sessionID, GenerationId: session.generationID, CallerIdentity: session.principal, AgentHandle: session.selfHandle, AgentFence: session.selfFence, Payload: &subagentsv1.Envelope_BridgePushFrame{BridgePushFrame: &subagentsv1.BridgePushFrame{AgentId: session.principal, Events: protoBridgeEvents(poll.Events), Deliveries: deliveries, LatestSequence: poll.LatestSequence, Reason: reason}}}
+	select {
+	case <-session.closed:
+		return false
+	case session.writer <- frame:
+		session.afterSequence = poll.LatestSequence
+		return true
+	case <-ctx.Done():
+		return false
+	}
 }
 
 func (s *Service) bridgePushRegistration(request, response *subagentsv1.Envelope, writer chan<- *subagentsv1.Envelope, closed <-chan struct{}) *bridgePushSession {
@@ -1814,6 +1884,9 @@ func (s *Service) reauthorizeReplay(request *subagentsv1.Envelope) bool {
 	case *subagentsv1.Envelope_BridgeDeliveryAckRequest:
 		agentID = payload.BridgeDeliveryAckRequest.AgentId
 		capability = "hosted_bridge"
+		if source, ok := authenticatedClientSource(request.CallerIdentity); ok && source == agentID {
+			capability = "observe"
+		}
 	case *subagentsv1.Envelope_BridgePollRequest:
 		agentID = payload.BridgePollRequest.AgentId
 		capability = "hosted_bridge"
@@ -2170,6 +2243,8 @@ func (s *Service) dispatch(request *subagentsv1.Envelope) *subagentsv1.Envelope 
 			return errorResponse(request, subagentsv1.ProtocolError_CODE_DEADLINE_EXCEEDED, "durable actor mutation deadline expired")
 		}
 		if result.Accepted {
+			// Hosted admission may enqueue synchronously. Regular delivery is
+			// pushed only by TargetTaskCommitted after the target durable commit.
 			s.pushBridgeUpdate(payload.ActorMessageRequest.Target, "actor delivery admitted")
 		}
 		response.Payload = &subagentsv1.Envelope_ActorMessageResponse{ActorMessageResponse: &subagentsv1.ActorMessageResponse{Accepted: result.Accepted, Completed: result.Completed, BoundedResult: result.Result, Reason: result.Reason, Source: protoCommunicationPeer(s.communicationPeer(ctx, source)), Target: protoCommunicationPeer(s.communicationPeer(ctx, payload.ActorMessageRequest.Target)), Kind: actorMessageKind(payload.ActorMessageRequest.Mode)}}
@@ -2203,7 +2278,11 @@ func (s *Service) dispatch(request *subagentsv1.Envelope) *subagentsv1.Envelope 
 		}
 		response.Payload = &subagentsv1.Envelope_ActorMessageResponse{ActorMessageResponse: &subagentsv1.ActorMessageResponse{Accepted: result.Accepted, Completed: result.Completed, Reason: result.Reason, Source: protoCommunicationPeer(s.communicationPeer(ctx, source)), Target: protoCommunicationPeer(s.communicationPeer(ctx, payload.ActorControlRequest.Target)), Kind: actorControlKind(payload.ActorControlRequest.Intent)}}
 	case *subagentsv1.Envelope_BridgeDeliveryAckRequest:
-		route, err := s.authorizeAgent(ctx, request, payload.BridgeDeliveryAckRequest.AgentId, []string{"hosted_bridge"})
+		capability := "hosted_bridge"
+		if source, ok := authenticatedClientSource(request.CallerIdentity); ok && source == payload.BridgeDeliveryAckRequest.AgentId {
+			capability = "observe"
+		}
+		route, err := s.authorizeAgent(ctx, request, payload.BridgeDeliveryAckRequest.AgentId, []string{capability})
 		if err != nil || !route.Allowed {
 			return errorResponse(request, subagentsv1.ProtocolError_CODE_SESSION_MISMATCH, "delivery acknowledgement authorization denied")
 		}
@@ -2221,6 +2300,7 @@ func (s *Service) dispatch(request *subagentsv1.Envelope) *subagentsv1.Envelope 
 		}
 		if result.Accepted {
 			s.updateBridgeAckCursor(payload.BridgeDeliveryAckRequest.AgentId, request.SessionId, request.GenerationId, request.AgentHandle, request.AgentFence, result.Cursor)
+			s.pushRegularDeliveryUpdate(payload.BridgeDeliveryAckRequest.AgentId, "delivery acknowledgement accepted")
 		} else {
 			// Every acknowledgement rejection is logged with a bounded reason so a
 			// stalled acknowledgement chain is diagnosable from the daemon side
@@ -2663,6 +2743,11 @@ func (s *Service) clientSessionResponse(ctx context.Context, request *subagentsv
 		caller := "client:" + random
 		if command.TerminalIdentity != "" {
 			caller = "client:" + command.TerminalIdentity
+		}
+		if command.TerminalIdentity != "" {
+			if err := s.ensureTerminalAgent(ctx, caller); err != nil {
+				return internalError(response)
+			}
 		}
 		credential := make([]byte, 32)
 		if _, err := rand.Read(credential); err != nil {

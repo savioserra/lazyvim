@@ -881,6 +881,7 @@ type BridgeDelivery struct {
 	Policy                                                     BridgeDeliveryPolicy
 	Kind                                                       BridgeDeliveryKind
 	SourceScope, CompletionKey                                 string
+	DeliveryBackend                                            string
 }
 
 // AckIdentityComplete reports whether the delivery carries the opaque

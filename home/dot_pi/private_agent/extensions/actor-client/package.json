@@ -5,7 +5,7 @@
   "type": "module",
   "license": "MIT",
   "scripts": {
-    "test": "node --experimental-strip-types --test ../../../../../tests/actor-client/handlers.test.mjs ../../../../../tests/actor-client/mutations.test.mjs"
+    "test": "node --experimental-strip-types --test ../../../../../tests/actor-client/handlers.test.mjs ../../../../../tests/actor-client/mutations.test.mjs ../../../../../tests/actor-client/regular-delivery.test.mjs"
   },
   "dependencies": {
     "@bufbuild/protobuf": "2.11.0",
