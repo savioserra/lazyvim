@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-08-31 21:41'
-updated_date: '2026-09-02 02:46'
+updated_date: '2026-09-02 02:48'
 labels: []
 dependencies:
   - TASK-5
@@ -46,4 +46,6 @@ Independent reviewer returned P0 production-wiring blockers at source sequence 2
 Baseline QA returned at source sequence 29 against a3c32c5/19f6539: focused/full code gates conditionally passed and worktree remained clean, but its hosted runtime PATH lacked tmux and stylua, blocking four tmux integration/smoke cases, chezmoi dry-run, and formatting. This does not override the independent review P0 findings; QA must rerun production-seam regressions after sequence 30 corrections.
 
 Correction commit 918dd04 was integrated to main (without replacing concurrent Backlog history): canonical completion keys reconcile provisional pending entries; presentation success/failure is awaited and replayable; higher epochs require reset-first; admission cannot project completion; persisted projection entries restore terminal-first; legacy mutation is removed; actor_client_xstate has a separate managed version/integrity key. New production-seam regressions were added.
+
+PM post-correction gates on ff4e792: actor-client 34/34 passed; hosted bridge 36/36 passed; tmux-subagents legacy suite 97/97 passed with tmux at /snap/bin/tmux; capabilities passed; service codegen verify, go test -race, go vet, and protocol npm 6/6 passed; git diff --check passed; chezmoi scratch dry-run exited 0. Only stylua remains environment-blocked because no executable is installed in PATH.
 <!-- SECTION:NOTES:END -->
