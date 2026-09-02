@@ -1,4 +1,4 @@
-import { Box, Text } from "@earendil-works/pi-tui";
+import { Box, Text, truncateToWidth } from "@earendil-works/pi-tui";
 import { envelopeCard, envelopeFromLegacy, type ActorClientRenderEnvelope } from "../projections/render-envelope.ts";
 import { renderPlainCard } from "../projections/layout.ts";
 import type { ConversationCard } from "../projections/types.ts";
@@ -21,7 +21,7 @@ export function renderActorClientConversationEnvelope(envelope: ActorClientRende
     render(width: number) {
       const box = new Box(1, 1, (text: string) => theme.bg(cardColor(card), text));
       for (const line of themedLines(card, theme, Math.max(20, width - 4))) box.addChild(new Text(line, 0, 0));
-      return box.render(width).map((line: string) => line.length > width ? line.slice(0, width) : line);
+      return box.render(width).map((line: string) => truncateToWidth(line, width));
     },
   };
 }

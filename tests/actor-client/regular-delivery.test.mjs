@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { REGULAR_DELIVERY_MARKER, RegularDeliveryCoordinator } from "../../home/dot_pi/private_agent/extensions/actor-client/regular-delivery.ts";
+import { projectIncomingRegularDelivery } from "../../home/dot_pi/private_agent/extensions/actor-client/index.ts";
+import { initialProjectionContext } from "../../home/dot_pi/private_agent/extensions/actor-client/projections/machine.ts";
 
 function delivery(kind, overrides={}) {
   return {sequence:1n,source:{stableId:"worker",displayName:"Worker",role:"implementer"},targetAgentId:"client:pm",requestId:"request",dedupeId:"dedupe",chainId:"chain",deadlineUnixMillis:BigInt(Date.now()+60_000),hopLimit:7,boundedPayload:new TextEncoder().encode(kind===4?"Please answer this request":"Worker report arrived"),kind,sourceScope:"scope",completionKey:"completion",...overrides};
@@ -13,13 +15,47 @@ function harness(entries=[]) {
 }
 const fence={handle:"regular",fence:1n};
 
+test("bridge push projects incoming tell through root before one render-envelope message",async()=>{
+  let projection=initialProjectionContext();
+  const messages=[];const markers=[];const acks=[];
+  const coordinator=new RegularDeliveryCoordinator({
+    appendMarker:(marker)=>markers.push(marker),
+    projectIncoming:(_delivery,prompt,card)=>{const projected=projectIncomingRegularDelivery(projection,prompt,card);projection=projected.context;return projected.message;},
+    sendFollowUp:(message,text)=>messages.push({message,text}),
+    acknowledge:async(item,_fence,delivered,answer,reason)=>acks.push({item,delivered,answer,reason}),
+  });
+  await coordinator.deliver(delivery(1),fence);
+  assert.equal(messages.length,1);
+  assert.equal(messages[0].message.renderEnvelope.schemaVersion,1);
+  assert.equal(messages[0].message.renderEnvelope.renderSnapshot.card.intent,"note");
+  assert.equal(messages[0].message.view,undefined);
+  assert.equal(projection.snapshot.cards.length,1);
+  assert.equal(acks.length,1);
+});
+
+test("bridge push projects incoming request once without duplicate conversation card",async()=>{
+  let projection=initialProjectionContext();
+  const messages=[];
+  const coordinator=new RegularDeliveryCoordinator({
+    appendMarker:()=>{},
+    projectIncoming:(_delivery,prompt,card)=>{const projected=projectIncomingRegularDelivery(projection,prompt,card);projection=projected.context;return projected.message;},
+    sendFollowUp:(message,text)=>messages.push({message,text}),
+    acknowledge:async()=>{},
+  });
+  await coordinator.deliver(delivery(4),fence);
+  await coordinator.deliver(delivery(4),fence);
+  assert.equal(messages.length,1);
+  assert.equal(projection.snapshot.cards.length,1);
+  assert.equal(messages[0].message.renderEnvelope.renderSnapshot.card.intent,"request");
+});
+
 test("incoming tell renders an incoming card, wakes the model once, then ACKs",async()=>{
   const h=harness();
   await h.coordinator.deliver(delivery(1),fence);
   assert.equal(h.messages.length,1);
   assert.equal(h.messages[0].message.key,"completion");
-  assert.equal(h.messages[0].message.view.direction,"incoming");
-  assert.equal(h.messages[0].message.view.intent,"note");
+  assert.equal(h.messages[0].message.renderEnvelope.renderSnapshot.card.direction,"incoming");
+  assert.equal(h.messages[0].message.renderEnvelope.renderSnapshot.card.intent,"note");
   assert.equal(h.messages[0].text,"Worker report arrived");
   assert.equal(h.acks.length,1);
   assert.equal(h.acks[0].delivered,true);
@@ -31,8 +67,8 @@ test("incoming ask waits for settlement and ACKs the bounded assistant answer",a
   const h=harness();
   await h.coordinator.deliver(delivery(4),fence);
   assert.equal(h.messages.length,1);
-  assert.equal(h.messages[0].message.view.direction,"incoming");
-  assert.equal(h.messages[0].message.view.intent,"request");
+  assert.equal(h.messages[0].message.renderEnvelope.renderSnapshot.card.direction,"incoming");
+  assert.equal(h.messages[0].message.renderEnvelope.renderSnapshot.card.intent,"request");
   assert.equal(h.acks.length,0,"prompt was acknowledged before a model run settled");
   h.coordinator.agentEnd([{role:"user",content:"Please answer this request"},{role:"assistant",content:[{type:"text",text:"Actual model answer"}]}]);
   await h.coordinator.settled();

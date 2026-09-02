@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createActor } from "../../home/dot_pi/private_agent/extensions/actor-client/node_modules/xstate/dist/xstate.cjs.js";
+import { visibleWidth } from "../../home/dot_pi/private_agent/extensions/actor-client/node_modules/@earendil-works/pi-tui/dist/index.js";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
@@ -102,6 +103,21 @@ test("render envelope widgets are width aware, theme driven, and resize-idempote
   assert.match(wide.join("\n"), /↑ Sent to Code Reviewer · review/);
   assert.match(wide.join("\n"), /╰─ ✓ delivered/);
   assert.ok(calls.includes("blue") || calls.includes("toolTitle"));
+});
+
+test("ansi themed cards stay display-width bounded and semantically intact", () => {
+  const card = { key: "ansi", direction: "incoming", intent: "request", state: "pending", peerDisplayName: "Project Manager", peerRole: "coordination", body: "Review the production widget wiring and report blockers." };
+  const theme = { fg: (_name, text) => `\x1b[35m${text}\x1b[0m`, bg: (_name, text) => `\x1b[48;5;236m${text}\x1b[0m` };
+  const component = renderActorClientConversationEnvelope(conversationEnvelope(card), theme);
+  for (const width of [20, 25, 49, 80]) {
+    const lines = component.render(width);
+    assert.ok(lines.every((line) => visibleWidth(line) <= width), `line exceeded ${width}: ${JSON.stringify(lines)}`);
+    assert.ok(lines.every((line) => !line.replace(/\x1b\[[0-9;]*m/g, "").includes("\x1b")), "broken ANSI control sequence");
+    const plain = lines.join("\n").replace(/\x1b\[[0-9;]*m/g, "");
+    assert.match(plain, /↓/);
+    assert.match(plain, /Project|Manager|asked|you/);
+    assert.match(plain, /Waiting|Project/);
+  }
 });
 
 test("legacy communication migration is read-only and renders through envelope widget", () => {

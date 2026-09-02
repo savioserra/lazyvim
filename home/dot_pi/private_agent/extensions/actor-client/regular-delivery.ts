@@ -1,5 +1,8 @@
 import { boundedAssistantAnswer, deliveryKindLabel } from "../hosted-pi-bridge/handlers.ts";
-import { incomingNote, incomingRequest, safePreview, type CommunicationView } from "../hosted-pi-bridge/communication-ui.ts";
+import { safePreview, type CommunicationView } from "../hosted-pi-bridge/communication-ui.ts";
+import { incomingCard } from "./projections/conversation.ts";
+import { conversationEnvelope, type ActorClientRenderEnvelope } from "./projections/render-envelope.ts";
+import type { ConversationCard } from "./projections/types.ts";
 
 const MAX_TEXT = 16 * 1024;
 export const REGULAR_DELIVERY_MARKER = "actor-client-regular-delivery-marker";
@@ -21,18 +24,24 @@ export type RegularDelivery = {
 };
 export type RegularFence = { handle: string; fence: bigint };
 export type RegularDeliveryMarker = { key: string; stage: "injected" | "acked"; kind: number };
-export type RegularDeliveryMessage = { key: string; view: CommunicationView };
+export type RegularDeliveryMessage = { key: string; renderEnvelope: ActorClientRenderEnvelope; view?: CommunicationView };
 
 type Pending = { delivery: RegularDelivery; fence: RegularFence; outcome?: { delivered: boolean; answer: string; reason: string }; lastRunMessages: unknown[]; timer?: NodeJS.Timeout };
 type Dependencies = {
   appendMarker(marker: RegularDeliveryMarker): void;
   sendFollowUp(message: RegularDeliveryMessage, text: string): void | Promise<void>;
   acknowledge(delivery: RegularDelivery, fence: RegularFence, delivered: boolean, answer: string, reason: string): Promise<void>;
+  projectIncoming?(delivery: RegularDelivery, prompt: boolean, card: ConversationCard): RegularDeliveryMessage;
   now?: () => number;
 };
 
 export function regularDeliveryKey(delivery: Pick<RegularDelivery, "completionKey" | "dedupeId" | "sequence">): string {
   return delivery.completionKey || `${delivery.dedupeId}\0${delivery.sequence}`;
+}
+
+function peerFromDelivery(peer: RegularDelivery["source"]) {
+  if (!peer?.displayName) return undefined;
+  return { stableId: peer.stableId, displayName: peer.displayName, role: peer.role, authoritative: true };
 }
 
 export class RegularDeliveryCoordinator {
@@ -105,9 +114,10 @@ export class RegularDeliveryCoordinator {
     // therefore re-ACK, but can never inject the same work twice.
     this.dependencies.appendMarker({ key, stage: "injected", kind: pending.delivery.kind });
     this.injected.add(key);
-    const view = prompt ? incomingRequest(key, pending.delivery.source, pending.delivery.boundedPayload) : incomingNote(key, pending.delivery.source, pending.delivery.boundedPayload);
+    const card = incomingCard({ key, source: peerFromDelivery(pending.delivery.source), body: pending.delivery.boundedPayload, request: prompt });
+    const message = this.dependencies.projectIncoming?.(pending.delivery, prompt, card) ?? { key, renderEnvelope: conversationEnvelope(card) };
     try {
-      await this.dependencies.sendFollowUp({ key, view }, text);
+      await this.dependencies.sendFollowUp(message, text);
     } catch (error) {
       await this.finish(pending, false, "", safePreview(error instanceof Error ? error.message : "terminal follow-up injection failed", 200));
     }
