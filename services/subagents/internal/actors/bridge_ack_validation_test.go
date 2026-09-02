@@ -57,15 +57,19 @@ func TestBridgeDeliveryAckValidationRetainsPromptDelivery(t *testing.T) {
 	if result := ask(identityAck("session", "generation", "hosted:source", attached.Handle, attached.Fence, "runtime", "pi", delivery, true, oversized)).(*application.BridgeDeliveryAckResult); result.Accepted || result.Reason == "" {
 		t.Fatalf("oversized ack accepted: %#v", result)
 	}
-	if result := ask(identityAck("session", "generation", "hosted:source", attached.Handle, attached.Fence, "runtime", "pi", delivery, true, nil)).(*application.BridgeDeliveryAckResult); result.Accepted || result.Reason == "" {
-		t.Fatalf("empty prompt ack accepted: %#v", result)
-	}
 	replay := ask(&application.PollBridge{SessionID: "session", GenerationID: "generation", Principal: "hosted:source", Handle: attached.Handle, Fence: attached.Fence, AfterSequence: 0, MaxItems: 64}).(*application.BridgePollResult)
 	if len(replay.Deliveries) != 1 || replay.Deliveries[0].Sequence != delivery.Sequence {
-		t.Fatalf("rejected ack removed delivery: %#v", replay)
+		t.Fatalf("rejected oversized ack removed delivery: %#v", replay)
 	}
-	if result := ask(identityAck("session", "generation", "hosted:source", attached.Handle, attached.Fence, "runtime", "pi", delivery, true, []byte("answer"))).(*application.BridgeDeliveryAckResult); !result.Accepted {
-		t.Fatalf("valid ack rejected: %#v", result)
+	// Empty settled output is valid lifecycle evidence. It commits once and the
+	// thread introspector, rather than ACK validation, decides that the model
+	// still owes a deliverable and schedules resumption.
+	if result := ask(identityAck("session", "generation", "hosted:source", attached.Handle, attached.Fence, "runtime", "pi", delivery, true, nil)).(*application.BridgeDeliveryAckResult); !result.Accepted {
+		t.Fatalf("empty settled prompt ack rejected: %#v", result)
+	}
+	committed := ask(&application.PollBridge{SessionID: "session", GenerationID: "generation", Principal: "hosted:source", Handle: attached.Handle, Fence: attached.Fence, AfterSequence: 0, MaxItems: 64}).(*application.BridgePollResult)
+	if len(committed.Deliveries) != 0 {
+		t.Fatalf("committed empty settlement replayed original delivery: %#v", committed)
 	}
 }
 
