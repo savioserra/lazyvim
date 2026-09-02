@@ -197,6 +197,22 @@ func (a *AgentActor) applyThreadIntrospectionClassification(thread *application.
 		a.threadScheduler.Resumable = append(a.threadScheduler.Resumable, thread.ThreadID)
 		return threadClassificationResume
 	case application.ThreadIntrospectionWaiting:
+		// The exact child may already have been consumed into a continuation
+		// turn that settled without assistant text. Waiting again would lose
+		// liveness even though the terminal child result remains durable.
+		if thread.ChildContinuation != nil && thread.ChildContinuation.Consumed && !workerResultContainsDeliverable(thread.WorkerResult) {
+			if completion, ok := a.taskCompletions[thread.ChildContinuation.AppliedCompletionKey]; ok {
+				thread.PendingPrompt = append(parentThreadCompletionPrompt(completion), []byte("\n\nReturn the requested parent deliverable now using this terminal child result.")...)
+				thread.State = application.AgentThreadResumable
+				thread.ResumeAttempts++
+				thread.NextAttempt = time.Time{}
+				appendThreadEvent(thread, application.DurableThreadEvent{Kind: "consumed_child_deliverable_missing", At: now, Digest: sha256.Sum256(completion.Terminal.Result)})
+				a.threadScheduler.ActiveThreadID = ""
+				a.removeThreadFromSchedulerQueues(thread.ThreadID)
+				a.threadScheduler.Resumable = append(a.threadScheduler.Resumable, thread.ThreadID)
+				return threadClassificationResume
+			}
+		}
 		if completion, ok := a.findCompletionForParentThread(*thread); ok {
 			thread.PendingPrompt = parentThreadCompletionPrompt(completion)
 			thread.State = application.AgentThreadResumable

@@ -31,6 +31,19 @@ func TestThreadIntrospectionCompletionContinuationWakesWaitingParent(t *testing.
 	}
 }
 
+func TestConsumedChildWithEmptyContinuationResultResumesDeliverable(t *testing.T) {
+	now := time.Unix(1_800_000_200, 0)
+	completion := application.ActorTaskCompleted{CompletionKey: "child-completion", Terminal: application.BridgeIntentResult{Accepted: true, Completed: true, Result: []byte("exact child answer")}, Target: application.CommunicationPeer{StableID: "worker"}}
+	a := &AgentActor{taskCompletions: map[string]application.ActorTaskCompleted{"child-completion": completion}, threadScheduler: application.DurableThreadScheduler{ActiveThreadID: "parent"}}
+	thread := application.DurableAgentThread{ThreadID: "parent", State: application.AgentThreadIntrospecting, WorkerResult: nil, ChildContinuation: &application.DurableChildContinuation{Consumed: true, AppliedCompletionKey: "child-completion"}}
+	a.threads = map[string]application.DurableAgentThread{"parent": thread}
+	a.threadOrder = []string{"parent"}
+	action := a.applyThreadIntrospectionClassification(&thread, application.ThreadIntrospectionResult{State: application.ThreadIntrospectionWaiting}, now)
+	if action != threadClassificationResume || thread.State != application.AgentThreadResumable || !strings.Contains(string(thread.PendingPrompt), "exact child answer") || !strings.Contains(string(thread.PendingPrompt), "Return the requested parent deliverable") {
+		t.Fatalf("consumed child did not resume empty continuation turn: action=%d thread=%#v", action, thread)
+	}
+}
+
 func TestParentChildWaitRecordedWithExactDispatchIdentity(t *testing.T) {
 	targetRef := application.DurableActorRef{AgentID: "worker", Address: "addr", Host: "host", Port: 1, Name: "agent-worker"}
 	a := &AgentActor{id: "supervisor", threadScheduler: application.DurableThreadScheduler{ActiveThreadID: "parent", Epoch: 10, ActiveLease: 20}, threads: map[string]application.DurableAgentThread{"parent": {ThreadID: "parent", Target: application.CommunicationPeer{StableID: "supervisor"}, Turn: 30, DispatchSchedulerEpoch: 10, DispatchActiveLease: 20, ActiveDeliverySequence: 40}}}
