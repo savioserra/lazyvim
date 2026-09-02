@@ -5,6 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 02:56'
+updated_date: '2026-09-02 02:58'
 labels: []
 dependencies:
   - TASK-6
@@ -40,3 +41,9 @@ Replace the actor-client's remaining legacy communication renderer path with pro
 3. Implement with one writer, add width/theme/replay and real adapter tests, then run independent review/QA.
 4. Apply, reload, and execute the bounded live acceptance matrix without pane injection or scraping.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Initial PM audit after TASK-6: XState projection modules and widgets exist, but production renderer registration in actor-client/index.ts still calls the hosted-pi-bridge legacy renderCommunicationCard helper; the new renderProjectionConversationCard/renderActorStatusWidget are not the production conversation path. TASK-1.1 closes this integration gap. UX and architecture audits were assigned through owned actor sequences 34 and 35 before the sole writer starts.
+<!-- SECTION:NOTES:END -->

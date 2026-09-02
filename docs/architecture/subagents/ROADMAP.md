@@ -9,8 +9,8 @@ This file is the canonical delivery roadmap. ADRs in this directory define archi
 | 0. GoAkt foundation | Approved | Global actors, protobuf WebSocket application plane, fencing, lifecycle, security tests |
 | 1. Hosted Pi runtime | Approved | Full Pi TUI in exactly owned tmux; dynamic actor lifecycle; bridge commands/tools |
 | 2. Self-hosting client MVP | Live, managed | Normal Pi creates dynamic actors, sends a real prompt, receives the correlated model answer, and delegates a repository task through the owned system |
-| 3. Actor-native push stabilization | Current | Implement ADR 0005 exactly: durable `HostedPiBridgeActor`, recovery-safe regular-actor-message Ask completion, contiguous ACK cursor with gap replay, authenticated roster/status push, epoch/sequence fencing, one-way schema migration, and compatibility polling retirement |
-| 4. Client stabilization | Next | Reproduce/fix same-name restart; use isolated worktrees; complete several real tasks through owned TaskCoordinator/Workflow actors |
+| 3. Actor-native push stabilization | Live, migration hardening | ADR 0005 durable delivery, recovery-safe Ask completion, ACK replay, authenticated roster push, epoch/sequence fencing, and XState client projections are live; retire the remaining migration adapters only after replay parity evidence |
+| 4. Client stabilization | Current in parallel | Finish production widget wiring, typed productive phases, same-name/session reincarnation fixes, and owned WorkflowActor UX through isolated worktrees |
 | 5. Authority cutover | Deferred | Owned execution parity proven; disable third-party authority without dual writers; retain bounded rollback window |
 | 6. Legacy removal | Deferred | Remove `pi-subagents`, old XState/Terminal Kit observer, superseded tests/docs/packages |
 | 7. Managed deployment | Live | Reviewed binary provisioning and active systemd-user/LaunchAgent transition; Linux/WSL/macOS validation |
@@ -34,9 +34,11 @@ Current managed entry point: restart an ordinary globally discovered `pi`; the `
 
 ## Next three deliverables
 
-1. Exercise the actor-native `HostedPiBridgeActor`/`BridgeSessionActor` push path with a real provider-backed self-improvement task and record reconnect, contiguous ACK cursor, gap replay, and exactly-one Ask completion evidence.
-2. Drive worker -> reviewer -> QA -> correction through WorkflowActor without PM UI dependence and record evidence-correct progress.
-3. Fix any defect found through the client lane, especially immediate same-name recreation after STOP.
+1. Complete `TASK-1.1`: wire the shipped XState render snapshots and responsive Pi TUI widgets into the production actor-client renderers, then pass the non-phase Actor UX acceptance matrix.
+2. Complete `TASK-1.2`: publish typed AgentActor/WorkflowActor productive phases and consume them through authenticated topic projections without liveness inference or polling.
+3. Complete `TASK-1.3`: drive worker -> reviewer -> QA -> correction and a durable user decision through WorkflowActor without PM UI dependence.
+
+The actor-native Ask path is live. After apply/reload, retained completions 30-32 replayed once in order and a fresh sequence 33 completed automatically with `ACTOR_UI_E2E_OK`. The production follow-through remains tracked under the `TASK-1` initiative; deprecation and parity-gated removal of the legacy Pi packages are `TASK-17` and `TASK-18`. Immediate same-name/session reincarnation and terminal roster hygiene remain independently tracked rather than being hidden inside UI work.
 
 Remote/VPS E2E evidence for phase 8 uses three logical nodes (`node-a`, `node-b`, `node-c`) on an owner-controlled private overlay or disposable VPS/VM network with URI-SAN mTLS and distinct actor/discovery/peers/application ports. Required artifacts are sanitized command transcript, logs, and test output proving remote placement, public roster reconciliation, Tell/Ask, target and origin restart replay, ACK gap replay, stale home-node failure, and no host/port or answer leak on public surfaces.
 
@@ -46,7 +48,7 @@ Remote/VPS E2E evidence for phase 8 uses three logical nodes (`node-a`, `node-b`
 
 ## Client reducer model
 
-The ordinary actor-client extension owns the ADR 0005 frontend reducer implementation. When XState machines replace the current reducer shape, `home/dot_pi/private_agent/extensions/actor-client/` must pin `xstate` exactly to 5.20.2 in package and lockfile and own the reducer tests. It exchanges typed daemon messages, subscribes to `ClientAgentRosterFrame` push, owns reconnect cursors and pending request UI state, and exposes one bounded render snapshot to Pi. Daemon-side `AgentActor`, `WorkflowActor`, `BridgeSessionActor`, and session registries remain authoritative for security and durable state; the client reducer is not a second authority or transport-specific cache.
+The ordinary actor-client extension owns the ADR 0005 frontend reducer implementation. Its root XState machine pins `xstate` exactly to 5.20.2 in package and lockfile and owns deterministic projection tests. It exchanges typed daemon messages, subscribes to `ClientAgentRosterFrame` push, owns reconnect cursors and pending request UI state, and exposes bounded render snapshots to Pi. Daemon-side `AgentActor`, `WorkflowActor`, `BridgeSessionActor`, and session registries remain authoritative for security and durable state; the client reducer is not a second authority or transport-specific cache. `TASK-1.1` now moves the remaining production renderer registrations off the legacy communication-card path and onto those snapshots.
 
 Implementation notes:
 
