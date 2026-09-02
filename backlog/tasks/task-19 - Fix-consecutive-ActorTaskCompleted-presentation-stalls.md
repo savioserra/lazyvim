@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 03:03'
-updated_date: '2026-09-02 03:59'
+updated_date: '2026-09-02 04:11'
 labels: []
 dependencies: []
 references:
@@ -72,4 +72,6 @@ Writer sequences 43/44 completed and were integrated: canonical client identity 
 PM post-integration gates on 7d1ac9e passed: actor-client 41/41, hosted bridge 37/37, capabilities, service codegen/go race/vet/protocol 6/6, git diff check, and scratch chezmoi dry-run. Independent architecture/security review sequence 45 and QA sequence 46 are active before the operator-requested fresh deployment reset.
 
 Independent review sequence 45 found no architecture/security implementation blockers, but two release-gate test gaps: no regression sends three or more consecutive completions and proves immediate reply frames without another request; stale-fence ACK retry is helper-mocked rather than integrated against real daemon fence rejection, reattach, and exactly-once retirement with unchanged delivery identity. QA sequence 46 conditionally passed code but hosted tmux was unavailable; PM scratch evidence supersedes the environment block. TASK-19 remains open until both regressions and live reset E2E pass.
+
+Operator-requested deployment reset executed on main a85c40d/7b7e517 code: chezmoi apply succeeded; five exact hosted actors were stopped; the old crew observer window was removed; daemon stopped; only configured actor state was cleared/recreated mode 0700; five verified leftover hosted Pi PIDs were terminated by exact WS_SUBAGENTS_AGENT_ID match; daemon restarted active; all five logical actors were recreated fresh and report available; labeled 3x2 crew window rebuilt with PM plus five actors. Active PM must /reload to load the new actor-client before live notification E2E.
 <!-- SECTION:NOTES:END -->
