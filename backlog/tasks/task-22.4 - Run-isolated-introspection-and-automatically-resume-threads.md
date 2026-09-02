@@ -1,11 +1,11 @@
 ---
 id: TASK-22.4
 title: Run isolated introspection and automatically resume threads
-status: Done
+status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 06:10'
-updated_date: '2026-09-02 13:00'
+updated_date: '2026-09-02 13:06'
 labels: []
 dependencies:
   - TASK-22.3
@@ -60,6 +60,8 @@ Live deployed Ask to ui_qa failed as thread introspection exhausted. Reproduced 
 Second live comms root cause found: production uses StartWebSocketConfigured, but only the retired Unix-socket StartConfigured path initialized hosted.IntrospectionRunner from introspection_model. Every real thread therefore ran with runner_unavailable and exhausted after three attempts; the model answers themselves were delivered correctly. Centralized runner initialization and wired it into WebSocket startup before listener effects; added a production-start regression test.
 
 Fresh deployed live proof succeeded after WebSocket runner initialization: UI QA Ask request a1425f90-a54a-48c2-8d5f-6625e7432002, source mutation sequence 13, returned COMMS_OK through durable ActorTask, settlement, real isolated introspection, completion push, and source commit. Full race/vet/codegen/protocol/capabilities gates pass.
+
+Post-fix reviewer Ask sequence 17 exposed a second real-output policy defect: the classifier correctly described a generic stale-fence refresh finding, but output validation rejected every occurrence of the words fence/handle as if it were a secret value. Narrowed policy to reject only fence/handle identifiers, tokens, values, or assigned raw values while permitting generic security concepts. Added allow/deny regression cases; actual credentials and identities remain forbidden.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
