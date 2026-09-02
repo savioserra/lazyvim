@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 06:10'
-updated_date: '2026-09-02 13:06'
+updated_date: '2026-09-02 13:09'
 labels: []
 dependencies:
   - TASK-22.3
@@ -62,6 +62,8 @@ Second live comms root cause found: production uses StartWebSocketConfigured, bu
 Fresh deployed live proof succeeded after WebSocket runner initialization: UI QA Ask request a1425f90-a54a-48c2-8d5f-6625e7432002, source mutation sequence 13, returned COMMS_OK through durable ActorTask, settlement, real isolated introspection, completion push, and source commit. Full race/vet/codegen/protocol/capabilities gates pass.
 
 Post-fix reviewer Ask sequence 17 exposed a second real-output policy defect: the classifier correctly described a generic stale-fence refresh finding, but output validation rejected every occurrence of the words fence/handle as if it were a secret value. Narrowed policy to reject only fence/handle identifiers, tokens, values, or assigned raw values while permitting generic security concepts. Added allow/deny regression cases; actual credentials and identities remain forbidden.
+
+Reopened on current review: internal RemoteBridgeIntent/raw BridgeIntent receive paths can still admit model-bearing Ask/Prompt directly into bridge deliveries, bypassing ActorTask credits, target-authoritative threads, settlement, and introspection. Public legacy endpoints are retired, but actor-plane injection remains a mandatory authority gap.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

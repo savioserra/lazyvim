@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@pi'
 created_date: '2026-09-02 06:10'
-updated_date: '2026-09-02 13:03'
+updated_date: '2026-09-02 13:09'
 labels: []
 dependencies:
   - TASK-22.4
@@ -33,4 +33,6 @@ Expose bounded owner-private thread status through the activity projection and p
 
 <!-- SECTION:NOTES:BEGIN -->
 Adopted sanitized A→B→resume-A acceptance sequence from UI/UX review: A accepted/resumable, B accepted/completed once, A automatic resume/completed once, including fresh process, daemon/runtime restart, and compaction; no reminder, pane inspection, actor_list polling, duplicate completion, or private leakage.
+
+Current thread-architect review confirms no owner-private status topic/replay and no fresh A→B→resume-A proof. It also found the remaining internal RemoteBridgeIntent/raw BridgeIntent model-bearing bypass; TASK-22.5 is not integration-ready until this authority gap and TASK-1.2.1 projection are complete.
 <!-- SECTION:NOTES:END -->
