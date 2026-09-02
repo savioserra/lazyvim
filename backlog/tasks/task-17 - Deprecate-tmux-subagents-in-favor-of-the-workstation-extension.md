@@ -1,10 +1,13 @@
 ---
 id: TASK-17
-title: Deprecate tmux-subagents in favor of the workstation extension
+title: >-
+  Deprecate pi-subagents and tmux-subagents in favor of the workstation
+  extension
 status: To Do
 assignee:
   - '@pi'
 created_date: '2026-09-02 02:38'
+updated_date: '2026-09-02 02:41'
 labels: []
 dependencies: []
 references:
@@ -18,12 +21,12 @@ ordinal: 17000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Deprecate the repository-managed `tmux-subagents` Pi observer extension and its lifecycle package. The replacement is the workstation extension, which ships the owned distributed-agent framework and its actor-client/UI surfaces. Treat `tmux-subagents` as compatibility-only removal inventory: it must not gain new workflow authority, product behavior, or architectural dependencies while the workstation extension reaches parity.
+Deprecate the managed upstream `pi-subagents` Pi package and the repository-managed `tmux-subagents` observer extension/lifecycle package. The replacement is the workstation extension, which ships the owned distributed-agent framework and its actor-client/UI surfaces. Treat both legacy packages as compatibility-only removal inventory: neither may gain new workflow authority, product behavior, or architectural dependencies while the workstation extension reaches parity.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Documentation and package discovery identify `tmux-subagents` as deprecated and name the workstation extension as its replacement
-- [ ] #2 The deprecation preserves existing installations without making `tmux-subagents` authoritative for owned actor execution, messaging, lifecycle, or UI state
-- [ ] #3 Repository guidance prevents new features or dependencies from being added to the deprecated extension
+- [ ] #1 Documentation and package discovery identify both `pi-subagents` and `tmux-subagents` as deprecated and name the workstation extension as their replacement
+- [ ] #2 Deprecation preserves existing installations without making either legacy package authoritative for owned actor execution, messaging, lifecycle, or UI state
+- [ ] #3 Repository guidance prevents new features or dependencies from being added to either deprecated package
 <!-- AC:END -->
