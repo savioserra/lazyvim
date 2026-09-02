@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-08-31 21:41'
-updated_date: '2026-09-02 02:48'
+updated_date: '2026-09-02 02:50'
 labels: []
 dependencies:
   - TASK-5
@@ -48,4 +48,6 @@ Baseline QA returned at source sequence 29 against a3c32c5/19f6539: focused/full
 Correction commit 918dd04 was integrated to main (without replacing concurrent Backlog history): canonical completion keys reconcile provisional pending entries; presentation success/failure is awaited and replayable; higher epochs require reset-first; admission cannot project completion; persisted projection entries restore terminal-first; legacy mutation is removed; actor_client_xstate has a separate managed version/integrity key. New production-seam regressions were added.
 
 PM post-correction gates on ff4e792: actor-client 34/34 passed; hosted bridge 36/36 passed; tmux-subagents legacy suite 97/97 passed with tmux at /snap/bin/tmux; capabilities passed; service codegen verify, go test -race, go vet, and protocol npm 6/6 passed; git diff --check passed; chezmoi scratch dry-run exited 0. Only stylua remains environment-blocked because no executable is installed in PATH.
+
+Correction re-review sequence 31 explicitly approved with no blockers and actor-client 34/34 passing. Correction QA sequence 32 explicitly passed actor-client, hosted bridge, capabilities, service codegen/race/vet/npm, and clean-worktree gates. Chezmoi apply completed successfully at main e48ab11 and deployed actor-client xstate 5.20.2. Final live reload/reconnect/conversation E2E remains before task finalization; the active Pi must run /reload because loaded TypeScript cannot be replaced in-process.
 <!-- SECTION:NOTES:END -->
