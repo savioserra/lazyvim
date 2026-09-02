@@ -3,6 +3,7 @@ package service_test
 import (
 	"context"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -14,9 +15,10 @@ import (
 
 type deterministicRuntime struct{ process *deterministicProcess }
 
-type completedIntrospectionRunner struct{}
+type completedIntrospectionRunner struct{ calls atomic.Int32 }
 
-func (completedIntrospectionRunner) Run(context.Context, application.ThreadIntrospectionInput) (application.ThreadIntrospectionResult, error) {
+func (r *completedIntrospectionRunner) Run(context.Context, application.ThreadIntrospectionInput) (application.ThreadIntrospectionResult, error) {
+	r.calls.Add(1)
 	return application.ThreadIntrospectionResult{State: application.ThreadIntrospectionCompleted, Confidence: application.ThreadIntrospectionConfidenceHigh, ReasonClass: application.ThreadIntrospectionDone, Checkpoint: "done", CompletionSummary: "completed"}, nil
 }
 
@@ -53,7 +55,8 @@ func TestDeterministicHostedBridgeGatewayAndClientIndependence(t *testing.T) {
 
 	binding := application.HostedPiRuntimeBinding{State: application.HostedPiRuntimeStarting, Lifetime: application.HostedPiLifetimeGlobalAgent, TmuxOwnership: application.HostedPiTmuxOwnershipExactSession, ControlBoundary: application.HostedPiControlDocumentedBridgeOnly, VisualizationBoundary: application.HostedPiVisualizationTmuxAttach, RuntimeID: "runtime-one", Incarnation: 1}
 	process := &deterministicProcess{binding: binding, exit: make(chan error, 1)}
-	registration := application.RegisterAgent{AgentID: "agent-one", AuthorityBinding: application.AuthorityBinding{Kind: application.AuthorityBindingHostedOwned, HostedRuntimeID: binding.RuntimeID}, HostedPiRuntime: binding, AllowedCapability: []string{"observe", "hosted_bridge", "send", "ask", "control_abort", "control_shutdown"}, PhaseTwoOwned: true, Retention: "explicit", Recovery: "owned-binding-v1", Runtime: deterministicRuntime{process}, IntrospectionRunner: completedIntrospectionRunner{}, LaunchSpec: application.HostedPiLaunchSpec{AgentID: "agent-one", RuntimeID: binding.RuntimeID, Incarnation: 1}}
+	runner := &completedIntrospectionRunner{}
+	registration := application.RegisterAgent{AgentID: "agent-one", AuthorityBinding: application.AuthorityBinding{Kind: application.AuthorityBindingHostedOwned, HostedRuntimeID: binding.RuntimeID}, HostedPiRuntime: binding, AllowedCapability: []string{"observe", "hosted_bridge", "send", "ask", "control_abort", "control_shutdown"}, PhaseTwoOwned: true, Retention: "explicit", Recovery: "owned-binding-v1", Runtime: deterministicRuntime{process}, IntrospectionRunner: runner, LaunchSpec: application.HostedPiLaunchSpec{AgentID: "agent-one", RuntimeID: binding.RuntimeID, Incarnation: 1}}
 	if err := daemon.RegisterAgent(context.Background(), registration); err != nil {
 		t.Fatal(err)
 	}
@@ -271,15 +274,24 @@ func TestDeterministicHostedBridgeGatewayAndClientIndependence(t *testing.T) {
 	if len(deliveries) != 2 {
 		t.Fatalf("bridge did not retain both deliveries: %#v", deliveries)
 	}
+	var promptAck *subagentsv1.BridgeDeliveryAckRequest
 	for _, delivery := range deliveries {
 		ackRequest := identityBridgeAck("agent-one", "runtime-one", "pi-session", 1, delivery, true, nil)
 		if delivery.Kind == subagentsv1.BridgeDelivery_KIND_PROMPT {
 			ackRequest.BoundedResult = []byte("model answer")
+			promptAck = proto.Clone(ackRequest).(*subagentsv1.BridgeDeliveryAckRequest)
 		}
 		ack := request(t, path, fencedBase(&subagentsv1.Envelope_BridgeDeliveryAckRequest{BridgeDeliveryAckRequest: ackRequest}))
 		if !ack.GetBridgeDeliveryAckResponse().Accepted {
 			t.Fatalf("delivery ack rejected: %#v", ack)
 		}
+	}
+	if promptAck == nil {
+		t.Fatal("prompt acknowledgement was not captured")
+	}
+	duplicateAck := request(t, path, fencedBase(&subagentsv1.Envelope_BridgeDeliveryAckRequest{BridgeDeliveryAckRequest: promptAck})).GetBridgeDeliveryAckResponse()
+	if duplicateAck == nil || !duplicateAck.Accepted {
+		t.Fatalf("exact duplicate settlement was not idempotent: %#v", duplicateAck)
 	}
 	var askReplay *subagentsv1.ActorMessageResponse
 	deadline = time.Now().Add(time.Second)
@@ -294,6 +306,9 @@ func TestDeterministicHostedBridgeGatewayAndClientIndependence(t *testing.T) {
 	}
 	if askReplay == nil || !askReplay.Accepted || !askReplay.Completed {
 		t.Fatalf("completed ASK exact retry did not converge after introspection: %#v", askReplay)
+	}
+	if calls := runner.calls.Load(); calls != 1 {
+		t.Fatalf("duplicate settlement spawned introspection %d times", calls)
 	}
 	freshProcessConnect := request(t, path, base(&subagentsv1.Envelope_BridgeConnectRequest{BridgeConnectRequest: &subagentsv1.BridgeConnectRequest{AgentId: "agent-one", RuntimeId: "runtime-one", Incarnation: 1, PiSessionId: "pi-session"}})).GetBridgeConnectResponse()
 	if !freshProcessConnect.Accepted || freshProcessConnect.ActorMessageHighWater != 2 {

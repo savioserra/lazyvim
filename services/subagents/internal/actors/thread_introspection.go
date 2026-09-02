@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/savioserra/lazyvim/services/subagents/internal/application"
@@ -128,33 +129,64 @@ func (a *AgentActor) finishThreadIntrospection(ctx *actor.ReceiveContext, outcom
 	thread.CheckpointDigest = sha256.Sum256([]byte(thread.Checkpoint))
 	thread.FailureClass = ""
 	appendThreadEvent(&thread, application.DurableThreadEvent{Kind: "introspection_committed", At: now, DeliverySequence: thread.ActiveDeliverySequence, Digest: thread.IntrospectionDigest})
-	switch outcome.Result.State {
-	case application.ThreadIntrospectionCompleted:
-		thread.State = application.AgentThreadCompleted
-		a.threads[thread.ThreadID] = thread
+	action := a.applyThreadIntrospectionClassification(&thread, outcome.Result, now)
+	a.threads[thread.ThreadID] = thread
+	switch action {
+	case threadClassificationComplete:
 		a.completeThreadTerminal(thread, application.BridgeIntentResult{Accepted: true, Completed: true, Result: append([]byte(nil), thread.WorkerResult...)})
 		a.persistThreadTransition(ctx, &pendingDurableReceipt{old: old, threadSchedule: true})
+	case threadClassificationResume:
+		a.persistThreadTransition(ctx, &pendingDurableReceipt{old: old, threadSchedule: true})
+	case threadClassificationInert:
+		a.persistThreadTransition(ctx, &pendingDurableReceipt{old: old})
+	}
+
+}
+
+type threadClassificationAction uint8
+
+const (
+	threadClassificationInert threadClassificationAction = iota
+	threadClassificationResume
+	threadClassificationComplete
+)
+
+func (a *AgentActor) applyThreadIntrospectionClassification(thread *application.DurableAgentThread, result application.ThreadIntrospectionResult, now time.Time) threadClassificationAction {
+	switch result.State {
+	case application.ThreadIntrospectionCompleted:
+		if !workerResultContainsDeliverable(thread.WorkerResult) {
+			thread.State = application.AgentThreadResumable
+			thread.ResumeAttempts++
+			thread.PendingPrompt = []byte("Return the requested deliverable directly in this thread. Do not reply with an acknowledgement, promise, or sent-elsewhere pointer.")
+			thread.NextAttempt = now.Add(threadIntrospectionBackoff(thread.IntrospectionAttempts))
+			appendThreadEvent(thread, application.DurableThreadEvent{Kind: "completion_pointer_rejected", At: now, DeliverySequence: thread.ActiveDeliverySequence, Reason: "deliverable_missing"})
+			a.threadScheduler.ActiveThreadID = ""
+			a.threadScheduler.Resumable = append(a.threadScheduler.Resumable, thread.ThreadID)
+			return threadClassificationResume
+		}
+		thread.State = application.AgentThreadCompleted
+		a.threadScheduler.ActiveThreadID = ""
+		return threadClassificationComplete
 	case application.ThreadIntrospectionContinue:
 		thread.State = application.AgentThreadResumable
 		thread.ResumeAttempts++
-		thread.PendingPrompt = []byte(outcome.Result.NextPrompt)
+		thread.PendingPrompt = []byte(result.NextPrompt)
 		thread.NextAttempt = now.Add(threadIntrospectionBackoff(thread.IntrospectionAttempts))
-		a.threads[thread.ThreadID] = thread
 		a.threadScheduler.ActiveThreadID = ""
 		a.threadScheduler.Resumable = append(a.threadScheduler.Resumable, thread.ThreadID)
-		a.persistThreadTransition(ctx, &pendingDurableReceipt{old: old, threadSchedule: true})
+		return threadClassificationResume
 	case application.ThreadIntrospectionWaiting:
 		thread.State = application.AgentThreadWaiting
-		a.threads[thread.ThreadID] = thread
 		a.threadScheduler.ActiveThreadID = ""
 		a.threadScheduler.Waiting = append(a.threadScheduler.Waiting, thread.ThreadID)
-		a.persistThreadTransition(ctx, &pendingDurableReceipt{old: old})
+		return threadClassificationInert
 	case application.ThreadIntrospectionBlocked:
 		thread.State = application.AgentThreadBlocked
-		a.threads[thread.ThreadID] = thread
 		a.threadScheduler.ActiveThreadID = ""
 		a.threadScheduler.Blocked = append(a.threadScheduler.Blocked, thread.ThreadID)
-		a.persistThreadTransition(ctx, &pendingDurableReceipt{old: old})
+		return threadClassificationInert
+	default:
+		return threadClassificationInert
 	}
 }
 
@@ -214,6 +246,27 @@ func threadAttemptID(thread application.DurableAgentThread, scheduler applicatio
 	value := thread.ThreadID + "\x00" + strconv.FormatUint(thread.Turn, 10) + "\x00" + strconv.FormatUint(scheduler.Epoch, 10) + "\x00" + strconv.FormatUint(scheduler.ActiveLease, 10) + "\x00" + strconv.FormatUint(uint64(attempt), 10)
 	digest := sha256.Sum256([]byte(value))
 	return hex.EncodeToString(digest[:16])
+}
+
+func workerResultContainsDeliverable(result []byte) bool {
+	value := strings.ToLower(strings.TrimSpace(string(result)))
+	if value == "" {
+		return false
+	}
+	if len(value) <= 64 {
+		switch value {
+		case "ok", "done", "completed", "ack", "acknowledged", "sent", "sent elsewhere", "see previous message", "see my other message":
+			return false
+		}
+	}
+	if len(value) <= 512 {
+		for _, marker := range []string{"sent to the client", "sent to client", "sent elsewhere", "provided elsewhere", "delivered elsewhere", "sent out of band", "see the other message", "reconnaissance sent"} {
+			if strings.Contains(value, marker) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func threadIntrospectionBackoff(attempt uint32) time.Duration {

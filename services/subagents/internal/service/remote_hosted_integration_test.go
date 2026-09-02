@@ -464,8 +464,8 @@ func ackNextPrompt(t *testing.T, s *Service, id string, answer []byte) {
 					if d.Kind == subagentsv1.BridgeDelivery_KIND_PROMPT {
 						result = answer
 					}
-					_ = s.dispatch(env(s, bridge.session, &subagentsv1.Envelope_BridgeDeliveryAckRequest{BridgeDeliveryAckRequest: identityBridgeAck(id, record.Binding.RuntimeID, "fake-pi", record.Binding.Incarnation, d, true, result)}, "ack"+time.Now().String(), bridge.handle, bridge.fence))
-					if d.Kind == subagentsv1.BridgeDelivery_KIND_PROMPT {
+					ack := s.dispatch(env(s, bridge.session, &subagentsv1.Envelope_BridgeDeliveryAckRequest{BridgeDeliveryAckRequest: identityBridgeAck(id, record.Binding.RuntimeID, "fake-pi", record.Binding.Incarnation, d, true, result)}, "ack"+time.Now().String(), bridge.handle, bridge.fence)).GetBridgeDeliveryAckResponse()
+					if d.Kind == subagentsv1.BridgeDelivery_KIND_PROMPT && ack != nil && ack.Accepted {
 						return
 					}
 				}

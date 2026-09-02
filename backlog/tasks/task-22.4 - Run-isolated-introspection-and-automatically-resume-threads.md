@@ -1,11 +1,11 @@
 ---
 id: TASK-22.4
 title: Run isolated introspection and automatically resume threads
-status: To Do
+status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 06:10'
-updated_date: '2026-09-02 06:14'
+updated_date: '2026-09-02 10:01'
 labels: []
 dependencies:
   - TASK-22.3
@@ -30,8 +30,18 @@ After the exact active thread turn settles, run isolated structured introspectio
 - [ ] #5 Introspection does not mark a request complete when its terminal answer is only an acknowledgement or sent-elsewhere pointer; required deliverables remain linked to the same durable thread and the requesting Ask receives the bounded completion result exactly once
 <!-- AC:END -->
 
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Bind the configured isolated runner to every restored/created hosted AgentActor and persist exact attempt identity before process spawn.\n2. Validate settlement against active thread/epoch/lease/turn/delivery, persist worker result, and classify completed/continue/waiting/blocked with strict runner output.\n3. Persist outcome before ActorTaskCompleted, resume dispatch, wait/block projection, retry, exhaustion, or source-commit compaction effects.\n4. Redrive settled/introspecting/resumable/completion state across restart and reconnect; dedupe duplicate settlement and completion commits.\n5. Add completed/continue/waiting/blocked/failure/exhaustion/restart and sent-elsewhere policy tests, then run full gates and live push-only Ask proof.
+<!-- SECTION:PLAN:END -->
+
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
 Live Ask 90 exposed the failure mode: its Ask completion first returned only `reconnaissance sent to client`; the full report arrived later as a separate hosted-bridge Tell. The PM initially lacked the payload, then received and processed it out of band. Thread completion must evaluate the requested deliverable and preserve it in-thread instead of treating an acknowledgement to a second message as completion.
+
+Initial implementation landed during the TASK-22.3 integration gate: isolated runner injection, durable attempt identity/result/checkpoint, completed/continue/waiting/blocked/exhaustion transitions, exact active tuple validation, source commit handshake, and cross-node completion tests are present in a635864..b34944b. TASK-22.4 now focuses on the remaining deterministic state/policy/restart tests and live proof.
+
+Added deterministic classification tests for completed, continue/resumable, waiting, blocked, and acknowledgement/sent-elsewhere rejection. Completed classification now independently rejects bounded acknowledgement/pointer worker results and resumes the same thread with a direct-deliverable prompt. Duplicate exact settlement is asserted idempotent with a counting runner (one introspection only). Remote bridge ACK test now retries explicit durable-busy responses instead of losing settlement evidence.
 <!-- SECTION:NOTES:END -->
