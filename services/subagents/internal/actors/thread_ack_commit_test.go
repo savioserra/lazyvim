@@ -31,13 +31,19 @@ func TestFailedThreadDeliveryBecomesResumable(t *testing.T) {
 	now := time.Unix(1_800_000_000, 0)
 	delivery := application.BridgeDelivery{Sequence: 7, SchedulerEpoch: 3, ActiveLease: 4, ThreadTurn: 1, ThreadID: "thread", DedupeID: "dedupe", CompletionKey: "completion", SourceScope: "scope", Kind: application.BridgeDeliveryPrompt}
 	thread := application.DurableAgentThread{SchemaVersion: application.DurableAgentThreadSchemaV1, ThreadID: "thread", State: application.AgentThreadAwaitingAgentSettled, Turn: 1, ActiveDeliverySequence: 7, CompletionKey: "completion", PendingPrompt: []byte("prompt")}
-	a := &AgentActor{id: "agent", threads: map[string]application.DurableAgentThread{"thread": thread}, threadScheduler: application.DurableThreadScheduler{SchemaVersion: application.DurableThreadSchedulerSchemaV1, AgentID: "agent", ActiveThreadID: "thread", Epoch: 3, ActiveLease: 4}, bridgeDeliveries: []application.BridgeDelivery{delivery}, deliverySources: map[uint64]string{7: "key"}, committedAcks: map[uint64]application.DurableBridgeAckRecord{}, threadClock: func() time.Time { return now }}
-	ack := &application.BridgeDeliveryAck{Sequence: 7, DedupeID: "dedupe", ThreadID: "thread", SchedulerEpoch: 3, ActiveLease: 4, ThreadTurn: 1, BridgeRunCounter: 5, Delivered: false, Reason: "delivery failed"}
+	a := &AgentActor{id: "agent", threads: map[string]application.DurableAgentThread{"thread": thread}, threadScheduler: application.DurableThreadScheduler{SchemaVersion: application.DurableThreadSchedulerSchemaV1, AgentID: "agent", ActiveThreadID: "thread", Epoch: 3, ActiveLease: 4}, bridgeDeliveries: []application.BridgeDelivery{delivery}, deliverySources: map[uint64]string{7: "key"}, committedAcks: map[uint64]application.DurableBridgeAckRecord{}, bridgeRunCounterHighWater: 5, threadClock: func() time.Time { return now }}
+	ack := &application.BridgeDeliveryAck{Sequence: 7, DedupeID: "dedupe", Kind: "prompt", SourceScope: "scope", CompletionKey: "completion", ThreadID: "thread", SchedulerEpoch: 3, ActiveLease: 4, ThreadTurn: 1, Delivered: false, Reason: "delivery failed before model run"}
+	if !a.validAckIdentity(ack, &delivery) {
+		t.Fatal("exact pre-run failure acknowledgement was rejected")
+	}
 	if !a.commitThreadAck(ack, delivery, 0, application.BridgeIntentResult{Accepted: true, Reason: ack.Reason}) {
 		t.Fatal("failed delivery evidence was rejected")
 	}
 	resumable := a.threads["thread"]
 	if resumable.State != application.AgentThreadResumable || a.threadScheduler.ActiveThreadID != "" || len(a.threadScheduler.Resumable) != 1 || !resumable.NextAttempt.Equal(now.Add(time.Second)) {
 		t.Fatalf("failed delivery was not durably resumable: %#v %#v", resumable, a.threadScheduler)
+	}
+	if a.bridgeRunCounterHighWater != 5 {
+		t.Fatalf("pre-run failure reset accepted run high-water: %d", a.bridgeRunCounterHighWater)
 	}
 }

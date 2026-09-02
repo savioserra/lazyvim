@@ -3414,10 +3414,23 @@ func (a *AgentActor) ackIdentityRejection(message *application.BridgeDeliveryAck
 		if message.ThreadID != a.threadScheduler.ActiveThreadID || message.SchedulerEpoch != a.threadScheduler.Epoch || message.ActiveLease != a.threadScheduler.ActiveLease {
 			return "active-lease"
 		}
-		if message.BridgeRunCounter == 0 || message.BridgeRunCounter <= a.bridgeRunCounterHighWater {
+		if message.Delivered {
+			if message.BridgeRunCounter == 0 || message.BridgeRunCounter <= a.bridgeRunCounterHighWater {
+				return "run-counter"
+			}
+			if !message.AgentEndObserved || !message.AgentSettledObserved {
+				return "settlement"
+			}
+		} else if message.BridgeRunCounter == 0 {
+			// A prompt can fail before any Pi model run starts. Its exact fenced
+			// delivery identity is still authoritative failure evidence, but it
+			// must not claim settlement or reset the accepted run high-water.
+			if message.AgentEndObserved || message.AgentSettledObserved {
+				return "settlement"
+			}
+		} else if message.BridgeRunCounter <= a.bridgeRunCounterHighWater {
 			return "run-counter"
-		}
-		if message.Delivered && (!message.AgentEndObserved || !message.AgentSettledObserved) {
+		} else if message.AgentEndObserved != message.AgentSettledObserved {
 			return "settlement"
 		}
 	}
@@ -3577,7 +3590,9 @@ func (a *AgentActor) commitThreadAck(message *application.BridgeDeliveryAck, del
 	a.threads[thread.ThreadID] = thread
 	a.bridgeDeliveries = append(a.bridgeDeliveries[:deliveryIndex], a.bridgeDeliveries[deliveryIndex+1:]...)
 	delete(a.deliverySources, delivery.Sequence)
-	a.bridgeRunCounterHighWater = message.BridgeRunCounter
+	if message.BridgeRunCounter > a.bridgeRunCounterHighWater {
+		a.bridgeRunCounterHighWater = message.BridgeRunCounter
+	}
 	a.retainCommittedAck(message, delivery, result)
 	return true
 }
