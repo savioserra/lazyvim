@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 06:10'
-updated_date: '2026-09-02 07:26'
+updated_date: '2026-09-02 07:41'
 labels: []
 dependencies:
   - TASK-22.1
@@ -42,4 +42,6 @@ Implemented first focused slice on main: required exact provider/model validatio
 Implemented second focused slice: additive protobuf thread_id/scheduler_epoch/active_lease/thread_turn on deliveries and settlement evidence on ACKs; hosted bridge echoes daemon thread identity and commits a bridge-local monotonic run counter with exact agent_end/agent_settled evidence; legacy wire frames remain decodable. Added daemon-local typed attempt/outcome contracts and an injectable Pi RPC runner with exact model, no session/tools/extensions/skills/templates/project trust, proper long-lived stdin through agent_settled, bounded RPC transport, strict duplicate/unknown/missing/trailing-key rejection, state/confidence/class validation, policy redaction, timeout, and process cleanup. Full service race/vet/codegen/protocol and 28 hosted handler tests pass. Extra root actor/bridge tests pass except known environment-only tmux smoke renderer launch and a direct Node TypeScript-enum loader invocation; canonical tsx protocol/bridge suites pass.
 
 Architect readiness Ask 99 arrived after implementation and its five ambiguities were reconciled: actual bounded RPC JSONL is used; exact isolation includes no-session/no-tools/no-extensions/no-skills/no-prompt-templates/no-approve; active lease is monotonic uint64; managed model is openai-codex/gpt-5.6-sol; settlement rides the exact delivery ACK. Follow-up hardening strips inherited actor/bridge/tmux/SSH/provider-key environment while preserving owner Pi HOME/config/auth-file authority, and adds BOM/invalid-UTF8/oversize/credential-path coverage plus capability/service documentation.
+
+Independent review Ask 101 blocked initial implementation. Corrections now enforce exact thread/delivery/epoch/lease/turn settlement identity in AgentActor, require settled evidence and monotonic bridge run counters for delivered thread prompts, persist the full tuple in gap and committed ACK records/high-water, reject duplicate collisions and stale counters, and validate durable gap records against retained deliveries. Hosted replay markers now persist and replay the exact settlement tuple; thread replay fails closed if evidence is missing. RPC drains stdout through EOF after settlement, rejects frames after settlement and multiple assistant finals. Added actor/state collision tests and real bridge wire replay assertions.
 <!-- SECTION:NOTES:END -->

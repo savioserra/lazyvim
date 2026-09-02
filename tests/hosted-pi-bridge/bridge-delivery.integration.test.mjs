@@ -150,6 +150,13 @@ function startMockDaemon() {
           kind: value.kind,
           sourceScope: value.sourceScope,
           completionKey: value.completionKey,
+          threadId: value.threadId,
+          schedulerEpoch: value.schedulerEpoch,
+          activeLease: value.activeLease,
+          threadTurn: value.threadTurn,
+          bridgeRunCounter: value.bridgeRunCounter,
+          agentEndObserved: value.agentEndObserved,
+          agentSettledObserved: value.agentSettledObserved,
         });
         if (value.dedupeId === "dedupe-rotated" && request.agentFence !== daemon.currentFence) {
           daemon.staleRejections += 1;
@@ -226,6 +233,10 @@ function promptDelivery(sequence, dedupeId, promptText) {
     target: { stableId: "hosted-agent-int", displayName: "Integration Reviewer", role: "CODE REVIEWER" },
     sourceScope: `scope-token-${sequence}`,
     completionKey: `hosted-agent-int:${sequence}:terminal:manager:request-${sequence}:${dedupeId}:chain-${sequence}:1`,
+    threadId: `thread-${sequence}`,
+    schedulerEpoch: BigInt(sequence),
+    activeLease: BigInt(sequence + 10),
+    threadTurn: 1n,
   });
 }
 
@@ -311,11 +322,13 @@ test("the real bridge delivery path acknowledges prompts end to end", async (t) 
   assert.equal(happyAck.kind, "prompt");
   assert.equal(happyAck.sourceScope, "scope-token-1");
   assert.equal(happyAck.completionKey, "hosted-agent-int:1:terminal:manager:request-1:dedupe-1:chain-1:1");
+  assert.deepEqual({ threadId: happyAck.threadId, schedulerEpoch: happyAck.schedulerEpoch, activeLease: happyAck.activeLease, threadTurn: happyAck.threadTurn, bridgeRunCounter: happyAck.bridgeRunCounter, agentEndObserved: happyAck.agentEndObserved, agentSettledObserved: happyAck.agentSettledObserved }, { threadId: "thread-1", schedulerEpoch: 1n, activeLease: 11n, threadTurn: 1n, bridgeRunCounter: 1n, agentEndObserved: true, agentSettledObserved: true });
   assert.equal(daemon.ackCursor, 1n, "accepted acknowledgement must advance the daemon cursor");
   const marker = entries.find((entry) => entry.customType === "hosted-pi-delivery-marker" && entry.data?.dedupeId === "dedupe-1");
   assert.ok(marker, "successful prompt acknowledgement must persist a delivery marker");
   assert.equal(marker.data.sequence, "1");
   assert.equal(marker.data.kind, 4);
+  assert.deepEqual({ bridgeRunCounter: marker.data.bridgeRunCounter, agentEndObserved: marker.data.agentEndObserved, agentSettledObserved: marker.data.agentSettledObserved }, { bridgeRunCounter: "1", agentEndObserved: true, agentSettledObserved: true });
 
   // Scenario B: an agent run that produces no assistant answer must terminate
   // the task with exactly one failed acknowledgement so the cursor advances.
@@ -342,6 +355,7 @@ test("the real bridge delivery path acknowledges prompts end to end", async (t) 
   const [replayedAck] = daemon.acks.filter((ack) => ack.sequence === 1n).slice(1);
   assert.equal(replayedAck.delivered, true);
   assert.match(replayedAck.reason, /replayed/);
+  assert.deepEqual({ threadId: replayedAck.threadId, schedulerEpoch: replayedAck.schedulerEpoch, activeLease: replayedAck.activeLease, threadTurn: replayedAck.threadTurn, bridgeRunCounter: replayedAck.bridgeRunCounter, agentEndObserved: replayedAck.agentEndObserved, agentSettledObserved: replayedAck.agentSettledObserved }, { threadId: happyAck.threadId, schedulerEpoch: happyAck.schedulerEpoch, activeLease: happyAck.activeLease, threadTurn: happyAck.threadTurn, bridgeRunCounter: happyAck.bridgeRunCounter, agentEndObserved: true, agentSettledObserved: true });
   assert.equal(sentUserMessages.length, 2, "a replayed prompt must never be injected twice");
   await new Promise((resolve) => setTimeout(resolve, 120));
   assert.equal(daemon.acks.length, 3, "the replay produced exactly one additional acknowledgement");

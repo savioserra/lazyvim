@@ -122,6 +122,8 @@ func TestParseIntrospectionRPCRejectsUnsettledToolAndOversizeStreams(t *testing.
 		`{"type":"response","command":"prompt","success":true}` + "\n" + assistant + "\n",
 		`{"type":"response","command":"prompt","success":true}` + "\n" + `{"type":"tool_execution_start"}` + "\n" + `{"type":"agent_settled"}` + "\n",
 		`{"type":"response","command":"prompt","success":false}` + "\n" + `{"type":"agent_settled"}` + "\n",
+		`{"type":"response","command":"prompt","success":true}` + "\n" + assistant + "\n" + assistant + "\n" + `{"type":"agent_settled"}` + "\n",
+		`{"type":"response","command":"prompt","success":true}` + "\n" + assistant + "\n" + `{"type":"agent_settled"}` + "\n" + `{"type":"agent_end","messages":[],"willRetry":false}` + "\n",
 	} {
 		if _, err := parseIntrospectionRPC([]byte(stream)); !errors.Is(err, ErrIntrospectionInvalidOutput) {
 			t.Fatalf("unsafe RPC stream was accepted: %v", err)

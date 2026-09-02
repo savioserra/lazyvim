@@ -109,10 +109,10 @@ func (r *PiRPCIntrospectionRunner) Run(parent context.Context, input application
 		_ = cmd.Wait()
 		return application.ThreadIntrospectionResult{}, fmt.Errorf("%w: prompt write", ErrIntrospectionUnavailable)
 	}
-	stream, readErr := readIntrospectionRPCUntilSettled(stdout)
-	// RPC mode is intentionally long-lived. Close stdin only after the exact
-	// agent_settled frame so Pi performs its documented shutdown without
-	// truncating the classifier turn.
+	stream, readErr := readIntrospectionRPC(stdout, func() { _ = stdin.Close() })
+	// RPC mode is intentionally long-lived. readIntrospectionRPC closes stdin
+	// only after the exact agent_settled frame, then drains stdout through EOF
+	// so trailing or duplicate frames cannot evade strict validation.
 	_ = stdin.Close()
 	waitErr := cmd.Wait()
 	if readErr != nil {
@@ -179,9 +179,10 @@ func (w *boundedWriter) Write(value []byte) (int, error) {
 	return w.Buffer.Write(value)
 }
 
-func readIntrospectionRPCUntilSettled(source io.Reader) ([]byte, error) {
+func readIntrospectionRPC(source io.Reader, onSettled func()) ([]byte, error) {
 	reader := bufio.NewReaderSize(io.LimitReader(source, maxIntrospectionRPCBytes+1), 16*1024)
 	var stream bytes.Buffer
+	settled := false
 	for {
 		line, err := reader.ReadBytes('\n')
 		if len(line) > 0 {
@@ -193,12 +194,16 @@ func readIntrospectionRPCUntilSettled(source io.Reader) ([]byte, error) {
 			var frame struct {
 				Type string `json:"type"`
 			}
-			if rejectDuplicateJSONKeys(trimmed) == nil && json.Unmarshal(trimmed, &frame) == nil && frame.Type == "agent_settled" {
-				return stream.Bytes(), nil
+			if rejectDuplicateJSONKeys(trimmed) == nil && json.Unmarshal(trimmed, &frame) == nil && frame.Type == "agent_settled" && !settled {
+				settled = true
+				onSettled()
 			}
 		}
 		if err != nil {
 			if errors.Is(err, io.EOF) {
+				if settled {
+					return stream.Bytes(), nil
+				}
 				return nil, fmt.Errorf("%w: rpc ended before settlement", ErrIntrospectionInvalidOutput)
 			}
 			return nil, fmt.Errorf("%w: rpc read", ErrIntrospectionUnavailable)
@@ -228,6 +233,7 @@ func parseIntrospectionRPC(stream []byte) (string, error) {
 	}
 	lines := bytes.Split(stream, []byte{'\n'})
 	promptAccepted, settled := false, false
+	assistantMessages := 0
 	lastAssistant := ""
 	for index, line := range lines {
 		if len(line) == 0 {
@@ -243,6 +249,9 @@ func parseIntrospectionRPC(stream []byte) (string, error) {
 		if err := rejectDuplicateJSONKeys(line); err != nil || json.Unmarshal(line, &frame) != nil || frame.Type == "" {
 			return "", fmt.Errorf("%w: malformed rpc frame", ErrIntrospectionInvalidOutput)
 		}
+		if settled {
+			return "", fmt.Errorf("%w: rpc frame after settlement", ErrIntrospectionInvalidOutput)
+		}
 		switch frame.Type {
 		case "response":
 			if frame.Command != "prompt" || frame.Success == nil || !*frame.Success {
@@ -254,8 +263,9 @@ func parseIntrospectionRPC(stream []byte) (string, error) {
 			if len(frame.Message) == 0 || json.Unmarshal(frame.Message, &message) != nil || message.Role != "assistant" {
 				continue
 			}
-			if message.StopReason != "stop" {
-				return "", fmt.Errorf("%w: assistant stop reason", ErrIntrospectionInvalidOutput)
+			assistantMessages++
+			if assistantMessages != 1 || message.StopReason != "stop" {
+				return "", fmt.Errorf("%w: assistant final cardinality", ErrIntrospectionInvalidOutput)
 			}
 			var text strings.Builder
 			for _, item := range message.Content {

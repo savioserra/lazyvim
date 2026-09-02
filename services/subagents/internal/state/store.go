@@ -377,7 +377,7 @@ func validateRecord(r application.DurableHostedRecord) error {
 		}
 		scopeKeys[scope.Key] = struct{}{}
 	}
-	deliveries := make(map[uint64]struct{}, len(r.AgentState.BridgeDeliveries))
+	deliveries := make(map[uint64]application.BridgeDelivery, len(r.AgentState.BridgeDeliveries))
 	for _, delivery := range r.AgentState.BridgeDeliveries {
 		if delivery.Sequence == 0 || delivery.DedupeID == "" {
 			return errors.New("durable delivery identity is invalid")
@@ -385,7 +385,7 @@ func validateRecord(r application.DurableHostedRecord) error {
 		if _, duplicate := deliveries[delivery.Sequence]; duplicate {
 			return errors.New("duplicate durable delivery sequence")
 		}
-		deliveries[delivery.Sequence] = struct{}{}
+		deliveries[delivery.Sequence] = delivery
 		key, exists := r.AgentState.DeliverySources[delivery.Sequence]
 		if !exists {
 			return errors.New("durable delivery source is missing")
@@ -397,6 +397,17 @@ func validateRecord(r application.DurableHostedRecord) error {
 	if len(deliveries) != len(r.AgentState.DeliverySources) {
 		return errors.New("durable delivery source cardinality mismatch")
 	}
+	for _, record := range r.AgentState.AckGapBuffer {
+		delivery, exists := deliveries[record.Sequence]
+		if !exists || !validDurableThreadAck(record) || record.ThreadID != delivery.ThreadID || record.SchedulerEpoch != delivery.SchedulerEpoch || record.ActiveLease != delivery.ActiveLease || record.ThreadTurn != delivery.ThreadTurn {
+			return errors.New("durable acknowledgement gap thread identity mismatch")
+		}
+	}
+	for _, record := range r.AgentState.CommittedAcks {
+		if !validDurableThreadAck(record) {
+			return errors.New("durable committed acknowledgement thread identity mismatch")
+		}
+	}
 	for _, value := range []string{r.AgentID, r.Session.SessionID, r.Session.GenerationID, r.Session.Caller, r.Session.CredentialFile, r.LaunchSpec.RuntimeID, r.LaunchSpec.TmuxSession, r.LaunchSpec.TmuxWindow, r.LaunchSpec.PiSessionDirectory, r.LaunchSpec.PiSessionName, r.RuntimeConfig.ProjectDirectory} {
 		if value == "" || len(value) > 4096 || value != strings.TrimSpace(value) || strings.ContainsAny(value, "\x00\r\n") {
 			return errors.New("durable hosted record contains invalid text")
@@ -406,4 +417,14 @@ func validateRecord(r application.DurableHostedRecord) error {
 		return errors.New("durable hosted paths must be absolute")
 	}
 	return nil
+}
+
+func validDurableThreadAck(record application.DurableBridgeAckRecord) bool {
+	if record.ThreadID == "" {
+		return record.SchedulerEpoch == 0 && record.ActiveLease == 0 && record.ThreadTurn == 0 && record.BridgeRunCounter == 0 && !record.AgentEndObserved && !record.AgentSettledObserved
+	}
+	if record.SchedulerEpoch == 0 || record.ActiveLease == 0 || record.ThreadTurn == 0 || record.BridgeRunCounter == 0 {
+		return false
+	}
+	return !record.Delivered || (record.AgentEndObserved && record.AgentSettledObserved)
 }

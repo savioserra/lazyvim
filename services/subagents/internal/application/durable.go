@@ -111,40 +111,47 @@ type DurablePendingCompletion struct {
 }
 
 type DurableAgentState struct {
-	Revision, CommandSequence, Fence, BridgeFence, BridgeSequence, BridgeLeaseToken uint64
-	BridgeReady, BridgeDeclaredReady                                                bool
-	Attachments                                                                     []DurableAttachment
-	Revoked                                                                         []string
-	BridgeSession, BridgeGeneration, BridgePrincipal, BridgeHandle, BridgePiSession string
-	BridgeDeliveries                                                                []BridgeDelivery
-	DeliverySources                                                                 map[uint64]string
-	MutationScopes                                                                  []DurableMutationScope
-	ActorMessageHighWater                                                           uint64
-	SourceOutbox                                                                    []DurableActorTaskOutboxItem
-	SourceTaskHistory                                                               []ActorTaskCompleted
-	SourceMutationReceipts                                                          []DurableSourceMutationReceipt
-	ReceivedTaskCompletions                                                         []ActorTaskCompleted
-	TaskCreditEpoch                                                                 uint64
-	TaskCreditReservations                                                          []DurableTaskCreditReservation
-	AckCursor                                                                       uint64
-	AckGapBuffer                                                                    []DurableBridgeAckRecord
-	CommittedAcks                                                                   []DurableBridgeAckRecord
-	TaskSources                                                                     map[uint64]DurableActorRef
-	CompletionTellPending                                                           []DurablePendingCompletion
+	Revision, CommandSequence, Fence, BridgeFence, BridgeSequence, BridgeLeaseToken, BridgeRunCounterHighWater uint64
+	BridgeReady, BridgeDeclaredReady                                                                           bool
+	Attachments                                                                                                []DurableAttachment
+	Revoked                                                                                                    []string
+	BridgeSession, BridgeGeneration, BridgePrincipal, BridgeHandle, BridgePiSession                            string
+	BridgeDeliveries                                                                                           []BridgeDelivery
+	DeliverySources                                                                                            map[uint64]string
+	MutationScopes                                                                                             []DurableMutationScope
+	ActorMessageHighWater                                                                                      uint64
+	SourceOutbox                                                                                               []DurableActorTaskOutboxItem
+	SourceTaskHistory                                                                                          []ActorTaskCompleted
+	SourceMutationReceipts                                                                                     []DurableSourceMutationReceipt
+	ReceivedTaskCompletions                                                                                    []ActorTaskCompleted
+	TaskCreditEpoch                                                                                            uint64
+	TaskCreditReservations                                                                                     []DurableTaskCreditReservation
+	AckCursor                                                                                                  uint64
+	AckGapBuffer                                                                                               []DurableBridgeAckRecord
+	CommittedAcks                                                                                              []DurableBridgeAckRecord
+	TaskSources                                                                                                map[uint64]DurableActorRef
+	CompletionTellPending                                                                                      []DurablePendingCompletion
 }
 
 type DurableBridgeAckRecord struct {
-	Sequence      uint64             `json:"sequence"`
-	DedupeID      string             `json:"dedupe_id"`
-	Kind          BridgeDeliveryKind `json:"kind"`
-	SourceScope   string             `json:"source_scope"`
-	CompletionKey string             `json:"completion_key"`
-	RuntimeID     string             `json:"runtime_id"`
-	Incarnation   uint64             `json:"incarnation"`
-	PiSessionID   string             `json:"pi_session_id"`
-	Delivered     bool               `json:"delivered"`
-	Reason        string             `json:"reason"`
-	Result        []byte             `json:"result,omitempty"`
+	Sequence             uint64             `json:"sequence"`
+	DedupeID             string             `json:"dedupe_id"`
+	ThreadID             string             `json:"thread_id,omitempty"`
+	SchedulerEpoch       uint64             `json:"scheduler_epoch,omitempty"`
+	ActiveLease          uint64             `json:"active_lease,omitempty"`
+	ThreadTurn           uint64             `json:"thread_turn,omitempty"`
+	BridgeRunCounter     uint64             `json:"bridge_run_counter,omitempty"`
+	AgentEndObserved     bool               `json:"agent_end_observed,omitempty"`
+	AgentSettledObserved bool               `json:"agent_settled_observed,omitempty"`
+	Kind                 BridgeDeliveryKind `json:"kind"`
+	SourceScope          string             `json:"source_scope"`
+	CompletionKey        string             `json:"completion_key"`
+	RuntimeID            string             `json:"runtime_id"`
+	Incarnation          uint64             `json:"incarnation"`
+	PiSessionID          string             `json:"pi_session_id"`
+	Delivered            bool               `json:"delivered"`
+	Reason               string             `json:"reason"`
+	Result               []byte             `json:"result,omitempty"`
 }
 
 type DurableAskCorrelation struct {

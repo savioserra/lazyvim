@@ -214,41 +214,42 @@ type AgentActor struct {
 	projectionSubscriptionDelay time.Duration
 	projectionMailbox           func() actor.Mailbox
 
-	registryPID             *actor.PID
-	runtimePID              *actor.PID
-	runtimeFailure          string
-	bridgeSession           string
-	bridgeGeneration        string
-	bridgePrincipal         string
-	bridgeHandle            string
-	bridgePiSession         string
-	bridgeFence             uint64
-	bridgeLeaseToken        uint64
-	bridgeDeclaredReady     bool
-	bridgeSequence          uint64
-	bridgeEvents            []application.BridgeEvent
-	bridgeDeliveries        []application.BridgeDelivery
-	deliverySources         map[uint64]string
-	taskSources             map[uint64]*actor.PID
-	durableTaskSources      map[uint64]application.DurableActorRef
-	resolvedRefs            map[string]*actor.PID
-	resolvingRefs           map[string]struct{}
-	scopeTokens             map[string]string
-	completionTellPending   map[string]application.DurablePendingCompletion
-	completionTellOrder     []string
-	ackGaps                 map[uint64]application.BridgeDeliveryAck
-	committedAcks           map[uint64]application.DurableBridgeAckRecord
-	committedAckOrder       []uint64
-	ackCursor               uint64
-	taskCompletions         map[string]application.ActorTaskCompleted
-	taskCompletionOrder     []string
-	sourceTaskHistory       map[string]application.ActorTaskCompleted
-	sourceTaskHistoryOrder  []string
-	sourceMutationReceipts  map[string]application.DurableSourceMutationReceipt
-	sourceMutationOrder     []string
-	sourceMutationHighWater uint64
-	sourceOutbox            map[string]application.DurableActorTaskOutboxItem
-	sourceOutboxOrder       []string
+	registryPID               *actor.PID
+	runtimePID                *actor.PID
+	runtimeFailure            string
+	bridgeSession             string
+	bridgeGeneration          string
+	bridgePrincipal           string
+	bridgeHandle              string
+	bridgePiSession           string
+	bridgeFence               uint64
+	bridgeLeaseToken          uint64
+	bridgeDeclaredReady       bool
+	bridgeSequence            uint64
+	bridgeRunCounterHighWater uint64
+	bridgeEvents              []application.BridgeEvent
+	bridgeDeliveries          []application.BridgeDelivery
+	deliverySources           map[uint64]string
+	taskSources               map[uint64]*actor.PID
+	durableTaskSources        map[uint64]application.DurableActorRef
+	resolvedRefs              map[string]*actor.PID
+	resolvingRefs             map[string]struct{}
+	scopeTokens               map[string]string
+	completionTellPending     map[string]application.DurablePendingCompletion
+	completionTellOrder       []string
+	ackGaps                   map[uint64]application.BridgeDeliveryAck
+	committedAcks             map[uint64]application.DurableBridgeAckRecord
+	committedAckOrder         []uint64
+	ackCursor                 uint64
+	taskCompletions           map[string]application.ActorTaskCompleted
+	taskCompletionOrder       []string
+	sourceTaskHistory         map[string]application.ActorTaskCompleted
+	sourceTaskHistoryOrder    []string
+	sourceMutationReceipts    map[string]application.DurableSourceMutationReceipt
+	sourceMutationOrder       []string
+	sourceMutationHighWater   uint64
+	sourceOutbox              map[string]application.DurableActorTaskOutboxItem
+	sourceOutboxOrder         []string
 	// outboxCreditAwaited tracks the single in-flight credit request per
 	// outbox item (taskID -> when the request was fired) so overlapping retry
 	// ticks cannot rotate the target credit epoch while a grant is awaited.
@@ -663,6 +664,7 @@ func (a *AgentActor) bridgeConnect(ctx *actor.ReceiveContext, message *applicati
 	old := a.durableState()
 	a.bridgeSession, a.bridgeGeneration, a.bridgePrincipal, a.bridgePiSession = message.SessionID, message.GenerationID, message.Principal, message.PiSessionID
 	a.bridgeHandle, a.bridgeFence = message.Handle, message.Fence
+	a.bridgeRunCounterHighWater = 0
 	// A new binding starts a fresh acknowledgement scope: acknowledgements
 	// buffered for the retired binding carry its pi-session identity and can
 	// never validate, and the contiguous baseline resets to the live queue.
@@ -692,6 +694,7 @@ func (a *AgentActor) bridgeReplace(ctx *actor.ReceiveContext, message *applicati
 	current.handle, current.fence = message.NewHandle, a.fence
 	a.attachments[key] = current
 	a.bridgeHandle, a.bridgeFence, a.bridgePiSession = current.handle, current.fence, message.NewPiSessionID
+	a.bridgeRunCounterHighWater = 0
 	// The replaced pi-session identity invalidates every buffered
 	// acknowledgement: rebase the acknowledgement scope to the new binding so
 	// its acknowledgements are never buffered behind the retired identity.
@@ -731,6 +734,7 @@ func (a *AgentActor) bridgeLifecycle(ctx *actor.ReceiveContext, message *applica
 	if message.Event == application.BridgeLifecycleSessionShutdown {
 		a.bridgeSession, a.bridgeGeneration, a.bridgePrincipal, a.bridgeHandle, a.bridgePiSession = "", "", "", "", ""
 		a.bridgeFence = 0
+		a.bridgeRunCounterHighWater = 0
 		a.bridgeDeclaredReady = false
 		a.bridgeLeaseToken++
 	}
@@ -791,7 +795,7 @@ func (a *AgentActor) bridgeLeaseExpired(ctx *actor.ReceiveContext, message *appl
 }
 
 func (a *AgentActor) durableState() application.DurableAgentState {
-	state := application.DurableAgentState{Revision: a.revision, CommandSequence: a.commandSequence, Fence: a.fence, BridgeFence: a.bridgeFence, BridgeSequence: a.bridgeSequence, BridgeLeaseToken: a.bridgeLeaseToken, BridgeReady: a.hostedPiRuntime.BridgeReady, BridgeDeclaredReady: a.bridgeDeclaredReady, BridgeSession: a.bridgeSession, BridgeGeneration: a.bridgeGeneration, BridgePrincipal: a.bridgePrincipal, BridgeHandle: a.bridgeHandle, BridgePiSession: a.bridgePiSession, BridgeDeliveries: append([]application.BridgeDelivery(nil), a.bridgeDeliveries...), DeliverySources: make(map[uint64]string, len(a.deliverySources)), TaskSources: make(map[uint64]application.DurableActorRef, len(a.durableTaskSources)), ActorMessageHighWater: a.sourceMutationHighWater}
+	state := application.DurableAgentState{Revision: a.revision, CommandSequence: a.commandSequence, Fence: a.fence, BridgeFence: a.bridgeFence, BridgeSequence: a.bridgeSequence, BridgeLeaseToken: a.bridgeLeaseToken, BridgeReady: a.hostedPiRuntime.BridgeReady, BridgeDeclaredReady: a.bridgeDeclaredReady, BridgeSession: a.bridgeSession, BridgeGeneration: a.bridgeGeneration, BridgePrincipal: a.bridgePrincipal, BridgeHandle: a.bridgeHandle, BridgePiSession: a.bridgePiSession, BridgeDeliveries: append([]application.BridgeDelivery(nil), a.bridgeDeliveries...), DeliverySources: make(map[uint64]string, len(a.deliverySources)), TaskSources: make(map[uint64]application.DurableActorRef, len(a.durableTaskSources)), ActorMessageHighWater: a.sourceMutationHighWater, BridgeRunCounterHighWater: a.bridgeRunCounterHighWater}
 	for sequence, key := range a.deliverySources {
 		state.DeliverySources[sequence] = key
 	}
@@ -831,7 +835,7 @@ func (a *AgentActor) durableState() application.DurableAgentState {
 	}
 	state.AckCursor = a.ackCursor
 	for sequence, ack := range a.ackGaps {
-		state.AckGapBuffer = append(state.AckGapBuffer, application.DurableBridgeAckRecord{Sequence: sequence, DedupeID: ack.DedupeID, Kind: ackDeliveryKind(ack.Kind), SourceScope: ack.SourceScope, CompletionKey: ack.CompletionKey, RuntimeID: ack.RuntimeID, Incarnation: ack.Incarnation, PiSessionID: ack.PiSessionID, Delivered: ack.Delivered, Reason: ack.Reason, Result: append([]byte(nil), ack.Result...)})
+		state.AckGapBuffer = append(state.AckGapBuffer, application.DurableBridgeAckRecord{Sequence: sequence, DedupeID: ack.DedupeID, ThreadID: ack.ThreadID, SchedulerEpoch: ack.SchedulerEpoch, ActiveLease: ack.ActiveLease, ThreadTurn: ack.ThreadTurn, BridgeRunCounter: ack.BridgeRunCounter, AgentEndObserved: ack.AgentEndObserved, AgentSettledObserved: ack.AgentSettledObserved, Kind: ackDeliveryKind(ack.Kind), SourceScope: ack.SourceScope, CompletionKey: ack.CompletionKey, RuntimeID: ack.RuntimeID, Incarnation: ack.Incarnation, PiSessionID: ack.PiSessionID, Delivered: ack.Delivered, Reason: ack.Reason, Result: append([]byte(nil), ack.Result...)})
 	}
 	slices.SortFunc(state.AckGapBuffer, func(l, r application.DurableBridgeAckRecord) int {
 		if l.Sequence < r.Sequence {
@@ -886,6 +890,7 @@ func (a *AgentActor) restoreDurableState(state application.DurableAgentState) {
 	a.bridgeDeclaredReady = state.BridgeDeclaredReady
 	a.hostedPiRuntime.BridgeReady = state.BridgeReady
 	a.bridgeSession, a.bridgeGeneration, a.bridgePrincipal, a.bridgeHandle, a.bridgePiSession = state.BridgeSession, state.BridgeGeneration, state.BridgePrincipal, state.BridgeHandle, state.BridgePiSession
+	a.bridgeRunCounterHighWater = state.BridgeRunCounterHighWater
 	a.bridgeDeliveries = append([]application.BridgeDelivery(nil), state.BridgeDeliveries...)
 	a.deliverySources = make(map[uint64]string, len(state.DeliverySources))
 	for sequence, key := range state.DeliverySources {
@@ -962,7 +967,7 @@ func (a *AgentActor) restoreDurableState(state application.DurableAgentState) {
 	a.ackCursor = state.AckCursor
 	a.ackGaps = make(map[uint64]application.BridgeDeliveryAck, len(state.AckGapBuffer))
 	for _, record := range state.AckGapBuffer {
-		a.ackGaps[record.Sequence] = application.BridgeDeliveryAck{Sequence: record.Sequence, DedupeID: record.DedupeID, Kind: application.BridgeDeliveryKindLabel(record.Kind), RuntimeID: record.RuntimeID, Incarnation: record.Incarnation, PiSessionID: record.PiSessionID, SourceScope: record.SourceScope, CompletionKey: record.CompletionKey, Delivered: record.Delivered, Reason: record.Reason, Result: append([]byte(nil), record.Result...)}
+		a.ackGaps[record.Sequence] = application.BridgeDeliveryAck{Sequence: record.Sequence, DedupeID: record.DedupeID, ThreadID: record.ThreadID, SchedulerEpoch: record.SchedulerEpoch, ActiveLease: record.ActiveLease, ThreadTurn: record.ThreadTurn, BridgeRunCounter: record.BridgeRunCounter, AgentEndObserved: record.AgentEndObserved, AgentSettledObserved: record.AgentSettledObserved, Kind: application.BridgeDeliveryKindLabel(record.Kind), RuntimeID: record.RuntimeID, Incarnation: record.Incarnation, PiSessionID: record.PiSessionID, SourceScope: record.SourceScope, CompletionKey: record.CompletionKey, Delivered: record.Delivered, Reason: record.Reason, Result: append([]byte(nil), record.Result...)}
 	}
 	a.committedAcks = make(map[uint64]application.DurableBridgeAckRecord, len(state.CommittedAcks))
 	a.committedAckOrder = nil
@@ -2900,7 +2905,7 @@ func (a *AgentActor) bridgeDeliveryAck(ctx *actor.ReceiveContext, message *appli
 			respondBridgeAck(ctx, message.Completion, &application.BridgeDeliveryAckResult{Reason: "delivery acknowledgement is not retained", Cursor: a.ackCursor})
 			return
 		}
-		if message.DedupeID != record.DedupeID || message.CompletionKey != record.CompletionKey || message.SourceScope != record.SourceScope || message.Kind != application.BridgeDeliveryKindLabel(record.Kind) || message.RuntimeID != record.RuntimeID || message.Incarnation != record.Incarnation || message.PiSessionID != record.PiSessionID || message.Delivered != record.Delivered {
+		if !bridgeAckMatchesRecord(message, record) {
 			respondBridgeAck(ctx, message.Completion, &application.BridgeDeliveryAckResult{Reason: "delivery acknowledgement identity collision", Cursor: a.ackCursor})
 			return
 		}
@@ -2919,7 +2924,7 @@ func (a *AgentActor) bridgeDeliveryAck(ctx *actor.ReceiveContext, message *appli
 	// ahead of the cursor; a mismatched identity collides and fails closed
 	// without evicting the genuine entry.
 	if buffered, exists := a.ackGaps[message.Sequence]; exists {
-		if message.DedupeID != buffered.DedupeID || message.CompletionKey != buffered.CompletionKey || message.SourceScope != buffered.SourceScope || message.Kind != buffered.Kind || message.RuntimeID != buffered.RuntimeID || message.Incarnation != buffered.Incarnation || message.PiSessionID != buffered.PiSessionID || message.Delivered != buffered.Delivered {
+		if !bridgeAcksMatch(message, &buffered) {
 			respondBridgeAck(ctx, message.Completion, &application.BridgeDeliveryAckResult{Reason: "delivery acknowledgement identity collision", Cursor: a.ackCursor})
 			return
 		}
@@ -3000,11 +3005,26 @@ func (a *AgentActor) rebaseAckCursor(discardBuffered bool) {
 	}
 }
 
+func bridgeAcksMatch(left, right *application.BridgeDeliveryAck) bool {
+	return left != nil && right != nil && left.Sequence == right.Sequence && left.DedupeID == right.DedupeID && left.CompletionKey == right.CompletionKey && left.SourceScope == right.SourceScope && left.Kind == right.Kind && left.RuntimeID == right.RuntimeID && left.Incarnation == right.Incarnation && left.PiSessionID == right.PiSessionID && left.Delivered == right.Delivered && left.ThreadID == right.ThreadID && left.SchedulerEpoch == right.SchedulerEpoch && left.ActiveLease == right.ActiveLease && left.ThreadTurn == right.ThreadTurn && left.BridgeRunCounter == right.BridgeRunCounter && left.AgentEndObserved == right.AgentEndObserved && left.AgentSettledObserved == right.AgentSettledObserved
+}
+
+func bridgeAckMatchesRecord(message *application.BridgeDeliveryAck, record application.DurableBridgeAckRecord) bool {
+	return message != nil && message.Sequence == record.Sequence && message.DedupeID == record.DedupeID && message.CompletionKey == record.CompletionKey && message.SourceScope == record.SourceScope && message.Kind == application.BridgeDeliveryKindLabel(record.Kind) && message.RuntimeID == record.RuntimeID && message.Incarnation == record.Incarnation && message.PiSessionID == record.PiSessionID && message.Delivered == record.Delivered && message.ThreadID == record.ThreadID && message.SchedulerEpoch == record.SchedulerEpoch && message.ActiveLease == record.ActiveLease && message.ThreadTurn == record.ThreadTurn && message.BridgeRunCounter == record.BridgeRunCounter && message.AgentEndObserved == record.AgentEndObserved && message.AgentSettledObserved == record.AgentSettledObserved
+}
+
 func (a *AgentActor) validAckIdentity(message *application.BridgeDeliveryAck, delivery *application.BridgeDelivery) bool {
 	// SourceScope is the opaque server-issued scope token: equality proves the
 	// acknowledgement names the exact scope that issued the delivery without
 	// exposing the underlying identity tuple.
-	if delivery.SourceScope == "" || delivery.CompletionKey == "" || message.DedupeID != delivery.DedupeID || message.Kind != application.BridgeDeliveryKindLabel(delivery.Kind) || message.SourceScope != delivery.SourceScope || message.CompletionKey != delivery.CompletionKey {
+	if delivery.SourceScope == "" || delivery.CompletionKey == "" || message.Sequence != delivery.Sequence || message.DedupeID != delivery.DedupeID || message.Kind != application.BridgeDeliveryKindLabel(delivery.Kind) || message.SourceScope != delivery.SourceScope || message.CompletionKey != delivery.CompletionKey {
+		return false
+	}
+	if delivery.ThreadID == "" {
+		if message.ThreadID != "" || message.SchedulerEpoch != 0 || message.ActiveLease != 0 || message.ThreadTurn != 0 || message.BridgeRunCounter != 0 || message.AgentEndObserved || message.AgentSettledObserved {
+			return false
+		}
+	} else if message.ThreadID != delivery.ThreadID || message.SchedulerEpoch != delivery.SchedulerEpoch || message.ActiveLease != delivery.ActiveLease || message.ThreadTurn != delivery.ThreadTurn || message.BridgeRunCounter == 0 || message.BridgeRunCounter <= a.bridgeRunCounterHighWater || (message.Delivered && (!message.AgentEndObserved || !message.AgentSettledObserved)) {
 		return false
 	}
 	if delivery.DeliveryBackend == "regular" {
@@ -3121,7 +3141,10 @@ func (a *AgentActor) commitAck(ctx *actor.ReceiveContext, message *application.B
 		effect.taskReplyTo = replyTo
 	}
 	burst.commits = append(burst.commits, effect)
-	a.committedAcks[message.Sequence] = application.DurableBridgeAckRecord{Sequence: message.Sequence, DedupeID: message.DedupeID, Kind: deliveryKind, SourceScope: delivery.SourceScope, CompletionKey: delivery.CompletionKey, RuntimeID: message.RuntimeID, Incarnation: message.Incarnation, PiSessionID: message.PiSessionID, Delivered: message.Delivered, Reason: boundedAckReason(message.Reason), Result: append([]byte(nil), result.Result...)}
+	if message.ThreadID != "" {
+		a.bridgeRunCounterHighWater = message.BridgeRunCounter
+	}
+	a.committedAcks[message.Sequence] = application.DurableBridgeAckRecord{Sequence: message.Sequence, DedupeID: message.DedupeID, ThreadID: message.ThreadID, SchedulerEpoch: message.SchedulerEpoch, ActiveLease: message.ActiveLease, ThreadTurn: message.ThreadTurn, BridgeRunCounter: message.BridgeRunCounter, AgentEndObserved: message.AgentEndObserved, AgentSettledObserved: message.AgentSettledObserved, Kind: deliveryKind, SourceScope: delivery.SourceScope, CompletionKey: delivery.CompletionKey, RuntimeID: message.RuntimeID, Incarnation: message.Incarnation, PiSessionID: message.PiSessionID, Delivered: message.Delivered, Reason: boundedAckReason(message.Reason), Result: append([]byte(nil), result.Result...)}
 	a.committedAckOrder = append(a.committedAckOrder, message.Sequence)
 	for len(a.committedAckOrder) > maxCommittedAcks {
 		oldest := a.committedAckOrder[0]
@@ -3259,6 +3282,7 @@ func (a *AgentActor) incarnationRetired(ctx *actor.ReceiveContext, message *appl
 	burst := a.retirePendingBridgeDeliveries(ctx, "hosted runtime incarnation retired")
 	a.bridgeSession, a.bridgeGeneration, a.bridgePrincipal, a.bridgeHandle, a.bridgePiSession = "", "", "", "", ""
 	a.bridgeFence = 0
+	a.bridgeRunCounterHighWater = 0
 	a.bridgeDeclaredReady = false
 	a.bridgeLeaseToken++
 	a.applyRuntimeBinding(message, binding)
@@ -3652,6 +3676,7 @@ func (a *AgentActor) dropSession(ctx *actor.ReceiveContext, message *application
 	if message.SessionID == a.bridgeSession && message.GenerationID == a.bridgeGeneration {
 		a.bridgeSession, a.bridgeGeneration, a.bridgePrincipal, a.bridgeHandle, a.bridgePiSession = "", "", "", "", ""
 		a.bridgeFence = 0
+		a.bridgeRunCounterHighWater = 0
 		a.bridgeDeclaredReady = false
 		a.bridgeLeaseToken++
 		a.hostedPiRuntime.BridgeReady = false

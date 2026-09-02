@@ -6,7 +6,7 @@ import { readFile, lstat } from "node:fs/promises";
 import { Type } from "typebox";
 type Envelope = any;
 let EnvelopeSchema: DescMessage;
-import { bridgeErrorClass, buildActorControl, buildActorMessage, buildIdentityDeliveryAck, communicationKey, CommunicationTimeline, completeHostedEnvironment, drainPages, executeTypedDelivery, invokeTypedDeliveryForAck, missingAckIdentity, PromptTaskCoordinator, registerHostedHandlers, type PromptTaskLifecycleEvent } from "./handlers.ts";
+import { bridgeErrorClass, buildActorControl, buildActorMessage, buildIdentityDeliveryAck, communicationKey, CommunicationTimeline, completeHostedEnvironment, drainPages, executeTypedDelivery, invokeTypedDeliveryForAck, missingAckIdentity, PromptTaskCoordinator, registerHostedHandlers, type PromptTaskLifecycleEvent, type ThreadSettlementEvidence } from "./handlers.ts";
 import { ClientMutationSequencer } from "./mutations.ts";
 import { bridgeDiagnostic, incomingControl, incomingNote, incomingRequestText, legacyCommunicationLine, outgoingExchange, peerView, renderCommunicationCard, type CommunicationView } from "./communication-ui.ts";
 
@@ -18,7 +18,7 @@ const textDecoder = new TextDecoder("utf-8", { fatal: true });
 
 type CredentialFile = { credential_b64: string };
 type CommunicationEntry = { key: string; line?: string; view?: CommunicationView };
-type DeliveryMarker = { dedupeId: string; sequence: string; kind?: number | string };
+type DeliveryMarker = { dedupeId: string; sequence: string; kind?: number | string; bridgeRunCounter?: string; agentEndObserved?: boolean; agentSettledObserved?: boolean };
 type Binding = {
   endpoint: string;
   sessionId: string;
@@ -164,6 +164,7 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
   const targetFences = new Map<string, CachedTargetFence>();
   const subscriptions = new Set<string>();
   const delivered = new Set<string>();
+  const promptSettlements = new Map<string, ThreadSettlementEvidence>();
   let piSessionId = "";
   let reconnecting: Promise<void> | undefined;
   let heartbeatTimer: NodeJS.Timeout | undefined;
@@ -212,7 +213,7 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
       throw new Error(rejection);
     }
     logBridgeDiagnostic(`prompt ack · agent=${boundedPublic(current.agentId, 48)} · sequence=${pending.delivery.sequence} · outcome=accepted · delivered=${deliveredSuccessfully}`);
-    if (deliveredSuccessfully) deliveredPrompt(pending.delivery.dedupeId, pending.delivery.sequence);
+    if (deliveredSuccessfully) deliveredPrompt(pending.delivery.dedupeId, pending.delivery.sequence, settlement);
   }, (event) => logPromptLifecycle(event));
 
   const list = async () => {
@@ -306,6 +307,7 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
   pi.on("session_start", async (_event, ctx) => {
     bridgeShuttingDown = false;
     extensionContext = ctx;
+    promptSettlements.clear();
     for (const entry of ctx.sessionManager.getEntries()) {
       if (entry.type !== "custom") continue;
       if (entry.customType === "hosted-pi-delivery-marker") {
@@ -313,6 +315,10 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
         if (typeof data?.dedupeId === "string") {
           delivered.add(data.dedupeId);
           try { lastAckedSequence = maxBigInt(lastAckedSequence, BigInt(data.sequence ?? "0")); } catch { /* ignore malformed legacy marker */ }
+          try {
+            const bridgeRunCounter = BigInt(data.bridgeRunCounter ?? "0");
+            if (bridgeRunCounter > 0n && data.agentEndObserved === true && data.agentSettledObserved === true) promptSettlements.set(data.dedupeId, { bridgeRunCounter, agentEndObserved: true, agentSettledObserved: true });
+          } catch { /* malformed settlement evidence cannot authorize replay */ }
         }
         continue;
       }
@@ -495,16 +501,19 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
     return response;
   }
 
-  function deliveredPrompt(dedupeId: string, sequence: bigint) {
+  function deliveredPrompt(dedupeId: string, sequence: bigint, settlement: ThreadSettlementEvidence) {
     delivered.add(dedupeId);
+    promptSettlements.set(dedupeId, settlement);
     lastAckedSequence = maxBigInt(lastAckedSequence, sequence);
     if (delivered.size > 512) delivered.delete(delivered.values().next().value!);
-    appendDeliveryMarker(dedupeId, sequence, 4);
+    appendDeliveryMarker(dedupeId, sequence, 4, settlement);
   }
 
   async function acknowledgeReplayedPrompt(delivery: any, fence: TargetFence) {
     const current = requiredBinding(binding);
-    const ack = buildIdentityDeliveryAck(current.agentId, { runtimeId: current.runtimeId, incarnation: current.incarnation, piSessionId }, delivery, true, "prompt replayed after successful acknowledgement");
+    const settlement = promptSettlements.get(delivery.dedupeId);
+    if (delivery.threadId && !settlement) throw new Error("thread prompt replay settlement evidence is unavailable");
+    const ack = buildIdentityDeliveryAck(current.agentId, { runtimeId: current.runtimeId, incarnation: current.incarnation, piSessionId }, delivery, true, "prompt replayed after successful acknowledgement", new Uint8Array(), settlement);
     const response = await requiredClient(client).request("bridgeDeliveryAckRequest", BridgeDeliveryAckRequestSchema, ack, fence);
     if (response.payload.case !== "bridgeDeliveryAckResponse" || !response.payload.value.accepted) {
       logBridgeDiagnostic(`prompt ack · agent=${boundedPublic(current.agentId, 48)} · sequence=${delivery.sequence} · outcome=rejected · class=${bridgeErrorClass(new Error(String(response.payload.value?.reason || "")))}`, true);
@@ -514,8 +523,8 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
     lastAckedSequence = maxBigInt(lastAckedSequence, delivery.sequence);
   }
 
-  function appendDeliveryMarker(dedupeId: string, sequence: bigint, kind?: number | string) {
-    pi.appendEntry<DeliveryMarker>("hosted-pi-delivery-marker", { dedupeId, sequence: sequence.toString(), kind });
+  function appendDeliveryMarker(dedupeId: string, sequence: bigint, kind?: number | string, settlement?: ThreadSettlementEvidence) {
+    pi.appendEntry<DeliveryMarker>("hosted-pi-delivery-marker", { dedupeId, sequence: sequence.toString(), kind, bridgeRunCounter: settlement?.bridgeRunCounter.toString(), agentEndObserved: settlement?.agentEndObserved, agentSettledObserved: settlement?.agentSettledObserved });
   }
 
   function restoreDeliveryMarkerFromKey(key: string) {
