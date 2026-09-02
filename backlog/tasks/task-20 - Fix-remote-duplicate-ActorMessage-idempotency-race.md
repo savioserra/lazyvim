@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 04:30'
-updated_date: '2026-09-02 05:16'
+updated_date: '2026-09-02 05:35'
 labels: []
 dependencies: []
 references:
@@ -41,6 +41,9 @@ A full `go test -race ./...` run intermittently failed `TestRemoteHostedOrdinary
 
 6. Close the terminal-history gap before integration: retain a durable immutable source mutation fingerprint and authoritative receipt across target acceptance/outbox retirement and terminal completion; include request, dedupe, chain, sequence, target, mode, capability, and payload digest.
 7. Prove identical and changed-payload duplicates both before completion and after terminal retention/restart, including legacy records whose fingerprint cannot be proven.
+
+8. Pin active accepted receipts: eviction may remove only terminal receipts. Before a new admission, if the bounded receipt set is full and every entry is active, return explicit backpressure before mutating high-water/outbox/durable state.
+9. Test >retention-limit active admissions, terminal-first eviction, duplicate replay at capacity, restart restoration, and capacity recovery after terminal completion.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
@@ -55,4 +58,6 @@ PM code audit of a21b62b found the implementation only validates payload while s
 Independent review sequence 63 rejected 9c08c38/a21b62b with two High findings: terminal sourceTaskHistory replays before comparing immutable fingerprint and actorTaskID omits request ID; sameSourceOutboxMutation omits dedupe/chain. Medium test gap: no post-terminal, restart, changed-request, changed-dedupe/chain, or exactly-once placement delivery proof; shared remote fixture also weakens isolation. These findings match the PM audit and are mandatory inputs to correction sequence 64.
 
 Corrected writer implementation integrated on main as 88d603c and 013adc7. Durable SourceMutationReceipts now retain full request/dedupe/chain/sequence/target/mode/capability/payload fingerprint plus authoritative result across outbox retirement and terminal/restart; legacy digest-less history fails closed. PM verification passed actor receipt -race count=20, state bound -race count=20, remote duplicate/concurrent -race count=20, hosted gateway -race count=20, full codegen/go race/vet/protocol, actor/bridge 79/79, capabilities, diff, and scratch apply. Independent final review sequence 66 remains open; task not finalized.
+
+Final independent review sequence 66 closed all prior High findings but rejected final approval on one Medium issue: retainSourceMutationReceipt blindly FIFO-evicts accepted AwaitingAck receipts at maxCommandResults. An active receipt must remain replayable until terminal; boundedness requires terminal-only eviction plus admission backpressure when every retained receipt is active.
 <!-- SECTION:NOTES:END -->
