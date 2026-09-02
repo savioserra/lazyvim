@@ -23,7 +23,7 @@ export type RegularDelivery = {
   completionKey?: string;
 };
 export type RegularFence = { handle: string; fence: bigint };
-export type RegularDeliveryMarker = { key: string; stage: "injected" | "acked"; kind: number };
+export type RegularDeliveryMarker = { key: string; stage: "injected" | "settled" | "acked"; kind: number; delivered?: boolean; answer?: string; reason?: string };
 export type RegularDeliveryMessage = { key: string; renderEnvelope: ActorClientRenderEnvelope; view?: CommunicationView };
 
 type Pending = { delivery: RegularDelivery; fence: RegularFence; outcome?: { delivered: boolean; answer: string; reason: string }; lastRunMessages: unknown[]; timer?: NodeJS.Timeout };
@@ -42,12 +42,17 @@ export function regularDeliveryKey(delivery: Pick<RegularDelivery, "completionKe
 const ACK_BUSY_RETRIES = 5;
 const ACK_BUSY_DELAY_MS = 25;
 
+export class RegularAckRejected extends Error {
+  readonly rejectionCode: string;
+  constructor(rejectionCode: string, message: string) { super(message); this.name = "RegularAckRejected"; this.rejectionCode = rejectionCode; }
+}
+function ackRejectionCode(error: unknown): string { return error instanceof RegularAckRejected ? error.rejectionCode : ""; }
+
 async function acknowledgeAfterPersistence(fence: RegularFence, attempt: (fence: RegularFence) => Promise<void>): Promise<void> {
   for (let retry = 0; ; retry++) {
     try { await attempt(fence); return; }
     catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message !== "durable persistence is busy" || retry >= ACK_BUSY_RETRIES) throw error;
+      if (ackRejectionCode(error) !== "persistence_busy" || retry >= ACK_BUSY_RETRIES) throw error;
       await new Promise((resolve) => setTimeout(resolve, ACK_BUSY_DELAY_MS * (retry + 1)));
     }
   }
@@ -56,8 +61,8 @@ async function acknowledgeAfterPersistence(fence: RegularFence, attempt: (fence:
 export async function acknowledgeWithFenceRefresh(fence: RegularFence, attempt: (fence: RegularFence) => Promise<void>, refresh: () => Promise<RegularFence>): Promise<void> {
   try { await acknowledgeAfterPersistence(fence, attempt); return; }
   catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (!/fence rejected|authorization denied/.test(message)) throw error;
+    const code = ackRejectionCode(error);
+    if (code !== "fence" && code !== "authorization") throw error;
   }
   // Reattach itself is a durable mutation. Retry only its exact transient-busy
   // successor so a fresh fence cannot enter an endless replay/reject loop.
@@ -71,6 +76,8 @@ function peerFromDelivery(peer: RegularDelivery["source"]) {
 
 export class RegularDeliveryCoordinator {
   private readonly injected = new Set<string>();
+  private readonly restoredInjected = new Set<string>();
+  private readonly settlements = new Map<string, { delivered: boolean; answer: string; reason: string }>();
   private readonly acked = new Set<string>();
   private pending?: Pending;
   private tail = Promise.resolve();
@@ -83,6 +90,8 @@ export class RegularDeliveryCoordinator {
       const marker = entry.data as Partial<RegularDeliveryMarker> | undefined;
       if (!marker?.key) continue;
       this.injected.add(marker.key);
+      if (marker.stage === "injected") this.restoredInjected.add(marker.key);
+      if (marker.stage === "settled") this.settlements.set(marker.key, { delivered: marker.delivered === true, answer: marker.answer ?? "", reason: marker.reason ?? "" });
       if (marker.stage === "acked") this.acked.add(marker.key);
     }
   }
@@ -117,6 +126,14 @@ export class RegularDeliveryCoordinator {
     if (delivery.kind === 4) {
       if (this.pending && regularDeliveryKey(this.pending.delivery) !== key) throw new Error("a different regular prompt delivery is already active");
       if (!this.pending) this.pending = { delivery, fence, lastRunMessages: [] };
+      const settled = this.settlements.get(key);
+      if (settled) this.pending.outcome = settled;
+      else if (this.restoredInjected.has(key)) {
+        // An injected prompt without a settled marker belongs to a prior local
+        // executor incarnation. Never reinject it or fabricate success: commit
+        // a deterministic terminal failure before attempting the fenced ACK.
+        this.pending.outcome = { delivered: false, answer: "", reason: "terminal executor restarted before prompt settlement" };
+      }
       if (this.pending.outcome) {
         await this.finish(this.pending, this.pending.outcome.delivered, this.pending.outcome.answer, this.pending.outcome.reason);
         return;
@@ -157,6 +174,12 @@ export class RegularDeliveryCoordinator {
     const encoded = new TextEncoder().encode(answer);
     if (encoded.byteLength > MAX_TEXT) throw new Error("assistant answer exceeds regular delivery bound");
     pending.outcome = { delivered, answer, reason };
+    if (!this.settlements.has(key)) {
+      // Settlement is durable before the ACK effect. A crash or reconnect
+      // therefore reuses the identical bounded terminal outcome.
+      this.dependencies.appendMarker({ key, stage: "settled", kind: pending.delivery.kind, delivered, answer, reason });
+      this.settlements.set(key, pending.outcome);
+    }
     await this.dependencies.acknowledge(pending.delivery, pending.fence, delivered, answer, reason);
     this.dependencies.appendMarker({ key, stage: "acked", kind: pending.delivery.kind });
     this.acked.add(key);

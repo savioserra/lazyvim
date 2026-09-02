@@ -19,9 +19,13 @@ import (
 // surface enabled but no hosted runtime processes.
 func terminalIdentityHarness(t *testing.T) (*Service, func()) {
 	t.Helper()
-	root := t.TempDir()
+	return terminalIdentityHarnessAtRoot(t, t.TempDir())
+}
+
+func terminalIdentityHarnessAtRoot(t *testing.T, root string) (*Service, func()) {
+	t.Helper()
 	_ = os.Chmod(root, 0o700)
-	listener, err := net.Listen("unix", filepath.Join(root, "control.sock"))
+	listener, err := net.Listen("unix", filepath.Join(os.TempDir(), fmt.Sprintf("ws-subagents-test-%d.sock", time.Now().UnixNano())))
 	if err != nil {
 		t.Fatal(err)
 	}

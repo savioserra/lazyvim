@@ -2309,9 +2309,9 @@ func (s *Service) dispatch(request *subagentsv1.Envelope) *subagentsv1.Envelope 
 			// Every acknowledgement rejection is logged with a bounded reason so a
 			// stalled acknowledgement chain is diagnosable from the daemon side
 			// instead of surfacing only as a silent cursor gap.
-			fmt.Fprintf(os.Stderr, "bridge delivery ack rejected: agent=%s sequence=%d dedupe=%s reason=%s\n", boundedLogAtom(payload.BridgeDeliveryAckRequest.AgentId, 64), payload.BridgeDeliveryAckRequest.Sequence, boundedLogAtom(payload.BridgeDeliveryAckRequest.DedupeId, 64), boundedLogAtom(result.Reason, 120))
+			fmt.Fprintf(os.Stderr, "bridge delivery ack rejected: agent=%s sequence=%d dedupe=%s code=%s reason=%s\n", boundedLogAtom(payload.BridgeDeliveryAckRequest.AgentId, 64), payload.BridgeDeliveryAckRequest.Sequence, boundedLogAtom(payload.BridgeDeliveryAckRequest.DedupeId, 64), boundedLogAtom(result.RejectionCode, 48), boundedLogAtom(result.Reason, 120))
 		}
-		response.Payload = &subagentsv1.Envelope_BridgeDeliveryAckResponse{BridgeDeliveryAckResponse: &subagentsv1.BridgeDeliveryAckResponse{Accepted: result.Accepted, Reason: result.Reason, Cursor: result.Cursor}}
+		response.Payload = &subagentsv1.Envelope_BridgeDeliveryAckResponse{BridgeDeliveryAckResponse: &subagentsv1.BridgeDeliveryAckResponse{Accepted: result.Accepted, Reason: result.Reason, Cursor: result.Cursor, RejectionCode: result.RejectionCode}}
 	case *subagentsv1.Envelope_BridgePollRequest:
 		agentID := payload.BridgePollRequest.AgentId
 		route, err := s.authorizeAgent(ctx, request, agentID, []string{"hosted_bridge"})

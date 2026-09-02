@@ -415,6 +415,8 @@ message BridgeDeliveryAckResponse {
   bool accepted = 1;
   string reason = 2;
   uint64 cursor = 3;
+  // Bounded machine-readable rejection class. Empty on acceptance.
+  string rejection_code = 4;
 }
 
 message BridgeReplaceRequest {

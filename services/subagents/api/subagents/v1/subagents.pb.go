@@ -4595,10 +4595,12 @@ func (x *BridgeDeliveryAckRequest) GetAgentSettledObserved() bool {
 }
 
 type BridgeDeliveryAckResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Accepted      bool                   `protobuf:"varint,1,opt,name=accepted,proto3" json:"accepted,omitempty"`
-	Reason        string                 `protobuf:"bytes,2,opt,name=reason,proto3" json:"reason,omitempty"`
-	Cursor        uint64                 `protobuf:"varint,3,opt,name=cursor,proto3" json:"cursor,omitempty"`
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Accepted bool                   `protobuf:"varint,1,opt,name=accepted,proto3" json:"accepted,omitempty"`
+	Reason   string                 `protobuf:"bytes,2,opt,name=reason,proto3" json:"reason,omitempty"`
+	Cursor   uint64                 `protobuf:"varint,3,opt,name=cursor,proto3" json:"cursor,omitempty"`
+	// Bounded machine-readable rejection class. Empty on acceptance.
+	RejectionCode string `protobuf:"bytes,4,opt,name=rejection_code,json=rejectionCode,proto3" json:"rejection_code,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4652,6 +4654,13 @@ func (x *BridgeDeliveryAckResponse) GetCursor() uint64 {
 		return x.Cursor
 	}
 	return 0
+}
+
+func (x *BridgeDeliveryAckResponse) GetRejectionCode() string {
+	if x != nil {
+		return x.RejectionCode
+	}
+	return ""
 }
 
 type BridgeReplaceRequest struct {
@@ -6259,11 +6268,12 @@ const file_api_subagents_v1_subagents_proto_rawDesc = "" +
 	"threadTurn\x12,\n" +
 	"\x12bridge_run_counter\x18\x11 \x01(\x04R\x10bridgeRunCounter\x12,\n" +
 	"\x12agent_end_observed\x18\x12 \x01(\bR\x10agentEndObserved\x124\n" +
-	"\x16agent_settled_observed\x18\x13 \x01(\bR\x14agentSettledObserved\"g\n" +
+	"\x16agent_settled_observed\x18\x13 \x01(\bR\x14agentSettledObserved\"\x8e\x01\n" +
 	"\x19BridgeDeliveryAckResponse\x12\x1a\n" +
 	"\baccepted\x18\x01 \x01(\bR\baccepted\x12\x16\n" +
 	"\x06reason\x18\x02 \x01(\tR\x06reason\x12\x16\n" +
-	"\x06cursor\x18\x03 \x01(\x04R\x06cursor\"\xd2\x01\n" +
+	"\x06cursor\x18\x03 \x01(\x04R\x06cursor\x12%\n" +
+	"\x0erejection_code\x18\x04 \x01(\tR\rrejectionCode\"\xd2\x01\n" +
 	"\x14BridgeReplaceRequest\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12\x1d\n" +
 	"\n" +

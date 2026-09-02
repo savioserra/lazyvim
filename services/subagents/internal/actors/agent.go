@@ -3264,21 +3264,21 @@ func bridgeControlDigest(message *application.BridgeControl) [32]byte {
 
 func (a *AgentActor) bridgeDeliveryAck(ctx *actor.ReceiveContext, message *application.BridgeDeliveryAck) {
 	if message == nil {
-		respondBridgeAck(ctx, nil, &application.BridgeDeliveryAckResult{Reason: "delivery acknowledgement fence rejected"})
+		respondBridgeAck(ctx, nil, &application.BridgeDeliveryAckResult{Reason: "delivery acknowledgement fence rejected", RejectionCode: "fence"})
 		return
 	}
 	if message.Delivered && len(message.Result) > maxBridgePayloadBytes {
-		respondBridgeAck(ctx, message.Completion, &application.BridgeDeliveryAckResult{Reason: "delivery result exceeds bound"})
+		respondBridgeAck(ctx, message.Completion, &application.BridgeDeliveryAckResult{Reason: "delivery result exceeds bound", RejectionCode: "result_bound"})
 		return
 	}
 	hostedAck := message.SessionID == a.bridgeSession && message.GenerationID == a.bridgeGeneration && message.Principal == a.bridgePrincipal && message.Handle == a.bridgeHandle && message.Fence == a.bridgeFence && a.validHandle(message.SessionID, message.GenerationID, message.Principal, message.Handle, message.Fence, "hosted_bridge")
 	regularAck := !hostedAck && message.Principal == a.id && a.validHandle(message.SessionID, message.GenerationID, message.Principal, message.Handle, message.Fence, "observe")
 	if !hostedAck && !regularAck {
-		respondBridgeAck(ctx, message.Completion, &application.BridgeDeliveryAckResult{Reason: "delivery acknowledgement fence rejected"})
+		respondBridgeAck(ctx, message.Completion, &application.BridgeDeliveryAckResult{Reason: "delivery acknowledgement fence rejected", RejectionCode: "fence"})
 		return
 	}
 	if a.durablePending != nil || a.durableFailed != nil {
-		respondBridgeAck(ctx, message.Completion, &application.BridgeDeliveryAckResult{Reason: "durable persistence is busy", Cursor: a.ackCursor})
+		respondBridgeAck(ctx, message.Completion, &application.BridgeDeliveryAckResult{Reason: "durable persistence is busy", RejectionCode: "persistence_busy", Cursor: a.ackCursor})
 		return
 	}
 	// Duplicate of an already-contiguously-committed acknowledgement: return the
@@ -3333,7 +3333,7 @@ func (a *AgentActor) bridgeDeliveryAck(ctx *actor.ReceiveContext, message *appli
 		// Log only the bounded mismatch class plus public logical actor/sequence;
 		// never emit handles, fences, runtime/session identity, or payload data.
 		fmt.Fprintf(os.Stderr, "bridge delivery ack identity mismatch: agent=%s sequence=%d class=%s\n", a.id, message.Sequence, rejection)
-		respondBridgeAck(ctx, message.Completion, &application.BridgeDeliveryAckResult{Reason: "delivery acknowledgement identity rejected"})
+		respondBridgeAck(ctx, message.Completion, &application.BridgeDeliveryAckResult{Reason: "delivery acknowledgement identity rejected", RejectionCode: "identity_" + rejection})
 		return
 	}
 	if message.Sequence > a.ackCursor+1 {
@@ -3462,7 +3462,7 @@ func (a *AgentActor) commitContiguousAcks(ctx *actor.ReceiveContext, trigger *ap
 	for ack != nil {
 		if !a.commitAck(ctx, ack, burst) {
 			a.restoreDurableState(oldDurable)
-			respondBridgeAck(ctx, trigger.Completion, &application.BridgeDeliveryAckResult{Reason: "delivery acknowledgement identity rejected", Cursor: a.ackCursor})
+			respondBridgeAck(ctx, trigger.Completion, &application.BridgeDeliveryAckResult{Reason: "delivery acknowledgement identity rejected", RejectionCode: "identity_commit", Cursor: a.ackCursor})
 			return
 		}
 		delete(a.ackGaps, ack.Sequence)

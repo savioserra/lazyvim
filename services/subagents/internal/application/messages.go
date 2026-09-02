@@ -944,9 +944,10 @@ type BridgeDeliveryAck struct {
 	Completion                                                   chan<- BridgeDeliveryAckResult
 }
 type BridgeDeliveryAckResult struct {
-	Accepted bool
-	Reason   string
-	Cursor   uint64
+	Accepted      bool
+	Reason        string
+	RejectionCode string
+	Cursor        uint64
 }
 
 type BridgeSessionOpened struct{ Session any }

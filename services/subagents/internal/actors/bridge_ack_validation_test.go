@@ -54,8 +54,13 @@ func TestBridgeDeliveryAckValidationRetainsPromptDelivery(t *testing.T) {
 	}
 	delivery := poll.Deliveries[0]
 	oversized := make([]byte, 16*1024+1)
-	if result := ask(identityAck("session", "generation", "hosted:source", attached.Handle, attached.Fence, "runtime", "pi", delivery, true, oversized)).(*application.BridgeDeliveryAckResult); result.Accepted || result.Reason == "" {
-		t.Fatalf("oversized ack accepted: %#v", result)
+	if result := ask(identityAck("session", "generation", "hosted:source", attached.Handle, attached.Fence, "runtime", "pi", delivery, true, oversized)).(*application.BridgeDeliveryAckResult); result.Accepted || result.RejectionCode != "result_bound" {
+		t.Fatalf("oversized ack accepted or untyped: %#v", result)
+	}
+	forged := identityAck("session", "generation", "hosted:source", attached.Handle, attached.Fence, "runtime", "pi", delivery, true, nil)
+	forged.CompletionKey = "wrong-completion"
+	if result := ask(forged).(*application.BridgeDeliveryAckResult); result.Accepted || result.RejectionCode != "identity_delivery" {
+		t.Fatalf("forged ack accepted or untyped: %#v", result)
 	}
 	replay := ask(&application.PollBridge{SessionID: "session", GenerationID: "generation", Principal: "hosted:source", Handle: attached.Handle, Fence: attached.Fence, AfterSequence: 0, MaxItems: 64}).(*application.BridgePollResult)
 	if len(replay.Deliveries) != 1 || replay.Deliveries[0].Sequence != delivery.Sequence {

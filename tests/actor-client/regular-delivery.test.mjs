@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { REGULAR_DELIVERY_MARKER, RegularDeliveryCoordinator, acknowledgeWithFenceRefresh } from "../../home/dot_pi/private_agent/extensions/actor-client/regular-delivery.ts";
+import { REGULAR_DELIVERY_MARKER, RegularAckRejected, RegularDeliveryCoordinator, acknowledgeWithFenceRefresh } from "../../home/dot_pi/private_agent/extensions/actor-client/regular-delivery.ts";
 import { projectIncomingRegularDelivery } from "../../home/dot_pi/private_agent/extensions/actor-client/index.ts";
 import { initialProjectionContext } from "../../home/dot_pi/private_agent/extensions/actor-client/projections/machine.ts";
 
@@ -21,11 +21,11 @@ test("regular delivery ack refreshes stale self fence once with identical delive
   const fresh={handle:"new",fence:2n};
   await acknowledgeWithFenceRefresh(stale, async (fence) => {
     calls.push(fence);
-    if (calls.length === 1) throw new Error("delivery acknowledgement fence rejected");
+    if (calls.length === 1) throw new RegularAckRejected("fence", "delivery acknowledgement fence rejected");
   }, async () => fresh);
   assert.deepEqual(calls, [stale, fresh]);
   calls.length = 0;
-  await assert.rejects(() => acknowledgeWithFenceRefresh(stale, async (fence) => { calls.push(fence); throw new Error("delivery acknowledgement fence rejected"); }, async () => fresh), /fence rejected/);
+  await assert.rejects(() => acknowledgeWithFenceRefresh(stale, async (fence) => { calls.push(fence); throw new RegularAckRejected("fence", "delivery acknowledgement fence rejected"); }, async () => fresh), /fence rejected/);
   assert.deepEqual(calls, [stale, fresh]);
 });
 
@@ -35,11 +35,11 @@ test("regular delivery ack retries exact persistence busy after fresh fence", as
   const calls=[];
   await acknowledgeWithFenceRefresh(stale, async (fence) => {
     calls.push(fence);
-    if (calls.length === 1) throw new Error("delivery acknowledgement fence rejected");
-    if (calls.length < 4) throw new Error("durable persistence is busy");
+    if (calls.length === 1) throw new RegularAckRejected("fence", "delivery acknowledgement fence rejected");
+    if (calls.length < 4) throw new RegularAckRejected("persistence_busy", "durable persistence is busy");
   }, async () => fresh);
   assert.deepEqual(calls, [stale, fresh, fresh, fresh]);
-  await assert.rejects(() => acknowledgeWithFenceRefresh(fresh, async () => { throw new Error("authorization denied permanently"); }, async () => fresh), /authorization denied permanently/);
+  await assert.rejects(() => acknowledgeWithFenceRefresh(fresh, async () => { throw new RegularAckRejected("authorization", "authorization denied permanently"); }, async () => fresh), /authorization denied permanently/);
 });
 
 test("bridge push projects incoming tell through root before one render-envelope message",async()=>{
@@ -87,7 +87,7 @@ test("incoming tell renders an incoming card, wakes the model once, then ACKs",a
   assert.equal(h.acks.length,1);
   assert.equal(h.acks[0].delivered,true);
   assert.equal(h.acks[0].answer,"");
-  assert.deepEqual(h.markers.map((entry)=>entry.data.stage),["injected","acked"]);
+  assert.deepEqual(h.markers.map((entry)=>entry.data.stage),["injected","settled","acked"]);
 });
 
 test("incoming ask waits for settlement and ACKs the bounded assistant answer",async()=>{
@@ -142,14 +142,32 @@ test("expired incoming work terminally ACKs failure without model injection",asy
   assert.match(h.acks[0].reason,/deadline expired/);
 });
 
-test("injected prompt replay does not reinject and completes from the correlated settlement",async()=>{
-  const marker={type:"custom",customType:REGULAR_DELIVERY_MARKER,data:{key:"completion",stage:"injected",kind:4}};
-  const h=harness([marker]);
-  await h.coordinator.deliver(delivery(4),fence);
-  assert.equal(h.messages.length,0);
-  assert.equal(h.acks.length,0);
-  h.coordinator.agentEnd([{role:"assistant",content:"Answer after reload"}]);
-  await h.coordinator.settled();
-  assert.equal(h.acks.length,1);
-  assert.equal(h.acks[0].answer,"Answer after reload");
+test("prior-executor injected prompt fails durably before ACK and never reinjects",async()=>{
+  const injected={type:"custom",customType:REGULAR_DELIVERY_MARKER,data:{key:"completion",stage:"injected",kind:4}};
+  const markers=[injected];
+  let attempts=0;
+  const first=new RegularDeliveryCoordinator({
+    appendMarker:(marker)=>markers.push({type:"custom",customType:REGULAR_DELIVERY_MARKER,data:marker}),
+    sendFollowUp:()=>assert.fail("abandoned prompt was reinjected"),
+    acknowledge:async()=>{attempts++;throw new Error("connection lost after durable settlement");},
+  });
+  first.restore(markers);
+  await assert.rejects(()=>first.deliver(delivery(4),fence),/connection lost/);
+  assert.equal(attempts,1);
+  assert.equal(markers.at(-1).data.stage,"settled");
+  assert.equal(markers.at(-1).data.delivered,false);
+  assert.match(markers.at(-1).data.reason,/executor restarted/);
+
+  const replay=harness(markers);
+  await replay.coordinator.deliver(delivery(4),fence);
+  assert.equal(replay.messages.length,0);
+  assert.equal(replay.acks.length,1);
+  assert.equal(replay.acks[0].delivered,false);
+  assert.match(replay.acks[0].reason,/executor restarted/);
+  assert.equal(replay.markers.at(-1).data.stage,"acked");
+
+  const secondRestart=harness([...markers,...replay.markers]);
+  await secondRestart.coordinator.deliver(delivery(4),fence);
+  assert.equal(secondRestart.messages.length,0);
+  assert.equal(secondRestart.acks.length,0);
 });
