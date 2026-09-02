@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@pi'
 created_date: '2026-09-02 02:56'
-updated_date: '2026-09-02 05:24'
+updated_date: '2026-09-02 05:26'
 labels: []
 dependencies: []
 references:
@@ -20,7 +20,7 @@ ordinal: 21000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Replace the planned WorkflowActor orchestration and durable-decision feature with a declarative project crew. A project-root `.crew.toml` defines long-lived participant AgentActors, default hosted Pi system prompts, and an optional prompt-driven `crew.supervisor` AgentActor. Starting Pi and `/crew spawn` invoke the same authenticated, idempotent registry reconciliation. The manifest is not workflow state or authority; the supervisor observes only its crew and coordinates through normal typed actor messages without pane automation or ordinary actor teardown.
+Replace the planned WorkflowActor orchestration and durable-decision feature with a declarative project crew. A project-root `.crew.toml` defines long-lived participant AgentActors, default hosted Pi system prompts, and an optional prompt-driven `crew.supervisor` with its own background hosted Pi runtime/session. Starting Pi and `/crew spawn` only reconcile the crew; the interactive terminal remains a separate peer. The manifest is not workflow state or authority, and the supervisor coordinates through normal typed actor messages without pane automation or ordinary actor teardown.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -32,6 +32,7 @@ Replace the planned WorkflowActor orchestration and durable-decision feature wit
 - [ ] #5 This repository dogfoods `.crew.toml` with six participant agents plus one supervisor: architecture, UI/UX, actor-model plus GoAkt v4 specialist, developer, reviewer, QA, and prompt-driven coordination
 - [ ] #6 The supervisor watches authenticated topic projections for its declared crew and coordinates only through ActorTask/ActorTaskCompleted and Tell/Ask, with no WorkflowActor, polling, pane injection, or ordinary stop/abort/shutdown authority
 - [ ] #7 Automated and live E2E evidence proves discovery, prompt loading, partial-retry recovery, concurrent idempotency, supervised coordination, retained actors, redaction, and one-writer enforcement
+- [ ] #8 The supervisor is an independent background hosted AgentActor/Pi session that runs in parallel and survives initiating terminal disconnect; no interactive `client:*` session is promoted, aliased, or adopted as supervisor
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -40,4 +41,6 @@ Replace the planned WorkflowActor orchestration and durable-decision feature wit
 Product decision: WorkflowActor orchestration and durable decision cards are removed from this roadmap slice. `.crew.toml` is declarative bootstrap configuration only. Ordinary coordination remains ActorTask/ActorTaskCompleted and actor Tell/Ask between retained AgentActors.
 
 Added product requirement: optional `crew.supervisor` is a retained normal AgentActor configured with a specialized prompt and crew-scoped observation/coordination capabilities. It is not a new transport actor class and does not restore WorkflowActor authority.
+
+Supervisor identity/runtime separation is mandatory: automatic startup and `/crew spawn` are reconciliation triggers only; the invoking terminal Pi remains an independent peer.
 <!-- SECTION:NOTES:END -->

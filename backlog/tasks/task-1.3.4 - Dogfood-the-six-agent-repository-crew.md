@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@pi'
 created_date: '2026-09-02 04:46'
-updated_date: '2026-09-02 05:25'
+updated_date: '2026-09-02 05:26'
 labels: []
 dependencies:
   - TASK-1.3.5
@@ -34,4 +34,5 @@ Add this repository root `.crew.toml` and use it as the live acceptance fixture 
 - [ ] #4 Live E2E proves the supervisor observes crew-scoped topic state, assigns one normal task, receives completion, requests review/QA or correction through typed messages, retains all participants, and does not use WorkflowActor authority
 - [ ] #5 Restart/reconnect restores supervised coordination and metadata/activity projections with sanitized UI and no polling, tmux scraping/injection, foreign mutation, dual writer, or automatic actor stop
 - [ ] #6 Roadmap, architecture, subagent, tool, and removal-parity documentation describes `.crew.toml`, supervisor semantics, automatic startup, explicit spawn, idempotency, and rollback/removal behavior
+- [ ] #7 Live E2E closes the initiating terminal after spawn and proves the separate supervisor Pi runtime continues coordinating participants in parallel, then delivers bounded completion after terminal reattach
 <!-- AC:END -->
