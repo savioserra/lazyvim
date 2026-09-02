@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 05:40'
-updated_date: '2026-09-02 05:40'
+updated_date: '2026-09-02 06:05'
 labels: []
 dependencies: []
 references:
@@ -37,4 +37,6 @@ Add the additive protocol, durable AgentActor state, authority validation, and b
 
 <!-- SECTION:NOTES:BEGIN -->
 Read-only current-code architecture audit assigned before implementation; no writer starts until protocol/topic authority and migration seams are frozen.
+
+Architecture Ask 84 returned from a stale worktree and old ADR/cutover scope, so it is not authoritative for current TASK-1.2.1. Superseded claims include missing XState/pin (current actor-client already pins xstate 5.20.2 and uses projection machines), fixed productive-phase/WorkflowActor authority (replaced by opaque runtime-defined activity), and HostedPiBridgeActor authority cutover as an activity prerequisite. Retain only contract-compatible evidence: activity must be explicit, opaque, durable-before-topic-push, owner-private, revision/epoch fenced, payload-free publicly, never inferred from role/lifecycle/tmux/process/heartbeat/output, and actor_list remains explicit inventory only rather than status refresh. The activity topic/envelope implementation remains outstanding.
 <!-- SECTION:NOTES:END -->
