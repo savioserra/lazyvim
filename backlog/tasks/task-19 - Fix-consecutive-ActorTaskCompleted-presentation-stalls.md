@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 03:03'
-updated_date: '2026-09-02 04:13'
+updated_date: '2026-09-02 04:16'
 labels: []
 dependencies: []
 references:
@@ -78,4 +78,6 @@ Operator-requested deployment reset executed on main a85c40d/7b7e517 code: chezm
 Fresh post-reset live proof passed: sequences 47, 48, and 49 were admitted consecutively without intervening user input and automatically produced NOTIFY_E2E_1/2/3 in order and exactly once, with no pane inspection or durable-state polling. Fresh cards used neutral  presentation with empty role rather than any hardcoded semantic role, while each target retained its independently registered dynamic metadata.
 
 Correction: the neutral source presentation label observed in sequences 47-49 was `client`; no semantic role was synthesized.
+
+The remaining TASK-19 release gates will be closed together with the production intent correction: add three-consecutive service wake regression, real daemon stale-fence reattach/ACK regression, and hosted reply-to-source Tell plus Ask live coverage.
 <!-- SECTION:NOTES:END -->

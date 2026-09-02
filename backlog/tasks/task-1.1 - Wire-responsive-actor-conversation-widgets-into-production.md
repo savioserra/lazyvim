@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 02:56'
-updated_date: '2026-09-02 04:11'
+updated_date: '2026-09-02 04:16'
 labels: []
 dependencies:
   - TASK-6
@@ -27,9 +27,9 @@ Replace the actor-client's remaining legacy communication renderer path with pro
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 Registered Pi message and entry renderers consume bounded XState-derived snapshots rather than the legacy hosted-bridge card renderer
-- [x] #2 Incoming Tell, outgoing Tell, incoming request, combined Ask/reply, pending, busy, and failure states match the approved semantic wording and never duplicate conversation items
+- [ ] #2 Incoming Tell, outgoing Tell, incoming request, combined Ask/reply, pending, busy, and failure states match the approved semantic wording and never duplicate conversation items
 - [x] #3 Wide and narrow layouts use Pi TUI components and theme tokens, stay within width, invalidate on theme changes, and preserve semantics on resize
-- [x] #4 Collapsed/expanded tool rendering is compact for humans while model-visible content retains required correlation and next-action fields
+- [ ] #4 Collapsed/expanded tool rendering is compact for humans while model-visible content retains required correlation and next-action fields
 - [ ] #5 Automated and live fresh-runtime E2E cover Actor UX acceptance items 1-10 and 12 except typed productive phase, which is tracked separately
 <!-- AC:END -->
 
@@ -37,6 +37,8 @@ Replace the actor-client's remaining legacy communication renderer path with pro
 
 <!-- SECTION:PLAN:BEGIN -->
 1. Add schema-versioned actor-client render envelopes plus read-only legacy CommunicationView/line migration adapters. 2. Wire index entry/message renderers and tool renderers to actor-client widgets from XState snapshots, preserving model-visible correlation content. 3. Make conversation/status widgets width-aware/theme-invalidating and selector-driven without append-on-resize/theme. 4. Add adapter, migration, restore/replay/collision, tool, redaction, and narrow/wide tests; run relevant gates and commit.
+
+5. Close the production intent gap: hosted `actor_tell` must use TELL admission semantics and display delivered/failure states; add a distinct `actor_ask` command/tool for request/reply semantics, preserving model correlation and compatibility documentation.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
@@ -67,4 +69,6 @@ Correction QA sequence 42 conditionally passed the requested code seams; its hos
 Deployment/live matrix will use the operator-requested fresh crew reset recorded in TASK-19: exact teardown only after apply, fresh daemon actor state, recreated five UI actors, and a rebuilt labeled 3x2 crew window while preserving/reconnecting the PM session safely.
 
 Fresh deployment reset completed with new service/frontend files applied and a rebuilt five-actor crew. Final live UI matrix awaits PM /reload and post-reload traffic.
+
+Live roadmap audit found the hosted `actor_tell` tool and `/actor-tell` command still call message mode 2 (ASK), despite their Tell labels. Synthetic projection tests do not prove production Tell semantics. AC 2 and 4 are reopened until true Tell and distinct Ask tools/cards pass live E2E.
 <!-- SECTION:NOTES:END -->
