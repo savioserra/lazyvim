@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@pi'
 created_date: '2026-09-02 05:40'
-updated_date: '2026-09-02 05:44'
+updated_date: '2026-09-02 06:03'
 labels: []
 dependencies:
   - TASK-1.2.1
@@ -42,4 +42,6 @@ Project authenticated roster/activity frames through the existing actor-client X
 
 <!-- SECTION:NOTES:BEGIN -->
 Information-hierarchy correction: interactive status remains payload-free. Actual Tell/Ask content expansion belongs to TASK-1.1 private conversation/tool balloons, while TASK-1.2.2 status rows avoid redundant labels and link users to conversation history rather than leaking payloads.
+
+UX Ask 85 returned from a stale research worktree and is not authoritative for current implementation state. Its claims that actor_tell routes through Ask, compact Ask/Tell wording is shared, canonical completion keys are request-derived, and 20/25/49/80 tests are absent are superseded by current main. Retain only still-current UX evidence: `/actor-status` is not implemented; tool expansion relies on Pi defaults without keyboard/live acceptance; custom message renderers ignore expanded/collapsed options; public status must remain payload-free; exact copy matrix recommends narrow `actors +N`, bounded content in private conversation cards, and no duplicated state labels.
 <!-- SECTION:NOTES:END -->
