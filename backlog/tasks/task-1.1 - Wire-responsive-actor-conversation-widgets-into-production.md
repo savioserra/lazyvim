@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 02:56'
-updated_date: '2026-09-02 03:14'
+updated_date: '2026-09-02 03:21'
 labels: []
 dependencies:
   - TASK-6
@@ -53,4 +53,6 @@ Validation: actor-client 37/37 passed; hosted bridge 36/36 passed; capabilities 
 Writer completion sequence 36 integrated as production code commit: render envelopes, legacy read-only conversion, snapshot-first registered renderers, width/theme-aware actor-client cards, selector pending status, and compact/expanded tool widgets. Writer gates passed actor-client 37/37, hosted bridge 36/36, capabilities, services codegen/race/vet/protocol, and diff check. Independent review/QA and local full gates follow before apply/reload.
 
 PM post-integration gates on 3e5d282 passed: actor-client 37/37, hosted bridge 36/36, capabilities, service codegen/go race/vet/protocol 6/6, legacy observer 97/97 with /snap/bin/tmux, git diff check, and scratch chezmoi dry-run. Independent reviewer sequence 37 and QA sequence 38 are active before apply/reload/live matrix.
+
+Independent reviewer sequence 37 found two P0 blockers: incoming regular Tell/request still carries only legacy CommunicationView and is rendered via conversion without DELIVERY.INCOMING projection/render-envelope production events; and conversation-card width enforcement uses raw string length/slice after theme styling, corrupting ANSI and dropping semantics. Existing 37 tests use migration/no-op theme paths and miss both seams. TASK-1.1 cannot deploy until corrected and re-reviewed.
 <!-- SECTION:NOTES:END -->
