@@ -1,7 +1,7 @@
 ---
 id: TASK-1.2
 title: Publish dynamic activity and live actor status UI
-status: To Do
+status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 02:56'
@@ -35,10 +35,21 @@ Publish authoritative, revision-fenced dynamic activity metadata from AgentActor
 - [ ] #8 Automated and fresh-process live E2E prove realtime updates, unknown/set/clear/stale/reconnect behavior, expanded interaction, lifecycle independence, exact tmux ownership, no polling, and full terminal Pi restart deployment
 <!-- AC:END -->
 
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Freeze the additive AgentActor activity/topic contract and realtime status/overlay interaction contract against current code and Pi TUI APIs.
+2. Implement and independently review durable activity authority and topic replay (TASK-1.2.1).
+3. Implement realtime actor-client footer/interactive overlay and exactly owned hosted tmux projection behind the authoritative topic contract (TASK-1.2.2/1.2.3), preserving one writer per worktree.
+4. Deploy through full Pi process/runtime restart and execute the live no-polling acceptance matrix (TASK-1.2.4).
+<!-- SECTION:PLAN:END -->
+
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
 Operator priority: current footer is missing trustworthy realtime/live updates. Ship the compact live status path first, then add a nice expandable interactive overlay when Pi APIs permit it without replacing the global footer or introducing authority. `/reload` is not a deployment gate; live proof uses a fresh terminal Pi process.
 
 WorkflowActor references are superseded. Activity authority belongs to normal retained AgentActors (including a crew supervisor when configured); the client remains projection-only.
+
+Implementation sequencing started. The existing UI writer remains occupied by TASK-20 sequence 67; architecture, UX, and QA perform read-only audits in parallel so the writer can begin immediately after that release blocker.
 <!-- SECTION:NOTES:END -->

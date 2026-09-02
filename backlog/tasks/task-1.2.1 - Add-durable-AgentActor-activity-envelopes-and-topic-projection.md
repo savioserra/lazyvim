@@ -1,10 +1,11 @@
 ---
 id: TASK-1.2.1
 title: Add durable AgentActor activity envelopes and topic projection
-status: To Do
+status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 05:40'
+updated_date: '2026-09-02 05:40'
 labels: []
 dependencies: []
 references:
@@ -31,3 +32,9 @@ Add the additive protocol, durable AgentActor state, authority validation, and b
 - [ ] #4 Registry/topic snapshots and cursor replay expose only sanitized public fields while owner-private topics retain only the additional facts required by the bound runtime
 - [ ] #5 Race, persistence, restart, reset, gap, collision, unknown-key, redaction, and role/lifecycle-independence tests pass
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Read-only current-code architecture audit assigned before implementation; no writer starts until protocol/topic authority and migration seams are frozen.
+<!-- SECTION:NOTES:END -->
