@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 02:56'
-updated_date: '2026-09-02 05:30'
+updated_date: '2026-09-02 05:34'
 labels: []
 dependencies:
   - TASK-6
@@ -81,4 +81,6 @@ Writer sequence 61 correction integrated: hosted renderToolResult now presents a
 PM verification on integrated main 862a9fc: hosted-pi-bridge suite passed 38/38 including production tool result renderer Ask/Tell semantic coverage; git diff --check passed and tree is clean. Independent final review remains required.
 
 Deployment verify found stale lifecycle expectations for removed actor-send command. Updated subagents verifier to require the current actor-connect/list/resolve/health/tell/ask/create/stop/control/subscription command surface and confirm hosted bridge registers none outside hosted runtime; direct source verifier passed.
+
+Operator-authorized deployment completed: exactly stopped five hosted UI actors, ran chezmoi source apply, rebuilt/restarted daemon, recreated all five fresh hosted runtimes from their worktrees with current display/role metadata, and confirmed deployed actor-client/hosted bridge files match source. Workstation verify passed after fixing the stale command-surface verifier. Current interactive Pi still requires `/reload` to load the deployed actor-client code.
 <!-- SECTION:NOTES:END -->
