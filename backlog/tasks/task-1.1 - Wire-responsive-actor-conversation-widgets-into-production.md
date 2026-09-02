@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 02:56'
-updated_date: '2026-09-02 03:21'
+updated_date: '2026-09-02 03:28'
 labels: []
 dependencies:
   - TASK-6
@@ -57,4 +57,6 @@ PM post-integration gates on 3e5d282 passed: actor-client 37/37, hosted bridge 3
 Independent reviewer sequence 37 found two P0 blockers: incoming regular Tell/request still carries only legacy CommunicationView and is rendered via conversion without DELIVERY.INCOMING projection/render-envelope production events; and conversation-card width enforcement uses raw string length/slice after theme styling, corrupting ANSI and dropping semantics. Existing 37 tests use migration/no-op theme paths and miss both seams. TASK-1.1 cannot deploy until corrected and re-reviewed.
 
 Baseline QA sequence 38 returned a conditional pass but did not exercise the two reviewer P0 seams; it is superseded by sequence 37 findings. QA must rerun after sequence 40 with live incoming projection-envelope and real-ANSI narrow-width coverage.
+
+P0 correction 3cc7aab integrated: live regular Tell/request now reduces DELIVERY.INCOMING events through root projection and persists schema-versioned render envelopes; legacy CommunicationView is migration-only; raw themed slicing replaced with Pi TUI truncateToWidth; real ANSI width tests cover 20, 25, 49, and 80 columns. Writer actor-client suite passed 40/40 and full relevant gates.
 <!-- SECTION:NOTES:END -->

@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@pi'
 created_date: '2026-09-02 03:03'
-updated_date: '2026-09-02 03:20'
+updated_date: '2026-09-02 03:28'
 labels: []
 dependencies: []
 references:
@@ -39,4 +39,6 @@ Terminal actor delivery remains unreliable in two related live paths. First, con
 Additional live evidence: sequence 34 appeared only after the user sent a later turn, rather than waking/presenting when the durable completion first committed. Its payload was only a report receipt, but the delayed wake behavior confirms the consecutive-completion presentation stall remains observable.
 
 Live proactive-Ask evidence: UI QA retained four outbox messages to the project-manager alias (one sent with high retry count, three pending credit); UI UX retained three. Daemon logs show terminal delivery ACK rejection under a rotated fence and repeated credit_reservation_missing redrive. The visible panel wording was optimistic local tool state, not authoritative delivery.
+
+Architecture diagnosis sequence 39 identified three interacting bugs: communicationPeer rewrites canonical client:* stable identity to presentation alias project-manager; regular delivery retains stale ACK fence across reattach; broker wake depends on serialized source principal matching the active terminal. Frozen fix direction: preserve canonical stable IDs, resolve/reject aliases before durable outbox, add canonical reply-to-source capability, refresh/retry ACK once with unchanged delivery identity, wake canonical sessions, and quarantine ambiguous legacy alias items.
 <!-- SECTION:NOTES:END -->
