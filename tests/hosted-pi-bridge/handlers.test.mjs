@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { buildActorControl, buildActorMessage, buildIdentityDeliveryAck, bridgeErrorClass, communicationKey, communicationLine, CommunicationTimeline, completeHostedEnvironment, ExactMutationSequencer, PromptTaskCoordinator, deliveryAction, deliveryKindLabel, destroyOnFramingFailure, drainPages, executeTypedDelivery, invokeTypedDeliveryForAck, missingAckIdentity, parseTargetMessage, registerHostedHandlers, requireExplicitModelTarget } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/handlers.ts";
-import { bridgeDiagnostic, incomingNote, incomingRequestText, outgoingExchange, renderCommunicationCard, compactToolCall, compactToolResult, modelResultContent, renderToolResult } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/communication-ui.ts";
-import { actorControlCapabilities, actorMessageCapabilities, actorMessageModelResult, capabilitySetIncludes, connectBridgeWithRetry, consumeReconnect, degradedBridgeStatus, resolveHostedMessageDestination } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/index.ts";
+import { bridgeDiagnostic, communicationEnvelope, envelopeCommunicationView, incomingNote, incomingRequestText, outgoingExchange, renderCommunicationCard, compactToolCall, compactToolResult, modelResultContent, renderHostedCommunicationEnvelope, renderToolResult } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/communication-ui.ts";
+import { actorControlCapabilities, actorMessageCapabilities, actorMessageModelResult, capabilitySetIncludes, connectBridgeWithRetry, consumeReconnect, degradedBridgeStatus, requestDeliveryAckWithFenceRefresh, resolveHostedMessageDestination } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/index.ts";
 
 const complete = { WS_SUBAGENTS_ENDPOINT: "ws://127.0.0.1:17213/actors", WS_SUBAGENTS_CREDENTIAL_FILE: "/state/credential", WS_SUBAGENTS_SESSION_ID: "session", WS_SUBAGENTS_GENERATION_ID: "generation", WS_SUBAGENTS_CALLER: "hosted:agent", WS_SUBAGENTS_AGENT_ID: "agent", WS_SUBAGENTS_RUNTIME_ID: "runtime", WS_SUBAGENTS_INCARNATION: "1" };
 
@@ -265,6 +265,45 @@ test("production tool result renderer preserves ask pending versus tell delivere
   assert.match(render("actor_tell", tellDelivered), /✓ delivered/);
   const tellFailed = outgoingExchange({ key: "tell-failed", target: "Beta", body: "note", accepted: false, mode: "tell", reason: "denied" });
   assert.match(render("actor_tell", tellFailed), /Couldn’t reach Beta/);
+});
+
+test("hosted render envelopes drive production conversation and expanded tool widgets", () => {
+  const theme = { fg: (name, text) => `${name}:${text}`, bg: (_name, text) => text, bold: (text) => text };
+  const view = outgoingExchange({ key: "render-envelope", target: "Beta", body: "question body", reply: "answer body", accepted: true, completed: true, mode: "ask", durationMillis: 8000 });
+  const envelope = communicationEnvelope(view, { line: "legacy line" });
+  assert.equal(envelope.schemaVersion, 1);
+  assert.equal(envelope.kind, "hosted-conversation-card");
+  assert.equal(envelopeCommunicationView(envelope).key, "render-envelope");
+  const direct = renderHostedCommunicationEnvelope(envelope, theme).render(80).join("\n");
+  assert.match(direct, /Asked Beta/);
+  assert.match(direct, /question body/);
+  assert.match(direct, /Beta replied/);
+  assert.match(direct, /answer body/);
+  assert.match(direct, /replied in 8s/);
+  const expanded = renderToolResult("actor_ask", { details: { renderEnvelope: envelope } }, { expanded: true }, theme).render(80).join("\n");
+  assert.match(expanded, /Asked Beta/);
+  assert.match(expanded, /answer body/);
+  const legacyExpanded = renderToolResult("actor_ask", { details: { communicationView: view } }, { expanded: true }, theme).render(80).join("\n");
+  assert.match(legacyExpanded, /Asked Beta/);
+  for (const line of renderHostedCommunicationEnvelope(envelope, theme).render(32)) assert.ok(line.replace(/^[a-z]+:/, "").length <= 32);
+});
+
+test("bridge delivery ack refresh retries once with identical payload and exactly one terminal success", async () => {
+  const ack = Object.freeze({ agentId: "agent", sequence: 7n, dedupeId: "d", boundedResult: new Uint8Array([1, 2, 3]) });
+  const staleFence = Object.freeze({ handle: "old", fence: 1n });
+  const freshFence = Object.freeze({ handle: "fresh", fence: 2n });
+  const attempts = [];
+  let refreshes = 0;
+  const response = await requestDeliveryAckWithFenceRefresh(async (payload, fence) => {
+    attempts.push({ payload, fence });
+    return attempts.length === 1 ? { payload: { case: "bridgeDeliveryAckResponse", value: { accepted: false, reason: "stale fence" } } } : { payload: { case: "bridgeDeliveryAckResponse", value: { accepted: true, reason: "" } } };
+  }, async () => { refreshes++; return freshFence; }, ack, staleFence);
+  assert.equal(response.payload.value.accepted, true);
+  assert.equal(refreshes, 1);
+  assert.equal(attempts.length, 2);
+  assert.equal(attempts[0].payload, ack);
+  assert.equal(attempts[1].payload, ack);
+  assert.deepEqual(attempts.map((attempt) => attempt.fence), [staleFence, freshFence]);
 });
 
 test("typed delivery invokes documented context abort/shutdown and notification methods", async () => {

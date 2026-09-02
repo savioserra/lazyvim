@@ -8,7 +8,7 @@ type Envelope = any;
 let EnvelopeSchema: DescMessage;
 import { bridgeErrorClass, buildActorControl, buildActorMessage, buildIdentityDeliveryAck, communicationKey, CommunicationTimeline, completeHostedEnvironment, drainPages, executeTypedDelivery, invokeTypedDeliveryForAck, missingAckIdentity, PromptTaskCoordinator, registerHostedHandlers, type PromptTaskLifecycleEvent, type ThreadSettlementEvidence } from "./handlers.ts";
 import { ClientMutationSequencer } from "./mutations.ts";
-import { bridgeDiagnostic, incomingControl, incomingNote, incomingRequestText, legacyCommunicationLine, outgoingExchange, peerView, renderCommunicationCard, type CommunicationView } from "./communication-ui.ts";
+import { bridgeDiagnostic, communicationEnvelope, incomingControl, incomingNote, incomingRequestText, legacyCommunicationLine, outgoingExchange, peerView, renderHostedCommunicationEnvelope, type CommunicationView, type HostedCommunicationRenderEnvelope } from "./communication-ui.ts";
 
 const MAX_FRAME = 64 * 1024;
 const MAX_TEXT = 16 * 1024;
@@ -17,7 +17,7 @@ const SHORT_REQUEST_TIMEOUT_MS = 2_000;
 const textDecoder = new TextDecoder("utf-8", { fatal: true });
 
 type CredentialFile = { credential_b64: string };
-type CommunicationEntry = { key: string; line?: string; view?: CommunicationView };
+type CommunicationEntry = { key: string; line?: string; view?: CommunicationView; renderEnvelope?: HostedCommunicationRenderEnvelope };
 type DeliveryMarker = { dedupeId: string; sequence: string; kind?: number | string; bridgeRunCounter?: string; agentEndObserved?: boolean; agentSettledObserved?: boolean };
 type Binding = {
   endpoint: string;
@@ -31,6 +31,15 @@ type Binding = {
 };
 type TargetFence = { handle: string; fence: bigint };
 type CachedTargetFence = { fence: TargetFence; capabilities: string[] };
+
+export async function requestDeliveryAckWithFenceRefresh<TAck, TFence, TResponse extends { payload?: { case?: string; value?: { accepted?: boolean; reason?: string } } }>(request: (ack: TAck, fence: TFence) => Promise<TResponse>, refreshFence: () => Promise<TFence>, ack: TAck, fence: TFence): Promise<TResponse> {
+  let response = await request(ack, fence);
+  const reason = response.payload?.case === "bridgeDeliveryAckResponse" ? String(response.payload.value?.reason || "") : "unexpected response";
+  if (response.payload?.case === "bridgeDeliveryAckResponse" && !response.payload.value?.accepted && /fence|stale|attach|reattach/i.test(reason)) {
+    response = await request(ack, await refreshFence());
+  }
+  return response;
+}
 
 class FramedClient {
   private socket?: WebSocket;
@@ -180,7 +189,7 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
   let extensionContext: ExtensionContext | undefined;
 
   pi.registerEntryRenderer<CommunicationEntry>("hosted-pi-communication", (entry, _options, theme) => {
-    if (entry.data?.view) return renderCommunicationCard(entry.data.view, theme);
+    if (entry.data?.renderEnvelope || entry.data?.view) return renderHostedCommunicationEnvelope(entry.data.renderEnvelope ?? communicationEnvelope(entry.data.view!), theme);
     const line = boundedPublic(entry.data?.line ?? "Communication event unavailable", 160);
     return new Text(`${theme.fg("accent", "Communication")}  ${line}`, 0, 0);
   });
@@ -197,7 +206,7 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
     const ack = buildIdentityDeliveryAck(current.agentId, { runtimeId: current.runtimeId, incarnation: current.incarnation, piSessionId }, pending.delivery, deliveredSuccessfully, reason, encoded, settlement);
     let response: Envelope;
     try {
-      response = await requiredClient(client).request("bridgeDeliveryAckRequest", BridgeDeliveryAckRequestSchema, ack, pending.fence);
+      response = await requestBridgeDeliveryAckWithFenceRefresh(requiredContext(extensionContext), ack, pending.fence);
     } catch (error) {
       logBridgeDiagnostic(`prompt ack · agent=${boundedPublic(current.agentId, 48)} · sequence=${pending.delivery.sequence} · outcome=error · class=${bridgeErrorClass(error)}`, true);
       throw error;
@@ -266,7 +275,7 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
     const messageScope = bridgeMessageScopeKey(current);
     return mutations.run(messageScope,
       (sequence)=>({requestId:randomUUID(),value:buildActorMessage(mode,destination,text,randomUUID(),inherited?.chainId ?? randomUUID(),sequence,inherited?.hopLimit ?? 8)}),
-      async (logical)=>{const started=Date.now();const active=requiredClient(client);const response=await active.request("actorMessageRequest",ActorMessageRequestSchema,logical.value,fence,logical.requestId,SHORT_REQUEST_TIMEOUT_MS);if(response.payload.case!=="actorMessageResponse"){active.invalidate(new Error("unexpected actor message response"));throw new Error("unexpected actor message response")};const result=actorMessageModelResult(logical,response.payload.value);appendCommunicationView(outgoingExchange({key:`request:${logical.requestId}`,target:response.payload.value.target,body:text,accepted:response.payload.value.accepted,completed:response.payload.value.completed,mode:mode===ActorMessageRequest_Mode.ASK?"ask":"tell",reason:response.payload.value.reason,durationMillis:Date.now()-started}));return result},
+      async (logical)=>{const started=Date.now();const active=requiredClient(client);const response=await active.request("actorMessageRequest",ActorMessageRequestSchema,logical.value,fence,logical.requestId,SHORT_REQUEST_TIMEOUT_MS);if(response.payload.case!=="actorMessageResponse"){active.invalidate(new Error("unexpected actor message response"));throw new Error("unexpected actor message response")};const result=actorMessageModelResult(logical,response.payload.value);const view=outgoingExchange({key:`request:${logical.requestId}`,target:response.payload.value.target,body:text,accepted:response.payload.value.accepted,completed:response.payload.value.completed,mode:mode===ActorMessageRequest_Mode.ASK?"ask":"tell",reason:response.payload.value.reason,durationMillis:Date.now()-started});appendCommunicationView(view);return {...result,communicationView:view,renderEnvelope:communicationEnvelope(view)}},
 
       async()=>reconnect(requiredContext(extensionContext)));
   };
@@ -483,7 +492,7 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
       }
     });
     if (outcome.degraded) { reportBridgeDegraded(ctx, new Error(outcome.degraded)); return; }
-    const response = await requestDeliveryAckWithFenceRefresh(ctx, outcome.ack, fence);
+    const response = await requestBridgeDeliveryAckWithFenceRefresh(ctx, outcome.ack, fence);
     if (response.payload.case !== "bridgeDeliveryAckResponse" || !response.payload.value.accepted) throw new Error(`delivery acknowledgement rejected: ${boundedPublic(String(response.payload.value?.reason || ""), 80)}`);
     if (outcome.ack.delivered) {
       lastAckedSequence = maxBigInt(lastAckedSequence, delivery.sequence);
@@ -491,14 +500,16 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
     }
   }
 
-  async function requestDeliveryAckWithFenceRefresh(ctx: ExtensionContext, ack: ReturnType<typeof buildIdentityDeliveryAck>, fence: TargetFence): Promise<Envelope> {
-    let response = await requiredClient(client).request("bridgeDeliveryAckRequest", BridgeDeliveryAckRequestSchema, ack, fence);
-    const reason = response.payload.case === "bridgeDeliveryAckResponse" ? String(response.payload.value.reason || "") : "unexpected response";
-    if (response.payload.case === "bridgeDeliveryAckResponse" && !response.payload.value.accepted && /fence|stale|attach|reattach/i.test(reason)) {
-      await reconnect(ctx);
-      response = await requiredClient(client).request("bridgeDeliveryAckRequest", BridgeDeliveryAckRequestSchema, ack, requiredFence(selfFence));
-    }
-    return response;
+  async function requestBridgeDeliveryAckWithFenceRefresh(ctx: ExtensionContext, ack: ReturnType<typeof buildIdentityDeliveryAck>, fence: TargetFence): Promise<Envelope> {
+    return requestDeliveryAckWithFenceRefresh(
+      (payload, activeFence) => requiredClient(client).request("bridgeDeliveryAckRequest", BridgeDeliveryAckRequestSchema, payload, activeFence),
+      async () => {
+        await reconnect(ctx);
+        return requiredFence(selfFence);
+      },
+      ack,
+      fence,
+    );
   }
 
   function deliveredPrompt(dedupeId: string, sequence: bigint, settlement: ThreadSettlementEvidence) {
@@ -514,7 +525,7 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
     const settlement = promptSettlements.get(delivery.dedupeId);
     if (delivery.threadId && !settlement) throw new Error("thread prompt replay settlement evidence is unavailable");
     const ack = buildIdentityDeliveryAck(current.agentId, { runtimeId: current.runtimeId, incarnation: current.incarnation, piSessionId }, delivery, true, "prompt replayed after successful acknowledgement", new Uint8Array(), settlement);
-    const response = await requiredClient(client).request("bridgeDeliveryAckRequest", BridgeDeliveryAckRequestSchema, ack, fence);
+    const response = await requestBridgeDeliveryAckWithFenceRefresh(requiredContext(extensionContext), ack, fence);
     if (response.payload.case !== "bridgeDeliveryAckResponse" || !response.payload.value.accepted) {
       logBridgeDiagnostic(`prompt ack · agent=${boundedPublic(current.agentId, 48)} · sequence=${delivery.sequence} · outcome=rejected · class=${bridgeErrorClass(new Error(String(response.payload.value?.reason || "")))}`, true);
       throw new Error(`delivery acknowledgement rejected: ${boundedPublic(String(response.payload.value?.reason || ""), 80)}`);
@@ -536,7 +547,7 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
 
   function appendCommunicationView(view: CommunicationView) {
     const line = legacyCommunicationLine(view);
-    if (timeline.add({ key: view.key, line })) pi.appendEntry<CommunicationEntry>("hosted-pi-communication", { key: view.key, line, view });
+    if (timeline.add({ key: view.key, line })) pi.appendEntry<CommunicationEntry>("hosted-pi-communication", { key: view.key, line, view, renderEnvelope: communicationEnvelope(view, { line }) });
   }
 
   let diagnosticCounter = 0;

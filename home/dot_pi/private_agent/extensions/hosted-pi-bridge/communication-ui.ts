@@ -1,4 +1,4 @@
-import { Box, Container, Text } from "@earendil-works/pi-tui";
+import { Box, Text, truncateToWidth } from "@earendil-works/pi-tui";
 
 export type CommunicationDirection = "incoming" | "outgoing";
 export type CommunicationIntent = "note" | "request" | "reply" | "control" | "failure";
@@ -17,6 +17,14 @@ export type CommunicationView = {
   durationMillis?: number;
 };
 
+export type HostedCommunicationRenderEnvelope = {
+  schemaVersion: 1;
+  kind: "hosted-conversation-card";
+  key: string;
+  renderSnapshot: { card: CommunicationView };
+  legacy?: { line?: string; communicationView?: CommunicationView };
+};
+
 const SENSITIVE = /\b(?:raw[-_ ]*)?(principal|session|credential|pid|handle|fence|runtime)(?:[-_:=]?[A-Za-z0-9_.:/-]*)?/gi;
 const MAX_BODY_PREVIEW = 480;
 const MAX_TOOL_PREVIEW = 160;
@@ -32,6 +40,17 @@ export function safePreview(value: Uint8Array | string | undefined, max = 240): 
 }
 
 function semantic(theme: any, preferred: string, fallback: string, text: string): string { try { return theme.fg(preferred, text); } catch { return theme.fg(fallback, text); } }
+
+export function communicationEnvelope(view: CommunicationView, legacy: { line?: string; communicationView?: CommunicationView } = {}): HostedCommunicationRenderEnvelope {
+  return { schemaVersion: 1, kind: "hosted-conversation-card", key: view.key, renderSnapshot: { card: view }, legacy: { communicationView: legacy.communicationView, line: legacy.line } };
+}
+
+export function envelopeCommunicationView(envelope: unknown): CommunicationView | undefined {
+  const value = envelope as Partial<HostedCommunicationRenderEnvelope> | undefined;
+  if (value?.schemaVersion === 1 && value.kind === "hosted-conversation-card" && value.renderSnapshot?.card?.key) return value.renderSnapshot.card;
+  const legacy = envelope as { communicationView?: CommunicationView; view?: CommunicationView } | undefined;
+  return legacy?.communicationView ?? legacy?.view;
+}
 
 export function peerView(peer?: CommunicationPeer | string): { displayName: string; role: string } {
   if (typeof peer === "string") return { displayName: safePreview(peer || "Unknown actor", 48), role: "" };
@@ -112,21 +131,61 @@ export function communicationFooter(view: CommunicationView): string {
 }
 
 export function renderCommunicationCard(view: CommunicationView, theme: any) {
-  const bg = view.direction === "incoming" ? "customMessageBg" : view.state === "failed" ? "toolErrorBg" : view.state === "pending" ? "toolPendingBg" : "toolSuccessBg";
+  return renderHostedCommunicationEnvelope(communicationEnvelope(view), theme);
+}
+
+export function renderHostedCommunicationEnvelope(envelope: HostedCommunicationRenderEnvelope | unknown, theme: any) {
+  const view = envelopeCommunicationView(envelope) ?? incomingNote("hosted:unavailable", undefined, "Communication event unavailable");
+  return {
+    invalidate() {},
+    render(width: number) {
+      const bg = view.direction === "incoming" ? "customMessageBg" : view.state === "failed" ? "toolErrorBg" : view.state === "pending" ? "toolPendingBg" : "toolSuccessBg";
+      const box = new Box(1, 1, (text: string) => theme.bg(bg, text));
+      for (const line of themedCommunicationLines(view, theme, Math.max(20, width - 4))) box.addChild(new Text(line, 0, 0));
+      return box.render(width).map((line: string) => truncateToWidth(line, width));
+    },
+  };
+}
+
+function themedCommunicationLines(view: CommunicationView, theme: any, width: number): string[] {
   const titleColor = view.state === "failed" ? "error" : view.direction === "incoming" ? "accent" : view.intent === "request" ? "magenta" : "blue";
+  return renderPlainCommunicationCard(view, width).map((line) => {
+    if (/!|Couldn’t reach|retry available/.test(line)) return theme.fg("error", line);
+    if (/↙|replied|✓/.test(line)) return theme.fg("success", line);
+    if (/Waiting|◌/.test(line)) return theme.fg("warning", line);
+    if (/Asked|↗/.test(line)) return semantic(theme, "magenta", "accent", line);
+    if (/Sent to|↑/.test(line)) return semantic(theme, "blue", "toolTitle", line);
+    if (/↓/.test(line)) return theme.fg(titleColor, line);
+    return line;
+  });
+}
+
+function renderPlainCommunicationCard(view: CommunicationView, width: number): string[] {
   const icon = view.state === "failed" ? "!" : view.direction === "incoming" ? "↓" : view.intent === "request" ? "↗" : "↑";
-  const box = new Box(1, 1, (text: string) => theme.bg(bg, text));
-  const title = `${icon} ${communicationTitle(view)}`;
-  const styledTitle = titleColor === "magenta" ? semantic(theme, "magenta", "accent", theme.bold ? theme.bold(title) : title) : titleColor === "blue" ? semantic(theme, "blue", "toolTitle", theme.bold ? theme.bold(title) : title) : theme.fg(titleColor, theme.bold ? theme.bold(title) : title);
-  box.addChild(new Text(styledTitle, 0, 0));
-  if (view.body) box.addChild(new Text(view.body, 0, 0));
-  if (view.reply) {
-    box.addChild(new Text("", 0, 0));
-    box.addChild(new Text(theme.fg("success", `↙ ${view.peerDisplayName} replied`), 0, 0));
-    box.addChild(new Text(view.reply, 0, 0));
+  const narrow = width < 50;
+  const inner = Math.max(8, narrow ? width - 2 : width - 4);
+  const bodyLines = [`${icon} ${communicationTitle(view)}`, ...wrapPlain(view.body, inner)];
+  if (view.reply) bodyLines.push("", `↙ ${view.peerDisplayName} replied`, ...wrapPlain(view.reply, inner));
+  const footer = communicationFooter(view);
+  if (narrow) return [...bodyLines, footer].map((line) => line.slice(0, width));
+  return ["╭─ " + bodyLines[0], ...bodyLines.slice(1).map((line) => `│ ${line}`.slice(0, width)), `╰─ ${footer}`].map((line) => line.slice(0, width));
+}
+
+function wrapPlain(text: string, width: number): string[] {
+  const limit = Math.max(1, width);
+  const output: string[] = [];
+  for (const paragraph of String(text || "").split("\n")) {
+    let line = paragraph.trimEnd();
+    if (!line) { output.push(""); continue; }
+    while (line.length > limit) {
+      let cut = line.slice(0, limit).lastIndexOf(" ");
+      if (cut < Math.floor(limit / 2)) cut = limit;
+      output.push(line.slice(0, cut).trimEnd());
+      line = line.slice(cut).trimStart();
+    }
+    output.push(line);
   }
-  box.addChild(new Text(theme.fg("dim", communicationFooter(view)), 0, 0));
-  return box;
+  return output;
 }
 
 export function compactToolCall(name: string, args: any): string {
@@ -163,10 +222,11 @@ export function renderToolCall(name: string, args: any, theme: any) {
 
 export function renderToolResult(name: string, result: any, options: { isPartial?: boolean; expanded?: boolean }, theme: any) {
   if (options.isPartial) return new Text(theme.fg("warning", compactToolCall(name, result?.details ?? {})), 0, 0);
-  if (options.expanded && fullModelAnswer(result?.details) !== undefined) return renderFullAnswerResult(name, result.details, theme);
-  if (result?.details?.communicationView) {
-    if (options.expanded) return renderCommunicationCard(result.details.communicationView, theme);
-    const view = result.details.communicationView;
+  if (options.expanded && fullModelAnswer(result?.details) !== undefined && !result?.details?.renderEnvelope && !result?.details?.communicationView) return renderFullAnswerResult(name, result.details, theme);
+  const envelopeView = envelopeCommunicationView(result?.details?.renderEnvelope);
+  if (result?.details?.renderEnvelope || result?.details?.communicationView) {
+    if (options.expanded) return renderHostedCommunicationEnvelope(result.details.renderEnvelope ?? communicationEnvelope(result.details.communicationView), theme);
+    const view = envelopeView ?? result.details.communicationView;
     const peer = view.peerDisplayName;
     const line = view.state === "replied" ? `✓ ${peer} replied` : view.state === "failed" ? `! Couldn’t reach ${peer}` : /ask/.test(name) && view.state === "pending" ? `◌ Waiting for ${peer}…` : `✓ delivered`;
     return new Text(theme.fg(view.state === "failed" ? "error" : view.state === "pending" ? "warning" : "success", line), 0, 0);
