@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 03:03'
-updated_date: '2026-09-02 22:20'
+updated_date: '2026-09-02 22:28'
 labels: []
 dependencies: []
 references:
@@ -174,4 +174,6 @@ Independent reviewer v17 APPROVED da9aecc with no findings. Full codegen/race/ve
 After deploying da9aecc, the already-running actor-client remained disconnected from the daemon restart, exposing the final AC3 gap: reconnect occurred only on a later tool call/process restart. Added a bounded 500ms connection reconciler guarded by one bootstrap, stable generation/context fencing, timer cleanup/unref, and full client/session/fence reset. Reviewer v18 APPROVED 88a5f6a; actor-client 46/46 and focused service gates pass. Atomically deployed actor-client. One final terminal process restart loads the reconciler; subsequent daemon restarts no longer require operator intervention.
 
 Lifecycle hardening after cursor recovery: sequence 10 became the active regular Ask, revealing that RegularDeliveryCoordinator.agentEnd previously accepted any subsequent terminal turn. Bound settlement to a message set containing the exact injected user prompt (same strict omitted-agent_start fallback used by hosted prompts); unrelated operator turns no longer settle Actor Ask. Added regression; actor-client 47/47 passes. Deployed source, requiring one terminal restart to load this final correlation guard; restored sequence 10 will then retire as prior-executor abandonment and sequence 12 can be handled as the next exact prompt.
+
+Production validation started. Committed and pushed through ebf659b; VPS root@vps fast-forwarded /root/lazyvim and completed explicit chezmoi apply. Remote daemon rebuilt/restarted active at 22:27:23 UTC with commit ebf659b and no deployment-time rejection/panic log matches. Managed local and VPS configs both still correctly have remoting disabled; physical local→remote AgentActor routing therefore requires the documented third node plus owner-private URI-SAN mTLS configuration before that phase can honestly run. Created isolated LOCAL_COMM_1/LOCAL_COMM_2 retained actors in separate detached worktrees and admitted local chain round 1 with strict child terminal barrier; awaiting protocol-pushed ActorTaskCompleted, not polling.
 <!-- SECTION:NOTES:END -->
