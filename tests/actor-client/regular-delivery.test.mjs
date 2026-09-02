@@ -105,6 +105,14 @@ test("incoming ask waits for settlement and ACKs the bounded assistant answer",a
   assert.notEqual(h.acks[0].answer,"delivered to terminal");
 });
 
+test("unrelated terminal turn cannot settle an active actor Ask",async()=>{
+  const h=harness();
+  await h.coordinator.deliver(delivery(4),fence);
+  h.coordinator.agentEnd([{role:"user",content:"unrelated operator message"},{role:"assistant",content:"unrelated answer"}]);
+  await h.coordinator.settled();
+  assert.equal(h.acks.length,0);
+});
+
 test("an active Ask follow-up turn cannot head-of-line block a later Tell ACK",async()=>{
   const messages=[];const acks=[];
   const never=new Promise(()=>{});

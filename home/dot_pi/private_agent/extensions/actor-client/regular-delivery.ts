@@ -1,4 +1,4 @@
-import { boundedAssistantAnswer, deliveryKindLabel } from "../hosted-pi-bridge/handlers.ts";
+import { boundedAssistantAnswer, deliveryKindLabel, runContainsInjectedPrompt } from "../hosted-pi-bridge/handlers.ts";
 import { safePreview, type CommunicationView } from "../hosted-pi-bridge/communication-ui.ts";
 import { incomingCard } from "./projections/conversation.ts";
 import { conversationEnvelope, type ActorClientRenderEnvelope } from "./projections/render-envelope.ts";
@@ -26,7 +26,7 @@ export type RegularFence = { handle: string; fence: bigint };
 export type RegularDeliveryMarker = { key: string; stage: "injected" | "settled" | "acked"; kind: number; delivered?: boolean; answer?: string; reason?: string };
 export type RegularDeliveryMessage = { key: string; renderEnvelope: ActorClientRenderEnvelope; view?: CommunicationView };
 
-type Pending = { delivery: RegularDelivery; fence: RegularFence; outcome?: { delivered: boolean; answer: string; reason: string }; lastRunMessages: unknown[]; timer?: NodeJS.Timeout };
+type Pending = { delivery: RegularDelivery; fence: RegularFence; injectedText?: string; outcome?: { delivered: boolean; answer: string; reason: string }; lastRunMessages: unknown[]; timer?: NodeJS.Timeout };
 type Dependencies = {
   appendMarker(marker: RegularDeliveryMarker): void;
   sendFollowUp(message: RegularDeliveryMessage, text: string): void;
@@ -102,7 +102,7 @@ export class RegularDeliveryCoordinator {
     return operation;
   }
 
-  agentEnd(messages: unknown[]) { if (this.pending && !this.pending.outcome) this.pending.lastRunMessages = messages ?? []; }
+  agentEnd(messages: unknown[]) { if (this.pending && !this.pending.outcome && runContainsInjectedPrompt(messages, this.pending.injectedText ?? "")) this.pending.lastRunMessages = messages ?? []; }
   async settled() {
     const pending = this.pending;
     if (!pending) return;
@@ -110,6 +110,7 @@ export class RegularDeliveryCoordinator {
       await this.finish(pending, pending.outcome.delivered, pending.outcome.answer, pending.outcome.reason);
       return;
     }
+    if (!pending.lastRunMessages.length) return;
     const answer = boundedAssistantAnswer(pending.lastRunMessages);
     await this.finish(pending, Boolean(answer), answer, answer ? "" : "prompt run ended without an assistant answer");
   }
@@ -156,6 +157,7 @@ export class RegularDeliveryCoordinator {
     // therefore re-ACK, but can never inject the same work twice.
     this.dependencies.appendMarker({ key, stage: "injected", kind: pending.delivery.kind });
     this.injected.add(key);
+    pending.injectedText = text;
     const card = incomingCard({ key, source: peerFromDelivery(pending.delivery.source), body: pending.delivery.boundedPayload, request: prompt });
     const message = this.dependencies.projectIncoming?.(pending.delivery, prompt, card) ?? { key, renderEnvelope: conversationEnvelope(card) };
     try {
