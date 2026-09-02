@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 02:56'
-updated_date: '2026-09-02 03:08'
+updated_date: '2026-09-02 03:13'
 labels: []
 dependencies:
   - TASK-6
@@ -49,4 +49,6 @@ Architecture audit sequence 35 returned the frozen production integration contra
 Implemented production widget wiring: schema-versioned render envelopes, read-only legacy migration adapters, actor-client entry/message/tool renderers, width-aware theme-token widgets, selector-driven pending status, terminal-first restore compatibility, and no resize/theme append path. Added tests for envelope rendering, legacy migration, pending wording, tool collapsed/expanded renderers, renderEnvelope persistence, width/theme/resize, restore/replay/collision, and redaction.
 
 Validation: actor-client 37/37 passed; hosted bridge 36/36 passed; capabilities passed; services npm/codegen/go test -race/go vet/npm protocol passed; git diff --check passed. tmux-subagents remains 93/97 with four tmux ENOENT cases on this host; stylua and chezmoi dry-run remain blocked by missing stylua/tmux.
+
+Writer completion sequence 36 integrated as production code commit: render envelopes, legacy read-only conversion, snapshot-first registered renderers, width/theme-aware actor-client cards, selector pending status, and compact/expanded tool widgets. Writer gates passed actor-client 37/37, hosted bridge 36/36, capabilities, services codegen/race/vet/protocol, and diff check. Independent review/QA and local full gates follow before apply/reload.
 <!-- SECTION:NOTES:END -->
