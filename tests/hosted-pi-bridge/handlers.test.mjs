@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { buildActorControl, buildActorMessage, buildIdentityDeliveryAck, bridgeErrorClass, communicationKey, communicationLine, CommunicationTimeline, completeHostedEnvironment, ExactMutationSequencer, PromptTaskCoordinator, deliveryAction, deliveryKindLabel, destroyOnFramingFailure, drainPages, executeTypedDelivery, invokeTypedDeliveryForAck, missingAckIdentity, parseTargetMessage, registerHostedHandlers, requireExplicitModelTarget } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/handlers.ts";
 import { bridgeDiagnostic, communicationEnvelope, envelopeCommunicationView, incomingNote, incomingRequestText, outgoingExchange, renderCommunicationCard, compactToolCall, compactToolResult, modelResultContent, renderHostedCommunicationEnvelope, renderToolResult } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/communication-ui.ts";
-import { actorControlCapabilities, actorMessageCapabilities, actorMessageModelResult, capabilitySetIncludes, connectBridgeWithRetry, consumeReconnect, degradedBridgeStatus, isTransientLifecycleBusyResponse, pendingAskRequiresParentSuspend, reportLifecycleWithBusyRetry, requestDeliveryAckWithFenceRefresh, resolveHostedMessageDestination } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/index.ts";
+import { actorControlCapabilities, actorMessageCapabilities, actorMessageModelResult, capabilitySetIncludes, connectBridgeWithRetry, consumeReconnect, degradedBridgeStatus, isTransientLifecycleBusyResponse, pendingAskRequiresParentSuspend, reportLifecycleWithBusyRetry, requestDeliveryAckWithFenceRefresh, requestPromptAckWithBusyRetry, resolveHostedMessageDestination } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/index.ts";
 
 const complete = { WS_SUBAGENTS_ENDPOINT: "ws://127.0.0.1:17213/actors", WS_SUBAGENTS_CREDENTIAL_FILE: "/state/credential", WS_SUBAGENTS_SESSION_ID: "session", WS_SUBAGENTS_GENERATION_ID: "generation", WS_SUBAGENTS_CALLER: "hosted:agent", WS_SUBAGENTS_AGENT_ID: "agent", WS_SUBAGENTS_RUNTIME_ID: "runtime", WS_SUBAGENTS_INCARNATION: "1" };
 
@@ -36,6 +36,16 @@ test("lifecycle READY retries only transient durable busy with identical payload
   assert.equal(calls.length, 3);
   for (const call of calls) assert.deepEqual(call, calls[0], "lifecycle retry must not rotate payload, schema, or fence identity");
   assert.equal(isTransientLifecycleBusyResponse({ payload: { case: "bridgeLifecycleResponse", value: { accepted: false, reason: "durable persistence is busy" } } }), true);
+});
+
+test("prompt ACK retries only exact durable busy with identical caller-owned payload", async () => {
+  let calls=0;
+  const accepted={payload:{case:"bridgeDeliveryAckResponse",value:{accepted:true,reason:""}}};
+  const result=await requestPromptAckWithBusyRetry(async()=>{calls++;return calls<3?{payload:{case:"bridgeDeliveryAckResponse",value:{accepted:false,reason:"durable persistence is busy"}}}:accepted;},5,()=>0);
+  assert.equal(result,accepted);assert.equal(calls,3);
+  calls=0;
+  const rejected=await requestPromptAckWithBusyRetry(async()=>{calls++;return {payload:{case:"bridgeDeliveryAckResponse",value:{accepted:false,reason:"delivery acknowledgement identity rejected"}}};},5,()=>0);
+  assert.equal(rejected.payload.value.reason,"delivery acknowledgement identity rejected");assert.equal(calls,1);
 });
 
 test("lifecycle retry exhaustion and non-busy rejections stay fatal", async () => {

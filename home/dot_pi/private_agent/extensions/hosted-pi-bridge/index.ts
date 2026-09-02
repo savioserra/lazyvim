@@ -207,7 +207,7 @@ export default async function hostedPiBridge(pi: ExtensionAPI) {
     const ack = buildIdentityDeliveryAck(current.agentId, { runtimeId: current.runtimeId, incarnation: current.incarnation, piSessionId }, pending.delivery, deliveredSuccessfully, reason, encoded, settlement);
     let response: Envelope;
     try {
-      response = await requestBridgeDeliveryAckWithFenceRefresh(requiredContext(extensionContext), ack, pending.fence);
+      response = await requestPromptAckWithBusyRetry(() => requestBridgeDeliveryAckWithFenceRefresh(requiredContext(extensionContext), ack, pending.fence));
     } catch (error) {
       logBridgeDiagnostic(`prompt ack · agent=${boundedPublic(current.agentId, 48)} · sequence=${pending.delivery.sequence} · outcome=error · class=${bridgeErrorClass(error)}`, true);
       throw error;
@@ -679,6 +679,18 @@ export async function connectBridgeWithRetry(client: Pick<FramedClient, "request
     if (attempt < attempts - 1) await wait(100);
   }
   throw new Error(`hosted bridge binding rejected: ${reason}`);
+}
+
+export async function requestPromptAckWithBusyRetry<TResponse extends { payload?: { case?: string; value?: { accepted?: boolean; reason?: string } } }>(attemptRequest: () => Promise<TResponse>, attempts = 5, backoffMs = (attempt: number) => Math.min(250, 20 * 2 ** attempt)): Promise<TResponse> {
+  let response: TResponse | undefined;
+  for (let attempt = 0; attempt < Math.max(1, attempts); attempt++) {
+    response = await attemptRequest();
+    if (response.payload?.case === "bridgeDeliveryAckResponse" && response.payload.value?.accepted) return response;
+    const busy = response.payload?.case === "bridgeDeliveryAckResponse" && response.payload.value?.accepted === false && response.payload.value?.reason === "durable persistence is busy";
+    if (!busy) return response;
+    if (attempt + 1 < Math.max(1, attempts)) await delay(backoffMs(attempt));
+  }
+  return response as TResponse;
 }
 
 export function isTransientLifecycleBusyResponse(response: { payload?: { case?: string; value?: { accepted?: boolean; reason?: string } } }): boolean {
