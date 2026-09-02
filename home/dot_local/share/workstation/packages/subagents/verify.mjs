@@ -21,9 +21,10 @@ function requireExtension(root, expectedCommands) {
   return extension;
 }
 
+const actorCommands = ["actor-connect", "actor-list", "actor-resolve", "actor-health", "actor-tell", "actor-ask", "actor-create", "actor-stop", "actor-abort", "actor-shutdown", "actor-subscribe", "actor-unsubscribe"];
 const bridge = requireExtension(bridgeRoot, []);
-for (const command of ["actor-list", "actor-resolve", "actor-send", "actor-ask", "actor-abort", "actor-shutdown", "actor-subscribe", "actor-unsubscribe"]) {
+for (const command of actorCommands) {
   if (bridge.commands.has(command)) throw new Error(`hosted bridge registered ${command} outside a hosted runtime`);
 }
-requireExtension(actorClientRoot, ["actor-list", "actor-resolve", "actor-send", "actor-ask", "actor-create", "actor-abort", "actor-shutdown", "actor-subscribe", "actor-unsubscribe"]);
+requireExtension(actorClientRoot, actorCommands);
 console.log("subagents actor client active");
