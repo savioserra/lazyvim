@@ -86,6 +86,20 @@ test("fresh hosted bridge process adopts daemon high-water before first allocati
   assert.equal(next.sequence, 9n, "adoption must never lower an existing high-water");
 });
 
+test("fresh hosted bridge process resumes after completed ask without duplicating old delivery", async () => {
+  const firstProcess = new ClientMutationSequencer(fast);
+  const admitted = await firstProcess.run(messageScope, message, async (logical) => ({ accepted: true, awaitingReply: true, requestId: logical.requestId, sequence: logical.value.sourceMutationSequence }), async () => {});
+  assert.equal(admitted.sequence, 1n);
+
+  const freshProcess = new ClientMutationSequencer(fast);
+  freshProcess.adoptHighWater(messageScope, admitted.sequence);
+  const attempts = [];
+  const next = await freshProcess.run(messageScope, message, async (logical) => { attempts.push(structuredClone(logical)); return { accepted: true, sequence: logical.value.sourceMutationSequence }; }, async () => {});
+  assert.equal(next.sequence, 2n, "fresh runtime rotation must allocate after the daemon-owned high-water");
+  assert.equal(attempts.length, 1, "fresh runtime must not replay the completed ask delivery");
+  assert.notEqual(attempts[0].requestId, admitted.requestId, "new process request IDs may rotate without reusing sequence 1");
+});
+
 test("control scopes stay per-target while messages share one namespace", async () => {
   const sequencer = new ClientMutationSequencer(fast);
   const control = (sequence) => ({ requestId: `control-${sequence}`, value: { intent: 1, sourceMutationSequence: sequence } });

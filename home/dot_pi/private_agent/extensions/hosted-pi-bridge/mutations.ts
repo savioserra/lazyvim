@@ -12,7 +12,8 @@
 // sequence only after the previous mutation settled, queues concurrent
 // mutations, retains the immutable unresolved mutation across reconnects so the
 // same logical request replays after reconcile (the daemon replays the retained
-// admission by request/dedupe/chain/sequence identity), retries transport
+// admission by logical dedupe/chain/sequence/payload identity, while accepting
+// request-id rotation after fresh process handshakes), retries transport
 // failures with a bounded cooldown, and fails loud on true sequence collisions
 // instead of silently burning slots.
 //

@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 03:03'
-updated_date: '2026-09-02 13:41'
+updated_date: '2026-09-02 14:14'
 labels: []
 dependencies: []
 references:
@@ -44,6 +44,12 @@ Terminal actor delivery remains unreliable in two related live paths. First, con
 5. Run service/client/security/reconnect regressions and a live multi-message hosted-agent-to-source E2E before finalization.
 
 6. Remove hardcoded PROJECT MANAGER and TERMINAL PI role/display assignments. Add an authenticated terminal metadata registration/update path so communicationPeer resolves canonical AgentActor metadata; presentation labels never become routing identity.
+
+7. Reproduce hosted AgentActor A→B Tell/Ask through actor-client hosted bridge tools/ActorMessageRequest, trace admission, credit reservation, ActorTask delivery, target thread creation, completion return, and UI delivery on origin/main a57222a+.
+
+8. Fix the regression with durable-before-effects semantics for hosted source identity/session rotation/stable ActorRefs/credit redrive without re-enabling raw or RemoteBridgeIntent Ask/Prompt.
+
+9. Add race-safe Go and actor-client/extension regressions for hosted A→B Tell and Ask across fresh runtime rotation and exactly-once completion; run codegen, race, vet, npm, and focused gates.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
@@ -108,4 +114,6 @@ QA post-fix matrix: remaining live gap is canonical hosted-to-source Tell then A
 Reviewer found prompt completion ACK and replay-prompt ACK directly reuse pending stale fence instead of requestDeliveryAckWithFenceRefresh. Assigned implementation and exactly-once identical-payload tests.
 
 Implemented prompt completion and replay-prompt ACK through the common fence-refresh path with identical payload and one bounded retry (babc3a3). Added exactly-once stale/fresh fence regression. Fresh hosted-to-source live acceptance remains.
+
+Hosted A→B ActorMessageRequest regression reproduced on origin/main a57222a path: alpha attached to bravo, alpha Tell/Ask admitted through service ActorMessageRequest -> SendActorTask -> credit -> ActorTask, bravo received Tell and Ask/thread, bravo ACK completed the Ask, but alpha's fresh request-id completion retry failed with source mutation sequence collision. Fixed source AgentActor replay to accept durable retained source mutations by logical dedupe/chain/sequence/target/mode/capability/payload fingerprint even when the transport request_id rotates; raw BridgeIntent and retired Prompt/TaskLifecycle remain rejected. Added hosted A→B service regression and hosted bridge sequencer fresh-process no-duplicate coverage. Gates: go test ./internal/actors ./internal/service; service npm ci/codegen verify/go test -race ./.../go vet ./.../npm test; hosted-pi-bridge npm ci + npm test; git diff --check. Initial service npm test failed before extension dependencies were installed; rerun passed after npm ci in hosted-pi-bridge.
 <!-- SECTION:NOTES:END -->

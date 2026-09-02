@@ -1535,7 +1535,7 @@ func (a *AgentActor) sendActorTask(ctx *actor.ReceiveContext, message *applicati
 	fingerprint := sourceMutationFingerprintFromTask(message, payloadDigest)
 	taskID := actorTaskID(a.id, message.RequestID, message.DedupeID, message.ChainID, message.SourceMutationSequence)
 	if receipt, ok := a.sourceMutationReceipts[taskID]; ok {
-		if !sameSourceMutationFingerprint(receipt.Fingerprint, fingerprint) {
+		if !sameSourceMutationFingerprint(receipt.Fingerprint, fingerprint) && !sameSourceMutationLogicalFingerprint(receipt.Fingerprint, fingerprint) {
 			respondBridgeIntent(ctx, message.Receipt, &application.BridgeIntentResult{Reason: "source mutation sequence collision"})
 			return
 		}
@@ -1544,7 +1544,7 @@ func (a *AgentActor) sendActorTask(ctx *actor.ReceiveContext, message *applicati
 		return
 	}
 	if item, exists := a.sourceOutbox[taskID]; exists {
-		if !sameSourceOutboxMutation(item, message, payloadDigest) {
+		if !sameSourceOutboxMutation(item, message, payloadDigest) && !sameSourceOutboxLogicalMutation(item, message, payloadDigest) {
 			respondBridgeIntent(ctx, message.Receipt, &application.BridgeIntentResult{Reason: "source mutation sequence collision"})
 			return
 		}
@@ -1554,7 +1554,7 @@ func (a *AgentActor) sendActorTask(ctx *actor.ReceiveContext, message *applicati
 	sequenceSuffix := fmt.Sprintf(":%d", message.SourceMutationSequence)
 	for key, receipt := range a.sourceMutationReceipts {
 		if strings.HasPrefix(key, a.id+":") && strings.HasSuffix(key, sequenceSuffix) {
-			if sameSourceMutationFingerprint(receipt.Fingerprint, fingerprint) {
+			if sameSourceMutationFingerprint(receipt.Fingerprint, fingerprint) || sameSourceMutationLogicalFingerprint(receipt.Fingerprint, fingerprint) {
 				result := receipt.Result
 				respondBridgeIntent(ctx, message.Receipt, &result)
 				return
@@ -1565,7 +1565,7 @@ func (a *AgentActor) sendActorTask(ctx *actor.ReceiveContext, message *applicati
 	}
 	for key, item := range a.sourceOutbox {
 		if strings.HasPrefix(key, a.id+":") && strings.HasSuffix(key, sequenceSuffix) {
-			if sameSourceOutboxMutation(item, message, payloadDigest) {
+			if sameSourceOutboxMutation(item, message, payloadDigest) || sameSourceOutboxLogicalMutation(item, message, payloadDigest) {
 				respondBridgeIntent(ctx, message.Receipt, &application.BridgeIntentResult{Accepted: true, AwaitingAck: true, Reason: "stored_pending_credit"})
 				return
 			}
@@ -1654,11 +1654,26 @@ func sameSourceMutationFingerprint(left, right application.SourceMutationFingerp
 	return validSourceMutationFingerprint(left) && validSourceMutationFingerprint(right) && left == right
 }
 
+func sameSourceMutationLogicalFingerprint(left, right application.SourceMutationFingerprint) bool {
+	if !validSourceMutationFingerprint(left) || !validSourceMutationFingerprint(right) {
+		return false
+	}
+	left.RequestID, right.RequestID = "", ""
+	return left == right
+}
+
 func sameSourceOutboxMutation(item application.DurableActorTaskOutboxItem, message *application.SendActorTask, payloadDigest [32]byte) bool {
 	if message == nil {
 		return false
 	}
 	return sameSourceMutationFingerprint(sourceMutationFingerprintFromOutbox(item), sourceMutationFingerprintFromTask(message, payloadDigest))
+}
+
+func sameSourceOutboxLogicalMutation(item application.DurableActorTaskOutboxItem, message *application.SendActorTask, payloadDigest [32]byte) bool {
+	if message == nil {
+		return false
+	}
+	return sameSourceMutationLogicalFingerprint(sourceMutationFingerprintFromOutbox(item), sourceMutationFingerprintFromTask(message, payloadDigest))
 }
 
 func (a *AgentActor) findSourceMutationReceiptForCompletion(completion application.ActorTaskCompleted) (string, application.DurableSourceMutationReceipt, bool) {

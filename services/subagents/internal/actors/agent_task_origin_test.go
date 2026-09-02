@@ -208,6 +208,7 @@ func TestSourceMutationReceiptsFencePendingAcceptedTerminalAndLegacyHistory(t *t
 	}
 	assertStored(send("request", "dedupe", "chain", "target-agent", "send", 1, application.BridgeMessageTell, "payload"))
 	assertStored(send("request", "dedupe", "chain", "target-agent", "send", 1, application.BridgeMessageTell, "payload"))
+	assertStored(send("rotated-request", "dedupe", "chain", "target-agent", "send", 1, application.BridgeMessageTell, "payload"))
 	assertCollision("payload", send("request", "dedupe", "chain", "target-agent", "send", 1, application.BridgeMessageTell, "changed"))
 	assertCollision("dedupe", send("request", "other-dedupe", "chain", "target-agent", "send", 1, application.BridgeMessageTell, "payload"))
 	assertCollision("chain", send("request", "dedupe", "other-chain", "target-agent", "send", 1, application.BridgeMessageTell, "payload"))
@@ -226,6 +227,10 @@ func TestSourceMutationReceiptsFencePendingAcceptedTerminalAndLegacyHistory(t *t
 	if !terminal.Accepted || !terminal.Completed || string(terminal.Result) != "done" {
 		t.Fatalf("terminal receipt not replayed: %#v", terminal)
 	}
+	rotatedTerminal := send("fresh-process-request", "dedupe", "chain", "target-agent", "send", 1, application.BridgeMessageTell, "payload")
+	if !rotatedTerminal.Accepted || !rotatedTerminal.Completed || string(rotatedTerminal.Result) != "done" {
+		t.Fatalf("terminal receipt not replayed after request-id rotation: %#v", rotatedTerminal)
+	}
 	assertCollision("terminal payload", send("request", "dedupe", "chain", "target-agent", "send", 1, application.BridgeMessageTell, "changed"))
 
 	restartDigest := sha256.Sum256([]byte("restart payload"))
@@ -236,7 +241,7 @@ func TestSourceMutationReceiptsFencePendingAcceptedTerminalAndLegacyHistory(t *t
 		t.Fatal(err)
 	}
 	restartReceipt := make(chan application.BridgeIntentResult, 1)
-	if err := system.NoSender().Tell(ctx, restarted, &application.SendActorTask{TargetPID: target.pid, TargetPeer: application.CommunicationPeer{StableID: "target-agent"}, RequestID: "request", DedupeID: "dedupe", ChainID: "chain", RequiredCapability: "send", SourceMutationSequence: 1, Deadline: time.Now().Add(time.Minute), HopLimit: 8, Mode: application.BridgeMessageTell, Payload: []byte("restart payload"), Receipt: restartReceipt}); err != nil {
+	if err := system.NoSender().Tell(ctx, restarted, &application.SendActorTask{TargetPID: target.pid, TargetPeer: application.CommunicationPeer{StableID: "target-agent"}, RequestID: "rotated-restart-request", DedupeID: "dedupe", ChainID: "chain", RequiredCapability: "send", SourceMutationSequence: 1, Deadline: time.Now().Add(time.Minute), HopLimit: 8, Mode: application.BridgeMessageTell, Payload: []byte("restart payload"), Receipt: restartReceipt}); err != nil {
 		t.Fatal(err)
 	}
 	select {
