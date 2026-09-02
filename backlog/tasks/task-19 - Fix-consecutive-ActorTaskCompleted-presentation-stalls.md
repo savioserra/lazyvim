@@ -76,4 +76,6 @@ Independent review sequence 45 found no architecture/security implementation blo
 Operator-requested deployment reset executed on main a85c40d/7b7e517 code: chezmoi apply succeeded; five exact hosted actors were stopped; the old crew observer window was removed; daemon stopped; only configured actor state was cleared/recreated mode 0700; five verified leftover hosted Pi PIDs were terminated by exact WS_SUBAGENTS_AGENT_ID match; daemon restarted active; all five logical actors were recreated fresh and report available; labeled 3x2 crew window rebuilt with PM plus five actors. Active PM must /reload to load the new actor-client before live notification E2E.
 
 Fresh post-reset live proof passed: sequences 47, 48, and 49 were admitted consecutively without intervening user input and automatically produced NOTIFY_E2E_1/2/3 in order and exactly once, with no pane inspection or durable-state polling. Fresh cards used neutral  presentation with empty role rather than any hardcoded semantic role, while each target retained its independently registered dynamic metadata.
+
+Correction: the neutral source presentation label observed in sequences 47-49 was `client`; no semantic role was synthesized.
 <!-- SECTION:NOTES:END -->
