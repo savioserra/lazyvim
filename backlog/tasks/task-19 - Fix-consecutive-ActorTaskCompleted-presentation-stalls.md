@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 03:03'
-updated_date: '2026-09-02 04:16'
+updated_date: '2026-09-02 04:28'
 labels: []
 dependencies: []
 references:
@@ -80,4 +80,6 @@ Fresh post-reset live proof passed: sequences 47, 48, and 49 were admitted conse
 Correction: the neutral source presentation label observed in sequences 47-49 was `client`; no semantic role was synthesized.
 
 The remaining TASK-19 release gates will be closed together with the production intent correction: add three-consecutive service wake regression, real daemon stale-fence reattach/ACK regression, and hosted reply-to-source Tell plus Ask live coverage.
+
+Writer sequence 50 integrated release-gate regressions: three consecutive completion reply frames without another request, real-wire stale-fence ACK rotation, and canonical reply-to-source Tell/Ask with display metadata rejected for routing. Task remains open for independent review and live Tell/Ask/fence evidence.
 <!-- SECTION:NOTES:END -->
