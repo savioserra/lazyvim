@@ -5,6 +5,7 @@ status: To Do
 assignee:
   - '@pi'
 created_date: '2026-09-02 03:03'
+updated_date: '2026-09-02 03:04'
 labels: []
 dependencies: []
 references:
@@ -30,3 +31,9 @@ After the corrected actor-client was applied and reloaded, fresh sequence 33 aut
 - [ ] #3 Presentation failure remains durable/retryable with bounded degraded status, and attachment/fence or reply-cursor errors cannot silently strand a completion
 - [ ] #4 Service and actor-client regressions reproduce the sequence-33-success then sequence-34/35-stall class and prove the fix under reconnect
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Additional live evidence: sequence 34 appeared only after the user sent a later turn, rather than waking/presenting when the durable completion first committed. Its payload was only a report receipt, but the delayed wake behavior confirms the consecutive-completion presentation stall remains observable.
+<!-- SECTION:NOTES:END -->
