@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 02:56'
-updated_date: '2026-09-02 05:43'
+updated_date: '2026-09-02 05:44'
 labels: []
 dependencies:
   - TASK-6
@@ -32,6 +32,8 @@ Replace the actor-client's remaining legacy communication renderer path with pro
 - [ ] #4 Collapsed/expanded tool rendering is compact for humans while model-visible content retains required correlation and next-action fields
 - [ ] #5 Automated and live fresh-runtime E2E cover Actor UX acceptance items 1-10 and 12 except typed productive phase, which is tracked separately
 - [ ] #6 Deployment documentation and live acceptance require a full terminal Pi process restart for actor-client changes; `/reload` alone is explicitly insufficient
+- [ ] #7 Conversation and tool copy has one clear information hierarchy: each state/action label appears once, with no duplicate wording such as applied/delivered/replied repeated in title, body, and footer
+- [ ] #8 Private conversation cards preserve the actual bounded Tell body, Ask prompt, and answer; collapsed views show a useful sanitized preview and expanded views show full bounded content plus correlation details without exposing it on public status surfaces
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -94,4 +96,6 @@ Fresh terminal Pi process after deployment now exposes true TELL semantics: acto
 Fresh-process live sequence 69 exposed a new blocker: initial actor_tell correctly rendered ✓ delivered/kind=Tell, but its terminal delivery ACK later entered the generic actorMessageReplyFrame path and rendered `Actor Ask replied` with answer `delivery acknowledged`. Tell terminal ACKs must not use actor-client-ask-completion or replied semantics.
 
 Sequence 70 independently reproduced the same Tell terminal misclassification against UI QA, confirming the defect is deterministic across targets rather than a one-off replay artifact.
+
+Operator UX feedback: balloons currently repeat information (for example the same applied/state wording can appear twice) while hiding the actual message. Copy review must remove redundant title/body/footer labels and make message content available through collapsed preview plus expansion. Public footer/roster remains payload-free; content is limited to the private requesting conversation/tool renderer.
 <!-- SECTION:NOTES:END -->

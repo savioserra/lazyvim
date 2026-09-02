@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@pi'
 created_date: '2026-09-02 05:40'
-updated_date: '2026-09-02 05:40'
+updated_date: '2026-09-02 05:44'
 labels: []
 dependencies:
   - TASK-1.2.1
@@ -35,4 +35,11 @@ Project authenticated roster/activity frames through the existing actor-client X
 - [ ] #3 The overlay is read-only projection UI; it exposes no stop/control actions, credentials, principals, fences, runtime IDs, PIDs, tmux IDs, prompts, answers, or raw payloads
 - [ ] #4 Unknown activity labels naturalize safely, clear removes only activity, lifecycle/activity remain separate, and stale/gapped/reconnect frames never flash older state
 - [ ] #5 TUI tests cover theme invalidation, ANSI width, 20/25/49/80 columns, overlay input/focus/disposal, live update rendering, non-TUI no-op, reconnect, and no polling
+- [ ] #6 Footer and overlay wording is copy-reviewed for one semantic fact per location; lifecycle/activity/pending/visibility labels are not redundantly repeated between row, detail, and footer
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Information-hierarchy correction: interactive status remains payload-free. Actual Tell/Ask content expansion belongs to TASK-1.1 private conversation/tool balloons, while TASK-1.2.2 status rows avoid redundant labels and link users to conversation history rather than leaking payloads.
+<!-- SECTION:NOTES:END -->
