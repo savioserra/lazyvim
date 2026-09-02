@@ -1,11 +1,11 @@
 ---
 id: TASK-20
 title: Fix remote duplicate ActorMessage idempotency race
-status: In Progress
+status: Done
 assignee:
   - '@pi'
 created_date: '2026-09-02 04:30'
-updated_date: '2026-09-02 05:47'
+updated_date: '2026-09-02 06:04'
 labels: []
 dependencies: []
 references:
@@ -24,10 +24,10 @@ A full `go test -race ./...` run intermittently failed `TestRemoteHostedOrdinary
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Concurrent and sequential duplicate remote ActorMessage requests with identical request ID, mutation sequence, and payload digest return the same authoritative admission/result
-- [ ] #2 A different payload or identity reusing the request/mutation identity still fails closed as a collision
-- [ ] #3 Idempotency survives placement forwarding and relevant node/session reconnect or restart boundaries without dual admission
-- [ ] #4 The remote duplicate regression passes repeatedly under race detection and the full service gate is stable
+- [x] #1 Concurrent and sequential duplicate remote ActorMessage requests with identical request ID, mutation sequence, and payload digest return the same authoritative admission/result
+- [x] #2 A different payload or identity reusing the request/mutation identity still fails closed as a collision
+- [x] #3 Idempotency survives placement forwarding and relevant node/session reconnect or restart boundaries without dual admission
+- [x] #4 The remote duplicate regression passes repeatedly under race detection and the full service gate is stable
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -62,4 +62,12 @@ Corrected writer implementation integrated on main as 88d603c and 013adc7. Durab
 Final independent review sequence 66 closed all prior High findings but rejected final approval on one Medium issue: retainSourceMutationReceipt blindly FIFO-evicts accepted AwaitingAck receipts at maxCommandResults. An active receipt must remain replayable until terminal; boundedness requires terminal-only eviction plus admission backpressure when every retained receipt is active.
 
 Final active-receipt correction integrated as main commit 1ec84c0. Admission now backpressures before mutation when all 1024 receipts are active; terminal-only eviction pins accepted AwaitingAck receipts and terminal completion restores capacity. PM focused TestSourceMutationReceipt race count=20 passed. Independent final re-review still required before checking AC/finalization.
+
+Independent final re-review Ask 87 approved 1ec84c0 with no findings. Reviewer confirmed active receipt pinning, all-active capacity backpressure, terminal-first eviction, fail-closed duplicate/collision handling, and focused/full Go tests plus diff check.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Fixed the remote duplicate ActorMessage race with durable full-fingerprint source mutation receipts across pending, terminal, forwarding, reconnect, and restart paths. Active accepted receipts remain pinned; only terminal receipts may be evicted, and an all-active 1024-entry set backpressures before any sequence/outbox/durable mutation. Collision and legacy-unprovable history remain fail-closed. PM race loops/full gates and independent final review passed.
+<!-- SECTION:FINAL_SUMMARY:END -->
