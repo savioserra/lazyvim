@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@pi'
 created_date: '2026-09-02 04:46'
-updated_date: '2026-09-02 04:46'
+updated_date: '2026-09-02 05:24'
 labels: []
 dependencies:
   - TASK-1.3.2
@@ -32,4 +32,5 @@ Expose crew reconciliation through actor-client. `/crew spawn` can consume suppl
 - [ ] #3 Each newly created hosted Pi runtime receives its configured `prompt` as default system prompt; existing retained actors are not silently restarted merely to reapply configuration
 - [ ] #4 Command, tool, and startup summaries distinguish created, existing, skipped, and conflict outcomes without exposing full prompts or private actor/runtime data
 - [ ] #5 Reload, reconnect, repeated command, and simultaneous terminal tests prove the client path remains idempotent and does not duplicate runtimes, cards, or status entries
+- [ ] #6 Automatic and explicit spawn surface the supervisor outcome separately from participant outcomes without exposing its prompt or granting terminal-derived coordination authority
 <!-- AC:END -->

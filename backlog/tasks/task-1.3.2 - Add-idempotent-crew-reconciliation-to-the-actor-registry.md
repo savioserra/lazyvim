@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@pi'
 created_date: '2026-09-02 04:46'
-updated_date: '2026-09-02 04:46'
+updated_date: '2026-09-02 05:24'
 labels: []
 dependencies:
   - TASK-1.3.1
@@ -32,4 +32,5 @@ Add an authenticated daemon operation that reconciles a validated crew manifest 
 - [ ] #3 Retry after partial failure creates only missing entries and reports created, existing, and conflict outcomes without stopping or replacing retained actors
 - [ ] #4 Conflicting stable identity or incompatible manifest revisions fail closed; prompts, credentials, host data, runtime IDs, fences, principals, and process/tmux details are redacted from public results
 - [ ] #5 Durable restart, remote placement, reconnect, and race tests prove idempotency and one-writer enforcement without WorkflowActor participation
+- [ ] #6 Reconciliation treats the optional supervisor as one ordinary retained AgentActor with crew-scoped capabilities and the same idempotent create/existing/conflict result contract as participants
 <!-- AC:END -->

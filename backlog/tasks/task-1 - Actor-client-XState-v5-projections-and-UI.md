@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-08-31 21:41'
-updated_date: '2026-09-02 04:47'
+updated_date: '2026-09-02 05:24'
 labels: []
 dependencies: []
 priority: high
@@ -23,7 +23,7 @@ Deliver the workstation extension complete actor-client UX on the owned distribu
 <!-- AC:BEGIN -->
 - [ ] #1 Production actor-client rendering uses bounded XState snapshots for the complete approved conversation-card, status, tool, replay, and responsive-layout contract
 - [ ] #2 AgentActor publishes revision-fenced dynamic activity metadata that drives status and exactly owned runtime UI without fixed domain phases, role inference, liveness inference, or polling
-- [ ] #3 A project-root `.crew.toml`, automatic Pi startup, and `/crew spawn` idempotently bootstrap and retain the configured AgentActors without WorkflowActor orchestration or PM UI dependence
+- [ ] #3 A project-root `.crew.toml`, optional prompt-driven supervisor, automatic Pi startup, and `/crew spawn` idempotently bootstrap, observe, coordinate, and retain AgentActors without WorkflowActor orchestration or PM UI dependence
 - [ ] #4 The Actor UX design system live acceptance matrix passes and the canonical roadmap reflects the shipped state and next cutover work
 <!-- AC:END -->
 
@@ -40,4 +40,6 @@ Deliver the workstation extension complete actor-client UX on the owned distribu
 
 <!-- SECTION:NOTES:BEGIN -->
 Product scope changed by operator decision: remove WorkflowActor orchestration and durable decision UX from this initiative. Declarative crew bootstrap is the replacement; AgentActors and normal task/message protocols remain authoritative.
+
+Crew scope now includes an optional prompt-driven supervisor AgentActor with crew-scoped topic observation and typed coordination actions; this remains normal AgentActor behavior, not WorkflowActor authority.
 <!-- SECTION:NOTES:END -->
