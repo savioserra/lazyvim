@@ -1857,6 +1857,7 @@ func (a *AgentActor) actorTask(ctx *actor.ReceiveContext, message *application.A
 		return
 	}
 	if a.durablePending != nil || a.durableFailed != nil {
+		a.logActorTaskReject("durable_persistence_busy", message.Credit, replyTo, &reservation)
 		_ = ctx.Self().Tell(context.WithoutCancel(ctx.Context()), replyTo, &application.ActorTaskAccepted{TaskID: message.Credit.TaskID, CreditID: message.Credit.CreditID, TargetAgentID: a.id, Reason: "durable persistence is busy"})
 		return
 	}
@@ -1864,6 +1865,7 @@ func (a *AgentActor) actorTask(ctx *actor.ReceiveContext, message *application.A
 	delete(a.taskCreditReservations, message.Credit.CreditID)
 	intent := &application.BridgeIntent{SessionID: "actor", GenerationID: "actor", Principal: message.SourcePeer.StableID, Handle: "actor", SourceAgentID: message.SourcePeer.StableID, TargetAgentID: a.id, RequestID: message.RequestID, RequiredCapability: message.RequiredCapability, DedupeID: message.DedupeID, ChainID: message.ChainID, SourceMutationSequence: message.SourceMutationSequence, Deadline: message.Deadline, HopLimit: message.HopLimit, Mode: message.Mode, Payload: append([]byte(nil), message.Payload...)}
 	if !a.acceptActorTaskWithCredit(ctx, intent, replyTo, message.SourcePeer, old) {
+		a.logActorTaskReject("admission_rejected", message.Credit, replyTo, &reservation)
 		// A refused task must not burn its credit: the source outbox still
 		// holds the granted credit and redrives it within the lease, so the
 		// reservation survives until its lease expiry or a successful

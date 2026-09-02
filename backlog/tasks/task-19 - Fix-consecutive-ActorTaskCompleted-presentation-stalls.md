@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 03:03'
-updated_date: '2026-09-02 16:28'
+updated_date: '2026-09-02 16:49'
 labels: []
 dependencies: []
 references:
@@ -54,6 +54,8 @@ Terminal actor delivery remains unreliable in two related live paths. First, con
 10. Make hosted-pi-bridge lifecycle READY retry only exact transient durable-persistence-busy responses with bounded backoff and identical lifecycle payload/identity; keep auth/incarnation/non-busy rejection fatal.
 
 11. Add extension and Go regressions for READY racing durable persistence, reconnect eventual Ready convergence, retry exhaustion, non-busy fail-closed, and no same-incarnation ready-to-starting regression; run relevant gates.
+
+12. Prevent Pi follow-up turn lifetime from blocking the durable regular-delivery queue: treat the documented sendMessage call as synchronous enqueue, ACK Tell immediately after enqueue, and let Ask ACK only from correlated agent settlement; add a regression with an unresolved follow-up thenable proving later Tell admission/ACK is not head-of-line blocked.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
@@ -130,4 +132,6 @@ Live actor1→actor2 E2E exposed a daemon crash at 12:33:48: async bridge push r
 Fresh relay E2E then exposed zero bridge-run-counter ACKs: prompt injection could receive a stale agent_settled from the prior run before its follow-up agent_start, causing PromptTaskCoordinator to finalize with run counter 0 and fail exact thread ACK identity forever. Coordinator now binds pending work only to the first post-injection agent_start, records agent_end only for that run, and ignores stale settlement until the correlated run ends. Added coarse payload-free ACK mismatch-class diagnostics and integration coverage for start/end/settled ordering. Hosted bridge 43/43 passes; fresh live relay remains required after runtime reincarnation.
 
 Cold-start probe still produced run-counter zero because this hosted Pi surface can omit agent_start for injected follow-up work. Added a strict fallback: agent_end may allocate/bind the run counter only when its user-message set contains the exact injected prompt text; unrelated prior runs and stale settlement remain unable to claim the pending thread. Added negative unrelated-run and positive omitted-agent_start coverage; hosted bridge 44/44 passes.
+
+Fresh live relay exposed a remaining queueing defect: client displayed regular deliveries 5 and 6, but AckCursor stayed 4 and relay B remained stored_pending_credit. RegularDeliveryCoordinator awaits sendFollowUp inside its serialized tail; on this Pi surface that thenable spans the triggered model turn, so the active Ask blocks a following Tell's durable ACK despite presentation.
 <!-- SECTION:NOTES:END -->

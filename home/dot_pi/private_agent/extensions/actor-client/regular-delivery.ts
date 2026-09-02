@@ -29,7 +29,7 @@ export type RegularDeliveryMessage = { key: string; renderEnvelope: ActorClientR
 type Pending = { delivery: RegularDelivery; fence: RegularFence; outcome?: { delivered: boolean; answer: string; reason: string }; lastRunMessages: unknown[]; timer?: NodeJS.Timeout };
 type Dependencies = {
   appendMarker(marker: RegularDeliveryMarker): void;
-  sendFollowUp(message: RegularDeliveryMessage, text: string): void | Promise<void>;
+  sendFollowUp(message: RegularDeliveryMessage, text: string): void;
   acknowledge(delivery: RegularDelivery, fence: RegularFence, delivered: boolean, answer: string, reason: string): Promise<void>;
   projectIncoming?(delivery: RegularDelivery, prompt: boolean, card: ConversationCard): RegularDeliveryMessage;
   now?: () => number;
@@ -126,7 +126,10 @@ export class RegularDeliveryCoordinator {
     const card = incomingCard({ key, source: peerFromDelivery(pending.delivery.source), body: pending.delivery.boundedPayload, request: prompt });
     const message = this.dependencies.projectIncoming?.(pending.delivery, prompt, card) ?? { key, renderEnvelope: conversationEnvelope(card) };
     try {
-      await this.dependencies.sendFollowUp(message, text);
+      // Pi's sendMessage contract synchronously enqueues the follow-up. Do not
+      // await an implementation thenable here: it may span the triggered model
+      // turn and head-of-line block later durable deliveries and Tell ACKs.
+      this.dependencies.sendFollowUp(message, text);
     } catch (error) {
       await this.finish(pending, false, "", safePreview(error instanceof Error ? error.message : "terminal follow-up injection failed", 200));
     }

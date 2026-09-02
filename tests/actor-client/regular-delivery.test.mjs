@@ -92,6 +92,24 @@ test("incoming ask waits for settlement and ACKs the bounded assistant answer",a
   assert.notEqual(h.acks[0].answer,"delivered to terminal");
 });
 
+test("an active Ask follow-up turn cannot head-of-line block a later Tell ACK",async()=>{
+  const messages=[];const acks=[];
+  const never=new Promise(()=>{});
+  const coordinator=new RegularDeliveryCoordinator({
+    appendMarker:()=>{},
+    // Some Pi surfaces return a thenable spanning the triggered model turn even
+    // though sendMessage's extension contract is synchronous enqueue.
+    sendFollowUp:(message,text)=>{messages.push({message,text});return never;},
+    acknowledge:async(item,_fence,delivered,answer,reason)=>acks.push({item,delivered,answer,reason}),
+  });
+  await coordinator.deliver(delivery(4),fence);
+  await coordinator.deliver(delivery(1,{sequence:2n,dedupeId:"tell",completionKey:"tell-completion"}),fence);
+  assert.equal(messages.length,2);
+  assert.equal(acks.length,1);
+  assert.equal(acks[0].item.sequence,2n);
+  assert.equal(acks[0].delivered,true);
+});
+
 test("reconnect replay restores durable markers and neither injects nor ACKs twice",async()=>{
   const first=harness();
   const item=delivery(1);
