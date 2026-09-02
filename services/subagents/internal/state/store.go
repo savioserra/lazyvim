@@ -84,6 +84,9 @@ func temporaryRecordName(name string) bool {
 	return err == nil
 }
 func (s *Store) Save(ctx context.Context, record application.DurableHostedRecord) error {
+	if record.SchemaVersion != application.DurableHostedSchemaVersion {
+		return fmt.Errorf("refusing to save durable hosted schema %d", record.SchemaVersion)
+	}
 	if err := validateRecord(record); err != nil {
 		return err
 	}

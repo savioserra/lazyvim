@@ -4,6 +4,7 @@ package state
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -15,6 +16,32 @@ import (
 func testRecord(root string) application.DurableHostedRecord {
 	return application.DurableHostedRecord{SchemaVersion: application.DurableHostedSchemaVersion, OwnerUID: os.Getuid(), AgentID: "agent", AuthorityBinding: application.AuthorityBinding{Kind: application.AuthorityBindingHostedOwned, HostedRuntimeID: "runtime"}, AllowedCapabilities: []string{"send"}, Retention: "explicit", Recovery: "owned-binding-v2", Session: application.DurableHostedSession{SessionID: "session", GenerationID: "generation", Caller: "hosted:agent", Capabilities: []string{"send"}, Persistent: true, CredentialFile: filepath.Join(root, "credentials", "agent.json")}, LaunchSpec: application.HostedPiLaunchSpec{AgentID: "agent", RuntimeID: "runtime", Incarnation: 1, TmuxSession: "tmux", TmuxWindow: "pi", PiSessionDirectory: filepath.Join(root, "sessions", "agent"), PiSessionName: "hosted-agent"}, RuntimeConfig: application.DurableRuntimeConfig{ProjectDirectory: root}, Binding: application.HostedPiRuntimeBinding{RuntimeID: "runtime", Incarnation: 1}}
 }
+func TestStoreRejectsLegacyThreadlessSchemaV2(t *testing.T) {
+	root := t.TempDir()
+	_ = os.Chmod(filepath.Dir(root), 0o700)
+	_ = os.Chmod(root, 0o700)
+	store, err := New(filepath.Join(root, "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := testRecord(root)
+	record.SchemaVersion = 2
+	if err := store.Save(context.Background(), record); err == nil {
+		t.Fatal("legacy schema v2 was accepted instead of requiring clean cutover")
+	}
+	encoded, err := json.Marshal(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(store.Directory, recordName(record.AgentID)), encoded, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	loaded, quarantined, err := store.LoadAllWithQuarantine(context.Background())
+	if err != nil || len(loaded) != 0 || len(quarantined) != 1 {
+		t.Fatalf("legacy v2 did not fail closed: loaded=%d quarantined=%#v err=%v", len(loaded), quarantined, err)
+	}
+}
+
 func TestSourceMutationReceiptRetentionBoundIsDurablyEnforced(t *testing.T) {
 	root := t.TempDir()
 	_ = os.Chmod(filepath.Dir(root), 0o700)

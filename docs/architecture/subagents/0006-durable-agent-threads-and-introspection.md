@@ -74,18 +74,11 @@ queued, active, awaiting_agent_end, awaiting_agent_settled,
 settled, introspecting, resumable, waiting, blocked, completed, failed, exhausted
 ```
 
-### Atomic schema v2 -> v3 migration
+### Clean schema v3 cutover
 
-Migration uses the existing state store's temp-file, rename, and directory-fsync atomic replace. There is no separate migration marker.
+Schema v2 threadless hosted records are intentionally not migrated. The operator explicitly retires and recreates every hosted runtime/session during deployment, producing clean schema v3 records before prompt admission resumes. A retained v2 record fails closed as unsupported and is quarantined; the daemon never guesses thread identity from incomplete legacy delivery state.
 
-1. Startup loads a valid v2 record and marks the in-memory actor as `migration_pending`; no hosted prompt admission is accepted.
-2. The migrator computes deterministic v3 thread/scheduler fields from retained v2 bridge prompt deliveries, mutation scopes, task source refs, and completion records.
-3. The actor saves a complete v3 record through the existing atomic write path.
-4. A crash before rename leaves the old valid v2 record; next startup repeats migration.
-5. A crash after rename leaves the new valid v3 record; next startup treats threads as authoritative.
-6. The actor admits prompt/model work only after v3 save commits and `migration_pending` clears.
-
-Quarantine conditions include duplicate `thread_id`, more than one active thread, active thread without matching delivery/correlation, scheduler entry with no retained thread/tombstone, invalid v3 references, invalid v2-to-v3 derivation, exceeded per-agent serialized limits, or record size exceeding the existing 1 MiB cap after compaction.
+Schema v3 writes continue to use the existing temp-file, rename, file-fsync, and directory-fsync atomic replace. Quarantine conditions include duplicate `thread_id`, more than one active thread, active thread without matching delivery/correlation, scheduler entry with no retained thread/tombstone, invalid v3 references, exceeded per-agent serialized limits, or record size exceeding the existing 1 MiB cap after compaction.
 
 ## Prompt, answer, checkpoint, and in-thread result semantics
 
@@ -219,8 +212,8 @@ Effects include `ActorTaskAccepted`, bridge push, ACK response, delivery retirem
 
 | Crash point | Durable outcome | Recovery behavior | Duplicate effect rule |
 | --- | --- | --- | --- |
-| Before v3 migration rename | Valid v2 record | Recompute migration; prompt admission still blocked. | No v3 effects emitted. |
-| After v3 migration rename/fsync | Valid v3 record | Threads authoritative. | Migration idempotent by schema. |
+| Before clean cutover completes | Unsupported v2 record or no record | Fail closed; operator retires and recreates the hosted runtime. | No v3 effects emitted. |
+| After clean v3 record rename/fsync | Valid v3 record | Threads authoritative. | Record creation is idempotent by actor identity. |
 | After thread admission mutate, before save | Old state | Caller sees no accepted durable result or retry gets exact replay from old source outbox. | No `ActorTaskAccepted`. |
 | After admission save, before `ActorTaskAccepted` | Thread queued | Redrive acceptance/scheduler from durable state. | Acceptance deduped by task/thread. |
 | After delivery save, before bridge push | Active delivery retained | Replay/push after reconnect or scheduler tick. | Delivery deduped by sequence/thread/turn. |

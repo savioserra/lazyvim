@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	DurableHostedSchemaVersion      = 2
+	DurableHostedSchemaVersion      = 3
 	DurableAgentRuntimeSchemaV3     = 3
 	DurableHostedPiBridgeSchemaV1   = 1
 	DurableAskCorrelationSchemaV1   = 1
@@ -131,6 +131,8 @@ type DurableAgentState struct {
 	CommittedAcks                                                                                              []DurableBridgeAckRecord
 	TaskSources                                                                                                map[uint64]DurableActorRef
 	CompletionTellPending                                                                                      []DurablePendingCompletion
+	Threads                                                                                                    []DurableAgentThread
+	ThreadScheduler                                                                                            DurableThreadScheduler
 }
 
 type DurableBridgeAckRecord struct {

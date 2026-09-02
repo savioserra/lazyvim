@@ -1,11 +1,11 @@
 ---
 id: TASK-22.3
 title: Persist AgentActor thread aggregate and fair scheduler
-status: To Do
+status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 06:10'
-updated_date: '2026-09-02 07:22'
+updated_date: '2026-09-02 09:11'
 labels: []
 dependencies:
   - TASK-22.2
@@ -25,11 +25,19 @@ Persist target-authoritative thread records and a one-active-thread scheduler so
 <!-- AC:BEGIN -->
 - [ ] #1 Exact duplicate admission converges on one thread and immutable mismatch fails closed
 - [ ] #2 Thread and scheduler state commits before acceptance, dispatch, status, or completion effects
-- [ ] #3 Queue, resumable, waiting, blocked, terminal tombstone, bounds, fairness, migration, crash, restart, and race tests pass
+- [ ] #3 Queue, resumable, waiting, blocked, terminal tombstone, bounds, fairness, clean-cutover, crash, restart, and race tests pass
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Add bounded v3 thread/event/scheduler records and strict state validation; v2 is intentionally unsupported and deployment recreates every hosted runtime with clean v3 state.\n2. Integrate target-authoritative thread derivation, immutable fingerprint collision checks, exact replay receipts, and commit-before-ActorTaskAccepted in acceptActorTaskWithCredit.\n3. Add one-active scheduler state with injectable clock/backoff and deterministic two-new-task fairness; persist epoch/lease/queue decisions before bridge dispatch.\n4. Restore/redrive scheduler state across v3 restart, compact bounded event/tombstone history, and quarantine impossible references or oversize records.\n5. Add table, crash-point, clean-cutover, restart, fairness, and race tests; run full service and repository gates before finalization.
+<!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
 QA reconnaissance Ask 100 froze the deterministic proof matrix and reusable seams: config/runner parser tables; atomic v2-to-v3 migration and quarantine; exact duplicate and collision admission; two-new-task fairness; injectable clock/backoff; ACK/settlement/introspection crash gates; restart/compaction redrive; owner-private projection; and push-only A-to-B-to-resume-A E2E with no BridgePollRequest or pane inspection. Existing bridge harnesses, blocking stores, ACK cursor/restart tests, and actor reply push tests should be reused.
+
+Operator explicitly chose a clean v3 cutover instead of v2-to-v3 record migration. All six retained hosted sessions were explicitly stopped and recreated from clean state; v2 records will fail closed rather than migrate.
 <!-- SECTION:NOTES:END -->
