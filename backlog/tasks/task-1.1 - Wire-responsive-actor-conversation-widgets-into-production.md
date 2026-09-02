@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 02:56'
-updated_date: '2026-09-02 03:30'
+updated_date: '2026-09-02 03:31'
 labels: []
 dependencies:
   - TASK-6
@@ -63,4 +63,6 @@ P0 correction 3cc7aab integrated: live regular Tell/request now reduces DELIVERY
 Focused independent re-review sequence 41 explicitly approved the incoming projection-envelope production path, legacy-only fallback, no duplicate request, ANSI-safe width handling at 20/25/49/80, and 40/40 actor-client tests. AC 1-4 are verified; AC 5 remains open for post-apply/reload live UX matrix, currently gated by TASK-19 terminal delivery reliability.
 
 Correction QA sequence 42 conditionally passed the requested code seams; its hosted environment lacked tmux. PM-host evidence supersedes that environment block: legacy observer 97/97 and scratch chezmoi dry-run passed with /snap/bin/tmux. TASK-1.1 now awaits only the live acceptance matrix after TASK-19.
+
+Deployment/live matrix will use the operator-requested fresh crew reset recorded in TASK-19: exact teardown only after apply, fresh daemon actor state, recreated five UI actors, and a rebuilt labeled 3x2 crew window while preserving/reconnecting the PM session safely.
 <!-- SECTION:NOTES:END -->
