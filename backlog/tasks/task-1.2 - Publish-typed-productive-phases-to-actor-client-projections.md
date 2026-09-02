@@ -1,14 +1,13 @@
 ---
 id: TASK-1.2
-title: Publish dynamic actor activity projections to clients and runtimes
+title: Publish dynamic activity and live actor status UI
 status: To Do
 assignee:
   - '@pi'
 created_date: '2026-09-02 02:56'
-updated_date: '2026-09-02 04:33'
+updated_date: '2026-09-02 05:40'
 labels: []
-dependencies:
-  - TASK-1.1
+dependencies: []
 references:
   - docs/architecture/subagents/ACTOR-UX-DESIGN-SYSTEM.md
   - services/subagents/internal/actors/hosted_pi_runtime.go
@@ -21,28 +20,25 @@ ordinal: 20000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Publish authoritative, revision-fenced dynamic activity metadata from AgentActor or WorkflowActor and project it through topic-backed roster/status/UI surfaces. Phase keys and human labels are supplied by the owning workflow/domain at runtime; reviewing, testing, correcting, or any other domain activity is not a central enum and is never inferred from role. Process, tmux, heartbeat, tool output, and elapsed time must never infer activity. Because each hosted Pi runtime actor is bound to its owning AgentActor, it subscribes to the owner's bounded activity/identity topic projection and updates only its exactly owned tmux UI from authenticated facts.
+Publish authoritative, revision-fenced dynamic activity metadata from AgentActors, including prompt-driven crew supervisors, and project it through authenticated topic-backed roster/status/UI surfaces. Activity keys and labels are supplied by the owning agent/domain at runtime; they are not central enums and are never inferred from role, lifecycle, liveness, tmux, tool output, or elapsed time. Actor-client provides immediate live footer status plus a bounded expandable interactive status view. Each hosted runtime subscribes to its owner-private projection and may update only exactly owned tmux UI.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 AgentActor or WorkflowActor publishes a typed activity envelope with opaque bounded phase key, optional human label/details, authoritative source, revision, and ownership semantics; the protocol does not enumerate domain phase values
-- [ ] #2 Role and activity are independent dynamic metadata: role changes do not synthesize activity, identical roles may publish different activities, and workflows/packages may introduce new phase keys without daemon/client code changes
-- [ ] #3 Actor-client consumes activity only through authenticated topic push, rejects stale revisions, and renders sanitized dynamic labels without polling actor_list or exposing private runtime fields
-- [ ] #4 Tests and live E2E prove workflow-defined phase values, unknown/new values, role changes, stale updates, clearing activity, and failure/degraded lifecycle remain truthful and bounded
-- [ ] #5 The hosted Pi runtime actor subscribes to its owning AgentActor/WorkflowActor topic projection and receives reset/replay/revision-fenced identity, lifecycle, and dynamic activity updates without polling or terminal scraping
-- [ ] #6 The runtime updates the exactly owned tmux pane/window UI from topic facts only after validating the full ownership tuple; adopted or foreign panes are never mutated
-- [ ] #7 Topic/subscriber, renderer, or tmux UI failure degrades only the disposable runtime view and cannot change AgentActor/WorkflowActor authority, lifecycle, routing, task state, role, or activity
+- [ ] #1 AgentActor publishes a typed activity envelope with opaque bounded key, optional human label/details, authoritative owner/source, epoch/revision, durable set/clear semantics, and no enumerated domain phase values
+- [ ] #2 Role, lifecycle, activity, access mode, and visibility are independent facts; changing one does not synthesize or clear another, and absent activity never fabricates idle
+- [ ] #3 Actor-client updates its compact footer status immediately from authenticated roster/activity topic push, rejects stale/gapped frames, and never uses actor_list polling or terminal/liveness inference
+- [ ] #4 A bounded `/actor-status` interactive overlay expands the same disposable XState snapshot into selectable actor details and status reporting, updates live while open, remains keyboard accessible, and performs no authority mutation
+- [ ] #5 Compact and expanded UI sanitize unknown activity keys/labels, redact all private routing/runtime/tmux/session data, remain ANSI/display-width safe, and degrade cleanly in narrow or non-TUI modes
+- [ ] #6 HostedPiRuntimeActor consumes reset/replay/revision-fenced owner-private identity/lifecycle/activity projection and updates only exactly owned pane/window title, border, or status after full ownership validation
+- [ ] #7 Topic, reducer, overlay, renderer, or tmux failure degrades only disposable visibility and cannot change AgentActor authority, lifecycle, routing, task state, role, access mode, or activity
+- [ ] #8 Automated and fresh-process live E2E prove realtime updates, unknown/set/clear/stale/reconnect behavior, expanded interaction, lifecycle independence, exact tmux ownership, no polling, and full terminal Pi restart deployment
 <!-- AC:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-User requirement: treat the tmux-hosted Pi runtime as an actor-bound subscriber of its owning AgentActor topics so pane UI follows the same authoritative identity/phase projection as actor-client status. This is part of TASK-1.2, not a separate liveness-derived observer authority.
+Operator priority: current footer is missing trustworthy realtime/live updates. Ship the compact live status path first, then add a nice expandable interactive overlay when Pi APIs permit it without replacing the global footer or introducing authority. `/reload` is not a deployment gate; live proof uses a fresh terminal Pi process.
 
-User correction: productive phase values are domain/workflow metadata, not a hardcoded enum and not derived from dynamic actor roles. Reviewing/testing/correcting are examples a workflow may publish, never daemon-wide constants.
-
-Corrected UX report received directly at sequence 58. Frozen human contract: render lifecycle/availability, dynamic activity, role, access mode, and visibility health as independent facts. Activity envelope supports set/clear/reset, authoritative owner, monotonic revision, opaque bounded key, optional label/detail, and actor-vs-workflow ownership. Unknown keys render via sanitized label or naturalized key; absent/cleared activity removes only that segment and never invents idle. Status is one-line bounded with +N; roster/pane layouts prioritize display name, lifecycle, then activity and collapse safely. Role/activity never imply each other. Visibility failure cannot alter activity. Required E2E covers unknown/unsafe values, clear, role/activity independence, same-role differences, lifecycle separation, stale fencing, reconnect replay, owner-bound runtime subscription, exact tmux ownership, narrow bounds, and no polling/scraping/injection.
-
-Corrected architecture report received directly at sequence 57. Accepted core: typed additive ActivityProjection envelope with opaque bounded key, optional label/details/failure class, authoritative AgentActor/WorkflowActor source, owner semantics, epoch/revision, durable clear marker, lifecycle separation, and no domain enum or role inference. Persist before publication; stale revisions are rejected; same revision/different digest quarantines activity only; resets preserve clear fencing. HostedPiRuntimeActor subscribes to an owner-bound topic, validates the full owned tmux/runtime/process tuple, and may update only pane/window title/border/status; failure degrades visibility only. Migration is additive and old records mean no activity. Implementation correction: retain the existing actor-client projections/ root machine and typed event transaction rather than creating a second machines/ topology. Runtime subscription should use a bounded owner-private activity/identity topic, not expose private ownership fields through the public roster topic. Existing TopicActor/event-log authority and explicit registry/service projection boundaries remain; do not add a domain subscriber map.
+WorkflowActor references are superseded. Activity authority belongs to normal retained AgentActors (including a crew supervisor when configured); the client remains projection-only.
 <!-- SECTION:NOTES:END -->
