@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 03:03'
-updated_date: '2026-09-02 03:53'
+updated_date: '2026-09-02 03:59'
 labels: []
 dependencies: []
 references:
@@ -70,4 +70,6 @@ Correction validation: capabilities passed; actor-client passed 41/41; hosted-pi
 Writer sequences 43/44 completed and were integrated: canonical client identity and reply alias/fence handling landed first, then all hardcoded PROJECT MANAGER and TERMINAL PI metadata was removed. ClientSessionRequest now carries optional authenticated display_name/role; registry updates metadata durably without identity/fence rotation; communicationPeer resolves current AgentActor metadata with neutral role-free fallback; display names cannot route. Writer gates passed actor-client 41/41, hosted bridge 37/37, service codegen/race/vet/protocol, capabilities, and diff.
 
 PM post-integration gates on 7d1ac9e passed: actor-client 41/41, hosted bridge 37/37, capabilities, service codegen/go race/vet/protocol 6/6, git diff check, and scratch chezmoi dry-run. Independent architecture/security review sequence 45 and QA sequence 46 are active before the operator-requested fresh deployment reset.
+
+Independent review sequence 45 found no architecture/security implementation blockers, but two release-gate test gaps: no regression sends three or more consecutive completions and proves immediate reply frames without another request; stale-fence ACK retry is helper-mocked rather than integrated against real daemon fence rejection, reattach, and exactly-once retirement with unchanged delivery identity. QA sequence 46 conditionally passed code but hosted tmux was unavailable; PM scratch evidence supersedes the environment block. TASK-19 remains open until both regressions and live reset E2E pass.
 <!-- SECTION:NOTES:END -->
