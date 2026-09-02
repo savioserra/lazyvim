@@ -34,7 +34,7 @@ func TestActorAskReturnsRegularTerminalModelAnswerToSource(t *testing.T) {
 		t.Fatal(err)
 	}
 	targetRecord := application.DurableHostedRecord{SchemaVersion: application.DurableHostedSchemaVersion, AgentID: "client:terminal", AuthorityBinding: application.AuthorityBinding{Kind: application.AuthorityBindingPhaseOneObservedUpstream, ObservedUpstreamRunID: "client:terminal"}, Binding: application.InactiveHostedPiRuntimeBinding()}
-	target, err := system.Spawn(ctx, "regular-terminal-target", actors.NewAgentActor(&application.RegisterAgent{AgentID: "client:terminal", Role: "TERMINAL PI", DisplayName: "TERMINAL PI", AuthorityBinding: targetRecord.AuthorityBinding, HostedPiRuntime: targetRecord.Binding, AllowedCapability: []string{"observe", "send", "ask", "prompt"}, Retention: "bounded", Recovery: "terminal-reattach", PersistencePID: writer, DurableRecord: &targetRecord}))
+	target, err := system.Spawn(ctx, "regular-terminal-target", actors.NewAgentActor(&application.RegisterAgent{AgentID: "client:terminal", Role: "Coordinator", DisplayName: "Terminal One", AuthorityBinding: targetRecord.AuthorityBinding, HostedPiRuntime: targetRecord.Binding, AllowedCapability: []string{"observe", "send", "ask", "prompt"}, Retention: "bounded", Recovery: "terminal-reattach", PersistencePID: writer, DurableRecord: &targetRecord}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,7 +54,7 @@ func TestActorAskReturnsRegularTerminalModelAnswerToSource(t *testing.T) {
 	}
 
 	receipt := make(chan application.BridgeIntentResult, 1)
-	if err := system.NoSender().Tell(ctx, source, &application.SendActorTask{TargetPID: target, TargetPeer: application.CommunicationPeer{StableID: "client:terminal", DisplayName: "PROJECT MANAGER", Role: "PROJECT MANAGER"}, RequestID: "regular-request", RequiredCapability: "send", DedupeID: "regular-dedupe", ChainID: "regular-chain", Deadline: time.Now().Add(5 * time.Second), HopLimit: 8, SourceMutationSequence: 1, Mode: application.BridgeMessageAsk, Payload: []byte("terminal delivery"), Receipt: receipt}); err != nil {
+	if err := system.NoSender().Tell(ctx, source, &application.SendActorTask{TargetPID: target, TargetPeer: application.CommunicationPeer{StableID: "client:terminal", DisplayName: "Terminal One", Role: "Coordinator"}, RequestID: "regular-request", RequiredCapability: "send", DedupeID: "regular-dedupe", ChainID: "regular-chain", Deadline: time.Now().Add(5 * time.Second), HopLimit: 8, SourceMutationSequence: 1, Mode: application.BridgeMessageAsk, Payload: []byte("terminal delivery"), Receipt: receipt}); err != nil {
 		t.Fatal(err)
 	}
 	select {

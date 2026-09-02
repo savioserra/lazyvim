@@ -52,12 +52,13 @@ test("pagination drains every page and advances only through emitted cursors", a
 });
 
 test("hosted reply target aliases resolve only to authoritative source", () => {
-  const delivery = { source: { stableId: "client:terminal-1", displayName: "PROJECT MANAGER" } };
-  assert.equal(resolveHostedMessageDestination("Project Manager", "worker", delivery), "client:terminal-1");
+  const delivery = { source: { stableId: "client:terminal-1", displayName: "Taylor", role: "Project Manager" } };
   assert.equal(resolveHostedMessageDestination("reply-to-source", "worker", delivery), "client:terminal-1");
+  assert.equal(resolveHostedMessageDestination("source", "worker", delivery), "client:terminal-1");
+  assert.equal(resolveHostedMessageDestination("Project Manager", "worker", delivery), "Project Manager");
   assert.equal(resolveHostedMessageDestination("worker-two", "worker", delivery), "worker-two");
-  assert.throws(() => resolveHostedMessageDestination("project-manager", "worker"), /not an authoritative reply target/);
-  assert.throws(() => resolveHostedMessageDestination("pm", "worker", { source: { stableId: "project-manager" } }), /not an authoritative reply target/);
+  assert.throws(() => resolveHostedMessageDestination("reply-to-source", "worker"), /not an authoritative reply target/);
+  assert.throws(() => resolveHostedMessageDestination("source", "worker", { source: { stableId: "project-manager" } }), /not an authoritative reply target/);
 });
 
 test("target attachment fences are operation-minimal and capability-set scoped", () => {

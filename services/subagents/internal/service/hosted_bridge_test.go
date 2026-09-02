@@ -149,7 +149,7 @@ func TestDeterministicHostedBridgeGatewayAndClientIndependence(t *testing.T) {
 	regularTell := clientBase(&subagentsv1.Envelope_ActorMessageRequest{ActorMessageRequest: &subagentsv1.ActorMessageRequest{Mode: subagentsv1.ActorMessageRequest_MODE_TELL, Target: "agent-one", BoundedPayload: []byte("regular-client-note"), DedupeId: "regular-client-tell", HopLimit: 8, ChainId: "regular-client-chain", SourceMutationSequence: 1}}, "regular-tell")
 	regularTell.AgentHandle, regularTell.AgentFence = clientAttach.AgentHandle, clientAttach.Fence
 	regularResponse := request(t, path, regularTell).GetActorMessageResponse()
-	if !regularResponse.Accepted || regularResponse.Kind != "Tell" || regularResponse.Source.GetStableId() != clientSession.Caller || regularResponse.Source.GetDisplayName() != "PROJECT MANAGER" || regularResponse.Target.GetDisplayName() != "agent-one" {
+	if !regularResponse.Accepted || regularResponse.Kind != "Tell" || regularResponse.Source.GetStableId() != clientSession.Caller || regularResponse.Source.GetDisplayName() != clientSession.Caller || regularResponse.Source.GetRole() != "" || regularResponse.Target.GetDisplayName() != "agent-one" {
 		t.Fatalf("regular client Tell was not admitted with authoritative peers/kind: %#v", regularResponse)
 	}
 	regularPoll := request(t, path, fencedBase(&subagentsv1.Envelope_BridgePollRequest{BridgePollRequest: &subagentsv1.BridgePollRequest{AgentId: "agent-one", MaxItems: 64}})).GetBridgePollResponse()
@@ -159,7 +159,7 @@ func TestDeterministicHostedBridgeGatewayAndClientIndependence(t *testing.T) {
 			regularDelivery = delivery
 		}
 	}
-	if regularDelivery == nil || regularDelivery.Kind != subagentsv1.BridgeDelivery_KIND_NOTIFICATION || regularDelivery.Source.GetDisplayName() != "PROJECT MANAGER" || regularDelivery.Target.GetDisplayName() != "agent-one" {
+	if regularDelivery == nil || regularDelivery.Kind != subagentsv1.BridgeDelivery_KIND_NOTIFICATION || regularDelivery.Source.GetStableId() != clientSession.Caller || regularDelivery.Source.GetRole() != "" || regularDelivery.Target.GetDisplayName() != "agent-one" {
 		t.Fatalf("regular client Tell delivery lost authoritative source/target/kind: %#v", regularPoll.Deliveries)
 	}
 	regularAck := request(t, path, fencedBase(&subagentsv1.Envelope_BridgeDeliveryAckRequest{BridgeDeliveryAckRequest: identityBridgeAck("agent-one", "runtime-one", "pi-session", 1, regularDelivery, true, nil)}))

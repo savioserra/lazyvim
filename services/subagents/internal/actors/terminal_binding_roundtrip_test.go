@@ -33,7 +33,7 @@ func TestTerminalAgentPersistsPristineInactiveBinding(t *testing.T) {
 		t.Fatal(err)
 	}
 	record := application.DurableHostedRecord{SchemaVersion: application.DurableHostedSchemaVersion, AgentID: "hosted:terminal-writer", AuthorityBinding: application.AuthorityBinding{Kind: application.AuthorityBindingPhaseOneObservedUpstream, ObservedUpstreamRunID: "hosted:terminal-writer"}, Retention: "bounded", Recovery: "terminal-reattach", Binding: application.InactiveHostedPiRuntimeBinding()}
-	pid, err := system.Spawn(ctx, "terminal-roundtrip-agent", NewAgentActor(&application.RegisterAgent{AgentID: "hosted:terminal-writer", Role: "TERMINAL PI", DisplayName: "TERMINAL PI", AuthorityBinding: record.AuthorityBinding, HostedPiRuntime: record.Binding, AllowedCapability: []string{"observe", "send"}, Retention: record.Retention, Recovery: record.Recovery, PersistencePID: writer, DurableRecord: &record}))
+	pid, err := system.Spawn(ctx, "terminal-roundtrip-agent", NewAgentActor(&application.RegisterAgent{AgentID: "hosted:terminal-writer", Role: "", DisplayName: "hosted:terminal-writer", AuthorityBinding: record.AuthorityBinding, HostedPiRuntime: record.Binding, AllowedCapability: []string{"observe", "send"}, Retention: record.Retention, Recovery: record.Recovery, PersistencePID: writer, DurableRecord: &record}))
 	if err != nil {
 		t.Fatal(err)
 	}

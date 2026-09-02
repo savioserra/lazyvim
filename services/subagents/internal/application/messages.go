@@ -522,6 +522,10 @@ type RemoteHostedPlacementResult struct {
 	Reason             string
 }
 type ResolveAgentActor struct{ AgentID string }
+type UpdateAgentMetadata struct {
+	AgentID, DisplayName, Role string
+	Result                     chan<- OperationResult
+}
 type AgentActorRef struct {
 	AgentID, ActorName string
 	Found              bool

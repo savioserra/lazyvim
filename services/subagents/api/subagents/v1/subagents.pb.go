@@ -4681,8 +4681,12 @@ type ClientSessionRequest struct {
 	// minting an ephemeral agent per session. Empty keeps the legacy ephemeral
 	// mint. Bounded to [A-Za-z0-9_-]{1,48}; malformed values are rejected.
 	TerminalIdentity string `protobuf:"bytes,2,opt,name=terminal_identity,json=terminalIdentity,proto3" json:"terminal_identity,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// Optional authenticated presentation metadata for the terminal AgentActor.
+	// These fields never participate in routing identity or source scopes.
+	DisplayName   string `protobuf:"bytes,3,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	Role          string `protobuf:"bytes,4,opt,name=role,proto3" json:"role,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ClientSessionRequest) Reset() {
@@ -4725,6 +4729,20 @@ func (x *ClientSessionRequest) GetOperation() ClientSessionRequest_Operation {
 func (x *ClientSessionRequest) GetTerminalIdentity() string {
 	if x != nil {
 		return x.TerminalIdentity
+	}
+	return ""
+}
+
+func (x *ClientSessionRequest) GetDisplayName() string {
+	if x != nil {
+		return x.DisplayName
+	}
+	return ""
+}
+
+func (x *ClientSessionRequest) GetRole() string {
+	if x != nil {
+		return x.Role
 	}
 	return ""
 }
@@ -5889,10 +5907,12 @@ const file_api_subagents_v1_subagents_proto_rawDesc = "" +
 	"\bagent_id\x18\x02 \x01(\tR\aagentId\x12J\n" +
 	"\aruntime\x18\x03 \x01(\v20.workstation.subagents.v1.HostedPiRuntimeBindingR\aruntime\x12#\n" +
 	"\rattach_target\x18\x04 \x01(\tR\fattachTarget\x12\x16\n" +
-	"\x06reason\x18\x05 \x01(\tR\x06reason\"\xec\x01\n" +
+	"\x06reason\x18\x05 \x01(\tR\x06reason\"\xa3\x02\n" +
 	"\x14ClientSessionRequest\x12V\n" +
 	"\toperation\x18\x01 \x01(\x0e28.workstation.subagents.v1.ClientSessionRequest.OperationR\toperation\x12+\n" +
-	"\x11terminal_identity\x18\x02 \x01(\tR\x10terminalIdentity\"O\n" +
+	"\x11terminal_identity\x18\x02 \x01(\tR\x10terminalIdentity\x12!\n" +
+	"\fdisplay_name\x18\x03 \x01(\tR\vdisplayName\x12\x12\n" +
+	"\x04role\x18\x04 \x01(\tR\x04role\"O\n" +
 	"\tOperation\x12\x19\n" +
 	"\x15OPERATION_UNSPECIFIED\x10\x00\x12\x12\n" +
 	"\x0eOPERATION_OPEN\x10\x01\x12\x13\n" +

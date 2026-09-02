@@ -2561,12 +2561,7 @@ func minTime(left, right time.Time) time.Time {
 }
 
 func (a *AgentActor) communicationPeer() application.CommunicationPeer {
-	peer := application.CommunicationPeer{StableID: a.id, DisplayName: aggregateDisplayName(a.id, a.hostedPiRuntime.DisplayName), Role: aggregateRole(a.id, a.hostedPiRuntime.Role)}
-	if strings.HasPrefix(a.id, "client:") {
-		peer.DisplayName = "PROJECT MANAGER"
-		peer.Role = "PROJECT MANAGER"
-	}
-	return peer
+	return application.CommunicationPeer{StableID: a.id, DisplayName: aggregateDisplayName(a.id, a.hostedPiRuntime.DisplayName), Role: aggregateRole(a.id, a.hostedPiRuntime.Role)}
 }
 
 func (a *AgentActor) expireTaskCredits() {

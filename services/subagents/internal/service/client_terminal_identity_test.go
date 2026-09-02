@@ -36,9 +36,16 @@ func terminalIdentityHarness(t *testing.T) (*Service, func()) {
 	}
 }
 
-func terminalIdentityOpen(t *testing.T, daemon *Service, identity string) *subagentsv1.ClientSessionResponse {
+func terminalIdentityOpen(t *testing.T, daemon *Service, identity string, metadata ...string) *subagentsv1.ClientSessionResponse {
 	t.Helper()
-	envelope := &subagentsv1.Envelope{ProtocolMajor: 1, Sequence: 1, RequestId: time.Now().String(), DeadlineUnixMillis: time.Now().Add(5 * time.Second).UnixMilli(), SessionCredential: daemon.adminCredential, Payload: &subagentsv1.Envelope_ClientSessionRequest{ClientSessionRequest: &subagentsv1.ClientSessionRequest{Operation: subagentsv1.ClientSessionRequest_OPERATION_OPEN, TerminalIdentity: identity}}}
+	displayName, role := "", ""
+	if len(metadata) > 0 {
+		displayName = metadata[0]
+	}
+	if len(metadata) > 1 {
+		role = metadata[1]
+	}
+	envelope := &subagentsv1.Envelope{ProtocolMajor: 1, Sequence: 1, RequestId: time.Now().String(), DeadlineUnixMillis: time.Now().Add(5 * time.Second).UnixMilli(), SessionCredential: daemon.adminCredential, Payload: &subagentsv1.Envelope_ClientSessionRequest{ClientSessionRequest: &subagentsv1.ClientSessionRequest{Operation: subagentsv1.ClientSessionRequest_OPERATION_OPEN, TerminalIdentity: identity, DisplayName: displayName, Role: role}}}
 	response := daemon.dispatch(envelope).GetClientSessionResponse()
 	if response == nil {
 		t.Fatalf("client session response missing for identity %q", identity)
@@ -54,7 +61,7 @@ func TestClientSessionOpenReturnsStableTerminalActorMessageHighWater(t *testing.
 	binding := application.InactiveHostedPiRuntimeBinding()
 	durable := application.DurableHostedRecord{SchemaVersion: application.DurableHostedSchemaVersion, OwnerUID: os.Getuid(), AgentID: agentID, AuthorityBinding: application.AuthorityBinding{Kind: application.AuthorityBindingPhaseOneObservedUpstream, ObservedUpstreamRunID: agentID}, AllowedCapabilities: []string{"observe", "send", "ask", "prompt", "control_abort", "control_shutdown"}, Retention: "bounded", Recovery: "terminal-reattach", Binding: binding, AgentState: application.DurableAgentState{SourceOutbox: []application.DurableActorTaskOutboxItem{{TaskID: "retained-task", SourceMutationSequence: 10, Deadline: time.Now().Add(time.Hour)}}}}
 	registered := make(chan application.RegisterAgentResult, 1)
-	registration := application.RegisterAgent{AgentID: agentID, Role: "TERMINAL PI", DisplayName: "TERMINAL PI", AuthorityBinding: durable.AuthorityBinding, HostedPiRuntime: binding, AllowedCapability: append([]string(nil), durable.AllowedCapabilities...), Retention: durable.Retention, Recovery: durable.Recovery, PersistencePID: daemon.persistencePID, PersistenceSupervisor: daemon.persistenceSupervisor, DurableRecord: &durable}
+	registration := application.RegisterAgent{AgentID: agentID, Role: "", DisplayName: agentID, AuthorityBinding: durable.AuthorityBinding, HostedPiRuntime: binding, AllowedCapability: append([]string(nil), durable.AllowedCapabilities...), Retention: durable.Retention, Recovery: durable.Recovery, PersistencePID: daemon.persistencePID, PersistenceSupervisor: daemon.persistenceSupervisor, DurableRecord: &durable}
 	if err := daemon.system.NoSender().Tell(context.Background(), daemon.agentRegistry, &application.CoordinateAgentRegistration{OperationID: "terminal-high-water", Registration: registration, Result: registered}); err != nil {
 		t.Fatal(err)
 	}
@@ -81,6 +88,41 @@ func terminalIdentityList(t *testing.T, daemon *Service, session application.Ope
 		t.Fatal("list agents response missing")
 	}
 	return listed.Agents
+}
+
+func TestTerminalMetadataIsDynamicPresentationOnly(t *testing.T) {
+	daemon, stop := terminalIdentityHarness(t)
+	defer stop()
+
+	first := terminalIdentityOpen(t, daemon, "term-one", "Taylor", "Coordinator")
+	second := terminalIdentityOpen(t, daemon, "term-two", "Riley", "Reviewer")
+	if !first.Accepted || !second.Accepted || first.CallerIdentity != "client:term-one" || second.CallerIdentity != "client:term-two" {
+		t.Fatalf("terminal opens lost canonical identities: %#v %#v", first, second)
+	}
+	one := daemon.communicationPeer(context.Background(), first.CallerIdentity)
+	two := daemon.communicationPeer(context.Background(), second.CallerIdentity)
+	if one.StableID != "client:term-one" || one.DisplayName != "Taylor" || one.Role != "Coordinator" || two.StableID != "client:term-two" || two.DisplayName != "Riley" || two.Role != "Reviewer" {
+		t.Fatalf("terminal dynamic metadata not reflected in peers: %#v %#v", one, two)
+	}
+
+	changed := terminalIdentityOpen(t, daemon, "term-one", "Taylor PM", "Project Manager")
+	if !changed.Accepted || changed.CallerIdentity != first.CallerIdentity {
+		t.Fatalf("metadata change rotated identity: %#v", changed)
+	}
+	updated := daemon.communicationPeer(context.Background(), first.CallerIdentity)
+	if updated.StableID != first.CallerIdentity || updated.DisplayName != "Taylor PM" || updated.Role != "Project Manager" {
+		t.Fatalf("metadata update did not preserve routing identity: %#v", updated)
+	}
+	session := application.OpenSession{SessionID: changed.SessionId, GenerationID: changed.GenerationId, Caller: changed.CallerIdentity, Credential: changed.SessionCredential}
+	metadataAttach := &subagentsv1.Envelope{ProtocolMajor: 1, Sequence: 1, RequestId: "metadata-route", DeadlineUnixMillis: time.Now().Add(5 * time.Second).UnixMilli(), SessionId: session.SessionID, GenerationId: session.GenerationID, CallerIdentity: session.Caller, SessionCredential: session.Credential, Payload: &subagentsv1.Envelope_AttachRequest{AttachRequest: &subagentsv1.AttachRequest{AgentId: "Taylor PM", RequestedCapabilities: []string{"observe"}}}}
+	if attached := daemon.dispatch(metadataAttach).GetAttachResponse(); attached != nil && attached.AgentHandle != "" {
+		t.Fatalf("display metadata routed as an agent identity: %#v", attached)
+	}
+	fallback := terminalIdentityOpen(t, daemon, "term-empty")
+	neutral := daemon.communicationPeer(context.Background(), fallback.CallerIdentity)
+	if neutral.StableID != fallback.CallerIdentity || neutral.Role != "" || neutral.DisplayName != fallback.CallerIdentity {
+		t.Fatalf("neutral metadata fallback inferred a semantic role: %#v", neutral)
+	}
 }
 
 // TestClientTerminalIdentityReattachesAndDrainsAcrossReopens covers the churn

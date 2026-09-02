@@ -56,7 +56,7 @@ func TestRegularTerminalWebSocketPushOccursOnlyAfterTargetCommit(t *testing.T) {
 		t.Fatal(err)
 	}
 	receipt := make(chan application.BridgeIntentResult, 1)
-	if err := daemon.system.NoSender().Tell(ctx, source, &application.SendActorTask{TargetPID: target.PID, TargetPeer: application.CommunicationPeer{StableID: opened.CallerIdentity, DisplayName: "PROJECT MANAGER", Role: "PROJECT MANAGER"}, RequestID: "regular-push-request", DedupeID: "regular-push-dedupe", ChainID: "regular-push-chain", RequiredCapability: "send", SourceMutationSequence: 1, Deadline: time.Now().Add(5 * time.Second), HopLimit: 8, Mode: application.BridgeMessageTell, Payload: []byte("committed report"), Receipt: receipt}); err != nil {
+	if err := daemon.system.NoSender().Tell(ctx, source, &application.SendActorTask{TargetPID: target.PID, TargetPeer: application.CommunicationPeer{StableID: opened.CallerIdentity, DisplayName: "Terminal One", Role: "Coordinator"}, RequestID: "regular-push-request", DedupeID: "regular-push-dedupe", ChainID: "regular-push-chain", RequiredCapability: "send", SourceMutationSequence: 1, Deadline: time.Now().Add(5 * time.Second), HopLimit: 8, Mode: application.BridgeMessageTell, Payload: []byte("committed report"), Receipt: receipt}); err != nil {
 		t.Fatal(err)
 	}
 	select {

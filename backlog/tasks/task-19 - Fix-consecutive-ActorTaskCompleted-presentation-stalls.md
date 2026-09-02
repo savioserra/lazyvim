@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 03:03'
-updated_date: '2026-09-02 03:36'
+updated_date: '2026-09-02 03:49'
 labels: []
 dependencies: []
 references:
@@ -62,4 +62,8 @@ Operator deployment decision: after reviewed code is applied, perform an explici
 Correction to the preceding deployment note: the rebuilt labeled 3x2 tmux window is named `crew`.
 
 Operator correction: Project Manager is a dynamic role, not a terminal actor class or transport alias. The diagnosis recommendation to retain hardcoded PROJECT MANAGER display/role is rejected. communicationPeer and ensureTerminalAgent must not synthesize semantic roles from client:*; terminal identity metadata must be dynamically registered and persisted, and absent metadata must use a neutral role-free fallback.
+
+Correction applied: rejected hardcoded PROJECT MANAGER/TERMINAL PI presentation semantics. Terminal client session now accepts optional validated display_name/role metadata, registers/updates the terminal AgentActor without rotating client:* identity, persists metadata in the durable record, and communicationPeer resolves current AgentActor metadata with neutral fallback and empty role. Hosted reply-to-source routing now uses only explicit source/reply-source aliases; display names such as Project Manager never route. Added terminal metadata/dynamic role and display-routing regressions.
+
+Correction validation: capabilities passed; actor-client passed 41/41; hosted-pi-bridge passed 37/37; service gate passed npm ci, codegen verify, go test -race ./..., go vet ./..., npm test; git diff --check passed. Host blockers unchanged: stylua missing, scratch chezmoi blocked by missing tmux, tmux-subagents 93/97 with spawn tmux ENOENT.
 <!-- SECTION:NOTES:END -->

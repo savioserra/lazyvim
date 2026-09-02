@@ -2373,16 +2373,13 @@ func protoCommunicationPeer(peer application.CommunicationPeer) *subagentsv1.Com
 }
 
 func (s *Service) communicationPeer(ctx context.Context, stableID string) application.CommunicationPeer {
-	if strings.HasPrefix(stableID, "client:") {
-		return application.CommunicationPeer{StableID: stableID, DisplayName: "PROJECT MANAGER", Role: "PROJECT MANAGER"}
-	}
 	value, err := s.system.NoSender().Ask(ctx, s.agentRegistry, &application.ResolveAgentControl{AgentID: stableID}, min(requestTimeout, boundedRemaining(ctx, requestTimeout)))
 	if err == nil {
 		if resolved, ok := value.(*application.AgentControlPID); ok && resolved.Found {
 			return application.CommunicationPeer{StableID: resolved.Reference.AgentID, DisplayName: resolved.Reference.DisplayName, Role: resolved.Reference.Role}
 		}
 	}
-	return application.CommunicationPeer{StableID: stableID, DisplayName: stableID, Role: "WORKER"}
+	return application.CommunicationPeer{StableID: stableID, DisplayName: neutralPeerDisplay(stableID), Role: ""}
 }
 
 func (s *Service) deduplicatedMutation(request, response *subagentsv1.Envelope, route *application.AgentRoute, operation string, execute func() *subagentsv1.Envelope) *subagentsv1.Envelope {
@@ -2742,6 +2739,11 @@ func (s *Service) clientSessionResponse(ctx context.Context, request *subagentsv
 		if command.TerminalIdentity != "" && !terminalIdentityPattern.MatchString(command.TerminalIdentity) {
 			return errorResponse(request, subagentsv1.ProtocolError_CODE_INVALID_REQUEST, "client terminal identity is invalid")
 		}
+		displayName, validDisplay := terminalMetadata(command.DisplayName, 80)
+		role, validRole := terminalMetadata(command.Role, 64)
+		if !validDisplay || !validRole {
+			return errorResponse(request, subagentsv1.ProtocolError_CODE_INVALID_REQUEST, "client terminal metadata is invalid")
+		}
 		random, err := randomHandle()
 		if err != nil {
 			return internalError(response)
@@ -2752,7 +2754,7 @@ func (s *Service) clientSessionResponse(ctx context.Context, request *subagentsv
 		}
 		var actorMessageHighWater uint64
 		if command.TerminalIdentity != "" {
-			if err := s.ensureTerminalAgent(ctx, caller); err != nil {
+			if err := s.ensureTerminalAgent(ctx, caller, displayName, role); err != nil {
 				return internalError(response)
 			}
 			var err error
@@ -3827,19 +3829,80 @@ func hostedStartupFailureClass(reason string) string {
 	}
 }
 
-func (s *Service) ensureTerminalAgent(ctx context.Context, agentID string) error {
+func neutralPeerDisplay(stableID string) string {
+	value, _ := terminalMetadata(stableID, 80)
+	if value != "" {
+		return value
+	}
+	return "actor"
+}
+
+func terminalMetadata(value string, limit int) (string, bool) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", true
+	}
+	if strings.ContainsAny(value, "\x00\r\n\t") || len(value) > limit {
+		return "", false
+	}
+	return value, true
+}
+
+func (s *Service) updateTerminalMetadata(ctx context.Context, agentID, displayName, role string) error {
+	if displayName == "" && role == "" {
+		return nil
+	}
+	result := make(chan application.OperationResult, 1)
+	if err := s.system.NoSender().Tell(ctx, s.agentRegistry, &application.UpdateAgentMetadata{AgentID: agentID, DisplayName: displayName, Role: role, Result: result}); err != nil {
+		return err
+	}
+	select {
+	case updated := <-result:
+		if !updated.Completed {
+			return fmt.Errorf("update terminal metadata: %s", updated.Reason)
+		}
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	if s.durableStore != nil {
+		records, err := s.durableStore.LoadAll(ctx)
+		if err != nil {
+			return err
+		}
+		for _, record := range records {
+			if record.AgentID != agentID {
+				continue
+			}
+			record.Binding.DisplayName = displayName
+			record.Binding.Role = role
+			return s.durableStore.Save(ctx, record)
+		}
+	}
+	return nil
+}
+
+func (s *Service) ensureTerminalAgent(ctx context.Context, agentID string, displayNameRole ...string) error {
 	if agentID == "" {
 		return fmt.Errorf("terminal agent id is empty")
 	}
 	value, err := s.system.NoSender().Ask(ctx, s.agentRegistry, &application.ResolveAgentControl{AgentID: agentID}, requestTimeout)
+	displayName, role := "", ""
+	if len(displayNameRole) > 0 {
+		displayName = displayNameRole[0]
+	}
+	if len(displayNameRole) > 1 {
+		role = displayNameRole[1]
+	}
 	if err == nil {
 		if resolved, ok := value.(*application.AgentControlPID); ok && resolved.Found {
-			return nil
+			return s.updateTerminalMetadata(ctx, agentID, displayName, role)
 		}
 	}
 	registered := make(chan application.RegisterAgentResult, 1)
 	durable := application.DurableHostedRecord{SchemaVersion: application.DurableHostedSchemaVersion, OwnerUID: os.Getuid(), AgentID: agentID, AuthorityBinding: application.AuthorityBinding{Kind: application.AuthorityBindingPhaseOneObservedUpstream, ObservedUpstreamRunID: agentID}, AllowedCapabilities: []string{"observe", "send", "ask", "prompt", "control_abort", "control_shutdown"}, Retention: "bounded", Recovery: "terminal-reattach", Binding: application.InactiveHostedPiRuntimeBinding()}
-	registration := application.RegisterAgent{AgentID: agentID, Role: "TERMINAL PI", DisplayName: "TERMINAL PI", AuthorityBinding: durable.AuthorityBinding, HostedPiRuntime: durable.Binding, AllowedCapability: append([]string(nil), durable.AllowedCapabilities...), Retention: durable.Retention, Recovery: durable.Recovery, PersistencePID: s.persistencePID, PersistenceSupervisor: s.persistenceSupervisor, DurableRecord: &durable}
+	durable.Binding.DisplayName = displayName
+	durable.Binding.Role = role
+	registration := application.RegisterAgent{AgentID: agentID, Role: role, DisplayName: displayName, AuthorityBinding: durable.AuthorityBinding, HostedPiRuntime: durable.Binding, AllowedCapability: append([]string(nil), durable.AllowedCapabilities...), Retention: durable.Retention, Recovery: durable.Recovery, PersistencePID: s.persistencePID, PersistenceSupervisor: s.persistenceSupervisor, DurableRecord: &durable}
 	if err := s.system.NoSender().Tell(ctx, s.agentRegistry, &application.CoordinateAgentRegistration{OperationID: "terminal-agent-" + agentID, Registration: registration, Result: registered}); err != nil {
 		return err
 	}

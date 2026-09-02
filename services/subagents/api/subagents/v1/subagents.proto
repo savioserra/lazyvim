@@ -446,6 +446,10 @@ message ClientSessionRequest {
   // minting an ephemeral agent per session. Empty keeps the legacy ephemeral
   // mint. Bounded to [A-Za-z0-9_-]{1,48}; malformed values are rejected.
   string terminal_identity = 2;
+  // Optional authenticated presentation metadata for the terminal AgentActor.
+  // These fields never participate in routing identity or source scopes.
+  string display_name = 3;
+  string role = 4;
 }
 message ClientSessionResponse {
   bool accepted = 1;

@@ -50,7 +50,7 @@ func TestAgentRegistryPublishesValidatedDisplayMetadata(t *testing.T) {
 	kit := testkit.New(ctx, t)
 	t.Cleanup(func() { kit.Shutdown(ctx) })
 	kit.Spawn(ctx, "agent-registry", actors.NewAgentRegistryActor())
-	cases := []struct{ id, requestedRole, requestedName, role, displayName string }{{"alpha-worker", "Code Reviewer", "Worker One", "Code Reviewer", "Worker One"}, {"beta", "QA", "Reviewer Two", "QA", "Reviewer Two"}, {"gamma", "", "", "gamma", "gamma"}}
+	cases := []struct{ id, requestedRole, requestedName, role, displayName string }{{"alpha-worker", "Code Reviewer", "Worker One", "Code Reviewer", "Worker One"}, {"beta", "QA", "Reviewer Two", "QA", "Reviewer Two"}, {"gamma", "", "", "", "gamma"}}
 	for _, item := range cases {
 		registration := registration(item.id, "observe")
 		registration.Role = item.requestedRole

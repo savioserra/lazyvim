@@ -127,8 +127,8 @@ func TestReconcileDurableHostedHealsLegacyTerminalBindingMetadata(t *testing.T) 
 		t.Fatal(err)
 	}
 	legacy := quarantineRestartRecord("client:legacy-terminal")
-	legacy.Binding.DisplayName = "TERMINAL PI"
-	legacy.Binding.Role = "TERMINAL PI"
+	legacy.Binding.DisplayName = "Legacy Client"
+	legacy.Binding.Role = ""
 	if err := store.Save(context.Background(), legacy); err != nil {
 		t.Fatal(err)
 	}

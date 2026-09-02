@@ -706,7 +706,7 @@ export function resolveHostedMessageDestination(target: string | undefined, self
   if (!value) return self;
   const folded = value.toLowerCase().replace(/[\s_-]+/g, "-");
   const sourceStable = inherited?.source?.stableId?.trim();
-  if (folded === "source" || folded === "reply-source" || folded === "reply-to-source" || folded === "project-manager" || folded === "pm") {
+  if (folded === "source" || folded === "reply-source" || folded === "reply-to-source") {
     if (sourceStable?.startsWith("client:")) return sourceStable;
     throw new Error("project manager alias is not an authoritative reply target");
   }

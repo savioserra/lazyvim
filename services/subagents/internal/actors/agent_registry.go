@@ -132,6 +132,8 @@ func (a *AgentRegistryActor) Receive(ctx *actor.ReceiveContext) {
 		}
 		slices.SortFunc(agents, func(left, right application.PublicHostedAgent) int { return cmpString(left.AgentID, right.AgentID) })
 		ctx.Response(&application.ListPublicHostedAgentsResult{Agents: agents})
+	case *application.UpdateAgentMetadata:
+		a.updateMetadata(ctx, message)
 	case *application.ResolveAgentControl:
 		item, exists := a.agents[message.AgentID]
 		if !exists {
@@ -706,15 +708,61 @@ func validRegistration(message *application.RegisterAgent) bool {
 	}
 	binding, hosted := message.AuthorityBinding, message.HostedPiRuntime
 	if !message.PhaseTwoOwned {
-		return binding.Kind == application.AuthorityBindingPhaseOneObservedUpstream && binding.ObservedUpstreamRunID != "" && hosted == application.InactiveHostedPiRuntimeBinding() && message.Runtime == nil
+		metadataNeutral := hosted
+		metadataNeutral.DisplayName = ""
+		metadataNeutral.Role = ""
+		return binding.Kind == application.AuthorityBindingPhaseOneObservedUpstream && binding.ObservedUpstreamRunID != "" && metadataNeutral == application.InactiveHostedPiRuntimeBinding() && message.Runtime == nil
 	}
 	return binding.Kind == application.AuthorityBindingHostedOwned && binding.HostedRuntimeID != "" && binding.HostedRuntimeID == hosted.RuntimeID && hosted.State == application.HostedPiRuntimeStarting && hosted.Lifetime == application.HostedPiLifetimeGlobalAgent && hosted.TmuxOwnership == application.HostedPiTmuxOwnershipExactSession && hosted.ControlBoundary == application.HostedPiControlDocumentedBridgeOnly && hosted.VisualizationBoundary == application.HostedPiVisualizationTmuxAttach && hosted.Incarnation > 0 && message.Runtime != nil && message.LaunchSpec.AgentID == message.AgentID && message.LaunchSpec.RuntimeID == hosted.RuntimeID && message.LaunchSpec.Incarnation == hosted.Incarnation
 }
+func (a *AgentRegistryActor) updateMetadata(ctx *actor.ReceiveContext, message *application.UpdateAgentMetadata) {
+	if message == nil || message.AgentID == "" {
+		deliverRegistryOperationResult(message.Result, application.OperationResult{Reason: "agent metadata identity is invalid"})
+		return
+	}
+	item, exists := a.agents[message.AgentID]
+	if !exists {
+		deliverRegistryOperationResult(message.Result, application.OperationResult{Reason: "agent not found"})
+		return
+	}
+	displayName := aggregateDisplayName(message.AgentID, message.DisplayName)
+	role := aggregateRole(message.AgentID, message.Role)
+	if item.reference.DisplayName == displayName && item.reference.Role == role {
+		deliverRegistryOperationResult(message.Result, application.OperationResult{Completed: true, Revision: item.reference.LifecycleRevision})
+		return
+	}
+	item.reference.DisplayName = displayName
+	item.reference.Role = role
+	item.reference.LifecycleRevision++
+	item.recipe.DisplayName = displayName
+	item.recipe.Role = role
+	item.recipe.HostedPiRuntime.DisplayName = displayName
+	item.recipe.HostedPiRuntime.Role = role
+	if item.recipe.DurableRecord != nil {
+		item.recipe.DurableRecord.Binding.DisplayName = displayName
+		item.recipe.DurableRecord.Binding.Role = role
+	}
+	a.agents[message.AgentID] = item
+	a.publishClientAgentUpsert(ctx, message.AgentID, item)
+	a.publishPublicAgentUpsert(ctx, message.AgentID, item)
+	deliverRegistryOperationResult(message.Result, application.OperationResult{Completed: true, Revision: item.reference.LifecycleRevision})
+}
+
+func deliverRegistryOperationResult(target chan<- application.OperationResult, result application.OperationResult) {
+	if target == nil {
+		return
+	}
+	select {
+	case target <- result:
+	default:
+	}
+}
+
 func aggregateRole(agentID, requested string) string {
 	if value := boundedDisplayMetadata(requested, 64); value != "" {
 		return value
 	}
-	return aggregateDisplayName(agentID, "")
+	return ""
 }
 
 func aggregateDisplayName(agentID, requested string) string {
