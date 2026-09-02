@@ -61,7 +61,23 @@ message Envelope {
     ClientAgentRosterRequest client_agent_roster_request = 60;
     ClientAgentRosterFrame client_agent_roster_frame = 61;
     ActorMessageReplyFrame actor_message_reply_frame = 62;
+    FrontendCompletionAckRequest frontend_completion_ack_request = 63;
+    FrontendCompletionAckResponse frontend_completion_ack_response = 64;
   }
+}
+
+message FrontendCompletionAckRequest {
+  string completion_key = 1;
+  uint64 frame_sequence = 2;
+  string original_request_id = 3;
+  string dedupe_id = 4;
+  string chain_id = 5;
+  uint64 source_mutation_sequence = 6;
+}
+
+message FrontendCompletionAckResponse {
+  bool accepted = 1;
+  string reason = 2;
 }
 
 message ActorMessageReplyFrame {

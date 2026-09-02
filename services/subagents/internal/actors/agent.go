@@ -575,6 +575,8 @@ func (a *AgentActor) Receive(ctx *actor.ReceiveContext) {
 		a.actorTaskCompletionCommittedFrom(ctx, message.message, message.sender)
 	case *application.DrainReceivedTaskCompletions:
 		a.drainTaskCompletions(message)
+	case *application.MarkFrontendCompletionDelivered:
+		a.markFrontendCompletionDelivered(ctx, message)
 	case *application.BridgeIntent:
 		if application.ModelBearingBridgeMode(message.Mode) && !a.allowDirectModelIntentTestFixture {
 			respondBridgeIntent(ctx, message.Receipt, &application.BridgeIntentResult{Reason: "model-bearing bridge intent retired; use actor task"})
@@ -2671,6 +2673,38 @@ func (a *AgentActor) drainTaskCompletions(message *application.DrainReceivedTask
 	case message.Result <- items:
 	default:
 	}
+}
+
+func (a *AgentActor) markFrontendCompletionDelivered(ctx *actor.ReceiveContext, message *application.MarkFrontendCompletionDelivered) {
+	if message == nil || message.Result == nil || message.CompletionKey == "" || message.GenerationID == "" || message.FrameSequence == 0 {
+		deliverRegistryOperationResult(message.Result, application.OperationResult{Reason: "frontend completion acknowledgement identity is invalid"})
+		return
+	}
+	completion, exists := a.taskCompletions[message.CompletionKey]
+	if !exists {
+		deliverRegistryOperationResult(message.Result, application.OperationResult{Completed: true, Reason: "already acknowledged"})
+		return
+	}
+	if completion.OriginalRequestID != message.OriginalRequestID || completion.DedupeID != message.DedupeID || completion.ChainID != message.ChainID || completion.SourceMutationSequence != message.SourceMutationSequence {
+		deliverRegistryOperationResult(message.Result, application.OperationResult{Reason: "frontend completion acknowledgement identity mismatch"})
+		return
+	}
+	if a.durableFailed != nil {
+		deliverRegistryOperationResult(message.Result, application.OperationResult{Reason: "durable persistence failed"})
+		return
+	}
+	if a.durablePending != nil {
+		deliverRegistryOperationResult(message.Result, application.OperationResult{Reason: "durable persistence is busy"})
+		return
+	}
+	old := a.durableState()
+	delete(a.taskCompletions, message.CompletionKey)
+	a.taskCompletionOrder = slices.DeleteFunc(a.taskCompletionOrder, func(key string) bool { return key == message.CompletionKey })
+	result := application.OperationResult{Completed: true, Revision: message.FrameSequence}
+	if a.beginDurablePersist(ctx, &pendingDurableReceipt{old: old, operation: message.Result, operationResult: &result}) {
+		return
+	}
+	deliverRegistryOperationResult(message.Result, result)
 }
 
 func (a *AgentActor) bridgeIntent(ctx *actor.ReceiveContext, message *application.BridgeIntent) {

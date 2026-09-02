@@ -683,9 +683,10 @@ type RouteActorMessageReply struct {
 }
 
 type MarkFrontendCompletionDelivered struct {
-	CompletionKey string
-	GenerationID  string
-	Result        chan<- OperationResult
+	CompletionKey, OriginalRequestID, DedupeID, ChainID string
+	GenerationID                                        string
+	FrameSequence, SourceMutationSequence               uint64
+	Result                                              chan<- OperationResult
 }
 
 type StopHostedBridge struct {

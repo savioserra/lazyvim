@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { publicAgentView, registerClientHandlers } from "../../home/dot_pi/private_agent/extensions/actor-client/handlers.ts";
-import { ACTOR_ASK_COMPLETION_TIMEOUT, ActorClientConversationLog, actorAskCompletionContent, actorReplyFramePresentationIntent, initialActorClientRosterState, reduceActorClientRoster, validateRemoteProject } from "../../home/dot_pi/private_agent/extensions/actor-client/index.ts";
+import { ACTOR_ASK_COMPLETION_TIMEOUT, ActorClientConversationLog, actorAskCompletionContent, actorReplyFramePresentationIntent, buildFrontendCompletionAckRequest, initialActorClientRosterState, reduceActorClientRoster, validateRemoteProject } from "../../home/dot_pi/private_agent/extensions/actor-client/index.ts";
 import { outgoingExchange } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/communication-ui.ts";
 
 test("remote project validation is syntax-only and does not require a local path", () => {
@@ -31,6 +31,10 @@ test("actor-client roster reducer fences frames and renders redacted lifecycle",
 
 test("actor ask completion deadline remains bounded for real model tasks", () => {
   assert.equal(ACTOR_ASK_COMPLETION_TIMEOUT, 6 * 60 * 60_000);
+});
+
+test("frontend completion acknowledgement preserves exact daemon frame identity", () => {
+  assert.deepEqual(buildFrontendCompletionAckRequest({ completionKey: "complete", originalRequestId: "request", dedupeId: "dedupe", chainId: "chain", sourceMutationSequence: 40n }, 7n), { completionKey: "complete", frameSequence: 7n, originalRequestId: "request", dedupeId: "dedupe", chainId: "chain", sourceMutationSequence: 40n });
 });
 
 test("actor reply frame presentation is ask-only and ignores Tell delivery acknowledgements", () => {

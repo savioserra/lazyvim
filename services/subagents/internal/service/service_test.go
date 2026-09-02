@@ -360,6 +360,14 @@ func roundTrip(t *testing.T, connection net.Conn, envelope *subagentsv1.Envelope
 	}
 	return response
 }
+func frontendCompletionAck(frame *subagentsv1.Envelope) *subagentsv1.FrontendCompletionAckRequest {
+	reply := frame.GetActorMessageReplyFrame()
+	if reply == nil {
+		return nil
+	}
+	return &subagentsv1.FrontendCompletionAckRequest{CompletionKey: reply.CompletionKey, FrameSequence: frame.Sequence, OriginalRequestId: reply.OriginalRequestId, DedupeId: reply.DedupeId, ChainId: reply.ChainId, SourceMutationSequence: reply.SourceMutationSequence}
+}
+
 func cloneEnvelope(envelope *subagentsv1.Envelope) *subagentsv1.Envelope {
 	return proto.Clone(envelope).(*subagentsv1.Envelope)
 }

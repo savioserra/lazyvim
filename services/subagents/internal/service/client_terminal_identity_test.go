@@ -228,6 +228,18 @@ func TestClientTerminalReceivesThreeConsecutiveCompletionsImmediately(t *testing
 			if reply == nil || reply.CompletionKey != fmt.Sprintf("completion-%d", i) || reply.OriginalRequestId != fmt.Sprintf("request-%d", i) || string(reply.BoundedResult) != fmt.Sprintf("answer-%d", i) {
 				t.Fatalf("reply %d out of order or mismatched: %#v", i, reply)
 			}
+			acked := make(chan application.OperationResult, 1)
+			if err := daemon.system.NoSender().Tell(context.Background(), resolved.PID, &application.MarkFrontendCompletionDelivered{CompletionKey: reply.CompletionKey, FrameSequence: frame.Sequence, OriginalRequestID: reply.OriginalRequestId, DedupeID: reply.DedupeId, ChainID: reply.ChainId, SourceMutationSequence: reply.SourceMutationSequence, GenerationID: opened.GenerationId, Result: acked}); err != nil {
+				t.Fatal(err)
+			}
+			select {
+			case result := <-acked:
+				if !result.Completed {
+					t.Fatalf("presentation ack %d rejected: %#v", i, result)
+				}
+			case <-time.After(time.Second):
+				t.Fatalf("presentation ack %d missing", i)
+			}
 		case <-time.After(3 * time.Second):
 			t.Fatalf("completion %d did not push without another client request", i)
 		}

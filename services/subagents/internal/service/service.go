@@ -1595,17 +1595,6 @@ func (s *Service) flushActorReplies(session *actorReplySession) bool {
 	key := actorReplySessionKey(session.sessionID, session.generationID, session.principal)
 	for _, completion := range completions {
 		s.actorReplyMu.Lock()
-		delivered := false
-		for _, record := range s.actorReplies[key] {
-			if record.frame.GetActorMessageReplyFrame().CompletionKey == completion.CompletionKey && record.delivered {
-				delivered = true
-				break
-			}
-		}
-		if delivered {
-			s.actorReplyMu.Unlock()
-			continue
-		}
 		s.actorReplyNext[key]++
 		frame := &subagentsv1.Envelope{ProtocolMajor: protocol.ProtocolMajor, ProtocolMinor: protocol.ProtocolMinor, SessionId: session.sessionID, GenerationId: session.generationID, RequestId: completion.OriginalRequestID, CallerIdentity: session.principal, Sequence: s.actorReplyNext[key], Payload: &subagentsv1.Envelope_ActorMessageReplyFrame{ActorMessageReplyFrame: &subagentsv1.ActorMessageReplyFrame{ThreadId: completion.ThreadID, CompletionKey: completion.CompletionKey, OriginalRequestId: completion.OriginalRequestID, DedupeId: completion.DedupeID, ChainId: completion.ChainID, SourceMutationSequence: completion.SourceMutationSequence, Accepted: completion.Terminal.Accepted, Completed: completion.Terminal.Completed, BoundedResult: append([]byte(nil), completion.Terminal.Result...), Reason: completion.Terminal.Reason, Source: protoCommunicationPeer(completion.Source), Target: protoCommunicationPeer(completion.Target), Kind: bridgeDeliveryKindLabel(completion.Kind)}}}
 		s.actorReplyMu.Unlock()
@@ -1617,7 +1606,7 @@ func (s *Service) flushActorReplies(session *actorReplySession) bool {
 			return false
 		}
 		s.actorReplyMu.Lock()
-		s.actorReplies[key] = append(s.actorReplies[key], actorReplyRecord{sequence: frame.Sequence, frame: frame, delivered: true})
+		s.actorReplies[key] = append(s.actorReplies[key], actorReplyRecord{sequence: frame.Sequence, frame: frame})
 		s.actorReplyMu.Unlock()
 	}
 	return true
@@ -1874,6 +1863,13 @@ func (s *Service) reauthorizeReplay(request *subagentsv1.Envelope) bool {
 		var ok bool
 		capability, ok = actorModeCapability(payload.ActorMessageRequest.Mode)
 		if !ok {
+			return false
+		}
+	case *subagentsv1.Envelope_FrontendCompletionAckRequest:
+		if source, ok := authenticatedClientSource(request.CallerIdentity); ok {
+			agentID = source
+			capability = "observe"
+		} else {
 			return false
 		}
 	case *subagentsv1.Envelope_PromptTaskRequest:
@@ -2220,6 +2216,29 @@ func (s *Service) dispatch(request *subagentsv1.Envelope) *subagentsv1.Envelope 
 			s.pushBridgeUpdate(payload.ActorMessageRequest.Target, "actor delivery admitted")
 		}
 		response.Payload = &subagentsv1.Envelope_ActorMessageResponse{ActorMessageResponse: &subagentsv1.ActorMessageResponse{Accepted: result.Accepted, Completed: result.Completed, BoundedResult: result.Result, Reason: result.Reason, Source: protoCommunicationPeer(s.communicationPeer(ctx, source)), Target: protoCommunicationPeer(s.communicationPeer(ctx, payload.ActorMessageRequest.Target)), Kind: actorMessageKind(payload.ActorMessageRequest.Mode)}}
+	case *subagentsv1.Envelope_FrontendCompletionAckRequest:
+		source, validSource := authenticatedClientSource(request.CallerIdentity)
+		if !validSource {
+			return errorResponse(request, subagentsv1.ProtocolError_CODE_INVALID_REQUEST, "frontend completion acknowledgement source is invalid")
+		}
+		route, err := s.authorizeAgent(ctx, request, source, []string{"observe"})
+		if err != nil || !route.Allowed || route.GenerationID != request.GenerationId || route.Principal != request.CallerIdentity {
+			return errorResponse(request, subagentsv1.ProtocolError_CODE_SESSION_MISMATCH, "frontend completion acknowledgement authorization denied")
+		}
+		result := make(chan application.OperationResult, 1)
+		ack := payload.FrontendCompletionAckRequest
+		if ack == nil || ack.CompletionKey == "" || ack.FrameSequence == 0 || ack.SourceMutationSequence == 0 || ack.DedupeId == "" || ack.ChainId == "" || ack.OriginalRequestId == "" {
+			return errorResponse(request, subagentsv1.ProtocolError_CODE_INVALID_REQUEST, "frontend completion acknowledgement identity is invalid")
+		}
+		if err := s.system.NoSender().Tell(ctx, route.PID, &application.MarkFrontendCompletionDelivered{CompletionKey: ack.CompletionKey, FrameSequence: ack.FrameSequence, OriginalRequestID: ack.OriginalRequestId, DedupeID: ack.DedupeId, ChainID: ack.ChainId, SourceMutationSequence: ack.SourceMutationSequence, GenerationID: request.GenerationId, Result: result}); err != nil {
+			return internalError(response)
+		}
+		select {
+		case completed := <-result:
+			response.Payload = &subagentsv1.Envelope_FrontendCompletionAckResponse{FrontendCompletionAckResponse: &subagentsv1.FrontendCompletionAckResponse{Accepted: completed.Completed, Reason: completed.Reason}}
+		case <-ctx.Done():
+			return errorResponse(request, subagentsv1.ProtocolError_CODE_DEADLINE_EXCEEDED, "frontend completion acknowledgement deadline expired")
+		}
 	case *subagentsv1.Envelope_ActorControlRequest:
 		capability, validIntent := actorControlCapability(payload.ActorControlRequest.Intent)
 		source, validSource := authenticatedHostedSource(request.CallerIdentity)

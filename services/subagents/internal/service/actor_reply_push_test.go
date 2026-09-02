@@ -108,6 +108,8 @@ func TestActorAskAdmissionThenPushedReplyAndReconnectReplayOnce(t *testing.T) {
 			env.Payload = p
 		case *subagentsv1.Envelope_ListAgentsRequest:
 			env.Payload = p
+		case *subagentsv1.Envelope_FrontendCompletionAckRequest:
+			env.Payload = p
 		}
 		if err := protocol.WriteEnvelope(conn, env); err != nil {
 			t.Fatal(err)
@@ -194,6 +196,10 @@ func TestActorAskAdmissionThenPushedReplyAndReconnectReplayOnce(t *testing.T) {
 	if reply == nil || reply.OriginalRequestId != "ask" || string(reply.BoundedResult) != "answer" || !reply.Completed {
 		t.Fatalf("reply: %#v", pushed)
 	}
+	forgedPresentation := request(clientConn, client, &subagentsv1.Envelope_FrontendCompletionAckRequest{FrontendCompletionAckRequest: &subagentsv1.FrontendCompletionAckRequest{CompletionKey: reply.CompletionKey, FrameSequence: pushed.Sequence, OriginalRequestId: reply.OriginalRequestId, DedupeId: "forged", ChainId: reply.ChainId, SourceMutationSequence: reply.SourceMutationSequence}}, "", 0, "presented-forged").GetFrontendCompletionAckResponse()
+	if forgedPresentation != nil && forgedPresentation.Accepted {
+		t.Fatalf("forged presentation ack was accepted: %#v", forgedPresentation)
+	}
 	_ = clientConn.Close()
 	again, err := net.Dial("unix", filepath.Join(root, "control.sock"))
 	if err != nil {
@@ -201,10 +207,25 @@ func TestActorAskAdmissionThenPushedReplyAndReconnectReplayOnce(t *testing.T) {
 	}
 	defer again.Close()
 	_ = request(again, client, &subagentsv1.Envelope_ListAgentsRequest{ListAgentsRequest: &subagentsv1.ListAgentsRequest{}}, "", 0, "prime2")
+	if err := again.SetReadDeadline(time.Now().Add(3 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	replayed, err := protocol.ReadEnvelope(again)
+	if err != nil || replayed.GetActorMessageReplyFrame() == nil {
+		t.Fatalf("unacknowledged reply did not replay after reconnect: %#v %v", replayed, err)
+	}
+	presented := request(again, client, &subagentsv1.Envelope_FrontendCompletionAckRequest{FrontendCompletionAckRequest: frontendCompletionAck(replayed)}, "", 0, "presented").GetFrontendCompletionAckResponse()
+	if presented == nil || !presented.Accepted {
+		t.Fatalf("presentation ack: %#v", presented)
+	}
+	duplicatePresented := request(again, client, &subagentsv1.Envelope_FrontendCompletionAckRequest{FrontendCompletionAckRequest: frontendCompletionAck(replayed)}, "", 0, "presented-duplicate").GetFrontendCompletionAckResponse()
+	if duplicatePresented == nil || !duplicatePresented.Accepted {
+		t.Fatalf("duplicate presentation ack was not idempotent: %#v", duplicatePresented)
+	}
 	if err := again.SetReadDeadline(time.Now().Add(200 * time.Millisecond)); err != nil {
 		t.Fatal(err)
 	}
 	if frame, err := protocol.ReadEnvelope(again); err == nil && frame.GetActorMessageReplyFrame() != nil {
-		t.Fatal("reply replayed more than once")
+		t.Fatal("reply replayed after durable presentation ack")
 	}
 }
