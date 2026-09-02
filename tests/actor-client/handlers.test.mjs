@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { publicAgentView, registerClientHandlers } from "../../home/dot_pi/private_agent/extensions/actor-client/handlers.ts";
-import { ACTOR_ASK_COMPLETION_TIMEOUT, ActorClientConversationLog, actorAskCompletionContent, initialActorClientRosterState, reduceActorClientRoster, validateRemoteProject } from "../../home/dot_pi/private_agent/extensions/actor-client/index.ts";
+import { ACTOR_ASK_COMPLETION_TIMEOUT, ActorClientConversationLog, actorAskCompletionContent, actorReplyFramePresentationIntent, initialActorClientRosterState, reduceActorClientRoster, validateRemoteProject } from "../../home/dot_pi/private_agent/extensions/actor-client/index.ts";
 import { outgoingExchange } from "../../home/dot_pi/private_agent/extensions/hosted-pi-bridge/communication-ui.ts";
 
 test("remote project validation is syntax-only and does not require a local path", () => {
@@ -31,6 +31,15 @@ test("actor-client roster reducer fences frames and renders redacted lifecycle",
 
 test("actor ask completion deadline remains bounded for real model tasks", () => {
   assert.equal(ACTOR_ASK_COMPLETION_TIMEOUT, 6 * 60 * 60_000);
+});
+
+test("actor reply frame presentation is ask-only and ignores Tell delivery acknowledgements", () => {
+  assert.equal(actorReplyFramePresentationIntent({ kind: "Ask" }), "ask-completion");
+  assert.equal(actorReplyFramePresentationIntent({ kind: "ask" }), "ask-completion");
+  assert.equal(actorReplyFramePresentationIntent({ kind: "prompt" }), "ask-completion");
+  assert.equal(actorReplyFramePresentationIntent({ kind: "Tell" }), "delivery-ack");
+  assert.equal(actorReplyFramePresentationIntent({ kind: "tell" }), "delivery-ack");
+  assert.equal(actorReplyFramePresentationIntent({ kind: "notification", boundedResult: new TextEncoder().encode("delivery acknowledged") }), "delivery-ack");
 });
 
 test("actor ask reply sends one model-visible custom message and clears pending", async () => {
@@ -135,6 +144,7 @@ test("regular client Pi callbacks register noncolliding commands and tools", asy
   const theme={fg:(_name,text)=>text,bg:(_name,text)=>text,bold:(text)=>text};
   const collapsed=tools.get("actor_tell").renderResult({details:{communicationView:outgoingExchange({key:"request-render",target:"Reviewer",body:"question",reply:"answer",accepted:true,completed:true,mode:"ask"})}}, {expanded:false}, theme).render(60).join("\n");
   assert.match(collapsed,/✓ Reviewer replied/);
+  assert.match(collapsed,/answer/);
   const expanded=tools.get("actor_tell").renderResult({details:{communicationView:outgoingExchange({key:"request-render",target:"Reviewer",body:"question",reply:"answer",accepted:true,completed:true,mode:"ask"})}}, {expanded:true}, theme).render(60).join("\n");
   assert.match(expanded,/Asked Reviewer/);
   assert.match(expanded,/Reviewer replied/);
@@ -147,6 +157,7 @@ test("regular client Pi callbacks register noncolliding commands and tools", asy
   assert.match(askResult.content[0].text,/dedupeId=dedupe-ask/);
   const tellResult = await tools.get("actor_tell").execute("id",{target:"actor42",message:"tool tell async"});
   assert.match(tellResult.content[0].text,/requestId=request-send/);
+  assert.match(tools.get("actor_tell").renderResult(tellResult, {expanded:false}, theme).render(80).join("\n"), /✓ delivered · tool tell async/);
   const healthResult = await tools.get("actor_health").execute("id",{target:"actor42"});
   assert.equal(healthResult.details.reachable,true);
   assert.ok(notices.every((notice)=>!/^\s*[\[{]/.test(notice)),"command notification exposed raw JSON");

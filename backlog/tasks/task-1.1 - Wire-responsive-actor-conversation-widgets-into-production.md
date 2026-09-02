@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 02:56'
-updated_date: '2026-09-02 05:44'
+updated_date: '2026-09-02 12:53'
 labels: []
 dependencies:
   - TASK-6
@@ -44,6 +44,9 @@ Replace the actor-client's remaining legacy communication renderer path with pro
 5. Close the production intent gap: hosted `actor_tell` must use TELL admission semantics and display delivered/failure states; add a distinct `actor_ask` command/tool for request/reply semantics, preserving model correlation and compatibility documentation.
 
 6. Separate terminal completion presentation by protocol intent: Tell acknowledgement may update a TUI-only delivered/failure projection but must never create an Actor Ask reply, trigger a model turn, or expose delivery acknowledged as an answer; Ask alone owns model-visible reply completion.
+
+7. UI-only correction on origin/main: gate actorMessageReplyFrame presentation so Tell/notification terminal ACKs update cursors without creating actor-client-ask-completion cards/model turns; keep Ask/prompt completions unchanged.
+8. Add private tool/conversation preview hierarchy tests for Tell/Ask collapsed renderers and non-duplicated Tell ACK semantics; run actor-client/hosted fast suites and diff checks.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
@@ -98,4 +101,6 @@ Fresh-process live sequence 69 exposed a new blocker: initial actor_tell correct
 Sequence 70 independently reproduced the same Tell terminal misclassification against UI QA, confirming the defect is deterministic across targets rather than a one-off replay artifact.
 
 Operator UX feedback: balloons currently repeat information (for example the same applied/state wording can appear twice) while hiding the actual message. Copy review must remove redundant title/body/footer labels and make message content available through collapsed preview plus expansion. Public footer/roster remains payload-free; content is limited to the private requesting conversation/tool renderer.
+
+UI-only origin/main correction implemented in isolated worktree: actorMessageReplyFrame presentation is now Ask/prompt/request only, so Tell/notification terminal ACKs only advance the mutation high-water and never create actor-client-ask-completion, replied cards, or model turns. Collapsed actor-client tool results now include a bounded sanitized private preview from the conversation card body/reply while expanded rendering keeps the full conversation envelope. Validation: actor-client npm test 42/42 passed; hosted-pi-bridge npm test 38/38 passed; capabilities passed; tmux-subagents remains 93/97 blocked by tmux ENOENT in this host PATH; stylua blocked by missing stylua; chezmoi dry-run passed with /snap/bin on PATH; git diff --check passed.
 <!-- SECTION:NOTES:END -->

@@ -16,12 +16,20 @@ export function compactToolCall(name: string, args: any): string {
 
 export function compactToolResult(name: string, details: any): string {
   const view = details?.renderEnvelope?.renderSnapshot?.card ?? details?.communicationView;
-  if (view?.state === "replied") return `✓ ${view.peerDisplayName ?? details?.target ?? "Actor"} replied`;
-  if (view?.state === "failed" || details?.accepted === false) return `! Couldn’t reach ${view?.peerDisplayName ?? details?.target ?? "actor"}`;
-  if (/actor_ask/.test(name)) return details?.awaitingReply ? `◌ Waiting for ${details?.target ?? "actor"}…` : details?.completed ? "✓ replied" : "✓ admitted";
-  if (/actor_tell|send/.test(name)) return details?.accepted ? "✓ delivered" : "! delivery failed";
+  const preview = toolPreview(view?.reply || view?.body || details?.answer || details?.message);
+  const suffix = preview ? ` · ${preview}` : "";
+  if (view?.state === "replied") return `✓ ${view.peerDisplayName ?? details?.target ?? "Actor"} replied${suffix}`;
+  if (view?.state === "failed" || details?.accepted === false) return `! Couldn’t reach ${view?.peerDisplayName ?? details?.target ?? "actor"}${suffix}`;
+  if (view?.state === "pending") return `◌ Waiting for ${view.peerDisplayName ?? details?.target ?? "actor"}…${suffix}`;
+  if (view?.state === "delivered") return `✓ delivered${suffix}`;
+  if (/actor_ask/.test(name)) return details?.awaitingReply ? `◌ Waiting for ${details?.target ?? "actor"}…${suffix}` : details?.completed ? `✓ replied${suffix}` : `✓ admitted${suffix}`;
+  if (/actor_tell|send/.test(name)) return details?.accepted ? `✓ delivered${suffix}` : `! delivery failed${suffix}`;
   if (Array.isArray(details)) return details.map((item) => `${item.displayName ?? item.agentId ?? "Actor"} ${item.lifecycle ?? "available"}`).join("\n") || "No actors";
-  return details?.completed === false ? "Waiting" : "Done";
+  return details?.completed === false ? `Waiting${suffix}` : `Done${suffix}`;
+}
+
+function toolPreview(value: unknown): string {
+  return sanitizeText(String(value ?? ""), 96);
 }
 
 export function modelResultContent(name: string, details: any): string {
