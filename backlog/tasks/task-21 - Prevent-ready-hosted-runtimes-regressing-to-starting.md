@@ -5,6 +5,7 @@ status: To Do
 assignee:
   - '@pi'
 created_date: '2026-09-02 05:34'
+updated_date: '2026-09-02 13:08'
 labels: []
 dependencies: []
 references:
@@ -30,3 +31,9 @@ Fresh deployment and exact recreation of five hosted agents produced durable/run
 - [ ] #4 Durable registration, AgentActor status, registry/public roster, actor-client status, and hosted runtime child agree on lifecycle and bridge readiness after convergence
 - [ ] #5 Race tests permute startup/readiness/state-change ordering and repeated fresh recreation/restart never leaves BridgeReady=true with lifecycle starting
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+QA post-fix matrix: actor-local early-readiness merge passes; still require same-incarnation stale-starting protection at AgentActor/registry/service/roster, ordering permutation tests, and fresh-runtime convergence proof.
+<!-- SECTION:NOTES:END -->

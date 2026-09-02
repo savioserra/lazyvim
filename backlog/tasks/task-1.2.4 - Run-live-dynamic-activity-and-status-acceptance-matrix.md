@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@pi'
 created_date: '2026-09-02 05:40'
-updated_date: '2026-09-02 06:04'
+updated_date: '2026-09-02 13:08'
 labels: []
 dependencies:
   - TASK-1.2.2
@@ -41,4 +41,6 @@ Deploy the activity/status slices and prove realtime footer, interactive overlay
 
 <!-- SECTION:NOTES:BEGIN -->
 QA Ask 86 ran from a stale worktree and old productive-phase scope, so it is not an acceptance result for the current opaque dynamic-activity architecture. Discard as superseded: WorkflowActor/productive-phase fields, fixed phase revisions/worker-reviewer enums, legacy tmux-subagents state-to-phase inference as TASK-1.2 authority, and actor_tell-to-Ask mismatch (fixed on current main and live sequences 68-70). Retain baseline evidence only: generic roster epoch/sequence fencing and public-view sanitization pass; TASK-1.2.1 activity topic is not implemented yet; fresh process/high-water/reconnect service tests pass; real tmux remains environment-blocked by snap confinement. Final matrix must run from fresh current main after TASK-1.2.1-.3 and TASK-22 priority work.
+
+QA acceptance matrix frozen: push-only changed/cleared activity plus pending Ask/lifecycle/role independence, live footer/overlay narrow-wide rerender/disposal, exact-owned tmux metadata with foreign pane unchanged, and audit against polling/scraping/injection/private leakage/duplicates.
 <!-- SECTION:NOTES:END -->
