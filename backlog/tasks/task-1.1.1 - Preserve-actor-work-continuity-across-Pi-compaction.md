@@ -1,9 +1,11 @@
 ---
 id: TASK-1.1.1
 title: Preserve actor work continuity across Pi compaction
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@pi'
 created_date: '2026-09-02 05:52'
+updated_date: '2026-09-02 05:53'
 labels: []
 dependencies: []
 references:
@@ -30,3 +32,17 @@ Preserve terminal and hosted actor conversation/work continuity when native Pi c
 - [ ] #5 Compaction persistence is owner-private, bounded, schema-versioned, and never exposes prompts, answers, runtime identifiers, credentials, hosts, or tmux internals on public projections
 - [ ] #6 Automated tests plus a fresh-process live E2E force compaction with work in flight and prove automatic post-compaction continuation without reminders, polling, or pane inspection
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Reproduce and map Pi compaction/session restore hooks against actor-client and hosted bridge projection persistence.
+2. Preserve bounded private pending intent and outbound report obligations across compaction without making Tell ACKs model-visible.
+3. Add compaction/reconnect/restart tests, then run a fresh-process forced-compaction E2E.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Live observation: after terminal compaction, actor Tell delivery ACKs continued arriving but the PM only classified them and retained agents left requested reports/actions in local panes. Hosted source records showed no outbound report receipts for architecture, UX, QA, or reviewer despite explicit report instructions. Current actor-client and hosted bridge code register no session_before_compact continuity hook. PM took writer ownership on main and explicitly paused the prior UI implementer assignment.
+<!-- SECTION:NOTES:END -->
