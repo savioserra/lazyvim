@@ -3490,24 +3490,28 @@ func (a *AgentActor) commitAck(ctx *actor.ReceiveContext, message *application.B
 	key := a.deliverySources[message.Sequence]
 	scope := a.mutationScopes[key]
 	if scope == nil {
+		fmt.Fprintf(os.Stderr, "bridge delivery ack commit rejected: agent=%s sequence=%d class=scope-missing\n", a.id, message.Sequence)
 		return false
 	}
 	// Fail closed unless the delivery's scope token maps back to the exact
 	// internal scope that owns its mutation state.
 	if a.scopeTokens[delivery.SourceScope] != key {
+		fmt.Fprintf(os.Stderr, "bridge delivery ack commit rejected: agent=%s sequence=%d class=scope-token\n", a.id, message.Sequence)
 		return false
 	}
 	record, ok := scope.dedupe[message.DedupeID]
 	if !ok || record.sequence != message.Sequence {
+		fmt.Fprintf(os.Stderr, "bridge delivery ack commit rejected: agent=%s sequence=%d class=mutation-record\n", a.id, message.Sequence)
 		return false
 	}
 	deliveryKind := delivery.Kind
 	result := application.BridgeIntentResult{Accepted: true, Completed: message.Delivered, Reason: message.Reason}
 	if message.Delivered {
 		if deliveryKind == application.BridgeDeliveryPrompt {
-			if len(message.Result) == 0 {
-				return false
-			}
+			// A correlated Pi run may settle without an assistant text result.
+			// Commit that evidence exactly once; isolated introspection will keep
+			// the thread resumable because an empty worker result is not a
+			// deliverable. Rejecting here would create an infinite ACK retry loop.
 			result.Result = append([]byte(nil), message.Result...)
 		} else {
 			result.Result = []byte("delivery acknowledged")
@@ -3521,6 +3525,9 @@ func (a *AgentActor) commitAck(ctx *actor.ReceiveContext, message *application.B
 			} else {
 				burst.threadSchedule = true
 			}
+		}
+		if !committed {
+			fmt.Fprintf(os.Stderr, "bridge delivery ack commit rejected: agent=%s sequence=%d class=thread-state\n", a.id, message.Sequence)
 		}
 		return committed
 	}
