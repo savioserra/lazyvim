@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 03:03'
-updated_date: '2026-09-02 03:49'
+updated_date: '2026-09-02 03:52'
 labels: []
 dependencies: []
 references:
@@ -66,4 +66,6 @@ Operator correction: Project Manager is a dynamic role, not a terminal actor cla
 Correction applied: rejected hardcoded PROJECT MANAGER/TERMINAL PI presentation semantics. Terminal client session now accepts optional validated display_name/role metadata, registers/updates the terminal AgentActor without rotating client:* identity, persists metadata in the durable record, and communicationPeer resolves current AgentActor metadata with neutral fallback and empty role. Hosted reply-to-source routing now uses only explicit source/reply-source aliases; display names such as Project Manager never route. Added terminal metadata/dynamic role and display-routing regressions.
 
 Correction validation: capabilities passed; actor-client passed 41/41; hosted-pi-bridge passed 37/37; service gate passed npm ci, codegen verify, go test -race ./..., go vet ./..., npm test; git diff --check passed. Host blockers unchanged: stylua missing, scratch chezmoi blocked by missing tmux, tmux-subagents 93/97 with spawn tmux ENOENT.
+
+Writer sequences 43/44 completed and were integrated: canonical client identity and reply alias/fence handling landed first, then all hardcoded PROJECT MANAGER and TERMINAL PI metadata was removed. ClientSessionRequest now carries optional authenticated display_name/role; registry updates metadata durably without identity/fence rotation; communicationPeer resolves current AgentActor metadata with neutral role-free fallback; display names cannot route. Writer gates passed actor-client 41/41, hosted bridge 37/37, service codegen/race/vet/protocol, capabilities, and diff.
 <!-- SECTION:NOTES:END -->
