@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 02:56'
-updated_date: '2026-09-02 13:08'
+updated_date: '2026-09-02 13:11'
 labels: []
 dependencies:
   - TASK-6
@@ -105,4 +105,6 @@ Operator UX feedback: balloons currently repeat information (for example the sam
 UI-only origin/main correction implemented in isolated worktree: actorMessageReplyFrame presentation is now Ask/prompt/request only, so Tell/notification terminal ACKs only advance the mutation high-water and never create actor-client-ask-completion, replied cards, or model turns. Collapsed actor-client tool results now include a bounded sanitized private preview from the conversation card body/reply while expanded rendering keeps the full conversation envelope. Validation: actor-client npm test 42/42 passed; hosted-pi-bridge npm test 38/38 passed; capabilities passed; tmux-subagents remains 93/97 blocked by tmux ENOENT in this host PATH; stylua blocked by missing stylua; chezmoi dry-run passed with /snap/bin on PATH; git diff --check passed.
 
 QA post-fix matrix: unit coverage is strong; remaining acceptance is fresh-terminal live proof that Tell yields one private delivered/failed card and never an Ask reply or model-visible delivery acknowledgement, followed by one real Ask reply. Full Pi restart required.
+
+Reviewer found hosted production still registers/appends legacy CommunicationView/renderCommunicationCard paths rather than schema-versioned render envelopes/widgets. Assigned follow-up implementation with no cross-extension runtime imports.
 <!-- SECTION:NOTES:END -->

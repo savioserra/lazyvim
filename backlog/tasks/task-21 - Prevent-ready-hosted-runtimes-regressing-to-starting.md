@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@pi'
 created_date: '2026-09-02 05:34'
-updated_date: '2026-09-02 13:08'
+updated_date: '2026-09-02 13:11'
 labels: []
 dependencies: []
 references:
@@ -36,4 +36,6 @@ Fresh deployment and exact recreation of five hosted agents produced durable/run
 
 <!-- SECTION:NOTES:BEGIN -->
 QA post-fix matrix: actor-local early-readiness merge passes; still require same-incarnation stale-starting protection at AgentActor/registry/service/roster, ordering permutation tests, and fresh-runtime convergence proof.
+
+Reviewer confirms same-incarnation runtimeProjectionAdvances accepts every projection in agent_registry and AgentActor, allowing stale starting to overwrite ready/BridgeReady. Require monotonic projection advancement with bridge readiness independent.
 <!-- SECTION:NOTES:END -->

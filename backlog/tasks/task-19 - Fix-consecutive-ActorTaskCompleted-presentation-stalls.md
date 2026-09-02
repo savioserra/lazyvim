@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 03:03'
-updated_date: '2026-09-02 13:08'
+updated_date: '2026-09-02 13:11'
 labels: []
 dependencies: []
 references:
@@ -104,4 +104,6 @@ First post-deploy live evidence: pre-restart durable Ask 94 automatically arrive
 Fresh post-deploy consecutive acceptance passed: Ask 95, 96, and 97 were admitted together and automatically presented exact NOTIFY_RECONCILE_1/2/3 results without another operator reminder, pane inspection, or durable-state read. Delivery order reflected completion order (97, 96, 95), each exactly once. Combined with pre-restart recovery 94 and focused lost-topic regression, reply reconciliation is live. TASK-19 remains open only for its broader canonical hosted-to-source Ask/Tell, stale-fence, and intent-specific presentation ACs.
 
 QA post-fix matrix: remaining live gap is canonical hosted-to-source Tell then Ask under real fence rotation; Tell must reconcile delivered-only once, Ask reply once, and stale-fence retry must not duplicate.
+
+Reviewer found prompt completion ACK and replay-prompt ACK directly reuse pending stale fence instead of requestDeliveryAckWithFenceRefresh. Assigned implementation and exactly-once identical-payload tests.
 <!-- SECTION:NOTES:END -->

@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@pi'
 created_date: '2026-09-02 05:40'
-updated_date: '2026-09-02 13:03'
+updated_date: '2026-09-02 13:11'
 labels: []
 dependencies:
   - TASK-1.2.1
@@ -46,4 +46,6 @@ Information-hierarchy correction: interactive status remains payload-free. Actua
 UX Ask 85 returned from a stale research worktree and is not authoritative for current implementation state. Its claims that actor_tell routes through Ask, compact Ask/Tell wording is shared, canonical completion keys are request-derived, and 20/25/49/80 tests are absent are superseded by current main. Retain only still-current UX evidence: `/actor-status` is not implemented; tool expansion relies on Pi defaults without keyboard/live acceptance; custom message renderers ignore expanded/collapsed options; public status must remain payload-free; exact copy matrix recommends narrow `actors +N`, bounded content in private conversation cards, and no duplicated state labels.
 
 Adopted UI/UX contract: one immutable projection snapshot feeds both a width-safe compact footer and read-only /actor-status overlay; public fields remain lifecycle-only, owner-private fields use bounded activity/thread buckets active/resumable/waiting/blocked/completed. Overlay keyboard: up/down, enter/space expand, esc/ctrl-c close; non-TUI sanitized table fallback.
+
+Reviewer on deployed 3b9dc40 confirms Critical missing /actor-status, split status keys, unused status widget, and stale literal [redacted] lifecycle copy. Implementation must register overlay and derive one footer/overlay snapshot after TASK-1.2.1.
 <!-- SECTION:NOTES:END -->
