@@ -103,6 +103,7 @@ enabled = true
 
 [hosted_pi]
 enabled = true
+introspection_model = "openai-codex/gpt-5.6-sol"
 
 [remoting]
 enabled = false
@@ -112,6 +113,7 @@ subagents_config.verify_managed_active([=[
 enabled = true
 [hosted_pi]
 enabled = true
+introspection_model = "openai-codex/gpt-5.6-sol"
 [remoting]
 enabled = true
 mode = "cluster"
@@ -141,6 +143,27 @@ enabled = true
 enabled = false
 ]])
 end)
+assert_fails("[hosted_pi].introspection_model must use exact provider/model form", function()
+	subagents_config.verify_managed_active([[
+[service]
+enabled = true
+[hosted_pi]
+enabled = true
+[remoting]
+enabled = false
+]])
+end)
+assert_fails("[hosted_pi].introspection_model must use exact provider/model form", function()
+	subagents_config.verify_managed_active([[
+[service]
+enabled = true
+[hosted_pi]
+enabled = true
+introspection_model = "gpt-5.6-sol"
+[remoting]
+enabled = false
+]])
+end)
 local managed_toml_corpus =
 	vim.fs.joinpath(repository, "services", "subagents", "internal", "config", "testdata", "managed_toml_accepted")
 local managed_toml_files = vim.fn.glob(vim.fs.joinpath(managed_toml_corpus, "*.toml"), false, true)
@@ -155,6 +178,7 @@ enabled = false
 
 [hosted_pi]
 enabled = true
+introspection_model = "openai-codex/gpt-5.6-sol"
 
 [remoting]
 enabled = false
@@ -167,6 +191,7 @@ assert_fails("[service].enabled must be true", function()
 
 [hosted_pi]
 enabled = true
+introspection_model = "openai-codex/gpt-5.6-sol"
 
 [remoting]
 enabled = false
@@ -176,6 +201,7 @@ assert_fails("[service].enabled must be true", function()
 	subagents_config.verify_managed_active([[
 [hosted_pi]
 enabled = true
+introspection_model = "openai-codex/gpt-5.6-sol"
 
 [remoting]
 enabled = false

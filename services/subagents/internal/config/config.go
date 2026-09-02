@@ -8,6 +8,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"syscall"
@@ -19,6 +20,8 @@ import (
 )
 
 const SchemaVersion = 2
+
+var introspectionModelPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._@+-]{0,62}/[A-Za-z0-9][A-Za-z0-9._@+-]{0,62}$`)
 
 type Config struct {
 	SchemaVersion int            `toml:"schema_version"`
@@ -44,6 +47,7 @@ type HostedPiConfig struct {
 	CredentialDirectory     string `toml:"credential_directory"`
 	AdminCredentialFile     string `toml:"admin_credential_file"`
 	DefaultProjectDirectory string `toml:"default_project_directory"`
+	IntrospectionModel      string `toml:"introspection_model"`
 	TrustProject            bool   `toml:"trust_project"`
 }
 
@@ -177,7 +181,20 @@ func Load(path string) (Config, error) {
 	if cfg.SchemaVersion != SchemaVersion {
 		return Config{}, fmt.Errorf("unsupported config schema version %d", cfg.SchemaVersion)
 	}
+	if err := validateHostedPi(cfg.HostedPi); err != nil {
+		return Config{}, err
+	}
 	return cfg, nil
+}
+
+func validateHostedPi(cfg HostedPiConfig) error {
+	if !cfg.Enabled {
+		return nil
+	}
+	if cfg.IntrospectionModel != strings.TrimSpace(cfg.IntrospectionModel) || !introspectionModelPattern.MatchString(cfg.IntrospectionModel) {
+		return errors.New("enabled hosted_pi requires introspection_model in exact provider/model form")
+	}
+	return nil
 }
 
 func ResolveRemoting(cfg RemotingConfig, resolver Resolver, localSource LocalAddressSource) (ResolvedRemoting, error) {

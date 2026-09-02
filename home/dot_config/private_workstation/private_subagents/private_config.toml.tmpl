@@ -29,6 +29,9 @@ admin_credential_file = "/run/user/{{ .chezmoi.uid }}/ws-subagents/admin/credent
 admin_credential_file = "{{ .chezmoi.homeDir }}/.local/state/workstation/subagents/admin/credential.json"
 {{- end }}
 default_project_directory = "{{ .chezmoi.homeDir }}"
+# This exact model is used only by the isolated post-turn thread classifier;
+# it never changes a hosted actor's worker model or transcript.
+introspection_model = "openai-codex/gpt-5.6-sol"
 # Hosted creation is an authenticated owner action; approve only the exact
 # project path carried by that typed request.
 trust_project = true

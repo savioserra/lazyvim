@@ -55,7 +55,7 @@ func run() error {
 
 	ctx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopSignals()
-	hosted := service.HostedAdminConfig{Enabled: cfg.HostedPi.Enabled, TmuxBinary: cfg.HostedPi.TmuxBinary, PiBinary: cfg.HostedPi.PiBinary, BridgeExtension: cfg.HostedPi.BridgeExtension, ServerName: cfg.HostedPi.TmuxServerName, TmuxConfig: cfg.HostedPi.TmuxConfig, StateDirectory: cfg.HostedPi.StateDirectory, PiSessionDirectory: cfg.HostedPi.PiSessionDirectory, CredentialDirectory: cfg.HostedPi.CredentialDirectory, AdminCredentialFile: cfg.HostedPi.AdminCredentialFile, DefaultProjectDirectory: cfg.HostedPi.DefaultProjectDirectory, TrustProject: cfg.HostedPi.TrustProject}
+	hosted := service.HostedAdminConfig{Enabled: cfg.HostedPi.Enabled, TmuxBinary: cfg.HostedPi.TmuxBinary, PiBinary: cfg.HostedPi.PiBinary, BridgeExtension: cfg.HostedPi.BridgeExtension, ServerName: cfg.HostedPi.TmuxServerName, TmuxConfig: cfg.HostedPi.TmuxConfig, StateDirectory: cfg.HostedPi.StateDirectory, PiSessionDirectory: cfg.HostedPi.PiSessionDirectory, CredentialDirectory: cfg.HostedPi.CredentialDirectory, AdminCredentialFile: cfg.HostedPi.AdminCredentialFile, DefaultProjectDirectory: cfg.HostedPi.DefaultProjectDirectory, IntrospectionModel: cfg.HostedPi.IntrospectionModel, TrustProject: cfg.HostedPi.TrustProject}
 	actorHost := "127.0.0.1"
 	if actorPlane != nil && actorPlane.NodeIdentity != "" {
 		if node, ok := actorPlane.PublicNodes[actorPlane.NodeIdentity]; ok && node.Host != "" {

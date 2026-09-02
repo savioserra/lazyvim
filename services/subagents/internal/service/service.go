@@ -56,6 +56,7 @@ type HostedAdminConfig struct {
 	Enabled                                                                                               bool
 	TmuxBinary, PiBinary, BridgeExtension, ServerName, TmuxConfig, ActorEndpoint                          string
 	StateDirectory, PiSessionDirectory, CredentialDirectory, AdminCredentialFile, DefaultProjectDirectory string
+	IntrospectionModel                                                                                    string
 	TrustProject                                                                                          bool
 	RuntimeFactory                                                                                        func(hostedpi.Config) application.HostedPiRuntime
 }

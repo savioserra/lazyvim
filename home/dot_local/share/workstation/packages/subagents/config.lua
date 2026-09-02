@@ -123,6 +123,7 @@ function M.verify_managed_active(contents)
 	local definitions = {}
 	local service_enabled = nil
 	local hosted_pi_enabled = nil
+	local hosted_pi_introspection_model = nil
 	local remoting_enabled = nil
 	local remoting_values = {}
 	local peer_tables = 0
@@ -157,6 +158,8 @@ function M.verify_managed_active(contents)
 					service_enabled = value
 				elseif table_name == "hosted_pi" and key == "enabled" then
 					hosted_pi_enabled = value
+				elseif table_name == "hosted_pi" and key == "introspection_model" then
+					hosted_pi_introspection_model = value
 				elseif table_name == "remoting" then
 					remoting_values[key] = value
 					if key == "enabled" then
@@ -170,6 +173,15 @@ function M.verify_managed_active(contents)
 	assert(
 		tables.hosted_pi and hosted_pi_enabled == "true",
 		"repository-managed subagents [hosted_pi].enabled must be true"
+	)
+	local introspection_provider, introspection_model = (hosted_pi_introspection_model or ""):match(
+		'^"([A-Za-z0-9][A-Za-z0-9._@+%-]*)/([A-Za-z0-9][A-Za-z0-9._@+%-]*)"$'
+	)
+	assert(
+		introspection_provider
+			and #introspection_provider <= 63
+			and #introspection_model <= 63,
+		"repository-managed subagents [hosted_pi].introspection_model must use exact provider/model form"
 	)
 	if remoting_enabled == "true" then
 		assert(remoting_values.mode == '"cluster"', "managed remoting mode must be cluster")

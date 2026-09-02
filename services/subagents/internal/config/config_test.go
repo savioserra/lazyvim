@@ -2,6 +2,7 @@ package config_test
 
 import (
 	"errors"
+	"fmt"
 	"net/netip"
 	"os"
 	"path/filepath"
@@ -108,6 +109,44 @@ func TestManagedRecognizerAcceptedCorpusLoads(t *testing.T) {
 			}
 			if _, err := config.Load(path); err != nil {
 				t.Fatalf("Lua-accepted corpus entry did not load through the production parser: %v", err)
+			}
+		})
+	}
+}
+
+func TestLoadRequiresExactHostedPiIntrospectionModel(t *testing.T) {
+	tests := []struct {
+		name, model string
+		wantError   bool
+	}{
+		{name: "exact", model: "openai-codex/gpt-5.6-sol"},
+		{name: "missing", wantError: true},
+		{name: "bare model", model: "gpt-5.6-sol", wantError: true},
+		{name: "reserved alias", model: "auto", wantError: true},
+		{name: "whitespace", model: " openai-codex/gpt-5.6-sol", wantError: true},
+		{name: "second slash", model: "provider/family/model", wantError: true},
+		{name: "control", model: "provider/model\nother", wantError: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			parent := filepath.Join(secureTempDir(t), "private")
+			if err := os.Mkdir(parent, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			contents := "schema_version = 2\n[service]\nenabled = false\n[hosted_pi]\nenabled = true\n"
+			if test.model != "" {
+				contents += fmt.Sprintf("introspection_model = %q\n", test.model)
+			}
+			path := filepath.Join(parent, "config.toml")
+			if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			_, err := config.Load(path)
+			if test.wantError && err == nil {
+				t.Fatal("invalid introspection model was accepted")
+			}
+			if !test.wantError && err != nil {
+				t.Fatalf("exact introspection model was rejected: %v", err)
 			}
 		})
 	}
