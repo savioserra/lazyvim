@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 03:03'
-updated_date: '2026-09-02 06:24'
+updated_date: '2026-09-02 06:26'
 labels: []
 dependencies: []
 references:
@@ -92,4 +92,6 @@ Live post-deployment Tell sequence 69 automatically pushed a terminal frame, but
 Sequence 70 provided a second automatic Tell completion push misrendered as Ask reply/delivery acknowledged; push delivery is consecutive, presentation intent remains wrong.
 
 New live failure after compaction/thread work: reviewer completed TASK-22.1 Ask 92 in its hosted runtime, but the requesting terminal received no completion notification. Operator observed all agents finished while PM remained waiting. Recovery required a second Ask 93 requesting the already-completed review, violating automatic exactly-once completion presentation and causing duplicate task pressure. This is independent of the Tell-as-Ask UI misclassification and confirms TASK-19 remains a runtime blocker.
+
+PM state inspection after operator report localized the missing-notification failure: Ask 92 and recovery Ask 93 were both already durably present in the terminal AgentActor SourceTaskHistory and ReceivedTaskCompletions with Completed=true; source outbox and completion-Tell pending were empty. Neither result reached the actor-client presentation path. The stall is therefore after source durable commit/completion receipt, in reply broker/topic push/client delivery or presentation, not unfinished agent work. PM recovered review 92 from authorized owner-private durable state without pane inspection.
 <!-- SECTION:NOTES:END -->
