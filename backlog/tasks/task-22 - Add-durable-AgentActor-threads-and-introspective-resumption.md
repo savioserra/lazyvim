@@ -5,6 +5,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 06:00'
+updated_date: '2026-09-02 06:03'
 labels: []
 dependencies: []
 references:
@@ -47,3 +48,9 @@ Give every hosted AgentActor durable Slack-like task threads so a later mailbox 
 3. Implement bounded recovery-safe scheduling and completion publication, then expose sanitized owner-private thread projection metadata.
 4. Run independent review, race/restart tests, and a fresh hosted-runtime A→B→resume-A E2E.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Crew execution started. Created retained `actor_thread_architect` in isolated read-only architecture worktree `/home/shyylol/dev/lazyvim-thread-arch` with actor-model/GoAkt role and attached its exact hosted session as a seventh live crew panel without pane injection. Architecture Ask 89 is freezing thread identity, durability, scheduling, introspection, failure, and E2E contracts. Read-only implementation reconnaissance Ask 90 is mapping the commit decomposition. PM remains the only main-worktree writer until the architecture contract returns.
+<!-- SECTION:NOTES:END -->
