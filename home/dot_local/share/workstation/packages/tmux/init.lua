@@ -56,6 +56,10 @@ return function()
 					commands.capture("git", { "-C", plugin_directory(context, plugin.name), "rev-parse", "HEAD" })
 				assert(actual == plugin.commit, ("%s: expected %s, got %s"):format(plugin.name, plugin.commit, actual))
 			end
+			assert(
+				vim.uv.fs_readlink(context.paths.join(context.paths.home, ".config", "tmux", "tmux.conf")) == "../../.tmux.conf",
+				"XDG tmux config must point at the managed legacy config"
+			)
 			local socket = "workstation-verify-" .. vim.uv.os_getpid()
 			commands.execute("tmux", {
 				"-L",
@@ -75,6 +79,11 @@ return function()
 				assert(
 					commands.capture("tmux", { "-L", socket, "show-options", "-gqv", "@tmux2k-theme" }) == "catppuccin",
 					"tmux2k theme was not loaded"
+				)
+				assert(
+					commands.capture("tmux", { "-L", socket, "show-options", "-gqv", "status-left" }):find("", 1, true)
+						~= nil,
+					"managed status format was not loaded last"
 				)
 			end)
 			commands.try_execute("tmux", { "-L", socket, "kill-server" })

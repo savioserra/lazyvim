@@ -3,7 +3,7 @@
 | Property | Value |
 | --- | --- |
 | Hosts | Linux, macOS |
-| Main target | `~/.tmux.conf` |
+| Main target | `~/.tmux.conf` and `~/.config/tmux/tmux.conf` symlink |
 | Theme target | `~/.config/tmux/themes/tmux2k.conf` |
 | Package implementation | `packages/tmux/init.lua` |
 | Plugin root | `~/.tmux/plugins/` |
@@ -12,6 +12,7 @@
 
 | Setting | Value |
 | --- | --- |
+| `status-position` | `bottom` |
 | `escape-time` | `10` |
 | `focus-events` | `on` |
 | `mouse` | `on` |
@@ -24,6 +25,10 @@ Load order:
 1. Base tmux settings and plugin declarations.
 2. `~/.config/tmux/themes/tmux2k.conf`.
 3. `~/.tmux/plugins/tpm/tpm`.
+
+`~/.config/tmux/tmux.conf` is a managed symlink to `~/.tmux.conf` so tmux
+versions that load XDG config after the legacy file cannot let distribution or
+desktop defaults override the managed theme.
 
 ## Plugin pins
 
