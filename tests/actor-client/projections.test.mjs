@@ -131,6 +131,239 @@ test("legacy communication migration is read-only and renders through envelope w
   assert.match(lines, /Waiting for Project Manager…/);
 });
 
+test("client semantic families remain distinct and runtime frozen", async () => {
+  const types = await import("../../home/dot_pi/private_agent/extensions/actor-client/projections/types.ts");
+  assert.deepEqual(types.CLIENT_SEMANTIC_FAMILIES, ["Tell", "Ask", "UserTurn", "SelfContinuation", "Waiting", "Blocked", "Completion", "PresentationAck", "Introspection"]);
+  assert.equal(Object.isFrozen(types.CLIENT_SEMANTIC_FAMILIES), true);
+  assert.throws(() => types.CLIENT_SEMANTIC_FAMILIES.push("Tell"), /object is not extensible|read only|Cannot add property/);
+  assert.deepEqual(types.CLIENT_SEMANTIC_FAMILIES, ["Tell", "Ask", "UserTurn", "SelfContinuation", "Waiting", "Blocked", "Completion", "PresentationAck", "Introspection"]);
+});
+
+test("pre-snapshot admission and reincarnation cannot bootstrap actor authority", () => {
+  let context = reduceProjection(initialProjectionContext(), { type: "USER_TURN.ADMISSION.REQUESTED", proposedTurnId: "misrouted", actorEpoch: "epoch-wrong", baseTranscriptSeq: 0, idempotencyKey: "idem-wrong" });
+  assert.equal(context.actorEpoch, undefined);
+  assert.equal(context.turnAdmission.actorEpoch, undefined);
+  context = reduceProjection(context, { type: "USER_TURN.ADMISSION.DECISION", proposedTurnId: "misrouted", actorEpoch: "epoch-wrong", decision: "admit", admissionToken: "bad-token" });
+  assert.equal(context.actorEpoch, undefined);
+  assert.equal(context.turnAdmission.state, "admission_pending");
+  context = reduceProjection(context, { type: "ACTOR.REINCARNATION", newActorEpoch: "epoch-attacker", recovery: "lossless", executorRecovery: "same_generation_valid", currentExecutor: { ref: { actorEpoch: "epoch-attacker", executorId: "exec", executorGeneration: "gen" }, state: "running", lifecycleSeq: 1 } });
+  assert.equal(context.actorEpoch, undefined);
+  assert.equal(context.replayAuthority, false);
+  assert.equal(context.executor.current, undefined);
+  context = reduceProjection(context, { type: "ACTOR.SNAPSHOT", actorEpoch: "epoch-real", transcriptSeq: 1, eventSeq: 1 });
+  assert.equal(context.actorEpoch, "epoch-real");
+  assert.equal(context.turnAdmission.state, "admission_required");
+});
+
+test("unsolicited admission decision cannot admit a turn", () => {
+  let context = reduceProjection(initialProjectionContext(), { type: "ACTOR.SNAPSHOT", actorEpoch: "epoch-a", transcriptSeq: 1, eventSeq: 1 });
+  context = reduceProjection(context, { type: "USER_TURN.ADMISSION.DECISION", proposedTurnId: "turn-1", actorEpoch: "epoch-a", decision: "admit", admissionToken: "token" });
+  assert.equal(context.turnAdmission.state, "admission_required");
+  assert.equal(context.turnAdmission.admissionToken, undefined);
+});
+
+test("user turn submit validates full admission tuple and clears non-rendered token", () => {
+  let context = reduceProjection(initialProjectionContext(), { type: "CLIENT.DRAFT.SET", draft: "ship this?" });
+  context = reduceProjection(context, { type: "ACTOR.SNAPSHOT", actorEpoch: "epoch-a", transcriptSeq: 10, eventSeq: 1 });
+  context = reduceProjection(context, { type: "USER_TURN.ADMISSION.REQUESTED", proposedTurnId: "turn-1", actorEpoch: "epoch-a", baseTranscriptSeq: 10, idempotencyKey: "idem-admit-1" });
+  context = reduceProjection(context, { type: "USER_TURN.ADMISSION.DECISION", proposedTurnId: "turn-1", actorEpoch: "epoch-a", decision: "admit", admissionToken: "token-secret-1", reason: "ok secret=abc" });
+  assert.equal(context.turnAdmission.reason.includes("secret=abc"), false);
+  for (const bad of [
+    { proposedTurnId: "other", turnId: "turn-1", actorEpoch: "epoch-a", admissionToken: "token-secret-1", idempotencyKey: "idem-admit-1" },
+    { proposedTurnId: "turn-1", turnId: "other", actorEpoch: "epoch-a", admissionToken: "token-secret-1", idempotencyKey: "idem-admit-1" },
+    { proposedTurnId: "turn-1", turnId: "turn-1", actorEpoch: "epoch-b", admissionToken: "token-secret-1", idempotencyKey: "idem-admit-1" },
+    { proposedTurnId: "turn-1", turnId: "turn-1", actorEpoch: "epoch-a", admissionToken: "wrong", idempotencyKey: "idem-admit-1" },
+    { proposedTurnId: "turn-1", turnId: "turn-1", actorEpoch: "epoch-a", admissionToken: "token-secret-1", idempotencyKey: "other" },
+  ]) {
+    const attempted = reduceProjection(context, { type: "USER_TURN.SUBMITTED", ...bad });
+    assert.equal(attempted.snapshot.inputState, "admitted");
+  }
+  context = reduceProjection(context, { type: "USER_TURN.SUBMITTED", proposedTurnId: "turn-1", turnId: "turn-1", actorEpoch: "epoch-a", admissionToken: "token-secret-1", idempotencyKey: "idem-admit-1" });
+  assert.equal(context.snapshot.inputState, "executing");
+  assert.equal(context.turnAdmission.admissionToken, undefined);
+  assert.equal(JSON.stringify(context.snapshot).includes("token-secret-1"), false);
+  context = reduceProjection(context, { type: "ACTOR.SNAPSHOT", actorEpoch: "epoch-a", transcriptSeq: 11, eventSeq: 22, availableContinuations: [], availableIntrospections: [] });
+  assert.equal(context.draft, "ship this?");
+});
+
+test("defer or reject decisions carrying tokens clear submit authority", () => {
+  let context = reduceProjection(initialProjectionContext(), { type: "ACTOR.SNAPSHOT", actorEpoch: "epoch-a", transcriptSeq: 1, eventSeq: 1 });
+  context = reduceProjection(context, { type: "USER_TURN.ADMISSION.REQUESTED", proposedTurnId: "turn-1", actorEpoch: "epoch-a", baseTranscriptSeq: 1, idempotencyKey: "idem-1" });
+  context = reduceProjection(context, { type: "USER_TURN.ADMISSION.DECISION", proposedTurnId: "turn-1", actorEpoch: "epoch-a", decision: "defer", admissionToken: "token-forbidden", reason: "blocked token=abc" });
+  assert.equal(context.turnAdmission.admissionToken, undefined);
+  assert.equal(context.turnAdmission.reason.includes("token=abc"), false);
+  let attempted = reduceProjection(context, { type: "USER_TURN.SUBMITTED", proposedTurnId: "turn-1", turnId: "turn-1", actorEpoch: "epoch-a", admissionToken: "token-forbidden", idempotencyKey: "idem-1" });
+  assert.equal(attempted.snapshot.inputState, "blocked");
+  context = reduceProjection(context, { type: "USER_TURN.ADMISSION.REQUESTED", proposedTurnId: "turn-2", actorEpoch: "epoch-a", baseTranscriptSeq: 1, idempotencyKey: "idem-2" });
+  context = reduceProjection(context, { type: "USER_TURN.ADMISSION.DECISION", proposedTurnId: "turn-2", actorEpoch: "epoch-a", decision: "reject", admissionToken: "token-forbidden-2", reason: "no secret=abc" });
+  assert.equal(context.turnAdmission.admissionToken, undefined);
+  attempted = reduceProjection(context, { type: "USER_TURN.SUBMITTED", proposedTurnId: "turn-2", turnId: "turn-2", actorEpoch: "epoch-a", admissionToken: "token-forbidden-2", idempotencyKey: "idem-2" });
+  assert.equal(attempted.snapshot.inputState, "admission_required");
+});
+
+test("stale admission request is rejected after actor authority exists", () => {
+  let context = reduceProjection(initialProjectionContext(), { type: "ACTOR.SNAPSHOT", actorEpoch: "epoch-a", transcriptSeq: 1, eventSeq: 1 });
+  context = reduceProjection(context, { type: "USER_TURN.ADMISSION.REQUESTED", proposedTurnId: "turn-b", actorEpoch: "epoch-b", baseTranscriptSeq: 1, idempotencyKey: "idem-b" });
+  assert.equal(context.actorEpoch, "epoch-a");
+  assert.equal(context.turnAdmission.state, "admission_required");
+  context = reduceProjection(context, { type: "USER_TURN.ADMISSION.REQUESTED", proposedTurnId: "turn-a", actorEpoch: "epoch-a", baseTranscriptSeq: 1, idempotencyKey: "idem-a" });
+  assert.equal(context.turnAdmission.state, "admission_pending");
+  let attempted = reduceProjection(context, { type: "USER_TURN.ADMISSION.REQUESTED", proposedTurnId: "turn-a2", actorEpoch: "epoch-a", baseTranscriptSeq: 1, idempotencyKey: "idem-a2" });
+  assert.equal(attempted.turnAdmission.proposedTurnId, "turn-a");
+  context = reduceProjection(context, { type: "USER_TURN.ADMISSION.DECISION", proposedTurnId: "turn-a", actorEpoch: "epoch-a", decision: "admit", admissionToken: "token-a" });
+  attempted = reduceProjection(context, { type: "USER_TURN.ADMISSION.REQUESTED", proposedTurnId: "turn-a2", actorEpoch: "epoch-a", baseTranscriptSeq: 1, idempotencyKey: "idem-a2" });
+  assert.equal(attempted.turnAdmission.proposedTurnId, "turn-a");
+  context = reduceProjection(context, { type: "USER_TURN.SUBMITTED", proposedTurnId: "turn-a", turnId: "turn-a", actorEpoch: "epoch-a", admissionToken: "token-a", idempotencyKey: "idem-a" });
+  attempted = reduceProjection(context, { type: "USER_TURN.ADMISSION.REQUESTED", proposedTurnId: "turn-a2", actorEpoch: "epoch-a", baseTranscriptSeq: 1, idempotencyKey: "idem-a2" });
+  assert.equal(attempted.turnAdmission.state, "executing");
+  context = reduceProjection(context, { type: "ACTOR.REINCARNATION", oldActorEpoch: "epoch-a", newActorEpoch: "epoch-b", recovery: "state_lost", executorRecovery: "executor_absent" });
+  context = reduceProjection(context, { type: "USER_TURN.ADMISSION.REQUESTED", proposedTurnId: "turn-b", actorEpoch: "epoch-b", baseTranscriptSeq: 1, idempotencyKey: "idem-b" });
+  assert.equal(context.turnAdmission.state, "state_lost");
+});
+
+test("executor lifecycle cannot establish authority before snapshot", () => {
+  const ref = { actorEpoch: "epoch-a", executorId: "exec", executorGeneration: "gen-a" };
+  let context = reduceProjection(initialProjectionContext(), { type: "EXECUTOR.LIFECYCLE", executor: ref, state: "running", lifecycleSeq: 1 });
+  assert.equal(context.actorEpoch, undefined);
+  assert.equal(context.executor.current, undefined);
+  context = reduceProjection(context, { type: "ACTOR.SNAPSHOT", actorEpoch: "epoch-a", transcriptSeq: 1, eventSeq: 1 });
+  context = reduceProjection(context, { type: "EXECUTOR.LIFECYCLE", executor: ref, state: "running", lifecycleSeq: 1 });
+  assert.equal(context.executor.current, undefined);
+});
+
+test("stale reincarnation cannot change epoch or replay authority", () => {
+  let context = reduceProjection(initialProjectionContext(), { type: "ACTOR.SNAPSHOT", actorEpoch: "epoch-a", transcriptSeq: 1, eventSeq: 1 });
+  context = reduceProjection(context, { type: "ACTOR.REINCARNATION", oldActorEpoch: "epoch-x", newActorEpoch: "epoch-b", recovery: "lossless", executorRecovery: "same_generation_valid" });
+  assert.equal(context.actorEpoch, "epoch-a");
+  assert.equal(context.replayAuthority, true);
+  context = reduceProjection(context, { type: "ACTOR.REINCARNATION", newActorEpoch: "epoch-b", recovery: "lossless", executorRecovery: "same_generation_valid" });
+  assert.equal(context.actorEpoch, "epoch-a");
+});
+
+test("executor controls and events are fenced by actor epoch and executor generation", () => {
+  const refA = { actorEpoch: "epoch-a", executorId: "exec", executorGeneration: "gen-a" };
+  const refB = { actorEpoch: "epoch-a", executorId: "exec", executorGeneration: "gen-b" };
+  let context = reduceProjection(initialProjectionContext(), { type: "ACTOR.SNAPSHOT", actorEpoch: "epoch-a", transcriptSeq: 1, eventSeq: 1, executor: { ref: refA, state: "running", lifecycleSeq: 1 } });
+  context = reduceProjection(context, { type: "EXECUTOR.COMMAND.REQUESTED", executor: refB, command: "request_stop", idempotencyKey: "stop-stale" });
+  assert.equal(context.executor.pendingCommands.size, 0);
+  context = reduceProjection(context, { type: "EXECUTOR.COMMAND.REQUESTED", executor: refA, command: "request_stop", idempotencyKey: "stop-current" });
+  assert.equal(context.executor.pendingCommands.size, 1);
+  context = reduceProjection(context, { type: "EXECUTOR.COMMAND.RESULT", executor: refA, status: "accepted", idempotencyKey: "stop-current" });
+  assert.equal(context.executor.pendingCommands.size, 0);
+  context = reduceProjection(context, { type: "EXECUTOR.LIFECYCLE", executor: refB, state: "stopped", lifecycleSeq: 2 });
+  assert.equal(context.executor.state, "running");
+  context = reduceProjection(context, { type: "EXECUTOR.LIFECYCLE", executor: { ...refA, actorEpoch: "epoch-old" }, state: "failed", lifecycleSeq: 3 });
+  assert.equal(context.executor.state, "running");
+  context = reduceProjection(context, { type: "EXECUTOR.LIFECYCLE", executor: refA, state: "stopping", lifecycleSeq: 2 });
+  assert.equal(context.executor.state, "stopping");
+  context = reduceProjection(context, { type: "EXECUTOR.LIFECYCLE", executor: refA, state: "failed", lifecycleSeq: 2 });
+  assert.equal(context.executor.state, "stopping");
+});
+
+test("snapshot rejects stale epoch seq and transcript regressions", () => {
+  const ref = { actorEpoch: "epoch-a", executorId: "exec-secret", executorGeneration: "gen-secret" };
+  let context = reduceProjection(initialProjectionContext(), { type: "ACTOR.SNAPSHOT", actorEpoch: "epoch-a", transcriptSeq: 5, eventSeq: 5, executor: { ref, state: "running", lifecycleSeq: 1 } });
+  assert.equal(context.executor.state, "running");
+  assert.equal(context.snapshot.executorLine, "executor running");
+  assert.equal(JSON.stringify(context.snapshot).includes("exec-secret"), false);
+  assert.equal(JSON.stringify(context.snapshot).includes("gen-secret"), false);
+  let attempted = reduceProjection(context, { type: "ACTOR.SNAPSHOT", actorEpoch: "epoch-b", transcriptSeq: 6, eventSeq: 6, executor: { ref: { ...ref, actorEpoch: "epoch-b" }, state: "failed", lifecycleSeq: 1 } });
+  assert.equal(attempted.actorEpoch, "epoch-a");
+  attempted = reduceProjection(context, { type: "ACTOR.SNAPSHOT", actorEpoch: "epoch-a", transcriptSeq: 6, eventSeq: 5, executor: { ref, state: "failed", lifecycleSeq: 2 } });
+  assert.equal(attempted.executor.state, "running");
+  attempted = reduceProjection(context, { type: "ACTOR.SNAPSHOT", actorEpoch: "epoch-a", transcriptSeq: 4, eventSeq: 6, executor: { ref, state: "failed", lifecycleSeq: 2 } });
+  assert.equal(attempted.transcriptSeq, 5);
+});
+
+test("snapshot replaces affordances and old executor commands while preserving draft", () => {
+  const refA = { actorEpoch: "epoch-a", executorId: "exec", executorGeneration: "gen-a" };
+  const refB = { actorEpoch: "epoch-a", executorId: "exec", executorGeneration: "gen-b" };
+  let context = reduceProjection(initialProjectionContext(), { type: "CLIENT.DRAFT.SET", draft: "local unsent text" });
+  context = reduceProjection(context, { type: "ACTOR.SNAPSHOT", actorEpoch: "epoch-a", transcriptSeq: 1, eventSeq: 1, executor: { ref: refA, state: "running", lifecycleSeq: 1 }, availableContinuations: [{ continuationId: "cont-old", turnId: "t", label: "Continue", mode: "suggested", actorEpoch: "epoch-a", eventSeq: 1 }], availableIntrospections: [{ introspectionId: "intro-old", scope: "last_turn", privacyNotice: "server scoped", actorEpoch: "epoch-a", eventSeq: 1 }] });
+  context = reduceProjection(context, { type: "EXECUTOR.COMMAND.REQUESTED", executor: refA, command: "request_abort", idempotencyKey: "abort-a" });
+  context = reduceProjection(context, { type: "ACTOR.SNAPSHOT", actorEpoch: "epoch-a", transcriptSeq: 2, eventSeq: 2, executor: { ref: refB, state: "running", lifecycleSeq: 1 }, availableContinuations: [{ continuationId: "cont-new", turnId: "t2", label: "Continue", mode: "recommended", actorEpoch: "epoch-a", eventSeq: 2 }], availableIntrospections: [] });
+  assert.equal(context.draft, "local unsent text");
+  assert.equal(context.executor.pendingCommands.size, 0);
+  assert.equal(context.affordances.continuations.has("cont-old"), false);
+  assert.equal(context.affordances.continuations.has("cont-new"), true);
+  assert.equal(context.affordances.introspections.size, 0);
+});
+
+test("presentation ack binds actor tuple, sanitizes requirement, dedupes replay, and is payload-free", () => {
+  let context = reduceProjection(initialProjectionContext(), { type: "TRANSPORT.CONNECTED" });
+  context = reduceProjection(context, { type: "ACTOR.SNAPSHOT", actorEpoch: "epoch-a", transcriptSeq: 2, eventSeq: 1 });
+  context = reduceProjection(context, { type: "PRESENTATION.RENDERED", presentationId: "p1", turnId: "t", transcriptSeq: 2, actorEpoch: "epoch-a", clientSessionId: "s", renderedAt: "2026-01-01T00:00:00Z", visibleRegion: { firstSeq: 1, lastSeq: 2 } });
+  assert.equal(context.presentationAckOutbox.length, 0);
+  context = reduceProjection(context, { type: "PRESENTATION.REQUIRED", presentationId: "p1", turnId: "t", transcriptSeq: 2, actorEpoch: "epoch-a", eventSeq: 2, requirement: "assistant_output_visible token=abc" });
+  assert.match(context.snapshot.presentationAckLine, /waiting/);
+  assert.equal([...context.pendingPresentation.values()][0].requirement.includes("token=abc"), false);
+  const collision = reduceProjection(context, { type: "PRESENTATION.REQUIRED", presentationId: "p1", turnId: "other", transcriptSeq: 2, actorEpoch: "epoch-a", eventSeq: 3, requirement: "tool_request_visible" });
+  assert.equal(collision.pendingPresentation.size, 1);
+  context = reduceProjection(context, { type: "PRESENTATION.RENDERED", presentationId: "p1", turnId: "other", transcriptSeq: 2, actorEpoch: "epoch-a", clientSessionId: "s", renderedAt: "2026-01-01T00:00:00Z" });
+  assert.equal(context.presentationAckOutbox.length, 0);
+  context = reduceProjection(context, { type: "PRESENTATION.RENDERED", presentationId: "p1", turnId: "t", transcriptSeq: 2, actorEpoch: "epoch-a", clientSessionId: "s", renderedAt: "2026-01-01T00:00:00Z", visibleRegion: { firstSeq: 1, lastSeq: 2 } });
+  context = reduceProjection(context, { type: "PRESENTATION.RENDERED", presentationId: "p1", turnId: "t", transcriptSeq: 2, actorEpoch: "epoch-a", clientSessionId: "s", renderedAt: "2026-01-01T00:00:01Z", visibleRegion: { firstSeq: 1, lastSeq: 2 } });
+  assert.equal(context.pendingPresentation.size, 0);
+  assert.equal(context.presentationAckOutbox.length, 1);
+  context = reduceProjection(context, { type: "PRESENTATION.REQUIRED", presentationId: "p1", turnId: "t", transcriptSeq: 2, actorEpoch: "epoch-a", eventSeq: 3, requirement: "assistant_output_visible" });
+  context = reduceProjection(context, { type: "PRESENTATION.RENDERED", presentationId: "p1", turnId: "t", transcriptSeq: 2, actorEpoch: "epoch-a", clientSessionId: "s", renderedAt: "2026-01-01T00:00:02Z" });
+  assert.equal(context.pendingPresentation.size, 0);
+  assert.equal(context.presentationAckOutbox.length, 1);
+  assert.deepEqual(context.presentationAckOutbox[0], { type: "client.presentation.ack", presentationId: "p1", turnId: "t", transcriptSeq: 2, actorEpoch: "epoch-a", clientSessionId: "s", renderedAt: "2026-01-01T00:00:00Z", visibleRegion: { firstSeq: 1, lastSeq: 2 } });
+  assert.equal(JSON.stringify(context.presentationAckOutbox).includes("assistant_output_visible"), false);
+  assert.equal(JSON.stringify(context.presentationAckOutbox).includes("token=abc"), false);
+});
+
+test("snapshot replay cannot resurrect acknowledged presentation tuple", () => {
+  let context = reduceProjection(initialProjectionContext(), { type: "TRANSPORT.CONNECTED" });
+  context = reduceProjection(context, { type: "ACTOR.SNAPSHOT", actorEpoch: "epoch-a", transcriptSeq: 2, eventSeq: 1 });
+  context = reduceProjection(context, { type: "PRESENTATION.REQUIRED", presentationId: "p-acked", turnId: "t", transcriptSeq: 2, actorEpoch: "epoch-a", eventSeq: 2, requirement: "assistant_output_visible" });
+  context = reduceProjection(context, { type: "PRESENTATION.RENDERED", presentationId: "p-acked", turnId: "t", transcriptSeq: 2, actorEpoch: "epoch-a", clientSessionId: "s", renderedAt: "2026-01-01T00:00:00Z" });
+  assert.equal(context.presentationAckOutbox.length, 1);
+  context = reduceProjection(context, { type: "ACTOR.SNAPSHOT", actorEpoch: "epoch-a", transcriptSeq: 2, eventSeq: 3, pendingPresentation: [{ presentationId: "p-acked", turnId: "t", transcriptSeq: 2, actorEpoch: "epoch-a", requirement: "assistant_output_visible" }] });
+  assert.equal(context.pendingPresentation.size, 0);
+  context = reduceProjection(context, { type: "PRESENTATION.RENDERED", presentationId: "p-acked", turnId: "t", transcriptSeq: 2, actorEpoch: "epoch-a", clientSessionId: "s", renderedAt: "2026-01-01T00:00:01Z" });
+  assert.equal(context.presentationAckOutbox.length, 1);
+});
+
+test("continuation and introspection affordances require actor authority and sanitize text", () => {
+  let context = initialProjectionContext();
+  context = reduceProjection(context, { type: "CONTINUATION.AVAILABLE", continuationId: "c0", turnId: "t0", label: "Continue token=abc", mode: "required_ack", actorEpoch: "epoch-a", eventSeq: 1 });
+  assert.equal(context.affordances.continuations.size, 0);
+  context = reduceProjection(context, { type: "TRANSPORT.CONNECTED" });
+  context = reduceProjection(context, { type: "ACTOR.SNAPSHOT", actorEpoch: "epoch-a", transcriptSeq: 1, eventSeq: 1 });
+  context = reduceProjection(context, { type: "CONTINUATION.AVAILABLE", continuationId: "stale", turnId: "t1", label: "Old", mode: "suggested", actorEpoch: "epoch-a", eventSeq: 1 });
+  context = reduceProjection(context, { type: "CONTINUATION.AVAILABLE", continuationId: "wrong", turnId: "t1", label: "Wrong", mode: "suggested", actorEpoch: "epoch-b", eventSeq: 2 });
+  assert.equal(context.affordances.continuations.size, 0);
+  context = reduceProjection(context, { type: "CONTINUATION.AVAILABLE", continuationId: "c1", turnId: "t1", label: "Continue token=abc", mode: "required_ack", actorEpoch: "epoch-a", eventSeq: 2 });
+  context = reduceProjection(context, { type: "INTROSPECTION.AVAILABLE", introspectionId: "i1", scope: "executor_state", privacyNotice: "actor state only secret=abc", actorEpoch: "epoch-a", eventSeq: 3 });
+  assert.equal(context.affordances.continuations.get("c1").label.includes("token=abc"), false);
+  assert.equal(context.affordances.introspections.get("i1").privacyNotice.includes("secret=abc"), false);
+  assert.match(context.snapshot.continuationLine, /continuation/);
+  assert.match(context.snapshot.introspectionLine, /introspection/);
+});
+
+test("reincarnation replay state clears stale affordances and gates input", () => {
+  const ref = { actorEpoch: "epoch-a", executorId: "exec", executorGeneration: "gen-a" };
+  let context = reduceProjection(initialProjectionContext(), { type: "CLIENT.DRAFT.SET", draft: "keep me" });
+  context = reduceProjection(context, { type: "ACTOR.SNAPSHOT", actorEpoch: "epoch-a", transcriptSeq: 1, eventSeq: 1, executor: { ref, state: "running", lifecycleSeq: 1 }, availableContinuations: [{ continuationId: "c", turnId: "t", label: "Continue", mode: "suggested", actorEpoch: "epoch-a", eventSeq: 1 }] });
+  context = reduceProjection(context, { type: "ACTOR.REINCARNATION", oldActorEpoch: "epoch-a", newActorEpoch: "epoch-b", recovery: "state_lost", executorRecovery: "executor_absent" });
+  assert.equal(context.draft, "keep me");
+  assert.equal(context.snapshot.inputState, "state_lost");
+  assert.equal(context.executor.current, undefined);
+  assert.equal(context.affordances.continuations.size, 0);
+  context = reduceProjection(context, { type: "CONTINUATION.AVAILABLE", continuationId: "after-loss", turnId: "t", label: "Continue", mode: "suggested", actorEpoch: "epoch-b", eventSeq: 1 });
+  context = reduceProjection(context, { type: "INTROSPECTION.AVAILABLE", introspectionId: "after-loss", scope: "last_turn", privacyNotice: "state", actorEpoch: "epoch-b", eventSeq: 2 });
+  context = reduceProjection(context, { type: "PRESENTATION.REQUIRED", presentationId: "after-loss", turnId: "t", transcriptSeq: 1, actorEpoch: "epoch-b", eventSeq: 3, requirement: "assistant_output_visible" });
+  assert.equal(context.affordances.continuations.size, 0);
+  assert.equal(context.affordances.introspections.size, 0);
+  assert.equal(context.pendingPresentation.size, 0);
+  context = reduceProjection(context, { type: "TRANSPORT.CONNECTED" });
+  context = reduceProjection(context, { type: "ACTOR.SNAPSHOT", actorEpoch: "epoch-b", transcriptSeq: 1, eventSeq: 3 });
+  context = reduceProjection(context, { type: "CONTINUATION.AVAILABLE", continuationId: "after-snapshot", turnId: "t", label: "Continue", mode: "suggested", actorEpoch: "epoch-b", eventSeq: 4 });
+  assert.equal(context.affordances.continuations.has("after-snapshot"), true);
+});
+
 test("pending status selector uses approved single-ask wording", () => {
   const context = reduceProjection(initialProjectionContext(), { type: "TASK.ADMITTED", pending: { key: "ask", requestId: "r", dedupeId: "d", chainId: "c", sourceMutationSequence: "1", target: "Code Reviewer", kind: "Ask", prompt: "question", hidden: true } });
   assert.equal(selectPendingStatusLine(context), "◌ Waiting for Code Reviewer…");

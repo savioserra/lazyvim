@@ -6,7 +6,11 @@ export function projectSnapshot(context: ProjectionContext, width = context.snap
   const firstPending = context.pending.values().next().value;
   const pending = firstPending ? context.pending.size === 1 ? `◌ Waiting for ${firstPending.target ?? firstPending.targetPeer?.displayName ?? "actor"}…` : `◌ actor asks ${context.pending.size} pending` : undefined;
   const cards = [...context.cards.values()].slice(-context.maxCards);
-  return { connection: context.connection, statusLine: roster.line, pendingLine: pending, cards, width, overflow: roster.overflow + Math.max(0, context.cards.size - cards.length), themeRevision };
+  const executorLine = context.executor.current ? `executor ${context.executor.state ?? "idle"}` : undefined;
+  const presentationAckLine = context.pendingPresentation.size ? `◌ waiting for presentation ack (${context.pendingPresentation.size})` : undefined;
+  const continuationLine = context.affordances.continuations.size ? `↻ ${context.affordances.continuations.size} continuation${context.affordances.continuations.size === 1 ? "" : "s"} available` : undefined;
+  const introspectionLine = context.affordances.introspections.size ? `ⓘ ${context.affordances.introspections.size} introspection${context.affordances.introspections.size === 1 ? "" : "s"} available` : undefined;
+  return { connection: context.connection, statusLine: roster.line, pendingLine: pending, cards, width, overflow: roster.overflow + Math.max(0, context.cards.size - cards.length), themeRevision, inputState: context.turnAdmission.state, executorLine, presentationAckLine, continuationLine, introspectionLine };
 }
 
 export function wrapPlain(text: string, width: number): string[] {
