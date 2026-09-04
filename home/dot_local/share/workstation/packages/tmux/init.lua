@@ -81,9 +81,8 @@ return function()
 					"tmux2k theme was not loaded"
 				)
 				assert(
-					commands.capture("tmux", { "-L", socket, "show-options", "-gqv", "status-left" }):find("", 1, true)
-						~= nil,
-					"managed status format was not loaded last"
+					commands.capture("tmux", { "-L", socket, "show-options", "-gqv", "@tmux2k-left-sep" }) == "|",
+					"tmux2k is not using vertical separators"
 				)
 			end)
 			commands.try_execute("tmux", { "-L", socket, "kill-server" })

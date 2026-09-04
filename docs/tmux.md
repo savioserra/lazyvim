@@ -61,21 +61,33 @@ Setup removes stale `~/.tmux/plugins/tmux-fingers` checkouts.
 
 | Setting | Value |
 | --- | --- |
-| Layout | `catppuccin` preset |
-| Palette | tender.vim overrides |
-| Powerline | Round Nerd Font separators |
+| Layout | `catppuccin` preset (unused-slot defaults only) |
+| Palette | tmux named colors following the live terminal palette |
+| Powerline | Vertical bar separators (`|`) |
 | Left | `session cwd` |
 | Right | `time` |
+| Refresh | `status-interval 5` |
 | Window list | Centered, `#I:#W`, activity flags |
+
+Colors resolve through terminal palette slots instead of hardcoded hex, so
+the bar follows the active terminal theme everywhere: Omarchy retints panes
+via OSC 4 on theme switch and the bar restyles without a tmux reload, and
+plain terminals follow their own palette.
 
 | Color role | Value |
 | --- | --- |
-| Black/text | `#282828` |
-| White | `#eeeeee` |
-| Gray/pane border | `#666666` |
-| Blue | `#73cef4` |
-| Green | `#c9d05c` |
-| Yellow | `#ffc24b` |
+| Status background | `default` (terminal background) |
+| Segment text | `black` |
+| Inactive window text / gray | `brightblack` |
+| Pane border | `brightblack`, active `blue` |
+| Session accent | `green` |
+| Cwd accent | `blue` |
+| Time accent | `yellow` |
+| Window flags | `red`, current `brightgreen` |
+
+Window-list colors are slot names (`bg_main blue`), not literal colors: the
+active window renders as a blue segment with vertical separators on the
+transparent bar and inactive windows render as plain muted text.
 
 ## Managed subagent actors
 

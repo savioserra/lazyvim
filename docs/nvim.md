@@ -50,7 +50,7 @@ Rules:
 | `lsp.lua` | Base nvim-lspconfig servers |
 | `mason.lua` | Headless sync integration |
 | `mason-lock.lua` | Blocking exact Mason restore |
-| `theme.lua` | tender.vim and contrast overrides |
+| `theme.lua` | tender.vim, contrast overrides, and guarded Omarchy desktop-theme import |
 | `treesitter.lua` | Parser set |
 | `ui.lua` | snacks, lualine, noice, dropbar, inline diagnostics |
 | `editor.lua` | Movement, tags, tmux navigation, diff view |
@@ -72,6 +72,22 @@ Mason restore requirements:
 - suppress lock rewrites during restore;
 - terminate timed-out operations;
 - verify final installed versions.
+
+## Desktop theme integration
+
+| Item | Value |
+| --- | --- |
+| Followed spec | `~/.local/state/omarchy/current/theme/neovim.lua` (legacy `~/.config/omarchy/current/theme/…`) |
+| Mechanism | `lua/plugins/theme.lua` loads the spec at startup and appends it after the tender specs |
+| Fallback | tender on non-Omarchy hosts, missing files, empty specs, or load errors |
+
+Rules:
+
+- Apply the imported colorscheme on the next Neovim start; running instances
+  only get the terminal-palette retint, so a colorscheme reload needs a
+  restart (stock Omarchy behaves the same way).
+- Keep tender.vim in the specs unconditionally so lockfile and headless sync
+  state stay host-independent.
 
 ## Headless sync
 
