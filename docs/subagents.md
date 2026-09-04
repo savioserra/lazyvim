@@ -125,7 +125,7 @@ The operator-provided private network is the approved reachability boundary; mTL
 
 ## Code generation and compatibility
 
-GoAkt is exactly pinned to v4.5.2. The managed Go 1.27.0 toolchain satisfies its Go 1.26 floor. The schema is canonical; generated Go and TypeScript are deterministic artifacts, and codegen byte-verifies the bridge-local TypeScript copy against the canonical generated output. `tools/codegen.sh` verifies a platform SHA-256-pinned protoc 33.5 archive, builds module-locked `protoc-gen-go` 1.36.12, invokes lockfile-installed `@bufbuild/protoc-gen-es` 2.11.0 by explicit path, and byte-compares temporary regeneration outputs. Generated files must be regenerated together and the Go/TypeScript framed golden fixture must remain byte-identical unless an intentional protocol revision updates all consumers.
+GoAkt is exactly pinned to v4.5.2. The managed Go 1.27.1 toolchain satisfies its Go 1.26 floor. The schema is canonical; generated Go and TypeScript are deterministic artifacts, and codegen byte-verifies the bridge-local TypeScript copy against the canonical generated output. `tools/codegen.sh` verifies a platform SHA-256-pinned protoc 33.5 archive, builds module-locked `protoc-gen-go` 1.36.12, invokes lockfile-installed `@bufbuild/protoc-gen-es` 2.11.0 by explicit path, and byte-compares temporary regeneration outputs. Generated files must be regenerated together and the Go/TypeScript framed golden fixture must remain byte-identical unless an intentional protocol revision updates all consumers.
 
 Major versions are rejected when unknown. Minor-compatible readers accept protobuf unknown fields. GoAkt PIDs, actor paths, serializers, and remoting messages never appear in this API.
 

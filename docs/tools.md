@@ -12,7 +12,7 @@ Supported deployment policy is Linux, WSL-as-Linux, and macOS. Native-Windows en
 | Tool | Version | Source | Target | Platforms |
 | --- | --- | --- | --- | --- |
 | Neovim | 0.12.4 | github.com/neovim/neovim | `.local/opt/nvim` (tree, `archive`) | linux-x86_64, darwin-arm64, darwin-x86_64, windows-arm64, windows-x86_64 |
-| Go | 1.27.0 | go.dev | `.local/opt/go` (tree, `archive`) | linux-x86_64, darwin-arm64, darwin-x86_64, windows-arm64, windows-x86_64 |
+| Go | 1.27.1 | go.dev | `.local/opt/go` (tree, `archive`) | linux-x86_64, darwin-arm64, darwin-x86_64, windows-arm64, windows-x86_64 |
 | nvm-windows | 1.2.2 | github.com/coreybutler/nvm-windows | `.local/opt/nvm-windows` (tree, `archive`) | Windows ARM64 and x64 |
 | nvm-sh | 0.40.4 | github.com/nvm-sh/nvm | `.local/opt/nvm` (tree, `archive`) | Linux x86_64, macOS ARM64 and x64 |
 | Node.js | `home/dot_node-version` (currently 24.19.0) | nodejs.org | Windows: `.local/opt/nvm-windows/v<version>`; Unix: `.local/opt/nvm/versions/node/v<version>` | all 5 |
@@ -28,7 +28,7 @@ Supported deployment policy is Linux, WSL-as-Linux, and macOS. Native-Windows en
 
 ## GoAkt service source dependency
 
-The sole nested service module under `services/subagents/` uses the managed Go 1.27.0 toolchain and exactly pins `github.com/tochemey/goakt/v4` v4.5.2. Its reproducible schema check uses SHA-256-pinned protoc 33.5 archives, module-locked protoc-gen-go 1.36.12, lockfile-pinned protoc-gen-es 2.11.0, and lockfile-pinned `tsx` to execute the generated descriptor. Chezmoi setup builds the reviewed daemon and clientctl into `~/.local/bin` with `go build -mod=readonly` and activates only the owner user service. The source-managed hosted bridge and actor client pin `@bufbuild/protobuf@2.11.0` and exact registry integrity in local locks. See [`subagents.md`](subagents.md).
+The sole nested service module under `services/subagents/` uses the managed Go 1.27.1 toolchain and exactly pins `github.com/tochemey/goakt/v4` v4.5.2. Its reproducible schema check uses SHA-256-pinned protoc 33.5 archives, module-locked protoc-gen-go 1.36.12, lockfile-pinned protoc-gen-es 2.11.0, and lockfile-pinned `tsx` to execute the generated descriptor. Chezmoi setup builds the reviewed daemon and clientctl into `~/.local/bin` with `go build -mod=readonly` and activates only the owner user service. The source-managed hosted bridge and actor client pin `@bufbuild/protobuf@2.11.0` and exact registry integrity in local locks. See [`subagents.md`](subagents.md).
 
 ## Not managed here
 
