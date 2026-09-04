@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@pi'
 created_date: '2026-09-02 17:12'
-updated_date: '2026-09-03 03:06'
+updated_date: '2026-09-03 03:17'
 labels: []
 dependencies: []
 references:
@@ -126,4 +126,16 @@ Runtime restore-validation addendum received. Reported fixes: RebuildIndexesFrom
 Runtime QA targeted restore-validation review approved. Runtime now approved by Architect, Security, and QA. Frontend already approved by Security and QA. Proceeding to integrate reviewed Runtime and Frontend slices into main working tree and run gates.
 
 Integrated approved crew slices into main working tree. Copied reviewed Runtime contract scaffold/tests from /home/shyylol/dev/lazyvim-research-runtime and reviewed Frontend projection/types/tests from /home/shyylol/dev/lazyvim-research-frontend. Local verification after integration: npm ci --omit=dev --ignore-scripts for actor-client and hosted-pi-bridge; find tests/actor-client -name '*.test.mjs' -print0 | xargs -0 node --test PASS 62/62; npm test --prefix home/dot_pi/private_agent/extensions/actor-client PASS 62/62; cd services/subagents && gofmt with managed Go 1.27.1, go test ./internal/application PASS, go test -race ./internal/application PASS; git diff --check PASS. Full services/subagents go test ./... was reported by Runtime as blocked by unrelated hostedpi/tmux startup failure.
+
+Committed and pushed reviewed scaffold/projection slice: ee25453 Add client actor turn authority scaffold (origin/main). This commit contains Frontend projection authority/fencing/ACK affordance tests and Runtime application client actor contract scaffold/tests. Continuing TASK-26 with next implementation slice: map scaffold contract into daemon/actor-client seams while preserving reviewed invariants.
+
+Frontend slice D returned after commit ee25453. Added actor-client interactive-seam.ts adapter, exported from index.ts, and projections tests. Translator handles snapshot/reincarnation/admission decision/presentation required/executor lifecycle/continuation/introspection frames; seam buildUserTurnSubmit has no effect before admission and transitions after actor admission; presentationRendered emits payload-free ACK only after required/rendered path. Reported npm actor-client tests 65 pass and git diff --check pass. Sending to Security and QA for review.
+
+Frontend slice D QA review not approved. Blocker: interactive-seam frame translator constructs events as { type: EXPECTED, ...value }, allowing payload details/data/value.type to override intended semantic type and violate non-interchangeability. Routed to Frontend for correction.
+
+Frontend slice D Security review not approved. Additional blockers: applyFrame accepts unauthenticated custom/direct frames and can bootstrap replay authority; buildUserTurnSubmit returns content/admissionToken unbounded/unchanged with no privacy/size guard or failed-send recovery; requestAdmission API accepts caller-supplied actorEpoch instead of deriving/rejecting at seam. Sent Frontend correction addendum. Runtime slice C QA review not approved: dispatch failure after durable admission+lease strands turn because duplicate retry does not redispatch; Dispatched:true reported when no dispatcher exists. Sent Runtime correction.
+
+Runtime slice C Architect and Security reviews not approved. Architect confirms dispatch failure strands admitted/leased work with no executor dispatch/recovery. Security confirms same and adds boundary payload size bound plus durable dispatch/delivery-issued state: dispatch success is not recorded durably, so crash after dispatch loses delivery state and duplicate suppression is unsound. Sent Runtime correction addendum.
+
+Frontend slice D Security correction addendum received. Reported fixes: applyFrame requires authenticated:true; unauthenticated custom/direct projection frames ignored; requestAdmission derives actorEpoch from current context and pre-snapshot admission does not pin authority; buildUserTurnSubmit rejects oversized/private canary content before returning action; added userTurnSendFailed recovery API/event to revert executing after send failure; tests for unauthenticated rejection, authenticated acceptance, derived epoch, submit gating, oversize/private rejection, no snapshot logging of returned content, failed-send recovery, payload-free ACK; reported 68 actor-client tests pass and git diff --check pass. Sending Frontend slice D final Security/QA re-review.
 <!-- SECTION:NOTES:END -->

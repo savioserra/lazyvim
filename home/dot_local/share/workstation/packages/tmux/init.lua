@@ -81,6 +81,11 @@ return function()
 					"tmux2k theme was not loaded"
 				)
 				assert(
+					commands.capture("tmux", { "-L", socket, "show-environment", "-g", "TMUX_PLUGIN_MANAGER_PATH" })
+						== "TMUX_PLUGIN_MANAGER_PATH=~/.tmux/plugins/",
+					"TPM plugin manager path was not pinned to the managed plugin root"
+				)
+				assert(
 					commands.capture("tmux", { "-L", socket, "show-options", "-gqv", "status-left" }):find("", 1, true)
 						~= nil,
 					"managed status format was not loaded last"

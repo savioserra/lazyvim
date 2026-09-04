@@ -30,6 +30,12 @@ Load order:
 versions that load XDG config after the legacy file cannot let distribution or
 desktop defaults override the managed theme.
 
+TPM redirects its plugin root to `~/.config/tmux/plugins/` whenever an XDG
+`tmux.conf` exists and then silently sources nothing from the managed root, so
+`~/.tmux.conf` pins `set-environment -g TMUX_PLUGIN_MANAGER_PATH
+'~/.tmux/plugins/'` before starting TPM. The package verify asserts that pin
+on an isolated server.
+
 ## Plugin pins
 
 | Plugin | Commit |
@@ -45,6 +51,8 @@ Pinning rules:
 - Keep `@plugin` values as bare `user/repo` for TPM.
 - Store exact commits in `packages/tmux/init.lua`.
 - Run setup on every apply; setup fetches and checks out each commit.
+- Keep the `TMUX_PLUGIN_MANAGER_PATH` pin ahead of the TPM `run-shell`; TPM's
+  default path logic alone would select the unmanaged XDG plugin root.
 - Update this table with implementation pins.
 
 TPM `user/repo#ref` supports branches/tags, not exact raw commits.
@@ -76,6 +84,16 @@ Setup removes stale `~/.tmux/plugins/tmux-fingers` checkouts.
 | Blue | `#73cef4` |
 | Green | `#c9d05c` |
 | Yellow | `#ffc24b` |
+
+## Omarchy interactions
+
+Omarchy ships its own tmux configuration in `/usr/share/omarchy/config/tmux/`
+and `omarchy-refresh-tmux` copies it onto `~/.config/tmux/tmux.conf` with
+`cp -f`. On a managed host that copy follows the XDG symlink and would
+overwrite `~/.tmux.conf`. Never run `omarchy-refresh-tmux` or
+`omarchy-refresh-config tmux/tmux.conf` here; if Omarchy ever replaces the
+file, restore with `chezmoi apply` and remove any `tmux.conf.bak.*` it left in
+`~/.config/tmux/`.
 
 ## Managed subagent actors
 
@@ -119,9 +137,11 @@ To disable, set `enabled=false`, apply, and reload. `PI_TMUX_SUBAGENTS_DISABLE=1
 ## Verification
 
 - assert each checkout commit;
+- assert the XDG symlink target;
 - start an isolated tmux socket and server;
 - assert session name;
 - assert `@tmux2k-theme=catppuccin`;
+- assert the pinned `TMUX_PLUGIN_MANAGER_PATH`;
 - test observer argv construction, tickets, claims, tuple checks, created/adopted cleanup, and pane disappearance;
 - run real observer controller tests against an isolated tmux socket;
 - kill the isolated server on success or failure.
