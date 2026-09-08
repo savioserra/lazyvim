@@ -91,8 +91,9 @@ return function()
 					"TPM plugin manager path was not pinned to the managed plugin root"
 				)
 				assert(
-					commands.capture("tmux", { "-L", socket, "show-options", "-gqv", "status-left" }):find("", 1, true)
-						~= nil,
+					commands
+						.capture("tmux", { "-L", socket, "show-options", "-gqv", "status-left" })
+						:find("", 1, true) ~= nil,
 					"managed status format was not loaded last"
 				)
 			end)
