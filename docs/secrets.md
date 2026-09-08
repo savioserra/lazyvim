@@ -59,7 +59,7 @@ cannot be rotated in place; revoke and recreate the account to change access.
 | Item | Non-secret fields (managed) | Secret fields (populate in 1Password) |
 | --- | --- | --- |
 | `ntfy` | `server_url`, `phone_user`, `operator_user` | `phone_password`, `operator_password`, `admin_token`, `notifier_token` |
-| `dokploy` | `url` | `api_key` |
+| `dokploy` | `url` (public panel), `local_api_url` | `api_key` |
 
 Fill secret fields from the corresponding root-only host files
 (`/etc/ntfy/credentials.env`, `/root/.config/pi/dokploy.env`) directly in the
