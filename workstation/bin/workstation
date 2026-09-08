@@ -1,23 +1,49 @@
 #!/bin/sh
-# workstation - public CLI entry for the workstation capabilities engine.
-# Resolves the engine root from this script's location (workstation/bin/..) and
-# execs the engine CLI on the pinned Neovim runtime. This is the only public
-# lifecycle interface; chezmoi is invoked by the engine, never by the user.
+# Sole public entry point. Only runtime installation precedes the Lua engine.
 set -eu
 
-script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
-engine_root=$(CDPATH= cd -- "$script_dir/.." && pwd -P)
-cli="$engine_root/apps/cli/run.lua"
+script=$0
+case "$script" in /*) ;; *) script=$PWD/$script ;; esac
+links=0
+while [ -L "$script" ]; do
+	links=$((links + 1))
+	[ "$links" -le 40 ] || { echo 'workstation: symlink loop' >&2; exit 1; }
+	dir=$(CDPATH='' cd -P "$(dirname "$script")" && pwd -P)
+	link=$(readlink "$script")
+	case "$link" in /*) script=$link ;; *) script=$dir/$link ;; esac
+done
+script_dir=$(CDPATH='' cd -P "$(dirname "$script")" && pwd -P)
+engine_root=$(CDPATH='' cd -P "$script_dir/.." && pwd -P)
 
-pinned_nvim="$HOME/.local/opt/nvim/bin/nvim"
+HOME=${WORKSTATION_HOME:-$HOME}
+case "$HOME" in /*) ;; *) echo 'workstation: target home must be absolute' >&2; exit 1 ;; esac
+export HOME
+WORKSTATION_HOME=$HOME
+USERPROFILE=$HOME
+XDG_CONFIG_HOME=$HOME/.config
+XDG_DATA_HOME=$HOME/.local/share
+XDG_STATE_HOME=$HOME/.local/state
+XDG_CACHE_HOME=$HOME/.cache
+XDG_RUNTIME_DIR=$XDG_STATE_HOME/workstation/run
+WORKSTATION_CACHE=$XDG_CACHE_HOME/workstation
+TMPDIR=$XDG_RUNTIME_DIR/tmp
+export WORKSTATION_HOME USERPROFILE XDG_CONFIG_HOME XDG_DATA_HOME XDG_STATE_HOME XDG_CACHE_HOME XDG_RUNTIME_DIR WORKSTATION_CACHE TMPDIR
+
+case "$(uname -s)/$(uname -m)" in
+	Linux/x86_64) platform=linux_x86_64 ;;
+	Darwin/arm64) platform=darwin_arm64 ;;
+	*) echo 'workstation: supported hosts are Linux x86_64 (including WSL) and Darwin arm64' >&2; exit 1 ;;
+esac
+umask 077
+mkdir -p "$TMPDIR"
+chmod 700 "$XDG_RUNTIME_DIR"
+pinned_nvim=$HOME/.local/opt/nvim/bin/nvim
+if [ "${1:-}" = bootstrap ]; then
+	# This local helper is shell, not downloaded code. No Lua runtime is needed.
+	exec sh "$engine_root/bootstrap/install-runtime.sh" "$engine_root" "$platform"
+fi
 if [ ! -x "$pinned_nvim" ]; then
-	if [ "${1:-}" = "bootstrap" ] && command -v nvim >/dev/null 2>&1; then
-		# Bootstrap installs the pinned runtime; until then any nvim may host it.
-		exec nvim -l "$cli" "$@"
-	fi
-	echo "workstation: pinned nvim not found at $pinned_nvim" >&2
-	echo "workstation: run 'workstation bootstrap' (any nvim on PATH hosts it)" >&2
+	echo "workstation: pinned nvim missing; run workstation bootstrap" >&2
 	exit 1
 fi
-
-exec "$pinned_nvim" -l "$cli" "$@"
+exec "$pinned_nvim" -l "$engine_root/apps/cli/run.lua" "$@"

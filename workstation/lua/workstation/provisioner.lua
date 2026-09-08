@@ -41,12 +41,22 @@ function M.chezmoi_source()
 end
 
 local function chezmoi_executable()
-	if vim.fn.executable("chezmoi") == 1 then
-		return "chezmoi"
-	end
-	local managed = paths.join(paths.local_dir, "bin", "chezmoi")
-	assert(vim.fn.executable(managed) == 1, "chezmoi CLI not found; run workstation bootstrap")
-	return managed
+	return paths.join(paths.local_dir, "opt", "chezmoi", "bin", "chezmoi")
+end
+
+function M.ensure_backend()
+	local host = vim.uv.os_uname()
+	local asset = host.sysname == "Linux" and host.machine == "x86_64" and "linux_x86_64"
+		or host.sysname == "Darwin" and host.machine == "arm64" and "darwin_arm64"
+	assert(asset, "unsupported backend platform: " .. host.sysname .. "/" .. host.machine)
+	local versions = require("workstation.versions")
+	require("workstation.provision").create(asset == "linux_x86_64" and "linux" or "darwin").archive({
+		url = versions["chezmoi_" .. asset .. "_url"]:gsub("{V}", versions.chezmoi),
+		sha256 = versions["chezmoi_" .. asset .. "_sha256"],
+		format = "tar",
+		inner_path = "chezmoi",
+		dest = chezmoi_executable(),
+	})
 end
 
 ---Build the full chezmoi argv for an action against the engine's source tree.
@@ -75,12 +85,14 @@ end
 
 ---Materialize home state (chezmoi apply with engine-provided source/destination).
 function M.apply(opts)
+	M.ensure_backend()
 	local argv = M.argv("apply", opts)
 	commands.execute(argv[1], { select(2, varargs_unpack(argv)) })
 end
 
 ---Show pending home-state changes (chezmoi diff with engine-provided source/destination).
 function M.diff(opts)
+	M.ensure_backend()
 	local argv = M.argv("diff", opts)
 	commands.execute(argv[1], { select(2, varargs_unpack(argv)) })
 end

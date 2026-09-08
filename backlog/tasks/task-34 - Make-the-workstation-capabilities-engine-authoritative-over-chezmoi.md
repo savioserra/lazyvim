@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@operator'
 created_date: '2026-09-08 21:27'
-updated_date: '2026-09-08 21:39'
+updated_date: '2026-09-08 23:36'
 labels: []
 dependencies: []
 type: feature
@@ -17,6 +17,42 @@ ordinal: 49000
 <!-- SECTION:DESCRIPTION:BEGIN -->
 Invert the architecture: the Lua capabilities engine (currently ~/.local/share/workstation, driven by .chezmoiscripts/run_after) becomes the sole public lifecycle interface (workstation apply/update/setup/sync/verify). Chezmoi remains the file-provisioner invoked BY the engine (--source/--destination explicit), never the other way around. Requires repo restructure: engine becomes repo-native (top-level workstation/), chezmoi source shrinks to pure home state, versions.json ownership moves to the engine, bootstrap story changes (no .chezmoiroot, no run_after lifecycle scripts). Planning task: decisions recorded here before implementation.
 <!-- SECTION:DESCRIPTION:END -->
+
+## Acceptance Criteria
+<!-- AC:BEGIN -->
+- [ ] #1 The workstation CLI is the authoritative lifecycle interface; chezmoi remains a subordinate file backend with explicit source/destination and no lifecycle run-after scripts.
+- [ ] #2 The engine-native workstation/ and chezmoi/ layout has explicit package registration and domain-neutral core, with no duplicate engine deployment or removal of the live engine clone.
+- [ ] #3 Fresh-host bootstrap succeeds with ordinary system prerequisites and no preinstalled Neovim, Node, Python or jq; exact runtime/backend pins and checksums have one canonical source and safe activation.
+- [ ] #4 Setup provisioning validates new, cached and installed artifacts, supports required tar/ZIP layouts, repairs managed drift safely and fails without activating unverified bytes.
+- [ ] #5 Scratch destinations isolate runtime, HOME, XDG and cache state and cannot invoke live user-service retirement; update and public symlink launch paths have regression tests.
+- [ ] #6 All six externals migrate to owning package setup operations, preserving platform URLs/checksums and managed Node/Pi dependency ordering.
+- [ ] #7 Documentation, AGENTS, skills, CI and scratch harness describe and exercise engine authority, supported Linux/WSL and macOS arm64 behavior, and the breaking cutover.
+- [ ] #8 Substantive independent review and command evidence pass before publication or live cutover; environment-limited and unrun checks are explicitly reported.
+<!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Recovery checkpoint after phases 1-3 at 1f4b62b0; this CLI-managed plan supersedes the legacy manually appended planning section.
+1. Correct the seven accepted aggregate-gate findings: cold shell bootstrap; public symlink resolution; LuaJIT-safe checked update subprocesses; coherent scratch HOME/XDG/runtime environment and no live host-service retirement in alternate destinations; cache plus installed-integrity validation; explicit ZIP format handling; current managed Node PATH after first materialization. Fix ShellCheck and separate offline fixture validation from the bounded chezmoi integration probe.
+2. Preserve versions.json as canonical pin ownership. Any shell-readable bootstrap pin manifest is a deterministic generated projection tied to the canonical file and checked for drift; never a second hand-maintained pin source. Shell installs pinned Neovim before Lua; engine then ensures the pinned chezmoi backend is available. No Node/Python/jq/system-Neovim runtime bootstrap dependency, unpinned downloads, sudo or OS package manager.
+3. One native worker owns corrections and tests; fresh native reviewer plus command-capable validator must return substantive evidence. Missing structured verdicts block rather than default to pass. Keep all host/service actions confined to synthetic fixtures and do not push/apply live.
+4. Only after parent acceptance, continue phase 4 per-package externals migration, phase 5 docs/CI/scratch harness, and phase 6 full supported-platform validation. Live cutover and publication remain gated at the end.
+
+Correction execution: install the shell runtime from a generated SHA-bound pin projection; provision pinned chezmoi from official v2.72.1 release checksums; isolate environment before dispatch; validate installations against verified staging, with rollback and explicit archive formats; add synthetic bootstrap/update/retire/Node/integrity fixtures and replace the real-source unit dry-run with an offline backend fixture. Full-source dry-run remains a separate later integration gate.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Original workflow b38d0752 failed at phase-3 reviewer timeout (1800000ms); earlier phase1/2 saved review files were narration-only and cannot be accepted as gates. Recovery workflow 560bf1c1 completed with explicit blocked source and command verdicts at clean main 1f4b62b0. Seven implementation defects accepted for repair; cache-tampering and cold-bootstrap failures reproduced in isolated fixtures. The provision suite file-size-bound failure is a validation limitation under investigation, not proof of a general product regression or download-free behavior. ShellCheck SC1007 needs correction. No real-host cutover/push performed. Durable complete review is stored in /tmp/pi-subagents-uid-0/async-subagent-runs/560bf1c1-8cee-40c9-8072-333efd48538c/status.json workflow.value.review.structuredOutput; its advertised Markdown report is empty. Command report is in the workflow output artifacts and logs at /tmp/task34-validation.EKDwJg/.
+
+Correction pass implemented all seven accepted source findings: POSIX cold Neovim installer with generated SHA256-bound canonical pin projection, checksum-before-extraction, serialized runtime/backend bootstrap and rollback; portable final-script symlink resolution; checked argv update children; pre-dispatch HOME/XDG/runtime/cache isolation and OS-account/service-file guarded retirement without success markers on skip/failure; verified cache and installed staging manifests (modes/completeness), exact repair/non-exact recursive state preservation and activation rollback; explicit/original-spec ZIP dispatch; refreshed managed Node PATH after materialization. Added engine-owned chezmoi 2.72.1 backend pins from official GitHub release checksum metadata; existing pins unchanged. No live lifecycle/service commands or host software installation performed.
+
+Fixture evidence: capabilities.test.lua, rewritten provision.test.lua, new cli.test.lua and bootstrap.test.lua all exit 0 with isolated HOME/TMP/XDG roots, 120-second timeout and 4096-block file-size guard. ShellCheck, sh syntax, full scoped StyLua check, generated manifest --check and git diff --check exit 0. Logs: /tmp/task34-repair-logs/. Initial provision fixture attempt exposed absent zip command; replaced archive generation with tiny source-managed stored-ZIP fixture builder (no installed dependency) and reran successfully. Backend/download/service/model actions are fake or stubbed; no real provider calls. Official metadata only: /tmp/task34-repair-metadata/{release.json,checksums.txt}.
+
+Bounded prior chezmoi failure investigated from saved evidence without rerunning or relaxing limits: /tmp/task34-validation.EKDwJg/cache/chezmoi includes external assets and a 4194304-byte lazygit HTTP-cache entry. --exclude externals did not establish an offline unit-test boundary. Unit argv validation now executes only a tiny fake backend; full real-source materialization remains an explicitly unrun later integration gate, not waived as passing. Linux x86_64 fixture checks only; Darwin branch simulated, not native macOS/WSL runtime validation. Phases 4-6 remain deferred: six externals/package migration, temporary versions symlink removal, public deployment/docs/AGENTS/skills/CI/harness cutover, full supported-platform apply/verify. All eight ACs remain unchecked and task remains In Progress pending independent review/command gates.
+<!-- SECTION:NOTES:END -->
 
 ## Plan
 

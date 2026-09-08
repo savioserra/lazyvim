@@ -1,11 +1,23 @@
 local M = {}
 
--- WORKSTATION_HOME wins: the engine CLI uses it for scratch-home testing.
--- CHEZMOI_DESTDIR follows: legacy compatibility while chezmoi scripts still exist.
-M.home = vim.env.WORKSTATION_HOME or vim.env.CHEZMOI_DESTDIR or vim.env.HOME or vim.env.USERPROFILE
-assert(M.home and M.home ~= "", "unable to determine target home")
+-- Resolve before dispatch (including direct Lua bootstrap/diff/status). All
+-- writable child roots belong to the target, never ambient XDG overrides.
+M.home = vim.env.WORKSTATION_HOME or vim.env.HOME
+assert(M.home and M.home:sub(1, 1) == "/", "target home must be absolute")
 M.home = vim.fs.normalize(M.home)
 M.local_dir = vim.fs.joinpath(M.home, ".local")
+vim.env.HOME = M.home
+vim.env.WORKSTATION_HOME = M.home
+vim.env.USERPROFILE = M.home
+vim.env.XDG_CONFIG_HOME = M.home .. "/.config"
+vim.env.XDG_DATA_HOME = M.local_dir .. "/share"
+vim.env.XDG_STATE_HOME = M.local_dir .. "/state"
+vim.env.XDG_CACHE_HOME = M.home .. "/.cache"
+vim.env.XDG_RUNTIME_DIR = M.local_dir .. "/state/workstation/run"
+vim.env.WORKSTATION_CACHE = M.home .. "/.cache/workstation"
+vim.env.TMPDIR = vim.env.XDG_RUNTIME_DIR .. "/tmp"
+vim.fn.mkdir(vim.env.TMPDIR, "p", 448)
+assert(vim.uv.fs_chmod(vim.env.XDG_RUNTIME_DIR, 448))
 
 function M.join(...)
 	return vim.fs.joinpath(...)

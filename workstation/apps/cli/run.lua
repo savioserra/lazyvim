@@ -33,8 +33,7 @@ end
 ---takes effect for the remaining steps: update never runs new code in-process.
 local function exec_via_launcher(step)
 	local launcher = paths.join(root, "bin", "workstation")
-	local ok, _, code = os.execute(table.concat({ vim.fn.shellescape(launcher), step }, " "))
-	assert(ok and code == 0, ("workstation %s failed (exit %s)"):format(step, tostring(code)))
+	commands.execute(launcher, { step })
 end
 
 ---versions.lua reads .node-version at require time, before apply exists it;
@@ -44,35 +43,14 @@ local function refresh_node_version(context)
 	if context.paths.exists(path) then
 		context.versions.node = vim.trim(context.paths.read(path))
 	end
+	context.platform.configure_runtime()
 end
 
--- bootstrap installs the engine's own runtime and must work before any apply.
+-- The shell has already installed the runtime before this handoff. Lua owns
+-- the pinned file backend; bootstrap never delegates to an unpinned host tool.
 if command == "bootstrap" then
-	local platform = require("workstation.platforms")
-	local versions = require("workstation.versions")
-	local provision = require("workstation.provision").create(platform.name)
-	local asset = platform.name == "linux" and "linux_x86_64" or "darwin_arm64"
-	local url_template = versions["neovim_" .. asset .. "_url"]
-	local sha256 = versions["neovim_" .. asset .. "_sha256"]
-	assert(url_template and sha256, "versions.json is missing neovim " .. asset .. " download pins")
-	local nvim_bin = paths.join(paths.local_dir, "opt", "nvim", "bin", "nvim")
-	if paths.exists(nvim_bin) then
-		local ok, actual = pcall(commands.capture, nvim_bin, { "--version" })
-		local version = ok and actual:match("NVIM v(%S+)") or nil
-		if version == versions.neovim then
-			print(("bootstrap: pinned nvim %s already present"):format(versions.neovim))
-			return
-		end
-	end
-	print(("bootstrap: installing pinned nvim %s (%s)"):format(versions.neovim, asset))
-	provision.directory({
-		url = url_template:gsub("{V}", versions.neovim),
-		sha256 = sha256,
-		dest = paths.join(paths.local_dir, "opt", "nvim"),
-		exact = true,
-		strip_components = 1,
-	})
-	print(("bootstrap complete (%s)."):format(platform.name))
+	provisioner.ensure_backend()
+	print("bootstrap complete.")
 	return
 end
 

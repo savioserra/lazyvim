@@ -1,267 +1,230 @@
 local commands = require("workstation.commands")
 local paths = require("workstation.paths")
 
--- Provision primitives: how capability setup handlers materialize pinned remote
--- assets (archives, single files, engine-managed directories) on the host.
--- Contracts:
---   * every remote asset requires a sha256 pin; downloads are verified before use
---   * installs are atomic: extraction happens in a staging sibling, then rename
---   * assets are cached content-addressed under the provision cache root
---   * a successful install records an identity marker; matching dest + marker skips work
---   * platform differences stay here (sha256sum vs shasum, tar vs unzip), never in packages
-
+-- Validate downloads on every use and compare installations with verified
+-- staging, not a writable identity marker. Core remains unaware of provisioning.
 local M = {}
 
-local function is_darwin(platform)
-	return platform == "darwin"
+local function sha256(platform, path)
+	local output = platform == "darwin" and commands.capture("shasum", { "-a", "256", path })
+		or commands.capture("sha256sum", { path })
+	return assert(output:match("^(%x+)"), "missing SHA256 digest"):lower()
 end
 
----@param platform string
----@param path string
----@return string hex digest
-local function file_sha256(platform, path)
-	local output
-	if is_darwin(platform) then
-		output = commands.capture("shasum", { "-a", "256", path })
-	else
-		output = commands.capture("sha256sum", { path })
+local sequence = 0
+local function sibling(dest)
+	sequence = sequence + 1
+	return ("%s.provision-%d-%d"):format(dest, vim.uv.os_getpid(), sequence)
+end
+
+local function exists(path)
+	return vim.uv.fs_lstat(path) ~= nil
+end
+
+local function download(platform, spec, allow_file_urls)
+	assert(type(spec.sha256) == "string" and #spec.sha256 == 64 and spec.sha256:match("^%x+$"), "invalid SHA256 pin")
+	assert(spec.url:match("^https://") or (allow_file_urls and spec.url:match("^file://")), "HTTPS URL required")
+	local root = paths.join(vim.env.WORKSTATION_CACHE, "downloads")
+	vim.fn.mkdir(root, "p")
+	local cached = paths.join(root, spec.sha256)
+	if exists(cached) then
+		local stat = vim.uv.fs_lstat(cached)
+		if stat.type == "file" and sha256(platform, cached) == spec.sha256 then
+			return cached
+		end
+		vim.fn.delete(cached, "rf")
 	end
-	local digest = output:match("%x+")
-	assert(digest, ("unable to read sha256 of %s"):format(path))
-	return digest:lower()
-end
-
-local function normalize_sha256(value)
-	local digest = assert(type(value) == "string" and value:lower():gsub("%s", ""), "sha256 pin is required")
-	assert(#digest == 64, "sha256 pin must be a 64-character hex digest")
-	return digest
-end
-
-local function normalize_mode(mode)
-	-- Mode is an octal string (tar/shell convention, e.g. "755"); default is executable.
-	return tonumber(mode or "755", 8)
-end
-
-local function cache_root()
-	return vim.env.WORKSTATION_CACHE
-		or paths.join(vim.env.XDG_CACHE_HOME or paths.join(paths.home, ".cache"), "workstation", "provision")
-end
-
-local function identity(spec)
-	return table.concat(
-		{ spec.url, spec.sha256, spec.dest, spec.inner_path or "", spec.mode or "", tostring(spec.exact) },
-		"\n"
-	)
-end
-
----@param key string
----@return string djb2 hex digest
-local function short_hash(key)
-	local hash = 5381
-	for index = 1, #key do
-		hash = (hash * 33 + key:byte(index)) % 0x100000000
-	end
-	return ("%08x"):format(hash)
-end
-
-local function marker_path(key)
-	return paths.join(cache_root(), "installed", short_hash(key))
-end
-
----Skip only when the destination exists AND the recorded install identity matches.
-local function up_to_date(key, dest)
-	if not paths.exists(dest) then
-		return false
-	end
-	local marker = marker_path(key)
-	return paths.exists(marker) and vim.trim(paths.read(marker)) == key
-end
-
-local function record_marker(key)
-	local marker = marker_path(key)
-	vim.fn.mkdir(vim.fs.dirname(marker), "p")
-	paths.write(marker, key)
-end
-
----Download once into the content-addressed cache; verify before admitting.
-local function ensure_downloaded(platform, spec)
-	local downloads = paths.join(cache_root(), "downloads")
-	local cached = paths.join(downloads, spec.sha256)
-	if paths.exists(cached) then
-		return cached
-	end
-	vim.fn.mkdir(downloads, "p")
-	local partial = cached .. ".part"
-	commands.capture("curl", { "-fSL", "--retry", "3", "-o", partial, spec.url })
-	local ok, failure
-	ok, failure = pcall(file_sha256, platform, partial)
-	if ok and failure ~= spec.sha256 then
-		ok = false
-		failure = ("provision checksum mismatch for %s: expected %s, got %s"):format(spec.url, spec.sha256, failure)
-	end
-	if not ok then
-		vim.fn.delete(partial)
-		error(failure)
-	end
-	assert(vim.uv.fs_rename(partial, cached))
+	local partial = sibling(cached)
+	local ok, failure = pcall(function()
+		commands.capture("curl", {
+			"--proto",
+			allow_file_urls and "=https,file" or "=https",
+			"--proto-redir",
+			"=https",
+			"-fSL",
+			"--retry",
+			"3",
+			"-o",
+			partial,
+			spec.url,
+		})
+		assert(sha256(platform, partial) == spec.sha256, "provision checksum mismatch: " .. spec.url)
+		assert(vim.uv.fs_rename(partial, cached))
+	end)
+	vim.fn.delete(partial)
+	assert(ok, failure)
 	return cached
 end
 
-local function archive_kind(url)
-	if url:match("%.zip$") then
-		return "zip"
+local function safe_member(name)
+	assert(name ~= "" and name:sub(1, 1) ~= "/" and not name:find("\\", 1, true), "unsafe archive member")
+	for part in name:gmatch("[^/]+") do
+		assert(part ~= "..", "unsafe archive member: " .. name)
 	end
-	return "tar"
 end
 
----Extract a single archive member into the staging directory; returns its path.
-local function extract_member(archive, inner_path, staging)
+local function extract(spec, archive, staging)
+	local kind = spec.format or (spec.url:match("%.zip$") and "zip" or "tar")
+	assert(kind == "tar" or kind == "zip", "unsupported archive format")
+	local listing = kind == "zip" and commands.capture("unzip", { "-Z1", archive })
+		or commands.capture("tar", { "-tf", archive })
+	for name in listing:gmatch("[^\n]+") do
+		safe_member(name)
+	end
 	vim.fn.mkdir(staging, "p")
-	if archive_kind(archive) == "zip" then
-		commands.execute("unzip", { "-o", archive, inner_path, "-d", staging })
+	if kind == "zip" then
+		commands.capture("unzip", { "-o", archive, "-d", staging })
 	else
-		commands.execute("tar", { "-xf", archive, "-C", staging, inner_path })
+		commands.capture("tar", { "-xf", archive, "-C", staging })
 	end
-	local member = paths.join(staging, inner_path)
-	assert(paths.exists(member), ("archive member missing after extraction: %s"):format(inner_path))
-	return member
 end
 
----Extract an entire archive into the staging directory.
-local function extract_all(archive, staging)
-	vim.fn.mkdir(staging, "p")
-	if archive_kind(archive) == "zip" then
-		commands.execute("unzip", { "-o", archive, "-d", staging })
+-- Includes empty directories, modes and link targets; lstat never follows a
+-- destination link while checking completeness. Non-exact trees allow extras.
+local function manifest(platform, root)
+	local result = {}
+	local function visit(path, name)
+		local stat = assert(vim.uv.fs_lstat(path))
+		local entry = { type = stat.type, mode = bit.band(stat.mode, 511) }
+		if stat.type == "file" then
+			entry.digest = sha256(platform, path)
+		elseif stat.type == "link" then
+			entry.link = assert(vim.uv.fs_readlink(path))
+			local target = vim.fs.normalize(paths.join(vim.fs.dirname(path), entry.link))
+			assert(
+				entry.link:sub(1, 1) ~= "/" and target:sub(1, #root + 1) == root .. "/",
+				"archive link escapes owned tree"
+			)
+		elseif stat.type ~= "directory" then
+			error("unsupported installed entry: " .. path)
+		end
+		result[name] = entry
+		if stat.type == "directory" then
+			for child in vim.fs.dir(path) do
+				visit(paths.join(path, child), name .. "/" .. child)
+			end
+		end
+	end
+	visit(root, "")
+	return result
+end
+
+local function matches(platform, dest, expected, exact)
+	if not exists(dest) then
+		return false
+	end
+	local ok, actual = pcall(manifest, platform, dest)
+	if not ok then
+		return false
+	end
+	for name, entry in pairs(expected) do
+		if not vim.deep_equal(entry, actual[name]) then
+			return false
+		end
+	end
+	return not exact or vim.deep_equal(actual, expected)
+end
+
+local function activate(content, dest)
+	local retired = sibling(dest)
+	local had_dest = exists(dest)
+	if had_dest then
+		assert(vim.uv.fs_rename(dest, retired))
+	end
+	local ok, failure = vim.uv.fs_rename(content, dest)
+	if not ok then
+		if had_dest then
+			assert(
+				vim.uv.fs_rename(retired, dest),
+				"activation failed; rollback failed; previous installation at " .. retired
+			)
+		end
+		error(failure)
+	end
+	vim.fn.delete(retired, "rf")
+end
+
+-- Overlay shipped members recursively, retaining unrelated mutable state.
+local function overlay(source, target)
+	local stat = assert(vim.uv.fs_lstat(source))
+	local existing = vim.uv.fs_lstat(target)
+	if stat.type == "directory" then
+		if existing and existing.type ~= "directory" then
+			vim.fn.delete(target, "rf")
+		end
+		vim.fn.mkdir(target, "p")
+		for name in vim.fs.dir(source) do
+			overlay(paths.join(source, name), paths.join(target, name))
+		end
+		assert(vim.uv.fs_chmod(target, bit.band(stat.mode, 511)))
 	else
-		commands.execute("tar", { "-xf", archive, "-C", staging })
+		vim.fn.delete(target, "rf")
+		assert(vim.uv.fs_rename(source, target))
 	end
 end
 
----Resolve the content root inside extracted staging, descending exactly
----`strip_components` levels; each level must be a single directory (the
----tar --strip-components contract for archives with one root entry).
-local function strip_root(staging, strip_components)
-	local content = staging
-	for _ = 1, strip_components do
-		local entries = {}
-		for name, entry_type in vim.fs.dir(content) do
-			table.insert(entries, { name = name, type = entry_type })
-		end
-		assert(
-			#entries == 1 and entries[1].type == "directory",
-			"archive root is not a single directory; cannot strip components"
-		)
-		content = paths.join(content, entries[1].name)
-	end
-	return content
-end
-
-local staging_sequence = 0
-
-local function fresh_staging(dest)
-	-- Unique within the process (pid + monotonic counter): a same-second second
-	-- caller must never regenerate and delete a live staging path.
-	staging_sequence = staging_sequence + 1
-	local staging = ("%s.provision-staging-%d-%d"):format(dest, vim.uv.os_getpid(), staging_sequence)
-	vim.fn.delete(staging, "rf")
-	return staging
-end
-
-local function install_file(source, dest, mode)
-	vim.fn.mkdir(vim.fs.dirname(dest), "p")
-	local staging = fresh_staging(dest) .. ".file"
-	vim.fn.delete(staging)
-	assert(vim.uv.fs_copyfile(source, staging))
-	assert(vim.uv.fs_chmod(staging, mode))
-	assert(vim.uv.fs_rename(staging, dest))
-end
-
----@param platform string host platform name ("linux" or "darwin")
----@return table provision primitives bound to the platform
-function M.create(platform)
-	assert(platform == "linux" or platform == "darwin", "unsupported provision platform: " .. tostring(platform))
-
-	local api = {}
-
-	---Install a single file member of a remote archive.
-	---    provision.archive{ url=, sha256=, inner_path=, dest=, mode="755" }
-	function api.archive(spec)
-		assert(
-			type(spec) == "table" and spec.url and spec.inner_path and spec.dest,
-			"provision.archive requires url, inner_path, dest"
-		)
-		spec = vim.tbl_extend("force", {}, spec, { sha256 = normalize_sha256(spec.sha256), mode = spec.mode or "755" })
-		local key = identity(spec)
-		if up_to_date(key, spec.dest) then
-			return
-		end
-		local cached = ensure_downloaded(platform, spec)
-		local staging = fresh_staging(spec.dest)
-		local member = extract_member(cached, spec.inner_path, staging)
-		install_file(member, spec.dest, normalize_mode(spec.mode))
-		vim.fn.delete(staging, "rf")
-		record_marker(key)
-	end
-
-	---Install a remote file verbatim.
-	---    provision.file{ url=, sha256=, dest=, mode="755" }
-	function api.file(spec)
-		assert(type(spec) == "table" and spec.url and spec.dest, "provision.file requires url, dest")
-		spec = vim.tbl_extend("force", {}, spec, { sha256 = normalize_sha256(spec.sha256), mode = spec.mode or "755" })
-		local key = identity(spec)
-		if up_to_date(key, spec.dest) then
-			return
-		end
-		local cached = ensure_downloaded(platform, spec)
-		install_file(cached, spec.dest, normalize_mode(spec.mode))
-		record_marker(key)
-	end
-
-	---Materialize an engine-managed directory from a remote archive.
-	---    provision.directory{ url=, sha256=, dest=, exact=true, strip_components=1 }
-	---With exact=true (replacing chezmoi's exact archives) the destination is
-	---replaced wholesale, so stale entries the archive no longer ships disappear.
-	---strip_components discards N single-directory root levels of the archive
-	---(the tar --strip-components contract), e.g. the nvim release tarball's
-	---top-level nvim-<platform>/ directory.
-	function api.directory(spec)
-		assert(type(spec) == "table" and spec.url and spec.dest, "provision.directory requires url, dest")
-		spec = vim.tbl_extend(
-			"force",
-			{},
-			spec,
-			{ sha256 = normalize_sha256(spec.sha256), exact = spec.exact ~= false }
-		)
-		local key = identity(spec)
-		if up_to_date(key, spec.dest) then
-			return
-		end
-		local cached = ensure_downloaded(platform, spec)
-		local staging = fresh_staging(spec.dest)
-		extract_all(cached, staging)
-		local content = strip_root(staging, spec.strip_components or 0)
+function M.create(platform, options)
+	assert(platform == "linux" or platform == "darwin", "unsupported provision platform")
+	options = options or {}
+	local function install(kind, spec)
+		assert(type(spec) == "table" and spec.dest and spec.url, "provision requires dest and url")
+		local cached = download(platform, spec, options.allow_file_urls == true)
 		vim.fn.mkdir(vim.fs.dirname(spec.dest), "p")
-		if spec.exact then
-			local retired = ("%s.provision-retired-%d"):format(spec.dest, os.time())
-			vim.fn.delete(retired, "rf")
-			if paths.exists(spec.dest) then
-				assert(vim.uv.fs_rename(spec.dest, retired))
+		local staging = sibling(spec.dest)
+		local merged = sibling(spec.dest)
+		local ok, failure = pcall(function()
+			local content
+			if kind == "file" then
+				assert(vim.uv.fs_copyfile(cached, staging))
+				content = staging
+			else
+				extract(spec, cached, staging)
+				content = staging
+				for _ = 1, spec.strip_components or 0 do
+					local entries = vim.fn.readdir(content)
+					assert(#entries == 1, "archive root is not a single directory")
+					content = paths.join(content, entries[1])
+					assert(vim.uv.fs_lstat(content).type == "directory", "archive root is not a directory")
+				end
+				-- Validate the complete extracted tree, including link confinement.
+				manifest(platform, content)
+				if kind == "archive" then
+					safe_member(assert(spec.inner_path, "inner_path required"))
+					content = paths.join(content, spec.inner_path)
+				end
 			end
-			assert(vim.uv.fs_rename(content, spec.dest))
-			vim.fn.delete(retired, "rf")
-		else
-			for name, _ in vim.fs.dir(content) do
-				local source = paths.join(content, name)
-				local target = paths.join(spec.dest, name)
-				vim.fn.delete(target, "rf")
-				assert(vim.uv.fs_rename(source, target))
+			if kind ~= "directory" then
+				assert(vim.uv.fs_lstat(content).type == "file", "archive member must be a regular file")
+				assert(vim.uv.fs_chmod(content, assert(tonumber(spec.mode or "755", 8))))
 			end
-			vim.fn.delete(staging, "rf")
-		end
-		record_marker(key)
+			local expected = manifest(platform, content)
+			local exact = kind ~= "directory" or spec.exact ~= false
+			if matches(platform, spec.dest, expected, exact) then
+				return
+			end
+			if not exact and exists(spec.dest) then
+				assert(vim.uv.fs_lstat(spec.dest).type == "directory", "non-exact destination must be a directory")
+				commands.capture("cp", { "-R", "-P", spec.dest, merged })
+				overlay(content, merged)
+				content = merged
+			end
+			activate(content, spec.dest)
+		end)
+		vim.fn.delete(staging, "rf")
+		vim.fn.delete(merged, "rf")
+		assert(ok, failure)
 	end
-
-	return api
+	return {
+		file = function(spec)
+			install("file", spec)
+		end,
+		archive = function(spec)
+			install("archive", spec)
+		end,
+		directory = function(spec)
+			install("directory", spec)
+		end,
+	}
 end
 
 return M
