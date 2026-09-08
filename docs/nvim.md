@@ -5,7 +5,7 @@
 | Target | `~/.config/nvim` |
 | Distribution | LazyVim |
 | Plugin manager | lazy.nvim |
-| Managed source | `home/dot_config/nvim/` |
+| Managed source | `chezmoi/dot_config/nvim/` |
 
 ## Startup and composition
 

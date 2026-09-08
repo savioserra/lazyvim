@@ -48,7 +48,7 @@ chezmoi re-add   # capture target edits into source state
 From a separate repository checkout:
 
 ```bash
-chezmoi --source "$PWD" apply
+chezmoi --source "$PWD/chezmoi" apply
 ```
 
 Chezmoi `run_after` scripts are the lifecycle entry points. Every apply runs:
@@ -70,23 +70,23 @@ No repository-level sync wrapper is required.
 
 | State | Source of truth |
 | --- | --- |
-| Host downloads | `home/.chezmoiexternals/*.toml.tmpl` |
-| Shared host versions | `home/dot_local/share/workstation/versions.json` |
-| Node version | `home/dot_node-version` |
+| Host downloads | `chezmoi/.chezmoiexternals/*.toml.tmpl` |
+| Shared host versions | `workstation/versions.json` |
+| Node version | `chezmoi/dot_node-version` |
 | Global pi package | `versions.json` and `packages/pi/init.lua` |
-| Global Pi skills | `home/dot_pi/private_agent/skills/`; secret operations require explicit `/skill:secrets` invocation |
+| Global Pi skills | `chezmoi/dot_pi/private_agent/skills/`; secret operations require explicit `/skill:secrets` invocation |
 | Registry Pi extension packages | Exact versions and integrity in `versions.json`; lifecycle under `packages/pi-subagents/` and `packages/pi-web-access/` |
-| Source-managed Pi extensions | `home/dot_pi/private_agent/extensions/`; owning workstation package verifies discovery and compatibility |
-| Neovim plugins | `home/dot_config/nvim/lazy-lock.json` |
-| Mason packages | `home/dot_config/nvim/mason-lock.json` |
+| Source-managed Pi extensions | `chezmoi/dot_pi/private_agent/extensions/`; owning workstation package verifies discovery and compatibility |
+| Neovim plugins | `chezmoi/dot_config/nvim/lazy-lock.json` |
+| Mason packages | `chezmoi/dot_config/nvim/mason-lock.json` |
 | Tree-sitter parsers | `lua/plugins/treesitter.lua` and locked nvim-treesitter commit |
-| Neovim language composition | `home/dot_config/nvim/lua/languages/profile.lua` |
-| Workstation package contributions | `home/dot_local/share/workstation/packages/` |
-| Package ordering | `home/dot_local/share/workstation/lua/workstation/catalog.lua` |
-| Generic lifecycle core | `home/dot_local/share/workstation/lua/workstation/core/` |
-| tmux plugin commits | `home/dot_local/share/packages/tmux/init.lua` |
+| Neovim language composition | `chezmoi/dot_config/nvim/lua/languages/profile.lua` |
+| Workstation package contributions | `workstation/packages/` |
+| Package ordering | `workstation/lua/workstation/catalog.lua` |
+| Generic lifecycle core | `workstation/lua/workstation/core/` |
+| tmux plugin commits | `workstation/packages/tmux/init.lua` |
 
-Chezmoi itself is installed independently and pinned by `home/.chezmoiversion`.
+Chezmoi itself is installed independently and pinned by `chezmoi/.chezmoiversion`.
 System prerequisites such as tmux and Git are not provisioned by this repository.
 
 ## Update rules
@@ -97,7 +97,7 @@ System prerequisites such as tmux and Git are not provisioned by this repository
 | Node | `.node-version`, Node external URL/checksum |
 | pi coding agent | Version/integrity catalog and `packages/pi/init.lua` |
 | Pi extension package | Exact version/integrity, package lifecycle verification, `docs/capabilities.md` |
-| Pi skill | `home/dot_pi/private_agent/skills/<name>/SKILL.md`, capability inventory, discovery verification |
+| Pi skill | `chezmoi/dot_pi/private_agent/skills/<name>/SKILL.md`, capability inventory, discovery verification |
 | Neovim plugin | Plugin spec and `lazy-lock.json` |
 | Mason package | Neovim/profile config and `mason-lock.json` |
 | tmux plugin | `packages/tmux/init.lua`, `docs/tmux.md` |
@@ -112,12 +112,12 @@ See `AGENTS.md` for implementation constraints and required checks.
 ├── docs/                             reference documentation
 ├── tests/                            capability/runtime tests
 ├── .github/                          CI, release, scratch-home test harness
-└── home/                             chezmoi source root
+├── workstation/                      lifecycle engine: packages, CLI, core, versions
+└── chezmoi/                          chezmoi source root
     ├── .chezmoiexternals/            pinned download inventory
     ├── .chezmoiscripts/              primary post-apply lifecycle entry points
     ├── dot_config/nvim/              Neovim configuration and locks
     ├── dot_config/tmux/              tmux theme
-    ├── dot_local/share/workstation/  lifecycle package monorepo
     ├── dot_pi/private_agent/extensions/      source-managed Pi extensions
     ├── dot_pi/private_agent/skills/          global Pi skills
     └── dot_tmux.conf                 tmux configuration

@@ -39,7 +39,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          version="$(cat home/.chezmoiversion)"
+          version="$(cat chezmoi/.chezmoiversion)"
           install_dir="$RUNNER_TEMP/chezmoi-bin"
           sh -c "$(curl -fsLS https://get.chezmoi.io)" -- \
             -b "$install_dir" -t "v${version}"
@@ -59,18 +59,18 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y luajit
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version-file: home/dot_node-version
+          node-version-file: chezmoi/dot_node-version
       - name: Validate scripts and JSON lockfiles
         run: |
           set -euo pipefail
-          sh -n home/.chezmoiscripts/run_after_20-unix-apply.sh.tmpl home/.chezmoiscripts/run_once_before_15-retire-subagents-service.sh .github/scripts/test-apply.sh
-          shellcheck -s sh home/.chezmoiscripts/run_after_20-unix-apply.sh.tmpl home/.chezmoiscripts/run_once_before_15-retire-subagents-service.sh .github/scripts/test-apply.sh
-          while IFS= read -r -d '' file; do LUA_AUDIT_FILE="$file" luajit -e 'assert(loadfile(os.getenv("LUA_AUDIT_FILE")))'; done < <(find home tests -name '*.lua' -print0)
-          version="$(cat home/.chezmoiversion)"
+          sh -n chezmoi/.chezmoiscripts/run_after_20-unix-apply.sh.tmpl chezmoi/.chezmoiscripts/run_once_before_15-retire-subagents-service.sh .github/scripts/test-apply.sh
+          shellcheck -s sh chezmoi/.chezmoiscripts/run_after_20-unix-apply.sh.tmpl chezmoi/.chezmoiscripts/run_once_before_15-retire-subagents-service.sh .github/scripts/test-apply.sh
+          while IFS= read -r -d '' file; do LUA_AUDIT_FILE="$file" luajit -e 'assert(loadfile(os.getenv("LUA_AUDIT_FILE")))'; done < <(find workstation chezmoi tests -name '*.lua' -print0)
+          version="$(cat chezmoi/.chezmoiversion)"
           grep -F -- "-t v${version}" README.md
           grep -F -- "--version ${version}" README.md
-          python3 -m json.tool home/dot_config/nvim/lazy-lock.json > /dev/null
-          python3 -m json.tool home/dot_config/nvim/mason-lock.json > /dev/null
-          python3 -m json.tool home/dot_config/nvim/lazyvim.json > /dev/null
-          python3 -m json.tool home/dot_local/share/workstation/versions.json > /dev/null
+          python3 -m json.tool chezmoi/dot_config/nvim/lazy-lock.json > /dev/null
+          python3 -m json.tool chezmoi/dot_config/nvim/mason-lock.json > /dev/null
+          python3 -m json.tool chezmoi/dot_config/nvim/lazyvim.json > /dev/null
+          python3 -m json.tool workstation/versions.json > /dev/null
           python3 -m json.tool .luarc.json > /dev/null

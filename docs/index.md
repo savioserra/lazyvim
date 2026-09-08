@@ -10,14 +10,14 @@
 | `.github/scripts/test-apply.sh` | Scratch-home end-to-end apply test |
 | `.github/workflows/ci.yml` | Platform matrix and lint |
 | `.github/workflows/release.yml` | Tagged source archives |
-| `home/` | Chezmoi source root |
-| `home/.chezmoiexternals/` | Pinned host downloads |
-| `home/.chezmoiscripts/` | Primary post-apply lifecycle entry points |
-| `home/dot_local/share/workstation/` | Package monorepo, lifecycle CLI, core, and versions |
-| `home/dot_pi/private_agent/skills/` | Managed global Pi skills |
-| `home/dot_pi/private_agent/extensions/` | Source-managed Pi extensions |
-| `home/dot_config/nvim/` | Neovim config and locks |
-| `home/dot_config/tmux/`, `home/dot_tmux.conf` | tmux config |
+| `chezmoi/` | Chezmoi source root |
+| `chezmoi/.chezmoiexternals/` | Pinned host downloads |
+| `chezmoi/.chezmoiscripts/` | Primary post-apply lifecycle entry points |
+| `workstation/` | Package monorepo, lifecycle CLI, core, and versions |
+| `chezmoi/dot_pi/private_agent/skills/` | Managed global Pi skills |
+| `chezmoi/dot_pi/private_agent/extensions/` | Source-managed Pi extensions |
+| `chezmoi/dot_config/nvim/` | Neovim config and locks |
+| `chezmoi/dot_config/tmux/`, `chezmoi/dot_tmux.conf` | tmux config |
 
 ## Documentation map
 
@@ -51,5 +51,5 @@
 | Lua format | `stylua --check --config-path .stylua.toml ...` |
 | Runtime unit/composition | `nvim -l tests/capabilities.test.lua` |
 | Chezmoi render | `chezmoi ... apply --dry-run` |
-| End to end | `.github/scripts/test-apply.ps1` |
+| End to end | `.github/scripts/test-apply.sh` |
 | Platform matrix | `.github/workflows/ci.yml` |

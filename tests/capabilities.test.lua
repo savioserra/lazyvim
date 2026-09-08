@@ -1,5 +1,5 @@
 local repository = vim.fn.getcwd()
-local root = vim.fs.joinpath(repository, "home", "dot_local", "share", "workstation")
+local root = vim.fs.joinpath(repository, "workstation")
 package.path = table.concat({
 	vim.fs.joinpath(root, "?.lua"),
 	vim.fs.joinpath(root, "?", "init.lua"),
@@ -32,7 +32,7 @@ local function capability(id, requires, options)
 	return contract(vim.tbl_extend("force", { id = id, requires = requires or {} }, options or {}))
 end
 
-local profile_path = vim.fs.joinpath(repository, "home", "dot_config", "nvim", "lua", "languages", "profile.lua")
+local profile_path = vim.fs.joinpath(repository, "chezmoi", "dot_config", "nvim", "lua", "languages", "profile.lua")
 local profile = profile_module.validate(assert(loadfile(profile_path))())
 local catalog = require("workstation.catalog")
 local packages = materialize.from_catalog(catalog, { nvim_profile = profile })
@@ -81,7 +81,7 @@ for _, name in ipairs({ "pi-skills", "pi-subagents", "pi-web-access" }) do
 end
 assert(#catalog == 12, "expected twelve explicitly registered packages")
 assert(
-	vim.uv.fs_stat(vim.fs.joinpath(repository, "home", "services")) == nil,
+	vim.uv.fs_stat(vim.fs.joinpath(repository, "chezmoi", "services")) == nil,
 	"service source must not deploy into HOME"
 )
 assert(#packages.contributions == #catalog, "catalog and materialized package counts differ")

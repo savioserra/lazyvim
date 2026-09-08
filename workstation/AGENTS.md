@@ -1,6 +1,6 @@
 # Workstation lifecycle instructions
 
-Scope: `home/dot_local/share/workstation/**`.
+Scope: `workstation/**`.
 
 ## Dependency direction
 
@@ -51,4 +51,4 @@ Pinned Pi community packages (`pi-subagents`, `pi-web-access`) are installed thr
 - Keep handlers idempotent.
 - Clean temporary files and child processes on failure.
 - Add a package-local backend when host behavior differs.
-- Keep Neovim language entries in `home/dot_config/nvim/lua/languages/profile.lua`.
+- Keep Neovim language entries in `chezmoi/dot_config/nvim/lua/languages/profile.lua`.

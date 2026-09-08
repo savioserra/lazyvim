@@ -39,7 +39,7 @@ chezmoi externals
 ## Phase 1 layout
 
 ```text
-dot_local/share/workstation/
+workstation/ (repository engine root)
 ├── apps/cli/run.lua
 ├── versions.json
 └── lua/workstation/

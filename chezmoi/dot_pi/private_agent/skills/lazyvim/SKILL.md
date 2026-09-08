@@ -7,7 +7,7 @@ description: Maintains this repository's cross-platform chezmoi-managed workstat
 
 ## Start
 
-1. Locate the source root. Use the current Git root when it contains `.chezmoiroot`; otherwise run `chezmoi source-path`.
+1. Locate the source root. Use the repository `chezmoi/` directory; otherwise run `chezmoi source-path`.
 2. Read the root `AGENTS.md` and every nearer `AGENTS.md` for files being changed.
 3. Read `docs/chezmoi.md` before changing apply behavior and `docs/capabilities.md` before changing lifecycle code.
 4. Run `git status --short`. Preserve unrelated work.
@@ -16,17 +16,17 @@ description: Maintains this repository's cross-platform chezmoi-managed workstat
 
 | Change | Owner |
 | --- | --- |
-| Downloaded host tool | `home/.chezmoiexternals/` and `workstation/versions.json` |
+| Downloaded host tool | `chezmoi/.chezmoiexternals/` and `workstation/versions.json` |
 | Combined capability and lifecycle behavior | `packages/<name>/` |
 | Package ordering and registration | `workstation/catalog.lua` |
 | Generic validation, graph, materialization, dispatch | `workstation/core/` |
 | Host-specific package behavior | Package-local backend |
-| Neovim language support | `home/dot_config/nvim/lua/languages/profile.lua` |
-| Pi skill | `home/dot_pi/private_agent/skills/<name>/SKILL.md` |
-| Source-managed Pi extension | `home/dot_pi/private_agent/extensions/<name>/`; owning workstation package verifies discovery and reload contract |
+| Neovim language support | `chezmoi/dot_config/nvim/lua/languages/profile.lua` |
+| Pi skill | `chezmoi/dot_pi/private_agent/skills/<name>/SKILL.md` |
+| Source-managed Pi extension | `chezmoi/dot_pi/private_agent/extensions/<name>/`; owning workstation package verifies discovery and reload contract |
 | Registry Pi extension package | Owning workstation package; exact version and integrity in `versions.json` |
 | Secret reference or vault workflow | `/skill:secrets`; `Workstation` vault only |
-| Deployed target removal | `home/.chezmoiremove` |
+| Deployed target removal | `chezmoi/.chezmoiremove` |
 
 `workstation.app` is the composition root. Each package is registered once and returns one combined contribution. Core modules must not import the catalog, packages, or Neovim.
 
@@ -49,9 +49,9 @@ Run all available checks relevant to the change:
 
 ```bash
 nvim -l tests/capabilities.test.lua
-stylua --check --config-path .stylua.toml home/dot_local/share/workstation home/dot_config/nvim tests
+stylua --check --config-path .stylua.toml workstation chezmoi/dot_config/nvim tests
 git diff --check
-chezmoi --source "$PWD" --destination "$(mktemp -d)" apply --dry-run
+chezmoi --source "$PWD/chezmoi" --destination "$(mktemp -d)" apply --dry-run
 ```
 
 For provisioning or host-specific changes, run a full scratch-home apply and the workstation CLI `verify` lifecycle on each affected host. Confirm the working tree is clean after commits.

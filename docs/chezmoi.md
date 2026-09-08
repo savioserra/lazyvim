@@ -1,6 +1,6 @@
 # Chezmoi reference
 
-Source root: `home/` via repository `.chezmoiroot`.
+Source root: the repository `chezmoi/` directory.
 
 ## Apply model
 
@@ -24,7 +24,7 @@ render source
        -> workstation/apps/cli/run.lua sync
 ```
 
-`home/.chezmoiscripts/` owns lifecycle invocation. Do not add repository-level
+`chezmoi/.chezmoiscripts/` owns lifecycle invocation. Do not add repository-level
 apply or sync wrappers.
 
 ## Source naming
@@ -102,7 +102,7 @@ Inventory: [`tools.md`](tools.md).
 Script requirements:
 
 - use the pinned Neovim under the target home;
-- use the deployed `.local/share/workstation/apps/cli/run.lua` under the target home;
+- use the repository `workstation/apps/cli/run.lua` against the target home;
 - stop before sync when setup fails;
 - return the sync exit code;
 - avoid shell-specific orchestration outside path resolution and failure handling.
@@ -111,15 +111,15 @@ Script requirements:
 
 | Target kind | Removal mechanism |
 | --- | --- |
-| File/non-exact directory | Add target path to `home/.chezmoiremove` |
+| File/non-exact directory | Add target path to `chezmoi/.chezmoiremove` |
 | `exact = true` external tree | External apply prunes stale children |
 | Platform-obsolete target | Add `.chezmoiremove`; retain appropriate ignore condition |
 
 ## Render checks
 
 ```bash
-chezmoi --source "$PWD" --destination "$(mktemp -d)" apply --dry-run
+chezmoi --source "$PWD/chezmoi" --destination "$(mktemp -d)" apply --dry-run
 ```
 
-Use `.github/scripts/test-apply.ps1` for an applied scratch-home test. The test
+Use `.github/scripts/test-apply.sh` for an applied scratch-home test. The test
 calls chezmoi directly; post-apply scripts execute setup and sync.

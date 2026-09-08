@@ -16,7 +16,7 @@ core -X-> catalog/packages/Neovim
 
 ## Module boundaries
 
-| Path under `home/dot_local/share/workstation/` | Contract |
+| Path under `workstation/` | Contract |
 | --- | --- |
 | `apps/cli/run.lua` | `setup`, `sync`, `verify` CLI entry point |
 | `lua/workstation/catalog.lua` | Explicit ordered inventory; one registration per package |
@@ -109,18 +109,18 @@ nvim -l ~/.local/share/workstation/apps/cli/run.lua setup|sync|verify
 
 ## Neovim package and profile
 
-The `packages.nvim` factory loads and validates the sole language profile source at `home/dot_config/nvim/lua/languages/profile.lua`. It adds profile `requires` values to its package dependencies and closes over the profile for sync and verification. Generic app and core modules do not import Neovim.
+The `packages.nvim` factory loads and validates the sole language profile source at `chezmoi/dot_config/nvim/lua/languages/profile.lua`. It adds profile `requires` values to its package dependencies and closes over the profile for sync and verification. Generic app and core modules do not import Neovim.
 
 | Consumer | Use |
 | --- | --- |
-| `home/dot_config/nvim/lua/config/lazy.lua` | Build ordered lazy.nvim specs |
+| `chezmoi/dot_config/nvim/lua/config/lazy.lua` | Build ordered lazy.nvim specs |
 | `packages/nvim/profile.lua` | Validate profile and derive prerequisites |
 | `packages/nvim/init.lua` | Locks, synchronization, behavior verification |
 | `packages/nvim/child.lua` | Configured-editor child operations |
 
 ## Pi resources
 
-`pi-skills` verifies managed files under `home/dot_pi/private_agent/skills/` and Pi discovery. The pinned community packages `pi-subagents` and `pi-web-access` are installed through their owning packages with exact registry integrity; `pi-ntfy-notifier` is source-managed under `home/dot_pi/private_agent/extensions/` and deploys through normal apply. Package-specific JavaScript verifiers remain inside their owning package directories.
+`pi-skills` verifies managed files under `chezmoi/dot_pi/private_agent/skills/` and Pi discovery. The pinned community packages `pi-subagents` and `pi-web-access` are installed through their owning packages with exact registry integrity; `pi-ntfy-notifier` is source-managed under `chezmoi/dot_pi/private_agent/extensions/` and deploys through normal apply. Package-specific JavaScript verifiers remain inside their owning package directories.
 
 ## Package-local backend rule
 

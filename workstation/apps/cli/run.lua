@@ -1,4 +1,7 @@
 local script = debug.getinfo(1, "S").source:gsub("^@", "")
+-- Resolve to an absolute path: packages derive verifier paths from their module
+-- source, which must stay absolute regardless of the caller's cwd.
+script = vim.uv.fs_realpath(script) or script
 local root = vim.fs.dirname(vim.fs.dirname(vim.fs.dirname(vim.fs.normalize(script))))
 package.path = table.concat(
 	{ root .. "/?.lua", root .. "/?/init.lua", root .. "/lua/?.lua", root .. "/lua/?/init.lua", package.path },

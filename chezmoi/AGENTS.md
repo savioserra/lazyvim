@@ -1,6 +1,6 @@
 # Chezmoi source-state instructions
 
-Scope: `home/**`.
+Scope: `chezmoi/**`.
 
 ## Rules
 
@@ -20,7 +20,6 @@ Scope: `home/**`.
 | --- | --- |
 | `.chezmoiexternals/` | Download inventory |
 | `.chezmoiscripts/` | Public post-apply lifecycle entry points |
-| `dot_local/share/workstation/` | Package-based workstation lifecycle application |
 | `dot_pi/private_agent/skills/` | Global Pi skills |
 | `dot_pi/private_agent/extensions/` | Source-managed Pi extensions; executable ownership, reload cleanup, discovery |
 | `dot_config/nvim/` | Managed Neovim application configuration |
