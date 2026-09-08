@@ -81,11 +81,14 @@ end
 
 -- Includes empty directories, modes and link targets; lstat never follows a
 -- destination link while checking completeness. Non-exact trees allow extras.
-local function manifest(platform, root)
+local function manifest(platform, root, staging)
 	local result = {}
 	local function visit(path, name)
 		local stat = assert(vim.uv.fs_lstat(path))
-		local entry = { type = stat.type, mode = bit.band(stat.mode, 511) }
+		local entry = { type = stat.type, mode = bit.band(stat.mode, 4095) }
+		-- No shipped artifact needs setuid, setgid or sticky semantics. Reject
+		-- privileged staging, but retain all bits when detecting installed drift.
+		assert(not staging or bit.band(entry.mode, 3584) == 0, "unsupported special mode in staging: " .. path)
 		if stat.type == "file" then
 			entry.digest = sha256(platform, path)
 		elseif stat.type == "link" then
@@ -187,7 +190,7 @@ function M.create(platform, options)
 					assert(vim.uv.fs_lstat(content).type == "directory", "archive root is not a directory")
 				end
 				-- Validate the complete extracted tree, including link confinement.
-				manifest(platform, content)
+				manifest(platform, content, true)
 				if kind == "archive" then
 					safe_member(assert(spec.inner_path, "inner_path required"))
 					content = paths.join(content, spec.inner_path)
@@ -195,16 +198,21 @@ function M.create(platform, options)
 			end
 			if kind ~= "directory" then
 				assert(vim.uv.fs_lstat(content).type == "file", "archive member must be a regular file")
-				assert(vim.uv.fs_chmod(content, assert(tonumber(spec.mode or "755", 8))))
+				local mode = assert(tonumber(spec.mode or "755", 8))
+				assert(mode >= 0 and mode <= 511, "unsupported special mode in staging")
+				assert(vim.uv.fs_chmod(content, mode))
 			end
-			local expected = manifest(platform, content)
+			local expected = manifest(platform, content, true)
 			local exact = kind ~= "directory" or spec.exact ~= false
 			if matches(platform, spec.dest, expected, exact) then
 				return
 			end
 			if not exact and exists(spec.dest) then
 				assert(vim.uv.fs_lstat(spec.dest).type == "directory", "non-exact destination must be a directory")
-				commands.capture("cp", { "-R", "-P", spec.dest, merged })
+				-- POSIX -p preserves existing unrelated modes (including special
+				-- bits), ownership and timestamps; shipped paths still come solely
+				-- from the special-bit-free verified staging tree.
+				commands.capture("cp", { "-p", "-R", "-P", spec.dest, merged })
 				overlay(content, merged)
 				content = merged
 			end

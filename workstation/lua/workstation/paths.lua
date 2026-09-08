@@ -1,5 +1,18 @@
 local M = {}
 
+-- Capture before normalization, also for direct Lua entry. Preserve the first
+-- capture across launcher/update children; retirement alone validates these hints.
+if vim.env.WORKSTATION_SESSION_CAPTURED ~= "1" then
+	vim.env.WORKSTATION_SESSION_RUNTIME_DIR = vim.env.XDG_RUNTIME_DIR or ""
+	vim.env.WORKSTATION_SESSION_BUS_ADDRESS = vim.env.DBUS_SESSION_BUS_ADDRESS or ""
+	vim.env.WORKSTATION_SESSION_CAPTURED = "1"
+end
+M.session = {
+	runtime_dir = vim.env.WORKSTATION_SESSION_RUNTIME_DIR or "",
+	bus_address = vim.env.WORKSTATION_SESSION_BUS_ADDRESS or "",
+}
+vim.env.DBUS_SESSION_BUS_ADDRESS = nil
+
 -- Resolve before dispatch (including direct Lua bootstrap/diff/status). All
 -- writable child roots belong to the target, never ambient XDG overrides.
 M.home = vim.env.WORKSTATION_HOME or vim.env.HOME

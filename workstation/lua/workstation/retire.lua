@@ -4,6 +4,35 @@ local commands = require("workstation.commands")
 local paths = require("workstation.paths")
 local M = {}
 
+-- Support the local account user bus only, not remote/multiple/abstract DBus
+-- addresses. Inspect metadata, never probe/connect or invent a /run/user path.
+local function linux_session(account)
+	local session = paths.session
+	local runtime = session.runtime_dir
+	assert(
+		runtime:sub(1, 1) == "/" and vim.uv.fs_realpath(runtime) == runtime,
+		"refusing retirement: invalid session runtime"
+	)
+	local stat = vim.uv.fs_lstat(runtime)
+	assert(
+		stat and stat.type == "directory" and stat.uid == account.uid and bit.band(stat.mode, 4095) == 448,
+		"refusing retirement: unsafe session runtime"
+	)
+	local bus = runtime .. "/bus"
+	stat = vim.uv.fs_lstat(bus)
+	assert(stat and stat.type == "socket" and stat.uid == account.uid, "refusing retirement: missing owned session bus")
+	assert(
+		session.bus_address == "" or (not bus:find("[^%w/_.%-]") and session.bus_address == "unix:path=" .. bus),
+		"refusing retirement: unsupported session bus address"
+	)
+	-- vim.system stringifies false env values; use a complete normalized child
+	-- environment so an absent DBus address stays unset, rather than "false".
+	local env = vim.fn.environ()
+	env.XDG_RUNTIME_DIR = runtime
+	env.DBUS_SESSION_BUS_ADDRESS = session.bus_address ~= "" and session.bus_address or nil
+	return env
+end
+
 function M.run(context)
 	local account = vim.uv.os_get_passwd()
 	local home = vim.uv.fs_realpath(context.paths.home)
@@ -53,8 +82,9 @@ function M.run(context)
 	end
 	-- Missing commands and failed operations abort: neither is recorded as success.
 	if platform == "linux" then
-		commands.execute("systemctl", { "--user", "disable", "--now", "workstation-subagents.service" })
-		commands.execute("systemctl", { "--user", "daemon-reload" })
+		local options = { env = linux_session(account), clear_env = true }
+		commands.execute("systemctl", { "--user", "disable", "--now", "workstation-subagents.service" }, options)
+		commands.execute("systemctl", { "--user", "daemon-reload" }, options)
 	else
 		commands.execute("launchctl", { "bootout", ("gui/%d/com.workstation.subagents"):format(account.uid) })
 	end

@@ -12,12 +12,15 @@ local function digest(path)
 	return output:match("^%x+")
 end
 local count = 0
-local function archive(entries, format)
+local function archive(entries, format, modes)
 	count = count + 1
 	local dir = scratch .. "/fixture-" .. count
 	vim.fn.mkdir(dir, "p")
 	for name, body in pairs(entries) do
 		paths.write(dir .. "/" .. name, body)
+	end
+	for name, permissions in pairs(modes or {}) do
+		assert(vim.uv.fs_chmod(dir .. "/" .. name, permissions))
 	end
 	local target = dir .. (format == "zip" and ".zip" or ".tar.gz")
 	if format == "zip" then
@@ -28,7 +31,7 @@ local function archive(entries, format)
 	return { url = "file://" .. target, sha256 = digest(target), format = format or "tar" }, target
 end
 local function mode(path)
-	return bit.band(assert(vim.uv.fs_stat(path)).mode, 511)
+	return bit.band(assert(vim.uv.fs_stat(path)).mode, 4095)
 end
 local function no_staging()
 	local found = vim.fn.glob(scratch .. "/**/*.provision-*", false, true)
@@ -44,6 +47,13 @@ for _, format in ipairs({ "tar", "zip" }) do
 	vim.uv.fs_chmod(spec.dest, 384)
 	api.archive(spec)
 	assert(paths.read(spec.dest) == "trusted\n" and mode(spec.dest) == 493, "installed bytes/mode not repaired")
+	-- Inert fixture bytes only: inspect special-bit drift, never execute it.
+	for _, permissions in ipairs({ 2541, 1517, 1005 }) do -- 04755, 02755, 01755
+		assert(vim.uv.fs_chmod(spec.dest, permissions))
+		assert(mode(spec.dest) == permissions, "fixture special bits not set")
+		api.archive(spec)
+		assert(mode(spec.dest) == 493, "installed special-bit drift not repaired")
+	end
 	local cached = vim.env.WORKSTATION_CACHE .. "/downloads/" .. spec.sha256
 	paths.write(cached, "tampered cache\n")
 	vim.fn.delete(spec.dest)
@@ -67,11 +77,26 @@ for _, format in ipairs({ "tar", "zip" }) do
 	vim.uv.fs_chmod(tree.dest .. "/bin/tool", 448)
 	api.directory(tree)
 	assert(mode(tree.dest .. "/bin/tool") == 420, "directory member mode not repaired")
+	local root_mode, member_mode = mode(tree.dest), mode(tree.dest .. "/bin/tool")
+	assert(vim.uv.fs_chmod(tree.dest, root_mode + 512)) -- sticky exact root
+	assert(vim.uv.fs_chmod(tree.dest .. "/bin/tool", member_mode + 2048))
+	assert(mode(tree.dest) == root_mode + 512 and mode(tree.dest .. "/bin/tool") == member_mode + 2048)
+	api.directory(tree)
+	assert(
+		mode(tree.dest) == root_mode and mode(tree.dest .. "/bin/tool") == member_mode,
+		"exact special-bit drift not repaired"
+	)
 	-- Non-exact owns only shipped paths, retaining nested mutable state.
 	tree.exact = false
 	paths.write(tree.dest .. "/bin/user-state", "retain")
 	paths.write(tree.dest .. "/bin/tool", "drift")
+	assert(vim.uv.fs_chmod(tree.dest .. "/bin/user-state", 936)) -- unrelated inert 01650
+	paths.write(tree.dest .. "/user-dir/state", "retain nested")
+	assert(vim.uv.fs_chmod(tree.dest .. "/user-dir", 960)) -- unrelated 01700
+	assert(mode(tree.dest .. "/bin/user-state") == 936 and mode(tree.dest .. "/user-dir") == 960)
 	api.directory(tree)
+	assert(mode(tree.dest .. "/bin/user-state") == 936, "unrelated non-exact mode changed")
+	assert(mode(tree.dest .. "/user-dir") == 960 and paths.read(tree.dest .. "/user-dir/state") == "retain nested")
 	assert(
 		paths.read(tree.dest .. "/bin/user-state") == "retain" and paths.read(tree.dest .. "/bin/tool") == "trusted\n"
 	)
@@ -99,6 +124,23 @@ do
 	bad.sha256 = string.rep("z", 64)
 	assert(not pcall(api.file, bad))
 	assert(not pcall(require("workstation.provision").create(host).file, spec), "production accepted file URL")
+	local privileged = vim.tbl_extend("force", spec, { mode = "4755" })
+	ok, failure = pcall(api.file, privileged)
+	assert(not ok and tostring(failure):find("unsupported special mode", 1, true))
+	assert(mode(spec.dest) == 420 and paths.read(spec.dest) == "raw bytes")
+end
+-- Reject special-bit archive staging instead of silently shipping privileges.
+do
+	local spec = archive({ ["bin/tool"] = "inert" })
+	spec.dest = scratch .. "/special-staging"
+	api.directory(spec)
+	for _, modes in ipairs({ { ["bin/tool"] = 2541 }, { bin = 1005 } }) do
+		local bad = archive({ ["bin/tool"] = "untrusted mode" }, "tar", modes)
+		bad.dest = spec.dest
+		local ok, failure = pcall(api.directory, bad)
+		assert(not ok and tostring(failure):find("unsupported special mode", 1, true), tostring(failure))
+		assert(paths.read(spec.dest .. "/bin/tool") == "inert" and mode(spec.dest .. "/bin/tool") == 420)
+	end
 end
 -- Failed extraction and activation leave the previous good installation intact.
 do

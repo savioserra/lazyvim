@@ -15,6 +15,16 @@ done
 script_dir=$(CDPATH='' cd -P "$(dirname "$script")" && pwd -P)
 engine_root=$(CDPATH='' cd -P "$script_dir/.." && pwd -P)
 
+# Carry the original rendezvous across Lua and repeated lifecycle launches.
+# These are untrusted hints; only owned-account retirement validates/uses them.
+if [ "${WORKSTATION_SESSION_CAPTURED:-}" != 1 ]; then
+	WORKSTATION_SESSION_RUNTIME_DIR=${XDG_RUNTIME_DIR:-}
+	WORKSTATION_SESSION_BUS_ADDRESS=${DBUS_SESSION_BUS_ADDRESS:-}
+	WORKSTATION_SESSION_CAPTURED=1
+fi
+export WORKSTATION_SESSION_CAPTURED WORKSTATION_SESSION_RUNTIME_DIR WORKSTATION_SESSION_BUS_ADDRESS
+unset DBUS_SESSION_BUS_ADDRESS
+
 HOME=${WORKSTATION_HOME:-$HOME}
 case "$HOME" in /*) ;; *) echo 'workstation: target home must be absolute' >&2; exit 1 ;; esac
 export HOME
