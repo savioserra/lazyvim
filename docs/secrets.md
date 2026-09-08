@@ -5,7 +5,7 @@
 | Component | Contract |
 | --- | --- |
 | `secrets` capability | Verify the pinned 1Password CLI; do not inspect authentication or vault state |
-| `LazyVIM` vault | Dedicated scope for this workstation's secrets |
+| `Workstation` vault | Dedicated scope for this workstation's secrets |
 | `/skill:secrets` | Explicit-only policy for safe metadata, references, and approved mutations |
 | Chezmoi source | Store `op://` references and non-secret schema only |
 
@@ -18,7 +18,7 @@ host-owned mutable state.
 - Normal apply, sync, verify, and CI never require vault authentication.
 - Never commit or render secret values into persistent configuration.
 - Prefer `op run` or `op inject` over retrieving values into agent context.
-- Scope every operation to the `LazyVIM` vault.
+- Scope every operation to the `Workstation` vault.
 - Require explicit user approval for each create, edit, archive, or delete.
 - Use a vault-scoped service account when technical enforcement is required on a headless host.
 
@@ -35,7 +35,7 @@ Unlock 1Password
 Use stable item and field names:
 
 ```dotenv
-ANTHROPIC_API_KEY=op://LazyVIM/Pi/anthropic_api_key
+ANTHROPIC_API_KEY=op://Workstation/Pi/anthropic_api_key
 ```
 
 Consume references without exposing resolved values:

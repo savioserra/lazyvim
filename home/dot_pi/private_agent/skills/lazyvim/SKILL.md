@@ -25,7 +25,7 @@ description: Maintains this repository's cross-platform chezmoi-managed workstat
 | Pi skill | `home/dot_pi/private_agent/skills/<name>/SKILL.md` |
 | Source-managed Pi extension | `home/dot_pi/private_agent/extensions/<name>/`; owning workstation package verifies discovery and reload contract |
 | Registry Pi extension package | Owning workstation package; exact version and integrity in `versions.json` |
-| Secret reference or vault workflow | `/skill:secrets`; `LazyVIM` vault only |
+| Secret reference or vault workflow | `/skill:secrets`; `Workstation` vault only |
 | Deployed target removal | `home/.chezmoiremove` |
 
 `workstation.app` is the composition root. Each package is registered once and returns one combined contribution. Core modules must not import the catalog, packages, or Neovim.
