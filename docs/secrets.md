@@ -60,6 +60,7 @@ cannot be rotated in place; revoke and recreate the account to change access.
 | --- | --- | --- |
 | `ntfy` | `server_url`, `phone_user`, `operator_user` | `phone_password`, `operator_password`, `admin_token`, `notifier_token` |
 | `dokploy` | `url` (public panel), `local_api_url` | `api_key` |
+| `dontstarve` | — | `cluster_token`, `server_password` (re-seed `/tmp/mindex-*` after reboot) |
 
 Fill secret fields from the corresponding root-only host files
 (`/etc/ntfy/credentials.env`, `/root/.config/pi/dokploy.env`) directly in the
