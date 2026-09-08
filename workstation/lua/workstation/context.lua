@@ -4,6 +4,7 @@ local M = {}
 ---@field paths table
 ---@field platform table
 ---@field versions table
+---@field provision table
 
 ---@return RuntimeContext
 function M.create()
@@ -13,7 +14,12 @@ function M.create()
 	vim.env.XDG_CONFIG_HOME = paths.join(paths.home, ".config")
 	local platform = require("workstation.platforms")
 	platform.configure_runtime()
-	return { paths = paths, platform = platform, versions = require("workstation.versions") }
+	return {
+		paths = paths,
+		platform = platform,
+		versions = require("workstation.versions"),
+		provision = require("workstation.provision").create(platform.name),
+	}
 end
 
 return M

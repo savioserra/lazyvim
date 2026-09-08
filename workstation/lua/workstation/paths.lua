@@ -1,6 +1,8 @@
 local M = {}
 
-M.home = vim.env.CHEZMOI_DESTDIR or vim.env.HOME or vim.env.USERPROFILE
+-- WORKSTATION_HOME wins: the engine CLI uses it for scratch-home testing.
+-- CHEZMOI_DESTDIR follows: legacy compatibility while chezmoi scripts still exist.
+M.home = vim.env.WORKSTATION_HOME or vim.env.CHEZMOI_DESTDIR or vim.env.HOME or vim.env.USERPROFILE
 assert(M.home and M.home ~= "", "unable to determine target home")
 M.home = vim.fs.normalize(M.home)
 M.local_dir = vim.fs.joinpath(M.home, ".local")
