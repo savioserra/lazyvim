@@ -1,6 +1,9 @@
 local commands = require("workstation.commands")
 local paths = require("workstation.paths")
 
+-- LuaJIT exposes varargs unpack as the global `unpack`; Lua 5.2+ as table.unpack.
+local varargs_unpack = table.unpack or unpack
+
 -- The chezmoi provisioner: the ONLY sanctioned way the engine materializes
 -- home state. Chezmoi is a subordinate file provisioner invoked with explicit
 -- --source/--destination; it is never driven by the user or by packages.
@@ -73,13 +76,13 @@ end
 ---Materialize home state (chezmoi apply with engine-provided source/destination).
 function M.apply(opts)
 	local argv = M.argv("apply", opts)
-	commands.execute(argv[1], { select(2, table.unpack(argv)) })
+	commands.execute(argv[1], { select(2, varargs_unpack(argv)) })
 end
 
 ---Show pending home-state changes (chezmoi diff with engine-provided source/destination).
 function M.diff(opts)
 	local argv = M.argv("diff", opts)
-	commands.execute(argv[1], { select(2, table.unpack(argv)) })
+	commands.execute(argv[1], { select(2, varargs_unpack(argv)) })
 end
 
 return M

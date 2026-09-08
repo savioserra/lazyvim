@@ -53,6 +53,22 @@ end
 
 function M.load(context)
 	local path = context.paths.join(context.paths.home, ".config", "nvim", "lua", "languages", "profile.lua")
+	if not context.paths.exists(path) then
+		-- A host that has never applied has no destination profile yet. The
+		-- repository copy is the declared composition and the graph's source of
+		-- truth, so pre-apply commands (status, bootstrap) still materialize the
+		-- catalog; once apply exists the destination copy is preferred as before.
+		local provisioner = require("workstation.provisioner")
+		path = context.paths.join(
+			provisioner.repo_root(),
+			"chezmoi",
+			"dot_config",
+			"nvim",
+			"lua",
+			"languages",
+			"profile.lua"
+		)
+	end
 	return M.validate(assert(loadfile(path))())
 end
 

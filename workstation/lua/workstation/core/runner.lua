@@ -1,6 +1,9 @@
 local M = {}
 
-local lifecycles = { setup = true, sync = true, verify = true }
+-- Lifecycle set: setup, sync, and verify run per package. retire is the
+-- engine-wide pre-apply phase (workstation.retire runs it at the start of
+-- apply); packages may also contribute retire handlers for their own cleanup.
+local lifecycles = { retire = true, setup = true, sync = true, verify = true }
 
 ---@param graph table
 ---@param handlers table<string, table>

@@ -63,8 +63,8 @@ jobs:
       - name: Validate scripts and JSON lockfiles
         run: |
           set -euo pipefail
-          sh -n chezmoi/.chezmoiscripts/run_after_20-unix-apply.sh.tmpl chezmoi/.chezmoiscripts/run_once_before_15-retire-subagents-service.sh .github/scripts/test-apply.sh
-          shellcheck -s sh chezmoi/.chezmoiscripts/run_after_20-unix-apply.sh.tmpl chezmoi/.chezmoiscripts/run_once_before_15-retire-subagents-service.sh .github/scripts/test-apply.sh
+          sh -n workstation/bin/workstation .github/scripts/test-apply.sh
+          shellcheck -s sh workstation/bin/workstation .github/scripts/test-apply.sh
           while IFS= read -r -d '' file; do LUA_AUDIT_FILE="$file" luajit -e 'assert(loadfile(os.getenv("LUA_AUDIT_FILE")))'; done < <(find workstation chezmoi tests -name '*.lua' -print0)
           version="$(cat chezmoi/.chezmoiversion)"
           grep -F -- "-t v${version}" README.md

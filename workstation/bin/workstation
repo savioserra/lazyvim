@@ -1,0 +1,23 @@
+#!/bin/sh
+# workstation - public CLI entry for the workstation capabilities engine.
+# Resolves the engine root from this script's location (workstation/bin/..) and
+# execs the engine CLI on the pinned Neovim runtime. This is the only public
+# lifecycle interface; chezmoi is invoked by the engine, never by the user.
+set -eu
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+engine_root=$(CDPATH= cd -- "$script_dir/.." && pwd -P)
+cli="$engine_root/apps/cli/run.lua"
+
+pinned_nvim="$HOME/.local/opt/nvim/bin/nvim"
+if [ ! -x "$pinned_nvim" ]; then
+	if [ "${1:-}" = "bootstrap" ] && command -v nvim >/dev/null 2>&1; then
+		# Bootstrap installs the pinned runtime; until then any nvim may host it.
+		exec nvim -l "$cli" "$@"
+	fi
+	echo "workstation: pinned nvim not found at $pinned_nvim" >&2
+	echo "workstation: run 'workstation bootstrap' (any nvim on PATH hosts it)" >&2
+	exit 1
+fi
+
+exec "$pinned_nvim" -l "$cli" "$@"

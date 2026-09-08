@@ -12,6 +12,7 @@ local commands = require("workstation.commands")
 local contract = require("workstation.core.contract")
 local graph = require("workstation.core.graph")
 local materialize = require("workstation.core.materialize")
+local paths = require("workstation.paths")
 local profile_module = require("packages.nvim.profile")
 local runner_module = require("workstation.core.runner")
 
@@ -256,5 +257,36 @@ assert(
 	"Unix Neovim data path ignored XDG_DATA_HOME"
 )
 vim.env.XDG_DATA_HOME = original_xdg_data_home
+
+-- CLI smoke: `workstation status` must exit 0 against a scratch destination
+-- home (the public surface has to work pre-apply, before any file exists).
+-- nvim's io.popen cannot report child exit codes, so the smoke runs through a
+-- shell wrapper that records the status and output in temp files.
+local scratch_home = vim.fn.tempname()
+vim.fn.mkdir(scratch_home, "p")
+local node_version_file = io.open(vim.fs.joinpath(scratch_home, ".node-version"), "w")
+assert(node_version_file, "unable to write scratch .node-version")
+node_version_file:write("24.19.0\n")
+node_version_file:close()
+local cli_path = vim.fs.joinpath(repository, "workstation", "apps", "cli", "run.lua")
+local status_output_file = vim.fn.tempname()
+local status_code_file = vim.fn.tempname()
+local status_command = table.concat({
+	("WORKSTATION_HOME=%s"):format(vim.fn.shellescape(scratch_home)),
+	vim.fn.shellescape(vim.v.progpath),
+	"-l",
+	vim.fn.shellescape(cli_path),
+	"status",
+	("> %s 2>&1"):format(vim.fn.shellescape(status_output_file)),
+	("; printf '%%s' $? > %s"):format(vim.fn.shellescape(status_code_file)),
+}, " ")
+assert(os.execute(status_command), "workstation status smoke could not execute")
+local status_code = vim.trim(paths.read(status_code_file))
+local status_output = paths.read(status_output_file)
+assert(status_code == "0", "workstation status failed in scratch home:\n" .. status_output)
+assert(status_output:find("status complete", 1, true), "workstation status produced no summary:\n" .. status_output)
+vim.fn.delete(scratch_home, "rf")
+vim.fn.delete(status_output_file)
+vim.fn.delete(status_code_file)
 
 print("workstation package runtime tests passed")

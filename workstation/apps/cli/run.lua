@@ -8,13 +8,118 @@ package.path = table.concat(
 	";"
 )
 
-local lifecycle = assert(arg[1], "usage: nvim -l run.lua <setup|sync|verify>")
-assert(vim.tbl_contains({ "setup", "sync", "verify" }, lifecycle), "unknown lifecycle: " .. lifecycle)
+local commands = require("workstation.commands")
+local paths = require("workstation.paths")
+local provisioner = require("workstation.provisioner")
 
-if lifecycle == "sync" then
+local command = assert(arg[1], "usage: workstation <apply|update|setup|sync|verify|diff|status|bootstrap>")
+local known_commands = {
+	apply = true,
+	update = true,
+	setup = true,
+	sync = true,
+	verify = true,
+	diff = true,
+	status = true,
+	bootstrap = true,
+}
+assert(known_commands[command], "unknown command: " .. command)
+
+if command == "sync" then
 	vim.env.LAZYVIM_HEADLESS_SYNC = "1"
 end
 
+---Re-run a lifecycle through the public launcher so freshly pulled engine code
+---takes effect for the remaining steps: update never runs new code in-process.
+local function exec_via_launcher(step)
+	local launcher = paths.join(root, "bin", "workstation")
+	local ok, _, code = os.execute(table.concat({ vim.fn.shellescape(launcher), step }, " "))
+	assert(ok and code == 0, ("workstation %s failed (exit %s)"):format(step, tostring(code)))
+end
+
+---versions.lua reads .node-version at require time, before apply exists it;
+---refresh the pin in place once chezmoi has materialized the file.
+local function refresh_node_version(context)
+	local path = paths.join(context.paths.home, ".node-version")
+	if context.paths.exists(path) then
+		context.versions.node = vim.trim(context.paths.read(path))
+	end
+end
+
+-- bootstrap installs the engine's own runtime and must work before any apply.
+if command == "bootstrap" then
+	local platform = require("workstation.platforms")
+	local versions = require("workstation.versions")
+	local provision = require("workstation.provision").create(platform.name)
+	local asset = platform.name == "linux" and "linux_x86_64" or "darwin_arm64"
+	local url_template = versions["neovim_" .. asset .. "_url"]
+	local sha256 = versions["neovim_" .. asset .. "_sha256"]
+	assert(url_template and sha256, "versions.json is missing neovim " .. asset .. " download pins")
+	local nvim_bin = paths.join(paths.local_dir, "opt", "nvim", "bin", "nvim")
+	if paths.exists(nvim_bin) then
+		local ok, actual = pcall(commands.capture, nvim_bin, { "--version" })
+		local version = ok and actual:match("NVIM v(%S+)") or nil
+		if version == versions.neovim then
+			print(("bootstrap: pinned nvim %s already present"):format(versions.neovim))
+			return
+		end
+	end
+	print(("bootstrap: installing pinned nvim %s (%s)"):format(versions.neovim, asset))
+	provision.directory({
+		url = url_template:gsub("{V}", versions.neovim),
+		sha256 = sha256,
+		dest = paths.join(paths.local_dir, "opt", "nvim"),
+		exact = true,
+		strip_components = 1,
+	})
+	print(("bootstrap complete (%s)."):format(platform.name))
+	return
+end
+
+-- diff is a pure chezmoi passthrough; it needs no application state.
+if command == "diff" then
+	provisioner.diff()
+	return
+end
+
 local application = require("workstation.app").create()
-application.runner:run(lifecycle)
-print(("\n%s complete (%s)."):format(lifecycle, application.context.platform.name))
+
+if command == "status" then
+	local platform = application.context.platform.name
+	print(("workstation status (%s)"):format(platform))
+	print(("  engine root  : %s"):format(root))
+	print(("  repo root    : %s"):format(provisioner.repo_root()))
+	print(("  destination  : %s"):format(application.context.paths.home))
+	print(("  nvim runtime : %s"):format(vim.v.progpath))
+	print(("  packages     : %d"):format(#application.packages))
+	print("  graph order  :")
+	for index, specification in ipairs(application.graph.ordered) do
+		print(("    %d. %s"):format(index, specification.id))
+	end
+	print(("status complete (%s)."):format(platform))
+	return
+end
+
+-- apply = engine retire phase -> chezmoi home state -> package setup.
+if command == "apply" then
+	require("workstation.retire").run(application.context)
+	provisioner.apply()
+	refresh_node_version(application.context)
+	application.runner:run("setup")
+	print(("apply complete (%s)."):format(application.context.platform.name))
+	return
+end
+
+-- update pulls first, then re-execs each step so the new code is what runs.
+if command == "update" then
+	commands.execute("git", { "-C", provisioner.repo_root(), "pull", "--ff-only" })
+	exec_via_launcher("apply")
+	exec_via_launcher("sync")
+	exec_via_launcher("verify")
+	print("update complete.")
+	return
+end
+
+-- setup / sync / verify
+application.runner:run(command)
+print(("\n%s complete (%s)."):format(command, application.context.platform.name))

@@ -137,6 +137,25 @@ local function extract_all(archive, staging)
 	end
 end
 
+---Resolve the content root inside extracted staging, descending exactly
+---`strip_components` levels; each level must be a single directory (the
+---tar --strip-components contract for archives with one root entry).
+local function strip_root(staging, strip_components)
+	local content = staging
+	for _ = 1, strip_components do
+		local entries = {}
+		for name, entry_type in vim.fs.dir(content) do
+			table.insert(entries, { name = name, type = entry_type })
+		end
+		assert(
+			#entries == 1 and entries[1].type == "directory",
+			"archive root is not a single directory; cannot strip components"
+		)
+		content = paths.join(content, entries[1].name)
+	end
+	return content
+end
+
 local staging_sequence = 0
 
 local function fresh_staging(dest)
@@ -199,9 +218,12 @@ function M.create(platform)
 	end
 
 	---Materialize an engine-managed directory from a remote archive.
-	---    provision.directory{ url=, sha256=, dest=, exact=true }
+	---    provision.directory{ url=, sha256=, dest=, exact=true, strip_components=1 }
 	---With exact=true (replacing chezmoi's exact archives) the destination is
 	---replaced wholesale, so stale entries the archive no longer ships disappear.
+	---strip_components discards N single-directory root levels of the archive
+	---(the tar --strip-components contract), e.g. the nvim release tarball's
+	---top-level nvim-<platform>/ directory.
 	function api.directory(spec)
 		assert(type(spec) == "table" and spec.url and spec.dest, "provision.directory requires url, dest")
 		spec = vim.tbl_extend(
@@ -217,6 +239,7 @@ function M.create(platform)
 		local cached = ensure_downloaded(platform, spec)
 		local staging = fresh_staging(spec.dest)
 		extract_all(cached, staging)
+		local content = strip_root(staging, spec.strip_components or 0)
 		vim.fn.mkdir(vim.fs.dirname(spec.dest), "p")
 		if spec.exact then
 			local retired = ("%s.provision-retired-%d"):format(spec.dest, os.time())
@@ -224,11 +247,11 @@ function M.create(platform)
 			if paths.exists(spec.dest) then
 				assert(vim.uv.fs_rename(spec.dest, retired))
 			end
-			assert(vim.uv.fs_rename(staging, spec.dest))
+			assert(vim.uv.fs_rename(content, spec.dest))
 			vim.fn.delete(retired, "rf")
 		else
-			for name, _ in vim.fs.dir(staging) do
-				local source = paths.join(staging, name)
+			for name, _ in vim.fs.dir(content) do
+				local source = paths.join(content, name)
 				local target = paths.join(spec.dest, name)
 				vim.fn.delete(target, "rf")
 				assert(vim.uv.fs_rename(source, target))
