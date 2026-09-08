@@ -24,11 +24,9 @@ Supported deployment policy is Linux, WSL-as-Linux, and macOS. Native-Windows en
 | rainfrog | 0.4.4 | github.com/achristmascarl/rainfrog | `.local/bin/rainfrog` | all except windows-arm64 (no upstream build) |
 | 1Password CLI | 2.39.0 | cache.agilebits.com | `.local/bin/op`; verified by the `secrets` capability | all 5; Windows ARM64 uses the x64 build |
 | pi coding agent | 0.84.3 | npm: `@earendil-works/pi-coding-agent` | Managed Node global prefix | all 5 |
+| pi-subagents | 0.56.0 | npm: `pi-subagents` | Pi package install under the Pi agent directory | all 5 |
+| pi-web-access | 0.17.1 | npm: `pi-web-access` | Pi package install under the Pi agent directory | all 5 |
 | JetBrainsMono Nerd Font | 3.5.0 | github.com/ryanoasis/nerd-fonts | Linux: `.local/share/fonts/JetBrainsMonoNerdFont`; darwin: `Library/Fonts/JetBrainsMonoNerdFont`; Windows: `AppData/Local/Microsoft/Windows/Fonts/JetBrainsMonoNerdFont` | all 5 |
-
-## GoAkt service source dependency
-
-The sole nested service module under `services/subagents/` uses the managed Go 1.27.1 toolchain and exactly pins `github.com/tochemey/goakt/v4` v4.5.2. Its reproducible schema check uses SHA-256-pinned protoc 33.5 archives, module-locked protoc-gen-go 1.36.12, lockfile-pinned protoc-gen-es 2.11.0, and lockfile-pinned `tsx` to execute the generated descriptor. Chezmoi setup builds the reviewed daemon and clientctl into `~/.local/bin` with `go build -mod=readonly` and activates only the owner user service. The source-managed hosted bridge and actor client pin `@bufbuild/protobuf@2.11.0` and exact registry integrity in local locks. See [`subagents.md`](subagents.md).
 
 ## Not managed here
 

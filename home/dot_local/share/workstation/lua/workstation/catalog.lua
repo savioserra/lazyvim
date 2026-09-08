@@ -5,10 +5,9 @@ return {
 	require("packages.pi"),
 	require("packages.pi-skills"),
 	require("packages.pi-subagents"),
+	require("packages.pi-web-access"),
 	require("packages.go"),
-	require("packages.subagents"),
 	require("packages.secrets"),
 	require("packages.nvim"),
 	require("packages.tmux"),
-	require("packages.pi-tmux-subagents"),
 }

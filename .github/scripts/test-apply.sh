@@ -11,6 +11,4 @@ stylua=$XDG_DATA_HOME/nvim/mason/bin/stylua
 chezmoi --source "$repo_root" --destination "$scratch_home" apply --force
 "$stylua" --check --config-path "$repo_root/.stylua.toml" "$repo_root/home/dot_local/share/workstation" "$repo_root/home/dot_config/nvim" "$repo_root/tests"
 "$nvim" -l "$repo_root/tests/capabilities.test.lua"
-"$npm" ci --omit=dev --ignore-scripts --no-audit --no-fund --prefix "$repo_root/home/dot_pi/private_agent/extensions/tmux-subagents"
-find "$repo_root/tests/tmux-subagents" -name '*.test.ts' -print0 | xargs -0 "$node" --test
 "$nvim" -l "$scratch_home/.local/share/workstation/apps/cli/run.lua" verify

@@ -49,8 +49,6 @@ Run all available checks relevant to the change:
 
 ```bash
 nvim -l tests/capabilities.test.lua
-npm ci --omit=dev --ignore-scripts --prefix home/dot_pi/private_agent/extensions/tmux-subagents
-find tests/tmux-subagents -name '*.test.ts' -print0 | xargs -0 node --test
 stylua --check --config-path .stylua.toml home/dot_local/share/workstation home/dot_config/nvim tests
 git diff --check
 chezmoi --source "$PWD" --destination "$(mktemp -d)" apply --dry-run

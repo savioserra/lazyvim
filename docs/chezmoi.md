@@ -53,7 +53,7 @@ dot_local/bin/symlink_nvim.tmpl -> ~/.local/bin/nvim
 | `.chezmoi.arch` | `amd64`, `arm64` |
 | `.chezmoi.destDir` | Target home |
 
-WSL uses the Linux branch. Native Windows is unsupported; use WSL. See the retained removal inventory in [`subagents.md`](subagents.md).
+WSL uses the Linux branch. Native Windows is unsupported; use WSL.
 
 ## Ignore rules
 
@@ -72,10 +72,8 @@ source: .chezmoiscripts/run_after_20-unix-apply.sh.tmpl
 ignore: .chezmoiscripts/20-unix-apply.sh
 ```
 
-| Host | Excluded targets |
-| --- | --- |
-| Linux | macOS LaunchAgent asset |
-| macOS | Linux systemd user asset |
+Native Windows retains ignore conditions in `.chezmoiignore` for targets that
+are not deployed there (shell profile, tmux, Unix-only launchers).
 
 ## External types
 
@@ -99,13 +97,13 @@ Inventory: [`tools.md`](tools.md).
 
 | Stripped name | Hosts | Ordered commands |
 | --- | --- | --- |
+| `15-retire-subagents-service.sh` | Linux/macOS | One-shot: stop and disable the removed `workstation-subagents` user service before its unit is deleted |
 | `20-unix-apply.sh` | Linux/macOS | Workstation CLI `setup`; then `sync` |
 
 Script requirements:
 
 - use the pinned Neovim under the target home;
 - use the deployed `.local/share/workstation/apps/cli/run.lua` under the target home;
-- export the source checkout path so managed build steps can compile the nested subagents service module;
 - stop before sync when setup fails;
 - return the sync exit code;
 - avoid shell-specific orchestration outside path resolution and failure handling.

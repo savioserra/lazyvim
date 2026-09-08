@@ -57,7 +57,8 @@ return function()
 				assert(actual == plugin.commit, ("%s: expected %s, got %s"):format(plugin.name, plugin.commit, actual))
 			end
 			assert(
-				vim.uv.fs_readlink(context.paths.join(context.paths.home, ".config", "tmux", "tmux.conf")) == "../../.tmux.conf",
+				vim.uv.fs_readlink(context.paths.join(context.paths.home, ".config", "tmux", "tmux.conf"))
+					== "../../.tmux.conf",
 				"XDG tmux config must point at the managed legacy config"
 			)
 			local socket = "workstation-verify-" .. vim.uv.os_getpid()

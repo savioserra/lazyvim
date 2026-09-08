@@ -59,240 +59,24 @@ for _, name in ipairs({
 	"pi",
 	"pi-skills",
 	"pi-subagents",
+	"pi-web-access",
 	"go",
-	"subagents",
 	"secrets",
 	"nvim",
 	"tmux",
-	"pi-tmux-subagents",
 }) do
 	assert(
 		vim.uv.fs_stat(vim.fs.joinpath(root, "packages", name, "init.lua")),
 		"top-level package contribution is missing: " .. name
 	)
 end
-for _, name in ipairs({ "pi-skills", "pi-subagents", "pi-tmux-subagents" }) do
+for _, name in ipairs({ "pi-skills", "pi-subagents", "pi-web-access" }) do
 	assert(
 		vim.uv.fs_stat(vim.fs.joinpath(root, "packages", name, "verify.mjs")),
 		"package verifier is missing: " .. name
 	)
 end
-assert(#catalog == 12, "expected twelve explicitly registered packages")
-for _, asset in ipairs({
-	"dot_config/systemd/user/workstation-subagents.service.tmpl",
-	"Library/LaunchAgents/com.workstation.subagents.plist.tmpl",
-}) do
-	local contents = assert(
-		vim.uv.fs_stat(vim.fs.joinpath(repository, "home", asset)),
-		"inactive service-manager asset missing: " .. asset
-	)
-	assert(contents.type == "file")
-end
-local subagents_package = assert(vim.fn.readfile(vim.fs.joinpath(root, "packages", "subagents", "init.lua")))
-local subagents_package_source = table.concat(subagents_package, "\n")
-for _, required in ipairs({ "systemctl", "launchctl", "kickstart", "enable" }) do
-	assert(
-		subagents_package_source:find(required),
-		"subagents lifecycle must activate reviewed service assets: " .. required
-	)
-end
-local subagents_config = require("packages.subagents.config")
-subagents_config.verify_managed_active([[
-[service]
-enabled = true
-
-[hosted_pi]
-enabled = true
-introspection_model = "openai-codex/gpt-5.6-sol"
-
-[remoting]
-enabled = false
-]])
-subagents_config.verify_managed_active([=[
-[service]
-enabled = true
-[hosted_pi]
-enabled = true
-introspection_model = "openai-codex/gpt-5.6-sol"
-[remoting]
-enabled = true
-mode = "cluster"
-network_trust = "trusted-overlay"
-allowed_cidrs = ["100.64.0.0/10"]
-address_families = ["ipv4"]
-[[remoting.peers]]
-node_identity = "node-b"
-[[remoting.peers]]
-node_identity = "node-c"
-]=])
-assert(not pcall(
-	subagents_config.verify_managed_active,
-	[[[service]
-enabled=true
-[hosted_pi]
-enabled=true
-[remoting]
-enabled=true
-]]
-), "managed enabled remoting must require the complete trusted-network cluster boundary")
-assert_fails("[hosted_pi].enabled must be true", function()
-	subagents_config.verify_managed_active([[
-[service]
-enabled = true
-[hosted_pi]
-enabled = false
-]])
-end)
-assert_fails("[hosted_pi].introspection_model must use exact provider/model form", function()
-	subagents_config.verify_managed_active([[
-[service]
-enabled = true
-[hosted_pi]
-enabled = true
-[remoting]
-enabled = false
-]])
-end)
-assert_fails("[hosted_pi].introspection_model must use exact provider/model form", function()
-	subagents_config.verify_managed_active([[
-[service]
-enabled = true
-[hosted_pi]
-enabled = true
-introspection_model = "gpt-5.6-sol"
-[remoting]
-enabled = false
-]])
-end)
-local managed_toml_corpus =
-	vim.fs.joinpath(repository, "services", "subagents", "internal", "config", "testdata", "managed_toml_accepted")
-local managed_toml_files = vim.fn.glob(vim.fs.joinpath(managed_toml_corpus, "*.toml"), false, true)
-assert(#managed_toml_files > 0, "managed TOML acceptance corpus is empty")
-for _, path in ipairs(managed_toml_files) do
-	subagents_config.verify_managed_active(table.concat(vim.fn.readfile(path), "\n"))
-end
-assert_fails("[service].enabled must be true", function()
-	subagents_config.verify_managed_active([[
-[service]
-enabled = false
-
-[hosted_pi]
-enabled = true
-introspection_model = "openai-codex/gpt-5.6-sol"
-
-[remoting]
-enabled = false
-]])
-end)
-assert_fails("[service].enabled must be true", function()
-	subagents_config.verify_managed_active([[
-# [service]
-# enabled = true
-
-[hosted_pi]
-enabled = true
-introspection_model = "openai-codex/gpt-5.6-sol"
-
-[remoting]
-enabled = false
-]])
-end)
-assert_fails("[service].enabled must be true", function()
-	subagents_config.verify_managed_active([[
-[hosted_pi]
-enabled = true
-introspection_model = "openai-codex/gpt-5.6-sol"
-
-[remoting]
-enabled = false
-]])
-end)
-assert_fails("[hosted_pi].enabled must be true", function()
-	subagents_config.verify_managed_active([[
-[service]
-enabled = true
-
-[hosted_pi]
-enabled = false
-
-[remoting]
-enabled = false
-]])
-end)
-assert_fails("multiline TOML strings are unsupported", function()
-	subagents_config.verify_managed_active([=[
-note = """
-[service]
-enabled = true
-"""
-[service]
-"enabled" = true
-]=])
-end)
-for _, adversarial in ipairs({
-	"schema_version = 01\n[service]\nenabled = false\n",
-	"schema_version = -01\n[service]\nenabled = false\n",
-	"schema_version = -0\n[service]\nenabled = false\n",
-	"schema_version = +1\n[service]\nenabled = false\n",
-	"schema_version = 9223372036854775808\n[service]\nenabled = false\n",
-	"schema_version = -9223372036854775809\n[service]\nenabled = false\n",
-	"schema_version\194\160= 1\n[service]\nenabled = false\n",
-	"schema_version\v= 1\n[service]\nenabled = false\n",
-	"service = 1\n[service]\nenabled = false\n",
-	"[service]\nenabled = false\nservice = 1\n",
-	"[service]\nenabled = false\n[service]\nenabled = true\n",
-	"[service]\nenabled = false\nenabled = true\n",
-	"['service']\nenabled = false\n",
-	'[service]\n"enabled" = false\n',
-	"[service]\nservice.enabled = false\n",
-	"[service.child]\nenabled = false\n",
-	"[[service]]\nenabled = false\n",
-	"[service]\nenabled = { value = false }\n",
-	"[service]\nenabled false\n",
-	"[service]\nenabled = # false\n",
-	"[service]\nenabled = 'false'\n",
-	"[service]\nenabled = 1979-05-27T07:32:00Z\n",
-	"[service]\nenabled = 0.0\n",
-	"[service]\nenabled = false; enabled = true\n",
-	"[service]\nenabled = false\n[remoting]\npeers = [1]\n",
-}) do
-	assert_fails("", function()
-		subagents_config.verify_managed_active(adversarial)
-	end)
-end
-local subagents_metadata = require("packages.subagents.metadata")
-subagents_metadata.verify(
-	{ type = "directory", mode = 448, uid = 1000 },
-	{ type = "file", mode = 384, uid = 1000 },
-	1000
-)
-assert_fails("directory must be owned by the current user", function()
-	subagents_metadata.verify(
-		{ type = "directory", mode = 448, uid = 1001 },
-		{ type = "file", mode = 384, uid = 1000 },
-		1000
-	)
-end)
-assert_fails("config must be owned by the current user", function()
-	subagents_metadata.verify(
-		{ type = "directory", mode = 448, uid = 1000 },
-		{ type = "file", mode = 384, uid = 1001 },
-		1000
-	)
-end)
-assert(
-	vim.uv.fs_stat(
-		vim.fs.joinpath(
-			repository,
-			"home",
-			"dot_config",
-			"private_workstation",
-			"private_subagents",
-			"private_config.toml.tmpl"
-		)
-	),
-	"owner-private subagents config source is missing"
-)
+assert(#catalog == 11, "expected eleven explicitly registered packages")
 assert(
 	vim.uv.fs_stat(vim.fs.joinpath(repository, "home", "services")) == nil,
 	"service source must not deploy into HOME"
@@ -315,13 +99,12 @@ end
 
 local windows = ids_for("win32") -- retained only as a native-Windows removal inventory during milestone 1
 assert(not vim.list_contains(windows, "tmux"), "Windows must omit tmux")
-assert(not vim.list_contains(windows, "subagents"), "native Windows must omit the subagents service")
-for _, id in ipairs({ "nvim", "go", "secrets", "pi", "pi-skills", "pi-subagents" }) do
+for _, id in ipairs({ "nvim", "go", "secrets", "pi", "pi-skills", "pi-subagents", "pi-web-access" }) do
 	assert_contains(windows, id)
 end
 
 local linux = ids_for("linux")
-for _, id in ipairs({ "tmux", "secrets", "pi", "pi-skills", "pi-subagents", "subagents" }) do
+for _, id in ipairs({ "tmux", "secrets", "pi", "pi-skills", "pi-subagents", "pi-web-access" }) do
 	assert_contains(linux, id)
 end
 local expected_linux = {
@@ -331,12 +114,11 @@ local expected_linux = {
 	"pi",
 	"pi-skills",
 	"pi-subagents",
+	"pi-web-access",
 	"go",
-	"subagents",
 	"secrets",
 	"nvim",
 	"tmux",
-	"pi-tmux-subagents",
 }
 assert(vim.deep_equal(linux, expected_linux), "Linux package graph order changed")
 assert(vim.deep_equal(ids_for("darwin"), expected_linux), "macOS package graph order differs from Linux")
@@ -347,6 +129,7 @@ local expected_windows = {
 	"pi",
 	"pi-skills",
 	"pi-subagents",
+	"pi-web-access",
 	"go",
 	"secrets",
 	"nvim",
@@ -365,15 +148,9 @@ assert(index_of(linux, "node") < index_of(linux, "pi"), "node must run before pi
 assert(index_of(linux, "pi") < index_of(linux, "pi-skills"), "pi must run before pi-skills")
 assert(index_of(linux, "pi") < index_of(linux, "pi-subagents"), "pi must run before pi-subagents")
 assert(index_of(linux, "pi-skills") < index_of(linux, "pi-subagents"), "pi-skills must run before pi-subagents")
-assert(index_of(linux, "go") < index_of(linux, "subagents"), "managed Go must precede the subagents source spike")
+assert(index_of(linux, "pi") < index_of(linux, "pi-web-access"), "pi must run before pi-web-access")
 assert(index_of(linux, "foundation") < index_of(linux, "secrets"), "foundation must run before secrets")
 assert(index_of(linux, "foundation") < index_of(linux, "tmux"), "foundation must run before tmux")
-assert(
-	index_of(linux, "pi-subagents") < index_of(linux, "pi-tmux-subagents"),
-	"pi-subagents must run before its tmux observer"
-)
-assert(index_of(linux, "tmux") < index_of(linux, "pi-tmux-subagents"), "tmux must run before its Pi observer")
-assert(not vim.list_contains(windows, "pi-tmux-subagents"), "Windows must omit the tmux Pi observer")
 
 local prerequisites = profile_module.required_capabilities(profile)
 assert_contains(prerequisites, "node")

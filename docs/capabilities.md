@@ -55,14 +55,13 @@ foundation
 ├── fonts
 ├── node
 │   └── pi
-│       └── pi-skills
-│           └── pi-subagents
-├── go
-│   └── subagents [also requires pi; active owner daemon, actor client, and hosted bridge]
+│       ├── pi-skills
+│       │   └── pi-subagents
+│       └── pi-web-access
+├── go [Neovim language toolchain]
 ├── secrets
 ├── nvim [package factory adds profile prerequisites]
 └── tmux [linux,darwin]
-    └── pi-tmux-subagents [also requires pi-subagents]
 ```
 
 | Package | Setup | Sync | Verify | Host support |
@@ -73,22 +72,11 @@ foundation
 | `pi` | Exact global npm package | — | npm package and CLI version | All |
 | `pi-skills` | — | — | Managed skill files and Pi discovery | All |
 | `pi-subagents` | Exact Pi package and role skill policy | — | Lock integrity, extension tools, skill, role overrides | All |
+| `pi-web-access` | Exact Pi package | — | Lock integrity, extension discovery, web tools | All |
 | `go` | — | — | Go version | Linux/WSL/macOS policy; legacy Windows removal inventory remains |
-| `subagents` | Exact actor extension runtimes, daemon/client build, owner service activation | — | Owner-private active config, binary paths, extension discovery, lock integrity | Linux/WSL/macOS |
 | `secrets` | — | — | Managed 1Password CLI version; never account or vault state | All; Windows ARM64 uses x64 emulation |
 | `nvim` | — | Locks and parsers | Startup, locks, profile behavior | All |
 | `tmux` | Plugin checkout | — | Commits, server, theme | Linux/macOS |
-| `pi-tmux-subagents` | Locked XState/Terminal Kit install | — | Supervised actor extension, companion skill, exact RPC/dependency gate, launcher | Linux/macOS |
-
-## GoAkt subagents boundary
-
-`packages/subagents/` owns the active owner-private deployed configuration, source-managed actor client, hosted bridge dependencies, daemon/client builds, and user-service activation. Setup installs exact npm dependencies from local locks, builds `workstation-subagents` and `workstation-subagents-clientctl` from the sole nested module `services/subagents/`, and enables/starts the owner systemd-user service or LaunchAgent. The managed TOML requires service and hosted Pi enabled, an exact `openai-codex/gpt-5.6-sol` thread-introspection model used only by an isolated no-session/no-tools Pi RPC process, remoting disabled, and renders as `~/.config/workstation/subagents/config.toml` under 0700 directories with mode 0600.
-
-The long-lived service has one global `ServiceGuardian`. Its `AgentRegistryActor` owns stable reusable AgentActors independently of the sibling `SessionRegistryActor`. Client sessions are ephemeral access/subscription contexts; cleanup leaves AgentActors and hosted runtimes intact. Explicit hosted-owned agents own one `HostedPiRuntimeActor` child with asynchronous typed effects, lifecycle states, and DeathWatch. The concrete runtime records and revalidates exact tmux session/window/pane/PID/start-token/TTY identity and writes bounded atomic owner-private XDG operational records. Managed daemon shutdown quiesces and persists bridge projections without destroying exactly owned tmux/Pi processes; startup adopts only exact live owned identity, restores fenced mutation/delivery state, and fails closed for foreign or indeterminate records. Public-agent topic snapshots begin with an epoch/sequence-fenced reset so absent actors cannot retain stale remote readiness. Existing observed-upstream agents and XState authority remain unchanged.
-
-The application protocol is bounded, sequenced protobuf-framed WebSocket traffic for ordinary clients and the hosted bridge and remains separate from optional GoAkt cluster remoting. Schema-v2 remoting validates a concrete local trusted-network bind, configured peer names, distinct fixed cluster ports, logical identities, and owner-private URI-SAN mTLS material; DNS supplies addresses only and is never identity. The operator-provided private network boundary and mTLS independently restrict the actor plane. Validated enabled configuration installs `actor.WithRemote`, `actor.WithCluster`, and `actor.WithoutRelocation`; managed configuration remains disabled until host certificates and physical multi-node validation exist.
-
-See [`subagents.md`](subagents.md) for paths, platform inventory, fixtures, and commands.
 
 ## Validation
 
@@ -130,11 +118,7 @@ The `packages.nvim` factory loads and validates the sole language profile source
 
 ## Pi resources
 
-`pi-skills` verifies managed files under `home/dot_pi/private_agent/skills/` and Pi discovery. The workstation actor package owns the globally discoverable env-free `actor-client`, hosted-only `hosted-pi-bridge`, generated protobuf copies, exact dependency locks, and discovery checks. Legacy third-party `pi-subagents` and `tmux-subagents` wiring is not part of the workstation actor authority. Package-specific JavaScript verifiers remain inside their owning package directories.
-
-## Workstation actor UI
-
-The workstation actor extension is the single user-facing actor UI. It registers `/actor-*` commands and `actor_*` tools, including `/actor-connect <node|host|ws://host:port/actors>` for explicitly selecting another advertised workstation endpoint. Hosted tmux panes are owned by the workstation runtime and remain ordinary Pi TUIs; no legacy observer extension or third-party run authority is required.
+`pi-skills` verifies managed files under `home/dot_pi/private_agent/skills/` and Pi discovery. The pinned community packages `pi-subagents` and `pi-web-access` are installed through their owning packages with exact registry integrity. Package-specific JavaScript verifiers remain inside their owning package directories.
 
 ## Package-local backend rule
 

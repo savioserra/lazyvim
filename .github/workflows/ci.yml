@@ -51,31 +51,6 @@ jobs:
         shell: bash
         run: ./.github/scripts/test-apply.sh "$RUNNER_TEMP/home"
 
-  subagents:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5
-        with:
-          go-version-file: services/subagents/go.mod
-          cache-dependency-path: services/subagents/go.sum
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version-file: home/dot_node-version
-          cache: npm
-          cache-dependency-path: services/subagents/package-lock.json
-      - name: Verify nested GoAkt service and generated protocol
-        working-directory: services/subagents
-        run: |
-          set -euo pipefail
-          npm ci --ignore-scripts --no-audit --no-fund
-          ./tools/codegen.sh verify
-          go test -race ./...
-          go vet ./...
-          npm test
-          GOOS=darwin GOARCH=arm64 go build -o "$RUNNER_TEMP/subagents-darwin" ./cmd/subagents
-
   lint:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -89,21 +64,8 @@ jobs:
       - name: Validate scripts and JSON lockfiles
         run: |
           set -euo pipefail
-          sh -n home/.chezmoiscripts/run_after_20-unix-apply.sh.tmpl .github/scripts/test-apply.sh
-          python3 - <<'PY'
-          import configparser, plistlib
-          unit = configparser.ConfigParser(interpolation=None, strict=False)
-          unit.optionxform = str
-          unit.read('home/dot_config/systemd/user/workstation-subagents.service.tmpl')
-          assert set(unit.sections()) == {'Unit', 'Service', 'Install'}
-          assert 'StartLimitIntervalSec' in unit['Unit'] and 'StartLimitIntervalSec' not in unit['Service']
-          assert unit['Service']['ExecStart'].startswith('%h/.local/bin/workstation-subagents ')
-          with open('home/Library/LaunchAgents/com.workstation.subagents.plist.tmpl', 'rb') as handle:
-              launchd = plistlib.load(handle)
-          assert launchd['RunAtLoad'] is False and launchd['Label'] == 'com.workstation.subagents'
-          PY
-          sh -n home/dot_local/bin/executable_workstation-tmux-subagents
-          shellcheck -s sh home/.chezmoiscripts/run_after_20-unix-apply.sh.tmpl home/dot_local/bin/executable_workstation-tmux-subagents .github/scripts/test-apply.sh
+          sh -n home/.chezmoiscripts/run_after_20-unix-apply.sh.tmpl home/.chezmoiscripts/run_once_before_15-retire-subagents-service.sh .github/scripts/test-apply.sh
+          shellcheck -s sh home/.chezmoiscripts/run_after_20-unix-apply.sh.tmpl home/.chezmoiscripts/run_once_before_15-retire-subagents-service.sh .github/scripts/test-apply.sh
           while IFS= read -r -d '' file; do LUA_AUDIT_FILE="$file" luajit -e 'assert(loadfile(os.getenv("LUA_AUDIT_FILE")))'; done < <(find home tests -name '*.lua' -print0)
           version="$(cat home/.chezmoiversion)"
           grep -F -- "-t v${version}" README.md
@@ -112,7 +74,4 @@ jobs:
           python3 -m json.tool home/dot_config/nvim/mason-lock.json > /dev/null
           python3 -m json.tool home/dot_config/nvim/lazyvim.json > /dev/null
           python3 -m json.tool home/dot_local/share/workstation/versions.json > /dev/null
-          python3 -m json.tool home/dot_pi/private_agent/extensions/tmux-subagents/config.json > /dev/null
           python3 -m json.tool .luarc.json > /dev/null
-          npm ci --omit=dev --ignore-scripts --no-audit --no-fund --prefix home/dot_pi/private_agent/extensions/tmux-subagents
-          find tests/tmux-subagents -name '*.test.ts' -print0 | xargs -0 node --test

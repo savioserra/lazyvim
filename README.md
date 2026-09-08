@@ -75,10 +75,8 @@ No repository-level sync wrapper is required.
 | Node version | `home/dot_node-version` |
 | Global pi package | `versions.json` and `packages/pi/init.lua` |
 | Global Pi skills | `home/dot_pi/private_agent/skills/`; secret operations require explicit `/skill:secrets` invocation |
-| Registry Pi extension packages | Exact versions and integrity in `versions.json`; lifecycle under `packages/pi-subagents/` |
+| Registry Pi extension packages | Exact versions and integrity in `versions.json`; lifecycle under `packages/pi-subagents/` and `packages/pi-web-access/` |
 | Source-managed Pi extensions | `home/dot_pi/private_agent/extensions/`; owning workstation package verifies discovery and compatibility |
-| Tmux subagent TUI | Existing authoritative `pi-subagents`/XState observer plus separately gated hosted-owned tmux runtime |
-| GoAkt subagents service | Nested `services/subagents/` module, inert hosted bridge, and private config with service/hosted execution disabled; no service is installed or started |
 | Neovim plugins | `home/dot_config/nvim/lazy-lock.json` |
 | Mason packages | `home/dot_config/nvim/mason-lock.json` |
 | Tree-sitter parsers | `lua/plugins/treesitter.lua` and locked nvim-treesitter commit |
@@ -119,7 +117,7 @@ See `AGENTS.md` for implementation constraints and required checks.
     ├── .chezmoiscripts/              primary post-apply lifecycle entry points
     ├── dot_config/nvim/              Neovim configuration and locks
     ├── dot_config/tmux/              tmux theme
-    ├── dot_local/share/workstation/  lifecycle package monorepo and tmux actor capability
+    ├── dot_local/share/workstation/  lifecycle package monorepo
     ├── dot_pi/private_agent/extensions/      source-managed Pi extensions
     ├── dot_pi/private_agent/skills/          global Pi skills
     └── dot_tmux.conf                 tmux configuration
@@ -143,4 +141,3 @@ See `AGENTS.md` for implementation constraints and required checks.
 - `.github/workflows/ci.yml`: supported Linux/macOS jobs; WSL follows Linux.
 - `.github/scripts/test-apply.sh`: extracted Linux/macOS scratch-apply validation. The retired PowerShell/native-Windows lifecycle is not supported.
 - `.github/workflows/release.yml`: `vMAJOR.MINOR.PATCH` source archives and SHA-256 sums.
-- `home/dot_pi/private_agent/extensions/tmux-subagents/`: supervised XState actors, adapters, authenticated IPC, and the separate Terminal Kit renderer; enablement remains an explicit apply/reload gate.
