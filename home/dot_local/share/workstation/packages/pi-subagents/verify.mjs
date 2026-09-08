@@ -23,7 +23,7 @@ const extension = extensions.extensions.find((item) =>
 if (!extension) {
 	throw new Error("Pi did not discover the pi-subagents extension");
 }
-for (const tool of ["subagent", "subagent_wait"]) {
+for (const tool of ["subagent", "bg_wait"]) {
 	if (!extension.tools.has(tool)) {
 		throw new Error(`pi-subagents did not register ${tool}`);
 	}
