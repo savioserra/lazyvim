@@ -30,6 +30,41 @@ Unlock 1Password
   -> op whoami
 ```
 
+## Headless setup (servers)
+
+Interactive account sessions do not exist on headless hosts. Use a vault-scoped
+service account instead:
+
+1. Create a service account at 1Password.com (Developer tools -> Service
+   accounts). Permissions are immutable after creation: grant the
+   `Workstation` vault with read and write access at creation time.
+2. Place the token in `/etc/pi/op.env` (root-only, mode 0600):
+
+   ```bash
+   read -rs OP_SA_TOKEN
+   printf 'OP_SERVICE_ACCOUNT_TOKEN=%s\n' "$OP_SA_TOKEN" > /etc/pi/op.env
+   chmod 600 /etc/pi/op.env && unset OP_SA_TOKEN
+   ```
+
+3. The managed `~/.profile` block (`# chezmoi: managed op env`) auto-exports
+   `/etc/pi/op.env` in login shells when the file exists. The same pattern
+   applies to `/etc/ntfy/notifier.env` (`# chezmoi: managed ntfy notifier env`).
+
+Values never enter git, agent context, or chat; `/etc` files stay the live
+mechanism and the vault is the recovery source of truth. Service account tokens
+cannot be rotated in place; revoke and recreate the account to change access.
+
+## Vault items
+
+| Item | Non-secret fields (managed) | Secret fields (populate in 1Password) |
+| --- | --- | --- |
+| `ntfy` | `server_url`, `phone_user`, `operator_user` | `phone_password`, `operator_password`, `admin_token`, `notifier_token` |
+| `dokploy` | `url` | `api_key` |
+
+Fill secret fields from the corresponding root-only host files
+(`/etc/ntfy/credentials.env`, `/root/.config/pi/dokploy.env`) directly in the
+1Password application; agents never copy values between file and vault.
+
 ## Reference form
 
 Use stable item and field names:
