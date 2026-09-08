@@ -1,17 +1,3 @@
 # Repository-only agent instructions.
 AGENTS.md
 **/AGENTS.md
-{{- /* Script paths below use their stripped target name (no run_/before_/
-after_/onchange_ attributes or .tmpl suffix) -- that's what .chezmoiignore
-actually matches against, not the source filename. */ -}}
-{{- if eq .chezmoi.os "windows" }}
-.tmux.conf
-.config/tmux/**
-.local/bin/nvim
-.local/bin/go
-.profile
-.bashrc
-.zshrc
-.config/shell/nvm.sh
-.chezmoiscripts/20-unix-apply.sh
-{{- end }}

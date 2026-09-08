@@ -73,8 +73,8 @@ foundation
 | `pi-skills` | — | — | Managed skill files and Pi discovery | All |
 | `pi-subagents` | Exact Pi package and role skill policy | — | Lock integrity, extension tools, skill, role overrides | All |
 | `pi-web-access` | Exact Pi package | — | Lock integrity, extension discovery, web tools | All |
-| `go` | — | — | Go version | Linux/WSL/macOS policy; legacy Windows removal inventory remains |
-| `secrets` | — | — | Managed 1Password CLI version; never account or vault state | All; Windows ARM64 uses x64 emulation |
+| `go` | — | — | Go version | Linux/WSL/macOS |
+| `secrets` | — | — | Managed 1Password CLI version; never account or vault state | All supported hosts |
 | `nvim` | — | Locks and parsers | Startup, locks, profile behavior | All |
 | `tmux` | Plugin checkout | — | Commits, server, theme | Linux/macOS |
 
@@ -127,9 +127,7 @@ Feature-specific host branches remain under the package:
 ```text
 packages/fonts/linux.lua
 packages/fonts/darwin.lua
-packages/fonts/win32.lua
 packages/node/unix.lua
-packages/node/windows.lua
 ```
 
 Use `host/` only for reusable primitives and `platforms/` only for runtime-wide detection, paths, and environment.

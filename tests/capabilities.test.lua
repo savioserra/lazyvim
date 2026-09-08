@@ -97,12 +97,6 @@ local function ids_for(host, specifications)
 	end, graph.resolve(specifications or packages.specifications, host).ordered)
 end
 
-local windows = ids_for("win32") -- retained only as a native-Windows removal inventory during milestone 1
-assert(not vim.list_contains(windows, "tmux"), "Windows must omit tmux")
-for _, id in ipairs({ "nvim", "go", "secrets", "pi", "pi-skills", "pi-subagents", "pi-web-access" }) do
-	assert_contains(windows, id)
-end
-
 local linux = ids_for("linux")
 for _, id in ipairs({ "tmux", "secrets", "pi", "pi-skills", "pi-subagents", "pi-web-access" }) do
 	assert_contains(linux, id)
@@ -122,19 +116,6 @@ local expected_linux = {
 }
 assert(vim.deep_equal(linux, expected_linux), "Linux package graph order changed")
 assert(vim.deep_equal(ids_for("darwin"), expected_linux), "macOS package graph order differs from Linux")
-local expected_windows = {
-	"foundation",
-	"fonts",
-	"node",
-	"pi",
-	"pi-skills",
-	"pi-subagents",
-	"pi-web-access",
-	"go",
-	"secrets",
-	"nvim",
-}
-assert(vim.deep_equal(windows, expected_windows), "Windows graph changed")
 
 local function index_of(values, expected)
 	return assert(
@@ -243,31 +224,22 @@ assert(not rawequal(linux_adapter, macos_adapter), "platform adapters must be in
 assert(linux_adapter.name == "linux", "loading macOS must not mutate Linux")
 assert(macos_adapter.name == "darwin", "macOS adapter has the wrong name")
 
-local windows_environment = require("workstation.host.windows_environment")
-local required = { "C:/managed/bin", "C:/managed/node" }
-local merged = windows_environment.merge_path(
-	"C:\\legacy\\node;C:\\managed\\bin;C:/managed/bin/;C:\\Windows;C:\\managed\\node",
-	required
-)
-assert(
-	merged == "C:/managed/bin;C:/managed/node;C:\\legacy\\node;C:\\Windows",
-	"PATH merge is not ordered and idempotent: " .. merged
-)
-assert(windows_environment.merge_path(merged, required) == merged, "repeated PATH merge changed its output")
+local host_dir = vim.fs.joinpath(root, "lua", "workstation", "host")
+if vim.uv.fs_stat(host_dir) then
+	for _, name in ipairs(vim.fn.readdir(host_dir)) do
+		assert(not name:match("^win"), "windows host helper still present: " .. name)
+	end
+end
+for _, name in ipairs({ "fonts", "node", "foundation", "secrets" }) do
+	local package_dir = vim.fs.joinpath(root, "packages", name)
+	for _, entry in ipairs(vim.fn.readdir(package_dir)) do
+		assert(not entry:match("^win"), "windows backend still present: " .. name .. "/" .. entry)
+	end
+end
 
 local failing_command, failing_arguments
-if vim.fn.has("win32") == 1 then
-	failing_command = "powershell.exe"
-	failing_arguments = {
-		"-NoProfile",
-		"-NonInteractive",
-		"-Command",
-		"[Console]::Out.WriteLine('visible-stdout'); [Console]::Error.WriteLine('visible-stderr'); exit 7",
-	}
-else
-	failing_command = "sh"
-	failing_arguments = { "-c", "printf 'visible-stdout\\n'; printf 'visible-stderr\\n' >&2; exit 7" }
-end
+failing_command = "sh"
+failing_arguments = { "-c", "printf 'visible-stdout\\n'; printf 'visible-stderr\\n' >&2; exit 7" }
 local ok, command_failure = pcall(commands.capture, failing_command, failing_arguments)
 assert(not ok, "failing command unexpectedly succeeded")
 assert(tostring(command_failure):find("visible-stdout", 1, true), "command failure omitted stdout")

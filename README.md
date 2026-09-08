@@ -1,7 +1,7 @@
 # LazyVim workstation
 
 Chezmoi source state for a pinned Neovim and tmux environment on Linux,
-WSL-as-Linux, and macOS. Native Windows is unsupported. Host lifecycle behavior is organized as a workstation package monorepo;
+WSL-as-Linux, and macOS (arm64). Host lifecycle behavior is organized as a workstation package monorepo;
 Neovim is one package and remains the temporary Phase 1 Lua launcher.
 
 ## Support
@@ -9,7 +9,7 @@ Neovim is one package and remains the temporary Phase 1 Lua launcher.
 | Host | Architectures | Notes |
 | --- | --- | --- |
 | Linux | x86_64 | WSL is Linux |
-| macOS | arm64, x86_64 | tmux and Git required |
+| macOS | arm64 | tmux and Git required |
 
 Unix prerequisites:
 
@@ -139,5 +139,5 @@ See `AGENTS.md` for implementation constraints and required checks.
 ## CI and release
 
 - `.github/workflows/ci.yml`: supported Linux/macOS jobs; WSL follows Linux.
-- `.github/scripts/test-apply.sh`: extracted Linux/macOS scratch-apply validation. The retired PowerShell/native-Windows lifecycle is not supported.
+- `.github/scripts/test-apply.sh`: Linux/macOS scratch-apply validation.
 - `.github/workflows/release.yml`: `vMAJOR.MINOR.PATCH` source archives and SHA-256 sums.

@@ -5,21 +5,8 @@
   {{- $goURL = printf "https://go.dev/dl/go%s.linux-amd64.tar.gz" $versions.go -}}
   {{- $goSha = "63d339f0da5ab53635a56f2490a7984dfe12dfcff22ad749f63edaf590168445" -}}
 {{- else if eq .chezmoi.os "darwin" -}}
-  {{- if eq .chezmoi.arch "arm64" -}}
-    {{- $goURL = printf "https://go.dev/dl/go%s.darwin-arm64.tar.gz" $versions.go -}}
-    {{- $goSha = "ee215d57e0ec269c60cc9ceca68e6bda321ba9ee5afe24f4b0988703c2d87d12" -}}
-  {{- else -}}
-    {{- $goURL = printf "https://go.dev/dl/go%s.darwin-amd64.tar.gz" $versions.go -}}
-    {{- $goSha = "8f8f52c6649542cf027bbc9b9c68d1ec042f9f34808a40413f0b8b3f66f3caa4" -}}
-  {{- end -}}
-{{- else if eq .chezmoi.os "windows" -}}
-  {{- if eq .chezmoi.arch "arm64" -}}
-    {{- $goURL = printf "https://go.dev/dl/go%s.windows-arm64.zip" $versions.go -}}
-    {{- $goSha = "13b69b87bb0e83f96bc68560a8cace7f0343b1e03469f1110ea18d17e3234069" -}}
-  {{- else -}}
-    {{- $goURL = printf "https://go.dev/dl/go%s.windows-amd64.zip" $versions.go -}}
-    {{- $goSha = "a3911b5e0e1b1053f25ed0675f4c1c6aad1e2bfcf253df2b9be4caabd2edd95d" -}}
-  {{- end -}}
+  {{- $goURL = printf "https://go.dev/dl/go%s.darwin-arm64.tar.gz" $versions.go -}}
+  {{- $goSha = "ee215d57e0ec269c60cc9ceca68e6bda321ba9ee5afe24f4b0988703c2d87d12" -}}
 {{- end -}}
 [".local/opt/go"]
     type = "archive"

@@ -93,7 +93,7 @@ return function()
 				assert(
 					commands
 						.capture("tmux", { "-L", socket, "show-options", "-gqv", "status-left" })
-						:find("", 1, true) ~= nil,
+						:find("tmux2k/plugins/session.sh", 1, true) ~= nil,
 					"managed status format was not loaded last"
 				)
 			end)

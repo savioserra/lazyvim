@@ -1,8 +1,7 @@
 local commands = require("workstation.commands")
 
 local function backend(context)
-	local module = context.platform.name == "win32" and "windows" or "unix"
-	return require("packages.node." .. module)
+	return require("packages.node.unix")
 end
 
 return function()

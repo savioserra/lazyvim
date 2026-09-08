@@ -72,8 +72,7 @@ source: .chezmoiscripts/run_after_20-unix-apply.sh.tmpl
 ignore: .chezmoiscripts/20-unix-apply.sh
 ```
 
-Native Windows retains ignore conditions in `.chezmoiignore` for targets that
-are not deployed there (shell profile, tmux, Unix-only launchers).
+`.chezmoiignore` currently excludes only repository-only instruction files.
 
 ## External types
 

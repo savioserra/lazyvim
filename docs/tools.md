@@ -1,6 +1,6 @@
 # Tool inventory
 
-Supported deployment policy is Linux, WSL-as-Linux, and macOS. Native-Windows entries below are retained removal inventory during milestone 1 and do not constitute support.
+Supported deployment policy is Linux, WSL-as-Linux, and macOS (arm64).
 
 | Property | Value |
 | --- | --- |
@@ -11,22 +11,21 @@ Supported deployment policy is Linux, WSL-as-Linux, and macOS. Native-Windows en
 
 | Tool | Version | Source | Target | Platforms |
 | --- | --- | --- | --- | --- |
-| Neovim | 0.12.4 | github.com/neovim/neovim | `.local/opt/nvim` (tree, `archive`) | linux-x86_64, darwin-arm64, darwin-x86_64, windows-arm64, windows-x86_64 |
-| Go | 1.27.1 | go.dev | `.local/opt/go` (tree, `archive`) | linux-x86_64, darwin-arm64, darwin-x86_64, windows-arm64, windows-x86_64 |
-| nvm-windows | 1.2.2 | github.com/coreybutler/nvm-windows | `.local/opt/nvm-windows` (tree, `archive`) | Windows ARM64 and x64 |
+| Neovim | 0.12.4 | github.com/neovim/neovim | `.local/opt/nvim` (tree, `archive`) | linux-x86_64, darwin-arm64 |
+| Go | 1.27.1 | go.dev | `.local/opt/go` (tree, `archive`) | linux-x86_64, darwin-arm64 |
 | nvm-sh | 0.40.4 | github.com/nvm-sh/nvm | `.local/opt/nvm` (tree, `archive`) | Linux x86_64, macOS ARM64 and x64 |
-| Node.js | `home/dot_node-version` (currently 24.19.0) | nodejs.org | Windows: `.local/opt/nvm-windows/v<version>`; Unix: `.local/opt/nvm/versions/node/v<version>` | all 5 |
-| ripgrep | 15.2.0 | github.com/BurntSushi/ripgrep | `.local/bin/rg` | all 5 |
-| fd | 10.4.2 (darwin-x86_64: 10.3.0 — no newer Intel macOS build published) | github.com/sharkdp/fd | `.local/bin/fd` | all 5 |
-| fzf | 0.74.2 | github.com/junegunn/fzf | `.local/bin/fzf` | all 5 |
-| lazygit | 0.63.1 | github.com/jesseduffield/lazygit | `.local/bin/lazygit` | all 5 |
-| tree-sitter (CLI) | 0.26.11 | github.com/tree-sitter/tree-sitter | `.local/bin/tree-sitter` | all 5 |
-| rainfrog | 0.4.4 | github.com/achristmascarl/rainfrog | `.local/bin/rainfrog` | all except windows-arm64 (no upstream build) |
-| 1Password CLI | 2.39.0 | cache.agilebits.com | `.local/bin/op`; verified by the `secrets` capability | all 5; Windows ARM64 uses the x64 build |
-| pi coding agent | 0.84.3 | npm: `@earendil-works/pi-coding-agent` | Managed Node global prefix | all 5 |
-| pi-subagents | 0.56.0 | npm: `pi-subagents` | Pi package install under the Pi agent directory | all 5 |
-| pi-web-access | 0.17.1 | npm: `pi-web-access` | Pi package install under the Pi agent directory | all 5 |
-| JetBrainsMono Nerd Font | 3.5.0 | github.com/ryanoasis/nerd-fonts | Linux: `.local/share/fonts/JetBrainsMonoNerdFont`; darwin: `Library/Fonts/JetBrainsMonoNerdFont`; Windows: `AppData/Local/Microsoft/Windows/Fonts/JetBrainsMonoNerdFont` | all 5 |
+| Node.js | `home/dot_node-version` (currently 24.19.0) | nodejs.org | `.local/opt/nvm/versions/node/v<version>` | linux-x86_64, darwin-arm64 |
+| ripgrep | 15.2.0 | github.com/BurntSushi/ripgrep | `.local/bin/rg` | linux-x86_64, darwin-arm64 |
+| fd | 10.4.2 | github.com/sharkdp/fd | `.local/bin/fd` | linux-x86_64, darwin-arm64 |
+| fzf | 0.74.2 | github.com/junegunn/fzf | `.local/bin/fzf` | linux-x86_64, darwin-arm64 |
+| lazygit | 0.63.1 | github.com/jesseduffield/lazygit | `.local/bin/lazygit` | linux-x86_64, darwin-arm64 |
+| tree-sitter (CLI) | 0.26.11 | github.com/tree-sitter/tree-sitter | `.local/bin/tree-sitter` | linux-x86_64, darwin-arm64 |
+| rainfrog | 0.4.4 | github.com/achristmascarl/rainfrog | `.local/bin/rainfrog` | linux-x86_64, darwin-arm64 |
+| 1Password CLI | 2.39.0 | cache.agilebits.com | `.local/bin/op`; verified by the `secrets` capability | linux-x86_64, darwin-arm64 |
+| pi coding agent | 0.84.3 | npm: `@earendil-works/pi-coding-agent` | Managed Node global prefix | linux-x86_64, darwin-arm64 |
+| pi-subagents | 0.56.0 | npm: `pi-subagents` | Pi package install under the Pi agent directory | linux-x86_64, darwin-arm64 |
+| pi-web-access | 0.17.1 | npm: `pi-web-access` | Pi package install under the Pi agent directory | linux-x86_64, darwin-arm64 |
+| JetBrainsMono Nerd Font | 3.5.0 | github.com/ryanoasis/nerd-fonts | Linux: `.local/share/fonts/JetBrainsMonoNerdFont`; darwin: `Library/Fonts/JetBrainsMonoNerdFont` | linux-x86_64, darwin-arm64 |
 
 ## Not managed here
 

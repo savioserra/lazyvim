@@ -1,2 +1,2 @@
-# Keep source files and lockfiles stable when the repository is shared with Windows.
+# Normalize text files to LF.
 * text=auto eol=lf

@@ -8,7 +8,6 @@
 {{- $lazygitURL := "" -}}{{- $lazygitSha := "" -}}
 {{- $treeSitterURL := "" -}}{{- $treeSitterSha := "" -}}
 {{- $rainfrogURL := "" -}}{{- $rainfrogSha := "" -}}
-{{- $ext := "" -}}
 {{- if eq .chezmoi.os "linux" -}}
   {{- $rgURL = printf "https://github.com/BurntSushi/ripgrep/releases/download/%s/ripgrep-%s-x86_64-unknown-linux-musl.tar.gz" $rgVersion $rgVersion -}}
   {{- $rgPath = printf "ripgrep-%s-x86_64-unknown-linux-musl/rg" $rgVersion -}}
@@ -25,7 +24,6 @@
   {{- $rainfrogURL = printf "https://github.com/achristmascarl/rainfrog/releases/download/v%s/rainfrog-v%s-x86_64-unknown-linux-musl.tar.gz" $versions.rainfrog $versions.rainfrog -}}
   {{- $rainfrogSha = "b3712391ec2c07c705fc5fd1ca1eb4b7246c8b104f94a9cdb626a08c7d1b3abd" -}}
 {{- else if eq .chezmoi.os "darwin" -}}
-  {{- if eq .chezmoi.arch "arm64" -}}
     {{- $rgURL = printf "https://github.com/BurntSushi/ripgrep/releases/download/%s/ripgrep-%s-aarch64-apple-darwin.tar.gz" $rgVersion $rgVersion -}}
     {{- $rgPath = printf "ripgrep-%s-aarch64-apple-darwin/rg" $rgVersion -}}
     {{- $rgSha = "3750b2e93f37e0c692657da574d7019a101c0084da05a790c83fd335bad973e4" -}}
@@ -40,103 +38,55 @@
     {{- $treeSitterSha = "050f41d60a054b608ea392ba14722bba9457bdc0ab11a5706c77f034dafc68ac" -}}
     {{- $rainfrogURL = printf "https://github.com/achristmascarl/rainfrog/releases/download/v%s/rainfrog-v%s-aarch64-apple-darwin.tar.gz" $versions.rainfrog $versions.rainfrog -}}
     {{- $rainfrogSha = "29d1ddb19b4d2c3888c7abf61b0f6fe9c99e3df309418ca59e449fa11b0c1a9f" -}}
-  {{- else -}}
-    {{- $rgURL = printf "https://github.com/BurntSushi/ripgrep/releases/download/%s/ripgrep-%s-x86_64-apple-darwin.tar.gz" $rgVersion $rgVersion -}}
-    {{- $rgPath = printf "ripgrep-%s-x86_64-apple-darwin/rg" $rgVersion -}}
-    {{- $rgSha = "af7825fcc69a2afc7a7aea55fc9af90e26421d8f20fe59df32e233c0b8a231c1" -}}
-    {{- $fdVersion = $versions.fd_darwin_x86_64 -}}
-    {{- $fdURL = printf "https://github.com/sharkdp/fd/releases/download/v%s/fd-v%s-x86_64-apple-darwin.tar.gz" $fdVersion $fdVersion -}}
-    {{- $fdPath = printf "fd-v%s-x86_64-apple-darwin/fd" $fdVersion -}}
-    {{- $fdSha = "50d30f13fe3d5914b14c4fff5abcbd4d0cdab4b855970a6956f4f006c17117a3" -}}
-    {{- $fzfURL = printf "https://github.com/junegunn/fzf/releases/download/v%s/fzf-%s-darwin_amd64.tar.gz" $versions.fzf $versions.fzf -}}
-    {{- $fzfSha = "b019ae8bcca33945a2ffbbbf8369705405cd1406fc4d74267e712797010e3676" -}}
-    {{- $lazygitURL = printf "https://github.com/jesseduffield/lazygit/releases/download/v%s/lazygit_%s_darwin_x86_64.tar.gz" $versions.lazygit $versions.lazygit -}}
-    {{- $lazygitSha = "5cc02389cc189b1146aa330615f0c547996395ca7661e56f946670947e803006" -}}
-    {{- $treeSitterURL = printf "https://github.com/tree-sitter/tree-sitter/releases/download/v%s/tree-sitter-cli-macos-x64.zip" $versions.tree_sitter -}}
-    {{- $treeSitterSha = "e3c2cdec71bbc60344b25df3dad5da378a174f2292af953ff0d641e06aaee099" -}}
-    {{- $rainfrogURL = printf "https://github.com/achristmascarl/rainfrog/releases/download/v%s/rainfrog-v%s-x86_64-apple-darwin.tar.gz" $versions.rainfrog $versions.rainfrog -}}
-    {{- $rainfrogSha = "f7de36aa710608ba2c77831f21a57e24c5c500a7e87929fd221f86c97d2915e2" -}}
-  {{- end -}}
-{{- else if eq .chezmoi.os "windows" -}}
-  {{- $ext = ".exe" -}}
-  {{- if eq .chezmoi.arch "arm64" -}}
-    {{- $rgURL = printf "https://github.com/BurntSushi/ripgrep/releases/download/%s/ripgrep-%s-aarch64-pc-windows-msvc.zip" $rgVersion $rgVersion -}}
-    {{- $rgPath = printf "ripgrep-%s-aarch64-pc-windows-msvc/rg.exe" $rgVersion -}}
-    {{- $rgSha = "e4abca10c3a64ebea742667dd7009449d49403db5460dd6873e389fa2945360f" -}}
-    {{- $fdURL = printf "https://github.com/sharkdp/fd/releases/download/v%s/fd-v%s-aarch64-pc-windows-msvc.zip" $fdVersion $fdVersion -}}
-    {{- $fdPath = printf "fd-v%s-aarch64-pc-windows-msvc/fd.exe" $fdVersion -}}
-    {{- $fdSha = "4f9110c2d5b33a7f760bfa5510f4c113d828109f7277d421b1053a9943c0fc92" -}}
-    {{- $fzfURL = printf "https://github.com/junegunn/fzf/releases/download/v%s/fzf-%s-windows_arm64.zip" $versions.fzf $versions.fzf -}}
-    {{- $fzfSha = "287075f98e5d0a4dff5bd4e800846cb3b5986b89b2e558b75d21a643a90d13ec" -}}
-    {{- $lazygitURL = printf "https://github.com/jesseduffield/lazygit/releases/download/v%s/lazygit_%s_windows_arm64.zip" $versions.lazygit $versions.lazygit -}}
-    {{- $lazygitSha = "8ced1a9e788cb9b5a8e27f61080ceecede0d76e86fb8ed74d882d2982d480458" -}}
-    {{- $treeSitterURL = printf "https://github.com/tree-sitter/tree-sitter/releases/download/v%s/tree-sitter-cli-windows-arm64.zip" $versions.tree_sitter -}}
-    {{- $treeSitterSha = "405b108531872a12d9a607b84ff8be21f96ad09bb40bd76043f31ce6565069f9" -}}
-  {{- else -}}
-    {{- $rgURL = printf "https://github.com/BurntSushi/ripgrep/releases/download/%s/ripgrep-%s-x86_64-pc-windows-msvc.zip" $rgVersion $rgVersion -}}
-    {{- $rgPath = printf "ripgrep-%s-x86_64-pc-windows-msvc/rg.exe" $rgVersion -}}
-    {{- $rgSha = "71b2fef860abe467217a538ff31de02f5258807c0129f771846f87bd029aafc5" -}}
-    {{- $fdURL = printf "https://github.com/sharkdp/fd/releases/download/v%s/fd-v%s-x86_64-pc-windows-msvc.zip" $fdVersion $fdVersion -}}
-    {{- $fdPath = printf "fd-v%s-x86_64-pc-windows-msvc/fd.exe" $fdVersion -}}
-    {{- $fdSha = "b2816e506390a89941c63c9187d58a3cc10e9a55f2ef0685f9ea0eccaf7c98c8" -}}
-    {{- $fzfURL = printf "https://github.com/junegunn/fzf/releases/download/v%s/fzf-%s-windows_amd64.zip" $versions.fzf $versions.fzf -}}
-    {{- $fzfSha = "a5a3b27dd203469139d10669721952335b9b46f19346e3d1abc102a67ea60804" -}}
-    {{- $lazygitURL = printf "https://github.com/jesseduffield/lazygit/releases/download/v%s/lazygit_%s_windows_x86_64.zip" $versions.lazygit $versions.lazygit -}}
-    {{- $lazygitSha = "230721fb5f0d5c0e91555bd4bd76f5213477b116027f1c0fe222b70d49f58ea0" -}}
-    {{- $treeSitterURL = printf "https://github.com/tree-sitter/tree-sitter/releases/download/v%s/tree-sitter-cli-windows-x64.zip" $versions.tree_sitter -}}
-    {{- $treeSitterSha = "d40e158839062803a5182ecefca76f809b89464146625d303ef779ed8ceb0f73" -}}
-    {{- $rainfrogURL = printf "https://github.com/achristmascarl/rainfrog/releases/download/v%s/rainfrog-v%s-x86_64-pc-windows-msvc.tar.gz" $versions.rainfrog $versions.rainfrog -}}
-    {{- $rainfrogSha = "61083e41d8e257fe1fb401a25af04da7c8c93c3d64c3bbfcbff8949db2da79d2" -}}
-  {{- end -}}
 {{- end -}}
-[".local/bin/rg{{ $ext }}"]
+[".local/bin/rg"]
     type = "archive-file"
     url = {{ $rgURL | quote }}
     path = {{ $rgPath | quote }}
     executable = true
-    [".local/bin/rg{{ $ext }}".checksum]
+    [".local/bin/rg".checksum]
         sha256 = {{ $rgSha | quote }}
 
-[".local/bin/fd{{ $ext }}"]
+[".local/bin/fd"]
     type = "archive-file"
     url = {{ $fdURL | quote }}
     path = {{ $fdPath | quote }}
     executable = true
-    [".local/bin/fd{{ $ext }}".checksum]
+    [".local/bin/fd".checksum]
         sha256 = {{ $fdSha | quote }}
 
-[".local/bin/fzf{{ $ext }}"]
+[".local/bin/fzf"]
     type = "archive-file"
     url = {{ $fzfURL | quote }}
-    path = "fzf{{ $ext }}"
+    path = "fzf"
     executable = true
-    [".local/bin/fzf{{ $ext }}".checksum]
+    [".local/bin/fzf".checksum]
         sha256 = {{ $fzfSha | quote }}
 
-[".local/bin/lazygit{{ $ext }}"]
+[".local/bin/lazygit"]
     type = "archive-file"
     url = {{ $lazygitURL | quote }}
-    path = "lazygit{{ $ext }}"
+    path = "lazygit"
     executable = true
-    [".local/bin/lazygit{{ $ext }}".checksum]
+    [".local/bin/lazygit".checksum]
         sha256 = {{ $lazygitSha | quote }}
 
-[".local/bin/tree-sitter{{ $ext }}"]
+[".local/bin/tree-sitter"]
     type = "archive-file"
     url = {{ $treeSitterURL | quote }}
-    path = "tree-sitter{{ $ext }}"
+    path = "tree-sitter"
     executable = true
-    [".local/bin/tree-sitter{{ $ext }}".checksum]
+    [".local/bin/tree-sitter".checksum]
         sha256 = {{ $treeSitterSha | quote }}
 
 {{- if ne $rainfrogURL "" }}
 
-[".local/bin/rainfrog{{ $ext }}"]
+[".local/bin/rainfrog"]
     type = "archive-file"
     url = {{ $rainfrogURL | quote }}
-    path = "rainfrog{{ $ext }}"
+    path = "rainfrog"
     executable = true
-    [".local/bin/rainfrog{{ $ext }}".checksum]
+    [".local/bin/rainfrog".checksum]
         sha256 = {{ $rainfrogSha | quote }}
 {{- end }}
 

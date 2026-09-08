@@ -11,7 +11,7 @@ Scope: `home/**`.
 - Add removed non-`exact` targets to `.chezmoiremove`.
 - Keep platform selection in templates or capability `supported_hosts`; do not create platform no-op feature declarations.
 - Keep downloads checksum-pinned and user-local.
-- Supported targets are Linux, WSL-as-Linux, and macOS. Retained native-Windows source is removal inventory, not a support promise.
+- Supported targets are Linux, WSL-as-Linux, and macOS (arm64).
 - Update version, URL, checksum, verification, and `docs/tools.md` together.
 
 ## Ownership

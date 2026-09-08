@@ -3,8 +3,7 @@
 ## Goal
 
 Maintain a reproducible chezmoi source state for Neovim and tmux on Linux,
-WSL-as-Linux, and macOS. Native Windows is unsupported; retained Windows files
-are a milestone-scoped removal inventory until their useful behavior is extracted.
+WSL-as-Linux, and macOS (arm64).
 
 ## Read first
 
@@ -45,7 +44,7 @@ git diff --check
 chezmoi --source "$PWD" --destination "$(mktemp -d)" apply --dry-run
 ```
 
-Full supported-platform verification runs on Linux/WSL and macOS. The Unix scratch-apply harness contains the extracted supported-host checks; the native-Windows PowerShell lifecycle has been retired.
+Full supported-platform verification runs on Linux/WSL and macOS (arm64).
 
 ## Change rules
 

@@ -1,13 +1,11 @@
 {
   "fd": "10.4.2",
-  "fd_darwin_x86_64": "10.3.0",
   "font": "3.5.0",
   "fzf": "0.74.2",
   "go": "1.27.1",
   "lazygit": "0.63.1",
   "neovim": "0.12.4",
   "nvm_sh": "0.40.4",
-  "nvm_windows": "1.2.2",
   "onepassword_cli": "2.39.0",
   "pi_coding_agent": "0.84.3",
   "pi_coding_agent_integrity": "sha512-Yr2p9PubrbFZmYEPYI+C8KmZP9xlFuLDnAG64RtU0ZDgrdiXYWa+y7WGyJO5OlqPliOkVCMd9IzVszO3/t0D0w==",

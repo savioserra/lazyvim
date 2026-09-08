@@ -6,7 +6,6 @@
 .pi/agent/extensions/tmux-subagents
 .pi/agent/extensions/actor-client
 .pi/agent/extensions/hosted-pi-bridge
-.pi/agent/extensions/ntfy-notifier
 .local/bin/workstation-tmux-subagents
 .local/bin/workstation-subagents
 .local/bin/workstation-subagents-clientctl

@@ -20,12 +20,10 @@ return function()
 				commands.capture("tree-sitter", { "--version" }):find(v.tree_sitter, 1, true),
 				"Unexpected tree-sitter version"
 			)
-			if not (context.platform.name == "win32" and jit.arch == "arm64") then
-				assert(
-					commands.capture(context.platform.tool("rainfrog"), { "--version" }):find(v.rainfrog, 1, true),
-					"Unexpected rainfrog version"
-				)
-			end
+			assert(
+				commands.capture(context.platform.tool("rainfrog"), { "--version" }):find(v.rainfrog, 1, true),
+				"Unexpected rainfrog version"
+			)
 		end,
 	}
 end

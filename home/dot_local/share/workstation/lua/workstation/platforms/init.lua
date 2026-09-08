@@ -1,7 +1,5 @@
 local module
-if vim.fn.has("win32") == 1 then
-	module = "windows"
-elseif vim.fn.has("mac") == 1 then
+if vim.fn.has("mac") == 1 then
 	module = "macos"
 elseif vim.fn.has("linux") == 1 then
 	module = "linux"

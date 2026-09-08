@@ -7,7 +7,7 @@ status: Done
 assignee:
   - '@operator'
 created_date: '2026-09-08 15:48'
-updated_date: '2026-09-08 16:17'
+updated_date: '2026-09-08 17:32'
 labels: []
 dependencies: []
 documentation:
@@ -51,6 +51,8 @@ Fully retire the GoAkt subagents daemon experiment and every repo-managed extens
 
 <!-- SECTION:NOTES:BEGIN -->
 Removed services/subagents Go module, packages subagents + pi-tmux-subagents, extensions tmux-subagents/actor-client/hosted-pi-bridge, tmux-subagents skill, service unit templates, private subagents config, workstation-tmux-subagents launcher, and the three mirrored test suites. Added packages/pi-web-access pinning npm:pi-web-access@0.17.1 with registry integrity; catalog now registers 11 packages. Added run_once_before_15-retire-subagents-service.sh to stop/disable the retired service; .chezmoiremove covers all stale deployed targets; dropped the now-dead CHEZMOI_WORKING_TREE export. Updated CI (subagents job and tmux-subagents lint steps removed), test-apply.sh, README, root/scoped AGENTS.md files, docs (index, tools, tmux, capabilities, chezmoi), and the lazyvim skill. Kept the go toolchain package because the Neovim language profile requires it. Host cleanup done: pi-subagentura and pi-agent-browser-native uninstalled, service disabled, stale binaries/config/extensions removed by apply; full verify lifecycle passes. Archived 26 superseded daemon/actor backlog tasks.
+
+Committed and pushed to origin/main after rebasing onto the remote Go 1.27.1 bump: 005775ca (daemon removal), eed9ac9e (PATH fix, follow-up), f505faeb (stylua format fix). Working tree clean; all fast checks re-run green post-rebase.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

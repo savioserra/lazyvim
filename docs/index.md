@@ -42,7 +42,7 @@
 - Neovim language composition has one profile source.
 - Removed non-`exact` targets are listed in `.chezmoiremove`.
 - The retired root Go CLI structure and nested Go service modules must not return.
-- Supported hosts are Linux, WSL-as-Linux, and macOS. Retained native-Windows files are removal inventory.
+- Supported hosts are Linux, WSL-as-Linux, and macOS (arm64).
 
 ## Validation layers
 
