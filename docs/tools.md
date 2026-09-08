@@ -25,6 +25,7 @@ Supported deployment policy is Linux, WSL-as-Linux, and macOS (arm64).
 | pi coding agent | 0.84.3 | npm: `@earendil-works/pi-coding-agent` | Managed Node global prefix | linux-x86_64, darwin-arm64 |
 | pi-subagents | 0.56.0 | npm: `pi-subagents` | Pi package install under the Pi agent directory | linux-x86_64, darwin-arm64 |
 | pi-web-access | 0.17.1 | npm: `pi-web-access` | Pi package install under the Pi agent directory | linux-x86_64, darwin-arm64 |
+| pi-ntfy-notifier | 0.3.0 | Source-managed extension in this repo | `.pi/agent/extensions/ntfy-notifier` | linux-x86_64, darwin-arm64 |
 | JetBrainsMono Nerd Font | 3.5.0 | github.com/ryanoasis/nerd-fonts | Linux: `.local/share/fonts/JetBrainsMonoNerdFont`; darwin: `Library/Fonts/JetBrainsMonoNerdFont` | linux-x86_64, darwin-arm64 |
 
 ## Not managed here

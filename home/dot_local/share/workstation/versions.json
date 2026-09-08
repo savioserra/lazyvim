@@ -13,6 +13,7 @@
   "pi_subagents_integrity": "sha512-XBmKqvrj4mCVQ6/uXiPqCmzHxGfBB+jjwmfNR3El+IfhnaJwZ+W6evXYRI3lQEXe6Nf56xfzUXQExIzE8cT5BQ==",
   "pi_web_access": "0.17.1",
   "pi_web_access_integrity": "sha512-AZaDlr6HE4Mn3P7/bokbukGcTqlqGqy/Am+vurxfk9g6L2iZMERLIEAMcZI7aFamrNBBcJ+js1B70ZSgye2xEQ==",
+  "pi_ntfy_notifier": "0.3.0",
   "rainfrog": "0.4.4",
   "ripgrep": "15.2.0",
   "tree_sitter": "0.26.11"

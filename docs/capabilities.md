@@ -58,6 +58,7 @@ foundation
 │       ├── pi-skills
 │       │   └── pi-subagents
 │       └── pi-web-access
+│           └── pi-ntfy-notifier [source-managed]
 ├── go [Neovim language toolchain]
 ├── secrets
 ├── nvim [package factory adds profile prerequisites]
@@ -73,6 +74,7 @@ foundation
 | `pi-skills` | — | — | Managed skill files and Pi discovery | All |
 | `pi-subagents` | Exact Pi package and role skill policy | — | Lock integrity, extension tools, skill, role overrides | All |
 | `pi-web-access` | Exact Pi package | — | Lock integrity, extension discovery, web tools | All |
+| `pi-ntfy-notifier` | Source-managed extension | — | Manifest version, extension files, node test suite | All |
 | `go` | — | — | Go version | Linux/WSL/macOS |
 | `secrets` | — | — | Managed 1Password CLI version; never account or vault state | All supported hosts |
 | `nvim` | — | Locks and parsers | Startup, locks, profile behavior | All |
@@ -118,7 +120,7 @@ The `packages.nvim` factory loads and validates the sole language profile source
 
 ## Pi resources
 
-`pi-skills` verifies managed files under `home/dot_pi/private_agent/skills/` and Pi discovery. The pinned community packages `pi-subagents` and `pi-web-access` are installed through their owning packages with exact registry integrity. Package-specific JavaScript verifiers remain inside their owning package directories.
+`pi-skills` verifies managed files under `home/dot_pi/private_agent/skills/` and Pi discovery. The pinned community packages `pi-subagents` and `pi-web-access` are installed through their owning packages with exact registry integrity; `pi-ntfy-notifier` is source-managed under `home/dot_pi/private_agent/extensions/` and deploys through normal apply. Package-specific JavaScript verifiers remain inside their owning package directories.
 
 ## Package-local backend rule
 

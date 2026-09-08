@@ -6,6 +6,7 @@ return {
 	require("packages.pi-skills"),
 	require("packages.pi-subagents"),
 	require("packages.pi-web-access"),
+	require("packages.pi-ntfy-notifier"),
 	require("packages.go"),
 	require("packages.secrets"),
 	require("packages.nvim"),

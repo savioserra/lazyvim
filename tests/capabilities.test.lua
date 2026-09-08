@@ -60,6 +60,7 @@ for _, name in ipairs({
 	"pi-skills",
 	"pi-subagents",
 	"pi-web-access",
+	"pi-ntfy-notifier",
 	"go",
 	"secrets",
 	"nvim",
@@ -70,13 +71,15 @@ for _, name in ipairs({
 		"top-level package contribution is missing: " .. name
 	)
 end
+-- pi-ntfy-notifier is source-managed: its node test suite is executed directly
+-- by its Lua verify step, so it has no separate verify.mjs.
 for _, name in ipairs({ "pi-skills", "pi-subagents", "pi-web-access" }) do
 	assert(
 		vim.uv.fs_stat(vim.fs.joinpath(root, "packages", name, "verify.mjs")),
 		"package verifier is missing: " .. name
 	)
 end
-assert(#catalog == 11, "expected eleven explicitly registered packages")
+assert(#catalog == 12, "expected twelve explicitly registered packages")
 assert(
 	vim.uv.fs_stat(vim.fs.joinpath(repository, "home", "services")) == nil,
 	"service source must not deploy into HOME"
@@ -98,7 +101,7 @@ local function ids_for(host, specifications)
 end
 
 local linux = ids_for("linux")
-for _, id in ipairs({ "tmux", "secrets", "pi", "pi-skills", "pi-subagents", "pi-web-access" }) do
+for _, id in ipairs({ "tmux", "secrets", "pi", "pi-skills", "pi-subagents", "pi-web-access", "pi-ntfy-notifier" }) do
 	assert_contains(linux, id)
 end
 local expected_linux = {
@@ -109,6 +112,7 @@ local expected_linux = {
 	"pi-skills",
 	"pi-subagents",
 	"pi-web-access",
+	"pi-ntfy-notifier",
 	"go",
 	"secrets",
 	"nvim",
