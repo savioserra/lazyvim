@@ -7,7 +7,7 @@ status: Done
 assignee:
   - '@operator'
 created_date: '2026-09-08 18:23'
-updated_date: '2026-09-08 18:43'
+updated_date: '2026-09-08 19:13'
 labels: []
 dependencies: []
 ordinal: 46000
@@ -33,6 +33,8 @@ The sole consumer does not need backwards compatibility or speculative platform 
 
 <!-- SECTION:NOTES:BEGIN -->
 Removed platforms/windows.lua, host/windows_environment.lua, fonts/win32.lua, node/windows.lua; unwrapped win32 branches in platforms/init, node/init+managed, foundation, symlink_go, .chezmoiignore, .gitattributes; stripped all windows and darwin-x86_64/amd64 variants from the six externals; versions.json drops nvm_windows and fd_darwin_x86_64; CI matrix is ubuntu-24.04 + macos-15; docs/AGENTS files now state Linux/WSL/macOS (arm64) with no removal-inventory language; capabilities tests assert windows helpers are absent. pi-ntfy-notifier 0.3.0 drops PI_NTFY_ENABLED (enablement = PI_NTFY_SERVER+PI_NTFY_TOPIC present); 11/11 tests pass; deployed copy refreshed. Fixed a latent remote bug surfaced by the first full apply: tmux verify still asserted the retired powerline glyph instead of the vertical-separator theme; it now asserts the tmux2k managed status script. Also dropped the stale ntfy-notifier entry from .chezmoiremove (kept extension). Verified: capabilities tests, stylua, git diff --check, chezmoi dry-run, host apply + verify complete (linux), and full .github/scripts/test-apply.sh scratch-home run.
+
+Committed and pushed: 3f0d6c1f (cleanup, TASK-31) and 968e1255 (1Password vault rename LazyVIM -> Workstation in secrets skill and docs). Working tree clean.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

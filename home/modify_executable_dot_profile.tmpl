@@ -12,3 +12,11 @@ fi
 if ! grep -Fqx "$nvm_marker" "$tmp"; then
   printf '\n%s\n%s\n' "$nvm_marker" '[ -r "$HOME/.config/shell/nvm.sh" ] && . "$HOME/.config/shell/nvm.sh"'
 fi
+op_marker='# chezmoi: managed op env'
+if ! grep -Fqx "$op_marker" "$tmp"; then
+  printf '\n%s\n%s\n' "$op_marker" '[ -r /etc/pi/op.env ] && { set -a; . /etc/pi/op.env; set +a; }'
+fi
+notifier_marker='# chezmoi: managed ntfy notifier env'
+if ! grep -Fqx "$notifier_marker" "$tmp"; then
+  printf '\n%s\n%s\n' "$notifier_marker" '[ -r /etc/ntfy/notifier.env ] && { set -a; . /etc/ntfy/notifier.env; set +a; }'
+fi
