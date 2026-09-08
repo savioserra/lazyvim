@@ -1,10 +1,14 @@
 #!/usr/bin/env sh
 set -eu
-marker='# chezmoi: load managed nvm'
+path_marker='# chezmoi: managed user-local bin'
+nvm_marker='# chezmoi: load managed nvm'
 tmp="$(mktemp)"
 trap 'rm -f "$tmp"' EXIT HUP INT TERM
 cat >"$tmp"
 cat "$tmp"
-if ! grep -Fqx "$marker" "$tmp"; then
-  printf '\n%s\n%s\n' "$marker" '[ -r "$HOME/.config/shell/nvm.sh" ] && . "$HOME/.config/shell/nvm.sh"'
+if ! grep -Fqx "$path_marker" "$tmp"; then
+  printf '\n%s\n%s\n' "$path_marker" 'case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) [ -d "$HOME/.local/bin" ] && PATH="$HOME/.local/bin:$PATH" ;; esac'
+fi
+if ! grep -Fqx "$nvm_marker" "$tmp"; then
+  printf '\n%s\n%s\n' "$nvm_marker" '[ -r "$HOME/.config/shell/nvm.sh" ] && . "$HOME/.config/shell/nvm.sh"'
 fi
