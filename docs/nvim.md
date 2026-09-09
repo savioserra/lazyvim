@@ -60,13 +60,14 @@ languages and formatter cases wherever formatting is promised. See
 
 ### Editor specs versus lifecycle packages
 
-`lua/languages/plugins/typescript.lua` currently returns lazy.nvim plugin specs:
-it configures TypeScript/JavaScript LSP ownership, completion and editor commands.
-The profile imports it as `languages.plugins.typescript` and requires the `node`
-host capability. It is not a catalog factory returning lifecycle handlers.
-`workstation/packages/nvim/` owns editor sync/verification; `node` owns the host
-runtime. This describes the present split, not a permanent requirement that all
-language payloads must stay outside workstation packages.
+`packages/typescript/files/languages/plugins/typescript.lua` returns lazy.nvim
+plugin specs — TypeScript/JavaScript LSP ownership, completion and editor
+commands — deployed as a plain runtime module. The `packages/typescript`
+capability owns it, declares the profile intent (`plugin_module =
+"languages.plugins.typescript"`) and verifies its own behavior through the
+nvim leaf helpers; `workstation/packages/nvim/` owns editor sync, locks and
+base/standard/Go verification; `node` owns the host runtime. Deployed Neovim
+imports runtime configuration only, never package factories or engine modules.
 
 ## Plugin ownership
 

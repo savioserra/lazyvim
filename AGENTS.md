@@ -52,7 +52,7 @@ replace Linux/WSL and native macOS arm64 acceptance.
 | Pi skill | `workstation/packages/pi-skills/files/.pi/agent/skills/<name>/SKILL.md`, `pi-skills` verification, docs |
 | tmux plugin pin | `workstation/packages/tmux/init.lua`, `docs/tmux.md` |
 | Workstation package | combined contribution, package catalog, tests, docs |
-| Neovim language | `languages/profile.lua`, lockfiles if needed, behavior case |
+| Neovim language | `nvim-profile` recipe in the owning package, lockfiles if needed, behavior case |
 | Removed deployed source | provider `kind = "remove"` recipe or an engine policy tombstone (`workstation/lua/workstation/provision/policy.lua`) |
 | New platform condition | canonical asset metadata, capability support, package backend, CI/test coverage |
 

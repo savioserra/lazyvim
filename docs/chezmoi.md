@@ -73,6 +73,11 @@ Preconditions stop before backend mutation:
 - retiring an exclusive leaf requires its recorded type/content/link to still
   match; shared transformed files and containers are never deleted.
 
+`workstation diff` previews **target-home** changes through the backend and can
+reveal your own file contents on your terminal; that explicit human preview is
+the intended surface, nothing is redacted automatically, and the engine never
+persists or forwards home diffs into the journal, Git or model logs.
+
 `workstation plan` previews the attributable change sets: owner, provider,
 operation, normalized target, source entry, type/mode/link metadata,
 generated-source Git-style patches against the last applied generation, target
