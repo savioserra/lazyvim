@@ -84,15 +84,26 @@ local function run_backend(action, generation, options)
 	commands.execute(argv[1], { select(2, varargs_unpack(argv)) })
 end
 
----Write one staged generation entry.
+---Write one staged generation entry. Every ancestor directory is a manifest
+---entry of its own and is created with its explicit mode: implicit mkdir -p
+---would inherit the caller umask and break byte/mode verification.
 local function write_staged(root, entry)
 	local path = paths.join(root, entry.name)
+	local prefix = entry.name:match("^(.*)/[^/]+$")
+	while prefix do
+		local parent = paths.join(root, prefix)
+		if vim.uv.fs_stat(parent) == nil then
+			assert(vim.uv.fs_mkdir(parent, 493))
+		end
+		prefix = prefix:match("^(.*)/[^/]+$")
+	end
 	if entry.type == "directory" then
-		vim.fn.mkdir(path, "p")
+		if vim.uv.fs_stat(path) == nil then
+			assert(vim.uv.fs_mkdir(path, entry.mode or 493))
+		end
 		assert(vim.uv.fs_chmod(path, entry.mode or 493))
 		return
 	end
-	vim.fn.mkdir(vim.fs.dirname(path), "p")
 	local file = assert(io.open(path, "wb"))
 	assert(file:write(entry.bytes or ""))
 	file:close()
@@ -165,21 +176,21 @@ local function publish(plan)
 	vim.fn.delete(staged, "rf")
 	vim.fn.mkdir(staged, "p")
 	assert(vim.uv.fs_chmod(staged, 448))
+	local bytes = { [".chezmoiremove"] = plan.remove_file }
+	for _, entry in ipairs(plan.entries) do
+		bytes[entry.source_name] = entry.bytes
+	end
 	local ok, failure = pcall(function()
-		for _, entry in ipairs(plan.entries) do
+		-- The manifest is sorted by name, so parent directories are staged
+		-- before their children regardless of the caller's umask.
+		for _, entry in ipairs(plan.manifest) do
 			write_staged(staged, {
-				name = entry.source_name,
-				type = entry.type == "directory" and "directory" or "file",
-				mode = entry.type == "directory" and (entry.mode or 493) or 420,
-				bytes = entry.bytes,
+				name = entry.name,
+				type = entry.type,
+				mode = entry.mode,
+				bytes = bytes[entry.name],
 			})
 		end
-		write_staged(staged, {
-			name = ".chezmoiremove",
-			type = "file",
-			mode = 420,
-			bytes = plan.remove_file,
-		})
 		assert(verify_generation(staged, plan.manifest))
 	end)
 	if not ok then

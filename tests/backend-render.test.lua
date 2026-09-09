@@ -27,10 +27,12 @@ local version = commands.capture(backend, { "--version" })
 print("backend-render: " .. version)
 
 local function install_backend()
+	-- Model an already-bootstrapped backend at the engine's canonical path
+	-- without copying tens of megabytes into the fixture home (the guarded
+	-- check bounds every file at 4 MiB).
 	local dest = paths.join(paths.local_dir, "opt", "chezmoi", "bin", "chezmoi")
 	vim.fn.mkdir(vim.fs.dirname(dest), "p")
-	assert(vim.uv.fs_copyfile(backend, dest))
-	assert(vim.uv.fs_chmod(dest, 448))
+	assert(vim.uv.fs_symlink(backend, dest))
 	return dest
 end
 
