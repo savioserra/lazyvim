@@ -50,6 +50,7 @@ end
 -- the pinned file backend; bootstrap never delegates to an unpinned host tool.
 if command == "bootstrap" then
 	provisioner.ensure_backend()
+	require("workstation.launcher").install(root)
 	print("bootstrap complete.")
 	return
 end
@@ -91,6 +92,7 @@ end
 -- update pulls first, then re-execs each step so the new code is what runs.
 if command == "update" then
 	commands.execute("git", { "-C", provisioner.repo_root(), "pull", "--ff-only" })
+	exec_via_launcher("bootstrap")
 	exec_via_launcher("apply")
 	exec_via_launcher("sync")
 	exec_via_launcher("verify")
@@ -99,5 +101,8 @@ if command == "update" then
 end
 
 -- setup / sync / verify
+if command == "verify" then
+	require("workstation.launcher").verify(root)
+end
 application.runner:run(command)
 print(("\n%s complete (%s)."):format(command, application.context.platform.name))

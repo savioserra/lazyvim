@@ -222,8 +222,13 @@ local run = fixture .. "/apps/cli/run.lua"
 paths.write(run, paths.read(repository .. "/workstation/apps/cli/run.lua"))
 local log = scratch .. "/update.log"
 vim.env.TEST_LOG = log
-executable(scratch .. "/bin/git", 'printf "git:%s\\n" "$*" >> "$TEST_LOG"\n[ "${TEST_FAIL:-}" != git ]\n')
-executable(fixture .. "/bin/workstation", 'printf "%s\\n" "$1" >> "$TEST_LOG"\n[ "${TEST_FAIL:-}" != "$1" ]\n')
+vim.env.TEST_PULLED_LAUNCHER = fixture .. "/bin/workstation"
+vim.env.TEST_PULLED_CONTENT = '#!/bin/sh\nset -eu\nprintf "%s\\n" "$1" >> "$TEST_LOG"\n[ "${TEST_FAIL:-}" != "$1" ]\n'
+executable(
+	scratch .. "/bin/git",
+	'printf "git:%s\\n" "$*" >> "$TEST_LOG"\n[ "${TEST_FAIL:-}" != git ]\nprintf "%s" "$TEST_PULLED_CONTENT" > "$TEST_PULLED_LAUNCHER"\n'
+)
+executable(fixture .. "/bin/workstation", "exit 98\n")
 vim.env.PATH = scratch .. "/bin:" .. vim.env.PATH
 local original_app, original_provisioner = package.loaded["workstation.app"], package.loaded["workstation.provisioner"]
 package.loaded["workstation.app"] = {
@@ -238,18 +243,59 @@ package.loaded["workstation.provisioner"] = {
 }
 local original_arg = arg
 arg = { "update" }
-for _, failure in ipairs({ "", "git", "apply", "sync", "verify" }) do
+for _, failure in ipairs({ "", "git", "bootstrap", "apply", "sync", "verify" }) do
 	paths.write(log, "")
+	executable(fixture .. "/bin/workstation", "exit 98\n")
 	vim.env.TEST_FAIL = failure
 	local ok = pcall(dofile, run)
 	assert(ok == (failure == ""), "update status mismatch for " .. failure)
 	local lines = vim.split(vim.trim(paths.read(log)), "\n")
-	local expected = failure == "git" and 1 or failure == "apply" and 2 or failure == "sync" and 3 or 4
+	local expected = ({ git = 1, bootstrap = 2, apply = 3, sync = 4, verify = 5 })[failure] or 5
 	assert(#lines == expected, "update did not stop at first failure")
 	assert(lines[1] == "git:-C " .. scratch .. "/repo pull --ff-only")
 	for index = 2, #lines do
-		assert(lines[index] == ({ "apply", "sync", "verify" })[index - 1])
+		assert(lines[index] == ({ "bootstrap", "apply", "sync", "verify" })[index - 1])
 	end
+end
+-- Bootstrap backend failure cannot publish or claim readiness. Successful
+-- backend handoff installs a real public link, retained on repeated bootstrap.
+local public = paths.local_dir .. "/bin/workstation"
+arg = { "bootstrap" }
+package.loaded["workstation.provisioner"].ensure_backend = function()
+	error("fixture backend failure")
+end
+assert(not pcall(dofile, run) and not vim.uv.fs_lstat(public))
+package.loaded["workstation.provisioner"].ensure_backend = function() end
+dofile(run)
+assert(vim.uv.fs_readlink(public) == fixture .. "/bin/workstation")
+require("workstation.launcher").verify(fixture)
+local inode = vim.uv.fs_lstat(public).ino
+dofile(run)
+assert(vim.uv.fs_lstat(public).ino == inode)
+paths.write(log, "")
+vim.env.TEST_FAIL = ""
+local launched = vim.system({ public, "status" }, { cwd = "/", text = true }):wait()
+assert(launched.code == 0 and paths.read(log) == "status\n")
+vim.fn.delete(public)
+for _, kind in ipairs({ "file", "directory", "link" }) do
+	if kind == "file" then
+		paths.write(public, "user-owned")
+	elseif kind == "directory" then
+		vim.fn.mkdir(public, "p")
+		paths.write(public .. "/keep", "user-owned")
+	else
+		assert(vim.uv.fs_symlink(scratch .. "/missing-user-target", public))
+	end
+	assert(not pcall(dofile, run), "conflicting " .. kind .. " accepted")
+	assert(not pcall(require("workstation.launcher").verify, fixture), "conflicting launcher verified")
+	if kind == "file" then
+		assert(paths.read(public) == "user-owned")
+	elseif kind == "directory" then
+		assert(paths.read(public .. "/keep") == "user-owned")
+	else
+		assert(vim.uv.fs_readlink(public) == scratch .. "/missing-user-target")
+	end
+	vim.fn.delete(public, kind == "directory" and "rf" or "")
 end
 arg = original_arg
 package.loaded["workstation.app"], package.loaded["workstation.provisioner"] = original_app, original_provisioner

@@ -10,7 +10,7 @@ Scope: `chezmoi/**`.
 - Use real directories for nested target paths.
 - Add removed non-`exact` targets to `.chezmoiremove`.
 - Keep platform selection in templates or capability `supported_hosts`; do not create platform no-op feature declarations.
-- Keep downloads checksum-pinned and user-local.
+- Keep downloads in engine bootstrap/package setup, checksum-pinned and user-local; this source owns files only.
 - Supported targets are Linux, WSL-as-Linux, and macOS (arm64).
 - Update version, URL, checksum, verification, and `docs/tools.md` together.
 
@@ -18,8 +18,6 @@ Scope: `chezmoi/**`.
 
 | Path | Owner |
 | --- | --- |
-| `.chezmoiexternals/` | Download inventory |
-| `.chezmoiscripts/` | Public post-apply lifecycle entry points |
 | `dot_pi/private_agent/skills/` | Global Pi skills |
 | `dot_pi/private_agent/extensions/` | Source-managed Pi extensions; executable ownership, reload cleanup, discovery |
 | `dot_config/nvim/` | Managed Neovim application configuration |
@@ -27,6 +25,8 @@ Scope: `chezmoi/**`.
 | `.chezmoiignore` | Target/platform exclusions |
 | `.chezmoiremove` | Explicit stale-target removal |
 
-Chezmoi scripts locate pinned Neovim and invoke the workstation CLI's `run.lua setup`
-followed by `run.lua sync`. Keep lifecycle implementation in the deployed workstation
-packages; do not add external apply/sync wrappers.
+The repo-native engine invokes chezmoi with explicit source and destination, then
+refreshes the materialized Node pin/PATH and runs setup. Sync is separate. Never
+add lifecycle run-after scripts, archive externals, a deployed engine copy or a
+chezmoi-managed public launcher. The whole Git clone hosts `workstation/` beside
+this directory; source discovery does not depend on a `.chezmoiroot` marker.

@@ -30,6 +30,7 @@ write(
 	scratch .. "/archive/nvim-test/bin/nvim",
 	[[#!/bin/sh
 if [ "$1" = --version ]; then printf 'NVIM v0.12.4\n'; exit 0; fi
+[ "${TEST_BACKEND_FAIL:-}" != yes ] || exit 45
 printf '%s\n' "$@" > "$HOME/handoff"
 printf '%s\n' "$HOME" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_STATE_HOME" "$XDG_CACHE_HOME" "$XDG_RUNTIME_DIR" "$WORKSTATION_CACHE" "$TMPDIR" > "$HOME/environment"
 ]],
@@ -150,8 +151,25 @@ local wrong = scratch .. "/wrong-archive"
 write(wrong, "untrusted")
 assert(launch({ TEST_ARCHIVE = wrong }).code ~= 0)
 assert(read(home .. "/.local/opt/nvim/previous-good") == "keep")
--- Public final-script symlink chains, relative targets, unrelated cwd.
+local failed_home = scratch .. "/failed-backend"
+local failed_backend = launch({ TEST_BACKEND_FAIL = "yes" }, failed_home)
+assert(failed_backend.code == 45 and not failed_backend.stdout:find("bootstrap complete", 1, true))
+assert(not vim.uv.fs_lstat(failed_home .. "/.local/bin/workstation"))
+-- The synthetic shell runtime above proves cold bootstrap without any ambient
+-- Node/Neovim. Separately use the test host to exercise real link publication,
+-- then execute that installed real launcher from an unrelated cwd.
 assert(launch().code == 0)
+vim.env.WORKSTATION_HOME = home
+package.path = repository .. "/workstation/lua/?.lua;" .. package.path
+require("workstation.launcher").install(engine)
+local installed_result = vim.system(
+	{ home .. "/.local/bin/workstation", "status" },
+	{ env = environment, clear_env = true, cwd = "/", text = true }
+):wait()
+assert(installed_result.code == 0, installed_result.stderr)
+assert(read(home .. "/handoff"):find(engine .. "/apps/cli/run.lua", 1, true))
+vim.fn.delete(home .. "/.local/bin/workstation")
+-- Also retain public final-script chains and relative-target coverage.
 vim.fn.mkdir(home .. "/.local/bin", "p")
 assert(vim.uv.fs_symlink("hop", home .. "/.local/bin/workstation"))
 assert(vim.uv.fs_symlink("../../clone-link", home .. "/.local/bin/hop"))

@@ -22,55 +22,29 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
 
-      - name: Install runtime prerequisites
+      # CI-only unmanaged prerequisites, never workstation lifecycle installers.
+      # Runner images supply Git, curl, archive/hash tools and build tools.
+      - name: Prepare unmanaged tmux and Bash prerequisites
         shell: bash
         run: |
           set -euo pipefail
           if [[ "$RUNNER_OS" == Linux ]]; then
             sudo apt-get update
             sudo apt-get install -y tmux
+            command -v shellcheck # runner-provided; no unpinned lint downloads
+            command -v fc-cache
           else
+            test "$(uname -m)" = arm64
             brew install bash tmux
-            echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
           fi
 
-      - name: Install pinned chezmoi
+      - name: Bootstrap and validate isolated engine lifecycle
         shell: bash
         run: |
           set -euo pipefail
-          version="$(cat chezmoi/.chezmoiversion)"
-          install_dir="$RUNNER_TEMP/chezmoi-bin"
-          sh -c "$(curl -fsLS https://get.chezmoi.io)" -- \
-            -b "$install_dir" -t "v${version}"
-          "$install_dir/chezmoi" --version | grep -F "chezmoi version v${version}"
-          echo "$install_dir" >> "$GITHUB_PATH"
-
-      - name: Test complete Unix apply
-        shell: bash
-        run: ./.github/scripts/test-apply.sh "$RUNNER_TEMP/home"
-
-  lint:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-      - name: Install LuaJIT syntax checker
-        run: sudo apt-get update && sudo apt-get install -y luajit
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version-file: chezmoi/dot_node-version
-      - name: Validate scripts and JSON lockfiles
-        run: |
-          set -euo pipefail
-          sh -n workstation/bin/workstation .github/scripts/test-apply.sh
-          shellcheck -s sh workstation/bin/workstation .github/scripts/test-apply.sh
-          while IFS= read -r -d '' file; do LUA_AUDIT_FILE="$file" luajit -e 'assert(loadfile(os.getenv("LUA_AUDIT_FILE")))'; done < <(find workstation chezmoi tests -name '*.lua' -print0)
-          version="$(cat chezmoi/.chezmoiversion)"
-          grep -F -- "-t v${version}" README.md
-          grep -F -- "--version ${version}" README.md
-          python3 -m json.tool chezmoi/dot_config/nvim/lazy-lock.json > /dev/null
-          python3 -m json.tool chezmoi/dot_config/nvim/mason-lock.json > /dev/null
-          python3 -m json.tool chezmoi/dot_config/nvim/lazyvim.json > /dev/null
-          python3 -m json.tool workstation/versions.json > /dev/null
-          python3 -m json.tool .luarc.json > /dev/null
+          # Outside runner HOME/source; retained for inspection, never rm caller input.
+          scratch_parent="$(mktemp -d /tmp/workstation-ci.XXXXXX)"
+          ./.github/scripts/test-apply.sh "$scratch_parent/home"

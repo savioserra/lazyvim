@@ -12,13 +12,13 @@ apps/cli/run.lua
 core -X-> catalog/packages/Neovim
 ```
 
-`workstation.app` is the composition root. Pinned Neovim remains only the Phase 1 Lua launcher; Neovim lifecycle behavior is an ordinary package.
+`workstation.app` is the composition root. Bootstrap-owned pinned Neovim hosts Lua without user configuration; Neovim lifecycle behavior is an ordinary package. `bin/workstation` is the sole public entry point.
 
 ## Module boundaries
 
 | Path under `workstation/` | Contract |
 | --- | --- |
-| `apps/cli/run.lua` | `setup`, `sync`, `verify` CLI entry point |
+| `apps/cli/run.lua` | Engine command dispatch through the public launcher |
 | `lua/workstation/catalog.lua` | Explicit ordered inventory; one registration per package |
 | `lua/workstation/core/contract.lua` | Combined contribution validation |
 | `lua/workstation/core/materialize.lua` | Invoke factories and split specifications from handlers |
@@ -96,16 +96,21 @@ The graph rejects duplicate IDs, unknown dependencies, dependency cycles, and en
 
 | Phase | Input state | Responsibility |
 | --- | --- | --- |
-| Chezmoi apply | Repository source | Render files and install checksum-pinned externals |
-| `setup` | Applied target home | Configure host state not represented by archives |
+| `bootstrap` | Whole source checkout, shell prerequisites | Install verified pinned runtime/backend, then conflict-safe public launcher |
+| `apply` | Repository source | Retire owned real-account legacy service (never scratch), materialize files, refresh Node pin/PATH, setup |
+| `setup` | Applied target home | Provision package archives and configure host state; reject missing Node pin before Node/nvm provisioning |
 | `sync` | Configured applications | Restore mutable application state |
 | `verify` | Complete target home | Assert versions and observable behavior |
+| `diff` | Source and target | Ensure backend, preview file changes only |
+| `update` | Git clone | Checked pull --ff-only, fresh launcher bootstrap, apply, sync, verify; stop at first failure |
 
-Entry point:
-
-```text
-nvim -l ~/.local/share/workstation/apps/cli/run.lua setup|sync|verify
-```
+Fresh installation: `workstation/bin/workstation bootstrap`, then the installed
+`~/.local/bin/workstation` runs `apply`, `sync`, `verify` separately. The whole
+clone (default `~/.local/share/workstation`) contains `workstation/` and `chezmoi/`;
+no source-root marker or chezmoi source-path lookup is used. Bootstrap retains an
+identical canonical launcher symlink, refuses all conflicting paths, and never
+reports completion after a backend failure. Update re-executes the newly pulled
+launcher before each lifecycle step, including bootstrap so pin changes take effect.
 
 ## Neovim package and profile
 

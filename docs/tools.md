@@ -51,12 +51,14 @@ without provisioning nvm or Node; run `workstation apply` first.
 
 Chezmoi has no archive externals or deployed engine payload. The removed temporary
 versions bridge is cleaned up only at `.local/share/workstation/versions.json`;
-the future engine clone and its nested `workstation/versions.json` are not removed.
+the engine clone and its nested `workstation/versions.json` are not removed. Existing legacy payloads need guarded operator inspection; see `chezmoi.md#breaking-cutover`.
 
 The runtime and backend pins are canonical in `workstation/versions.json`.
 The backend SHA256 values come from the official v2.72.1
 `chezmoi_2.72.1_checksums.txt` release asset. Bootstrap installs Neovim in POSIX
-shell before Lua provisions this backend; it does not use a PATH chezmoi.
+shell before Lua provisions this backend, then publishes the canonical repo-native
+launcher at `.local/bin/workstation`; it does not use a PATH chezmoi. Update runs
+fresh bootstrap before apply/sync/verify to install newly pulled pins.
 `workstation/bootstrap/bootstrap.pins` is a generated, SHA256-bound projection:
 regenerate/check with pinned `nvim -l workstation/bootstrap/generate.lua [--check]`.
 Fresh bootstrap needs shell, curl with HTTPS, tar/gzip, SHA256 tooling
@@ -69,7 +71,9 @@ inspection/recovery of that lock and any `previous` tree before retrying.
 
 | Tool | Why | Where it's handled |
 | --- | --- | --- |
-| tmux, TPM-installed plugins | tmux/TPM aren't host-tool binaries in the same sense | `workstation/packages/tmux/init.lua`, `chezmoi/dot_tmux.conf` |
+| Git, tmux >=3.2, Bash >=5.2 | User/CI unmanaged prerequisites; no lifecycle OS installs | tmux plugin commits/setup are managed separately by `workstation/packages/tmux/init.lua` |
+| C compiler/build tools, Linux fontconfig, macOS Command Line Tools | Parser/application builds and font verification prerequisites | User or CI image; see README |
+| ShellCheck | Validation tool supplied by Linux CI image; used wherever available | `.github/scripts/check.sh`; no unpinned lint downloads |
 | 1Password desktop app and account session | User application and interactive authentication are outside source state | Install the official app, enable CLI integration, and sign in interactively |
 | Mason-installed LSP servers/formatters/linters | Neovim-internal package manager, not a host binary | `zapling/mason-lock.nvim`, `chezmoi/dot_config/nvim/mason-lock.json` — see nvim.md |
 | lazy.nvim-installed Neovim plugins | Neovim-internal package manager | `chezmoi/dot_config/nvim/lazy-lock.json` — see nvim.md |

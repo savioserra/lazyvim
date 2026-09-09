@@ -1,6 +1,6 @@
 # Neovim configuration instructions
 
-Scope: `home/dot_config/nvim/**`.
+Scope: `chezmoi/dot_config/nvim/**`.
 
 ## Composition order
 

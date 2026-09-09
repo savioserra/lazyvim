@@ -2,7 +2,7 @@
 
 ## Goal
 
-Maintain a reproducible chezmoi source state for Neovim and tmux on Linux,
+Maintain a reproducible engine-owned workstation source state for Neovim and tmux on Linux,
 WSL-as-Linux, and macOS (arm64).
 
 ## Read first
@@ -10,7 +10,7 @@ WSL-as-Linux, and macOS (arm64).
 | Area | Reference |
 | --- | --- |
 | Repository map | `docs/index.md` |
-| Chezmoi apply/scripts | `docs/chezmoi.md` |
+| Subordinate file backend/cutover | `docs/chezmoi.md` |
 | Capability boundaries | `docs/capabilities.md` |
 | Neovim | `docs/nvim.md` |
 | tmux | `docs/tmux.md` |
@@ -22,14 +22,15 @@ Use the nearest `AGENTS.md` for scoped rules.
 ## Architecture rules
 
 - Define each lifecycle capability once under `workstation/packages/`.
-- Keep `workstation/core/` domain-neutral. It must not import the catalog, packages, or Neovim.
-- Register each package once in the explicit ordered `workstation/catalog.lua`; do not auto-discover packages.
+- Keep `workstation/lua/workstation/core/` domain-neutral. It must not import the catalog, packages, or Neovim.
+- Register each package once in the explicit ordered `workstation/lua/workstation/catalog.lua`; do not auto-discover packages.
 - Keep complex behavior and feature-specific OS branches inside the owning package.
 - Let the core materializer explicitly split graph specifications from lifecycle handlers; do not deep-merge contributions.
 - Keep Neovim language composition in `lua/languages/profile.lua`, not in lifecycle capabilities.
-- Keep chezmoi as the archive/file provisioner and public apply/update interface.
-- Invoke setup and sync from `chezmoi/.chezmoiscripts/`; do not add repository-level wrappers.
-- Keep Lua `setup` limited to post-apply host state; keep `sync` limited to mutable application state.
+- Keep `workstation/bin/workstation` the sole public lifecycle interface; chezmoi is the subordinate file backend with explicit source/destination.
+- Bootstrap owns pinned Neovim/backend and the public launcher; setup owns other downloads and post-materialization host configuration. Do not add root wrappers, externals or lifecycle scripts.
+- Apply performs guarded real-account legacy retirement, files, Node pin/PATH refresh and setup; sync separately restores mutable application state. Update checks pull, fresh bootstrap, apply, sync and verify in order.
+- The source clone is the whole repository with sibling `workstation/` and `chezmoi/`; never delete an old payload or overwrite a clone implicitly. See guarded cutover instructions.
 - Do not add Node as a bootstrap dependency; pinned Neovim is the lifecycle runtime until the standalone workstation runtime replaces it.
 - Do not add Go service modules, daemons, or actor runtimes to this repository; the Go toolchain exists only for the Neovim language profile.
 
@@ -38,20 +39,21 @@ Use the nearest `AGENTS.md` for scoped rules.
 Run checks relevant to the change. Before completion, run all available fast checks:
 
 ```bash
-nvim -l tests/capabilities.test.lua
-stylua --check --config-path .stylua.toml workstation chezmoi/dot_config/nvim tests
+for suite in tests/*.test.lua; do "$HOME/.local/opt/nvim/bin/nvim" -l "$suite" || exit; done
+"$HOME/.local/opt/nvim/bin/nvim" -l .github/scripts/syntax.lua
+"$HOME/.local/opt/nvim/bin/nvim" -l workstation/bootstrap/generate.lua --check
+stylua --check --config-path .stylua.toml workstation chezmoi/dot_config/nvim tests .github/scripts
 git diff --check
-chezmoi --source "$PWD/chezmoi" --destination "$(mktemp -d)" apply --dry-run
 ```
 
-Full supported-platform verification runs on Linux/WSL and macOS (arm64).
+Check every shell file separately with `sh -n` and available ShellCheck (see `.github/scripts/check.sh`). Inspect the full source before the isolated backend render in `docs/chezmoi.md`; dry-run alone is not a sandbox. Real `.github/scripts/test-apply.sh` bootstrap/apply/sync/checks/verify requires explicit network/installation authorization. Full supported-platform verification runs on Linux/WSL and macOS (arm64); synthetic tests are not deployment acceptance.
 
 ## Change rules
 
 | Change | Required updates |
 | --- | --- |
-| Host tool version | `versions.json`, owning external URL/checksum, `docs/tools.md` |
-| Node version | `chezmoi/dot_node-version`, Node external URL/checksum |
+| Host tool version | `workstation/versions.json`, owning package URL/checksum, `docs/tools.md` |
+| Node version | `chezmoi/dot_node-version`, canonical Node URL/checksum |
 | Global npm capability | Exact version, registry integrity, feature setup/verify, docs |
 | Pi extension package | Exact version or source-managed extension contract, setup/verify, Pi discovery, docs |
 | Pi skill | `chezmoi/dot_pi/private_agent/skills/<name>/SKILL.md`, `pi-skills` verification, docs |
@@ -59,7 +61,7 @@ Full supported-platform verification runs on Linux/WSL and macOS (arm64).
 | Workstation package | combined contribution, package catalog, tests, docs |
 | Neovim language | `languages/profile.lua`, lockfiles if needed, behavior case |
 | Removed deployed source | `chezmoi/.chezmoiremove` unless inside an `exact` target |
-| New platform condition | external template, capability support, feature backend, CI/test coverage |
+| New platform condition | canonical asset metadata, capability support, package backend, CI/test coverage |
 
 ## Do not
 
@@ -69,7 +71,7 @@ Full supported-platform verification runs on Linux/WSL and macOS (arm64).
 - Duplicate LazyVim language imports outside `languages/profile.lua`.
 - Put feature workflows in `setup/platforms/`.
 - Commit generated plugin, Mason, parser, cache, session, or history state.
-- Add shell or PowerShell wrappers around `chezmoi apply` or `chezmoi update`.
+- Restore public chezmoi lifecycle aliases, source-path discovery or lifecycle run-after scripts.
 
 <!-- BACKLOG.MD GUIDELINES START -->
 <!-- backlog.md-instructions-version: 1.50.1 -->

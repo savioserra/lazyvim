@@ -23,7 +23,7 @@ Never enumerate, inspect, or modify another vault. Desktop CLI authentication ma
 1. Ask what application, item, and field schema the user intends to manage.
 2. Prefer stable `op://Workstation/<item>/<field>` references in chezmoi source.
 3. Prefer `op run` or `op inject` so values flow directly to the consuming process.
-4. Keep normal `chezmoi apply`, tests, and verification independent of vault authentication.
+4. Keep normal `workstation apply`, sync, tests, and verification independent of vault authentication.
 5. Inspect only titles, field labels, categories, and other non-secret metadata when diagnosing schema.
 
 ## Secret-value boundary

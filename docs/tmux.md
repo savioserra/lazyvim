@@ -104,7 +104,7 @@ and `omarchy-refresh-tmux` copies it onto `~/.config/tmux/tmux.conf` with
 `cp -f`. On a managed host that copy follows the XDG symlink and would
 overwrite `~/.tmux.conf`. Never run `omarchy-refresh-tmux` or
 `omarchy-refresh-config tmux/tmux.conf` here; if Omarchy ever replaces the
-file, restore with `chezmoi apply` and remove any `tmux.conf.bak.*` it left in
+file, restore with `workstation apply` and remove any `tmux.conf.bak.*` it left in
 `~/.config/tmux/`.
 
 ## Verification

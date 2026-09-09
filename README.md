@@ -1,143 +1,106 @@
 # LazyVim workstation
 
-Chezmoi source state for a pinned Neovim and tmux environment on Linux,
-WSL-as-Linux, and macOS (arm64). Host lifecycle behavior is organized as a workstation package monorepo;
-Neovim is one package and remains the temporary Phase 1 Lua launcher.
+Repo-native workstation engine for pinned Neovim, tmux configuration and Pi
+resources on Linux x86_64 (including WSL-as-Linux) and macOS arm64.
+`workstation` owns the lifecycle; chezmoi is its subordinate home-file backend.
 
-## Support
+## Prerequisites
 
-| Host | Architectures | Notes |
-| --- | --- | --- |
-| Linux | x86_64 | WSL is Linux |
-| macOS | arm64 | tmux and Git required |
+The user or CI image supplies these; workstation never runs an OS package manager:
 
-Unix prerequisites:
+- Git; tmux >=3.2; Bash >=5.2 for tmux2k.
+- POSIX shell, HTTPS curl, tar/gzip, unzip, SHA-256 tools (`sha256sum` on Linux,
+  `shasum` on macOS), and ordinary Unix filesystem tools.
+- C compiler/build tools for parser and application-package builds (macOS Command
+  Line Tools); Linux fontconfig (`fc-cache`, `fc-list`). macOS supplies
+  `system_profiler` for font verification.
 
-```bash
-# Ubuntu/Zorin
-sudo apt install tmux git
+Bootstrap itself needs only the shell/download/archive/hash/filesystem essentials,
+not Node, Python, jq, system Neovim, LuaJIT or a preinstalled chezmoi.
+Managed tools and their exact pins are listed in [`docs/tools.md`](docs/tools.md).
 
-# macOS
-xcode-select --install
-brew install tmux git
+## Fresh installation
+
+**Stop if `~/.local/share/workstation` already exists.** It may be the old deployed
+engine payload, not a Git clone. Follow the guarded [cutover procedure](docs/chezmoi.md#breaking-cutover)
+with the operator; never clone over or erase it.
+
+```sh
+git clone https://github.com/savioserra/lazyvim.git "$HOME/.local/share/workstation"
+"$HOME/.local/share/workstation/workstation/bin/workstation" bootstrap
+"$HOME/.local/bin/workstation" apply
+"$HOME/.local/bin/workstation" sync
+"$HOME/.local/bin/workstation" verify
 ```
 
-Required tmux version: 3.2+. Required Bash version for tmux2k: 5.2+.
+The clone is the **whole repository**, containing sibling `workstation/` and
+`chezmoi/` directories. Any checkout can host the launcher. Bootstrap prepares the
+checksum-pinned Neovim runtime and chezmoi backend, then atomically creates
+`~/.local/bin/workstation` pointing to that checkout's actual repo-native launcher.
+A matching link is retained; conflicting user files/links/directories are refused,
+not replaced. Keep the checkout available. Add `~/.local/bin` to your PATH for the
+commands below (managed shell files also do this for future shells).
 
-## Install
+## Daily lifecycle
 
-```bash
-# Linux/macOS
-sh -c "$(curl -fsLS https://get.chezmoi.io)" -- \
-  -b "$HOME/.local/bin" -t v2.72.0 -- \
-  init --apply savioserra/lazyvim
+```sh
+workstation diff     # preview file-backend changes (not a setup simulation)
+workstation apply    # guarded legacy retirement, files, then package setup
+workstation sync     # separately restore mutable application state
+workstation verify   # check installed versions and behavior
+workstation update   # git pull --ff-only, fresh bootstrap, apply, sync, verify
+workstation status   # inspect paths and the explicit package graph
 ```
 
-`init --apply` installs host tools, runs post-apply setup, and restores Neovim
-plugins, Mason packages, and Tree-sitter parsers.
+Update invokes the freshly pulled launcher for **bootstrap before apply**, so new
+runtime/backend pins are installed. Every child is checked; the first failure
+stops subsequent phases. Bootstrap/backend failure never reports readiness.
+`apply` refreshes the materialized Node pin and PATH before setup. Direct `setup`
+before first apply rejects a missing/invalid `.node-version` before nvm/Node
+provisioning; it is not the fresh-install entry point. There are no compatibility
+aliases or `workstation apply --dry-run`; use `diff` or an isolated file render.
 
-## Apply and update
+No login profiles, secret values, provider credentials, 1Password account sessions,
+or vault state belong to the engine. The source-managed ntfy notifier and pinned
+Pi packages retain their own discovery/reload contracts; see the references below.
 
-```bash
-chezmoi update   # pull the managed source and apply it
-chezmoi apply    # apply the current managed source
-chezmoi diff     # preview target changes
-chezmoi re-add   # capture target edits into source state
-```
+## Sources of truth
 
-From a separate repository checkout:
-
-```bash
-chezmoi --source "$PWD/chezmoi" apply
-```
-
-Chezmoi `run_after` scripts are the lifecycle entry points. Every apply runs:
-
-```text
-workstation/apps/cli/run.lua setup
-workstation/apps/cli/run.lua sync
-```
-
-No repository-level sync wrapper is required.
-
-```text
-:Lazy restore
-:MasonLockRestore
-:TSUpdate
-```
-
-## Reproducibility sources
-
-| State | Source of truth |
+| State | Owner |
 | --- | --- |
-| Host downloads | `chezmoi/.chezmoiexternals/*.toml.tmpl` |
-| Shared host versions | `workstation/versions.json` |
-| Node version | `chezmoi/dot_node-version` |
-| Global pi package | `versions.json` and `packages/pi/init.lua` |
-| Global Pi skills | `chezmoi/dot_pi/private_agent/skills/`; secret operations require explicit `/skill:secrets` invocation |
-| Registry Pi extension packages | Exact versions and integrity in `versions.json`; lifecycle under `packages/pi-subagents/` and `packages/pi-web-access/` |
-| Source-managed Pi extensions | `chezmoi/dot_pi/private_agent/extensions/`; owning workstation package verifies discovery and compatibility |
-| Neovim plugins | `chezmoi/dot_config/nvim/lazy-lock.json` |
-| Mason packages | `chezmoi/dot_config/nvim/mason-lock.json` |
-| Tree-sitter parsers | `lua/plugins/treesitter.lua` and locked nvim-treesitter commit |
-| Neovim language composition | `chezmoi/dot_config/nvim/lua/languages/profile.lua` |
-| Workstation package contributions | `workstation/packages/` |
-| Package ordering | `workstation/lua/workstation/catalog.lua` |
-| Generic lifecycle core | `workstation/lua/workstation/core/` |
+| Engine runtime/backend and host download metadata | `workstation/versions.json`; generated bootstrap pin projection |
+| Host provisioning | `workstation/packages/` setup; Neovim/backend bootstrap |
+| Node version | `chezmoi/dot_node-version` only |
+| Managed home configuration | `chezmoi/` (no externals or lifecycle scripts) |
+| Package ordering / generic core | `workstation/lua/workstation/catalog.lua` / `core/` |
+| Neovim plugins / Mason tools | `chezmoi/dot_config/nvim/lazy-lock.json` / `mason-lock.json` |
+| Language composition / parsers | `chezmoi/dot_config/nvim/lua/languages/profile.lua` / parser config and locked plugin |
+| Pi skills / source-managed extensions | `chezmoi/dot_pi/private_agent/skills/` / `extensions/` |
+| Registry Pi packages | Exact versions/integrity in `workstation/versions.json`, owning package verification |
 | tmux plugin commits | `workstation/packages/tmux/init.lua` |
 
-Chezmoi itself is installed independently and pinned by `chezmoi/.chezmoiversion`.
-System prerequisites such as tmux and Git are not provisioned by this repository.
+Update version, owning URL/checksum or registry integrity, verification and tool
+documentation together. Never edit deployed state to change the source contract.
 
-## Update rules
+## Documentation and validation
 
-| Change | Files |
+| Reference | Scope |
 | --- | --- |
-| Host tool | Version catalog, owning external URL/checksum, `docs/tools.md` |
-| Node | `.node-version`, Node external URL/checksum |
-| pi coding agent | Version/integrity catalog and `packages/pi/init.lua` |
-| Pi extension package | Exact version/integrity, package lifecycle verification, `docs/capabilities.md` |
-| Pi skill | `chezmoi/dot_pi/private_agent/skills/<name>/SKILL.md`, capability inventory, discovery verification |
-| Neovim plugin | Plugin spec and `lazy-lock.json` |
-| Mason package | Neovim/profile config and `mason-lock.json` |
-| tmux plugin | `packages/tmux/init.lua`, `docs/tmux.md` |
+| [`docs/index.md`](docs/index.md) | Repository map and checks |
+| [`docs/capabilities.md`](docs/capabilities.md) | Package boundaries and lifecycle |
+| [`docs/chezmoi.md`](docs/chezmoi.md) | File backend, scratch rendering, guarded cutover |
+| [`docs/tools.md`](docs/tools.md) | Managed inventory and prerequisites |
+| [`docs/secrets.md`](docs/secrets.md) | User-owned authentication and explicit secrets skill |
+| [`docs/nvim.md`](docs/nvim.md), [`docs/tmux.md`](docs/tmux.md) | Application configuration |
+| [`docs/lua-migration.md`](docs/lua-migration.md) | Runtime rationale and historical context |
+| `AGENTS.md` | Contributor rules |
 
-See `AGENTS.md` for implementation constraints and required checks.
-
-## Layout
-
-```text
-.
-├── AGENTS.md                         contributor and agent rules
-├── docs/                             reference documentation
-├── tests/                            capability/runtime tests
-├── .github/                          CI, release, scratch-home test harness
-├── workstation/                      lifecycle engine: packages, CLI, core, versions
-└── chezmoi/                          chezmoi source root
-    ├── .chezmoiexternals/            pinned download inventory
-    ├── .chezmoiscripts/              primary post-apply lifecycle entry points
-    ├── dot_config/nvim/              Neovim configuration and locks
-    ├── dot_config/tmux/              tmux theme
-    ├── dot_pi/private_agent/extensions/      source-managed Pi extensions
-    ├── dot_pi/private_agent/skills/          global Pi skills
-    └── dot_tmux.conf                 tmux configuration
-```
-
-## Documentation
-
-| Document | Reference |
-| --- | --- |
-| Repository map and invariants | [`docs/index.md`](docs/index.md) |
-| Chezmoi apply and scripts | [`docs/chezmoi.md`](docs/chezmoi.md) |
-| Capability/runtime boundaries | [`docs/capabilities.md`](docs/capabilities.md) |
-| Managed tools | [`docs/tools.md`](docs/tools.md) |
-| Secrets and 1Password | [`docs/secrets.md`](docs/secrets.md) |
-| Neovim | [`docs/nvim.md`](docs/nvim.md) |
-| tmux | [`docs/tmux.md`](docs/tmux.md) |
-| Runtime decision | [`docs/lua-migration.md`](docs/lua-migration.md) |
-
-## CI and release
-
-- `.github/workflows/ci.yml`: supported Linux/macOS jobs; WSL follows Linux.
-- `.github/scripts/test-apply.sh`: Linux/macOS scratch-apply validation.
-- `.github/workflows/release.yml`: `vMAJOR.MINOR.PATCH` source archives and SHA-256 sums.
+`.github/scripts/test-apply.sh /absolute/new/scratch-home` drives real
+bootstrap → apply → sync → all fast checks/format → verify. The destination must
+not exist, must be outside the real home/source, and is retained even on failure.
+The harness clears ambient environment and confines HOME/XDG/cache/temp without
+loading login profiles or `/etc` auth snippets. It downloads real managed assets;
+offline fixture tests are a separate gate, not full lifecycle acceptance.
+StyLua comes from the locked Mason profile after sync. CI uses Linux and macOS
+arm64 runners; WSL follows Linux. Release CI validates before producing tagged
+source archives and SHA-256 sums, not a separate engine build or installer.

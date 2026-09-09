@@ -1,4 +1,6 @@
 #!/usr/bin/env sh
+# Emit shell expressions literally for future shells, never evaluate at render time.
+# shellcheck disable=SC2016
 set -eu
 path_marker='# chezmoi: managed user-local bin'
 nvm_marker='# chezmoi: load managed nvm'

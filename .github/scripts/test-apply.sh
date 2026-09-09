@@ -1,19 +1,47 @@
 #!/bin/sh
+# Real integration harness. Never source login profiles or accept an existing home.
 set -eu
-scratch_home=$1
-repo_root=${GITHUB_WORKSPACE:-$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)}
-export HOME=$scratch_home CHEZMOI_DESTDIR=$scratch_home XDG_CONFIG_HOME=$scratch_home/.config XDG_DATA_HOME=$scratch_home/.local/share XDG_STATE_HOME=$scratch_home/.local/state XDG_CACHE_HOME=$scratch_home/.cache
-node_version=$(cat "$repo_root/chezmoi/dot_node-version")
-nvim=$scratch_home/.local/opt/nvim/bin/nvim
-node=$scratch_home/.local/opt/nvm/versions/node/v$node_version/bin/node
-npm=$scratch_home/.local/opt/nvm/versions/node/v$node_version/bin/npm
-stylua=$XDG_DATA_HOME/nvim/mason/bin/stylua
-# TASK-34 phase 1: the engine no longer deploys through chezmoi. Chezmoi
-# materializes home state only; the lifecycle runs from the repository engine
-# against the scratch home. Phase 3 replaces this with the workstation CLI.
-chezmoi --source "$repo_root/chezmoi" --destination "$scratch_home" apply --force --exclude scripts
-"$nvim" -l "$repo_root/tests/capabilities.test.lua"
-"$nvim" -l "$repo_root/workstation/apps/cli/run.lua" setup
-"$nvim" -l "$repo_root/workstation/apps/cli/run.lua" sync
-"$stylua" --check --config-path "$repo_root/.stylua.toml" "$repo_root/workstation" "$repo_root/chezmoi/dot_config/nvim" "$repo_root/tests"
-"$nvim" -l "$repo_root/workstation/apps/cli/run.lua" verify
+PATH=/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin
+export PATH
+fail() { echo "test-apply: $*" >&2; exit 1; }
+[ "$#" -eq 1 ] || fail 'usage: test-apply.sh <new absolute scratch directory>'
+case "$1" in /*) ;; *) fail 'scratch path must be absolute' ;; esac
+case "$1" in */|*/.|*/..) fail 'scratch path must name a new directory' ;; esac
+repo_root=$(CDPATH='' cd -P "$(dirname "$0")/../.." && pwd -P)
+parent=$(CDPATH='' cd -P "$(dirname "$1")" && pwd -P)
+scratch_home=$parent/$(basename "$1")
+real_home=$(CDPATH='' cd -P "$HOME" && pwd -P)
+for protected in / "$real_home" "$repo_root"; do
+	[ "$scratch_home" != "$protected" ] || fail 'protected destination'
+	case "$protected/" in "$scratch_home/"*) fail 'destination contains home or source' ;; esac
+done
+case "$scratch_home/" in "$real_home/"*|"$repo_root/"*) fail 'destination is inside home or source' ;; esac
+if [ -e "$scratch_home" ] || [ -L "$scratch_home" ]; then
+	fail 'destination already exists; use a new scratch path'
+fi
+umask 077
+mkdir "$scratch_home" # Atomic ownership claim; never delete caller input, even on failure.
+# A fixed prerequisite PATH is intentional: no ambient managed Node/Neovim,
+# agents, credentials, session sockets, Git config or provider settings survive.
+# Homebrew's standard arm64 prefix supplies CI/user-owned Bash and tmux on macOS.
+# The child expands variables only after env -i has replaced the environment.
+# shellcheck disable=SC2016
+exec env -i HOME="$scratch_home" WORKSTATION_HOME="$scratch_home" \
+	PATH="$PATH" \
+	XDG_CONFIG_HOME="$scratch_home/.config" XDG_DATA_HOME="$scratch_home/.local/share" \
+	XDG_STATE_HOME="$scratch_home/.local/state" XDG_CACHE_HOME="$scratch_home/.cache" \
+	XDG_RUNTIME_DIR="$scratch_home/.local/state/workstation/run" \
+	TMPDIR="$scratch_home/.local/state/workstation/run/tmp" \
+	WORKSTATION_CACHE="$scratch_home/.cache/workstation" \
+	GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_SYSTEM=/dev/null GIT_CONFIG_GLOBAL=/dev/null \
+	sh -eu -c '
+		repo_root=$1
+		mkdir -p "$TMPDIR"
+		cd "$repo_root"
+		"$repo_root/workstation/bin/workstation" bootstrap
+		launcher=$HOME/.local/bin/workstation
+		"$launcher" apply
+		"$launcher" sync
+		sh "$repo_root/.github/scripts/check.sh"
+		"$launcher" verify
+	' sh "$repo_root"
