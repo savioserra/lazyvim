@@ -350,7 +350,7 @@ assert(
 
 -- Part 3: native private/executable FILE permissions are faithful chezmoi
 -- source attributes, not directory-only: bounded proof with the same trusted
--- backend that private files deploy 0600 and private+executable 0755.
+-- backend that private files deploy 0600 and private+executable 0700.
 do
 	local mode_tree = paths.join(scratch, "mode-source")
 	local mode_home = paths.join(scratch, "mode-home")
