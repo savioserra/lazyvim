@@ -216,6 +216,28 @@ for _, shell in ipairs({ false, true }) do
 	assert(result.code ~= 0 and captured ~= "" and not paths.exists(child_marker), "failed child recorded retirement")
 end
 
+-- The launcher creates private runtime roots, but its private umask must not
+-- leak into ordinary backend files (otherwise chezmoi writes 0600 instead of
+-- the declared 0644, and partial-apply recovery conflicts with its own output).
+paths.write(
+	session_engine .. "/apps/cli/run.lua",
+	[[
+local path = vim.env.HOME .. "/launcher-mode-probe"
+assert(vim.uv.fs_lstat(path) == nil)
+local file = assert(io.open(path, "w"))
+file:write("public configuration\n")
+file:close()
+assert(bit.band(vim.uv.fs_lstat(path).mode, 4095) == 420, "launcher leaked private umask into ordinary files")
+assert(bit.band(vim.uv.fs_lstat(vim.env.XDG_RUNTIME_DIR).mode, 4095) == 448, "runtime root lost private mode")
+assert(bit.band(vim.uv.fs_lstat(vim.env.TMPDIR).mode, 4095) == 448, "temporary root lost private mode")
+]]
+)
+local mode_result = vim.system(
+	{ session_engine .. "/bin/workstation", "mode-probe" },
+	{ env = base_env, clear_env = true, text = true }
+):wait()
+assert(mode_result.code == 0, mode_result.stderr)
+
 -- Real checked argv children, but fake git and launcher in a tiny copied engine.
 local fixture = scratch .. "/repo/workstation"
 local run = fixture .. "/apps/cli/run.lua"

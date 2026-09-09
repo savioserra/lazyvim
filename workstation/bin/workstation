@@ -56,4 +56,7 @@ if [ ! -x "$pinned_nvim" ]; then
 	echo "workstation: pinned nvim missing; run workstation bootstrap" >&2
 	exit 1
 fi
+# Runtime roots above stay private. Ordinary files must use the same default
+# modes as their native chezmoi recipes; private state sets explicit 0700/0600.
+umask 022
 exec "$pinned_nvim" -l "$engine_root/apps/cli/run.lua" "$@"

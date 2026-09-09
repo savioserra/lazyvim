@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@operator'
 created_date: '2026-09-08 21:27'
-updated_date: '2026-09-09 20:30'
+updated_date: '2026-09-09 20:43'
 labels: []
 dependencies: []
 type: feature
@@ -52,6 +52,8 @@ Provider implementation — parent-approved after the bounded all-GLM5.3 council
 No live apply/cutover, push, Docker/download retry, auth/vault/model/service probing, TASK35/Herdr work or fallback execution mode. Matrix is outside this project. Retain all prior evidence. Mason child124 and full Linux/cached-bootstrap/native macOS/WSL/CI acceptance remain separate, unwaived gates. If the accepted safety/API contract cannot be met, stop for parent disposition rather than silently weakening it.
 
 Owner-authorized immediate rollout (2026-09-09): use the parent-run guarded checker, integrate and push the committed candidate, preserve private backups, bootstrap the pinned backend, reconcile only identified managed-file conflicts, then apply, sync and verify this Linux host. Keep final GLM reviews and native/CI/full-E2E acceptance incomplete; stop on real failures and never force ownership conflicts.
+
+Live rollout repair: prevent launcher private-directory umask077 from leaking into ordinary Lua/backend file materialization. Add a real-launcher regression asserting0644 normal files and0700 runtime/temp roots, demonstrate failure then fix the handoff to umask022, run guarded checks, commit/push, and reconcile only fingerprint-matching partial-apply permission changes before resuming.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
@@ -131,6 +133,10 @@ SERIAL CORRECTION STAGE (new stage, same sole writer, worktree retained; starts 
 Serial correction stage complete (base 93efdac1, same sole writer/worktree): 487ee402 closed R1-R8 supported-API safety defects (fragments-only shell API, destructive containment and complete exact-tree ownership, native-name/removal-literal fail-closed encoding, full-07777 fingerprints with journal-revision-bound stale-plan rejection under the lock, retained partial-attempt blocking, active/replaced/retiring shell-block integrity with pre-backend validation, no-follow engine-state confinement with exclusive temporaries and bounded lock diagnostics, recorded-ownership remove semantics, complete add/change/delete patch previews on a manifest-verified baseline) with tests/correction.test.lua through the real helper->plan->provisioner paths; fc65bd98 replaced the swallowed-pcall populated probe with asserted independent legacy parity from a frozen d674698e baseline fixture (all 44 paths + 17 tombstones accounted, explicit permitted differences, conflict-then-explicit-recovery, no runtime git dependence); 6d025fbe documented remove semantics and incidental read-only engine-state creation; afc267e6 fixed the stale mode comment. Full check.sh and the guarded rerun (env-i fresh homes, unshare -rn network denial, timeout 120, 4194304-byte/file) exit 0 at the final head; real backend evidence remains trusted 2.72.0 only. New run-routed packet exported with 93-to-head and d674-to-head diffs, unchanged original-packet receipt (191 files byte-identical), findings-to-tests mapping and full readable candidate source. No AC/status changes; parent disposition pending.
 
 Parent rollout disposition: owner explicitly requested rollout now after being informed that final GLM gates failed with quota429/code1308. The parent independently ran the unchanged actual check.sh at813933fe under the prepared single-use user/network namespace, env-i/fresh per-suite HOME,120s and4194304-byte/file controls: exit0. This is command evidence, not completed independent GLM review or pinned2.72.1 lifecycle/native certification. Correction-worker supplemental scratch apply/setup was NOT authorized and DID download/install packages; any no-download characterization of that supplemental step is superseded. Its scratch and logs remain preserved. Integration/push/live rollout are now authorized; TASK34 remains In Progress with acceptance criteria unchecked pending objective evidence. Receipts: /tmp/task34-offline-acceptance.zllqshz4/.
+
+Live bootstrap succeeded. First apply failed because old chezmoi last-written-state requested a TTY for an explicitly backed-up/replaced file; original backend DB preserved by rename. Recovery then failed safely because the first partial backend pass changed managed files from0644 to0600 under the launcher umask077. This is a narrow runtime defect, not permission to force ownership or erase evidence. Original attempts and private backups remain /root/workstation-rollout.0MbqMb/.
+
+Rollout umask repair verified red/green: new real-launcher test failed with launcher leaked private umask into ordinary files (exit1), then full guarded checker passed (exit0) after resetting umask022 only after creating private runtime roots. Runtime/temp0700 assertions remain green; private journals use explicit0600. This checker used the now-installed pinned chezmoi2.72.1 for isolated render evidence. No GLM review claim. Logs: /root/workstation-rollout.0MbqMb/logs/{umask-red,repair-check}.*.
 <!-- SECTION:NOTES:END -->
 
 ## Plan
