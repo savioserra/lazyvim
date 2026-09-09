@@ -67,16 +67,16 @@ foundation
 
 | Package | Setup | Sync | Verify | Host support |
 | --- | --- | --- | --- | --- |
-| `foundation` | — | — | CLI versions | All |
-| `fonts` | Host registration/cache | — | Host visibility | All |
-| `node` | NVM default/environment | — | NVM and Node version | All |
+| `foundation` | CLI archive members | — | CLI versions | All |
+| `fonts` | Font archives, then host registration/cache | — | Host visibility | All |
+| `node` | nvm and Node archives, then default/environment | — | NVM and Node version | All |
 | `pi` | Exact global npm package | — | npm package and CLI version | All |
 | `pi-skills` | — | — | Managed skill files and Pi discovery | All |
 | `pi-subagents` | Exact Pi package and role skill policy | — | Lock integrity, extension tools, skill, role overrides | All |
 | `pi-web-access` | Exact Pi package | — | Lock integrity, extension discovery, web tools | All |
 | `pi-ntfy-notifier` | Source-managed extension | — | Manifest version, extension files, node test suite | All |
-| `go` | — | — | Go version | Linux/WSL/macOS |
-| `secrets` | — | — | Managed 1Password CLI version; never account or vault state | All supported hosts |
+| `go` | Exact toolchain archive | — | Go version | Linux/WSL/macOS |
+| `secrets` | Pinned op archive member | — | Managed 1Password CLI version; never account or vault state | All supported hosts |
 | `nvim` | — | Locks and parsers | Startup, locks, profile behavior | All |
 | `tmux` | Plugin checkout | — | Commits, server, theme | Linux/macOS |
 

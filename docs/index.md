@@ -11,7 +11,7 @@
 | `.github/workflows/ci.yml` | Platform matrix and lint |
 | `.github/workflows/release.yml` | Tagged source archives |
 | `chezmoi/` | Chezmoi source root |
-| `chezmoi/.chezmoiexternals/` | Pinned host downloads |
+| `workstation/packages/`, `workstation/versions.json` | Package-owned host provisioning and canonical pins |
 | `chezmoi/.chezmoiscripts/` | Primary post-apply lifecycle entry points |
 | `workstation/` | Package monorepo, lifecycle CLI, core, and versions |
 | `chezmoi/dot_pi/private_agent/skills/` | Managed global Pi skills |
@@ -34,7 +34,7 @@
 ## Invariants
 
 - Pinned Neovim is the temporary Phase 1 Lua launcher; Neovim is a lifecycle package.
-- Chezmoi owns deployed files and archive downloads.
+- Chezmoi owns deployed home files; engine bootstrap and package setup own archive downloads.
 - Downloads require SHA-256 checksums.
 - Managed tools install under user-local targets only.
 - Each package contributes capability metadata and lifecycle behavior through one registered record.

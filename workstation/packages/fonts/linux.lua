@@ -2,6 +2,10 @@ local commands = require("workstation.commands")
 
 local M = {}
 
+function M.directory(context)
+	return context.paths.join(context.paths.local_dir, "share", "fonts", "JetBrainsMonoNerdFont")
+end
+
 function M.configure(context)
 	commands.execute("fc-cache", { "-f", context.paths.join(context.paths.local_dir, "share", "fonts") })
 end

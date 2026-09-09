@@ -9,7 +9,9 @@ return function()
 		id = "node",
 		requires = { "foundation" },
 		setup = function(context)
+			backend(context).provision(context)
 			backend(context).configure(context)
+			context.platform.configure_runtime()
 		end,
 		verify = function(context)
 			backend(context).verify(context)

@@ -2,10 +2,14 @@ local commands = require("workstation.commands")
 
 local M = {}
 
+function M.directory(context)
+	return context.paths.join(context.paths.home, "Library", "Fonts", "JetBrainsMonoNerdFont")
+end
+
 function M.configure() end
 
 function M.verify(context)
-	local directory = context.paths.join(context.paths.home, "Library", "Fonts", "JetBrainsMonoNerdFont")
+	local directory = M.directory(context)
 	local found = false
 	for name in vim.fs.dir(directory) do
 		if name:sub(-4) == ".ttf" then

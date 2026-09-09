@@ -14,3 +14,4 @@
 .config/systemd/user/workstation-subagents.service
 Library/LaunchAgents/com.workstation.subagents.plist
 .local/share/workstation/lua/workstation/packages
+.local/share/workstation/versions.json

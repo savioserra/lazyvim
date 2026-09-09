@@ -4,18 +4,18 @@ Supported deployment policy is Linux, WSL-as-Linux, and macOS (arm64).
 
 | Property | Value |
 | --- | --- |
-| Download declarations | `chezmoi/.chezmoiexternals/*.toml.tmpl` |
-| Shared versions | `workstation/versions.json` |
+| Download operations | Owning `workstation/packages/<name>/` setup; Neovim bootstrap and engine-owned chezmoi backend |
+| Shared versions, URL templates and SHA-256 | `workstation/versions.json` |
 | Node version | `chezmoi/dot_node-version` |
 | Update unit | Version, URL, SHA-256 checksum, verification, this table |
 
 | Tool | Version | Source | Target | Platforms |
 | --- | --- | --- | --- | --- |
 | chezmoi backend | 2.72.1 | github.com/twpayne/chezmoi | `.local/opt/chezmoi/bin/chezmoi` (engine-owned) | linux-x86_64, darwin-arm64 |
-| Neovim | 0.12.4 | github.com/neovim/neovim | `.local/opt/nvim` (tree, `archive`) | linux-x86_64, darwin-arm64 |
-| Go | 1.27.1 | go.dev | `.local/opt/go` (tree, `archive`) | linux-x86_64, darwin-arm64 |
-| nvm-sh | 0.40.4 | github.com/nvm-sh/nvm | `.local/opt/nvm` (tree, `archive`) | Linux x86_64, macOS ARM64 and x64 |
-| Node.js | `chezmoi/dot_node-version` (currently 24.19.0) | nodejs.org | `.local/opt/nvm/versions/node/v<version>` | linux-x86_64, darwin-arm64 |
+| Neovim | 0.12.4 | github.com/neovim/neovim | `.local/opt/nvim` (exact tree, engine bootstrap) | linux-x86_64, darwin-arm64 |
+| Go | 1.27.1 | go.dev | `.local/opt/go` (exact tree, `go` setup) | linux-x86_64, darwin-arm64 |
+| nvm-sh | 0.40.4 | github.com/nvm-sh/nvm | `.local/opt/nvm` (non-exact tree, `node` setup) | linux-x86_64, darwin-arm64 |
+| Node.js | `chezmoi/dot_node-version` (currently 24.19.0) | nodejs.org | `.local/opt/nvm/versions/node/v<version>` (non-exact, `node` setup) | linux-x86_64, darwin-arm64 |
 | ripgrep | 15.2.0 | github.com/BurntSushi/ripgrep | `.local/bin/rg` | linux-x86_64, darwin-arm64 |
 | fd | 10.4.2 | github.com/sharkdp/fd | `.local/bin/fd` | linux-x86_64, darwin-arm64 |
 | fzf | 0.74.2 | github.com/junegunn/fzf | `.local/bin/fzf` | linux-x86_64, darwin-arm64 |
@@ -28,6 +28,30 @@ Supported deployment policy is Linux, WSL-as-Linux, and macOS (arm64).
 | pi-web-access | 0.28.0 | npm: `pi-web-access` | Pi package install under the Pi agent directory | linux-x86_64, darwin-arm64 |
 | pi-ntfy-notifier | 0.3.0 | Source-managed extension in this repo | `.pi/agent/extensions/ntfy-notifier` | linux-x86_64, darwin-arm64 |
 | JetBrainsMono Nerd Font | 3.5.0 | github.com/ryanoasis/nerd-fonts | Linux: `.local/share/fonts/JetBrainsMonoNerdFont`; darwin: `Library/Fonts/JetBrainsMonoNerdFont` | linux-x86_64, darwin-arm64 |
+
+## Provisioning ownership
+
+| Owner | Setup assets | Layout policy |
+| --- | --- | --- |
+| `foundation` | rg, fd, fzf, lazygit, tree-sitter, rainfrog | Selected archive members → `.local/bin`, mode 0755; no parent-directory replacement |
+| `go` | Go toolchain | Strip one archive root; exact `.local/opt/go` |
+| `node` | nvm, then pinned Node | Strip one root each; non-exact overlays preserve aliases, other Node versions and unrelated global npm packages |
+| `fonts` | JetBrainsMono Nerd Font | Exact font-only directory, no root stripping; provision before host cache/registration |
+| `secrets` | op | ZIP member `op` → `.local/bin/op`, mode 0755; verify only `--version`, never account/vault state |
+| Engine bootstrap | Neovim | Strip one root; exact `.local/opt/nvim`; no competing package installer |
+| Engine file backend | chezmoi | Selected archive member; never package-owned |
+
+Package setup uses checksum-verified provisioning and installed-content comparison;
+unchanged installations are retained. Node provisions both archives before writing
+the default alias and refreshing its environment, and before dependent Pi/npm
+setup. `chezmoi/dot_node-version` is the sole Node version source: first `apply`
+materializes `.node-version` and refreshes the in-memory pin/PATH before setup.
+Direct `setup` before that materialization rejects a missing/invalid Node pin
+without provisioning nvm or Node; run `workstation apply` first.
+
+Chezmoi has no archive externals or deployed engine payload. The removed temporary
+versions bridge is cleaned up only at `.local/share/workstation/versions.json`;
+the future engine clone and its nested `workstation/versions.json` are not removed.
 
 The runtime and backend pins are canonical in `workstation/versions.json`.
 The backend SHA256 values come from the official v2.72.1
