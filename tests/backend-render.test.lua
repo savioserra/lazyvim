@@ -46,7 +46,7 @@ install_backend()
 -- removes .chezmoiremove entries on first apply against fresh state (verified
 -- identical against the retired centralized tree), while reappearance later is
 -- the backend's interactive prompt path, not an engine concern.
-local tombstones = vim.split(vim.trim(paths.read(paths.join(repository, "chezmoi", ".chezmoiremove"))), "\n")
+local tombstones = require("workstation.provision.policy").legacy_removals
 assert(#tombstones == 17, "expected seventeen legacy tombstones")
 for _, removed in ipairs(tombstones) do
 	local path = paths.join(paths.home, removed)
@@ -92,7 +92,28 @@ local function assert_deployed()
 	return profile
 end
 local deployed_profile = assert_deployed()
-print("backend-render: fresh target applied")
+-- Repository instructions can never deploy: no recipe targets AGENTS.md and
+-- no ignore policy is needed to keep them out of generated source.
+for _, entry in ipairs(plan.entries) do
+	assert(not entry.target:find("AGENTS.md", 1, true), "instructions leaked into the plan: " .. entry.target)
+end
+assert(not vim.uv.fs_stat(paths.home .. "/.config/nvim/AGENTS.md"), "AGENTS.md deployed")
+-- Package-owned payload deploys byte-for-byte from its owner.
+local parity = {
+	{ "workstation/packages/nvim/files/.config/nvim/init.lua", ".config/nvim/init.lua" },
+	{ "workstation/packages/nvim/files/.config/nvim/lazy-lock.json", ".config/nvim/lazy-lock.json" },
+	{ "workstation/packages/nvim/files/.config/nvim/lua/config/lazy.lua", ".config/nvim/lua/config/lazy.lua" },
+	{ "workstation/packages/tmux/files/.tmux.conf", ".tmux.conf" },
+	{ "workstation/packages/pi-skills/files/.pi/agent/skills/lazyvim/SKILL.md", ".pi/agent/skills/lazyvim/SKILL.md" },
+	{ "workstation/packages/node/files/nvm.sh", ".config/shell/nvm.sh" },
+}
+for _, pair in ipairs(parity) do
+	assert(
+		paths.read(paths.join(paths.home, pair[2])) == paths.read(paths.join(repository, pair[1])),
+		"deployed bytes differ from the owning package: " .. pair[2]
+	)
+end
+print("backend-render: fresh target applied with package-owned byte parity")
 
 -- Repeated apply is stable and keeps the identical generation.
 local repeat_plan = source.plan(require("workstation.app").create())

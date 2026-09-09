@@ -4,23 +4,46 @@ local provision = require("workstation.provision.recipes")
 
 local extension_dir_name = "ntfy-notifier"
 
+local payload_files = {
+	"README.md",
+	"extensions/ntfy-notifier.ts",
+	"package.json",
+	"src/ntfy.js",
+	"test/ntfy.test.mjs",
+}
+
 return function()
+	local contributes = {
+		provision.chezmoi({ target = ".pi/agent", kind = "directory", private = true }),
+	}
+	for _, name in ipairs(payload_files) do
+		table.insert(
+			contributes,
+			provision.chezmoi({
+				target = ".pi/agent/extensions/ntfy-notifier/" .. name,
+				kind = "file",
+				asset = "files/.pi/agent/extensions/ntfy-notifier/" .. name,
+			})
+		)
+	end
+	-- The notifier still executes in future shells: stopping source
+	-- management of its environment fragment is not removal.
+	table.insert(
+		contributes,
+		provision.shell({
+			target = ".profile",
+			fragment = {
+				id = "managed-ntfy-notifier-env",
+				order = 40,
+				marker = "# chezmoi: managed ntfy notifier env",
+				body = "[ -r /etc/ntfy/notifier.env ] && { set -a; . /etc/ntfy/notifier.env; set +a; }",
+			},
+		})
+	)
 	return {
 		id = "pi-ntfy-notifier",
 		requires = { "pi" },
-		contributes = {
-			-- The notifier still executes in future shells: stopping source
-			-- management of its environment fragment is not removal.
-			provision.shell({
-				target = ".profile",
-				fragment = {
-					id = "managed-ntfy-notifier-env",
-					order = 40,
-					marker = "# chezmoi: managed ntfy notifier env",
-					body = "[ -r /etc/ntfy/notifier.env ] && { set -a; . /etc/ntfy/notifier.env; set +a; }",
-				},
-			}),
-		},
+		contributes = contributes,
 		verify = function(context)
 			local extension_dir =
 				context.paths.join(context.paths.home, ".pi", "agent", "extensions", extension_dir_name)

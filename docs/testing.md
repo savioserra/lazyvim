@@ -14,9 +14,16 @@ Never run fixtures directly against an applied home: they write fake Node/npm st
 Owned 0700 `/tmp/workstation-test.*` roots are printed and retained for inspection;
 no caller path is recursively deleted. Fixture umask is 022 inside that boundary.
 
-The checker runs all `tests/*.test.lua`, Lua/JSON syntax, generated pin projection,
-StyLua, each shell file separately with `sh -n` and available ShellCheck, then
-`git diff --check`. ShellCheck is required in Linux CI; report local absence.
+The checker runs all `tests/*.test.lua` (graph/profile, provider contract,
+journal/preconditions, real backend renders, provisioning, CLI/update/launcher,
+cold bootstrap, package parity, checker/harness regressions), Lua/JSON syntax,
+generated pin projection, StyLua, each shell file separately with `sh -n` and
+available ShellCheck, then `git diff --check`. ShellCheck is required in Linux
+CI; report local absence. The real-render suite needs a trusted installed
+backend: the canonical pinned path wins, otherwise a retained evidence
+extraction (for example `~/.local/opt/chezmoi-2.72.0/chezmoi`) is used and its
+ACTUAL version is reported by the suite — existing-2.72.0 renders are file
+semantics evidence, never pinned-2.72.1 lifecycle acceptance.
 For bounded Linux source checks, use a cleared environment, network denial,
 120-second deadline and a **4 MiB per-file** limit (`ulimit -f 4096` in a shell
 using 1024-byte blocks; use the byte-equivalent setting otherwise).

@@ -31,7 +31,6 @@ for name in vim.fs.dir(repository .. "/tests") do
 		write(clone .. "/tests/" .. name, "")
 	end
 end
-write(clone .. "/chezmoi/.keep", "")
 write(
 	clone .. "/fixture-nvim",
 	[[#!/bin/sh

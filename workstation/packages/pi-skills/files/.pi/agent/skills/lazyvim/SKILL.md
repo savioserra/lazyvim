@@ -7,10 +7,15 @@ description: Maintains this repository's cross-platform engine-owned workstation
 
 ## Start
 
-1. Locate the whole Git root containing sibling `workstation/` and `chezmoi/`:
-   use `git rev-parse --show-toplevel` in a checkout, otherwise inspect the canonical
-   `~/.local/bin/workstation` link. Never use chezmoi source-path or a root marker.
-   Stop if `~/.local/share/workstation` is a legacy payload rather than a clone.
+1. Locate the whole Git root of the engine clone with
+   `git rev-parse --show-toplevel` in a checkout, otherwise inspect the canonical
+   `~/.local/bin/workstation` link. The repository has no checked-in chezmoi
+   payload tree: packages under `workstation/packages/` own their payload files
+   (`files/`) and declare them as provider recipes; the engine generates
+   target-specific chezmoi source at apply time. Never edit deployed targets or
+   the private generated state under `~/.local/state/workstation` as if it were
+   source. Stop if `~/.local/share/workstation` is a legacy payload rather than
+   a clone.
 2. Read root and nearer `AGENTS.md` files, including their mandatory Backlog CLI
    workflow. Run `git status --short`; preserve unrelated work.
 3. Resolve the following repository references from that root, not this skill's
@@ -20,7 +25,7 @@ description: Maintains this repository's cross-platform engine-owned workstation
 | --- | --- |
 | Install/daily commands | `README.md` |
 | Packages, lifecycle, Pi verification contracts | `docs/capabilities.md` |
-| File backend, removals, guarded cutover | `docs/chezmoi.md` |
+| Generated file backend, engine state, guarded cutover | `docs/chezmoi.md` |
 | Versions, checksums/integrity, pin generation | `docs/tools.md` |
 | Editor profile/locks or tmux | `docs/nvim.md`, `docs/tmux.md` |
 | Isolation and acceptance gates | `docs/testing.md` |

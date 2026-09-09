@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@operator'
 created_date: '2026-09-08 21:27'
-updated_date: '2026-09-09 16:59'
+updated_date: '2026-09-09 18:15'
 labels: []
 dependencies: []
 type: feature
@@ -115,6 +115,8 @@ Parent accepted and fast-forwarded the documentation-only cleanup through 35f116
 E2E workflow7e0984a1 remains BLOCKED: bootstrap/apply passed, Mason child124 hit 300000ms with gopls incomplete; cause unproven. Full suites/public verify/cached bootstrap were not reached. Read-only diagnostic matched all13 archive pins, including Neovim, without waiving lifecycle failure. Full retained report: task34-container-exec/e2e.md in that workflow’s durable outputs. No retry or additional Docker operation authorized; Matrix excluded. TASK-34 stays In Progress with ACs unchanged.
 
 Parent accepted the call-style provider/change-set design after two GLM5.3 council passes (recovery708e781a). The accepted memo/CLI plan correct mixed recipe shapes, graph direction, source-only safety, shell-residue removal and inventory errors (44 tracked source files,17 legacy tombstones). No provider implementation or task-wide acceptance yet; all criteria remain unchecked and prior E2E/native/publication limits remain.
+
+Checkpoint provider-api-typescript-checkpoint committed at 6d88f5eb in worktree pi-subagents/implement-providers-ca93047-9eff-s0-t0: pure provision.chezmoi/shell recipes, generic envelope in core, explicit provider registry with nvim-profile and shared-shell compositors, deterministic shared diff/apply/plan generation, immutable content-addressed generations with fail-closed lock/journal/preconditions/fragment retirement, node pin+nvm.sh moved, typescript package with own plugin/profile/verification, remaining payload via temporary migration-source adapter. New provider/journal/backend-render suites; full check.sh green; real backend evidence uses existing 2.72.0, not pinned 2.72.1.
 <!-- SECTION:NOTES:END -->
 
 ## Plan

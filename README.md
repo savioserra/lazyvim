@@ -33,9 +33,11 @@ git clone https://github.com/savioserra/lazyvim.git "$HOME/.local/share/workstat
 "$HOME/.local/bin/workstation" verify
 ```
 
-The clone is the **whole repository**, containing sibling `workstation/` and
-`chezmoi/` directories. Any checkout can host the launcher. Bootstrap prepares the
-checksum-pinned Neovim runtime and chezmoi backend, then atomically creates
+The clone is the **whole repository**; every home-state payload and recipe
+lives with its owning package under `workstation/packages/`, and the engine
+generates target-specific chezmoi source at apply time — there is no checked-in
+centralized payload tree. Any checkout can host the launcher. Bootstrap prepares
+the checksum-pinned Neovim runtime and chezmoi backend, then atomically creates
 `~/.local/bin/workstation` pointing to that checkout's actual repo-native launcher.
 A matching link is retained; conflicting user files/links/directories are refused,
 not replaced. Keep the checkout available. Add `~/.local/bin` to your PATH for the
@@ -44,6 +46,7 @@ commands below (managed shell files also do this for future shells).
 ## Daily lifecycle
 
 ```sh
+workstation plan     # attributable change-set/patch preview; mutates nothing
 workstation diff     # preview file-backend changes (not a setup simulation)
 workstation apply    # guarded legacy retirement, files, then package setup
 workstation sync     # separately restore mutable application state

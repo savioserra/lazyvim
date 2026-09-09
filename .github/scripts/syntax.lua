@@ -10,7 +10,7 @@ local function scan(directory)
 		end
 	end
 end
-for _, directory in ipairs({ "workstation", "chezmoi", "tests", ".github/scripts" }) do
+for _, directory in ipairs({ "workstation", "tests", ".github/scripts" }) do
 	scan(directory)
 end
 vim.json.decode(table.concat(vim.fn.readfile(".luarc.json"), "\n"))

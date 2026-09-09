@@ -25,10 +25,10 @@ for suite in tests/*.test.lua; do
 done
 sh "$isolate" "$nvim" -l .github/scripts/syntax.lua
 sh "$isolate" "$nvim" -l workstation/bootstrap/generate.lua --check
-sh "$isolate" "$stylua" --check --config-path .stylua.toml workstation chezmoi/dot_config/nvim tests .github/scripts
-# Each file requires its own sh -n invocation. These modifiers are literal shell
-# (no template expressions); checking them does not execute their output.
-find workstation chezmoi .github/scripts -type f \( -name '*.sh' -o -name 'workstation' -o -name 'modify_*.tmpl' \) -print |
+sh "$isolate" "$stylua" --check --config-path .stylua.toml workstation tests .github/scripts
+# Each file requires its own sh -n invocation. Generated modify programs are
+# exercised (not just parsed) by the provider/journal/backend-render suites.
+find workstation .github/scripts -type f \( -name '*.sh' -o -name 'workstation' \) -print |
 	while IFS= read -r file; do
 		sh "$isolate" sh -n "$file"
 		if command -v shellcheck >/dev/null 2>&1; then

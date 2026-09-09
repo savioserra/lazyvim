@@ -20,7 +20,7 @@ Read the nearest scoped `AGENTS.md` and follow the owning reference:
 
 ## Operating contract
 
-- Edit source, not deployed state. The whole Git clone contains sibling `workstation/` and `chezmoi/`; never implicitly overwrite a clone or delete a legacy payload.
+- Edit source, not deployed state. Every home-state payload and recipe lives with its owning package under `workstation/packages/`; home source state is generated per target by the engine, never checked in. Never implicitly overwrite a clone or delete a legacy payload.
 - `workstation/bin/workstation` is the sole public lifecycle interface. Chezmoi is the explicit-source/destination file backend; no public chezmoi aliases, source-path discovery, externals, lifecycle scripts or root wrappers.
 - Register each lifecycle capability once under `workstation/packages/` in the explicit catalog. Keep core domain-neutral: no catalog/package/Neovim imports. Detailed composition and lifecycle rules belong to `docs/capabilities.md`.
 - Bootstrap owns pinned Neovim/backend and launcher; setup owns other downloads. No Node bootstrap dependency, unpinned downloads, `sudo` or OS-package-manager installation of managed tools.
@@ -46,14 +46,14 @@ replace Linux/WSL and native macOS arm64 acceptance.
 | Change | Required updates |
 | --- | --- |
 | Host tool version | `workstation/versions.json`, owning package URL/checksum, `docs/tools.md` |
-| Node version | `chezmoi/dot_node-version`, canonical Node URL/checksum |
+| Node version | `workstation/packages/node/files/.node-version`, canonical Node URL/checksum |
 | Global npm capability | Exact version, registry integrity, feature setup/verify, docs |
 | Pi extension package | Exact version or source-managed extension contract, setup/verify, Pi discovery, docs |
-| Pi skill | `chezmoi/dot_pi/private_agent/skills/<name>/SKILL.md`, `pi-skills` verification, docs |
+| Pi skill | `workstation/packages/pi-skills/files/.pi/agent/skills/<name>/SKILL.md`, `pi-skills` verification, docs |
 | tmux plugin pin | `workstation/packages/tmux/init.lua`, `docs/tmux.md` |
 | Workstation package | combined contribution, package catalog, tests, docs |
 | Neovim language | `languages/profile.lua`, lockfiles if needed, behavior case |
-| Removed deployed source | `chezmoi/.chezmoiremove` unless inside an `exact` target |
+| Removed deployed source | provider `kind = "remove"` recipe or an engine policy tombstone (`workstation/lua/workstation/provision/policy.lua`) |
 | New platform condition | canonical asset metadata, capability support, package backend, CI/test coverage |
 
 <!-- BACKLOG.MD GUIDELINES START -->

@@ -5,7 +5,7 @@
 | Target | `~/.config/nvim` |
 | Distribution | LazyVim |
 | Plugin manager | lazy.nvim |
-| Managed source | `chezmoi/dot_config/nvim/` |
+| Managed source | `workstation/packages/nvim/files/.config/nvim/` (recipes in `packages/nvim/init.lua`) |
 
 ## Startup and composition
 
@@ -24,15 +24,19 @@
 | `lua/config/keymaps.lua` | Keymaps |
 | `lua/config/autocmds.lua` | Autocommands |
 | `lua/config/sync.lua` | Named blocking sync operations |
-| `lua/languages/profile.lua` | Language imports, prerequisites, verification cases |
+| `lua/languages/profile.lua` | Generated language imports, prerequisites, verification cases |
 | `lua/languages/plugins/*.lua` | Profile-referenced custom specs |
 | `lazyvim.json` | Base LazyVim extras |
 | `neoconf.json` | Project settings import policy |
 
 ## Profile fields
 
-The canonical [profile](../chezmoi/dot_config/nvim/lua/languages/profile.lua)
-returns an ordered list of contribution tables. The engine
+The deployed
+[`languages/profile.lua`](../workstation/packages/nvim/init.lua) is **generated**
+by the nvim-owned compositor from declared `nvim-profile` recipes
+(base/standard/Go from `packages/nvim`, language entries from their own
+capabilities such as `packages/typescript`), ordered Go, TypeScript, standard.
+The engine
 [validator](../workstation/packages/nvim/profile.lua) checks these fields:
 
 | Field | Shape / use |

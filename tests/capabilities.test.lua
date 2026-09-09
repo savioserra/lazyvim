@@ -70,7 +70,6 @@ for _, name in ipairs({
 	"nvim",
 	"typescript",
 	"tmux",
-	"migration-source",
 }) do
 	assert(
 		vim.uv.fs_stat(vim.fs.joinpath(root, "packages", name, "init.lua")),
@@ -85,11 +84,18 @@ for _, name in ipairs({ "pi-skills", "pi-subagents", "pi-web-access" }) do
 		"package verifier is missing: " .. name
 	)
 end
-assert(catalog_count == 14, "expected fourteen explicitly registered packages")
+assert(catalog_count == 13, "expected thirteen explicitly registered packages")
+-- The centralized checked-in chezmoi tree is fully retired: every payload
+-- item lives with its owning capability and no legacy adapter remains.
+assert(vim.uv.fs_stat(vim.fs.joinpath(repository, "chezmoi")) == nil, "centralized chezmoi tree still exists")
 assert(
-	vim.uv.fs_stat(vim.fs.joinpath(repository, "chezmoi", "services")) == nil,
-	"service source must not deploy into HOME"
+	vim.uv.fs_stat(vim.fs.joinpath(root, "packages", "migration-source")) == nil,
+	"temporary migration adapter still exists"
 )
+-- Repository instructions cannot deploy: no recipe declares an AGENTS target.
+for _, entry in ipairs(plan.entries) do
+	assert(not entry.target:find("AGENTS.md", 1, true), "instructions leaked into the plan: " .. entry.target)
+end
 assert(#packages.contributions == catalog_count, "catalog and materialized package counts differ")
 assert(
 	vim.uv.fs_stat(vim.fs.joinpath(root, "lua", "setup", "capabilities")) == nil,
@@ -124,7 +130,6 @@ local expected_linux = {
 	"nvim",
 	"typescript",
 	"tmux",
-	"migration-source",
 }
 assert(vim.deep_equal(linux, expected_linux), "Linux package graph order changed")
 assert(vim.deep_equal(ids_for("darwin"), expected_linux), "macOS package graph order differs from Linux")

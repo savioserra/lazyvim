@@ -1,5 +1,6 @@
 local commands = require("workstation.commands")
 local managed_node = require("packages.node.managed")
+local provision = require("workstation.provision.recipes")
 
 local skills = {
 	{
@@ -15,10 +16,25 @@ local skills = {
 local module_path = debug.getinfo(1, "S").source:gsub("^@", "")
 local verifier = vim.fs.joinpath(vim.fs.dirname(vim.fs.normalize(module_path)), "verify.mjs")
 
+local function skill_recipe(directory)
+	return provision.chezmoi({
+		target = (".pi/agent/skills/%s/SKILL.md"):format(directory),
+		kind = "file",
+		asset = ("files/.pi/agent/skills/%s/SKILL.md"):format(directory),
+	})
+end
+
 return function()
+	local contributes = {
+		provision.chezmoi({ target = ".pi/agent", kind = "directory", private = true }),
+	}
+	for _, skill in ipairs(skills) do
+		table.insert(contributes, skill_recipe(skill.directory))
+	end
 	return {
 		id = "pi-skills",
 		requires = { "pi" },
+		contributes = contributes,
 		verify = function(context)
 			local npm = managed_node.executable(context, "npm")
 			local node = managed_node.executable(context, "node")

@@ -6,18 +6,13 @@
 | --- | --- |
 | `README.md` | Install, apply, update commands |
 | `AGENTS.md` | Repository-wide implementation rules |
-| `tests/*.test.lua` | Graph/profile, provisioning, CLI/update/launcher, cold bootstrap, package parity and isolated harness fixtures |
+| `tests/*.test.lua` | Graph/profile, provider contract, journal/preconditions, real backend renders, provisioning, CLI/update/launcher, cold bootstrap, package parity and isolated harness fixtures |
 | `.github/scripts/test-apply.sh` | Scratch-home end-to-end apply test |
 | `.github/workflows/ci.yml` | Platform matrix and lint |
 | `.github/workflows/release.yml` | Tagged source archives |
-| `chezmoi/` | Chezmoi source root |
-| `workstation/packages/`, `workstation/versions.json` | Package-owned host provisioning and canonical pins |
+| `workstation/packages/`, `workstation/versions.json` | Package-owned host provisioning, file recipes, payload assets and canonical pins |
 | `workstation/bin/workstation` | Sole public lifecycle launcher; bootstrap installs the home symlink |
-| `workstation/` | Package monorepo, lifecycle CLI, core, and versions |
-| `chezmoi/dot_pi/private_agent/skills/` | Managed global Pi skills |
-| `chezmoi/dot_pi/private_agent/extensions/` | Source-managed Pi extensions |
-| `chezmoi/dot_config/nvim/` | Neovim config and locks |
-| `chezmoi/dot_config/tmux/`, `chezmoi/dot_tmux.conf` | tmux config |
+| `workstation/` | Package monorepo, lifecycle CLI, core, providers, engine state and versions |
 
 ## Documentation map
 

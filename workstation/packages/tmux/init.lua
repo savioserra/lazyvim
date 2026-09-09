@@ -1,4 +1,5 @@
 local commands = require("workstation.commands")
+local provision = require("workstation.provision.recipes")
 
 local plugins = {
 	{
@@ -37,6 +38,25 @@ return function()
 		id = "tmux",
 		requires = { "foundation" },
 		supported_hosts = { linux = true, darwin = true },
+		contributes = {
+			provision.chezmoi({
+				target = ".tmux.conf",
+				kind = "file",
+				asset = "files/.tmux.conf",
+			}),
+			provision.chezmoi({
+				target = ".config/tmux/themes/tmux2k.conf",
+				kind = "file",
+				asset = "files/.config/tmux/themes/tmux2k.conf",
+			}),
+			-- The XDG tmux config stays a link to the managed legacy config so
+			-- TPM keeps loading the pinned plugin root.
+			provision.chezmoi({
+				target = ".config/tmux/tmux.conf",
+				kind = "symlink",
+				to = "../../.tmux.conf",
+			}),
+		},
 		setup = function(context)
 			local root = context.paths.join(context.paths.home, ".tmux", "plugins")
 			vim.fn.mkdir(root, "p")

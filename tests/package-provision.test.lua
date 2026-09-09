@@ -29,7 +29,7 @@ local graph = require("workstation.core.graph")
 local materialize = require("workstation.core.materialize")
 local runner = require("workstation.core.runner")
 local packages = materialize.from_catalog(require("workstation.catalog"), { context = { paths = paths } })
-assert(#packages.contributions == 14)
+assert(#packages.contributions == 13)
 assert(packages.handlers.nvim.setup == nil, "Neovim must remain bootstrap-owned")
 local original_arg = arg
 arg = { "status" }
@@ -254,9 +254,7 @@ package.loaded["workstation.app"], package.loaded["workstation.provisioner"], pa
 	app, backend, retire
 commands.execute, commands.capture, provision.create = execute, capture, create
 
-for _, removed in ipairs({ ".chezmoiexternals", ".chezmoiscripts", "dot_local/share/workstation" }) do
-	assert(not vim.uv.fs_lstat(repository .. "/chezmoi/" .. removed), "home-deployed engine/external/script remains")
-end
+assert(vim.uv.fs_stat(repository .. "/chezmoi") == nil, "centralized chezmoi tree still exists")
 local removals = require("workstation.provision.policy").legacy_removals
 assert(#removals == 17, "expected the seventeen baseline tombstones")
 assert(vim.list_contains(removals, ".local/share/workstation/versions.json"))

@@ -12,5 +12,4 @@ return {
 	require("packages.nvim"),
 	require("packages.typescript"),
 	require("packages.tmux"),
-	require("packages.migration-source"),
 }

@@ -6,7 +6,7 @@ Supported deployment policy is Linux, WSL-as-Linux, and macOS (arm64).
 | --- | --- |
 | Download operations | Owning `workstation/packages/<name>/` setup; Neovim bootstrap and engine-owned chezmoi backend |
 | Shared versions, URL templates and SHA-256 | `workstation/versions.json` |
-| Node version | `chezmoi/dot_node-version` |
+| Node version | `workstation/packages/node/files/.node-version` |
 | Update unit | Version, URL, SHA-256 checksum, verification, this table |
 
 | Tool | Version | Source | Target | Platforms |
@@ -15,7 +15,7 @@ Supported deployment policy is Linux, WSL-as-Linux, and macOS (arm64).
 | Neovim | 0.12.4 | github.com/neovim/neovim | `.local/opt/nvim` (exact tree, engine bootstrap) | linux-x86_64, darwin-arm64 |
 | Go | 1.27.1 | go.dev | `.local/opt/go` (exact tree, `go` setup) | linux-x86_64, darwin-arm64 |
 | nvm-sh | 0.40.4 | github.com/nvm-sh/nvm | `.local/opt/nvm` (non-exact tree, `node` setup) | linux-x86_64, darwin-arm64 |
-| Node.js | `chezmoi/dot_node-version` (currently 24.19.0) | nodejs.org | `.local/opt/nvm/versions/node/v<version>` (non-exact, `node` setup) | linux-x86_64, darwin-arm64 |
+| Node.js | `workstation/packages/node/files/.node-version` (currently 24.19.0) | nodejs.org | `.local/opt/nvm/versions/node/v<version>` (non-exact, `node` setup) | linux-x86_64, darwin-arm64 |
 | ripgrep | 15.2.0 | github.com/BurntSushi/ripgrep | `.local/bin/rg` | linux-x86_64, darwin-arm64 |
 | fd | 10.4.2 | github.com/sharkdp/fd | `.local/bin/fd` | linux-x86_64, darwin-arm64 |
 | fzf | 0.74.2 | github.com/junegunn/fzf | `.local/bin/fzf` | linux-x86_64, darwin-arm64 |
@@ -65,5 +65,5 @@ retrying. Do not remove a lock while its installer is still running.
 | C compiler/build tools, Linux fontconfig, macOS Command Line Tools | Parser/application builds and font verification prerequisites | User or CI image; see README |
 | ShellCheck | Validation tool supplied by Linux CI image; used wherever available | `.github/scripts/check.sh`; no unpinned lint downloads |
 | 1Password desktop app and account session | User application and interactive authentication are outside source state | Install the official app, enable CLI integration, and sign in interactively |
-| Mason-installed LSP servers/formatters/linters | Neovim-internal package manager, not a host binary | `zapling/mason-lock.nvim`, `chezmoi/dot_config/nvim/mason-lock.json` — see [Neovim](nvim.md) |
-| lazy.nvim-installed Neovim plugins | Neovim-internal package manager | `chezmoi/dot_config/nvim/lazy-lock.json` — see [Neovim](nvim.md) |
+| Mason-installed LSP servers/formatters/linters | Neovim-internal package manager, not a host binary | `zapling/mason-lock.nvim`, `workstation/packages/nvim/files/.config/nvim/mason-lock.json` — see [Neovim](nvim.md) |
+| lazy.nvim-installed Neovim plugins | Neovim-internal package manager | `workstation/packages/nvim/files/.config/nvim/lazy-lock.json` — see [Neovim](nvim.md) |

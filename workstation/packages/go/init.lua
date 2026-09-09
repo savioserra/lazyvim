@@ -1,9 +1,17 @@
 local commands = require("workstation.commands")
+local provision = require("workstation.provision.recipes")
 
 return function()
 	return {
 		id = "go",
 		requires = { "foundation" },
+		contributes = {
+			provision.chezmoi({
+				target = ".local/bin/go",
+				kind = "symlink",
+				to = "../opt/go/bin/go",
+			}),
+		},
 		setup = function(context)
 			local v = context.versions
 			local asset = context.platform.name == "darwin" and "darwin_arm64" or "linux_x86_64"

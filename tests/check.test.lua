@@ -22,7 +22,7 @@ local function checked(argv)
 end
 local clone, home, bin = scratch .. "/source", scratch .. "/populated", scratch .. "/bin"
 vim.fn.mkdir(clone, "p")
-for _, path in ipairs({ "workstation", "chezmoi", ".stylua.toml", ".luarc.json", ".github" }) do
+for _, path in ipairs({ "workstation", ".stylua.toml", ".luarc.json", ".github" }) do
 	checked({ "cp", "-R", repository .. "/" .. path, clone .. "/" .. path })
 end
 -- An explicit subset avoids recursion while retaining the real fresh-HOME
