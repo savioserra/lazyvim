@@ -31,7 +31,7 @@ for _, path in ipairs({ "capabilities.test.lua", "package-provision.test.lua", "
 	vim.fn.mkdir(clone .. "/tests", "p")
 	checked({ "cp", "-R", repository .. "/tests/" .. path, clone .. "/tests/" .. path })
 end
-write(home .. "/.node-version", read(repository .. "/chezmoi/dot_node-version"))
+write(home .. "/.node-version", read(repository .. "/workstation/packages/node/files/.node-version"))
 for _, path in ipairs({ ".config/keep", ".pi/agent/auth.json", ".npmrc", ".profile", ".local/opt/nvm/alias/default" }) do
 	write(home .. "/" .. path, "synthetic protected state; never source or execute")
 	assert(vim.uv.fs_chmod(home .. "/" .. path, 256)) -- 0400
@@ -40,6 +40,9 @@ local node = vim.trim(read(home .. "/.node-version"))
 for _, name in ipairs({ "node", "npm" }) do
 	write(home .. "/.local/opt/nvm/versions/node/v" .. node .. "/bin/" .. name, "protected installed fixture", true)
 end
+-- The cloned check.sh probes for a trusted backend; a stub satisfies the
+-- lookup because the cloned suites are inert copies in this regression.
+write(home .. "/.local/opt/chezmoi/bin/chezmoi", "#!/bin/sh\nexit 0\n", true)
 for path, target in pairs({
 	[".local/opt/nvim/bin/nvim"] = nvim,
 	[".local/share/nvim/mason/bin/stylua"] = stylua,

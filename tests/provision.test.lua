@@ -247,8 +247,15 @@ end
 do
 	local provisioner = require("workstation.provisioner")
 	local destination = scratch .. "/argv-home"
-	local argv = provisioner.argv("apply", { dry_run = true, destination = destination })
-	assert(argv[2] == "--source" and argv[3] == repository .. "/chezmoi")
+	local generated = scratch .. "/generated"
+	assert_fails_argument = function(options)
+		local ok, failure = pcall(provisioner.argv, "apply", options)
+		assert(not ok and tostring(failure):find("explicit source generation", 1, true), tostring(failure))
+	end
+	assert_fails_argument({})
+	assert_fails_argument({ destination = destination })
+	local argv = provisioner.argv("apply", { dry_run = true, destination = destination, source = generated })
+	assert(argv[2] == "--source" and argv[3] == generated)
 	assert(argv[4] == "--destination" and argv[5] == destination)
 	assert(argv[6] == "apply" and argv[7] == "--dry-run" and argv[9] == "scripts")
 	local log = scratch .. "/backend-argv"

@@ -23,16 +23,13 @@ end
 -- 146fee8c; this fixture is evidence, never a runtime source of pins.
 local expected = vim.json.decode(paths.read(repository .. "/tests/fixtures/package-provision.expected.json"))
 local versions = require("workstation.versions")
-local canonical_node = vim.trim(paths.read(repository .. "/chezmoi/dot_node-version"))
+local canonical_node = vim.trim(paths.read(repository .. "/workstation/packages/node/files/.node-version"))
 assert(versions.node == nil, "test requires a fresh isolated HOME")
 local graph = require("workstation.core.graph")
 local materialize = require("workstation.core.materialize")
-local profile = require("packages.nvim.profile").validate(
-	assert(loadfile(repository .. "/chezmoi/dot_config/nvim/lua/languages/profile.lua"))()
-)
 local runner = require("workstation.core.runner")
-local packages = materialize.from_catalog(require("workstation.catalog"), { nvim_profile = profile })
-assert(#packages.contributions == 12)
+local packages = materialize.from_catalog(require("workstation.catalog"), { context = { paths = paths } })
+assert(#packages.contributions == 14)
 assert(packages.handlers.nvim.setup == nil, "Neovim must remain bootstrap-owned")
 local original_arg = arg
 arg = { "status" }
@@ -209,7 +206,10 @@ local app, backend, retire =
 package.loaded["workstation.provisioner"] = {
 	apply = function()
 		assert(versions.node == nil)
-		paths.write(paths.home .. "/.node-version", paths.read(repository .. "/chezmoi/dot_node-version"))
+		paths.write(
+			paths.home .. "/.node-version",
+			paths.read(repository .. "/workstation/packages/node/files/.node-version")
+		)
 	end,
 }
 package.loaded["workstation.retire"] = { run = function() end }
@@ -218,6 +218,8 @@ package.loaded["workstation.app"] = {
 	create = function()
 		return {
 			context = context,
+			graph = { ordered = {} },
+			packages_roots = {},
 			runner = {
 				run = function(_, step)
 					assert(step == "setup" and versions.node == canonical_node)
@@ -255,7 +257,8 @@ commands.execute, commands.capture, provision.create = execute, capture, create
 for _, removed in ipairs({ ".chezmoiexternals", ".chezmoiscripts", "dot_local/share/workstation" }) do
 	assert(not vim.uv.fs_lstat(repository .. "/chezmoi/" .. removed), "home-deployed engine/external/script remains")
 end
-local removals = vim.split(vim.trim(paths.read(repository .. "/chezmoi/.chezmoiremove")), "\n")
+local removals = require("workstation.provision.policy").legacy_removals
+assert(#removals == 17, "expected the seventeen baseline tombstones")
 assert(vim.list_contains(removals, ".local/share/workstation/versions.json"))
 assert(not vim.list_contains(removals, ".local/share/workstation"))
 assert(not vim.list_contains(removals, ".local/share/workstation/workstation/versions.json"))

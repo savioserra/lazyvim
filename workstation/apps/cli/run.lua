@@ -12,7 +12,7 @@ local commands = require("workstation.commands")
 local paths = require("workstation.paths")
 local provisioner = require("workstation.provisioner")
 
-local command = assert(arg[1], "usage: workstation <apply|update|setup|sync|verify|diff|status|bootstrap>")
+local command = assert(arg[1], "usage: workstation <apply|update|setup|sync|verify|diff|plan|status|bootstrap>")
 local known_commands = {
 	apply = true,
 	update = true,
@@ -20,6 +20,7 @@ local known_commands = {
 	sync = true,
 	verify = true,
 	diff = true,
+	plan = true,
 	status = true,
 	bootstrap = true,
 }
@@ -37,13 +38,22 @@ local function exec_via_launcher(step)
 end
 
 ---versions.lua reads .node-version at require time, before apply exists it;
----refresh the pin in place once chezmoi has materialized the file.
+---refresh the pin in place once the backend has materialized the file.
 local function refresh_node_version(context)
 	local path = paths.join(context.paths.home, ".node-version")
 	if context.paths.exists(path) then
 		context.versions.node = vim.trim(context.paths.read(path))
 	end
 	context.platform.configure_runtime()
+end
+
+---Collect the supported-host graph, validate every recipe and compose the
+---desired source plan BEFORE either diff or apply; both commands share one
+---deterministic generation for identical declarations and host.
+local function planned_application()
+	local application = require("workstation.app").create()
+	local plan = require("workstation.source").plan(application)
+	return application, plan
 end
 
 -- The shell has already installed the runtime before this handoff. Lua owns
@@ -55,13 +65,22 @@ if command == "bootstrap" then
 	return
 end
 
--- diff is a pure chezmoi passthrough; it needs no application state.
+-- diff is a read-only backend preview over the same desired source state.
 if command == "diff" then
-	provisioner.diff()
+	local _, plan = planned_application()
+	provisioner.diff(plan)
 	return
 end
 
-local application = require("workstation.app").create()
+-- plan previews the attributable change sets and generated-source patches
+-- without mutating the target or the journal.
+if command == "plan" then
+	local application, plan = planned_application()
+	require("workstation.changesets").print_report(application, plan)
+	return
+end
+
+local application, plan = planned_application()
 
 if command == "status" then
 	local platform = application.context.platform.name
@@ -79,10 +98,12 @@ if command == "status" then
 	return
 end
 
--- apply = engine retire phase -> chezmoi home state -> package setup.
+-- apply = engine retire phase -> chezmoi home state -> package setup. The plan
+-- is validated before real-account retirement; retirement still strictly
+-- precedes file deletion, and files precede the Node refresh and setup.
 if command == "apply" then
 	require("workstation.retire").run(application.context)
-	provisioner.apply()
+	provisioner.apply(plan)
 	refresh_node_version(application.context)
 	application.runner:run("setup")
 	print(("apply complete (%s)."):format(application.context.platform.name))

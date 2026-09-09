@@ -233,7 +233,7 @@ vim.env.PATH = scratch .. "/bin:" .. vim.env.PATH
 local original_app, original_provisioner = package.loaded["workstation.app"], package.loaded["workstation.provisioner"]
 package.loaded["workstation.app"] = {
 	create = function()
-		return { context = context }
+		return { context = context, graph = { ordered = {} }, packages_roots = {} }
 	end,
 }
 package.loaded["workstation.provisioner"] = {
@@ -315,6 +315,8 @@ package.loaded["workstation.app"] = {
 	create = function()
 		return {
 			context = { paths = paths, versions = versions, platform = adapter },
+			graph = { ordered = {} },
+			packages_roots = {},
 			runner = {
 				run = function(_, step)
 					assert(step == "setup" and versions.node == "99.1.0")

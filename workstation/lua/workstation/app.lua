@@ -16,6 +16,7 @@ function M.create(context)
 		context = context,
 		graph = resolved,
 		packages = packages.contributions,
+		packages_roots = packages.roots,
 		runner = runner.new(resolved, packages.handlers, context),
 	}
 end

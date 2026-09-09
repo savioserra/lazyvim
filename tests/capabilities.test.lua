@@ -33,12 +33,15 @@ local function capability(id, requires, options)
 	return contract(vim.tbl_extend("force", { id = id, requires = requires or {} }, options or {}))
 end
 
-local profile_path = vim.fs.joinpath(repository, "chezmoi", "dot_config", "nvim", "lua", "languages", "profile.lua")
-local profile = profile_module.validate(assert(loadfile(profile_path))())
+local application_module = require("workstation.app")
 local catalog = require("workstation.catalog")
-local packages = materialize.from_catalog(catalog, { nvim_profile = profile })
-local application = require("workstation.app")
-assert(type(application.create) == "function", "workstation composition root did not load")
+assert(type(application_module.create) == "function", "workstation composition root did not load")
+local application = application_module.create()
+local plan = require("workstation.source").plan(application)
+local packages = materialize.from_catalog(catalog, { context = application.context })
+local profile = application.context.nvim_profile
+assert(profile ~= nil and profile == plan.profile, "composed profile was not attached to the context")
+local catalog_count = #catalog
 
 for _, name in ipairs({ "contract", "materialize", "graph", "runner" }) do
 	local source = vim.fn.readfile(vim.fs.joinpath(root, "lua", "workstation", "core", name .. ".lua"))
@@ -65,7 +68,9 @@ for _, name in ipairs({
 	"go",
 	"secrets",
 	"nvim",
+	"typescript",
 	"tmux",
+	"migration-source",
 }) do
 	assert(
 		vim.uv.fs_stat(vim.fs.joinpath(root, "packages", name, "init.lua")),
@@ -80,12 +85,12 @@ for _, name in ipairs({ "pi-skills", "pi-subagents", "pi-web-access" }) do
 		"package verifier is missing: " .. name
 	)
 end
-assert(#catalog == 12, "expected twelve explicitly registered packages")
+assert(catalog_count == 14, "expected fourteen explicitly registered packages")
 assert(
 	vim.uv.fs_stat(vim.fs.joinpath(repository, "chezmoi", "services")) == nil,
 	"service source must not deploy into HOME"
 )
-assert(#packages.contributions == #catalog, "catalog and materialized package counts differ")
+assert(#packages.contributions == catalog_count, "catalog and materialized package counts differ")
 assert(
 	vim.uv.fs_stat(vim.fs.joinpath(root, "lua", "setup", "capabilities")) == nil,
 	"legacy capability catalog still exists"
@@ -117,7 +122,9 @@ local expected_linux = {
 	"go",
 	"secrets",
 	"nvim",
+	"typescript",
 	"tmux",
+	"migration-source",
 }
 assert(vim.deep_equal(linux, expected_linux), "Linux package graph order changed")
 assert(vim.deep_equal(ids_for("darwin"), expected_linux), "macOS package graph order differs from Linux")
@@ -138,12 +145,28 @@ assert(index_of(linux, "pi") < index_of(linux, "pi-web-access"), "pi must run be
 assert(index_of(linux, "foundation") < index_of(linux, "secrets"), "foundation must run before secrets")
 assert(index_of(linux, "foundation") < index_of(linux, "tmux"), "foundation must run before tmux")
 
-local prerequisites = profile_module.required_capabilities(profile)
-assert_contains(prerequisites, "node")
-assert_contains(prerequisites, "go")
+-- nvim's dependencies are declared, not inferred from the deployed profile;
+-- typescript depends on node+nvim and never the other way around.
+local nvim_specification
+for _, specification in ipairs(application.graph.ordered) do
+	if specification.id == "nvim" then
+		nvim_specification = specification
+	end
+end
+assert(vim.deep_equal(nvim_specification.requires, { "foundation", "node", "go" }), "nvim requires drifted")
+local typescript_specification
+for _, specification in ipairs(application.graph.ordered) do
+	if specification.id == "typescript" then
+		typescript_specification = specification
+	end
+end
+assert(vim.deep_equal(typescript_specification.requires, { "node", "nvim" }), "typescript requires drifted")
 for _, prerequisite in ipairs({ "foundation", "node", "go" }) do
 	assert(index_of(linux, prerequisite) < index_of(linux, "nvim"), prerequisite .. " must run before Neovim")
 end
+assert(index_of(linux, "nvim") < index_of(linux, "typescript"), "nvim must run before typescript")
+-- The composed profile preserves the explicit Go, TypeScript, standard order.
+assert(#profile == 3 and profile[1].id == "go" and profile[2].id == "typescript" and profile[3].id == "standard")
 
 assert_fails("duplicate package identity", function()
 	materialize.from_catalog({

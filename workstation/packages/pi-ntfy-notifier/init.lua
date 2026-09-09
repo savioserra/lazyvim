@@ -1,5 +1,6 @@
 local commands = require("workstation.commands")
 local managed_node = require("packages.node.managed")
+local provision = require("workstation.provision.recipes")
 
 local extension_dir_name = "ntfy-notifier"
 
@@ -7,6 +8,19 @@ return function()
 	return {
 		id = "pi-ntfy-notifier",
 		requires = { "pi" },
+		contributes = {
+			-- The notifier still executes in future shells: stopping source
+			-- management of its environment fragment is not removal.
+			provision.shell({
+				target = ".profile",
+				fragment = {
+					id = "managed-ntfy-notifier-env",
+					order = 40,
+					marker = "# chezmoi: managed ntfy notifier env",
+					body = "[ -r /etc/ntfy/notifier.env ] && { set -a; . /etc/ntfy/notifier.env; set +a; }",
+				},
+			}),
+		},
 		verify = function(context)
 			local extension_dir =
 				context.paths.join(context.paths.home, ".pi", "agent", "extensions", extension_dir_name)

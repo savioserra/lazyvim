@@ -42,6 +42,7 @@ printf 'nvim:%s\n' "$*" >> "$parent/events"
 ]],
 	true
 )
+write(clone .. "/fixture-chezmoi", "#!/bin/sh\nexit 0\n", true)
 write(
 	clone .. "/fixture-stylua",
 	[[#!/bin/sh
@@ -76,9 +77,10 @@ if [ "$1" = bootstrap ]; then
  ! command -v node
  ! command -v nvim
  printf 'no-ambient-node-or-nvim\n' >> "$HOME/events"
- mkdir -p "$HOME/.local/bin" "$HOME/.local/opt/nvim/bin" "$HOME/.local/share/nvim/mason/bin"
+ mkdir -p "$HOME/.local/bin" "$HOME/.local/opt/nvim/bin" "$HOME/.local/share/nvim/mason/bin" "$HOME/.local/opt/chezmoi/bin"
  cp fixture-nvim "$HOME/.local/opt/nvim/bin/nvim"
  cp fixture-stylua "$HOME/.local/share/nvim/mason/bin/stylua"
+ cp fixture-chezmoi "$HOME/.local/opt/chezmoi/bin/chezmoi"
  ln -s "$PWD/workstation/bin/workstation" "$HOME/.local/bin/workstation"
 fi
 ]],

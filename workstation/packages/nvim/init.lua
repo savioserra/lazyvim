@@ -1,27 +1,18 @@
 local commands = require("workstation.commands")
+local leaf = require("packages.nvim.leaf")
+local paths = require("workstation.paths")
+local profile_module = require("packages.nvim.profile")
+local provision = require("workstation.provision.recipes")
 
-local module_path = debug.getinfo(1, "S").source:gsub("^@", "")
-local child_path = vim.fs.joinpath(vim.fs.dirname(vim.fs.normalize(module_path)), "child.lua")
+-- nvim owns base editor state: config payload, lockfiles and the base/standard
+-- and Go language intents of the composed profile. Language capabilities such
+-- as typescript contribute their own intents and verify their own behavior.
 
-local function run_child(context, operation, request, inherit_output)
-	local request_path = vim.fn.tempname() .. ".json"
-	context.paths.write(request_path, vim.json.encode(request or {}))
-	local lua = ("local ok, err = xpcall(function() dofile(%q)(%q, %q) end, debug.traceback); if not ok then io.stderr:write(err .. '\\n'); vim.cmd('cquit 1') end"):format(
-		child_path,
-		operation,
-		request_path
-	)
-	local command = inherit_output and commands.execute or commands.capture
-	local ok, result = pcall(command, context.platform.nvim, { "--headless", "-c", "lua " .. lua, "+qa" })
-	vim.fs.rm(request_path, { force = true })
-	if not ok then
-		error(result)
-	end
-	return result
-end
-
-local function read_json(path, context)
-	return vim.json.decode(context.paths.read(path))
+local function read_json(path)
+	local file = assert(io.open(path, "rb"))
+	local contents = file:read("*a")
+	file:close()
+	return vim.json.decode(contents)
 end
 
 local function verify_locked_state(context)
@@ -31,65 +22,109 @@ local function verify_locked_state(context)
 		vim.split(commands.capture("nvim", { "--version" }), "\n")[1] == first_line,
 		"Configured environment does not resolve managed Neovim"
 	)
-	run_child(context, "messages", {})
+	leaf.run_child(context, "messages", {})
 
 	local config = context.paths.join(context.paths.home, ".config", "nvim")
 	for _, lock in ipairs({
 		{ "lazy-lock.json", context.paths.join(context.platform.nvim_data(), "lazy") },
 		{ "mason-lock.json", context.paths.join(context.platform.nvim_data(), "mason", "packages") },
 	}) do
-		for name in pairs(read_json(context.paths.join(config, lock[1]), context)) do
+		for name in pairs(read_json(context.paths.join(config, lock[1]))) do
 			assert(context.paths.exists(context.paths.join(lock[2], name)), "Missing " .. lock[1] .. " entry: " .. name)
 		end
 	end
 end
 
-local function verify_profile(context, profile)
-	local mason_lock = read_json(context.paths.join(context.paths.home, ".config", "nvim", "mason-lock.json"), context)
-	for _, contribution in ipairs(profile) do
-		for _, package_name in ipairs(contribution.mason_packages or {}) do
-			assert(mason_lock[package_name], "Neovim profile requires unlocked Mason package " .. package_name)
-		end
-		if contribution.plugin_module then
-			run_child(context, "module", { module = contribution.plugin_module })
-		end
-	end
-end
-
-local function verify_language(context, directory, behavior_case)
-	local source = context.paths.join(directory, behavior_case.filename)
-	context.paths.write(source, behavior_case.contents)
-	run_child(context, "language", { source = source, case = behavior_case })
-end
-
-local function verify_formatter(context, directory, behavior_case)
-	for name, contents in pairs(behavior_case.project_files or {}) do
-		context.paths.write(context.paths.join(directory, name), contents)
-	end
-	local source = context.paths.join(directory, behavior_case.filename)
-	context.paths.write(source, behavior_case.contents)
-	run_child(context, "formatter", { source = source })
-	assert(
-		context.paths.read(source) == behavior_case.expected,
-		behavior_case.language .. " formatter did not produce expected output"
-	)
-end
+-- nvim's own profile intents, in the composed order they declare: Go before
+-- TypeScript (contributed by the typescript capability) before standard.
+local intents = {
+	{
+		order = 10,
+		entry = {
+			id = "go",
+			requires = { "go" },
+			lazyvim_extras = { "lazyvim.plugins.extras.lang.go" },
+			language_cases = {
+				{
+					language = "go",
+					filename = "attachment_test.go",
+					contents = "package behavior\n\nvar answer = 42\n",
+					client = "gopls",
+				},
+			},
+		},
+	},
+	{
+		order = 30,
+		entry = {
+			id = "standard",
+			lazyvim_extras = {
+				"lazyvim.plugins.extras.lang.docker",
+				"lazyvim.plugins.extras.lang.json",
+				"lazyvim.plugins.extras.lang.markdown",
+				"lazyvim.plugins.extras.lang.tailwind",
+				"lazyvim.plugins.extras.lang.toml",
+				"lazyvim.plugins.extras.lang.yaml",
+			},
+			language_cases = {
+				{
+					language = "lua",
+					filename = "attachment-test.lua",
+					contents = "local answer = 42\n",
+					client = "lua_ls",
+				},
+				{
+					language = "html",
+					filename = "attachment-test.html",
+					contents = "<!doctype html><title>test</title>\n",
+					client = "html",
+				},
+				{
+					language = "css",
+					filename = "attachment-test.css",
+					contents = "body { color: red; }\n",
+					client = "cssls",
+				},
+				{
+					language = "json",
+					filename = "attachment-test.json",
+					contents = '{ "answer": 42 }\n',
+					client = "jsonls",
+				},
+				{ language = "yaml", filename = "attachment-test.yaml", contents = "answer: 42\n", client = "yamlls" },
+				{
+					language = "markdown",
+					filename = "attachment-test.md",
+					contents = "# Behavior test\n",
+					client = "marksman",
+				},
+				{ language = "dockerfile", filename = "Dockerfile", contents = "FROM scratch\n", client = "dockerls" },
+			},
+		},
+	},
+}
 
 return function(environment)
-	local profile_module = require("packages.nvim.profile")
-	local profile = environment.nvim_profile
-		or profile_module.load(assert(environment.context, "nvim package requires a runtime context"))
-	local requires, seen = { "foundation" }, { foundation = true }
-	for _, dependency in ipairs(profile_module.required_capabilities(profile)) do
-		if not seen[dependency] then
-			table.insert(requires, dependency)
-			seen[dependency] = true
-		end
+	local home = assert(
+		assert(environment, "nvim package requires a factory environment").context,
+		"nvim package requires a runtime context"
+	).paths.home
+	local contributes = {
+		provision.chezmoi({
+			target = ".local/bin/nvim",
+			kind = "symlink",
+			to = paths.join(home, ".local/opt/nvim/bin/nvim"),
+		}),
+	}
+	for _, intent in ipairs(intents) do
+		table.insert(contributes, profile_module.recipe({ order = intent.order, entry = intent.entry }))
 	end
 	return {
 		id = "nvim",
-		requires = requires,
+		requires = { "foundation", "node", "go" },
+		contributes = contributes,
 		sync = function(context)
+			assert(context.nvim_profile, "nvim sync requires a composed profile")
 			for _, operation in ipairs({
 				{ "Restoring Neovim plugins", "lazy-restore" },
 				{ "Removing inactive Neovim plugins", "lazy-clean" },
@@ -97,27 +132,22 @@ return function(environment)
 				{ "Updating Tree-sitter parsers", "treesitter" },
 			}) do
 				print("\n  -> " .. operation[1])
-				run_child(context, "sync", { operation = operation[2] }, true)
+				leaf.run_child(context, "sync", { operation = operation[2] }, true)
 			end
 		end,
 		verify = function(context)
+			-- The composed profile is source-derived: a tampered deployed copy
+			-- cannot alter what is verified here.
+			local profile = assert(context.nvim_profile, "nvim verify requires a composed profile")
 			verify_locked_state(context)
-			verify_profile(context, profile)
-			local temporary = vim.fn.tempname()
-			vim.fn.mkdir(temporary, "p")
-			local ok, failure = pcall(function()
-				for _, contribution in ipairs(profile) do
-					for _, behavior_case in ipairs(contribution.language_cases or {}) do
-						verify_language(context, temporary, behavior_case)
-					end
-					for _, behavior_case in ipairs(contribution.formatter_cases or {}) do
-						verify_formatter(context, temporary, behavior_case)
-					end
+			for _, contribution in ipairs(profile) do
+				leaf.verify_mason(context, contribution)
+			end
+			for _, intent in ipairs(intents) do
+				if intent.entry.plugin_module then
+					leaf.verify_module(context, intent.entry.plugin_module)
 				end
-			end)
-			vim.fs.rm(temporary, { recursive = true, force = true })
-			if not ok then
-				error(failure)
+				leaf.verify_cases(context, intent.entry)
 			end
 		end,
 	}

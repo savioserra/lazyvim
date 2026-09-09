@@ -8,10 +8,20 @@ nvim=$installed_home/.local/opt/nvim/bin/nvim
 stylua=$installed_home/.local/share/nvim/mason/bin/stylua
 [ -x "$nvim" ] && [ -x "$stylua" ]
 isolate=$repo_root/.github/scripts/test-home.sh
+# Locate the trusted installed backend for the real-render suite. The canonical
+# pinned install wins; a retained evidence extraction is accepted and its
+# ACTUAL version is reported by the suite, never confused with the pin.
+backend=$installed_home/.local/opt/chezmoi/bin/chezmoi
+if [ ! -x "$backend" ]; then
+	for candidate in "$installed_home"/.local/opt/chezmoi-*/chezmoi; do
+		[ -x "$candidate" ] && backend=$candidate && break
+	done
+fi
+[ -x "$backend" ] || { printf 'trusted chezmoi backend not found\n' >&2; exit 1; }
 for suite in tests/*.test.lua; do
 	# The real-check regression needs the frozen formatter too; no tool paths
 	# are rediscovered from the new fixture HOME.
-	sh "$isolate" "$nvim" -l "$suite" "$stylua"
+	sh "$isolate" "$nvim" -l "$suite" "$stylua" "$backend"
 done
 sh "$isolate" "$nvim" -l .github/scripts/syntax.lua
 sh "$isolate" "$nvim" -l workstation/bootstrap/generate.lua --check

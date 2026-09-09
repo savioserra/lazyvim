@@ -1,12 +1,31 @@
 local commands = require("workstation.commands")
+local provision = require("workstation.provision.recipes")
 
 local function assert_version_prefix(actual, expected, label)
 	assert(vim.startswith(actual, expected), ("%s: expected %s, got %s"):format(label, expected, actual))
 end
 
+local startup_files = { ".profile", ".bashrc", ".zshrc" }
+
 return function()
+	local contributes = {}
+	for _, target in ipairs(startup_files) do
+		table.insert(
+			contributes,
+			provision.shell({
+				target = target,
+				fragment = {
+					id = "user-local-bin",
+					order = 10,
+					marker = "# chezmoi: managed user-local bin",
+					body = 'case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) [ -d "$HOME/.local/bin" ] && PATH="$HOME/.local/bin:$PATH" ;; esac',
+				},
+			})
+		)
+	end
 	return {
 		id = "foundation",
+		contributes = contributes,
 		setup = function(context)
 			local v = context.versions
 			local asset = context.platform.name == "darwin" and "darwin_arm64" or "linux_x86_64"

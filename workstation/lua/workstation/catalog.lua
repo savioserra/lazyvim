@@ -10,5 +10,7 @@ return {
 	require("packages.go"),
 	require("packages.secrets"),
 	require("packages.nvim"),
+	require("packages.typescript"),
 	require("packages.tmux"),
+	require("packages.migration-source"),
 }
