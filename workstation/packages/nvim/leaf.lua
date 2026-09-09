@@ -6,7 +6,7 @@ local commands = require("workstation.commands")
 -- child machinery, while nvim keeps base/standard/Go and lock verification.
 
 local module_path = debug.getinfo(1, "S").source:gsub("^@", "")
-local child_path = vim.fs.joinpath(vim.fs.dirname(vim.fs.dirname(vim.fs.normalize(module_path))), "child.lua")
+local child_path = vim.fs.joinpath(vim.fs.dirname(vim.fs.normalize(module_path)), "child.lua")
 
 local M = {}
 

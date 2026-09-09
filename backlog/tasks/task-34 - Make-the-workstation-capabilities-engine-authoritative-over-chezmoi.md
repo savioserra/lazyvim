@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@operator'
 created_date: '2026-09-08 21:27'
-updated_date: '2026-09-09 20:43'
+updated_date: '2026-09-09 21:00'
 labels: []
 dependencies: []
 type: feature
@@ -54,6 +54,8 @@ No live apply/cutover, push, Docker/download retry, auth/vault/model/service pro
 Owner-authorized immediate rollout (2026-09-09): use the parent-run guarded checker, integrate and push the committed candidate, preserve private backups, bootstrap the pinned backend, reconcile only identified managed-file conflicts, then apply, sync and verify this Linux host. Keep final GLM reviews and native/CI/full-E2E acceptance incomplete; stop on real failures and never force ownership conflicts.
 
 Live rollout repair: prevent launcher private-directory umask077 from leaking into ordinary Lua/backend file materialization. Add a real-launcher regression asserting0644 normal files and0700 runtime/temp roots, demonstrate failure then fix the handoff to umask022, run guarded checks, commit/push, and reconcile only fingerprint-matching partial-apply permission changes before resuming.
+
+Live sync repair: nvim leaf helper resolves child.lua one directory too high after extraction. Add a fresh-HOME real headless messages-child regression, fix the sibling path, run red/green and full guarded checks, commit/push, then resume sync and verify without changing package pins or timeouts.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
@@ -137,6 +139,10 @@ Parent rollout disposition: owner explicitly requested rollout now after being i
 Live bootstrap succeeded. First apply failed because old chezmoi last-written-state requested a TTY for an explicitly backed-up/replaced file; original backend DB preserved by rename. Recovery then failed safely because the first partial backend pass changed managed files from0644 to0600 under the launcher umask077. This is a narrow runtime defect, not permission to force ownership or erase evidence. Original attempts and private backups remain /root/workstation-rollout.0MbqMb/.
 
 Rollout umask repair verified red/green: new real-launcher test failed with launcher leaked private umask into ordinary files (exit1), then full guarded checker passed (exit0) after resetting umask022 only after creating private runtime roots. Runtime/temp0700 assertions remain green; private journals use explicit0600. This checker used the now-installed pinned chezmoi2.72.1 for isolated render evidence. No GLM review claim. Logs: /root/workstation-rollout.0MbqMb/logs/{umask-red,repair-check}.*.
+
+Apply now succeeded after the tested launcher mode fix and fingerprint-checked mode reconciliation. Sync stopped immediately before plugin restoration: leaf.lua resolved workstation/packages/child.lua instead of workstation/packages/nvim/child.lua. No Mason timeout occurred in this attempt. Original sync error retained in the rollout logs.
+
+Neovim leaf path repair is red/green: the new actual headless messages-child test reproduced the missing sibling path (exit1), and full guarded check.sh passed after correcting one dirname (exit0), including capture and execute child paths. No sync operations or app downloads in the regression. Parent-controlled rollout continues with independent GLM review still unavailable.
 <!-- SECTION:NOTES:END -->
 
 ## Plan
