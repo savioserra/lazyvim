@@ -53,8 +53,11 @@ checkout or Git:
 | `journal/applied.json` | Last successful generation, owned target fingerprints, fragment records |
 | `journal/pending/`, `journal/failed/` | Attempt evidence; no automatic garbage collection |
 
-`apply` and `diff` hold the lock through publication, backend execution and
-journal completion. A contending command refuses with the recorded owner
+Read-only commands (`status`, `plan`, `diff`) may create the private
+engine-state root and journal directory on first use; that incidental creation
+is confined by the same no-follow/ownership/mode guards and stores nothing
+beyond engine metadata. `apply` and `diff` hold the lock through publication,
+backend execution and journal completion. A contending command refuses with the recorded owner
 metadata; stale locks are never stolen — inspect the recorded owner and remove
 the lock file only as a deliberate operator action. The exact generation path
 is passed to the backend, never a mutable pointer. Last-applied metadata is
@@ -92,8 +95,19 @@ metadata (0700 directories, 0600 files) — never home-file bodies or secrets.
 
 `.chezmoiremove` is generated per plan from the engine policy module's exact
 seventeen legacy tombstones plus explicitly declared and reconciled removals.
-The guarded real-account service retirement runs before any file deletion;
-scratch targets never contact the live user manager (see
+Every final removal literal is revalidated against active ownership and
+engine-private state - static policy aggregation gets no bypass - and removal
+literals with glob metacharacters or control bytes are rejected so one owned
+target can never expand into several removals.
+
+Package `kind = "remove"` recipes operate on **recorded ownership**: a target
+that exists but was never journaled conflicts instead of being destructively
+adopted, and a declared removal of an absent, never-owned target is a no-op
+that never becomes a future tombstone. Matching owned leaves are removed
+idempotently; changed type/mode/content/link conflicts. The reviewed
+legacy-policy tombstones are a separate narrow migration mechanism, not a
+general removal API. The guarded real-account service retirement runs before
+any file deletion; scratch targets never contact the live user manager (see
 [capabilities](capabilities.md#lifecycle-phases)).
 
 ## Isolated validation

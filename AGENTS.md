@@ -53,7 +53,7 @@ replace Linux/WSL and native macOS arm64 acceptance.
 | tmux plugin pin | `workstation/packages/tmux/init.lua`, `docs/tmux.md` |
 | Workstation package | combined contribution, package catalog, tests, docs |
 | Neovim language | `nvim-profile` recipe in the owning package, lockfiles if needed, behavior case |
-| Removed deployed source | provider `kind = "remove"` recipe or an engine policy tombstone (`workstation/lua/workstation/provision/policy.lua`) |
+| Removed deployed source | provider `kind = "remove"` recipe (recorded ownership or already-absent no-op) or an engine policy tombstone (`workstation/lua/workstation/provision/policy.lua`) |
 | New platform condition | canonical asset metadata, capability support, package backend, CI/test coverage |
 
 <!-- BACKLOG.MD GUIDELINES START -->

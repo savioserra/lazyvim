@@ -84,7 +84,9 @@ Only `id`, `requires`, `supported_hosts`, `contributes`, `setup`, `sync`, and
 options and perform no I/O, target writes or registration. Core validates only
 the generic envelope shape; each registered provider validates its own specs
 and rejects unknown options. Kinds: `file`, `directory`, `symlink`, `modify`
-(whole body or structured fragments, mutually exclusive) and `remove`. Native
+(one whole inline body or package-relative asset - structured fragments are the
+`provision.shell` compositor's input alone and are rejected here) and `remove`.
+Native
 attributes are `private`, `executable`, `exact` and `template`; conflicting or
 unrepresentable combinations are rejected instead of pretending arbitrary POSIX
 modes are encoded. File/modifier content is exactly one inline body or a
