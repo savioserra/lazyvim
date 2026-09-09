@@ -25,7 +25,9 @@ core -X-> catalog/packages/Neovim
 | `lua/workstation/core/graph.lua` | Host selection, dependency validation, topological ordering |
 | `lua/workstation/core/runner.lua` | Lifecycle dispatch |
 | `packages/<name>/` | Combined capability metadata and lifecycle behavior |
-| `lua/workstation/host/` | Reusable host primitives |
+| `lua/workstation/commands.lua` | Checked child processes |
+| `lua/workstation/paths.lua` | Target paths and isolated writable roots |
+| `lua/workstation/provision.lua` | Verified archive provisioning |
 | `lua/workstation/platforms/` | Runtime-wide paths, detection, and base environment |
 | `lua/workstation/app.lua` | Catalog composition and runner creation |
 
@@ -153,7 +155,10 @@ packages/fonts/darwin.lua
 packages/node/unix.lua
 ```
 
-Use `host/` only for reusable primitives and `platforms/` only for runtime-wide detection, paths, and environment.
+Reuse `lua/workstation/commands.lua`, `lua/workstation/paths.lua` and
+`lua/workstation/provision.lua` for checked children, target paths and archive
+provisioning. Use `lua/workstation/platforms/` only for runtime-wide detection,
+paths and environment (paths relative to `workstation/`).
 
 ## Verification requirements
 

@@ -9,8 +9,10 @@ for module boundaries, graph semantics and verification requirements.
    contribution: `id`, `requires`, `supported_hosts`, optional `setup`, `sync`, `verify`.
 2. Register it once in `lua/workstation/catalog.lua`; no filesystem discovery,
    deep merging or handler overrides.
-3. Keep complex helpers and feature-specific OS backends package-local. `host/`
-   is for reusable primitives; `platforms/` is for runtime-wide environment only,
+3. Keep complex helpers and feature-specific OS backends package-local. Reuse
+   `lua/workstation/commands.lua`, `lua/workstation/paths.lua` and
+   `lua/workstation/provision.lua` for checked children, target paths and archive
+   provisioning. `lua/workstation/platforms/` is for runtime-wide environment only,
    never feature workflows.
 4. Add ordering, unsupported-host, contract and lifecycle tests. Update ownership
    docs and pin metadata together; use the root safe-check entry point.

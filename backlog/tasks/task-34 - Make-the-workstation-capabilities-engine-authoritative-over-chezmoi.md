@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@operator'
 created_date: '2026-09-08 21:27'
-updated_date: '2026-09-09 15:12'
+updated_date: '2026-09-09 15:30'
 labels: []
 dependencies: []
 type: feature
@@ -37,7 +37,7 @@ Current next steps and gates (AC7 documentation cleanup at a92ef8c2):
 1. Apply approved consistency/concision findings in this managed worktree only: reference ownership, executable private Docker /tmp, actual profile schema/loading, notifier verification limits, explicit-only secrets handoff and desktop/headless recovery. No lifecycle/config/package/pin changes or architecture redesign; the language/package question remains separately reviewed.
 2. Validate local links/schema/frontmatter, diff scope and before/after counts; run the existing isolated fast checker with network denial, 120-second deadline and byte-equivalent 4MiB per-file guard. Stop on tooling/setup failure; retain exact receipts.
 3. Commit normally only here and export a complete durable base-to-head review packet before handoff. Independent review is required before parent integration; this writer leaves canonical /root/lazyvim unchanged.
-4. E2E workflow7e098 is terminal BLOCKED: bootstrap/apply passed; Mason sync child124 hit unchanged300000ms, gopls staged/incomplete, cause unproven. No suites/public verify/cached bootstrap ran; no repair/retry authorized here. Matrix work, native acceptance, publication and cutover remain separately parent-gated. No AC/status/final-summary changes; TASK-35 untouched.
+4. E2E workflow7e098 is terminal BLOCKED: bootstrap/apply passed; Mason sync child124 hit unchanged300000ms, gopls staged/incomplete, cause unproven. No suites/public verify/cached bootstrap ran; no repair/retry authorized here. Matrix work is OUT OF SCOPE and is not a workstation gate. Native acceptance, publication and cutover remain separately parent-gated. No AC/status/final-summary changes; TASK-35 untouched.
 Superseded CLI phase plans and authorization/failure provenance are retained in existing implementation notes and Git history (including a92ef8c2). The trailing legacy unmanaged “## Plan” is historical, not current instructions; task edit supports only structured sections and cannot remove that section without unsupported Markdown surgery.
 <!-- SECTION:PLAN:END -->
 
