@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@operator'
 created_date: '2026-09-08 21:27'
-updated_date: '2026-09-09 15:41'
+updated_date: '2026-09-09 16:01'
 labels: []
 dependencies: []
 type: feature
@@ -28,16 +28,20 @@ Invert the architecture: the Lua capabilities engine (currently ~/.local/share/w
 - [ ] #6 All six externals migrate to owning package setup operations, preserving platform URLs/checksums and managed Node/Pi dependency ordering.
 - [ ] #7 Documentation, AGENTS, skills, CI and scratch harness describe and exercise engine authority, supported Linux/WSL and macOS arm64 behavior, and the breaking cutover.
 - [ ] #8 Substantive independent review and command evidence pass before publication or live cutover; environment-limited and unrun checks are explicitly reported.
+- [ ] #9 Capabilities declare validated provider contributions through an explicit API/registry; declarations are side-effect free and generic core has no chezmoi/Neovim imports or implicit deep merging.
+- [ ] #10 The chezmoi provider assembles deterministic capability-owned source state used by both diff and apply, rejecting ownership/path conflicts and safely handling removed contributions, repeat runs and failures without rewriting tracked source or deleting unrelated home state.
+- [ ] #11 TypeScript is an explicitly registered capability with correct Node/Neovim dependencies, package-owned configuration and behavior verification; deployed Neovim imports runtime configuration only, with no duplicate TypeScript declaration or lifecycle-engine dependency.
 <!-- AC:END -->
 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Current remaining gates after documentation acceptance at 35f1161f:
-1. Obtain an approved investigation/repair scope for the retained Mason sync failure before further source changes or real-download retries. Preserve original controls, limits, logs and partial state; do not infer a benign cause or silently extend timeouts.
-2. When ready and separately authorized, complete the real isolated Linux harness, then network-none cached public bootstrap and independent receipt review. Earlier synthetic checks and successful bootstrap/apply do not substitute for this gate.
-3. Parent must disposition native macOS arm64/WSL/CI evidence and acceptance criteria before publication or live cutover; neither action is currently authorized. The capability-to-provider/generated-chezmoi-source proposal is not implemented or approved by this documentation cleanup.
-Matrix is OUT OF SCOPE and not a workstation gate. TASK-35 remains untouched. Superseded phase/doc-cleanup plans are in existing notes and Git history (a92ef8c2, 35f1161f); the trailing legacy unmanaged “## Plan” is historical, not current instructions.
+Provider contribution implementation — owner authorized a GLM5.3 fleet for design, debate, implementation and review.
+1. Two read-only GLM5.3 advisors inspect architecture/API options independently; parent curates at most one cross-examination and resolves the contract before source mutation. Record the accepted decision and executable implementation plan through CLI.
+2. Implement a minimal explicit provider/contribution API, deterministic generated chezmoi source state shared by diff/apply, and a real TypeScript capability owning its contribution/dependencies/verification. Resolve Neovim composition outside generic core; remove duplicate moved sources. No static-backend-only or docs-only substitute.
+3. Use one implementation writer, then independent GLM5.3 source/safety review and command validation. Test conflict/path/removal/failure/idempotency behavior, dependency ordering, first apply and unchanged existing lifecycle contracts. Keep source docs concise and current.
+4. Retain all historical evidence. No live deployment, push, model/vault operations from lifecycle, host/Matrix service work or new real-download Docker retry; existing Mason child124 integration blocker remains distinct. Native/platform acceptance and release remain parent-owned.
+Earlier phase/doc-cleanup plans and the trailing unmanaged legacy Plan are historical. This owner authorization supersedes the earlier pending-provider-design note, not safety, pin, core-neutrality or publication boundaries.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
