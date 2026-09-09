@@ -1,0 +1,23 @@
+# Official Ubuntu 24.04 linux/amd64 manifest; provenance: docs/testing.md.
+FROM ubuntu:24.04@sha256:1e0a86e57d247923571b75e0aaf48a1449cf8c543d51fb3e07a4a7d7bfa79316
+
+# CI-owned unmanaged prerequisites ONLY. Managed runtimes/apps are installed
+# by the unmodified test-apply.sh at runtime, never by apt or this image build.
+RUN test "$(dpkg --print-architecture)" = amd64 \
+    && apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        bash build-essential ca-certificates curl file fontconfig git gzip \
+        shellcheck tar tmux unzip xz-utils \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --gid 10001 e2e \
+    && useradd --uid 10001 --gid 10001 --home-dir /caller --create-home --shell /bin/bash e2e \
+    && mkdir /work \
+    && chown 10001:10001 /work
+
+# Context MUST be an independent, clean tracked Git snapshot (including .git),
+# not the working checkout or a home directory. Run with a read-only rootfs.
+COPY --chown=10001:10001 . /source
+USER 10001:10001
+ENV HOME=/caller
+WORKDIR /source
+CMD ["sh", ".github/scripts/test-apply.sh", "/work/home"]

@@ -26,6 +26,7 @@
 | [`capabilities.md`](capabilities.md) | Dependency direction, contracts, lifecycle phases |
 | [`chezmoi.md`](chezmoi.md) | Subordinate file backend, isolation, removals and guarded cutover |
 | [`tools.md`](tools.md) | Managed tool inventory and platform coverage |
+| [`testing.md`](testing.md) | Offline checks and isolated Linux container E2E recipe |
 | [`secrets.md`](secrets.md) | 1Password boundary, vault scope, Pi skill policy |
 | [`nvim.md`](nvim.md) | Editor entry points, profile, plugins, locks |
 | [`tmux.md`](tmux.md) | Settings, plugin pins, theme |
@@ -54,5 +55,5 @@
 | Runtime/synthetic fixtures | `.github/scripts/check.sh`: pinned runtime, fresh isolated home per suite |
 | Shell/Lua/JSON/projection | `.github/scripts/check.sh` (after managed sync); each shell checked individually |
 | File-only render | Inspected isolated backend probe in `chezmoi.md`; not lifecycle acceptance |
-| End to end | `.github/scripts/test-apply.sh` |
+| End to end | `.github/scripts/test-apply.sh`; Linux container contract in [`testing.md`](testing.md) |
 | Platform matrix | `.github/workflows/ci.yml` |

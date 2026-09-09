@@ -63,13 +63,23 @@ local function safe_member(name)
 	end
 end
 
+-- GNU tar's default escape style and BSD tar's safe_fprintf octal-escape
+-- non-ASCII bytes in the C locale. Normalize only those display octets, once.
+-- ASCII escapes (including doubled real backslashes and controls) remain
+-- forbidden by safe_member; ZIP listings and inner_path are not tar displays.
+local function tar_member(name)
+	return (name:gsub("\\([23][0-7][0-7])", function(octal)
+		return string.char(tonumber(octal, 8))
+	end))
+end
+
 local function extract(spec, archive, staging)
 	local kind = spec.format or (spec.url:match("%.zip$") and "zip" or "tar")
 	assert(kind == "tar" or kind == "zip", "unsupported archive format")
 	local listing = kind == "zip" and commands.capture("unzip", { "-Z1", archive })
 		or commands.capture("tar", { "-tf", archive })
 	for name in listing:gmatch("[^\n]+") do
-		safe_member(name)
+		safe_member(kind == "tar" and tar_member(name) or name)
 	end
 	vim.fn.mkdir(staging, "p")
 	if kind == "zip" then

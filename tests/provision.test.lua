@@ -106,6 +106,79 @@ for _, format in ipairs({ "tar", "zip" }) do
 		paths.read(tree.dest .. "/bin/tool") == "trusted\n" and paths.read(tree.dest .. "/bin/user-state") == "retain"
 	)
 end
+-- GNU/BSD tar display non-ASCII octets as octal in C locale. These are
+-- real inert archives and real tar children, not a mocked Unicode listing.
+do
+	local capture = commands.capture
+	local extracts, listing = 0, nil
+	commands.capture = function(command, args, options)
+		if command == "tar" then
+			options = vim.tbl_extend("force", options or {}, { env = { LC_ALL = "C" } })
+			if args[1] == "-xf" then
+				extracts = extracts + 1
+			end
+		end
+		local result = capture(command, args, options)
+		if command == "tar" and args[1] == "-tf" then
+			listing = result
+		end
+		return result
+	end
+	local member = "app/Running 'nvm alias ˂name˃'"
+	local spec = archive({ [member] = "unicode bytes" })
+	spec.dest = scratch .. "/unicode"
+	api.directory(spec)
+	assert(listing:find("\\313\\202", 1, true), "C-locale tar did not exercise octal display escaping")
+	assert(paths.read(spec.dest .. "/" .. member) == "unicode bytes")
+	api.directory(spec)
+	assert(paths.read(spec.dest .. "/" .. member) == "unicode bytes", "cached Unicode staging changed names")
+
+	local tar = dofile(repository .. "/tests/fixtures/tar.lua")
+	for i, name in ipairs({
+		"app/real\\backslash",
+		"app/literal\\313\\202", -- literal spelling must not become Unicode
+		"app/literal\\134", -- must not be recursively unescaped
+		"app/literal\\q",
+		"/absolute",
+		"../escape",
+		"app/../../escape",
+		"app/˂/../../../escape",
+		"app/line\nbreak",
+		"app/tab\tname",
+	}) do
+		local source = scratch .. "/unsafe-name-" .. i .. ".tar"
+		tar.write(source, name, "never extract")
+		local before = extracts
+		local ok, failure = pcall(api.directory, {
+			url = "file://" .. source,
+			sha256 = digest(source),
+			dest = spec.dest,
+		})
+		assert(not ok and tostring(failure):find("unsafe archive member", 1, true), tostring(failure))
+		assert(extracts == before, "unsafe member reached extraction")
+		assert(paths.read(spec.dest .. "/" .. member) == "unicode bytes", "unsafe archive changed installation")
+	end
+	-- Even octal-looking ZIP names remain literal; tar normalization must not
+	-- alter ZIP or caller-provided inner_path semantics.
+	local bad = archive({ ["literal\\313\\202"] = "inert" }, "zip")
+	bad.dest = spec.dest
+	assert(not pcall(api.directory, bad))
+	local inner = vim.tbl_extend("force", spec, { inner_path = "app/\\313\\202" })
+	assert(not pcall(api.archive, inner))
+	-- Unicode acceptance does not waive the complete staging link manifest.
+	for i, target in ipairs({ "/outside", "../../outside" }) do
+		local source = scratch .. "/unicode-link-" .. i .. ".tar"
+		tar.write(source, "app/˂link˃", "", target)
+		local ok, failure = pcall(api.directory, {
+			url = "file://" .. source,
+			sha256 = digest(source),
+			dest = spec.dest,
+		})
+		assert(not ok and tostring(failure):find("archive link escapes owned tree", 1, true), tostring(failure))
+		assert(paths.read(spec.dest .. "/" .. member) == "unicode bytes")
+	end
+	commands.capture = capture
+end
 -- Direct file bytes, pin validation and invalid downloads never activate.
 do
 	local source = scratch .. "/raw"
