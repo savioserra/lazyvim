@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@operator'
 created_date: '2026-09-08 21:27'
-updated_date: '2026-09-09 15:30'
+updated_date: '2026-09-09 15:41'
 labels: []
 dependencies: []
 type: feature
@@ -33,12 +33,11 @@ Invert the architecture: the Lua capabilities engine (currently ~/.local/share/w
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Current next steps and gates (AC7 documentation cleanup at a92ef8c2):
-1. Apply approved consistency/concision findings in this managed worktree only: reference ownership, executable private Docker /tmp, actual profile schema/loading, notifier verification limits, explicit-only secrets handoff and desktop/headless recovery. No lifecycle/config/package/pin changes or architecture redesign; the language/package question remains separately reviewed.
-2. Validate local links/schema/frontmatter, diff scope and before/after counts; run the existing isolated fast checker with network denial, 120-second deadline and byte-equivalent 4MiB per-file guard. Stop on tooling/setup failure; retain exact receipts.
-3. Commit normally only here and export a complete durable base-to-head review packet before handoff. Independent review is required before parent integration; this writer leaves canonical /root/lazyvim unchanged.
-4. E2E workflow7e098 is terminal BLOCKED: bootstrap/apply passed; Mason sync child124 hit unchanged300000ms, gopls staged/incomplete, cause unproven. No suites/public verify/cached bootstrap ran; no repair/retry authorized here. Matrix work is OUT OF SCOPE and is not a workstation gate. Native acceptance, publication and cutover remain separately parent-gated. No AC/status/final-summary changes; TASK-35 untouched.
-Superseded CLI phase plans and authorization/failure provenance are retained in existing implementation notes and Git history (including a92ef8c2). The trailing legacy unmanaged “## Plan” is historical, not current instructions; task edit supports only structured sections and cannot remove that section without unsupported Markdown surgery.
+Current remaining gates after documentation acceptance at 35f1161f:
+1. Obtain an approved investigation/repair scope for the retained Mason sync failure before further source changes or real-download retries. Preserve original controls, limits, logs and partial state; do not infer a benign cause or silently extend timeouts.
+2. When ready and separately authorized, complete the real isolated Linux harness, then network-none cached public bootstrap and independent receipt review. Earlier synthetic checks and successful bootstrap/apply do not substitute for this gate.
+3. Parent must disposition native macOS arm64/WSL/CI evidence and acceptance criteria before publication or live cutover; neither action is currently authorized. The capability-to-provider/generated-chezmoi-source proposal is not implemented or approved by this documentation cleanup.
+Matrix is OUT OF SCOPE and not a workstation gate. TASK-35 remains untouched. Superseded phase/doc-cleanup plans are in existing notes and Git history (a92ef8c2, 35f1161f); the trailing legacy unmanaged “## Plan” is historical, not current instructions.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
@@ -99,6 +98,9 @@ Phase6 workflow 3686354a stopped before lifecycle with validator exit1: a traili
 Owner-directed container follow-up source correction: direct env-i to GNU tar (no Python child) reproduces the nvm rejection with unset locale and LC_ALL=C byte-identical:435 members, exactly2 octal-escaped display names. Verified cached SHA5949b50e4640f2be2263f963952673d7f1a8745a83f05365e99f032fe78307fd and360647 bytes; metadata-only GNU literal listing matches one-pass non-ASCII octal normalization exactly and confirms actual UTF-8 CB82/CB83 (U+02C2/U+02C3), zero true unsafe names. No cached archive extraction/application or package execution. GNU primary quoting docs and BSD libarchive safe_fprintf/read source retained. Provisioning now normalizes only high-byte octal display escapes before unchanged path guards; ASCII escapes/real backslashes remain rejected and ZIP/inner_path stay literal. Link/staging/manifest/checksum/mode/overlay/rollback code unchanged. Real synthetic C-locale Unicode/cache regression fails old code at original guard and passes corrected code; actual unsafe-name/backslash/control/path/link fixtures plus existing security suites pass.
 
 Prepared small .github/Dockerfile.e2e plus docs/testing.md/index reference, wrapping unmodified test-apply.sh with UID/GID10001 and distinct /caller and /work/home. Official Ubuntu24.04 linux/amd64 FROM is SHA1e0a86e57d247923571b75e0aaf48a1449cf8c543d51fb3e07a4a7d7bfa79316; public index SHA33ceb71981b602c1a7443a53469e4dba065f7503eab3078a2d7a57a2ab987517, body/header digests confirmed. Only CI-owned OS prerequisites use future image-local apt; no managed runtime/apps baked in. Documented independent tracked Git context, readonly source/rootfs, fresh labeled volume, network/account/privacy/resource controls and retained failure receipts. No image build/pull/run, Docker/Swarm/daemon changes or real E2E attempted. Actual safe check.sh all8 suites plus syntax/projection/StyLua/individual sh-n/ShellCheck/diff pass from synthetic populated HOME with before/after home/tool inventories equal, phase5 env-i/network-denied/timeout120/ulimit-f4096 bounds. Docker RUN fragment sh-n/ShellCheck and static manifest/recipe assertions pass. Preserved old-code exit1 and first corrected-run fixture-header length assertion exit1 (helper corrected from514 to512 bytes); no unresolved check/infrastructure failure. Review packet /tmp/task34-container-review includes exact receipts, sources, baseline bytes and preserved-attempt inventories. Both original real attempts retained unchanged; native BSD/macOS/WSL, container build/full E2E/cached bootstrap, independent acceptance and live publication/cutover remain unrun/pending. Task stays In Progress @operator, all8 ACs unchecked; no Herdr or pin/package upgrades.
+
+Parent accepted and fast-forwarded the documentation-only cleanup through 35f1161f (70d76726 plus narrow review corrections). Independent reviews 8c15a3ed/15f6b1af and the actual eight-suite isolated checker/downstream checks passed; exact 17-file Markdown-only scope confirmed. Root/scoped instructions, reference ownership, notifier verification limits, profile documentation and explicit/headless secrets guidance are corrected. No runtime/provider implementation, deployment or push. Original optional bundle128/export1 failure remains preserved separately from passing required-artifact audits. Integration receipts: /tmp/task34-docs-parent-integration.CUfjqW.
+E2E workflow7e0984a1 remains BLOCKED: bootstrap/apply passed, Mason child124 hit 300000ms with gopls incomplete; cause unproven. Full suites/public verify/cached bootstrap were not reached. Read-only diagnostic matched all13 archive pins, including Neovim, without waiving lifecycle failure. Full retained report: task34-container-exec/e2e.md in that workflow’s durable outputs. No retry or additional Docker operation authorized; Matrix excluded. TASK-34 stays In Progress with ACs unchanged.
 <!-- SECTION:NOTES:END -->
 
 ## Plan
