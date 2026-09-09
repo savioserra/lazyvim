@@ -51,7 +51,7 @@
 | Layer | Command/location |
 | --- | --- |
 | Lua format | `stylua --check --config-path .stylua.toml ...` |
-| Runtime/synthetic fixtures | Pinned `nvim -l tests/<suite>.test.lua` for every suite |
+| Runtime/synthetic fixtures | `.github/scripts/check.sh`: pinned runtime, fresh isolated home per suite |
 | Shell/Lua/JSON/projection | `.github/scripts/check.sh` (after managed sync); each shell checked individually |
 | File-only render | Inspected isolated backend probe in `chezmoi.md`; not lifecycle acceptance |
 | End to end | `.github/scripts/test-apply.sh` |

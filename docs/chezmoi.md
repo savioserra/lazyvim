@@ -78,7 +78,15 @@ roots and disabled ambient Git config. No actual login profiles are loaded.
 Bootstrap installs prerequisites before public-link apply/sync; all Lua suites,
 syntax/projection/shell/format checks run before public verify. Failures propagate
 the exact failing exit code and retain scratch evidence. Offline harness tests
-copy the source and substitute local fakes; that is not a real install.
+copy the source and substitute local lifecycle fakes; real nonrecursive suites
+also run through the actual checker against a synthetic populated parent home.
+The checker freezes absolute installed Neovim/Mason StyLua paths before each
+suite gets a fresh private HOME/TMP/XDG/cache and cleared environment through
+`test-home.sh`. Owned `/tmp/workstation-test.*` roots are printed and retained
+for inspection, independent of caller-selected writable roots and never recursively deleted.
+Bootstrap fixtures adapt both simulated host hash commands over one available
+`sha256sum` or `shasum`; no cross-platform hash dependency is added. This is not
+a real install or native-platform acceptance.
 
 ## Breaking cutover
 

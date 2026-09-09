@@ -39,12 +39,15 @@ Use the nearest `AGENTS.md` for scoped rules.
 Run checks relevant to the change. Before completion, run all available fast checks:
 
 ```bash
-for suite in tests/*.test.lua; do "$HOME/.local/opt/nvim/bin/nvim" -l "$suite" || exit; done
-"$HOME/.local/opt/nvim/bin/nvim" -l .github/scripts/syntax.lua
-"$HOME/.local/opt/nvim/bin/nvim" -l workstation/bootstrap/generate.lua --check
-stylua --check --config-path .stylua.toml workstation chezmoi/dot_config/nvim tests .github/scripts
-git diff --check
+sh .github/scripts/check.sh
 ```
+
+The runner freezes installed Neovim/Mason StyLua paths before giving every suite
+and check a fresh private HOME, TMP, XDG and cache with cleared ambient state.
+Do not run fixture suites directly against an applied home: they write fake
+Node/npm state. Test-only `test-home.sh` retains its owned `/tmp/workstation-test.*`
+roots (printed on stderr) for inspection; no caller path is recursively deleted.
+It preserves only prerequisite PATH, not auth/agent/session/tool configuration.
 
 Check every shell file separately with `sh -n` and available ShellCheck (see `.github/scripts/check.sh`). Inspect the full source before the isolated backend render in `docs/chezmoi.md`; dry-run alone is not a sandbox. Real `.github/scripts/test-apply.sh` bootstrap/apply/sync/checks/verify requires explicit network/installation authorization. Full supported-platform verification runs on Linux/WSL and macOS (arm64); synthetic tests are not deployment acceptance.
 

@@ -48,12 +48,15 @@ description: Maintains this repository's cross-platform engine-owned workstation
 Run all available checks relevant to the change:
 
 ```bash
-for suite in tests/*.test.lua; do "$HOME/.local/opt/nvim/bin/nvim" -l "$suite" || exit; done
-"$HOME/.local/opt/nvim/bin/nvim" -l .github/scripts/syntax.lua
-"$HOME/.local/opt/nvim/bin/nvim" -l workstation/bootstrap/generate.lua --check
-stylua --check --config-path .stylua.toml workstation chezmoi/dot_config/nvim tests .github/scripts
-git diff --check
+sh .github/scripts/check.sh
 ```
+
+The runner freezes installed Neovim/Mason StyLua paths before giving every suite
+and check a fresh private HOME, TMP, XDG and cache with cleared ambient state.
+Do not run fixture suites directly against an applied home: they write fake
+Node/npm state. Test-only `test-home.sh` retains its owned `/tmp/workstation-test.*`
+roots (printed on stderr) for inspection; no caller path is recursively deleted.
+It preserves only prerequisite PATH, not auth/agent/session/tool configuration.
 
 Check every shell separately with `sh -n` and available ShellCheck. For authorized real integration use `.github/scripts/test-apply.sh <new-absolute-scratch-home>` outside the real home/source: bootstrap → apply → sync → all fast checks/format → verify. This downloads real assets; offline copied-source fixtures are not platform acceptance. Inspect the source before the isolated file-only render in `docs/chezmoi.md`; dry-run alone is not a sandbox. Keep auth/session/provider state private and never source login profiles for scratch checks. Confirm the working tree is clean after requested commits.
 

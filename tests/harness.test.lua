@@ -12,18 +12,19 @@ local function read(path)
 end
 local clone = scratch .. "/source"
 local bin = scratch .. "/prerequisites"
-for _, name in ipairs({ "sh", "env", "dirname", "basename", "mkdir", "ln", "cp", "cat", "find" }) do
+for _, name in ipairs({ "sh", "env", "dirname", "basename", "mkdir", "mktemp", "ln", "cp", "cat", "find" }) do
 	vim.fn.mkdir(bin, "p")
 	assert(vim.uv.fs_symlink(assert(vim.fn.exepath(name)), bin .. "/" .. name))
 end
 write(bin .. "/git", "#!/bin/sh\n[ \"$*\" = 'diff --check' ]\n", true)
-write(bin .. "/shellcheck", '#!/bin/sh\n[ "$(cat "$HOME/../failure")" != shellcheck ] || exit 43\n', true)
+write(bin .. "/shellcheck", '#!/bin/sh\n[ "$(cat "$PWD/failure")" != shellcheck ] || exit 43\n', true)
 -- Only this copied fixture changes the production prerequisite PATH. This is
 -- not an ambient-runtime bootstrap claim or a production test-mode switch.
 local harness = read(repository .. "/.github/scripts/test-apply.sh")
 harness = harness:gsub("PATH=/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin", "PATH=" .. bin)
 write(clone .. "/.github/scripts/test-apply.sh", harness, true)
 write(clone .. "/.github/scripts/check.sh", read(repository .. "/.github/scripts/check.sh"))
+write(clone .. "/.github/scripts/test-home.sh", read(repository .. "/.github/scripts/test-home.sh"))
 write(clone .. "/.github/scripts/syntax.lua", "")
 for name in vim.fs.dir(repository .. "/tests") do
 	if name:match("%.test.lua$") then
@@ -35,8 +36,9 @@ write(
 	clone .. "/fixture-nvim",
 	[[#!/bin/sh
 set -eu
-printf 'nvim:%s\n' "$*" >> "$HOME/events"
-[ "$(cat "$HOME/../failure")" != tests ] || exit 41
+parent=${0%/.local/opt/nvim/bin/nvim}
+printf 'nvim:%s\n' "$*" >> "$parent/events"
+[ "$(cat "$parent/../failure")" != tests ] || exit 41
 ]],
 	true
 )
@@ -44,8 +46,9 @@ write(
 	clone .. "/fixture-stylua",
 	[[#!/bin/sh
 set -eu
-printf 'stylua\n' >> "$HOME/events"
-[ "$(cat "$HOME/../failure")" != format ] || exit 42
+parent=${0%/.local/share/nvim/mason/bin/stylua}
+printf 'stylua\n' >> "$parent/events"
+[ "$(cat "$parent/../failure")" != format ] || exit 42
 ]],
 	true
 )
@@ -110,6 +113,7 @@ end
 for _, failure in ipairs({ "none", "bootstrap", "apply", "sync", "tests", "format", "shellcheck", "verify" }) do
 	local parent = scratch .. "/" .. failure
 	write(parent .. "/failure", failure)
+	write(clone .. "/failure", failure)
 	local target = parent .. "/home"
 	local result = run(target)
 	local expected = failure == "none" and 0
@@ -128,7 +132,7 @@ for _, failure in ipairs({ "none", "bootstrap", "apply", "sync", "tests", "forma
 	if failure == "apply" or failure == "sync" then
 		assert(not events:find("nvim:", 1, true))
 	elseif failure == "tests" then
-		assert(not events:find("stylua", 1, true))
+		assert(not vim.list_contains(vim.split(events, "\n", { plain = true }), "stylua"))
 	elseif failure == "format" or failure == "shellcheck" then
 		assert(not events:find("verify", 1, true))
 	elseif failure == "none" or failure == "verify" then
@@ -155,6 +159,7 @@ assert(not vim.uv.fs_stat(empty .. "/events"))
 -- ignored as an extra filename to a single sh -n invocation.
 write(clone .. "/.github/scripts/z-invalid.sh", "#!/bin/sh\n(\n")
 write(scratch .. "/syntax-failure/failure", "none")
+write(clone .. "/failure", "none")
 local syntax_failure = run(scratch .. "/syntax-failure/home")
 assert(syntax_failure.code == 2, syntax_failure.stderr)
 assert(not read(scratch .. "/syntax-failure/home/events"):find("verify", 1, true))

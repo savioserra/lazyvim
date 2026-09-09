@@ -38,8 +38,16 @@ printf '%s\n' "$HOME" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_STATE_HOME" "$XD
 )
 local archive = scratch .. "/runtime.tar.gz"
 checked({ "tar", "-czf", archive, "-C", scratch .. "/archive", "nvim-test" })
-local hash_command = vim.uv.os_uname().sysname == "Darwin" and { "shasum", "-a", "256", archive }
-	or { "sha256sum", archive }
+-- Both simulated hosts use fixture-local command names backed by just one
+-- available host hash implementation. Never require the other OS's tool.
+local hash_tool = vim.fn.exepath("sha256sum")
+local hash_args = ""
+if hash_tool == "" then
+	hash_tool = vim.fn.exepath("shasum")
+	hash_args = " -a 256"
+end
+assert(hash_tool ~= "", "test prerequisite missing: sha256sum or shasum")
+local hash_command = hash_args == "" and { hash_tool, archive } or { hash_tool, "-a", "256", archive }
 local hash = checked(hash_command).stdout:match("^%x+")
 local versions = vim.json.decode(read(engine .. "/versions.json"))
 versions.neovim_linux_x86_64_sha256, versions.neovim_darwin_arm64_sha256 = hash, hash
@@ -55,8 +63,6 @@ for _, command in ipairs({
 	"mkdir",
 	"chmod",
 	"cut",
-	"sha256sum",
-	"shasum",
 	"rm",
 	"sleep",
 	"cp",
@@ -66,6 +72,15 @@ for _, command in ipairs({
 	assert(path ~= "", "test prerequisite missing: " .. command)
 	assert(vim.uv.fs_symlink(path, bin .. "/" .. command))
 end
+local hash_exec = "exec " .. vim.fn.shellescape(hash_tool) .. hash_args .. ' "$@"\n'
+write(bin .. "/sha256sum", "#!/bin/sh\n" .. hash_exec, true)
+write(bin .. "/shasum", '#!/bin/sh\n[ "$1" = -a ] && [ "$2" = 256 ] || exit 2\nshift 2\n' .. hash_exec, true)
+local cold_path = checked({ "sh", "-c", "! command -v node && ! command -v nvim" }, {
+	env = { PATH = bin },
+	clear_env = true,
+	text = true,
+})
+assert(cold_path.stdout == "", "bootstrap fixture acquired ambient Node/Neovim")
 write(
 	bin .. "/uname",
 	'#!/bin/sh\ncase "$1" in -s) echo "${TEST_OS:-Linux}" ;; -m) echo "${TEST_ARCH:-x86_64}" ;; esac\n',
