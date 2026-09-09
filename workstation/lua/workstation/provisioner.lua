@@ -1,5 +1,6 @@
 local commands = require("workstation.commands")
 local paths = require("workstation.paths")
+local shell_provider = require("workstation.provision.shell")
 local state = require("workstation.state")
 
 -- The chezmoi provisioner: the ONLY sanctioned way the engine materializes
@@ -9,6 +10,13 @@ local state = require("workstation.state")
 
 -- LuaJIT exposes varargs unpack as the global `unpack`; Lua 5.2+ as table.unpack.
 local varargs_unpack = table.unpack or unpack
+
+-- Plan-local staging sequence for exclusive staging directories.
+local sequence = 0
+
+local function is_within(target, ancestor)
+	return target == ancestor or target:sub(1, #ancestor + 1) == ancestor .. "/"
+end
 
 local M = {}
 
@@ -92,7 +100,7 @@ local function write_staged(root, entry)
 	local prefix = entry.name:match("^(.*)/[^/]+$")
 	while prefix do
 		local parent = paths.join(root, prefix)
-		if vim.uv.fs_stat(parent) == nil then
+		if vim.uv.fs_lstat(parent) == nil then
 			assert(vim.uv.fs_mkdir(parent, 493))
 		end
 		prefix = prefix:match("^(.*)/[^/]+$")
@@ -104,18 +112,20 @@ local function write_staged(root, entry)
 		assert(vim.uv.fs_chmod(path, entry.mode or 493))
 		return
 	end
+	assert(entry.bytes ~= nil, "refusing to stage a source file without bytes: " .. entry.name)
 	local file = assert(io.open(path, "wb"))
-	assert(file:write(entry.bytes or ""))
+	assert(file:write(entry.bytes))
 	file:close()
 	assert(vim.uv.fs_chmod(path, entry.mode or 420))
 end
 
 ---Verify a generation directory byte-for-byte against its manifest. A
 ---hash-shaped pathname alone is never trusted.
-local function verify_generation(root, manifest)
+function M.verify_generation(root, manifest)
 	local expected, expected_count = {}, 0
 	for _, entry in ipairs(manifest) do
 		assert(type(entry.name) == "string" and entry.name ~= "", "manifest entry has no name")
+		assert(entry.type ~= "file" or entry.sha256 ~= nil, "manifest file entry has no digest: " .. entry.name)
 		assert(expected[entry.name] == nil, "duplicate manifest entry: " .. entry.name)
 		expected[entry.name] = entry
 		expected_count = expected_count + 1
@@ -161,9 +171,10 @@ end
 local function publish(plan)
 	local root = state.generations_root()
 	local directory = paths.join(root, plan.generation)
-	local stat = vim.uv.fs_stat(directory)
+	local stat = vim.uv.fs_lstat(directory)
 	if stat then
-		local ok = pcall(verify_generation, directory, plan.manifest)
+		assert(stat.type == "directory", "cached generation is not a directory: " .. directory)
+		local ok = pcall(M.verify_generation, directory, plan.manifest)
 		if ok then
 			return directory
 		end
@@ -172,10 +183,21 @@ local function publish(plan)
 		local quarantine = ("%s.invalid-%d-%d"):format(directory, vim.uv.os_getpid(), os.time())
 		assert(vim.uv.fs_rename(directory, quarantine), "cannot quarantine damaged generation: " .. directory)
 	end
-	local staged = paths.join(root, (".staging-%d-%d"):format(vim.uv.os_getpid(), os.time()))
-	vim.fn.delete(staged, "rf")
-	vim.fn.mkdir(staged, "p")
-	assert(vim.uv.fs_chmod(staged, 448))
+	-- Allocate the staging directory exclusively: an existing path is never
+	-- deleted or written through, whatever it is.
+	local staged
+	for _ = 1, 64 do
+		sequence = sequence + 1
+		local candidate =
+			paths.join(root, (".staging-%d-%d-%d"):format(vim.uv.os_getpid(), os.time() % 1000000, sequence))
+		local ok, err = vim.uv.fs_mkdir(candidate, 448)
+		if ok then
+			staged = candidate
+			break
+		end
+		assert(err == "EEXIST", "cannot allocate a staging generation: " .. tostring(err))
+	end
+	assert(staged, "cannot allocate a staging generation in " .. root)
 	local bytes = { [".chezmoiremove"] = plan.remove_file }
 	for _, entry in ipairs(plan.entries) do
 		bytes[entry.source_name] = entry.bytes
@@ -191,7 +213,7 @@ local function publish(plan)
 				bytes = bytes[entry.name],
 			})
 		end
-		assert(verify_generation(staged, plan.manifest))
+		assert(M.verify_generation(staged, plan.manifest))
 	end)
 	if not ok then
 		vim.fn.delete(staged, "rf")
@@ -208,14 +230,54 @@ end
 M.publish = publish
 
 ---Check actual target preconditions for every planned mutation: intervening
----home edits, first adoption of different unrecorded whole files, symlinked
----ancestors and removal safety. Conflicts stop before backend mutation.
+---home edits (full type/mode/content/link state), first adoption of unrecorded
+---whole files, exact-directory ownership of existing contents, shared-target
+---fragment integrity and removal safety. Conflicts stop before any backend
+---mutation. The plan is bound to the journal revision it was built against.
 local function check_preconditions(plan)
 	local journal = state.applied_record()
+	local current_revision = journal and journal.revision or 0
+	local current_generation = journal and journal.generation
+	-- A plan is stale when a different successful generation was applied after
+	-- it was built. Re-applying the identical desired generation is an
+	-- idempotent no-op, not staleness; fingerprints still guard every target.
+	local stale = current_revision ~= plan.journal_revision and current_generation ~= plan.generation
+	assert(
+		not stale,
+		("stale plan: it was built against journal revision %s (generation %s), but revision %s applied generation %s; rebuild the plan"):format(
+			tostring(plan.journal_revision),
+			tostring(plan.baseline_generation),
+			tostring(current_revision),
+			tostring(current_generation)
+		)
+	)
 	local pending = state.pending_records()
-	local pending_generations = {}
+	local desired_targets = {}
+	for _, entry in ipairs(plan.entries) do
+		desired_targets[entry.target] = true
+	end
+	-- Unresolved partial attempts are never silently forgotten: when the
+	-- desired generation changed, any target the attempt touched that is
+	-- neither proven owned (journal) nor still desired must be recovered
+	-- explicitly before a new generation may apply.
 	for _, record in ipairs(pending) do
-		pending_generations[record.generation] = true
+		if record.generation ~= plan.generation then
+			for _, target in ipairs(record.targets or {}) do
+				if
+					not (journal and journal.targets and journal.targets[target])
+					and not desired_targets[target]
+					and vim.uv.fs_lstat(state.join_home(target)) ~= nil
+				then
+					error(
+						("workstation apply conflict: unresolved partial attempt for generation %s touched %s, which is neither recorded as owned nor desired; inspect the journal and recover explicitly"):format(
+							record.generation,
+							target
+						),
+						0
+					)
+				end
+			end
+		end
 	end
 	local function conflict(entry, message)
 		error(
@@ -228,27 +290,62 @@ local function check_preconditions(plan)
 		)
 	end
 	for _, entry in ipairs(plan.entries) do
-		local path = paths.join(paths.home, entry.target)
+		local path = state.join_home(entry.target)
 		local stat = vim.uv.fs_lstat(path)
 		-- Never write through a symlinked ancestor into unrelated state.
-		local ancestor = entry.target:match("^(.*/)[^/]+$")
+		local ancestor = entry.target:match("^(.*)/[^/]+$")
 		while ancestor do
-			local ancestor_stat = vim.uv.fs_lstat(paths.join(paths.home, ancestor:sub(1, -2)))
+			local ancestor_stat = vim.uv.fs_lstat(state.join_home(ancestor))
 			assert(
 				ancestor_stat == nil or ancestor_stat.type ~= "link",
-				"refusing to write through symlinked ancestor " .. ancestor:sub(1, -2) .. " for " .. entry.target
+				"refusing to write through symlinked ancestor " .. ancestor .. " for " .. entry.target
 			)
-			ancestor = ancestor:match("^(.*/)[^/]+$")
+			ancestor = ancestor:match("^(.*)/[^/]+$")
 		end
 		if entry.operation == "directory" then
 			if stat and stat.type ~= "directory" then
 				conflict(entry, "target exists as " .. stat.type)
+			end
+			if entry.exact then
+				-- Exact management prunes anything unknown inside the target:
+				-- adoption requires complete proven ownership of the existing
+				-- contents, otherwise it fails closed.
+				local owned = {}
+				for target in pairs(journal and journal.targets or {}) do
+					if is_within(target, entry.target) then
+						owned[target] = true
+					end
+				end
+				if stat then
+					for child in vim.fs.dir(path) do
+						local child_stat = vim.uv.fs_lstat(paths.join(path, child))
+						if child_stat and child_stat.type == "directory" then
+							conflict(entry, "exact directory contains unproven subdirectory " .. child)
+						end
+						if not owned[entry.target .. "/" .. child] then
+							conflict(entry, "exact directory contains unproven content " .. child)
+						end
+					end
+				end
 			end
 		elseif not stat then
 			-- absent targets are adoptable
 		elseif entry.operation == "modify" then
 			if stat.type ~= "file" then
 				conflict(entry, "shared target exists as " .. stat.type)
+			end
+			-- Shared-target fragment integrity is validated before the backend
+			-- runs, so a later modifier conflict cannot follow earlier writes.
+			if entry.fragments then
+				local recorded = {}
+				local applied = journal and journal.fragments and journal.fragments[entry.target] or {}
+				for _, fragment in ipairs(applied) do
+					recorded[fragment.id] = fragment
+				end
+				local ok, reason = shell_provider.validate_target(path, entry.fragments, recorded)
+				if not ok then
+					conflict(entry, reason)
+				end
 			end
 		else
 			local recorded = journal and journal.targets and journal.targets[entry.target]
@@ -259,6 +356,7 @@ local function check_preconditions(plan)
 					or fingerprint.type ~= recorded.type
 					or fingerprint.sha256 ~= recorded.sha256
 					or fingerprint.link ~= recorded.link
+					or fingerprint.mode ~= recorded.mode
 				then
 					conflict(entry, "target changed since the last successful apply")
 				end
@@ -268,16 +366,11 @@ local function check_preconditions(plan)
 					fingerprint.type ~= entry.expected.type
 					or fingerprint.sha256 ~= entry.expected.sha256
 					or fingerprint.link ~= entry.expected.link
+					or fingerprint.mode ~= entry.expected.mode
 				then
-					if pending_generations[plan.generation] then
-						conflict(
-							entry,
-							"unrecorded target differs from this generation's pending attempt; inspect the journal"
-						)
-					end
 					conflict(
 						entry,
-						"first adoption of an existing unrecorded target; inspect it and remove or back it up explicitly"
+						"first adoption of an existing unrecorded target differing in type, mode, content or link; inspect it and remove or back it up explicitly"
 					)
 				end
 			else
@@ -287,15 +380,25 @@ local function check_preconditions(plan)
 	end
 	for _, removal in ipairs(plan.removals) do
 		local recorded = journal and journal.targets and journal.targets[removal.target]
-		assert(recorded, "removal of " .. removal.target .. " has no owned record")
-		local fingerprint = state.target_fingerprint(removal.target)
-		assert(
-			fingerprint ~= nil
-				and fingerprint.type == recorded.type
-				and fingerprint.sha256 == recorded.sha256
-				and fingerprint.link == recorded.link,
-			"removal of " .. removal.target .. " conflicts: the target changed since the last successful apply"
-		)
+		local present = vim.uv.fs_lstat(state.join_home(removal.target)) ~= nil
+		if present then
+			-- Package remove recipes operate on recorded ownership only: an
+			-- existing target that was never journaled is never destructively
+			-- adopted by a removal declaration.
+			assert(
+				recorded ~= nil,
+				"removal of " .. removal.target .. " conflicts: it exists but was never recorded as owned"
+			)
+			local fingerprint = state.target_fingerprint(removal.target)
+			assert(
+				fingerprint ~= nil
+					and fingerprint.type == recorded.type
+					and fingerprint.sha256 == recorded.sha256
+					and fingerprint.link == recorded.link
+					and fingerprint.mode == recorded.mode,
+				"removal of " .. removal.target .. " conflicts: the target changed since the last successful apply"
+			)
+		end
 	end
 end
 
@@ -314,13 +417,31 @@ local function applied_fingerprints(plan)
 	return fingerprints
 end
 
----Materialize home state: publish the verified immutable generation, check
----target preconditions, apply through the backend, then record last-applied
----metadata. Held under the fail-closed per-target lock throughout.
+---Index source entries by name for verifiable patch baselines.
+local function source_index(plan)
+	local index = {}
+	for _, entry in ipairs(plan.entries) do
+		index[entry.source_name] = {
+			target = entry.target,
+			owner = entry.owner,
+			attribution = entry.attribution,
+			type = entry.type,
+			mode = entry.mode,
+			link = entry.link,
+		}
+	end
+	return index
+end
+
+---Materialize home state: verify the plan is current, check target
+---preconditions, publish the verified immutable generation, apply through the
+---backend, then record last-applied metadata. Held under the fail-closed
+---per-target lock throughout; preconditions are rechecked before any
+---publication or backend mutation.
 function M.apply(plan)
 	return state.with_lock("apply", function()
-		local generation = publish(plan)
 		check_preconditions(plan)
+		local generation = publish(plan)
 		state.write_pending({
 			generation = plan.generation,
 			at = os.time(),
@@ -341,8 +462,14 @@ function M.apply(plan)
 			})
 			error(failure)
 		end
-		state.record_applied(plan.generation, applied_fingerprints(plan), plan.fragments_journal)
-		state.clear_pending(plan.generation)
+		state.record_applied(
+			plan.generation,
+			applied_fingerprints(plan),
+			plan.fragments_journal,
+			plan.manifest,
+			source_index(plan)
+		)
+		state.clear_pending()
 		return generation
 	end)
 end

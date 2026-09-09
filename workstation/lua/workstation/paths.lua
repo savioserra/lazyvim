@@ -29,6 +29,25 @@ vim.env.XDG_CACHE_HOME = M.home .. "/.cache"
 vim.env.XDG_RUNTIME_DIR = M.local_dir .. "/state/workstation/run"
 vim.env.WORKSTATION_CACHE = M.home .. "/.cache/workstation"
 vim.env.TMPDIR = vim.env.XDG_RUNTIME_DIR .. "/tmp"
+-- The writable runtime root is resolved without following symlinks: a
+-- redirected .local/state chain must fail closed here, not silently write
+-- through a link into unrelated state.
+do
+	if vim.uv.fs_lstat(M.home) == nil then
+		vim.fn.mkdir(M.home, "p")
+	end
+	local current = M.home
+	for index, component in ipairs({ ".local", "state", "workstation", "run" }) do
+		current = vim.fs.joinpath(current, component)
+		local stat = vim.uv.fs_lstat(current)
+		if stat then
+			assert(stat.type == "directory", "runtime root component is not a directory: " .. current)
+		else
+			assert(vim.uv.fs_mkdir(current, index == 4 and 448 or 493), "cannot create " .. current)
+		end
+	end
+	assert(vim.uv.fs_chmod(current, 448))
+end
 vim.fn.mkdir(vim.env.TMPDIR, "p", 448)
 assert(vim.uv.fs_chmod(vim.env.XDG_RUNTIME_DIR, 448))
 

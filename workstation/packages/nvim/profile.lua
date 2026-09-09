@@ -91,19 +91,6 @@ function M.validate_spec(spec)
 	M.validate_entry(spec.entry, "Neovim profile entry " .. tostring(spec.entry and spec.entry.id))
 end
 
-function M.required_capabilities(profile)
-	local required, seen = {}, {}
-	for _, contribution in ipairs(profile) do
-		for _, capability in ipairs(contribution.requires or {}) do
-			if not seen[capability] then
-				seen[capability] = true
-				table.insert(required, capability)
-			end
-		end
-	end
-	return required
-end
-
 local function quote(value)
 	-- %q keeps strings valid Lua source; fold its literal-newline escapes back
 	-- onto one line so every serialized field stays a single readable line.

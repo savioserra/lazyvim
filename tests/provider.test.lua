@@ -59,8 +59,17 @@ do
 	assert_fails("exactly a link destination", function()
 		provision.chezmoi({ target = ".local/bin/x", kind = "symlink", to = "../opt/x", content = "x" })
 	end)
-	assert_fails("one whole body or structured fragments", function()
+	-- R1: structured fragments belong to provision.shell ONLY; a native
+	-- modify recipe with fragments is rejected by the public constructor
+	-- before any collection, source generation or target mutation.
+	assert_fails("they belong to provision.shell only", function()
 		provision.chezmoi({ target = ".profile", kind = "modify", content = "x", fragments = { { id = "a" } } })
+	end)
+	assert_fails("they belong to provision.shell only", function()
+		provision.chezmoi({ target = ".profile", kind = "modify", fragments = { { id = "a" } } })
+	end)
+	assert_fails("they belong to provision.shell only", function()
+		provision.chezmoi({ target = ".profile", kind = "file", content = "x", fragments = { { id = "a" } } })
 	end)
 	assert_fails("accepts no content", function()
 		provision.chezmoi({ target = ".old", kind = "remove", content = "x" })
@@ -141,7 +150,7 @@ do
 	assert_fails("requires a marker", function()
 		shell.recipe({ target = ".profile", fragment = { id = "x", body = "y", order = 1 } })
 	end)
-	assert_fails("single line", function()
+	assert_fails("must not contain control characters or newlines", function()
 		shell.recipe({
 			target = ".profile",
 			fragment = { id = "x", marker = "# m", body = "two\nlines", order = 1 },
@@ -315,10 +324,27 @@ do
 			["a"] = { provision.chezmoi({ target = ".local/state/workstation/x", kind = "file", content = "x\n" }) },
 		})
 	end)
-	assert_fails("encompasses target", function()
+	assert_fails("contains cross-owner target", function()
 		plan_for({
 			["a"] = { provision.chezmoi({ target = ".exact", kind = "directory", exact = true }) },
 			["b"] = { provision.chezmoi({ target = ".exact/inner", kind = "file", content = "x\n" }) },
+		})
+	end)
+	-- Same-owner children inside an exact container follow the documented
+	-- exact contract; only cross-owner content is rejected.
+	local exact_plan = plan_for({
+		["a"] = {
+			provision.chezmoi({ target = ".exact", kind = "directory", exact = true }),
+			provision.chezmoi({ target = ".exact/inner", kind = "file", content = "x\n" }),
+		},
+	})
+	assert(#exact_plan.entries == 2, "same-owner exact children were rejected")
+	assert_fails("encompasses engine-private state", function()
+		plan_for({
+			["a"] = {
+				provision.chezmoi({ target = ".local", kind = "directory", exact = true }),
+				provision.chezmoi({ target = ".local/owned", kind = "file", content = "x\n" }),
+			},
 		})
 	end)
 	-- compatible shared directories merge and share attribution
