@@ -5,23 +5,10 @@ interface is the repo-native `workstation/bin/workstation`, not chezmoi commands
 `workstation/versions.json` owns the backend pin; no `.chezmoiversion` policy,
 source-root marker, archive externals or lifecycle run-after scripts remain.
 
-## Lifecycle and file ownership
-
-```text
-bootstrap -> pinned Neovim -> pinned chezmoi -> public launcher link
-apply     -> owned real-account legacy service retirement (never scratch)
-          -> chezmoi --source <repo>/chezmoi --destination <target-home> apply
-          -> refresh materialized Node pin/PATH -> package setup
-sync      -> mutable application state restoration
-verify    -> version and behavior checks
-update    -> checked git pull --ff-only -> freshly pulled launcher bootstrap
-          -> freshly launched apply -> sync -> verify (first failure stops)
-```
-
-`workstation diff` previews file-backend state only. It ensures the pinned backend
-is available; it does not simulate setup or sync. Setup owns host downloads and
-configuration. Bootstrap owns Neovim, backend and launcher installation, not
-chezmoi. Authentication, sessions and provider state remain user-owned.
+See [lifecycle phases](capabilities.md#lifecycle-phases) for ordering and
+[README](../README.md) for public commands. The engine supplies
+`--source <repo>/chezmoi --destination <target-home>` explicitly; authentication,
+sessions and provider state remain user-owned.
 
 ## Source naming
 
@@ -41,7 +28,7 @@ package-owned exact archive trees are pruned by provisioning instead.
 
 Shell modifiers print literal environment/auth snippets; rendering them does not
 source login profiles or read `/etc/pi/op.env` or `/etc/ntfy/notifier.env`.
-Those files and their credentials remain operator-owned (see `secrets.md`).
+Those files and their credentials remain [operator-owned](secrets.md).
 
 ## Isolated validation
 
@@ -64,29 +51,14 @@ env -i PATH=/usr/bin:/bin HOME="$scratch/home" TMPDIR="$scratch/tmp" \
   --no-pager --no-tty apply --dry-run
 ```
 
-Audit all templates/modifiers before executing a backend probe; dry-run or
-`--exclude` alone is not a sandbox. The bounded Linux phase5 structural gate uses
-network denial, timeout 120 seconds and `ulimit -f 4096`, with the **existing
-2.72.0 backend**, not installation or acceptance of canonical **2.72.1**. Exact
-pinned backend, real assets and full native lifecycle validation remain separate.
-
-For real integration use `.github/scripts/test-apply.sh <new-absolute-home>`.
-It refuses existing paths (even empty ones), home/source or their ancestors and
-descendants, claims the new directory atomically, and never deletes caller input.
-An `env -i` child uses fixed Unix/Homebrew prerequisite PATH, private writable
-roots and disabled ambient Git config. No actual login profiles are loaded.
-Bootstrap installs prerequisites before public-link apply/sync; all Lua suites,
-syntax/projection/shell/format checks run before public verify. Failures propagate
-the exact failing exit code and retain scratch evidence. Offline harness tests
-copy the source and substitute local lifecycle fakes; real nonrecursive suites
-also run through the actual checker against a synthetic populated parent home.
-The checker freezes absolute installed Neovim/Mason StyLua paths before each
-suite gets a fresh private HOME/TMP/XDG/cache and cleared environment through
-`test-home.sh`. Owned `/tmp/workstation-test.*` roots are printed and retained
-for inspection, independent of caller-selected writable roots and never recursively deleted.
-Bootstrap fixtures adapt both simulated host hash commands over one available
-`sha256sum` or `shasum`; no cross-platform hash dependency is added. This is not
-a real install or native-platform acceptance.
+Audit the full source, including templates/modifiers, before executing a probe;
+dry-run or `--exclude` alone is not a sandbox. Add the network denial, deadline
+and byte-equivalent file-size guard from [testing](testing.md#offline-source-checks)
+for bounded Linux checks; the example above provides only backend state isolation.
+Record the actual backend version: a render with another installed version does
+not validate the canonical pin. File rendering is never full lifecycle acceptance.
+See [real integration](testing.md#real-integration) for the authorized scratch
+harness; historical probe/debug receipts remain in TASK-34 notes and Git.
 
 ## Breaking cutover
 

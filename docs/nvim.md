@@ -31,17 +31,38 @@
 
 ## Profile fields
 
-See [`capabilities.md`](capabilities.md#neovim-profile) for the schema.
+The canonical [profile](../chezmoi/dot_config/nvim/lua/languages/profile.lua)
+returns an ordered list of contribution tables. The engine
+[validator](../workstation/packages/nvim/profile.lua) checks these fields:
 
-Rules:
+| Field | Shape / use |
+| --- | --- |
+| `id` | Required unique non-empty string |
+| `requires` | Optional list of non-empty host capability IDs; added to `nvim` dependencies |
+| `lazyvim_extras` | Optional list of non-empty module names; imported before base custom specs |
+| `plugin_module` | Optional non-empty module name; imported after base custom specs |
+| `mason_packages` | Optional list of non-empty package names; verification requires entries in `mason-lock.json` |
+| `language_cases` | Optional list of tables with non-empty strings `language`, `filename`, `contents`, `client`; real parser/LSP checks |
+| `formatter_cases` | Optional list of tables with non-empty strings `language`, `filename`, `contents`, `expected`; on-disk output checks |
 
-- Put every language-specific LazyVim import in the profile.
-- Put profile extras before base custom plugins.
-- Put profile custom modules after base custom plugins.
-- Declare required host capabilities with `requires`.
-- Add a real parser/LSP behavior case for supported languages.
-- Add an on-disk case for promised formatters.
-- Keep Mason requirements present in `mason-lock.json`.
+Formatter cases also support `project_files`, a filename-to-contents map written
+by the [verification consumer](../workstation/packages/nvim/init.lua) before the
+source file. The profile validator does not validate that map or reject unknown
+fields; its list checks use `ipairs`, not a strict dense-array schema.
+
+Put language-specific LazyVim imports here, include parser/LSP cases for supported
+languages and formatter cases wherever formatting is promised. See
+[target-first engine loading](capabilities.md#neovim-package-and-profile).
+
+### Editor specs versus lifecycle packages
+
+`lua/languages/plugins/typescript.lua` currently returns lazy.nvim plugin specs:
+it configures TypeScript/JavaScript LSP ownership, completion and editor commands.
+The profile imports it as `languages.plugins.typescript` and requires the `node`
+host capability. It is not a catalog factory returning lifecycle handlers.
+`workstation/packages/nvim/` owns editor sync/verification; `node` owns the host
+runtime. This describes the present split, not a permanent requirement that all
+language payloads must stay outside workstation packages.
 
 ## Plugin ownership
 
@@ -94,7 +115,7 @@ Rules:
 | Item | Value |
 | --- | --- |
 | Mode flag | `LAZYVIM_HEADLESS_SYNC=1` |
-| Dispatcher | `packages/nvim/child.lua` |
+| Dispatcher | `workstation/packages/nvim/child.lua` |
 | Operations | `lazy-restore`, `lazy-clean`, `mason`, `treesitter` |
 
 Keep mode-specific behavior at `plugins/mason.lua` and the child integration

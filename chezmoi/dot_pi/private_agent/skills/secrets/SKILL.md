@@ -14,7 +14,7 @@ Use only the 1Password vault named `Workstation`. This skill is a handling polic
 1. Confirm `op --version` succeeds.
 2. Confirm authentication with `op whoami` without printing account details.
 3. Confirm `op vault get Workstation` succeeds without displaying its JSON.
-4. If any check fails, stop and ask the user to unlock 1Password or enable desktop CLI integration. Do not start an interactive sign-in flow.
+4. If any check fails, stop. For a missing CLI, refer to the repository install guide; do not install it implicitly. On desktop, ask the user to unlock 1Password/enable CLI integration. On headless hosts, ask the operator to restore the vault-scoped service-account environment and access. Follow `docs/secrets.md` from the located repository root, not relative to this deployed skill. Never inspect/request token values or start an interactive sign-in flow.
 
 Never enumerate, inspect, or modify another vault. Desktop CLI authentication may technically grant broader access, but that access is out of scope.
 

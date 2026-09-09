@@ -64,29 +64,12 @@ No login profiles, secret values, provider credentials, 1Password account sessio
 or vault state belong to the engine. The source-managed ntfy notifier and pinned
 Pi packages retain their own discovery/reload contracts; see the references below.
 
-## Sources of truth
-
-| State | Owner |
-| --- | --- |
-| Engine runtime/backend and host download metadata | `workstation/versions.json`; generated bootstrap pin projection |
-| Host provisioning | `workstation/packages/` setup; Neovim/backend bootstrap |
-| Node version | `chezmoi/dot_node-version` only |
-| Managed home configuration | `chezmoi/` (no externals or lifecycle scripts) |
-| Package ordering / generic core | `workstation/lua/workstation/catalog.lua` / `core/` |
-| Neovim plugins / Mason tools | `chezmoi/dot_config/nvim/lazy-lock.json` / `mason-lock.json` |
-| Language composition / parsers | `chezmoi/dot_config/nvim/lua/languages/profile.lua` / parser config and locked plugin |
-| Pi skills / source-managed extensions | `chezmoi/dot_pi/private_agent/skills/` / `extensions/` |
-| Registry Pi packages | Exact versions/integrity in `workstation/versions.json`, owning package verification |
-| tmux plugin commits | `workstation/packages/tmux/init.lua` |
-
-Update version, owning URL/checksum or registry integrity, verification and tool
-documentation together. Never edit deployed state to change the source contract.
-
 ## Documentation and validation
 
 | Reference | Scope |
 | --- | --- |
-| [`docs/index.md`](docs/index.md) | Repository map and checks |
+| [`docs/index.md`](docs/index.md) | Repository navigation |
+| [`docs/testing.md`](docs/testing.md) | Fast checks, isolated E2E and acceptance limits |
 | [`docs/capabilities.md`](docs/capabilities.md) | Package boundaries and lifecycle |
 | [`docs/chezmoi.md`](docs/chezmoi.md) | File backend, scratch rendering, guarded cutover |
 | [`docs/tools.md`](docs/tools.md) | Managed inventory and prerequisites |
@@ -95,12 +78,9 @@ documentation together. Never edit deployed state to change the source contract.
 | [`docs/lua-migration.md`](docs/lua-migration.md) | Runtime rationale and historical context |
 | `AGENTS.md` | Contributor rules |
 
-`.github/scripts/test-apply.sh /absolute/new/scratch-home` drives real
-bootstrap → apply → sync → all fast checks/format → verify. The destination must
-not exist, must be outside the real home/source, and is retained even on failure.
-The harness clears ambient environment and confines HOME/XDG/cache/temp without
-loading login profiles or `/etc` auth snippets. It downloads real managed assets;
-offline fixture tests are a separate gate, not full lifecycle acceptance.
-StyLua comes from the locked Mason profile after sync. CI uses Linux and macOS
-arm64 runners; WSL follows Linux. Release CI validates before producing tagged
-source archives and SHA-256 sums, not a separate engine build or installer.
+Run `sh .github/scripts/check.sh` for safe isolated source checks; never run
+fixtures directly against an applied home. Real scratch integration downloads
+assets and requires explicit authorization; follow [testing](docs/testing.md),
+not a live-home experiment. CI uses Linux and macOS arm64 runners; WSL follows
+Linux. Release CI validates before producing tagged source archives and SHA-256
+sums, not a separate engine build or installer.

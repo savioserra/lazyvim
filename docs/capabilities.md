@@ -57,8 +57,8 @@ foundation
 │   └── pi
 │       ├── pi-skills
 │       │   └── pi-subagents
-│       └── pi-web-access
-│           └── pi-ntfy-notifier [source-managed]
+│       ├── pi-web-access
+│       └── pi-ntfy-notifier [source-managed]
 ├── go [Neovim language toolchain]
 ├── secrets
 ├── nvim [package factory adds profile prerequisites]
@@ -104,17 +104,21 @@ The graph rejects duplicate IDs, unknown dependencies, dependency cycles, and en
 | `diff` | Source and target | Ensure backend, preview file changes only |
 | `update` | Git clone | Checked pull --ff-only, fresh launcher bootstrap, apply, sync, verify; stop at first failure |
 
-Fresh installation: `workstation/bin/workstation bootstrap`, then the installed
-`~/.local/bin/workstation` runs `apply`, `sync`, `verify` separately. The whole
-clone (default `~/.local/share/workstation`) contains `workstation/` and `chezmoi/`;
-no source-root marker or chezmoi source-path lookup is used. Bootstrap retains an
-identical canonical launcher symlink, refuses all conflicting paths, and never
-reports completion after a backend failure. Update re-executes the newly pulled
-launcher before each lifecycle step, including bootstrap so pin changes take effect.
+Bootstrap retains an identical canonical launcher symlink, refuses conflicting
+paths and never reports completion after a backend failure. Update re-executes
+the newly pulled launcher before each lifecycle step, including bootstrap so pin
+changes take effect. See [installation and daily use](../README.md).
 
 ## Neovim package and profile
 
-The `packages.nvim` factory loads and validates the sole language profile source at `chezmoi/dot_config/nvim/lua/languages/profile.lua`. It adds profile `requires` values to its package dependencies and closes over the profile for sync and verification. Generic app and core modules do not import Neovim.
+The `packages.nvim` factory uses an explicitly supplied `environment.nvim_profile`
+or loads the target home's `.config/nvim/lua/languages/profile.lua`, falling back
+to the repository copy only when the target file is absent. The canonical editable
+source is `chezmoi/dot_config/nvim/lua/languages/profile.lua`; editing it does not
+immediately change an already-applied home's graph. The loader validates the
+[profile fields](nvim.md#profile-fields); the factory adds their `requires` values
+to package dependencies and closes over the profile for sync/verify. Generic app
+and core modules do not import Neovim.
 
 | Consumer | Use |
 | --- | --- |
@@ -125,7 +129,19 @@ The `packages.nvim` factory loads and validates the sole language profile source
 
 ## Pi resources
 
-`pi-skills` verifies managed files under `chezmoi/dot_pi/private_agent/skills/` and Pi discovery. The pinned community packages `pi-subagents` and `pi-web-access` are installed through their owning packages with exact registry integrity; `pi-ntfy-notifier` is source-managed under `chezmoi/dot_pi/private_agent/extensions/` and deploys through normal apply. Package-specific JavaScript verifiers remain inside their owning package directories.
+`pi-skills` verifies managed skill files and discovery through Pi's resource loader.
+The community packages `pi-subagents` and `pi-web-access` install with exact
+registry integrity; their JavaScript verifiers stay package-local.
+`pi-ntfy-notifier` deploys from `chezmoi/dot_pi/private_agent/extensions/ntfy-notifier/`
+through `workstation apply`, followed by Pi `/reload` or a new process.
+
+Notifier package verification checks manifest/version/files and Node unit tests
+that import the extension with a mock Pi API. These do **not** prove actual Pi
+auto-discovery or reload cleanup. Real discovery and reload acceptance remains a
+separate required check for extension changes: confirm commands/events load once
+and shutdown/reload releases owned resources without duplicate handlers. Keep
+checks independent of credentials; live notification delivery requires separate
+authorization and must not expose tokens.
 
 ## Package-local backend rule
 

@@ -7,57 +7,49 @@ description: Maintains this repository's cross-platform engine-owned workstation
 
 ## Start
 
-1. Locate the whole Git source root containing sibling `workstation/` and `chezmoi/`. From a checkout use `git rev-parse --show-toplevel`; otherwise inspect the canonical `~/.local/bin/workstation` link to its repo-native launcher. Never rely on chezmoi source-path or a source-root marker. Stop if the existing `~/.local/share/workstation` is a legacy deployed payload rather than a clone.
-2. Read the root `AGENTS.md` and every nearer `AGENTS.md` for files being changed.
-3. Read `docs/chezmoi.md` before changing apply behavior and `docs/capabilities.md` before changing lifecycle code.
-4. Run `git status --short`. Preserve unrelated work.
+1. Locate the whole Git root containing sibling `workstation/` and `chezmoi/`:
+   use `git rev-parse --show-toplevel` in a checkout, otherwise inspect the canonical
+   `~/.local/bin/workstation` link. Never use chezmoi source-path or a root marker.
+   Stop if `~/.local/share/workstation` is a legacy payload rather than a clone.
+2. Read root and nearer `AGENTS.md` files, including their mandatory Backlog CLI
+   workflow. Run `git status --short`; preserve unrelated work.
+3. Resolve the following repository references from that root, not this skill's
+   deployed directory:
 
-## Ownership
-
-| Change | Owner |
+| Work | Reference |
 | --- | --- |
-| Downloaded host tool | Owning `workstation/packages/` setup and `workstation/versions.json`; runtime/backend are bootstrap-owned |
-| Combined capability and lifecycle behavior | `workstation/packages/<name>/` |
-| Package ordering and registration | `workstation/lua/workstation/catalog.lua` |
-| Generic validation, graph, materialization, dispatch | `workstation/lua/workstation/core/` |
-| Host-specific package behavior | Package-local backend |
-| Neovim language support | `chezmoi/dot_config/nvim/lua/languages/profile.lua` |
-| Pi skill | `chezmoi/dot_pi/private_agent/skills/<name>/SKILL.md` |
-| Source-managed Pi extension | `chezmoi/dot_pi/private_agent/extensions/<name>/`; owning workstation package verifies discovery and reload contract |
-| Registry Pi extension package | Owning workstation package; exact version and integrity in `versions.json` |
-| Secret reference or vault workflow | `/skill:secrets`; `Workstation` vault only |
-| Deployed target removal | `chezmoi/.chezmoiremove` |
+| Install/daily commands | `README.md` |
+| Packages, lifecycle, Pi verification contracts | `docs/capabilities.md` |
+| File backend, removals, guarded cutover | `docs/chezmoi.md` |
+| Versions, checksums/integrity, pin generation | `docs/tools.md` |
+| Editor profile/locks or tmux | `docs/nvim.md`, `docs/tmux.md` |
+| Isolation and acceptance gates | `docs/testing.md` |
 
-`workstation.app` is the composition root. Each package is registered once and returns one combined contribution. Core modules must not import the catalog, packages, or Neovim.
+## Work safely
 
-## Workflow
+- Edit repository source only, never deployed targets. Use managed pinned tools
+  and the public `workstation` lifecycle; do not overwrite legacy payloads or
+  remove live clones. Real apply/cutover needs separate authorization.
+- For secret-reference or vault work, ask the user to invoke `/skill:secrets`
+  explicitly before entering that workflow. Do not invoke it on their behalf or
+  retrieve secret values; `docs/secrets.md` owns host-authentication guidance.
+- For long-running/interactive work, use a dedicated project tmux pane/window
+  when available and useful. Do not assume a target or introduce tmux for a simple
+  one-shot command.
+- Commit or push only when requested.
 
-1. Edit repository source state, not deployed targets.
-2. Keep version, URL, checksum or registry integrity, verification, and tool documentation in one change.
-3. Add a package once to `workstation/lua/workstation/catalog.lua` and add dependency-order tests.
-4. Keep lifecycle handlers idempotent and package-local.
-5. Use `workstation` as the sole public lifecycle. Fresh install is repo launcher `bootstrap` then installed launcher `apply`, `sync`, `verify`. Bootstrap prepares pinned runtime/backend and a conflict-safe public symlink; no Node/system-Neovim dependency.
-6. Apply owns guarded real-account retirement (never scratch), explicit file-backend materialization, Node pin/PATH refresh and setup. Sync is separate. Direct setup before the first apply rejects a missing Node pin before Node/nvm provisioning. Update checks pull then freshly launched bootstrap/apply/sync/verify; diff previews files only. Never add compatibility aliases or imaginary dry-run flags.
-7. Delegate secret-reference and 1Password work to `/skill:secrets`; never retrieve secret values directly.
-8. When tmux is available and work is long-running, interactive, or benefits from parallel observation, use a dedicated project window or pane so commands survive and remain inspectable. Do not introduce tmux for simple one-shot commands, assume an existing target, or require it on unsupported hosts.
-9. Prefer managed pinned tools and engine lifecycle over host-global alternatives. Git/tmux/Bash/build/font prerequisites are user/CI-owned; never install OS prerequisites from lifecycle code. Follow guarded operator cutover in `docs/chezmoi.md`; never overwrite legacy payloads or remove a live clone.
-10. Commit or push only when requested.
+## Check and hand off
 
-## Checks
+Run `sh .github/scripts/check.sh`. Never run fixtures directly against an applied
+home: they write fake Node/npm state. Follow `docs/testing.md` for private roots,
+individual shell checks and real integration authorization. Audit full source
+before a backend render; dry-run is not a sandbox. Report actual failures and
+unrun acceptance gates rather than treating synthetic checks as deployment proof.
+Confirm clean status after requested commits.
 
-Run all available checks relevant to the change:
-
-```bash
-sh .github/scripts/check.sh
-```
-
-The runner freezes installed Neovim/Mason StyLua paths before giving every suite
-and check a fresh private HOME, TMP, XDG and cache with cleared ambient state.
-Do not run fixture suites directly against an applied home: they write fake
-Node/npm state. Test-only `test-home.sh` retains its owned `/tmp/workstation-test.*`
-roots (printed on stderr) for inspection; no caller path is recursively deleted.
-It preserves only prerequisite PATH, not auth/agent/session/tool configuration.
-
-Check every shell separately with `sh -n` and available ShellCheck. For authorized real integration use `.github/scripts/test-apply.sh <new-absolute-scratch-home>` outside the real home/source: bootstrap → apply → sync → all fast checks/format → verify. This downloads real assets; offline copied-source fixtures are not platform acceptance. Inspect the source before the isolated file-only render in `docs/chezmoi.md`; dry-run alone is not a sandbox. Keep auth/session/provider state private and never source login profiles for scratch checks. Confirm the working tree is clean after requested commits.
-
-When editing skills, consult the pinned installed Pi `docs/skills.md`: managed global resources deploy under `~/.pi/agent/skills/`, nested `SKILL.md` discovery uses valid name/description frontmatter, and relative resource paths resolve from the skill directory. Edit repository skills only, never deployed skills; `pi-skills` owns discovery verification.
+Before editing skills, read pinned installed Pi `docs/skills.md` and relevant
+linked guidance. Retain valid name/description frontmatter and nested `SKILL.md`
+discovery under `~/.pi/agent/skills/`; relative resource links resolve from the
+skill directory. `pi-skills` owns actual discovery verification. Notifier
+manifest/unit tests do not establish real extension discovery/reload acceptance;
+follow the separate required gate in `docs/capabilities.md`.

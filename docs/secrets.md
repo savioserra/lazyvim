@@ -18,11 +18,12 @@ host-owned mutable state.
 - Normal apply, sync, verify, and CI never require vault authentication.
 - Never commit or render secret values into persistent configuration.
 - Prefer `op run` or `op inject` over retrieving values into agent context.
+- Enter secret-reference/vault work only when the user explicitly invokes `/skill:secrets`; other skills must request that invocation, not invoke it automatically.
 - Scope every operation to the `Workstation` vault.
 - Require explicit user approval for each create, edit, archive, or delete.
 - Use a vault-scoped service account when technical enforcement is required on a headless host.
 
-Desktop CLI setup:
+## Desktop authentication
 
 ```text
 Unlock 1Password
@@ -50,9 +51,21 @@ service account instead:
    `/etc/pi/op.env` in login shells when the file exists. The same pattern
    applies to `/etc/ntfy/notifier.env` (`# chezmoi: managed ntfy notifier env`).
 
-Values never enter git, agent context, or chat; `/etc` files stay the live
-mechanism and the vault is the recovery source of truth. Service account tokens
-cannot be rotated in place; revoke and recreate the account to change access.
+These are operator-run steps, not commands for an agent to execute. Values never
+enter Git, agent context or chat; `/etc` files stay the live mechanism and the
+vault is the recovery source of truth. Service account tokens cannot be rotated
+in place; revoke and recreate the account to change access.
+
+## Authentication recovery
+
+Within an explicitly invoked secrets workflow, failed authentication/vault checks
+stop further operations. Desktop users should unlock the app and restore CLI
+integration. Headless operators should restore their service-account environment
+and `Workstation` permissions out of band, recreating the account if necessary.
+Never ask for or inspect the token value, print account/vault details, or start an
+interactive sign-in flow. A missing `op` is an installation issue; use the
+[install guide](../README.md), not an implicit authentication-time install.
+Normal lifecycle verification remains version-only.
 
 ## Vault items
 

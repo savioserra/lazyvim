@@ -7,19 +7,18 @@ It uses Pi's `agent_settled` lifecycle event, so it waits until retries, compact
 - **Pi completed — agent-name** — default priority with a completion tag
 - **Pi needs attention — agent-name** — high priority when the response asks for input, is blocked, or ends with an error/abort/length stop reason
 
-The title identifies the Pi session or sub-agent by its session name, falling back to the working directory name. Interactive and process-isolated `pi-subagentura` agents set their agent name as the Pi session name, so simultaneous agent notifications remain distinguishable.
+The title identifies the Pi session by its session name, falling back to the working directory name.
 
 The assistant response itself is never sent to ntfy. Notifications contain only a generic status and elapsed time by default.
 
 The package has no built-in server or topic: it publishes nothing until `PI_NTFY_SERVER` and `PI_NTFY_TOPIC` are provided by the host environment, so no infrastructure details are baked into the code.
 
-## Install
+## Apply and reload
 
-```bash
-pi install /path/to/pi-ntfy-notifier
-```
-
-Start a new Pi process or run `/reload` in an existing Pi TUI after installation.
+This repository deploys the source-managed extension to
+`~/.pi/agent/extensions/ntfy-notifier` through `workstation apply`.
+Start a new Pi process or run `/reload` in the existing Pi TUI after applying;
+no separate `pi install` is needed.
 
 ## Commands
 
@@ -46,16 +45,20 @@ Example:
 ```bash
 export PI_NTFY_SERVER=https://ntfy.example.com
 export PI_NTFY_TOPIC=pi
-export PI_NTFY_TOKEN=tk_your_token
+# Supply any required token through the operator-owned environment, never chat or Git.
 pi
 ```
 
 Keep topic names generic (`pi`, `backups`, `alerts`) and rely on server-side access control (`auth-default-access: deny-all` plus per-user/token grants) instead of unguessable topic names. On public shared servers without access control, a topic name effectively acts as a password.
 
-## Development
+## Verification
 
-```bash
-npm test
-npm run pack:check
-pi --no-extensions -e ./extensions/ntfy-notifier.ts --list-models
-```
+The owning workstation package checks manifest/version/files and runs
+`node --test test/ntfy.test.mjs`. These unit tests import the extension with a
+mock Pi API; they do not exercise real auto-discovery or `/reload`.
+
+Real Pi discovery/reload acceptance remains required for extension changes:
+confirm commands/events load once and shutdown/reload cleans up owned resources
+without duplicates. Keep credentials out of checks. `/ntfy-test` sends a real
+notification and requires separately authorized host configuration; it is not
+an offline verification step.

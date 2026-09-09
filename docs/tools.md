@@ -42,30 +42,20 @@ Supported deployment policy is Linux, WSL-as-Linux, and macOS (arm64).
 | Engine file backend | chezmoi | Selected archive member; never package-owned |
 
 Package setup uses checksum-verified provisioning and installed-content comparison;
-unchanged installations are retained. Node provisions both archives before writing
-the default alias and refreshing its environment, and before dependent Pi/npm
-setup. `chezmoi/dot_node-version` is the sole Node version source: first `apply`
-materializes `.node-version` and refreshes the in-memory pin/PATH before setup.
-Direct `setup` before that materialization rejects a missing/invalid Node pin
-without provisioning nvm or Node; run `workstation apply` first.
+unchanged installations are retained. See [lifecycle contracts](capabilities.md#lifecycle-phases),
+[installation/prerequisites](../README.md) and [legacy cutover](chezmoi.md#breaking-cutover).
 
-Chezmoi has no archive externals or deployed engine payload. The removed temporary
-versions bridge is cleaned up only at `.local/share/workstation/versions.json`;
-the engine clone and its nested `workstation/versions.json` are not removed. Existing legacy payloads need guarded operator inspection; see `chezmoi.md#breaking-cutover`.
+## Bootstrap pin maintenance
 
-The runtime and backend pins are canonical in `workstation/versions.json`.
 The backend SHA256 values come from the official v2.72.1
-`chezmoi_2.72.1_checksums.txt` release asset. Bootstrap installs Neovim in POSIX
-shell before Lua provisions this backend, then publishes the canonical repo-native
-launcher at `.local/bin/workstation`; it does not use a PATH chezmoi. Update runs
-fresh bootstrap before apply/sync/verify to install newly pulled pins.
-`workstation/bootstrap/bootstrap.pins` is a generated, SHA256-bound projection:
-regenerate/check with pinned `nvim -l workstation/bootstrap/generate.lua [--check]`.
-Fresh bootstrap needs shell, curl with HTTPS, tar/gzip, SHA256 tooling
-(`sha256sum` on Linux, `shasum` on macOS), and ordinary Unix filesystem tools;
-no Node, Python, jq, or system Neovim is required. Concurrent runtime installers
-serialize on `.local/opt/.nvim-bootstrap.lock`; an interrupted SIGKILL requires
-inspection/recovery of that lock and any `previous` tree before retrying.
+`chezmoi_2.72.1_checksums.txt` release asset. `workstation/bootstrap/bootstrap.pins`
+is a generated, SHA256-bound projection of `workstation/versions.json`, not a
+second hand-maintained source. Regenerate/check with pinned
+`nvim -l workstation/bootstrap/generate.lua [--check]`.
+
+Concurrent runtime installers serialize on `.local/opt/.nvim-bootstrap.lock`;
+after interrupted SIGKILL, inspect/recover that lock and any `previous` tree before
+retrying. Do not remove a lock while its installer is still running.
 
 ## Not managed here
 
@@ -75,5 +65,5 @@ inspection/recovery of that lock and any `previous` tree before retrying.
 | C compiler/build tools, Linux fontconfig, macOS Command Line Tools | Parser/application builds and font verification prerequisites | User or CI image; see README |
 | ShellCheck | Validation tool supplied by Linux CI image; used wherever available | `.github/scripts/check.sh`; no unpinned lint downloads |
 | 1Password desktop app and account session | User application and interactive authentication are outside source state | Install the official app, enable CLI integration, and sign in interactively |
-| Mason-installed LSP servers/formatters/linters | Neovim-internal package manager, not a host binary | `zapling/mason-lock.nvim`, `chezmoi/dot_config/nvim/mason-lock.json` — see nvim.md |
-| lazy.nvim-installed Neovim plugins | Neovim-internal package manager | `chezmoi/dot_config/nvim/lazy-lock.json` — see nvim.md |
+| Mason-installed LSP servers/formatters/linters | Neovim-internal package manager, not a host binary | `zapling/mason-lock.nvim`, `chezmoi/dot_config/nvim/mason-lock.json` — see [Neovim](nvim.md) |
+| lazy.nvim-installed Neovim plugins | Neovim-internal package manager | `chezmoi/dot_config/nvim/lazy-lock.json` — see [Neovim](nvim.md) |

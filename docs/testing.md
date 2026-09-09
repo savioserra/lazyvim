@@ -2,71 +2,76 @@
 
 ## Offline source checks
 
-Run `sh .github/scripts/check.sh` after sync. It freezes installed Neovim and
-Mason StyLua, then gives every suite/check private HOME/TMP/XDG/cache roots via
-`test-home.sh`; never run fresh-home fixture suites against an applied home.
-For bounded Linux repair checks, additionally use a cleared environment,
-network denial, a 120-second deadline and `ulimit -f 4096`. These synthetic
-checks are not downloaded-asset or native-platform acceptance.
+```sh
+sh .github/scripts/check.sh
+```
 
-`tests/provision.test.lua` exercises real synthetic tar extraction with
-`LC_ALL=C`: GNU/BSD tar display high bytes as octal escapes, not literal member
-backslashes. Provisioning normalizes only those non-ASCII display octets before
-unchanged path guards; real backslashes, ASCII escapes, absolute paths and `..`
-components remain rejected. ZIP listings and caller `inner_path` stay literal.
-Link confinement, checksum, mode, staging, overlay and rollback checks still
-apply. No locale installation, shell unquoting or extra bootstrap runtime is needed.
+Requires installed pinned Neovim and locked Mason StyLua (available after sync).
+The runner freezes their absolute paths, then `test-home.sh` gives each suite/check
+fresh private HOME/WORKSTATION_HOME, TMP, XDG and cache with cleared ambient state.
+Only prerequisite PATH is retained, not auth/agent/session/tool configuration.
+Never run fixtures directly against an applied home: they write fake Node/npm state.
+Owned 0700 `/tmp/workstation-test.*` roots are printed and retained for inspection;
+no caller path is recursively deleted. Fixture umask is 022 inside that boundary.
+
+The checker runs all `tests/*.test.lua`, Lua/JSON syntax, generated pin projection,
+StyLua, each shell file separately with `sh -n` and available ShellCheck, then
+`git diff --check`. ShellCheck is required in Linux CI; report local absence.
+For bounded Linux source checks, use a cleared environment, network denial,
+120-second deadline and a **4 MiB per-file** limit (`ulimit -f 4096` in a shell
+using 1024-byte blocks; use the byte-equivalent setting otherwise).
+
+Synthetic graph/provisioning/bootstrap/CLI/harness tests are not downloaded-asset,
+real Pi discovery/reload or native-platform acceptance. Backend rendering requires
+[a full source audit first](chezmoi.md#isolated-validation); dry-run is not a sandbox.
+
+## Real integration
+
+With explicit network/installation authorization, `.github/scripts/test-apply.sh
+<new-absolute-home>` runs bootstrap → public apply → sync → checks → public verify.
+The target must be absent and outside the real home/source (not their ancestor or
+descendant). The harness claims it atomically, clears ambient environment/Git
+configuration, uses private writable roots and never loads login profiles or
+`/etc` auth snippets. Failures retain scratch evidence and the failing exit code.
+Use existing trusted prerequisites; do not download lint tools to close a local gap.
 
 ## Linux container E2E recipe
 
-`.github/Dockerfile.e2e` wraps the **unchanged** `.github/scripts/test-apply.sh`:
-bootstrap → public apply → sync → fast checks → public verify. Docker is the
-Linux E2E isolation boundary, not a replacement lifecycle or public CLI. Image
-build and real integration require separate authorization; a recipe or offline
-fixture pass is not evidence that either ran. Native macOS arm64 CI stays in
-`.github/workflows/ci.yml`; this image cannot establish macOS or WSL acceptance.
+[`.github/Dockerfile.e2e`](../.github/Dockerfile.e2e) wraps the unchanged harness.
+Build and execution require separate approval. A recipe/offline pass proves neither
+ran; Linux containers do not establish native macOS arm64 or WSL acceptance.
 
 ### Base provenance
 
-The official Docker Hub `library/ubuntu:24.04` public manifest metadata resolved
-on 2026-09-09 to:
-
-| Metadata | SHA256 |
-| --- | --- |
-| OCI index (`registry-1.docker.io/v2/library/ubuntu/manifests/24.04`) | `33ceb71981b602c1a7443a53469e4dba065f7503eab3078a2d7a57a2ab987517` |
-| Selected `linux/amd64` manifest (the `FROM` pin) | `1e0a86e57d247923571b75e0aaf48a1449cf8c543d51fb3e07a4a7d7bfa79316` |
-
-Both response body hashes match their `Docker-Content-Digest` headers. The index
-identifies Ubuntu 24.04, official source `https://git.launchpad.net/cloud-images/+oci/ubuntu-base`,
-revision `461fbe29535e51d03451ae146a90f730671d950d`. Metadata resolution does not
-pull image layers. Apt is confined to this test image's unmanaged OS/build/font/
-shell prerequisites; their repository versions are not pinned. No Node, Neovim,
-Go, backend, managed apps, user caches or credentials are baked in.
+The `FROM` pin is the official Ubuntu 24.04 `linux/amd64` manifest SHA256
+`1e0a86e57d247923571b75e0aaf48a1449cf8c543d51fb3e07a4a7d7bfa79316`.
+Public [manifest metadata](https://registry-1.docker.io/v2/library/ubuntu/manifests/24.04)
+and resolution receipts are retained in TASK-34 notes/Git history. Apt is limited
+to image-local unmanaged OS/build/font/shell prerequisites (repository versions
+are unpinned); no managed runtimes/apps, user caches or credentials are baked in.
 
 ### Build context and runtime contract
 
-- Prepare a new independent Git clone of the reviewed commit using sanitized Git
-  settings and `clone --no-local --no-hardlinks --template=`. Remove its local
-  origin, confirm exact HEAD and clean tracked/untracked status, no alternates or
-  hardlinked objects. Include `.git` for the actual checker's Git diff check.
-  Never send the working checkout, root home, untracked `.pi`, auth files or
-  ambient Docker/Git configuration as context. After approval build **only** this
-  prepared context with `--platform=linux/amd64 -f .github/Dockerfile.e2e`.
-- The stable image account is UID/GID 10001, HOME `/caller`; `/source` is owned by
-  that account for Git checks. Runtime **must** use a read-only rootfs (including
-  `/source`); do not mask it with a writable mount. Its ordinary source modes
-  allow fixture copies to be edited only in private writable scratch space.
-- Supply a new, labeled test-only volume at `/work` (image directory ownership
-  initializes it to 10001:10001) and private bounded `/tmp` tmpfs. `/work/home`
-  must not exist: the harness claims it. Caller-home `/caller` and target-home
-  `/work/home` are deliberately distinct. Retain the volume and first-failure
-  receipts, not `--rm`, automatic retries or broad cleanup.
-- Drop all capabilities, set no-new-privileges, and bound CPU, memory, PIDs,
-  per-file size (2 GiB) and wall time (25 minutes with kill escalation). Use
-  private network/PID namespaces: no privileged mode, host networking, published
-  ports, host sockets, auth/session environment, service/daemon changes or host
-  directory mounts. No model/vault/account probes or sourced login profiles.
-- Retain exact commands, image/source IDs, identity/isolation/limit receipts,
-  stdout/stderr and exits. Stop at the first failure. Only after a successful
-  full run, validate cached public bootstrap in a **separate network-none**
-  container using the retained test volume and the same immutable source.
+- Prepare an independent Git clone of the reviewed commit with sanitized Git
+  settings and `clone --no-local --no-hardlinks --template=`. Remove local origin;
+  confirm exact HEAD, clean tracked/untracked status, no alternates or hardlinked
+  objects. Include `.git` for the checker. Never send the working checkout, root
+  home, untracked `.pi`, auth files or ambient Docker/Git configuration. Build only
+  this context with `--platform=linux/amd64 -f .github/Dockerfile.e2e`.
+- Use image UID/GID 10001, HOME `/caller`, and a read-only rootfs including the
+  account-owned `/source`; no writable source overlay. Fixture copies may be
+  edited only in private scratch space.
+- Supply a fresh labeled test-only `/work` volume (initialized to 10001:10001) and
+  **private, bounded, executable `/tmp` tmpfs**: fixtures execute shims there, so
+  `noexec` is invalid. Keep `nosuid,nodev`; record actual mount flags. `/work/home`
+  must be absent and distinct from `/caller`. Retain volume/first-failure receipts;
+  no `--rm`, automatic retries or broad cleanup.
+- Drop all capabilities, set no-new-privileges; bound CPU, memory, PIDs, per-file
+  size (2 GiB) and wall time (25 minutes with kill escalation). Use private network
+  and PID namespaces. No privileged mode, host networking, published ports, host
+  sockets/directory mounts, auth/session environment, service/daemon changes,
+  model/vault/account probes or sourced login profiles.
+- Retain commands, image/source IDs, identity/isolation/mount/limit receipts,
+  stdout/stderr and exits. Stop at first failure. Only after full success, validate
+  cached public bootstrap in a **separate network-none** container with the retained
+  volume and same immutable source.
