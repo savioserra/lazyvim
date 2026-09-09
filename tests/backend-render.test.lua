@@ -123,34 +123,180 @@ assert(repeat_plan.generation == plan.generation, "desired state drifted between
 provisioner.apply(repeat_plan)
 assert(assert_deployed() == deployed_profile, "repeated apply changed deployed bytes")
 
--- A populated target with unrelated state converges without adopting it:
--- pre-existing differing whole files conflict instead of being overwritten.
-local populated = vim.fn.tempname()
-vim.fn.mkdir(populated, "p")
-local previous = {
-	HOME = populated,
-	WORKSTATION_HOME = populated,
+-- R9: independent migration parity against frozen legacy evidence. The
+-- baseline fixture was generated once from the retired centralized tree at
+-- d674698e; runtime tests never touch Git history. Every one of the 44 legacy
+-- files is accounted for: byte parity where the payload moved unchanged,
+-- explicit permitted differences (updated skill guidance, generated profile),
+-- or the non-deploying engine/instruction set verified through symlinks,
+-- shell targets, tombstones and the AGENTS non-deployment proof.
+local baseline = vim.json.decode(paths.read(paths.join(repository, "tests", "fixtures", "legacy-baseline.json")))
+assert(#baseline.files == 44, "frozen baseline must account for all 44 legacy files")
+assert(#baseline.tombstones == 17, "frozen baseline must keep 17 tombstones")
+
+local permitted_differences = {
+	["chezmoi/dot_pi/private_agent/skills/lazyvim/SKILL.md"] = "skill guidance updated for the generated-source layout",
 }
-previous.XDG_CONFIG_HOME = populated .. "/.config"
-local probe_plan = source.plan(require("workstation.app").create())
-local ok, failure = pcall(function()
-	-- .config/nvim/init.lua absent here, but a user-owned nvim tree must conflict
-	vim.fn.mkdir(populated .. "/.config/nvim/lua", "p")
-	vim.fn.writefile({ "return {}" }, populated .. "/.config/nvim/init.lua")
-	-- run the backend against the populated destination through the engine argv
-	local argv = provisioner.argv(
-		"apply",
-		{ source = paths.join(state.generations_root(), probe_plan.generation), destination = populated }
+local non_deploying = {
+	["chezmoi/.chezmoiignore"] = "ignore policy superseded by recipe selection",
+	["chezmoi/.chezmoiremove"] = "engine policy module owns the 17 tombstones",
+	["chezmoi/AGENTS.md"] = "repository instructions can never deploy",
+	["chezmoi/dot_config/nvim/AGENTS.md"] = "repository instructions can never deploy",
+	["chezmoi/dot_config/tmux/symlink_tmux.conf"] = "declared link recipe",
+	["chezmoi/dot_local/bin/symlink_go.tmpl"] = "declared link recipe",
+	["chezmoi/dot_local/bin/symlink_nvim.tmpl"] = "declared link recipe",
+	["chezmoi/modify_executable_dot_bashrc.tmpl"] = "composed by provision.shell",
+	["chezmoi/modify_executable_dot_profile.tmpl"] = "composed by provision.shell",
+	["chezmoi/modify_executable_dot_zshrc.tmpl"] = "composed by provision.shell",
+}
+local function legacy_disposition(legacy)
+	if legacy == "chezmoi/dot_config/nvim/lua/languages/profile.lua" then
+		return "profile"
+	end
+	if permitted_differences[legacy] then
+		return "permitted"
+	end
+	if non_deploying[legacy] then
+		return "non_deploying"
+	end
+	return "bytes"
+end
+local function legacy_target(legacy)
+	local target = (
+		legacy
+			:gsub("^chezmoi/", "")
+			:gsub("^dot_", ".")
+			:gsub("/dot_", "/.")
+			:gsub("/private_agent/", "/agent/")
+			:gsub("^dot_pi/private_agent/", ".pi/agent/")
 	)
-	local result = vim.system(argv, { text = true }):wait()
-	assert(result.code == 0, result.stderr)
+	return target
+end
+
+local function assert_legacy_parity(phase)
+	local checked = { bytes = 0, permitted = 0, non_deploying = 0, profile = 0 }
+	for _, record in ipairs(baseline.files) do
+		local disposition = legacy_disposition(record.legacy)
+		checked[disposition] = checked[disposition] + 1
+		local target = legacy_target(record.legacy)
+		if disposition == "bytes" then
+			local deployed = paths.read(paths.join(paths.home, target))
+			assert(
+				state.sha256(deployed) == record.sha256,
+				phase .. ": deployed bytes differ from the frozen legacy baseline: " .. target
+			)
+		elseif disposition == "permitted" then
+			-- The updated payload deploys exactly its owning package's bytes;
+			-- the difference from the frozen legacy hash is the recorded one.
+			local deployed = paths.read(paths.join(paths.home, target))
+			assert(
+				deployed ~= "" and state.sha256(deployed) ~= record.sha256,
+				phase .. ": expected permitted difference missing for " .. target
+			)
+			assert(
+				deployed:find("no checked%-in chezmoi", 1),
+				phase .. ": permitted difference is not the documented skill update: " .. target
+			)
+		elseif disposition == "profile" then
+			local deployed_profile = assert(loadfile(paths.join(paths.home, target)))()
+			assert(#deployed_profile == #baseline.legacy_profile_semantics, phase .. ": profile entry count changed")
+			for index, expected in ipairs(baseline.legacy_profile_semantics) do
+				assert(
+					vim.deep_equal(deployed_profile[index], expected),
+					phase .. ": generated profile semantics differ from the frozen legacy profile at entry " .. index
+				)
+			end
+		end
+	end
+	assert(checked.bytes == 32, phase .. ": byte-parity count drifted: " .. checked.bytes)
+	assert(
+		checked.permitted == 1 and checked.profile == 1 and checked.non_deploying == 10,
+		phase .. ": disposition counts drifted"
+	)
+	for target, link in pairs(baseline.symlinks) do
+		assert(vim.uv.fs_readlink(paths.join(paths.home, target)) == link, phase .. ": link drifted: " .. target)
+	end
+	assert(
+		vim.uv.fs_readlink(paths.home .. "/.local/bin/nvim") == paths.home .. "/.local/opt/nvim/bin/nvim",
+		phase .. ": nvim link drifted"
+	)
+	for target, markers in pairs(baseline.shell_targets) do
+		local contents = paths.read(paths.join(paths.home, target))
+		for _, marker in ipairs(markers) do
+			assert(contents:find(marker, 1, true), phase .. ": shell marker missing from " .. target .. ": " .. marker)
+		end
+		local mode = string.format("%o", bit.band(vim.uv.fs_stat(paths.join(paths.home, target)).mode, 4095))
+		assert(mode == baseline.shell_modes.mode, phase .. ": shell mode drifted for " .. target)
+	end
+	for _, directory in ipairs(baseline.private_directories) do
+		assert(
+			bit.band(vim.uv.fs_stat(paths.join(paths.home, directory)).mode, 4095) == 448,
+			phase .. ": private directory mode drifted for " .. directory
+		)
+	end
+	assert(
+		paths.read(paths.home .. "/.node-version"):gsub("\n$", "") == baseline.node_version,
+		phase .. ": node pin drifted"
+	)
+	for _, removed in ipairs(baseline.tombstones) do
+		assert(vim.uv.fs_lstat(paths.join(paths.home, removed)) == nil, phase .. ": tombstone survived: " .. removed)
+	end
+	assert(not vim.uv.fs_stat(paths.home .. "/.config/nvim/AGENTS.md"), phase .. ": instructions deployed")
+	assert(paths.read(paths.home .. "/.config/keep") == "user state\n", phase .. ": unrelated user state touched")
+	return checked
+end
+assert_legacy_parity("fresh")
+
+-- Repeated apply is byte-stable across every deployed target.
+local function deployed_snapshot()
+	local snapshot = {}
+	for _, record in ipairs(baseline.files) do
+		local disposition = legacy_disposition(record.legacy)
+		if disposition == "bytes" or disposition == "permitted" then
+			local target = legacy_target(record.legacy)
+			snapshot[target] = paths.read(paths.join(paths.home, target))
+		end
+	end
+	for target in pairs(baseline.shell_targets) do
+		snapshot[target] = paths.read(paths.join(paths.home, target))
+	end
+	snapshot[".config/nvim/lua/languages/profile.lua"] =
+		paths.read(paths.home .. "/.config/nvim/lua/languages/profile.lua")
+	return snapshot
+end
+local before_repeat = deployed_snapshot()
+provisioner.apply(source.plan(require("workstation.app").create()))
+assert(vim.deep_equal(deployed_snapshot(), before_repeat), "repeated apply changed deployed bytes")
+assert_legacy_parity("repeated")
+print("backend-render: independent legacy parity holds on fresh and repeated targets")
+
+-- Populated target with an existing DIFFERING unrecorded owned-path file: the
+-- engine must conflict before any backend mutation, leave every owned target
+-- untouched, and converge only after explicit fixture-only operator recovery.
+paths.write(paths.home .. "/.config/nvim/init.lua", "-- operator-local nvim config\n")
+local guard_snapshot = deployed_snapshot()
+local failed_apply, failure = pcall(function()
+	provisioner.apply(source.plan(require("workstation.app").create()))
 end)
--- The backend itself overwrites differing targets by design; the ENGINE's
--- first-adoption precondition is what protects unrecorded user files, and it
--- is proven in journal.test.lua. Here the unmanaged keep-file survives.
-assert(vim.fn.filereadable(populated .. "/.config/nvim/init.lua") == 1)
-vim.fn.delete(populated, "rf")
-print("backend-render: populated target probed")
+assert(not failed_apply, "differing unrecorded owned-path file was overwritten")
+assert(
+	tostring(failure):find("target changed since the last successful apply", 1, true),
+	"unexpected failure: " .. tostring(failure)
+)
+assert(vim.deep_equal(deployed_snapshot(), guard_snapshot), "conflicting apply partially mutated owned targets")
+assert(
+	paths.read(paths.home .. "/.config/nvim/init.lua") == "-- operator-local nvim config\n",
+	"conflicting apply touched the unrecorded file"
+)
+-- Fixture-only operator resolution: restore the expected source bytes, then
+-- the engine converges and full legacy parity holds again.
+paths.write(
+	paths.home .. "/.config/nvim/init.lua",
+	paths.read(paths.join(repository, "workstation/packages/nvim/files/.config/nvim/init.lua"))
+)
+provisioner.apply(source.plan(require("workstation.app").create()))
+assert_legacy_parity("after-recovery")
+print("backend-render: populated target conflicts safely and converges after explicit recovery")
 
 -- Part 2: native modifier versus run-script exclusion with the trusted
 -- backend, using a synthetic generated source. This is the evidence that

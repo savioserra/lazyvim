@@ -1,0 +1,339 @@
+{
+ "base": "d674698e80e8f0d0718c9e6e059b0430556afeb1",
+ "generated_from": "git ls-tree/show at correction time; runtime tests never touch git history",
+ "files": [
+  {
+   "legacy": "chezmoi/.chezmoiignore",
+   "sha256": "541370909fccfc4428f02ccdc3dc282070593775632959350f0da10a67b38ea2"
+  },
+  {
+   "legacy": "chezmoi/.chezmoiremove",
+   "sha256": "096ed7eab246a8aa4195d136b218eb846c0238673f727b52ad8b6a77ac693838"
+  },
+  {
+   "legacy": "chezmoi/AGENTS.md",
+   "sha256": "2618381df9dbaf314c5ff2de2b98c41cc61824a8db1667d043778eb5cfa86ddc"
+  },
+  {
+   "legacy": "chezmoi/dot_config/nvim/.gitignore",
+   "sha256": "f284e46933d658c493bafc852fe1bb46f54e5dbe479c251a739139517d4683ec"
+  },
+  {
+   "legacy": "chezmoi/dot_config/nvim/AGENTS.md",
+   "sha256": "ecb5655f650f135ccb027f78703c05aa6550d059fe08a006321af1b4ecd4dfff"
+  },
+  {
+   "legacy": "chezmoi/dot_config/nvim/init.lua",
+   "sha256": "9629e6e7864a9d4a8bfffadf918252ae0475d4e6b8f8661d7f7df826df99577d"
+  },
+  {
+   "legacy": "chezmoi/dot_config/nvim/lazy-lock.json",
+   "sha256": "182d9bbd82ea45565924c7a695e65b9dd96dad0397446892794bb51c9960ed03"
+  },
+  {
+   "legacy": "chezmoi/dot_config/nvim/lazyvim.json",
+   "sha256": "1eb9280c4a0a4df28a2bc8a32c068d43b011e37139561bef8ca625afc352053f"
+  },
+  {
+   "legacy": "chezmoi/dot_config/nvim/lua/config/autocmds.lua",
+   "sha256": "cdea12e634111fd8fb179cbb2e28e0afe712744a049d988d8bc66f9817881db6"
+  },
+  {
+   "legacy": "chezmoi/dot_config/nvim/lua/config/keymaps.lua",
+   "sha256": "53e5a08f8d06ad19fc25a8f66f47b7a584f3082da124158dd613c500db946b5b"
+  },
+  {
+   "legacy": "chezmoi/dot_config/nvim/lua/config/lazy.lua",
+   "sha256": "205e5a82e1671a6a14aeff69f00c34bd8538209695263a958d15de9c940c9d22"
+  },
+  {
+   "legacy": "chezmoi/dot_config/nvim/lua/config/options.lua",
+   "sha256": "c90d178b1e77db2d8142fe9bfd822a9bbe7050c69ee9b368f3615333bf1bbdb4"
+  },
+  {
+   "legacy": "chezmoi/dot_config/nvim/lua/config/sync.lua",
+   "sha256": "a205efc065e14749b99a0ed154e3622c6c8591cef732c6c5b93434dd71c63e08"
+  },
+  {
+   "legacy": "chezmoi/dot_config/nvim/lua/languages/plugins/typescript.lua",
+   "sha256": "c0866d7dd104547a28d9363a809d1318cbc603a36490c4591c7e0dabb2a7b49b"
+  },
+  {
+   "legacy": "chezmoi/dot_config/nvim/lua/languages/profile.lua",
+   "sha256": "e2285f190d632d6d2bc5e2f28fde39dfb9bff0c3e65e753e8081b3393aabdfa2"
+  },
+  {
+   "legacy": "chezmoi/dot_config/nvim/lua/plugins/debugging.lua",
+   "sha256": "3158018e71248d8cf3b96abec559ae0c8c96c80c62fd6d90554fdd36c5b8ad54"
+  },
+  {
+   "legacy": "chezmoi/dot_config/nvim/lua/plugins/editor.lua",
+   "sha256": "b130c9cb49e3a94f7c71356c07c565755e7416417f047e723c395d73472e2909"
+  },
+  {
+   "legacy": "chezmoi/dot_config/nvim/lua/plugins/lsp.lua",
+   "sha256": "38b1ed359da6ba607fb0cd84b3ab2b3ebd9f2272246114b1034f700943e37650"
+  },
+  {
+   "legacy": "chezmoi/dot_config/nvim/lua/plugins/mason-lock.lua",
+   "sha256": "378f006369a3015f206790ab3b9ed570c18219bb4f5eefcfb4d887915730d366"
+  },
+  {
+   "legacy": "chezmoi/dot_config/nvim/lua/plugins/mason.lua",
+   "sha256": "9daa06f9bf25b933df867709ba1d895cab8c3b08abeaeda12d310b98dc35af0d"
+  },
+  {
+   "legacy": "chezmoi/dot_config/nvim/lua/plugins/testing.lua",
+   "sha256": "02868998d275636e23cc4350b6b53a0819ed94fc91d5f2b7317cccb4f8608b34"
+  },
+  {
+   "legacy": "chezmoi/dot_config/nvim/lua/plugins/theme.lua",
+   "sha256": "412bc6d55a630fc16f32ae7b22b3682c9a789843e840391bc63889c60571f96a"
+  },
+  {
+   "legacy": "chezmoi/dot_config/nvim/lua/plugins/treesitter.lua",
+   "sha256": "3e4050ca74eaa356bb868f0ffa1ef8efc4f3a149736697cded1a771ed5c91feb"
+  },
+  {
+   "legacy": "chezmoi/dot_config/nvim/lua/plugins/ui.lua",
+   "sha256": "53d87a1fb63431592b61355dd906ee3f47b63fcb4dfd006e0fc989d94220487f"
+  },
+  {
+   "legacy": "chezmoi/dot_config/nvim/mason-lock.json",
+   "sha256": "e93ba961135edf2a98ebddccb7fcc102eb692b6565a001fcdbcd90741e9dfd05"
+  },
+  {
+   "legacy": "chezmoi/dot_config/nvim/neoconf.json",
+   "sha256": "dcff80f91059594b60a0a39b4e195634bbd15f39c6c3ead7c501d0f9bee5339d"
+  },
+  {
+   "legacy": "chezmoi/dot_config/nvim/stylua.toml",
+   "sha256": "59841fbcee7b707144c6a470e96e96e96062d7a59d2e45bac445984d863e1af2"
+  },
+  {
+   "legacy": "chezmoi/dot_config/shell/nvm.sh",
+   "sha256": "7511a80b888844f48928c483295297bfaf118d4d17214724da1c0287a2032b89"
+  },
+  {
+   "legacy": "chezmoi/dot_config/tmux/symlink_tmux.conf",
+   "sha256": "22d2b16be79d552a972480eba6795faded2b7b31e33ba0c1aa54c179820c9877"
+  },
+  {
+   "legacy": "chezmoi/dot_config/tmux/themes/tmux2k.conf",
+   "sha256": "4f12c30d839a60b6a174170d989fa19d5a612b3fd5cac066f7659988eb0a88c8"
+  },
+  {
+   "legacy": "chezmoi/dot_local/bin/symlink_go.tmpl",
+   "sha256": "16664b447c62dd93a94af730ae132d3a4dc9b9263ddfd64a03293edefbf1a8eb"
+  },
+  {
+   "legacy": "chezmoi/dot_local/bin/symlink_nvim.tmpl",
+   "sha256": "b3d19ce54d1e64a8b8f510d614222f242b2c57c9d08fc15b4ac203dc28be0a76"
+  },
+  {
+   "legacy": "chezmoi/dot_node-version",
+   "sha256": "7e8a2fa94951112b894a3dbe3d05efef5e9263741fa49125f0a70f40fedab4cc"
+  },
+  {
+   "legacy": "chezmoi/dot_pi/private_agent/extensions/ntfy-notifier/README.md",
+   "sha256": "28bd015444240f08d1eb19529fc3215303454201d4aa4b5130e5d8764fccb522"
+  },
+  {
+   "legacy": "chezmoi/dot_pi/private_agent/extensions/ntfy-notifier/extensions/ntfy-notifier.ts",
+   "sha256": "0a57a0bce14d7d99f85a14f136de35062bff29ec2dab94efd698395bcde1526e"
+  },
+  {
+   "legacy": "chezmoi/dot_pi/private_agent/extensions/ntfy-notifier/package.json",
+   "sha256": "a2c19ecc64797a87b26733d202a3f7a141901cad5fa1a2df1fb2e54e08e0fd03"
+  },
+  {
+   "legacy": "chezmoi/dot_pi/private_agent/extensions/ntfy-notifier/src/ntfy.js",
+   "sha256": "88031e734f5e1805896066d3dd2c5bcb288623a130d5a691aca194a22fc0c754"
+  },
+  {
+   "legacy": "chezmoi/dot_pi/private_agent/extensions/ntfy-notifier/test/ntfy.test.mjs",
+   "sha256": "dda542c5f87bcc471206aeedaad127f51b9ac6ed3e284e6fbff2e3a159af085f"
+  },
+  {
+   "legacy": "chezmoi/dot_pi/private_agent/skills/lazyvim/SKILL.md",
+   "sha256": "202d43e23bb6c9d5449a25f7c5eaa1ec743567c7402a32aca62f4d6a9981594a"
+  },
+  {
+   "legacy": "chezmoi/dot_pi/private_agent/skills/secrets/SKILL.md",
+   "sha256": "197ac8a37326fe91b5831f0a950cd5bb1379bb5f63ccea99cdf45b6377e4a3c4"
+  },
+  {
+   "legacy": "chezmoi/dot_tmux.conf",
+   "sha256": "8c9fe5638a5e8c9cf4c3f6ddd27393067b5e2fcf8086e2aa1a939c683d30001e"
+  },
+  {
+   "legacy": "chezmoi/modify_executable_dot_bashrc.tmpl",
+   "sha256": "e34fc04477a68f749f8c918da19b0ae16dd40a2de91d15d5a0fa60498330387d"
+  },
+  {
+   "legacy": "chezmoi/modify_executable_dot_profile.tmpl",
+   "sha256": "c7fc8f1fca0ce73cc47cdeb54d7a7cd222f9943b0d3da91cd520ddc8a29283f1"
+  },
+  {
+   "legacy": "chezmoi/modify_executable_dot_zshrc.tmpl",
+   "sha256": "e34fc04477a68f749f8c918da19b0ae16dd40a2de91d15d5a0fa60498330387d"
+  }
+ ],
+ "tombstones": [
+  ".local/share/lazyvim",
+  ".config/nvim/lua/capabilities",
+  ".config/nvim/lua/languages/extras",
+  ".pi/agent/skills/manage-lazyvim-workstation",
+  ".pi/agent/skills/tmux-subagents",
+  ".pi/agent/extensions/tmux-subagents",
+  ".pi/agent/extensions/actor-client",
+  ".pi/agent/extensions/hosted-pi-bridge",
+  ".local/bin/workstation-tmux-subagents",
+  ".local/bin/workstation-subagents",
+  ".local/bin/workstation-subagents-clientctl",
+  ".local/share/workstation/apps/tmux-subagents",
+  ".config/workstation/subagents",
+  ".config/systemd/user/workstation-subagents.service",
+  "Library/LaunchAgents/com.workstation.subagents.plist",
+  ".local/share/workstation/lua/workstation/packages",
+  ".local/share/workstation/versions.json"
+ ],
+ "symlinks": {
+  ".local/bin/go": "../opt/go/bin/go",
+  ".config/tmux/tmux.conf": "../../.tmux.conf"
+ },
+ "nvim_symlink_note": "absolute to <home>/.local/opt/nvim/bin/nvim via the legacy template",
+ "shell_targets": {
+  ".profile": [
+   "# chezmoi: managed user-local bin",
+   "# chezmoi: load managed nvm",
+   "# chezmoi: managed op env",
+   "# chezmoi: managed ntfy notifier env"
+  ],
+  ".bashrc": [
+   "# chezmoi: managed user-local bin",
+   "# chezmoi: load managed nvm"
+  ],
+  ".zshrc": [
+   "# chezmoi: managed user-local bin",
+   "# chezmoi: load managed nvm"
+  ]
+ },
+ "shell_modes": {
+  "mode": "755"
+ },
+ "private_directories": [
+  ".pi/agent"
+ ],
+ "node_version": "24.19.0",
+ "legacy_profile_semantics": [
+  {
+   "language_cases": [
+    {
+     "language": "go",
+     "filename": "attachment_test.go",
+     "client": "gopls",
+     "contents": "package behavior\n\nvar answer = 42\n"
+    }
+   ],
+   "id": "go",
+   "requires": [
+    "go"
+   ],
+   "lazyvim_extras": [
+    "lazyvim.plugins.extras.lang.go"
+   ]
+  },
+  {
+   "mason_packages": [
+    "typescript-language-server",
+    "eslint-lsp",
+    "prettier"
+   ],
+   "language_cases": [
+    {
+     "language": "javascript",
+     "filename": "attachment-test.js",
+     "client": "typescript-tools",
+     "contents": "const answer = 42;\n"
+    }
+   ],
+   "id": "typescript",
+   "formatter_cases": [
+    {
+     "language": "javascript",
+     "expected": "const answer = 42;\n",
+     "project_files": {
+      ".prettierrc.json": "{}\n"
+     },
+     "filename": "format-test.js",
+     "contents": "const answer=42\n"
+    }
+   ],
+   "requires": [
+    "node"
+   ],
+   "lazyvim_extras": [
+    "lazyvim.plugins.extras.lang.typescript",
+    "lazyvim.plugins.extras.linting.eslint",
+    "lazyvim.plugins.extras.formatting.prettier"
+   ],
+   "plugin_module": "languages.plugins.typescript"
+  },
+  {
+   "language_cases": [
+    {
+     "language": "lua",
+     "filename": "attachment-test.lua",
+     "client": "lua_ls",
+     "contents": "local answer = 42\n"
+    },
+    {
+     "language": "html",
+     "filename": "attachment-test.html",
+     "client": "html",
+     "contents": "<!doctype html><title>test</title>\n"
+    },
+    {
+     "language": "css",
+     "filename": "attachment-test.css",
+     "client": "cssls",
+     "contents": "body { color: red; }\n"
+    },
+    {
+     "language": "json",
+     "filename": "attachment-test.json",
+     "client": "jsonls",
+     "contents": "{ \"answer\": 42 }\n"
+    },
+    {
+     "language": "yaml",
+     "filename": "attachment-test.yaml",
+     "client": "yamlls",
+     "contents": "answer: 42\n"
+    },
+    {
+     "language": "markdown",
+     "filename": "attachment-test.md",
+     "client": "marksman",
+     "contents": "# Behavior test\n"
+    },
+    {
+     "language": "dockerfile",
+     "filename": "Dockerfile",
+     "client": "dockerls",
+     "contents": "FROM scratch\n"
+    }
+   ],
+   "id": "standard",
+   "lazyvim_extras": [
+    "lazyvim.plugins.extras.lang.docker",
+    "lazyvim.plugins.extras.lang.json",
+    "lazyvim.plugins.extras.lang.markdown",
+    "lazyvim.plugins.extras.lang.tailwind",
+    "lazyvim.plugins.extras.lang.toml",
+    "lazyvim.plugins.extras.lang.yaml"
+   ]
+  }
+ ]
+}
