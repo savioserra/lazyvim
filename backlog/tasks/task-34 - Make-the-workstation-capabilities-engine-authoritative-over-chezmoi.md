@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@operator'
 created_date: '2026-09-08 21:27'
-updated_date: '2026-09-09 16:01'
+updated_date: '2026-09-09 16:07'
 labels: []
 dependencies: []
 type: feature
@@ -15,13 +15,13 @@ ordinal: 49000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Invert the architecture: the Lua capabilities engine (currently ~/.local/share/workstation, driven by .chezmoiscripts/run_after) becomes the sole public lifecycle interface (workstation apply/update/setup/sync/verify). Chezmoi remains the file-provisioner invoked BY the engine (--source/--destination explicit), never the other way around. Requires repo restructure: engine becomes repo-native (top-level workstation/), chezmoi source shrinks to pure home state, versions.json ownership moves to the engine, bootstrap story changes (no .chezmoiroot, no run_after lifecycle scripts). Planning task: decisions recorded here before implementation.
+Make the repo-native workstation capability engine the authoritative public lifecycle. Capabilities own dependencies, lifecycle behavior and declarative desired-state contributions; explicitly registered providers consume them. Chezmoi is a subordinate generated-source file backend with explicit source/destination, not a centralized hand-maintained payload tree. Design and debate the contribution/provider API, implement TypeScript as the first capability-owned vertical slice, then migrate every existing home-state contribution to its owner and retire the checked-in chezmoi tree. Preserve canonical pins, bootstrap safety, supported platforms and deployed behavior; no compatibility layers or implicit live cutover.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 The workstation CLI is the authoritative lifecycle interface; chezmoi remains a subordinate file backend with explicit source/destination and no lifecycle run-after scripts.
-- [ ] #2 The engine-native workstation/ and chezmoi/ layout has explicit package registration and domain-neutral core, with no duplicate engine deployment or removal of the live engine clone.
+- [ ] #2 The repo-native workstation layout has explicit package/provider registration and domain-neutral core, with no duplicate engine deployment or removal of the live engine clone; chezmoi source state is generated from capability-owned contributions rather than a checked-in centralized payload tree.
 - [ ] #3 Fresh-host bootstrap succeeds with ordinary system prerequisites and no preinstalled Neovim, Node, Python or jq; exact runtime/backend pins and checksums have one canonical source and safe activation.
 - [ ] #4 Setup provisioning validates new, cached and installed artifacts, supports required tar/ZIP layouts, repairs managed drift safely and fails without activating unverified bytes.
 - [ ] #5 Scratch destinations isolate runtime, HOME, XDG and cache state and cannot invoke live user-service retirement; update and public symlink launch paths have regression tests.
@@ -31,6 +31,7 @@ Invert the architecture: the Lua capabilities engine (currently ~/.local/share/w
 - [ ] #9 Capabilities declare validated provider contributions through an explicit API/registry; declarations are side-effect free and generic core has no chezmoi/Neovim imports or implicit deep merging.
 - [ ] #10 The chezmoi provider assembles deterministic capability-owned source state used by both diff and apply, rejecting ownership/path conflicts and safely handling removed contributions, repeat runs and failures without rewriting tracked source or deleting unrelated home state.
 - [ ] #11 TypeScript is an explicitly registered capability with correct Node/Neovim dependencies, package-owned configuration and behavior verification; deployed Neovim imports runtime configuration only, with no duplicate TypeScript declaration or lifecycle-engine dependency.
+- [ ] #12 Every contribution from the former checked-in chezmoi tree has an explicit owning capability or backend-policy owner; the centralized tree is retired, shared target files compose explicitly without silent overwrites, and deployed paths, sole pin authority, removal rules and supported-platform behavior are preserved and covered by migration tests.
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -38,7 +39,7 @@ Invert the architecture: the Lua capabilities engine (currently ~/.local/share/w
 <!-- SECTION:PLAN:BEGIN -->
 Provider contribution implementation — owner authorized a GLM5.3 fleet for design, debate, implementation and review.
 1. Two read-only GLM5.3 advisors inspect architecture/API options independently; parent curates at most one cross-examination and resolves the contract before source mutation. Record the accepted decision and executable implementation plan through CLI.
-2. Implement a minimal explicit provider/contribution API, deterministic generated chezmoi source state shared by diff/apply, and a real TypeScript capability owning its contribution/dependencies/verification. Resolve Neovim composition outside generic core; remove duplicate moved sources. No static-backend-only or docs-only substitute.
+2. Implement a minimal explicit provider/contribution API, deterministic generated chezmoi source state shared by diff/apply, and a real TypeScript capability owning its contribution/dependencies/verification as the first vertical slice, then migrate every remaining contribution to an explicit owner and retire the checked-in chezmoi tree. Shared files require explicit composition; no permanent legacy base or catch-all package. Resolve Neovim composition outside generic core; remove duplicate moved sources. No static-backend-only or docs-only substitute.
 3. Use one implementation writer, then independent GLM5.3 source/safety review and command validation. Test conflict/path/removal/failure/idempotency behavior, dependency ordering, first apply and unchanged existing lifecycle contracts. Keep source docs concise and current.
 4. Retain all historical evidence. No live deployment, push, model/vault operations from lifecycle, host/Matrix service work or new real-download Docker retry; existing Mason child124 integration blocker remains distinct. Native/platform acceptance and release remain parent-owned.
 Earlier phase/doc-cleanup plans and the trailing unmanaged legacy Plan are historical. This owner authorization supersedes the earlier pending-provider-design note, not safety, pin, core-neutrality or publication boundaries.
