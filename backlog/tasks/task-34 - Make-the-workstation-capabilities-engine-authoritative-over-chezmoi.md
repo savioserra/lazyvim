@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@operator'
 created_date: '2026-09-08 21:27'
-updated_date: '2026-09-09 18:15'
+updated_date: '2026-09-09 18:33'
 labels: []
 dependencies: []
 type: feature
@@ -117,6 +117,8 @@ E2E workflow7e0984a1 remains BLOCKED: bootstrap/apply passed, Mason child124 hit
 Parent accepted the call-style provider/change-set design after two GLM5.3 council passes (recovery708e781a). The accepted memo/CLI plan correct mixed recipe shapes, graph direction, source-only safety, shell-residue removal and inventory errors (44 tracked source files,17 legacy tombstones). No provider implementation or task-wide acceptance yet; all criteria remain unchecked and prior E2E/native/publication limits remain.
 
 Checkpoint provider-api-typescript-checkpoint committed at 6d88f5eb in worktree pi-subagents/implement-providers-ca93047-9eff-s0-t0: pure provision.chezmoi/shell recipes, generic envelope in core, explicit provider registry with nvim-profile and shared-shell compositors, deterministic shared diff/apply/plan generation, immutable content-addressed generations with fail-closed lock/journal/preconditions/fragment retirement, node pin+nvm.sh moved, typescript package with own plugin/profile/verification, remaining payload via temporary migration-source adapter. New provider/journal/backend-render suites; full check.sh green; real backend evidence uses existing 2.72.0, not pinned 2.72.1.
+
+Full migration complete in the same worktree: f95207c6 migrated every remaining owner (nvim payload/locks/link, tmux config+theme+link, go link, pi-skills payloads, pi-ntfy-notifier payload) and deleted the checked-in chezmoi tree plus the temporary migration-source adapter; 8ea2aa43 fixed umask-077 generation staging found through real public-CLI receipts; 1a3e1fe7 polished handoff docs. Final validation at 1a3e1fe7: full sh .github/scripts/check.sh exit 0 and the guarded rerun (unshare -rn network denial, timeout 120, ulimit -f 4096 blocks = 4194304 bytes/file) exit 0; real status/plan/diff receipts through bin/workstation captured. Durable packet with base-to-head diff, full readable tracked candidate source and hashes, ownership/deletion inventory and validation logs exported under the task34-provider session artifacts. No AC/status changes made by the worker.
 <!-- SECTION:NOTES:END -->
 
 ## Plan
