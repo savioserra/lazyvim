@@ -102,6 +102,21 @@ do
 		"private ancestor component"
 	)
 	assert(name_for({ target = ".x", kind = "file", content = "x", private = true }) == "private_dot_x", "private file")
+	-- Native file permission metadata, proven against the trusted backend:
+	-- private 0600, executable 0755, private+executable 0700 (owner-only).
+	assert(
+		chezmoi.entry_mode(chezmoi.recipe({ target = ".x", kind = "file", content = "x", private = true }).spec) == 384
+	)
+	assert(
+		chezmoi.entry_mode(
+			chezmoi.recipe({ target = ".x", kind = "file", content = "x", private = true, executable = true }).spec
+		) == 448
+	)
+	assert(
+		chezmoi.entry_mode(chezmoi.recipe({ target = ".x", kind = "file", content = "x", executable = true }).spec)
+			== 493
+	)
+	assert(chezmoi.entry_mode(chezmoi.recipe({ target = ".x", kind = "file", content = "x" }).spec) == 420)
 	assert_fails("no chezmoi source name", function()
 		chezmoi.source_name(chezmoi.recipe({ target = ".old", kind = "remove" }).spec)
 	end)

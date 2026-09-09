@@ -202,7 +202,43 @@ assert(
 	"run script did not execute without exclusion"
 )
 
--- Part 3: template recipes are rendered by the backend itself.
+-- Part 3: native private/executable FILE permissions are faithful chezmoi
+-- source attributes, not directory-only: bounded proof with the same trusted
+-- backend that private files deploy 0600 and private+executable 0755.
+do
+	local mode_tree = paths.join(scratch, "mode-source")
+	local mode_home = paths.join(scratch, "mode-home")
+	vim.fn.mkdir(mode_home, "p")
+	paths.write(paths.join(mode_tree, "private_dot_secret"), "private payload\n")
+	paths.write(paths.join(mode_tree, "private_executable_dot_tool"), "#!/bin/sh\nexit 0\n")
+	paths.write(paths.join(mode_tree, "executable_dot_plain"), "#!/bin/sh\nexit 0\n")
+	local result = vim.system({ backend, "--source", mode_tree, "--destination", mode_home, "apply" }, { text = true })
+		:wait()
+	assert(result.code == 0, result.stderr)
+	local function mode_of(name)
+		return bit.band(assert(vim.uv.fs_lstat(paths.join(mode_home, name))).mode, 4095)
+	end
+	assert(mode_of(".secret") == 384, "private file did not deploy 0600")
+	assert(mode_of(".tool") == 448, "private executable file did not deploy 0700")
+	assert(mode_of(".plain") == 493, "executable file did not deploy 0755")
+	assert(paths.read(paths.join(mode_home, ".secret")) == "private payload\n")
+	-- the provider encodes exactly these native names for file recipes
+	local provider = require("workstation.provision.chezmoi")
+	local private_file = provider.recipe({ target = ".secret", kind = "file", content = "x\n", private = true })
+	assert(provider.source_name(private_file.spec) == "private_dot_secret")
+	local private_executable = provider.recipe({
+		target = ".tool",
+		kind = "file",
+		content = "x\n",
+		private = true,
+		executable = true,
+	})
+	assert(provider.source_name(private_executable.spec) == "private_executable_dot_tool")
+	assert(provider.entry_mode(private_file.spec) == 384 and provider.entry_mode(private_executable.spec) == 448)
+end
+print("backend-render: private and executable file modes are native source attributes")
+
+-- Part 4: template recipes are rendered by the backend itself.
 local template_tree = paths.join(scratch, "template-source")
 paths.write(
 	paths.join(template_tree, "dot_tmpl.tmpl"),

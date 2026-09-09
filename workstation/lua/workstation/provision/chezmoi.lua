@@ -228,6 +228,8 @@ end
 
 -- Full required mode metadata for change sets; chezmoi only distinguishes
 -- private/executable, and arbitrary POSIX modes are rejected as unrepresentable.
+-- Proven with the trusted backend: private files are 0600, executable files
+-- 0755, and private+executable files 0700 (owner-only, never group/world).
 function M.entry_mode(spec)
 	if spec.kind == "symlink" then
 		return nil
@@ -236,9 +238,9 @@ function M.entry_mode(spec)
 		return spec.private and 448 or 493
 	end
 	if spec.executable then
-		return 493
+		return spec.private and 448 or 493
 	end
-	return 420
+	return spec.private and 384 or 420
 end
 
 ---Read a confined package-relative asset. The asset must stay inside the owner
