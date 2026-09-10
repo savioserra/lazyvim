@@ -38,7 +38,11 @@ individually owned fragments (`marker` + single-line literal `body`, explicit
 and preserves unrelated text and other owners; an edited or duplicated owned
 block is a conflict, never a guess. Arbitrary whole-body `modify` programs have
 no general inverse: their retirement is reported as an unsupported reversal
-instead of a claimed removal. Leftover managed shell lines are not inert.
+instead of a claimed removal. One whole-body modifier is blessed as an
+ownership model rather than an escape hatch: engine-seeded, runtime-extended
+mutable targets (the nvim lockfile merge program) deploy through it precisely
+because modify targets are never byte-compared; see [nvim](nvim.md).
+Leftover managed shell lines are not inert.
 
 ## Engine state, lock and journal
 

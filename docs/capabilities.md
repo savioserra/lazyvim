@@ -86,6 +86,12 @@ the generic envelope shape; each registered provider validates its own specs
 and rejects unknown options. Kinds: `file`, `directory`, `symlink`, `modify`
 (one whole inline body or package-relative asset - structured fragments are the
 `provision.shell` compositor's input alone and are rejected here) and `remove`.
+Packages may declare whole-body `modify` programs for engine-seeded,
+runtime-extended mutable targets: the recipe embeds its baseline, apply never
+byte-compares the target, and a package-owned merge reconciles runtime
+drift. `lazy-lock.json` under the nvim package is the reference
+implementation; see [nvim](nvim.md). Such recipes inherit the documented
+whole-body retirement semantics (unsupported reversal, never auto-removal).
 Native
 attributes are `private`, `executable`, `exact` and `template`; conflicting or
 unrepresentable combinations are rejected instead of pretending arbitrary POSIX

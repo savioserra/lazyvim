@@ -301,6 +301,45 @@ assert_fails("refusing to write through symlinked ancestor", function()
 end)
 assert(not paths.exists(paths.home .. "/state-real/file"), "write escaped through the symlinked ancestor")
 
+-- Recipe evolution from a byte-owned file to a modify program converges a
+-- runtime-drifted owned target without conflict: the modify precondition
+-- never byte-compares, which is the ownership model the nvim package uses
+-- for the runtime-extended lazy-lock.json.
+local lockfile_baseline = '{\n  "plugin": { "branch": "main", "commit": "aaaa" }\n}\n'
+local lockfile_runtime =
+	'{\n  "plugin": { "branch": "main", "commit": "aaaa" },\n  "host-theme": { "branch": "v3", "commit": "bbbb" }\n}\n'
+local as_file = {
+	provision.chezmoi({ target = ".state/lazy-lock.json", kind = "file", content = lockfile_baseline }),
+}
+provisioner.apply(plan_with(as_file, {}))
+paths.write(paths.home .. "/.state/lazy-lock.json", lockfile_runtime)
+assert_fails("target changed since the last successful apply", function()
+	provisioner.apply(plan_with(as_file, {}))
+end)
+local as_modify = {
+	provision.chezmoi({
+		target = ".state/lazy-lock.json",
+		kind = "modify",
+		executable = true,
+		content = "#!/bin/sh\ncat <<'__LOCK__'\n" .. lockfile_runtime .. "__LOCK__\n",
+	}),
+}
+provisioner.apply(plan_with(as_modify, {}))
+assert(
+	paths.read(paths.home .. "/.state/lazy-lock.json") == lockfile_runtime,
+	"modify recipe clobbered runtime-extended state"
+)
+assert(
+	state.applied_record().targets[".state/lazy-lock.json"].operation == "modify",
+	"journal kept the retired file operation"
+)
+provisioner.apply(plan_with(as_modify, {}))
+assert(
+	paths.read(paths.home .. "/.state/lazy-lock.json") == lockfile_runtime,
+	"repeated modify apply destabilized the target"
+)
+print("file-to-modify recipe swap converges runtime drift")
+
 commands.execute = real_execute
 print(
 	"state journal tests passed (preconditions, adoption, pending/failed evidence, exclusive retirement, fragment recomposition, unsupported reversal)"

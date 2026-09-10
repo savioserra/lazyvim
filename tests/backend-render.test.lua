@@ -36,6 +36,21 @@ local function install_backend()
 	return dest
 end
 
+local function install_nvim()
+	-- The lazy-lock merge program executes the canonical managed Neovim path
+	-- inside the fixture home; model the bootstrap guarantee the same way.
+	-- -l mode exposes no vim.v0: resolve the running binary instead.
+	local running = vim.uv.fs_readlink("/proc/self/exe")
+	if not (running and vim.uv.fs_stat(running)) then
+		running = vim.fn.resolve(vim.fn.exepath("nvim"))
+	end
+	assert(running and vim.fn.executable(running) == 1, "cannot resolve the running Neovim")
+	local dest = paths.join(paths.local_dir, "opt", "nvim", "bin", "nvim")
+	vim.fn.mkdir(vim.fs.dirname(dest), "p")
+	assert(vim.uv.fs_symlink(running, dest))
+	return dest
+end
+
 -- Part 1: the REAL capability declarations through the full engine pipeline
 -- against a fresh fixture home, then a populated and a repeated target.
 local application = require("workstation.app").create()
@@ -43,6 +58,7 @@ local plan = source.plan(application)
 assert(#plan.entries > 40, "expected the full migrated payload, got " .. #plan.entries)
 assert(plan.profile and #plan.profile == 3, "composed profile is missing language intents")
 install_backend()
+install_nvim()
 
 -- Populate the exact legacy tombstones before the first apply: the backend
 -- removes .chezmoiremove entries on first apply against fresh state (verified

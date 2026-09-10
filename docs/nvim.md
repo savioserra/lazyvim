@@ -91,6 +91,21 @@ imports runtime configuration only, never package factories or engine modules.
 | Mason tools | `mason-lock.json` | `:MasonLockRestore` |
 | Tree-sitter parsers | Parser config + locked plugin | `:TSUpdate` |
 
+`lazy-lock.json` is engine-seeded, runtime-extended mutable application
+state, not byte-owned configuration: it deploys through a package-owned
+whole-body `modify` merge program
+(`files/modify/lazy-lock.json.sh` with the committed asset embedded verbatim),
+never a whole-file recipe. Absent targets seed the baseline byte-for-byte;
+drifted copies reconcile: engine pins win, host extras with an installed
+plugin directory are preserved, stale extras are pruned, and malformed input
+fails closed. Verify asserts every engine pin is present at its exact
+branch/commit and installed at that commit; host extras are reported
+audit-only (bounding them by class would couple the engine to whatever
+external spec source produced them). Consequences: the deployed file carries
+mode 0755 because modify programs deploy as executable, and `workstation
+diff` stays the readable surface for effective lockfile changes (`plan` shows
+the program body with its embedded pin block).
+
 Mason restore requirements:
 
 - install exact locked versions;
@@ -112,8 +127,10 @@ Rules:
 - Apply the imported colorscheme on the next Neovim start; running instances
   only get the terminal-palette retint, so a colorscheme reload needs a
   restart (stock Omarchy behaves the same way).
-- Keep tender.vim in the specs unconditionally so lockfile and headless sync
-  state stay host-independent.
+- Keep tender.vim in the specs unconditionally so the spec set and headless
+  sync stay host-independent. The deployed lockfile may still legitimately
+  gain host extras (the followed theme's plugin); the merge program
+  reconciles them at the next apply instead of failing closed.
 
 ## Headless sync
 
