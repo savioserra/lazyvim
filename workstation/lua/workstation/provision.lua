@@ -73,6 +73,19 @@ local function tar_member(name)
 	end))
 end
 
+-- GNU tar and bsdtar alike report each member's HEADER mode as the first
+-- `tar -tvf` field. Extraction cannot be trusted for this: unprivileged tar
+-- (GNU 1.35) silently strips setuid/setgid/sticky bits, so the staged tree
+-- underreports privileges the archive header still carries.
+local function safe_mode(line)
+	local perms = line:match("^(%S+)")
+	assert(perms and #perms >= 10 and not perms:sub(2, 10):find("[^%a%-]"), "unreadable archive mode: " .. line)
+	local special = (perms:sub(4, 4):find("[sS]") and 2048 or 0)
+		+ (perms:sub(7, 7):find("[sS]") and 1024 or 0)
+		+ (perms:sub(10, 10):find("[tT]") and 512 or 0)
+	assert(special == 0, "unsupported special mode in archive: " .. line)
+end
+
 local function extract(spec, archive, staging)
 	local kind = spec.format or (spec.url:match("%.zip$") and "zip" or "tar")
 	assert(kind == "tar" or kind == "zip", "unsupported archive format")
@@ -80,6 +93,13 @@ local function extract(spec, archive, staging)
 		or commands.capture("tar", { "-tf", archive })
 	for name in listing:gmatch("[^\n]+") do
 		safe_member(kind == "tar" and tar_member(name) or name)
+	end
+	-- Reject special modes from archive headers before extracting: dropped bits
+	-- during unprivileged extraction would bypass the manifest staging check.
+	if kind == "tar" then
+		for line in commands.capture("tar", { "-tvf", archive }):gmatch("[^\n]+") do
+			safe_mode(line)
+		end
 	end
 	vim.fn.mkdir(staging, "p")
 	if kind == "zip" then
