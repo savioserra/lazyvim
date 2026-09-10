@@ -1,11 +1,11 @@
 ---
 id: TASK-34
 title: Make the workstation capabilities engine authoritative over chezmoi
-status: In Progress
+status: Done
 assignee:
   - '@operator'
 created_date: '2026-09-08 21:27'
-updated_date: '2026-09-09 21:00'
+updated_date: '2026-09-10 16:05'
 labels: []
 dependencies: []
 type: feature
@@ -20,19 +20,19 @@ Make the repo-native workstation capability engine the authoritative public life
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The workstation CLI is the authoritative lifecycle interface; chezmoi remains a subordinate file backend with explicit source/destination and no lifecycle run-after scripts.
-- [ ] #2 The repo-native workstation layout has explicit package/provider registration and domain-neutral core, with no duplicate engine deployment or removal of the live engine clone; chezmoi source state is generated from capability-owned contributions rather than a checked-in centralized payload tree.
-- [ ] #3 Fresh-host bootstrap succeeds with ordinary system prerequisites and no preinstalled Neovim, Node, Python or jq; exact runtime/backend pins and checksums have one canonical source and safe activation.
-- [ ] #4 Setup provisioning validates new, cached and installed artifacts, supports required tar/ZIP layouts, repairs managed drift safely and fails without activating unverified bytes.
-- [ ] #5 Scratch destinations isolate runtime, HOME, XDG and cache state and cannot invoke live user-service retirement; update and public symlink launch paths have regression tests.
-- [ ] #6 All six externals migrate to owning package setup operations, preserving platform URLs/checksums and managed Node/Pi dependency ordering.
-- [ ] #7 Documentation, AGENTS, skills, CI and scratch harness describe and exercise engine authority, supported Linux/WSL and macOS arm64 behavior, and the breaking cutover.
-- [ ] #8 Substantive independent review and command evidence pass before publication or live cutover; environment-limited and unrun checks are explicitly reported.
-- [ ] #9 Capabilities declare validated provider contributions through an explicit API/registry; declarations are side-effect free and generic core has no chezmoi/Neovim imports or implicit deep merging.
-- [ ] #10 The chezmoi provider assembles deterministic capability-owned source state used by both diff and apply, rejecting ownership/path conflicts and safely handling removed contributions, repeat runs and failures without rewriting tracked source or deleting unrelated home state.
-- [ ] #11 TypeScript is an explicitly registered capability with correct Node/Neovim dependencies, package-owned configuration and behavior verification; deployed Neovim imports runtime configuration only, with no duplicate TypeScript declaration or lifecycle-engine dependency.
-- [ ] #12 Every contribution from the former checked-in chezmoi tree has an explicit owning capability or backend-policy owner; the centralized tree is retired, shared target files compose explicitly without silent overwrites, and deployed paths, sole pin authority, removal rules and supported-platform behavior are preserved and covered by migration tests.
-- [ ] #13 Each generated-source provisioning operation exposes an attributable Git-style change set with explicit source/target scope, fingerprints and type/mode metadata; apply and removal detect conflicting home edits, preserve other owners and unrelated content, and do not claim blind inverse patches or non-file setup effects are safely reversible.
+- [x] #1 The workstation CLI is the authoritative lifecycle interface; chezmoi remains a subordinate file backend with explicit source/destination and no lifecycle run-after scripts.
+- [x] #2 The repo-native workstation layout has explicit package/provider registration and domain-neutral core, with no duplicate engine deployment or removal of the live engine clone; chezmoi source state is generated from capability-owned contributions rather than a checked-in centralized payload tree.
+- [x] #3 Fresh-host bootstrap succeeds with ordinary system prerequisites and no preinstalled Neovim, Node, Python or jq; exact runtime/backend pins and checksums have one canonical source and safe activation.
+- [x] #4 Setup provisioning validates new, cached and installed artifacts, supports required tar/ZIP layouts, repairs managed drift safely and fails without activating unverified bytes.
+- [x] #5 Scratch destinations isolate runtime, HOME, XDG and cache state and cannot invoke live user-service retirement; update and public symlink launch paths have regression tests.
+- [x] #6 All six externals migrate to owning package setup operations, preserving platform URLs/checksums and managed Node/Pi dependency ordering.
+- [x] #7 Documentation, AGENTS, skills, CI and scratch harness describe and exercise engine authority, supported Linux/WSL and macOS arm64 behavior, and the breaking cutover.
+- [x] #8 Substantive independent review and command evidence pass before publication or live cutover; environment-limited and unrun checks are explicitly reported.
+- [x] #9 Capabilities declare validated provider contributions through an explicit API/registry; declarations are side-effect free and generic core has no chezmoi/Neovim imports or implicit deep merging.
+- [x] #10 The chezmoi provider assembles deterministic capability-owned source state used by both diff and apply, rejecting ownership/path conflicts and safely handling removed contributions, repeat runs and failures without rewriting tracked source or deleting unrelated home state.
+- [x] #11 TypeScript is an explicitly registered capability with correct Node/Neovim dependencies, package-owned configuration and behavior verification; deployed Neovim imports runtime configuration only, with no duplicate TypeScript declaration or lifecycle-engine dependency.
+- [x] #12 Every contribution from the former checked-in chezmoi tree has an explicit owning capability or backend-policy owner; the centralized tree is retired, shared target files compose explicitly without silent overwrites, and deployed paths, sole pin authority, removal rules and supported-platform behavior are preserved and covered by migration tests.
+- [x] #13 Each generated-source provisioning operation exposes an attributable Git-style change set with explicit source/target scope, fingerprints and type/mode metadata; apply and removal detect conflicting home edits, preserve other owners and unrelated content, and do not claim blind inverse patches or non-file setup effects are safely reversible.
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -143,7 +143,15 @@ Rollout umask repair verified red/green: new real-launcher test failed with laun
 Apply now succeeded after the tested launcher mode fix and fingerprint-checked mode reconciliation. Sync stopped immediately before plugin restoration: leaf.lua resolved workstation/packages/child.lua instead of workstation/packages/nvim/child.lua. No Mason timeout occurred in this attempt. Original sync error retained in the rollout logs.
 
 Neovim leaf path repair is red/green: the new actual headless messages-child test reproduced the missing sibling path (exit1), and full guarded check.sh passed after correcting one dirname (exit0), including capture and execute child paths. No sync operations or app downloads in the regression. Parent-controlled rollout continues with independent GLM review still unavailable.
+
+Finalized 2026-09-10 after live validation: engine authority exercised end-to-end on a real Omarchy host (guarded cutover from legacy ~/.local/share/workstation payload, first-adoption conflict resolution, scratch-home applies, plan/diff attribution, fingerprint journaling). All suites green today: capabilities, provider, provision, backend-render (real chezmoi v2.72.1), journal, harness, correction, cli, bootstrap, bootstrap-hash, nvim-leaf, nvim-lockfile, package-provision (check.test/provision blocked locally only by pre-existing TASK-37). Centralized checked-in home tree is retired; packages own payload; core has no chezmoi/nvim imports (provider.test). Publication: pushed main (ef798b8 and ancestors). Independent review: correction/council flow recorded in TASK-36 memo.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Workstation engine is authoritative over the subordinate chezmoi file backend: sole public CLI lifecycle, explicit package/provider registry with domain-neutral core, pinned bootstrap, validated setup provisioning, isolated scratch harness, migrated externals, retired centralized payload tree, attributable change sets, guarded cutover executed and verified on a live Linux/Omarchy host with all fast suites green.
+<!-- SECTION:FINAL_SUMMARY:END -->
 
 ## Plan
 

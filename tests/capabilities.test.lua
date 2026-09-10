@@ -66,6 +66,8 @@ for _, name in ipairs({
 	"pi-web-access",
 	"pi-ntfy-notifier",
 	"go",
+	"herdr",
+	"herdr-pi",
 	"secrets",
 	"nvim",
 	"typescript",
@@ -78,13 +80,13 @@ for _, name in ipairs({
 end
 -- pi-ntfy-notifier is source-managed: its node test suite is executed directly
 -- by its Lua verify step, so it has no separate verify.mjs.
-for _, name in ipairs({ "pi-skills", "pi-subagents", "pi-web-access" }) do
+for _, name in ipairs({ "pi-skills", "pi-subagents", "pi-web-access", "herdr-pi" }) do
 	assert(
 		vim.uv.fs_stat(vim.fs.joinpath(root, "packages", name, "verify.mjs")),
 		"package verifier is missing: " .. name
 	)
 end
-assert(catalog_count == 13, "expected thirteen explicitly registered packages")
+assert(catalog_count == 15, "expected fifteen explicitly registered packages")
 -- The centralized checked-in chezmoi tree is fully retired: every payload
 -- item lives with its owning capability and no legacy adapter remains.
 assert(vim.uv.fs_stat(vim.fs.joinpath(repository, "chezmoi")) == nil, "centralized chezmoi tree still exists")
@@ -126,6 +128,8 @@ local expected_linux = {
 	"pi-web-access",
 	"pi-ntfy-notifier",
 	"go",
+	"herdr",
+	"herdr-pi",
 	"secrets",
 	"nvim",
 	"typescript",
@@ -166,6 +170,27 @@ for _, specification in ipairs(application.graph.ordered) do
 	end
 end
 assert(vim.deep_equal(typescript_specification.requires, { "node", "nvim" }), "typescript requires drifted")
+local herdr_specification
+for _, specification in ipairs(application.graph.ordered) do
+	if specification.id == "herdr" then
+		herdr_specification = specification
+	end
+end
+assert(vim.deep_equal(herdr_specification.requires, { "foundation" }), "herdr requires drifted")
+local herdr_pi_specification
+for _, specification in ipairs(application.graph.ordered) do
+	if specification.id == "herdr-pi" then
+		herdr_pi_specification = specification
+	end
+end
+assert(vim.deep_equal(herdr_pi_specification.requires, { "pi", "herdr", "pi-subagents" }), "herdr-pi requires drifted")
+for _, prerequisite in ipairs({ "pi", "herdr", "pi-subagents" }) do
+	assert(index_of(linux, prerequisite) < index_of(linux, "herdr-pi"), prerequisite .. " must run before herdr-pi")
+end
+-- Herdr is runtime-optional: neither Pi nor the subagent engine requires it.
+for _, id in ipairs({ "pi", "pi-skills", "pi-subagents", "pi-web-access", "pi-ntfy-notifier" }) do
+	assert(index_of(linux, "herdr") > index_of(linux, id), "herdr must not gate " .. id)
+end
 for _, prerequisite in ipairs({ "foundation", "node", "go" }) do
 	assert(index_of(linux, prerequisite) < index_of(linux, "nvim"), prerequisite .. " must run before Neovim")
 end

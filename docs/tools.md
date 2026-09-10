@@ -14,6 +14,7 @@ Supported deployment policy is Linux, WSL-as-Linux, and macOS (arm64).
 | chezmoi backend | 2.72.1 | github.com/twpayne/chezmoi | `.local/opt/chezmoi/bin/chezmoi` (engine-owned) | linux-x86_64, darwin-arm64 |
 | Neovim | 0.12.4 | github.com/neovim/neovim | `.local/opt/nvim` (exact tree, engine bootstrap) | linux-x86_64, darwin-arm64 |
 | Go | 1.27.1 | go.dev | `.local/opt/go` (exact tree, `go` setup) | linux-x86_64, darwin-arm64 |
+| Herdr | 0.9.0 | github.com/herdrdev/herdr | `.local/opt/herdr/bin/herdr` (`herdr` setup) + `.local/bin/herdr` link | linux-x86_64, darwin-arm64 (WSL uses the Linux asset) |
 | nvm-sh | 0.40.4 | github.com/nvm-sh/nvm | `.local/opt/nvm` (non-exact tree, `node` setup) | linux-x86_64, darwin-arm64 |
 | Node.js | `workstation/packages/node/files/.node-version` (currently 24.19.0) | nodejs.org | `.local/opt/nvm/versions/node/v<version>` (non-exact, `node` setup) | linux-x86_64, darwin-arm64 |
 | ripgrep | 15.2.0 | github.com/BurntSushi/ripgrep | `.local/bin/rg` | linux-x86_64, darwin-arm64 |
@@ -27,6 +28,7 @@ Supported deployment policy is Linux, WSL-as-Linux, and macOS (arm64).
 | pi-subagents | 0.66.0 | npm: `pi-subagents` | Pi package install under the Pi agent directory | linux-x86_64, darwin-arm64 |
 | pi-web-access | 0.28.0 | npm: `pi-web-access` | Pi package install under the Pi agent directory | linux-x86_64, darwin-arm64 |
 | pi-ntfy-notifier | 0.3.0 | Source-managed extension in this repo | `.pi/agent/extensions/ntfy-notifier` | linux-x86_64, darwin-arm64 |
+| herdr Pi hook | Integration revision 8 (Herdr v0.9.0 bundle) | github.com/herdrdev/herdr | `.pi/agent/extensions/herdr-agent-state.ts` (`herdr-pi` file recipe) | linux-x86_64, darwin-arm64 |
 | JetBrainsMono Nerd Font | 3.5.0 | github.com/ryanoasis/nerd-fonts | Linux: `.local/share/fonts/JetBrainsMonoNerdFont`; darwin: `Library/Fonts/JetBrainsMonoNerdFont` | linux-x86_64, darwin-arm64 |
 
 ## Provisioning ownership

@@ -8,6 +8,8 @@ return {
 	require("packages.pi-web-access"),
 	require("packages.pi-ntfy-notifier"),
 	require("packages.go"),
+	require("packages.herdr"),
+	require("packages.herdr-pi"),
 	require("packages.secrets"),
 	require("packages.nvim"),
 	require("packages.typescript"),

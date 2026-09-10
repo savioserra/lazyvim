@@ -25,4 +25,5 @@
 | [`secrets.md`](secrets.md) | 1Password boundary, vault scope, Pi skill policy |
 | [`nvim.md`](nvim.md) | Editor entry points, profile, plugins, locks |
 | [`tmux.md`](tmux.md) | Settings, plugin pins, theme |
+| [`herdr.md`](herdr.md) | Pinned Herdr binary and official Pi hook, ownership and compatibility gates |
 | [`lua-migration.md`](lua-migration.md) | Runtime rationale and explicitly historical context |

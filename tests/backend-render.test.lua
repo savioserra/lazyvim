@@ -84,6 +84,7 @@ local function assert_deployed()
 	assert(paths.read(paths.home .. "/.node-version") == "24.19.0\n", "Node pin not deployed")
 	assert(vim.uv.fs_readlink(paths.home .. "/.local/bin/nvim") == paths.home .. "/.local/opt/nvim/bin/nvim")
 	assert(vim.uv.fs_readlink(paths.home .. "/.local/bin/go") == "../opt/go/bin/go")
+	assert(vim.uv.fs_readlink(paths.home .. "/.local/bin/herdr") == "../opt/herdr/bin/herdr")
 	assert(vim.uv.fs_readlink(paths.home .. "/.config/tmux/tmux.conf") == "../../.tmux.conf")
 	assert(bit.band(vim.uv.fs_stat(paths.home .. "/.pi/agent").mode, 4095) == 448, "private agent dir mode lost")
 	assert(bit.band(vim.uv.fs_stat(paths.home .. "/.profile").mode, 4095) == 493, "shell file lost exec mode")
@@ -121,6 +122,10 @@ local parity = {
 	{ "workstation/packages/nvim/files/.config/nvim/init.lua", ".config/nvim/init.lua" },
 	{ "workstation/packages/nvim/files/.config/nvim/lazy-lock.json", ".config/nvim/lazy-lock.json" },
 	{ "workstation/packages/nvim/files/.config/nvim/lua/config/lazy.lua", ".config/nvim/lua/config/lazy.lua" },
+	{
+		"workstation/packages/herdr-pi/files/.pi/agent/extensions/herdr-agent-state.ts",
+		".pi/agent/extensions/herdr-agent-state.ts",
+	},
 	{ "workstation/packages/tmux/files/.tmux.conf", ".tmux.conf" },
 	{ "workstation/packages/pi-skills/files/.pi/agent/skills/lazyvim/SKILL.md", ".pi/agent/skills/lazyvim/SKILL.md" },
 	{ "workstation/packages/node/files/nvm.sh", ".config/shell/nvm.sh" },

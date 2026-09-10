@@ -113,12 +113,16 @@ foundation
 │       ├── pi-web-access
 │       └── pi-ntfy-notifier [source-managed]
 ├── go [Neovim language toolchain]
+├── herdr [pinned terminal-workspace binary; runtime-optional, no server lifecycle]
 ├── secrets
 ├── nvim [requires foundation+node+go; owns base/standard/Go profile intents]
 └── tmux [linux,darwin]
 
 nvim
 └── typescript [requires node+nvim; owns its plugin module, profile intent and verification]
+
+herdr
+└── herdr-pi [requires pi+herdr+pi-subagents; owns only the official Pi hook bytes]
 ```
 
 | Package | Setup | Sync | Verify | Host support |
@@ -132,6 +136,8 @@ nvim
 | `pi-web-access` | Exact Pi package | — | Lock integrity, extension discovery, web tools | All |
 | `pi-ntfy-notifier` | Source-managed extension | — | Manifest version, extension files, node test suite | All |
 | `go` | Exact toolchain archive; go link recipe | — | Go version | Linux/WSL/macOS |
+| `herdr` | Exact pinned binary; herdr link recipe | — | Static binary version only; never server/pane/session lifecycle | All |
+| `herdr-pi` | — (official hook deploys as a file recipe) | — | Exact hook bytes, integration revision marker, isolated Pi loader discovery | All |
 | `secrets` | Pinned op archive member; op env fragment | — | Managed 1Password CLI version; never account or vault state | All supported hosts |
 | `nvim` | — | Locks and parsers | Startup, locks, mason coverage, base/standard/Go behavior | All |
 | `typescript` | — | — | Own Mason expectations, plugin module and behavior/formatter cases through nvim leaf helpers | All |
