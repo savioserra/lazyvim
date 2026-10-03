@@ -60,13 +60,8 @@ for _, name in ipairs({
 	"foundation",
 	"fonts",
 	"node",
-	"pi",
+	"agent",
 	"pi-skills",
-	"pi-subagents",
-	"pi-web-access",
-	"billion-context-pi",
-	"pi-simplify",
-	"openwiki",
 	"pi-ntfy-notifier",
 	"go",
 	"herdr",
@@ -85,11 +80,6 @@ end
 -- by its Lua verify step, so it has no separate verify.mjs.
 for _, name in ipairs({
 	"pi-skills",
-	"pi-subagents",
-	"pi-web-access",
-	"billion-context-pi",
-	"pi-simplify",
-	"openwiki",
 	"herdr-pi",
 }) do
 	assert(
@@ -97,7 +87,14 @@ for _, name in ipairs({
 		"package verifier is missing: " .. name
 	)
 end
-assert(catalog_count == 18, "expected eighteen explicitly registered packages")
+-- The agent capability keeps one package-local verifier per pinned pi package.
+for _, name in ipairs({ "billion-context-pi", "openwiki", "pi-simplify", "pi-subagents", "pi-web-access" }) do
+	assert(
+		vim.uv.fs_stat(vim.fs.joinpath(root, "packages", "agent", "verify", name .. ".mjs")),
+		"agent verifier is missing: " .. name
+	)
+end
+assert(catalog_count == 13, "expected thirteen explicitly registered packages")
 -- The centralized checked-in chezmoi tree is fully retired: every payload
 -- item lives with its owning capability and no legacy adapter remains.
 assert(vim.uv.fs_stat(vim.fs.joinpath(repository, "chezmoi")) == nil, "centralized chezmoi tree still exists")
@@ -126,20 +123,15 @@ local function ids_for(host, specifications)
 end
 
 local linux = ids_for("linux")
-for _, id in ipairs({ "tmux", "secrets", "pi", "pi-skills", "pi-subagents", "pi-web-access", "pi-ntfy-notifier" }) do
+for _, id in ipairs({ "tmux", "secrets", "agent", "pi-skills", "pi-ntfy-notifier" }) do
 	assert_contains(linux, id)
 end
 local expected_linux = {
 	"foundation",
 	"fonts",
 	"node",
-	"pi",
+	"agent",
 	"pi-skills",
-	"pi-subagents",
-	"pi-web-access",
-	"billion-context-pi",
-	"pi-simplify",
-	"openwiki",
 	"pi-ntfy-notifier",
 	"go",
 	"herdr",
@@ -160,11 +152,8 @@ local function index_of(values, expected)
 		"missing package " .. expected
 	)
 end
-assert(index_of(linux, "node") < index_of(linux, "pi"), "node must run before pi")
-assert(index_of(linux, "pi") < index_of(linux, "pi-skills"), "pi must run before pi-skills")
-assert(index_of(linux, "pi") < index_of(linux, "pi-subagents"), "pi must run before pi-subagents")
-assert(index_of(linux, "pi-skills") < index_of(linux, "pi-subagents"), "pi-skills must run before pi-subagents")
-assert(index_of(linux, "pi") < index_of(linux, "pi-web-access"), "pi must run before pi-web-access")
+assert(index_of(linux, "node") < index_of(linux, "agent"), "node must run before agent")
+assert(index_of(linux, "agent") < index_of(linux, "pi-skills"), "agent must run before pi-skills")
 assert(index_of(linux, "foundation") < index_of(linux, "secrets"), "foundation must run before secrets")
 assert(index_of(linux, "foundation") < index_of(linux, "tmux"), "foundation must run before tmux")
 
@@ -197,12 +186,12 @@ for _, specification in ipairs(application.graph.ordered) do
 		herdr_pi_specification = specification
 	end
 end
-assert(vim.deep_equal(herdr_pi_specification.requires, { "pi", "herdr", "pi-subagents" }), "herdr-pi requires drifted")
-for _, prerequisite in ipairs({ "pi", "herdr", "pi-subagents" }) do
+assert(vim.deep_equal(herdr_pi_specification.requires, { "agent", "herdr" }), "herdr-pi requires drifted")
+for _, prerequisite in ipairs({ "agent", "herdr" }) do
 	assert(index_of(linux, prerequisite) < index_of(linux, "herdr-pi"), prerequisite .. " must run before herdr-pi")
 end
 -- Herdr is runtime-optional: neither Pi nor the subagent engine requires it.
-for _, id in ipairs({ "pi", "pi-skills", "pi-subagents", "pi-web-access", "pi-ntfy-notifier" }) do
+for _, id in ipairs({ "agent", "pi-skills", "pi-ntfy-notifier" }) do
 	assert(index_of(linux, "herdr") > index_of(linux, id), "herdr must not gate " .. id)
 end
 for _, prerequisite in ipairs({ "foundation", "node", "go" }) do

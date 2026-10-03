@@ -33,7 +33,7 @@ return function()
 	end
 	return {
 		id = "pi-skills",
-		requires = { "pi" },
+		requires = { "agent" },
 		contributes = contributes,
 		verify = function(context)
 			local npm = managed_node.executable(context, "npm")

@@ -29,7 +29,7 @@ local graph = require("workstation.core.graph")
 local materialize = require("workstation.core.materialize")
 local runner = require("workstation.core.runner")
 local packages = materialize.from_catalog(require("workstation.catalog"), { context = { paths = paths } })
-assert(#packages.contributions == 18)
+assert(#packages.contributions == 13)
 assert(packages.handlers.nvim.setup == nil, "Neovim must remain bootstrap-owned")
 local original_arg = arg
 arg = { "status" }
@@ -141,7 +141,7 @@ for _, host in ipairs({ "linux", "darwin", "wsl" }) do
 		)
 	)
 	assert(events[event_index + 3][1] == "runtime")
-	assert(vim.deep_equal(events[event_index + 4], { "dependent", "pi" }))
+	assert(vim.deep_equal(events[event_index + 4], { "dependent", "agent" }))
 	-- Repeat emits identical narrow ownership declarations. Integrity/idempotence
 	-- and non-exact recursive mutable-state preservation are exercised by provision.test.lua.
 	local first_events, first_emitted = events, emitted

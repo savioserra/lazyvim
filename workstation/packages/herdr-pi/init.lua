@@ -11,7 +11,7 @@ local HOOK_TARGET = ".pi/agent/extensions/herdr-agent-state.ts"
 return function()
 	return {
 		id = "herdr-pi",
-		requires = { "pi", "herdr", "pi-subagents" },
+		requires = { "agent", "herdr" },
 		contributes = {
 			-- The only managed artifact: the exact official hook bytes bundled
 			-- with the pinned Herdr release (integration revision 8). The file

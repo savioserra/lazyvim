@@ -11,12 +11,12 @@ official Pi integration hook; it never manages the runtime.
 | Binary `0.9.0` (linux x86_64, macOS arm64; WSL uses the Linux asset) | `workstation/packages/herdr` setup via `provision.file`, link at `.local/bin/herdr` |
 | Official Pi hook (integration revision 8, exact bundled bytes) | `workstation/packages/herdr-pi` file recipe at `.pi/agent/extensions/herdr-agent-state.ts` |
 | Server, panes, sockets, `~/.config/herdr`, sessions, saved machines | Human/host; lifecycle commands never start, stop, attach or inspect them |
-| Pi sessions, subagent children, artifacts, project-pane bindings | Existing `pi` / `pi-subagents` ownership, unchanged |
+| Pi sessions, subagent children, artifacts, project-pane bindings | Existing `agent` capability ownership (pi-subagents inside it), unchanged |
 
-`herdr-pi` is a full-stack composition (`pi + herdr + pi-subagents`) by owner
-decision; Pi and pi-subagents never require Herdr and stay fully runnable
-without it. An unmanaged existing hook file fails closed at apply; takeover is
-an explicit operator action.
+`herdr-pi` is a full-stack composition (`agent + herdr`) by owner decision; the
+agent capability and its subagent engine never require Herdr and stay fully
+runnable without it. An unmanaged existing hook file fails closed at apply;
+takeover is an explicit operator action.
 
 ## Compatibility gates
 
@@ -32,7 +32,7 @@ sourced specification, preserved in Git history as `backlog/docs/doc-1`):
 | Live server, panes, detach/reattach, native restore | Human-only; start/stop is host-owned |
 | Semantic busy reporting | **Documented limitation**: the inspected official route has no `herdr:busy` receiver; effects untested upstream |
 | Blocked overlay, shutdown/reload authority drain, RPC metadata isolation | Not yet tested; no support claimed |
-| Inspector / project panes | Existing pi-subagents functionality, unchanged; closing an inspector never stops children |
+| Inspector / project panes | Existing pi-subagents functionality inside the agent capability, unchanged; closing an inspector never stops children |
 
 Semantic idle never proves all children finished; do not build destructive
 cleanup on it.

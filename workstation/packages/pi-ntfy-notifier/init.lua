@@ -42,7 +42,7 @@ return function()
 	)
 	return {
 		id = "pi-ntfy-notifier",
-		requires = { "pi" },
+		requires = { "agent" },
 		contributes = contributes,
 		verify = function(context)
 			local extension_dir =

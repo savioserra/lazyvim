@@ -107,13 +107,8 @@ never discovered from the filesystem.
 foundation
 ├── fonts
 ├── node
-│   └── pi
-│   ├── pi-skills
-│   │   └── pi-subagents
-│   ├── pi-web-access
-│   ├── billion-context-pi [requires pi-subagents; owns the acp delegate-off contract]
-│   ├── pi-simplify
-│   ├── openwiki
+│   └── agent [pi coding agent + internal pi-packages.json pinned catalog; delegates installs to the pi CLI]
+│   ├── pi-skills [requires agent]
 │   └── pi-ntfy-notifier [source-managed]
 ├── go [Neovim language toolchain]
 ├── herdr [pinned terminal-workspace binary; runtime-optional, no server lifecycle]
@@ -125,7 +120,7 @@ nvim
 └── typescript [requires node+nvim; owns its plugin module, profile intent and verification]
 
 herdr
-└── herdr-pi [requires pi+herdr+pi-subagents; owns only the official Pi hook bytes]
+└── herdr-pi [requires agent+herdr; owns only the official Pi hook bytes]
 ```
 
 | Package | Setup | Sync | Verify | Host support |
@@ -133,13 +128,8 @@ herdr
 | `foundation` | CLI archive members | — | CLI versions | All |
 | `fonts` | Font archives, then host registration/cache | — | Host visibility | All |
 | `node` | nvm and Node archives, then default/environment | — | NVM and Node version | All |
-| `pi` | Exact global npm package | — | npm package and CLI version | All |
+| `agent` | Exact global pi npm package; internal pi packages from `pi-packages.json`, installed via the pinned pi CLI; subagent skill policy; acp.json delegate-off | — | npm/CLI version, per-package lock integrity, pinned settings entries, extension discovery tools | All |
 | `pi-skills` | — | — | Managed skill files and Pi discovery | All |
-| `pi-subagents` | Exact Pi package and role skill policy | — | Lock integrity, extension tools, skill, role overrides | All |
-| `pi-web-access` | Exact Pi package | — | Lock integrity, extension discovery, web tools | All |
-| `billion-context-pi` | Exact Pi package; acp.json delegate-off | — | Lock integrity, extension tools, delegate disabled | All |
-| `pi-simplify` | Exact Pi package | — | Lock integrity, extension discovery | All |
-| `openwiki` | Exact Pi package | — | Lock integrity, extension discovery, lifecycle tools | All |
 | `pi-ntfy-notifier` | Source-managed extension | — | Manifest version, extension files, node test suite | All |
 | `go` | Exact toolchain archive; go link recipe | — | Go version | Linux/WSL/macOS |
 | `herdr` | Exact pinned binary; herdr link recipe | — | Static binary version only; never server/pane/session lifecycle | All |
@@ -215,12 +205,24 @@ alter the graph or the desired source because composition is source-derived.
 
 ## Pi resources
 
+The `agent` capability owns the pi coding agent and every internal pi package.
+The coding agent is pinned in the canonical `workstation/versions.json`; internal
+packages (pi-subagents, pi-web-access, billion-context-pi, pi-simplify, openwiki)
+are pinned with exact versions and registry integrity in the package-local
+`workstation/packages/agent/pi-packages.json` catalog. All install work is
+delegated to the pinned pi CLI (`pi install npm:<name>@<version>`); the engine
+asserts the catalog, then verifies installed versions, settings entries and
+package-lock integrity. Host-side `pi update` drift is converged back to the
+catalog by the next apply, never followed.
+
+The agent capability also owns the subagent skill policy (worker/delegate get the
+managed lazyvim skill) and `~/.pi/acp.json` with `delegate: false`, keeping
+pi-subagents as the only delegation surface while billion-context-pi compression
+tools stay enabled. One JavaScript verifier per pinned package lives under
+`workstation/packages/agent/verify/` and checks Pi discovery through the
+resource loader.
+
 `pi-skills` verifies managed skill files and discovery through Pi's resource loader.
-The community packages `pi-subagents`, `pi-web-access`, `billion-context-pi`,
-`pi-simplify` and `openwiki` install with exact registry integrity; their
-JavaScript verifiers stay package-local. `billion-context-pi` additionally owns
-`~/.pi/acp.json` with `delegate: false`, keeping pi-subagents as the only
-delegation surface while ACP compression tools stay enabled.
 `pi-ntfy-notifier` deploys from
 `workstation/packages/pi-ntfy-notifier/files/.pi/agent/extensions/ntfy-notifier/`
 through `workstation apply`, followed by Pi `/reload` or a new process.
