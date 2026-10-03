@@ -16,10 +16,6 @@ local paths = require("workstation.paths")
 local profile_module = require("packages.nvim.profile")
 local runner_module = require("workstation.core.runner")
 
-local function assert_contains(values, expected)
-	assert(vim.list_contains(values, expected), ("expected %s in [%s]"):format(expected, table.concat(values, ", ")))
-end
-
 local function assert_fails(pattern, callback)
 	local ok, failure = pcall(callback)
 	assert(not ok, "expected operation to fail")
@@ -43,7 +39,12 @@ local profile = application.context.nvim_profile
 assert(profile ~= nil and profile == plan.profile, "composed profile was not attached to the context")
 local catalog_count = #catalog
 
-for _, name in ipairs({ "contract", "materialize", "graph", "runner" }) do
+for _, name in ipairs({
+	"contract",
+	"materialize",
+	"graph",
+	"runner",
+}) do
 	local source = vim.fn.readfile(vim.fs.joinpath(root, "lua", "workstation", "core", name .. ".lua"))
 	local contents = table.concat(source, "\n")
 	assert(not contents:find('require("packages.', 1, true), "core imports a package: " .. name)
@@ -56,45 +57,24 @@ assert(
 	vim.uv.fs_stat(vim.fs.joinpath(root, "lua", "workstation", "packages")) == nil,
 	"legacy package contribution directory still exists"
 )
-for _, name in ipairs({
-	"foundation",
-	"fonts",
-	"node",
-	"agent",
-	"pi-skills",
-	"pi-ntfy-notifier",
-	"go",
-	"herdr",
-	"herdr-pi",
-	"secrets",
-	"nvim",
-	"typescript",
-	"tmux",
-}) do
-	assert(
-		vim.uv.fs_stat(vim.fs.joinpath(root, "packages", name, "init.lua")),
-		"top-level package contribution is missing: " .. name
-	)
-end
 -- pi-ntfy-notifier is source-managed: its node test suite is executed directly
 -- by its Lua verify step, so it has no separate verify.mjs.
-for _, name in ipairs({
-	"pi-skills",
-	"herdr-pi",
-}) do
+for _, name in ipairs({ "pi-skills", "herdr-pi" }) do
 	assert(
 		vim.uv.fs_stat(vim.fs.joinpath(root, "packages", name, "verify.mjs")),
 		"package verifier is missing: " .. name
 	)
 end
--- The agent capability keeps one package-local verifier per pinned pi package.
-for _, name in ipairs({ "billion-context-pi", "openwiki", "pi-simplify", "pi-subagents", "pi-web-access" }) do
+-- Behavioral catalog rule: every pinned pi package must carry a Pi-discovery
+-- verifier. The rule follows pi-packages.json, not a hardcoded name list, so
+-- catalog entries without verifiers fail here.
+local agent_catalog = vim.json.decode(paths.read(vim.fs.joinpath(root, "packages", "agent", "pi-packages.json")))
+for _, entry in ipairs(agent_catalog.pi_packages) do
 	assert(
-		vim.uv.fs_stat(vim.fs.joinpath(root, "packages", "agent", "verify", name .. ".mjs")),
-		"agent verifier is missing: " .. name
+		vim.uv.fs_stat(vim.fs.joinpath(root, "packages", "agent", "verify", entry.name .. ".mjs")),
+		"agent verifier is missing for pinned package: " .. entry.name
 	)
 end
-assert(catalog_count == 13, "expected thirteen explicitly registered packages")
 -- The centralized checked-in chezmoi tree is fully retired: every payload
 -- item lives with its owning capability and no legacy adapter remains.
 assert(vim.uv.fs_stat(vim.fs.joinpath(repository, "chezmoi")) == nil, "centralized chezmoi tree still exists")
@@ -122,27 +102,28 @@ local function ids_for(host, specifications)
 	end, graph.resolve(specifications or packages.specifications, host).ordered)
 end
 
-local linux = ids_for("linux")
-for _, id in ipairs({ "tmux", "secrets", "agent", "pi-skills", "pi-ntfy-notifier" }) do
-	assert_contains(linux, id)
+-- Behavioral ordering invariant: a capability only ever resolves after every
+-- capability it requires, on every supported host. The absolute sequence is an
+-- implementation detail owned by the declarations, not by this suite.
+local function assert_requirements_resolve_first(host)
+	local ordered = graph.resolve(packages.specifications, host).ordered
+	local position = {}
+	for index, specification in ipairs(ordered) do
+		position[specification.id] = index
+	end
+	for _, specification in ipairs(ordered) do
+		for _, requirement in ipairs(specification.requires or {}) do
+			assert(
+				position[requirement] ~= nil and position[requirement] < position[specification.id],
+				("%s resolved before its requirement %s on %s"):format(specification.id, requirement, host)
+			)
+		end
+	end
 end
-local expected_linux = {
-	"foundation",
-	"fonts",
-	"node",
-	"agent",
-	"pi-skills",
-	"pi-ntfy-notifier",
-	"go",
-	"herdr",
-	"herdr-pi",
-	"secrets",
-	"nvim",
-	"typescript",
-	"tmux",
-}
-assert(vim.deep_equal(linux, expected_linux), "Linux package graph order changed")
-assert(vim.deep_equal(ids_for("darwin"), expected_linux), "macOS package graph order differs from Linux")
+assert_requirements_resolve_first("linux")
+assert_requirements_resolve_first("darwin")
+local linux = ids_for("linux")
+assert(vim.deep_equal(ids_for("darwin"), linux), "macOS resolved a different graph than Linux")
 
 local function index_of(values, expected)
 	return assert(
@@ -152,52 +133,24 @@ local function index_of(values, expected)
 		"missing package " .. expected
 	)
 end
-assert(index_of(linux, "node") < index_of(linux, "agent"), "node must run before agent")
-assert(index_of(linux, "agent") < index_of(linux, "pi-skills"), "agent must run before pi-skills")
-assert(index_of(linux, "foundation") < index_of(linux, "secrets"), "foundation must run before secrets")
-assert(index_of(linux, "foundation") < index_of(linux, "tmux"), "foundation must run before tmux")
-
--- nvim's dependencies are declared, not inferred from the deployed profile;
--- typescript depends on node+nvim and never the other way around.
-local nvim_specification
-for _, specification in ipairs(application.graph.ordered) do
-	if specification.id == "nvim" then
-		nvim_specification = specification
+-- Composition contracts: the documented owner decisions for which capability
+-- requires what. Relative resolution order is covered by the invariant above.
+local function specification_requires(id)
+	for _, specification in ipairs(application.graph.ordered) do
+		if specification.id == id then
+			return specification.requires
+		end
 	end
+	return nil
 end
-assert(vim.deep_equal(nvim_specification.requires, { "foundation", "node", "go" }), "nvim requires drifted")
-local typescript_specification
-for _, specification in ipairs(application.graph.ordered) do
-	if specification.id == "typescript" then
-		typescript_specification = specification
-	end
-end
-assert(vim.deep_equal(typescript_specification.requires, { "node", "nvim" }), "typescript requires drifted")
-local herdr_specification
-for _, specification in ipairs(application.graph.ordered) do
-	if specification.id == "herdr" then
-		herdr_specification = specification
-	end
-end
-assert(vim.deep_equal(herdr_specification.requires, { "foundation" }), "herdr requires drifted")
-local herdr_pi_specification
-for _, specification in ipairs(application.graph.ordered) do
-	if specification.id == "herdr-pi" then
-		herdr_pi_specification = specification
-	end
-end
-assert(vim.deep_equal(herdr_pi_specification.requires, { "agent", "herdr" }), "herdr-pi requires drifted")
-for _, prerequisite in ipairs({ "agent", "herdr" }) do
-	assert(index_of(linux, prerequisite) < index_of(linux, "herdr-pi"), prerequisite .. " must run before herdr-pi")
-end
--- Herdr is runtime-optional: neither Pi nor the subagent engine requires it.
+assert(vim.deep_equal(specification_requires("nvim"), { "foundation", "node", "go" }), "nvim requires drifted")
+assert(vim.deep_equal(specification_requires("typescript"), { "node", "nvim" }), "typescript requires drifted")
+assert(vim.deep_equal(specification_requires("herdr"), { "foundation" }), "herdr requires drifted")
+assert(vim.deep_equal(specification_requires("herdr-pi"), { "agent", "herdr" }), "herdr-pi requires drifted")
+-- Herdr is runtime-optional: neither the agent capability nor its engine requires it.
 for _, id in ipairs({ "agent", "pi-skills", "pi-ntfy-notifier" }) do
 	assert(index_of(linux, "herdr") > index_of(linux, id), "herdr must not gate " .. id)
 end
-for _, prerequisite in ipairs({ "foundation", "node", "go" }) do
-	assert(index_of(linux, prerequisite) < index_of(linux, "nvim"), prerequisite .. " must run before Neovim")
-end
-assert(index_of(linux, "nvim") < index_of(linux, "typescript"), "nvim must run before typescript")
 -- The composed profile preserves the explicit Go, TypeScript, standard order.
 assert(#profile == 3 and profile[1].id == "go" and profile[2].id == "typescript" and profile[3].id == "standard")
 

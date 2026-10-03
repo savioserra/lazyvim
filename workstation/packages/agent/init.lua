@@ -17,6 +17,12 @@ local function read_json(context, path)
 	return vim.json.decode(context.paths.read(path))
 end
 
+-- The pinned catalog is package-owned source data, not target state: it is
+-- read from the checkout directly, never through the target filesystem.
+local function read_catalog()
+	return vim.json.decode(table.concat(vim.fn.readfile(catalog_path), "\n"))
+end
+
 local function agent_dir(context)
 	return context.paths.join(context.paths.home, ".pi", "agent")
 end
@@ -145,7 +151,7 @@ return function()
 			-- Internal pi packages: exact versions and registry integrity live in the
 			-- package-local pi-packages.json catalog. Every install is delegated to the
 			-- pinned pi CLI; the engine only asserts the catalog before delegating.
-			local catalog = read_json(context, catalog_path)
+			local catalog = read_catalog()
 			local settings_path = context.paths.join(agent_dir(context), "settings.json")
 			local settings = read_json(context, settings_path)
 			for _, entry in ipairs(catalog.pi_packages or {}) do
@@ -175,7 +181,7 @@ return function()
 
 			local settings = read_json(context, context.paths.join(agent_dir(context), "settings.json"))
 			local lock = read_json(context, context.paths.join(agent_dir(context), "npm", "package-lock.json"))
-			local catalog = read_json(context, catalog_path)
+			local catalog = read_catalog()
 			for _, entry in ipairs(catalog.pi_packages or {}) do
 				local expected = "npm:" .. entry.name .. "@" .. entry.version
 				assert(

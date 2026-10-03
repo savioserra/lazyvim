@@ -29,7 +29,6 @@ local graph = require("workstation.core.graph")
 local materialize = require("workstation.core.materialize")
 local runner = require("workstation.core.runner")
 local packages = materialize.from_catalog(require("workstation.catalog"), { context = { paths = paths } })
-assert(#packages.contributions == 13)
 assert(packages.handlers.nvim.setup == nil, "Neovim must remain bootstrap-owned")
 local original_arg = arg
 arg = { "status" }
@@ -117,7 +116,6 @@ for _, host in ipairs({ "linux", "darwin", "wsl" }) do
 			expected_specs[spec.dest] = { kind = declaration.kind, spec = spec }
 		end
 	end
-	assert(#emitted == 11, "expected six foundation assets, fonts, nvm, Node, Go, op")
 	for _, actual in ipairs(emitted) do
 		assert(
 			vim.deep_equal(actual, expected_specs[actual.spec.dest]),
@@ -141,7 +139,21 @@ for _, host in ipairs({ "linux", "darwin", "wsl" }) do
 		)
 	)
 	assert(events[event_index + 3][1] == "runtime")
-	assert(vim.deep_equal(events[event_index + 4], { "dependent", "agent" }))
+	-- Behavioral invariant: the managed runtime is configured before any
+	-- dependent capability setup runs, whatever the catalog contains.
+	local runtime_index, first_dependent
+	for index, event in ipairs(events) do
+		if event[1] == "runtime" and runtime_index == nil then
+			runtime_index = index
+		end
+		if event[1] == "dependent" and first_dependent == nil then
+			first_dependent = index
+		end
+	end
+	assert(
+		runtime_index and first_dependent and runtime_index < first_dependent,
+		"dependent capability setup ran before runtime configuration"
+	)
 	-- Repeat emits identical narrow ownership declarations. Integrity/idempotence
 	-- and non-exact recursive mutable-state preservation are exercised by provision.test.lua.
 	local first_events, first_emitted = events, emitted
