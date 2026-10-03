@@ -108,10 +108,13 @@ foundation
 ├── fonts
 ├── node
 │   └── pi
-│       ├── pi-skills
-│       │   └── pi-subagents
-│       ├── pi-web-access
-│       └── pi-ntfy-notifier [source-managed]
+│   ├── pi-skills
+│   │   └── pi-subagents
+│   ├── pi-web-access
+│   ├── billion-context-pi [requires pi-subagents; owns the acp delegate-off contract]
+│   ├── pi-simplify
+│   ├── openwiki
+│   └── pi-ntfy-notifier [source-managed]
 ├── go [Neovim language toolchain]
 ├── herdr [pinned terminal-workspace binary; runtime-optional, no server lifecycle]
 ├── secrets
@@ -134,6 +137,9 @@ herdr
 | `pi-skills` | — | — | Managed skill files and Pi discovery | All |
 | `pi-subagents` | Exact Pi package and role skill policy | — | Lock integrity, extension tools, skill, role overrides | All |
 | `pi-web-access` | Exact Pi package | — | Lock integrity, extension discovery, web tools | All |
+| `billion-context-pi` | Exact Pi package; acp.json delegate-off | — | Lock integrity, extension tools, delegate disabled | All |
+| `pi-simplify` | Exact Pi package | — | Lock integrity, extension discovery | All |
+| `openwiki` | Exact Pi package | — | Lock integrity, extension discovery, lifecycle tools | All |
 | `pi-ntfy-notifier` | Source-managed extension | — | Manifest version, extension files, node test suite | All |
 | `go` | Exact toolchain archive; go link recipe | — | Go version | Linux/WSL/macOS |
 | `herdr` | Exact pinned binary; herdr link recipe | — | Static binary version only; never server/pane/session lifecycle | All |
@@ -210,8 +216,11 @@ alter the graph or the desired source because composition is source-derived.
 ## Pi resources
 
 `pi-skills` verifies managed skill files and discovery through Pi's resource loader.
-The community packages `pi-subagents` and `pi-web-access` install with exact
-registry integrity; their JavaScript verifiers stay package-local.
+The community packages `pi-subagents`, `pi-web-access`, `billion-context-pi`,
+`pi-simplify` and `openwiki` install with exact registry integrity; their
+JavaScript verifiers stay package-local. `billion-context-pi` additionally owns
+`~/.pi/acp.json` with `delegate: false`, keeping pi-subagents as the only
+delegation surface while ACP compression tools stay enabled.
 `pi-ntfy-notifier` deploys from
 `workstation/packages/pi-ntfy-notifier/files/.pi/agent/extensions/ntfy-notifier/`
 through `workstation apply`, followed by Pi `/reload` or a new process.

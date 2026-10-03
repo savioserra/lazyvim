@@ -24,9 +24,12 @@ Supported deployment policy is Linux, WSL-as-Linux, and macOS (arm64).
 | tree-sitter (CLI) | 0.26.11 | github.com/tree-sitter/tree-sitter | `.local/bin/tree-sitter` | linux-x86_64, darwin-arm64 |
 | rainfrog | 0.4.4 | github.com/achristmascarl/rainfrog | `.local/bin/rainfrog` | linux-x86_64, darwin-arm64 |
 | 1Password CLI | 2.39.0 | cache.agilebits.com | `.local/bin/op`; verified by the `secrets` capability | linux-x86_64, darwin-arm64 |
-| pi coding agent | 0.85.1 | npm: `@earendil-works/pi-coding-agent` | Managed Node global prefix | linux-x86_64, darwin-arm64 |
-| pi-subagents | 0.66.0 | npm: `pi-subagents` | Pi package install under the Pi agent directory | linux-x86_64, darwin-arm64 |
-| pi-web-access | 0.28.0 | npm: `pi-web-access` | Pi package install under the Pi agent directory | linux-x86_64, darwin-arm64 |
+| pi coding agent | 1.0.1 | npm: `@earendil-works/pi-coding-agent` | Managed Node global prefix | linux-x86_64, darwin-arm64 |
+| pi-subagents | 0.75.0 | npm: `pi-subagents` | Pi package install under the Pi agent directory | linux-x86_64, darwin-arm64 |
+| pi-web-access | 0.35.0 | npm: `pi-web-access` | Pi package install under the Pi agent directory | linux-x86_64, darwin-arm64 |
+| billion-context-pi | 0.1.83 | npm: `billion-context-pi` | Pi package install under the Pi agent directory; owns `.pi/acp.json` delegate-off | linux-x86_64, darwin-arm64 |
+| pi-simplify | 0.2.3 | npm: `pi-simplify` | Pi package install under the Pi agent directory | linux-x86_64, darwin-arm64 |
+| openwiki | 0.7.0 | npm: `openwiki` | Pi package install under the Pi agent directory | linux-x86_64, darwin-arm64 |
 | pi-ntfy-notifier | 0.3.0 | Source-managed extension in this repo | `.pi/agent/extensions/ntfy-notifier` | linux-x86_64, darwin-arm64 |
 | herdr Pi hook | Integration revision 8 (Herdr v0.9.0 bundle) | github.com/herdrdev/herdr | `.pi/agent/extensions/herdr-agent-state.ts` (`herdr-pi` file recipe) | linux-x86_64, darwin-arm64 |
 | JetBrainsMono Nerd Font | 3.5.0 | github.com/ryanoasis/nerd-fonts | Linux: `.local/share/fonts/JetBrainsMonoNerdFont`; darwin: `Library/Fonts/JetBrainsMonoNerdFont` | linux-x86_64, darwin-arm64 |

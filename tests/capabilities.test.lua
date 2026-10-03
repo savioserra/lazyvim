@@ -64,6 +64,9 @@ for _, name in ipairs({
 	"pi-skills",
 	"pi-subagents",
 	"pi-web-access",
+	"billion-context-pi",
+	"pi-simplify",
+	"openwiki",
 	"pi-ntfy-notifier",
 	"go",
 	"herdr",
@@ -80,13 +83,21 @@ for _, name in ipairs({
 end
 -- pi-ntfy-notifier is source-managed: its node test suite is executed directly
 -- by its Lua verify step, so it has no separate verify.mjs.
-for _, name in ipairs({ "pi-skills", "pi-subagents", "pi-web-access", "herdr-pi" }) do
+for _, name in ipairs({
+	"pi-skills",
+	"pi-subagents",
+	"pi-web-access",
+	"billion-context-pi",
+	"pi-simplify",
+	"openwiki",
+	"herdr-pi",
+}) do
 	assert(
 		vim.uv.fs_stat(vim.fs.joinpath(root, "packages", name, "verify.mjs")),
 		"package verifier is missing: " .. name
 	)
 end
-assert(catalog_count == 15, "expected fifteen explicitly registered packages")
+assert(catalog_count == 18, "expected eighteen explicitly registered packages")
 -- The centralized checked-in chezmoi tree is fully retired: every payload
 -- item lives with its owning capability and no legacy adapter remains.
 assert(vim.uv.fs_stat(vim.fs.joinpath(repository, "chezmoi")) == nil, "centralized chezmoi tree still exists")
@@ -126,6 +137,9 @@ local expected_linux = {
 	"pi-skills",
 	"pi-subagents",
 	"pi-web-access",
+	"billion-context-pi",
+	"pi-simplify",
+	"openwiki",
 	"pi-ntfy-notifier",
 	"go",
 	"herdr",
