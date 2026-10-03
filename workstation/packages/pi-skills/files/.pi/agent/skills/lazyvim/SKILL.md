@@ -16,8 +16,7 @@ description: Maintains this repository's cross-platform engine-owned workstation
    the private generated state under `~/.local/state/workstation` as if it were
    source. Stop if `~/.local/share/workstation` is a legacy payload rather than
    a clone.
-2. Read root and nearer `AGENTS.md` files, including their mandatory Backlog CLI
-   workflow. Run `git status --short`; preserve unrelated work.
+2. Read root and nearer `AGENTS.md` files. Run `git status --short`; preserve unrelated work.
 3. Resolve the following repository references from that root, not this skill's
    deployed directory:
 

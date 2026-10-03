@@ -19,8 +19,8 @@ capability/feature catalogs, then a deployed engine under
 `~/.local/share/workstation`. Chezmoi externals installed Neovim and run-after
 scripts invoked setup/sync; `home/` and `.chezmoiroot` belonged to that layout.
 TASK-34 inverts this ownership: the repo-native engine owns downloads and invokes
-the file backend. Backlog notes and Git preserve authorization, failed attempts
-and superseded plans; they are not current how-to instructions.
+the file backend. Git history preserves authorization, failed attempts and
+superseded plans; they are not current how-to instructions.
 
 Old tmux observer/service experiments do not establish a standalone runtime or
 extension contract. Pi resources follow [their current contract](capabilities.md#pi-resources);

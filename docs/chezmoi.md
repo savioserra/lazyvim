@@ -195,6 +195,6 @@ The generated tombstones remove the old temporary bridge only at
 `.local/share/workstation/versions.json`, **not** the clone root or its
 canonical `workstation/versions.json`. Other legacy engine payload
 inspection/cleanup is operator-owned; there is no blanket recursive migration
-deletion. Historical Backlog/decision references to the checked-in `chezmoi/`
+deletion. Historical decision references to the checked-in `chezmoi/`
 tree, `.chezmoiroot`, externals and scripts explain the previous layout and
 are not current instructions.

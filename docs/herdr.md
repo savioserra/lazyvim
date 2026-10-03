@@ -22,7 +22,7 @@ an explicit operator action.
 
 Static install and Pi discovery are verified automatically. Runtime behavior is
 deliberately **not** promised until the corresponding evidence exists (see the
-sourced specification in `backlog/docs/doc-1`):
+sourced specification, preserved in Git history as `backlog/docs/doc-1`):
 
 | Surface | Status |
 | --- | --- |
