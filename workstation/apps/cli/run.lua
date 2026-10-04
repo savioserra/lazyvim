@@ -12,6 +12,23 @@ local commands = require("workstation.commands")
 local paths = require("workstation.paths")
 local provisioner = require("workstation.provisioner")
 
+-- Lifecycle progress must stream, not batch: when stdout is a pipe (update's
+-- launcher children, CI, pipes into log files) the C-stdio buffer only flushes
+-- at exit, so per-package progress stays invisible for the whole run. nvim's
+-- print does not route through Lua's io.stdout, so both are line-flushed here.
+io.stdout:setvbuf("line")
+local raw_print = print
+print = function(...)
+	local count = select("#", ...)
+	for index = 1, count do
+		io.stdout:write(tostring(select(index, ...)), index == count and "\n" or "\t")
+	end
+	if count == 0 then
+		io.stdout:write("\n")
+	end
+	io.stdout:flush()
+end
+
 local command = assert(arg[1], "usage: workstation <apply|update|setup|sync|verify|diff|plan|status|bootstrap>")
 local known_commands = {
 	apply = true,
@@ -32,9 +49,16 @@ end
 
 ---Re-run a lifecycle through the public launcher so freshly pulled engine code
 ---takes effect for the remaining steps: update never runs new code in-process.
+---Child output is relayed line by line; the launcher child line-flushes its own
+---stdout, so per-package progress reaches the terminal while the step runs.
 local function exec_via_launcher(step)
 	local launcher = paths.join(root, "bin", "workstation")
-	commands.execute(launcher, { step })
+	local function relay(_, line)
+		if line and line ~= "" then
+			print(line)
+		end
+	end
+	commands.execute(launcher, { step }, { stdout = relay, stderr = relay })
 end
 
 ---versions.lua reads .node-version at require time, before apply exists it;
