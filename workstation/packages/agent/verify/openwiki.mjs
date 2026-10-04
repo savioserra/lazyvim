@@ -25,7 +25,7 @@ const extension = extensions.extensions.find((item) =>
 if (!extension) {
 	throw new Error("Pi did not discover the openwiki extension");
 }
-for (const tool of ["openwiki_begin", "openwiki_search"]) {
+for (const tool of ["openwiki_begin", "openwiki_submit_plan", "openwiki_next_page", "openwiki_submit_page", "openwiki_finish"]) {
 	if (!extension.tools.has(tool)) {
 		throw new Error(`openwiki did not register ${tool}`);
 	}
