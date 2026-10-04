@@ -242,6 +242,60 @@ do
 	assert(not ok and tostring(failure):find("injected activation failure", 1, true))
 	assert(paths.read(spec.dest .. "/bin/tool") == "good" and paths.read(spec.dest .. "/stale") == "state")
 end
+-- Ignored subtrees stay out of the manifests: runtime drift inside them is
+-- tolerated and survives re-checks, drift outside still re-provisions.
+do
+	local spec = archive({ ["app/bin/tool"] = "trusted\n", ["app/node_modules/pkg/index.js"] = "shipped\n" })
+	spec.dest = scratch .. "/ignored-tree"
+	spec.strip_components = 1
+	spec.exact = true
+	spec.ignore = { "node_modules" }
+	api.directory(spec)
+	assert(paths.read(spec.dest .. "/bin/tool") == "trusted\n")
+	assert(paths.read(spec.dest .. "/node_modules/pkg/index.js") == "shipped\n")
+	paths.write(spec.dest .. "/node_modules/runtime-state", "mutated\n")
+	paths.write(spec.dest .. "/node_modules/pkg/index.js", "upgraded\n")
+	api.directory(spec)
+	assert(
+		paths.read(spec.dest .. "/node_modules/runtime-state") == "mutated\n"
+			and paths.read(spec.dest .. "/node_modules/pkg/index.js") == "upgraded\n",
+		"ignored subtree was re-provisioned"
+	)
+	paths.write(spec.dest .. "/bin/tool", "drift\n")
+	api.directory(spec)
+	assert(paths.read(spec.dest .. "/bin/tool") == "trusted\n", "non-ignored drift not repaired")
+	assert(
+		not paths.exists(spec.dest .. "/node_modules/runtime-state")
+			and paths.read(spec.dest .. "/node_modules/pkg/index.js") == "shipped\n",
+		"re-provision did not replace the exact tree"
+	)
+	for _, bad in ipairs({ "node_modules", { node_modules = true }, { "" }, { "a/b" }, { "ok", 7 } }) do
+		local ok, failure = pcall(api.directory, vim.tbl_extend("force", spec, { ignore = bad }))
+		assert(not ok and tostring(failure):find("invalid provision ignore", 1, true), tostring(failure))
+	end
+	assert(paths.read(spec.dest .. "/bin/tool") == "trusted\n")
+	no_staging()
+end
+-- sha256_batch slices the walk into sha256_chunk-file spawns: cross the
+-- boundary with 201 members and require every digest back.
+do
+	local entries = {}
+	for index = 1, 201 do
+		entries["app/files/f" .. index] = "payload " .. index .. "\n"
+	end
+	local spec = archive(entries)
+	spec.dest = scratch .. "/chunked-tree"
+	spec.strip_components = 1
+	api.directory(spec)
+	api.directory(spec)
+	assert(
+		paths.read(spec.dest .. "/files/f1") == "payload 1\n"
+			and paths.read(spec.dest .. "/files/f200") == "payload 200\n"
+			and paths.read(spec.dest .. "/files/f201") == "payload 201\n",
+		"chunk-boundary tree did not verify"
+	)
+	no_staging()
+end
 -- Deterministic argv smoke: execute a tiny fake backend, never the real source
 -- (chezmoi may resolve/download externals even with --exclude externals).
 do

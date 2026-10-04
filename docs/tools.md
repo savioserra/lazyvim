@@ -36,14 +36,17 @@ Supported deployment policy is Linux, WSL-as-Linux, and macOS (arm64).
 | --- | --- | --- |
 | `foundation` | rg, fd, fzf, lazygit, tree-sitter, rainfrog | Selected archive members → `.local/bin`, mode 0755; no parent-directory replacement |
 | `go` | Go toolchain | Strip one archive root; exact `.local/opt/go` |
-| `node` | nvm, then pinned Node | Strip one root each; non-exact overlays preserve aliases, other Node versions and unrelated global npm packages |
+| `node` | nvm, then pinned Node | Strip one root each; non-exact overlays preserve aliases, other Node versions and unrelated global npm packages; `node_modules` stays manifest-ignored (checksum-pinned at download) |
 | `fonts` | JetBrainsMono Nerd Font | Exact font-only directory, no root stripping; provision before host cache/registration |
 | `secrets` | op | ZIP member `op` → `.local/bin/op`, mode 0755; verify only `--version`, never account/vault state |
 | Engine bootstrap | Neovim | Strip one root; exact `.local/opt/nvim`; no competing package installer |
 | Engine file backend | chezmoi | Selected archive member; never package-owned |
 
 Package setup uses checksum-verified provisioning and installed-content comparison;
-unchanged installations are retained. See [lifecycle contracts](capabilities.md#lifecycle-phases),
+unchanged installations are retained. Directory specs may declare `ignore` lists of
+directory names whose subtrees stay out of staging and installed tree manifests, so
+runtime drift inside them is intentionally never repaired; the downloaded archive's
+checksum still pins their content. See [lifecycle contracts](capabilities.md#lifecycle-phases),
 [installation/prerequisites](../README.md) and [legacy cutover](chezmoi.md#breaking-cutover).
 
 ## Bootstrap pin maintenance

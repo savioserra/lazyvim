@@ -127,7 +127,7 @@ local function sha256_batch(platform, entries)
 	end
 	for start = 1, #entries, sha256_chunk do
 		local stop = math.min(start + sha256_chunk - 1, #entries)
-		local args = vim.list_extend(vim.deepcopy(prefix), {})
+		local args = vim.deepcopy(prefix)
 		for index = start, stop do
 			table.insert(args, entries[index].path)
 		end
@@ -250,7 +250,8 @@ function M.create(platform, options)
 	local function install(kind, spec)
 		assert(type(spec) == "table" and spec.dest and spec.url, "provision requires dest and url")
 		local ignore = {}
-		for _, name in ipairs(spec.ignore or {}) do
+		assert(type(spec.ignore) == "table" or spec.ignore == nil, "invalid provision ignore list")
+		for _, name in pairs(spec.ignore or {}) do
 			assert(
 				type(name) == "string" and name ~= "" and not name:find("/", 1, true),
 				"invalid provision ignore name"
@@ -275,7 +276,9 @@ function M.create(platform, options)
 					content = paths.join(content, entries[1])
 					assert(vim.uv.fs_lstat(content).type == "directory", "archive root is not a directory")
 				end
-				-- Validate the complete extracted tree, including link confinement.
+				-- Validate the staged tree, except ignored subtrees: they get no
+				-- walk at all (no special-mode or link-confinement assertions)
+				-- and are pinned only by the archive checksum.
 				manifest(platform, content, true, ignore)
 				if kind == "archive" then
 					safe_member(assert(spec.inner_path, "inner_path required"))
