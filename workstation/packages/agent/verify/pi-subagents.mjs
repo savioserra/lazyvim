@@ -18,7 +18,7 @@ if (packageErrors.length > 0) {
 	throw new Error(`Pi extension diagnostic: ${packageErrors.map((item) => item.error).join("; ")}`);
 }
 const extension = extensions.extensions.find((item) =>
-	item.resolvedPath.replaceAll("\\", "/").endsWith("/pi-subagents/index.ts"),
+	item.resolvedPath.replaceAll("\\", "/").endsWith("/pi-subagents/index.js"),
 );
 if (!extension) {
 	throw new Error("Pi did not discover the pi-subagents extension");
