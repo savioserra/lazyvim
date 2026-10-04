@@ -22,6 +22,7 @@ function M.provision(context)
 			dest = tool[2],
 			strip_components = 1,
 			exact = false,
+			ignore = tool[1] == "node" and { "node_modules" } or nil,
 		})
 	end
 end

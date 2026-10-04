@@ -109,20 +109,52 @@ local function extract(spec, archive, staging)
 	end
 end
 
--- Runtime-mutated dependency trees are excluded from per-file manifests.
--- npm's own node_modules under a Node install (and every global package
--- installed through it) legitimately drifts after provisioning; hashing tens
--- of thousands of mutated files with one child process per file made every
--- apply crawl. Their integrity is pinned once by the archive checksum at
--- download time and enforced by npm's own registry integrity afterwards.
-local function ignored(name)
-	return name == "node_modules"
+-- Per-file digests are computed with batched registry-tool spawns: one
+-- sha256sum/shasum invocation per chunk of files instead of one process per
+-- file, which made large trees (Node, Go toolchains) crawl for minutes.
+local sha256_chunk = 200
+
+local function sha256_batch(platform, entries)
+	local command, prefix
+	if platform == "darwin" then
+		command, prefix = "shasum", { "-a", "256" }
+	else
+		command, prefix = "sha256sum", {}
+	end
+	local by_path = {}
+	for _, entry in ipairs(entries) do
+		by_path[entry.path] = entry
+	end
+	for start = 1, #entries, sha256_chunk do
+		local stop = math.min(start + sha256_chunk - 1, #entries)
+		local args = vim.list_extend(vim.deepcopy(prefix), {})
+		for index = start, stop do
+			table.insert(args, entries[index].path)
+		end
+		local listing = commands.capture(command, args)
+		for line in listing:gmatch("[^\n]+") do
+			local digest, path = line:match("^(%x+)  (.-)$")
+			local entry = path and by_path[path] or nil
+			assert(entry, "unexpected digest line: " .. line)
+			entry.digest = digest
+		end
+	end
+	for _, entry in ipairs(entries) do
+		assert(entry.digest, "missing digest for " .. entry.path)
+	end
 end
 
+-- Provision specs may declare ignore lists: directory names whose subtrees
+-- stay out of the tree manifests (staging and installed alike). Their content
+-- is still pinned by the archive checksum at download time. This exists for
+-- runtime-mutated dependency trees such as npm's node_modules, which
+-- legitimately drift after provisioning.
 -- Includes empty directories, modes and link targets; lstat never follows a
 -- destination link while checking completeness. Non-exact trees allow extras.
-local function manifest(platform, root, staging)
+local function manifest(platform, root, staging, ignore)
+	ignore = ignore or {}
 	local result = {}
+	local files = {}
 	local function visit(path, name)
 		local stat = assert(vim.uv.fs_lstat(path))
 		local entry = { type = stat.type, mode = bit.band(stat.mode, 4095) }
@@ -130,7 +162,7 @@ local function manifest(platform, root, staging)
 		-- privileged staging, but retain all bits when detecting installed drift.
 		assert(not staging or bit.band(entry.mode, 3584) == 0, "unsupported special mode in staging: " .. path)
 		if stat.type == "file" then
-			entry.digest = sha256(platform, path)
+			table.insert(files, { name = name, path = path })
 		elseif stat.type == "link" then
 			entry.link = assert(vim.uv.fs_readlink(path))
 			local target = vim.fs.normalize(paths.join(vim.fs.dirname(path), entry.link))
@@ -144,21 +176,25 @@ local function manifest(platform, root, staging)
 		result[name] = entry
 		if stat.type == "directory" then
 			for child in vim.fs.dir(path) do
-				if not ignored(child) then
+				if not ignore[child] then
 					visit(paths.join(path, child), name .. "/" .. child)
 				end
 			end
 		end
 	end
 	visit(root, "")
+	sha256_batch(platform, files)
+	for _, file in ipairs(files) do
+		result[file.name].digest = file.digest
+	end
 	return result
 end
 
-local function matches(platform, dest, expected, exact)
+local function matches(platform, dest, expected, exact, ignore)
 	if not exists(dest) then
 		return false
 	end
-	local ok, actual = pcall(manifest, platform, dest)
+	local ok, actual = pcall(manifest, platform, dest, nil, ignore)
 	if not ok then
 		return false
 	end
@@ -213,6 +249,14 @@ function M.create(platform, options)
 	options = options or {}
 	local function install(kind, spec)
 		assert(type(spec) == "table" and spec.dest and spec.url, "provision requires dest and url")
+		local ignore = {}
+		for _, name in ipairs(spec.ignore or {}) do
+			assert(
+				type(name) == "string" and name ~= "" and not name:find("/", 1, true),
+				"invalid provision ignore name"
+			)
+			ignore[name] = true
+		end
 		local cached = download(platform, spec, options.allow_file_urls == true)
 		vim.fn.mkdir(vim.fs.dirname(spec.dest), "p")
 		local staging = sibling(spec.dest)
@@ -232,7 +276,7 @@ function M.create(platform, options)
 					assert(vim.uv.fs_lstat(content).type == "directory", "archive root is not a directory")
 				end
 				-- Validate the complete extracted tree, including link confinement.
-				manifest(platform, content, true)
+				manifest(platform, content, true, ignore)
 				if kind == "archive" then
 					safe_member(assert(spec.inner_path, "inner_path required"))
 					content = paths.join(content, spec.inner_path)
@@ -244,9 +288,9 @@ function M.create(platform, options)
 				assert(mode >= 0 and mode <= 511, "unsupported special mode in staging")
 				assert(vim.uv.fs_chmod(content, mode))
 			end
-			local expected = manifest(platform, content, true)
+			local expected = manifest(platform, content, true, ignore)
 			local exact = kind ~= "directory" or spec.exact ~= false
-			if matches(platform, spec.dest, expected, exact) then
+			if matches(platform, spec.dest, expected, exact, ignore) then
 				return
 			end
 			if not exact and exists(spec.dest) then

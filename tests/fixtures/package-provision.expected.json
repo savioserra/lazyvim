@@ -118,7 +118,10 @@
       "kind": "directory",
       "strip_components": 1,
       "exact": false,
-      "format": "tar"
+      "format": "tar",
+      "ignore": [
+        "node_modules"
+      ]
     },
     {
       "owner": "fonts",
@@ -264,7 +267,10 @@
       "kind": "directory",
       "strip_components": 1,
       "exact": false,
-      "format": "tar"
+      "format": "tar",
+      "ignore": [
+        "node_modules"
+      ]
     },
     {
       "owner": "fonts",
