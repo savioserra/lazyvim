@@ -109,6 +109,16 @@ local function extract(spec, archive, staging)
 	end
 end
 
+-- Runtime-mutated dependency trees are excluded from per-file manifests.
+-- npm's own node_modules under a Node install (and every global package
+-- installed through it) legitimately drifts after provisioning; hashing tens
+-- of thousands of mutated files with one child process per file made every
+-- apply crawl. Their integrity is pinned once by the archive checksum at
+-- download time and enforced by npm's own registry integrity afterwards.
+local function ignored(name)
+	return name == "node_modules"
+end
+
 -- Includes empty directories, modes and link targets; lstat never follows a
 -- destination link while checking completeness. Non-exact trees allow extras.
 local function manifest(platform, root, staging)
@@ -134,7 +144,9 @@ local function manifest(platform, root, staging)
 		result[name] = entry
 		if stat.type == "directory" then
 			for child in vim.fs.dir(path) do
-				visit(paths.join(path, child), name .. "/" .. child)
+				if not ignored(child) then
+					visit(paths.join(path, child), name .. "/" .. child)
+				end
 			end
 		end
 	end
