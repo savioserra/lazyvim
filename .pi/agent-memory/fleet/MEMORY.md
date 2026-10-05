@@ -271,3 +271,17 @@ required.
 - System.cmd children inherit the full parent env (WORKSTATION_HOME
   bracket included) — do not blame launcher env re-export first when a
   spawned child misbehaves; check identity/argv contracts first.
+
+## Handoff identity gotchas (P0 fix lane, 2026-10-05)
+
+- Update handoff note names IDENTITY, never location; the child bin comes
+  from the release ROOT — spawning the identity token as a path is the
+  :enoent P0 (079a667e). Identity is captured, never re-read mid-chain:
+  writer's BEFORE the installer re-stamps, caller's once at chain start.
+- Seam-gap lesson: unit tests that inject path-shaped fakes through a
+  seam can mask an identity-as-path conflation — add one composition test
+  (real probe + real spawn derivation + shape-antagonistic value) for any
+  identity-like handoff.
+- :code.root_dir() under `mix test` is the mise erlang bin dir, not a
+  release — any test exercising spawn-from-root must pass the fixture
+  root explicitly (Plain :handoff_release_root seam).
