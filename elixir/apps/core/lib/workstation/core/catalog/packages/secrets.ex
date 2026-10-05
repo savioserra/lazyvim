@@ -15,6 +15,7 @@ defmodule Workstation.Core.Catalog.Packages.Secrets do
   @spec spec() :: map()
   def spec do
     %{
+      foundation: "foundation/secrets",
       id: "secrets",
       requires: ["foundation"],
       supported_hosts: nil,

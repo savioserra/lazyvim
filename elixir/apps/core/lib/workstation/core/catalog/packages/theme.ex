@@ -19,6 +19,7 @@ defmodule Workstation.Core.Catalog.Packages.Theme do
   @spec spec() :: map()
   def spec do
     %{
+      foundation: "foundation/theme",
       id: "theme",
       requires: ["foundation"],
       supported_hosts: %{"darwin" => true, "linux" => true},

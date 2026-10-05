@@ -17,6 +17,7 @@ defmodule Workstation.Core.Catalog.Packages.Agent do
   @spec spec() :: map()
   def spec do
     %{
+      foundation: "foundation/agent",
       id: "agent",
       requires: ["node", "theme"],
       supported_hosts: nil,

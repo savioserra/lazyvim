@@ -56,6 +56,7 @@ defmodule Workstation.Core.Catalog.Packages.ElixirLang do
   @spec spec() :: map()
   def spec do
     %{
+      foundation: "foundation/runtime",
       id: "elixir",
       requires: ["nvim"],
       supported_hosts: nil,

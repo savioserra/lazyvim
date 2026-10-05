@@ -13,6 +13,7 @@ defmodule Workstation.Core.Catalog.Packages.Fonts do
   @spec spec() :: map()
   def spec do
     %{
+      foundation: "foundation/fonts",
       id: "fonts",
       requires: ["foundation"],
       supported_hosts: nil,

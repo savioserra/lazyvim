@@ -17,6 +17,7 @@ defmodule Workstation.Core.Catalog.Packages.Tmux do
   @spec spec() :: map()
   def spec do
     %{
+      foundation: "foundation/terminal",
       id: "tmux",
       requires: ["foundation", "theme"],
       supported_hosts: %{"darwin" => true, "linux" => true},

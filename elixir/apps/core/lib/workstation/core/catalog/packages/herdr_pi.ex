@@ -17,6 +17,7 @@ defmodule Workstation.Core.Catalog.Packages.HerdrPi do
   @spec spec() :: map()
   def spec do
     %{
+      foundation: "foundation/agent",
       id: "herdr-pi",
       requires: ["agent", "herdr"],
       supported_hosts: nil,

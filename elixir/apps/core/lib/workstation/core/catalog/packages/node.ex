@@ -30,6 +30,7 @@ defmodule Workstation.Core.Catalog.Packages.Node do
     ]
 
     %{
+      foundation: "foundation/runtime",
       id: "node",
       requires: ["foundation"],
       supported_hosts: nil,

@@ -36,6 +36,7 @@ defmodule Workstation.Core.Catalog do
           required(:id) => String.t(),
           required(:requires) => [String.t()],
           optional(:supported_hosts) => %{optional(String.t()) => boolean()} | nil,
+          optional(:foundation) => String.t(),
           required(:contributes) => [recipe()]
         }
 

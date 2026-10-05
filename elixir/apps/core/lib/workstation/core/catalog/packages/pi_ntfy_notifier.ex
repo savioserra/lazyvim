@@ -35,6 +35,7 @@ defmodule Workstation.Core.Catalog.Packages.PiNtfyNotifier do
       end)
 
     %{
+      foundation: "foundation/agent",
       id: "pi-ntfy-notifier",
       requires: ["agent"],
       supported_hosts: nil,

@@ -135,6 +135,7 @@ defmodule Workstation.Core.Catalog.Packages.Nvim do
         [Packages.profile_intent(10, @go_intent), Packages.profile_intent(30, @standard_intent)]
 
     %{
+      foundation: "foundation/editor",
       id: "nvim",
       requires: ["foundation", "node", "go"],
       supported_hosts: nil,

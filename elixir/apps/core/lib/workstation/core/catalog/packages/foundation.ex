@@ -3,12 +3,12 @@ defmodule Workstation.Core.Catalog.Packages.Foundation do
   The `foundation` workstation package's native contribution:
   the catalog discipline root every HOME-writing capability depends on.
 
-  The runtime payload (rg/fd/fzf/lazygit/tree-sitter/rainfrog archives) is
-  provisioned by the factory's Lua `setup` handler at apply time, never as
-  managed home targets, so the native contribution surface is exactly the
-  shared-shell PATH fragment on the three startup files. Fragment bytes are
-  load-bearing: they are generation-digested engine output (see
-  `Workstation.Core.ShellProgram`).
+  The runtime payload archives (rg/fd/fzf/lazygit/tree-sitter/rainfrog) are
+  not managed home targets and are no longer provisioned by the retired Lua
+  `setup` handler; capability acquisition is bootstrap's contract. The
+  native contribution surface is the shared-shell PATH fragment on the
+  three startup files. Fragment bytes are load-bearing: they are
+  generation-digested engine output (see `Workstation.Core.ShellProgram`).
   """
 
   alias Workstation.Core.Catalog.Packages
@@ -25,6 +25,7 @@ defmodule Workstation.Core.Catalog.Packages.Foundation do
   @spec spec() :: map()
   def spec do
     %{
+      foundation: "foundation/base",
       id: "foundation",
       requires: [],
       supported_hosts: nil,

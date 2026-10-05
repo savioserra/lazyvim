@@ -45,6 +45,7 @@ defmodule Workstation.Core.Catalog.Packages.Typescript do
   @spec spec() :: map()
   def spec do
     %{
+      foundation: "foundation/runtime",
       id: "typescript",
       requires: ["node", "nvim"],
       supported_hosts: nil,

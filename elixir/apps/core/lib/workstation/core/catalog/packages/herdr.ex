@@ -14,6 +14,7 @@ defmodule Workstation.Core.Catalog.Packages.Herdr do
   @spec spec() :: map()
   def spec do
     %{
+      foundation: "foundation/agent",
       id: "herdr",
       requires: ["foundation"],
       supported_hosts: nil,

@@ -14,6 +14,7 @@ defmodule Workstation.Core.Catalog.Packages.Go do
   @spec spec() :: map()
   def spec do
     %{
+      foundation: "foundation/runtime",
       id: "go",
       requires: ["foundation"],
       supported_hosts: nil,

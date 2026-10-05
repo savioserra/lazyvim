@@ -26,6 +26,7 @@ defmodule Workstation.Core.Catalog.Packages.PiSkills do
       end)
 
     %{
+      foundation: "foundation/agent",
       id: "pi-skills",
       requires: ["agent"],
       supported_hosts: nil,

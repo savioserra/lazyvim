@@ -13,9 +13,10 @@ defmodule Workstation.Core.Catalog.Packages do
 
   Declaration order is load-bearing twice: it is the graph's tie-break for
   equal-priority contributors (`Workstation.Core.Graph` post-order DFS), and
-  it is the recorded construction order of the golden envelopes. This port
-  mirrors `workstation/lua/workstation/catalog.lua` order in full; the
-  editor capability (`Nvim`) completes the set.
+  it is the recorded construction order of the golden envelopes. Parity
+  anchor for the recorded order: `workstation/lua/workstation/catalog.lua`
+  (deleted with the retired runtime); the editor capability (`Nvim`)
+  completes the set.
 
   The recipe helpers mirror `workstation/lua/workstation/provision/recipes.lua`
   (chezmoi / shell) plus the two domain compositors their contributors import
@@ -73,6 +74,33 @@ defmodule Workstation.Core.Catalog.Packages do
   @doc "Native package modules in catalog declaration order (the complete catalog)."
   @spec modules() :: [module()]
   def modules, do: @package_modules
+
+  # The catalog taxonomy: every package declares the foundation layer it
+  # belongs to (`foundation: "foundation/<layer>"` in its spec map). The
+  # declaration is descriptive metadata — it never enters graph resolution,
+  # plan projection, or the golden envelopes, so catalog order and plan
+  # bytes stay untouched. `CatalogNativeTest` pins the map and the known
+  # layer set.
+  @known_foundations ~w(
+    foundation/base
+    foundation/editor
+    foundation/runtime
+    foundation/terminal
+    foundation/agent
+    foundation/theme
+    foundation/fonts
+    foundation/secrets
+  )
+
+  @doc "Package id -> declared foundation layer, in declaration order."
+  @spec taxonomy() :: %{String.t() => String.t()}
+  def taxonomy do
+    Map.new(packages(), fn spec ->
+      foundation = Map.fetch!(spec, :foundation)
+      foundation in @known_foundations || raise "unknown foundation #{foundation}"
+      {Map.fetch!(spec, :id), foundation}
+    end)
+  end
 
   @doc """
   The native catalog's package specifications in declaration order: the

@@ -17,6 +17,7 @@ defmodule Workstation.Core.Graph do
           required(:id) => String.t(),
           optional(:requires) => [String.t()] | nil,
           optional(:supported_hosts) => %{optional(String.t()) => boolean()} | nil,
+          optional(:foundation) => String.t(),
           optional(:contributes) => [term()] | nil
         }
 
