@@ -106,6 +106,10 @@ if [ -n "$repo" ]; then
 		[ ! -f "$release_stage/build.log" ] || { echo 'workstation bootstrap: release build failed:' >&2; tail -20 "$release_stage/build.log" >&2; }
 		fail 'engine release build failed'
 	fi
+	# mix release emits the OTP tree under _build/prod/rel/workstation;
+	# stage a private copy so activation is a sibling rename, never a
+	# partial tree.
+	cp -a "$repo/elixir/_build/prod/rel/workstation" "$release_stage/workstation"
 	[ -x "$release_stage/workstation/bin/workstation" ] || fail 'built release lacks bin/workstation'
 	if [ -e "$parent/workstation" ]; then mv "$parent/workstation" "$lock/workstation-previous"; fi
 	mv "$release_stage/workstation" "$parent/workstation"
