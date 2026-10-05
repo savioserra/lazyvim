@@ -56,12 +56,20 @@ chmod 700 "$XDG_RUNTIME_DIR"
 release=$HOME/.local/opt/workstation/bin/workstation
 
 if [ "${1:-}" = bootstrap ]; then
-	# A checkout drives its own acquisition: point the installer at the
-	# engine umbrella so it builds and stages the release. An installed
-	# release tree has no elixir/ umbrella; without the anchor the runtime
-	# install above is the whole contract, exactly as on a bare host.
-	if [ -f "$engine_root/elixir/mix.exs" ] && [ -f "$engine_root/bootstrap/install-runtime.sh" ]; then
-		WORKSTATION_ENGINE_REPO=$engine_root
+	# A checkout drives its own acquisition: point the installer at the repo
+	# anchor (the directory holding the elixir/ umbrella). The shim lives at
+	# <repo>/workstation/bin/workstation, so the anchor is engine_root itself
+	# for a self-contained engine tree, or its parent for the checkout
+	# layout. A bare host matches neither and keeps the runtime-only
+	# contract; the installer re-validates the umbrella before building.
+	repo_anchor=""
+	if [ -f "$engine_root/elixir/mix.exs" ]; then
+		repo_anchor=$engine_root
+	elif [ "$(basename "$engine_root")" = workstation ] && [ -f "$engine_root/../elixir/mix.exs" ]; then
+		repo_anchor=$engine_root/..
+	fi
+	if [ -n "$repo_anchor" ]; then
+		WORKSTATION_ENGINE_REPO=$repo_anchor
 		export WORKSTATION_ENGINE_REPO
 	fi
 	# The installer is shell, not downloaded code; it installs the pinned
