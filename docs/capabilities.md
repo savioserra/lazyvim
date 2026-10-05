@@ -229,9 +229,19 @@ leaves a handoff note under the destination state root, the headless runner
 probes it after every step, and on a live handoff the remaining steps
 (`apply`, `sync`, `verify`) execute under the new release via
 `workstation update --headless --resume-from <steps>` — one command, one
-exit code, the child's output forwarded. The TUI does not survive a rebuild:
-interactive operators re-run `workstation update`, which the refresh stamp
-makes a fast no-op rebuild path. See [installation and daily use](../README.md).
+exit code, the child's output forwarded. The handoff compares release
+IDENTITY, not location: an in-place refresh reuses the same release root,
+so identity is the installer's `.built-from` stamp (path fallback for
+unstamped dev releases) — the refreshed code consumes the note as its handoff
+target, the caller's own stamp means "hand off and leave the note for a
+crashed re-exec to re-derive", and the parent clears the note only after the
+child exits 0 (parent success = child exit 0 + note consumed). A handoff
+decision after the final step is a no-op: there is never an empty
+`--resume-from` child, and a failing child status — including exit-2 argv
+validation — is echoed once, never retried. The TUI does not survive a
+rebuild: interactive operators re-run `workstation update`, which the
+refresh stamp makes a fast no-op rebuild path. See
+[installation and daily use](../README.md).
 
 The launcher shim (`workstation/bin/workstation`) resolves the checkout repo
 anchor — the directory holding the `elixir/` umbrella — for EVERY verb and

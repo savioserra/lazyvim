@@ -125,16 +125,18 @@ defmodule Workstation.CLI.Engine do
   end
 
   # The release handoff note (docs/capabilities.md, "release refresh and
-  # handoff"): a REFRESHED bootstrap leaves a note naming the release that
-  # wrote it, because this process is still executing the OLD loaded code
-  # while the on-disk release just changed under it; the plain runner
-  # probes the note after every step and hands the remaining chain to the
-  # new release. A non-refreshing bootstrap REMOVES any leftover note —
-  # after a refresh-free bootstrap, this process and the disk agree, so a
-  # stale note from an earlier crashed handoff must not trigger a spurious
+  # handoff"): a REFRESHED bootstrap leaves a note naming the CODE IDENTITY
+  # (the installer's .built-from stamp) of the release that wrote it,
+  # because this process is still executing the OLD loaded code while the
+  # on-disk release just changed under it; the plain runner probes the note
+  # after every step and hands the remaining chain to the new release. The
+  # parent clears the note itself when the handed-off child exits 0, and a
+  # non-refreshing bootstrap REMOVES any leftover note — after a
+  # refresh-free bootstrap, this process and the disk agree, so a stale
+  # note from an earlier crashed handoff must not trigger a spurious
   # handoff later.
   defp refresh_note(false, opts) do
-    File.rm(update_handoff_path(opts))
+    clear_update_handoff(opts)
     :ok
   end
 
@@ -148,7 +150,7 @@ defmodule Workstation.CLI.Engine do
   end
 
   defp write_handoff_note(path) do
-    note = Jason.encode!(%{"from_release" => :code.root_dir() |> to_string()})
+    note = Jason.encode!(%{"from_release" => release_identity()})
 
     case File.write(path, note) do
       :ok -> :ok
@@ -159,19 +161,21 @@ defmodule Workstation.CLI.Engine do
   @doc """
   Probe the release handoff note left by a refreshed bootstrap step.
 
-  Returns `{:ok, release_root}` when the caller is still executing the
-  release the note names — the on-disk release changed mid-run while this
-  process keeps its old loaded code, so the remaining update steps belong
-  to the new release (the plain runner re-execs it with `--resume-from`).
-  The note deliberately SURVIVES this return: if the re-exec dies, the
-  next update run re-derives the same handoff instead of silently
-  finishing the chain under stale code.
+  Returns `{:ok, identity}` when the caller is still executing the CODE the
+  note names — the on-disk release changed mid-run while this process keeps
+  its old loaded modules, so the remaining update steps belong to the new
+  release (the plain runner re-execs it with `--resume-from`). The note
+  deliberately SURVIVES this return: if the re-exec dies, the next update
+  run re-derives the same handoff instead of silently finishing the chain
+  under stale code.
 
-  Returns `{:ok, nil}` when there is nothing to hand off — no note, or the
-  caller already IS a different (newer) release than the note names, which
-  is the handoff target case: the note is consumed so it cannot trigger
-  another handoff later. A malformed note is an error, never a silent
-  continue: the note is engine state this module wrote.
+  Returns `{:ok, nil}` when there is nothing to hand off: no note, or the
+  caller's code identity differs from the note's (the refreshed release
+  itself — an in-place refresh REUSES the release root, so identity is the
+  installer's stamp, never the path). The target consumes the note; the
+  plain runner additionally clears it after a successful handed-off child.
+  A malformed note is an error, never a silent continue: the note is engine
+  state this module wrote.
   """
   @spec update_handoff(keyword()) :: {:ok, String.t() | nil} | {:error, String.t()}
   def update_handoff(opts \\ []) when is_list(opts) do
@@ -187,7 +191,7 @@ defmodule Workstation.CLI.Engine do
       {:ok, raw} ->
         case parse_note(raw) do
           {:ok, from_release} ->
-            if from_release == current_release() do
+            if from_release == Keyword.get(opts, :release_identity, release_identity()) do
               {:ok, from_release}
             else
               _ = File.rm(path)
@@ -198,6 +202,19 @@ defmodule Workstation.CLI.Engine do
             {:error, "malformed release handoff note at #{path}"}
         end
     end
+  end
+
+  @doc """
+  Remove the release handoff note unconditionally (idempotent, missing-ok).
+
+  Called by the plain runner after a handed-off child exits 0 — parent
+  success is `child exit 0 + note consumed` — and by every refresh-free
+  bootstrap so a stale note cannot outlive the disk state it described.
+  """
+  @spec clear_update_handoff(keyword()) :: :ok
+  def clear_update_handoff(opts \\ []) when is_list(opts) do
+    File.rm(update_handoff_path(opts))
+    :ok
   end
 
   # Self-written state: exactly the one documented key, non-empty string.
@@ -211,11 +228,21 @@ defmodule Workstation.CLI.Engine do
     end
   end
 
-  # The release root of the code this process is executing (the OTP root
-  # under the installed release; under mix it is the build tree's OTP
-  # root — consistent within one process, which is all the identity
-  # comparison needs).
-  defp current_release, do: :code.root_dir() |> to_string()
+  @doc """
+  Identity of the CODE installed at a release root: the installer's
+  .built-from stamp beside the root (first line), falling back to the root
+  path itself when unstamped (dev/mix runs). Path identity alone is useless
+  for in-place refreshes — the rebuilt release reuses the same root — so
+  the live handoff looped forever re-handing off to itself (2026-10-05
+  incident): identity must be the built code, not its location.
+  """
+  @spec release_identity(String.t()) :: String.t()
+  def release_identity(root \\ :code.root_dir() |> to_string()) do
+    case File.read(Path.join([root, ".built-from"])) do
+      {:ok, stamp} -> stamp |> String.split("\n") |> hd() |> String.trim()
+      {:error, _} -> root
+    end
+  end
 
   defp update_handoff_path(opts),
     do: Path.join([state_root(home(opts)), "update", "handoff.json"])

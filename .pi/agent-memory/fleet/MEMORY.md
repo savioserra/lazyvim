@@ -261,3 +261,13 @@ required.
   clauses match x, never {:halt, x}.
 - Installer stamps releases with .built-from = source HEAD; a release
   without a stamp is always stale (conservative rebuild).
+- Handoff/staleness identity MUST be content (installer .built-from stamp),
+  never a path: an in-place release refresh reuses the same release root,
+  so path identity made the refreshed code re-hand-off to itself forever
+  (live 2026-10-05: each generation ran one more step, last spawned an
+  EMPTY --resume-from → exit 2 cascade). Fixed in Engine.release_identity/1;
+  unit-seam tests missed it because the fixtures never had writer/reader on
+  the same path — identity tests need the in-place shape.
+- System.cmd children inherit the full parent env (WORKSTATION_HOME
+  bracket included) — do not blame launcher env re-export first when a
+  spawned child misbehaves; check identity/argv contracts first.

@@ -61,6 +61,142 @@ defmodule Workstation.CLITest.PlainTest do
     assert output |> String.split("Updated") |> length() == 2
   end
 
+  test "a handoff child spawned through its launcher binary sees the bracketed environment", %{root: root} do
+    # The live 2026-10-05 handoff ran through the real launcher shim, which
+    # re-exports HOME/WORKSTATION_HOME/XDG_* before exec — this test spawns
+    # the child the same way the runner does (a real bin/workstation exec,
+    # not an in-process Router call) and pins the environment contract: the
+    # child must inherit the parent's WORKSTATION_HOME bracket so it
+    # re-derives the same engine state (and handoff note path).
+    previous_ws = System.get_env("WORKSTATION_HOME")
+    previous_home = System.get_env("HOME")
+
+    System.put_env("WORKSTATION_HOME", root)
+    System.put_env("HOME", root)
+
+    on_exit(fn ->
+      restore_env("WORKSTATION_HOME", previous_ws)
+      restore_env("HOME", previous_home)
+    end)
+
+    release = fake_release(root, 0)
+    probe = fn _opts -> {:ok, release} end
+
+    output =
+      ExUnit.CaptureIO.capture_io(:stdio, fn ->
+        assert :ok =
+                 Plain.run(:update, destination: "HOME",
+                   executor: fn %{"step" => _step} -> :ok end, handoff_probe: probe
+                 )
+      end)
+
+    # The child argv is the resume contract; the child env is the state
+    # contract (it re-derives the handoff note path from WORKSTATION_HOME).
+    assert File.read!(Path.join(root, "child.argv")) |> String.trim_trailing("\n") ==
+             "update --headless --resume-from bootstrap,apply,sync,verify"
+
+    assert File.read!(Path.join(root, "child.env")) == "#{root}\n"
+    assert output =~ "Updated"
+  end
+
+  test "parent success clears the handoff note (consumed exactly once)", %{root: root} do
+    release = fake_release(root, 0)
+    probe = fn _opts -> {:ok, release} end
+
+    previous_ws = System.get_env("WORKSTATION_HOME")
+    System.put_env("WORKSTATION_HOME", root)
+    on_exit(fn -> restore_env("WORKSTATION_HOME", previous_ws) end)
+
+    note = note_path(root)
+    File.mkdir_p!(Path.dirname(note))
+    File.write!(note, Jason.encode!(%{"from_release" => "stale"}))
+
+    ExUnit.CaptureIO.capture_io(:stdio, fn ->
+      assert :ok =
+               Plain.run(:update, destination: "HOME",
+                 executor: fn %{"step" => _step} -> :ok end, handoff_probe: probe
+               )
+    end)
+
+    # Parent success = child exit 0 + note consumed: the cleared note can
+    # never re-derive a handoff that already finished.
+    refute File.exists?(note)
+  end
+
+  test "a failed handed-off child leaves the note for re-derivation", %{root: root} do
+    release = fake_release(root, 3)
+    probe = fn _opts -> {:ok, release} end
+
+    previous_ws = System.get_env("WORKSTATION_HOME")
+    System.put_env("WORKSTATION_HOME", root)
+    on_exit(fn -> restore_env("WORKSTATION_HOME", previous_ws) end)
+
+    note = note_path(root)
+    File.mkdir_p!(Path.dirname(note))
+    File.write!(note, Jason.encode!(%{"from_release" => "stale"}))
+
+    ExUnit.CaptureIO.capture_io(:stderr, fn ->
+      assert catch_exit(
+               ExUnit.CaptureIO.capture_io(:stdio, fn ->
+                 Plain.run(:update, destination: "HOME",
+                   executor: fn %{"step" => _step} -> :ok end, handoff_probe: probe
+                 )
+               end)
+             ) == {:shutdown, 4}
+    end)
+
+    # A crashed re-exec must leave the note: the next update run re-derives
+    # the same handoff instead of finishing the chain under stale code.
+    assert File.exists?(note)
+  end
+
+  test "a handoff decision after the last step never spawns a child", %{root: root} do
+    # The live incident's exit-2 trigger: a probe firing after the final
+    # step produced an EMPTY --resume-from child. There is nothing left to
+    # hand off, so the run must finish normally — proven here by a release
+    # root with no bin/workstation at all (a spawn would fail loudly).
+    release = Path.join(root, "never-spawned")
+    {:ok, exec_pid} = Agent.start_link(fn -> 0 end)
+
+    probe = fn _opts ->
+      ran = Agent.get_and_update(exec_pid, fn n -> {n, n + 1} end)
+      if ran >= 5, do: {:ok, release}, else: {:ok, nil}
+    end
+
+    output =
+      ExUnit.CaptureIO.capture_io(:stdio, fn ->
+        assert :ok =
+                 Plain.run(:update, destination: "HOME",
+                   executor: fn %{"step" => _step} -> :ok end, handoff_probe: probe
+                 )
+      end)
+
+    refute output =~ "handed off"
+    assert output =~ "Updated"
+  end
+
+  test "a validation exit under the handed-off release fails fast, exactly once", %{root: root} do
+    release = fake_release(root, 2)
+    probe = fn _opts -> {:ok, release} end
+
+    output =
+      ExUnit.CaptureIO.capture_io(:stderr, fn ->
+        assert catch_exit(
+                 ExUnit.CaptureIO.capture_io(:stdio, fn ->
+                   Plain.run(:update, destination: "HOME",
+                     executor: fn %{"step" => _step} -> :ok end, handoff_probe: probe
+                   )
+                 end)
+               ) == {:shutdown, 4}
+      end)
+
+    # The live incident retried a validation failure three generations
+    # deep; the parent must echo the child's status and stop — one spawn,
+    # one failure, no retry loop.
+    assert output =~ "update failed under the handed-off release (exit 2)"
+    assert length(String.split(File.read!(Path.join(root, "child.argv")), "\n", trim: true)) == 1
+  end
+
   test "a nonzero child exit fails the run with the child's status", %{root: root} do
     release = fake_release(root, 3)
     probe = fn _opts -> {:ok, release} end
@@ -143,17 +279,25 @@ defmodule Workstation.CLITest.PlainTest do
   end
 
   # The child stand-in: records its argv (space-joined, the resume contract
-  # is what matters) and exits with the configured status.
+  # is what matters), its inherited WORKSTATION_HOME (the state contract —
+  # the child re-derives the handoff note path from it), and exits with the
+  # configured status.
   defp fake_release(root, exit_code) do
     bin = Path.join([root, "fake-release", "bin", "workstation"])
     File.mkdir_p!(Path.dirname(bin))
 
     File.write!(
       bin,
-      "#!/bin/sh\nprintf '%s\\n' \"$*\" >> #{root}/child.argv\necho Updated\nexit #{exit_code}\n"
+      "#!/bin/sh\nprintf '%s\\n' \"$*\" >> #{root}/child.argv\nprintf '%s\\n' \"$WORKSTATION_HOME\" >> #{root}/child.env\necho Updated\nexit #{exit_code}\n"
     )
 
     File.chmod!(bin, 0o755)
     Path.join([root, "fake-release"])
   end
+
+  defp note_path(root),
+    do: Path.join([root, ".local", "state", "workstation", "update", "handoff.json"])
+
+  defp restore_env(name, nil), do: System.delete_env(name)
+  defp restore_env(name, value), do: System.put_env(name, value)
 end

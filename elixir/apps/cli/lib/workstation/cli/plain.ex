@@ -112,7 +112,7 @@ defmodule Workstation.CLI.Plain do
         :ok
 
       {:handoff, release, remaining} ->
-        handoff(release, remaining, total)
+        handoff(release, remaining, total, opts)
 
       {:error, {step, reason}} ->
         fail(4, "error: update failed at #{step}: #{reason}")
@@ -152,9 +152,12 @@ defmodule Workstation.CLI.Plain do
   # The handoff probe runs after EVERY step: a note can only exist when a
   # bootstrap refreshed the release (or an earlier run crashed between the
   # refresh and its exec), and in both cases the remaining chain belongs to
-  # the new release. A no-note probe is one file read that misses. The
-  # probe is injectable (`:handoff_probe`) with the same seam contract as
-  # `:executor`: production default, stand-ins for tests.
+  # the new release. A no-note probe is one file read that misses. When the
+  # just-completed step was the LAST one there is nothing left to hand off
+  # (the empty --resume-from child was the live 2026-10-05 incident's exit-2
+  # trigger), so the run finishes normally and the parent clears the note.
+  # The probe is injectable (`:handoff_probe`) with the same seam contract
+  # as `:executor`: production default, stand-ins for tests.
   defp after_step(probe, steps, index, total) do
     case probe.([]) do
       {:ok, nil} ->
@@ -162,7 +165,12 @@ defmodule Workstation.CLI.Plain do
 
       {:ok, release} ->
         remaining = Enum.drop_while(steps, fn {_s, i} -> i <= index end)
-        {:halt, {:handoff, release, remaining}}
+
+        if remaining == [] do
+          {:cont, :ok}
+        else
+          {:halt, {:handoff, release, remaining}}
+        end
 
       {:error, message} ->
         IO.puts("  [#{index}/#{total}] handoff failed: #{message}")
@@ -170,7 +178,17 @@ defmodule Workstation.CLI.Plain do
     end
   end
 
-  defp handoff(release, remaining, total) do
+  # The handoff re-exec: spawn `<release>/bin/workstation` with the
+  # remaining steps, forwarding output and exit status (the BEAM has no
+  # exec(2); the observable contract is one command, one exit code). The
+  # child inherits this process' environment — including any
+  # WORKSTATION_HOME bracket — because it re-derives engine state the same
+  # way the parent did. Parent success = child exit 0 + note consumed:
+  # the parent clears the note itself (a crashed re-exec must leave it for
+  # re-derivation), and a nonzero child status — including exit 2 argv
+  # validation, which is never retried — fails the run with the child's
+  # status echoed.
+  defp handoff(release, remaining, total, opts) do
     Enum.each(remaining, fn {step, index} ->
       IO.puts("  [#{index}/#{total}] #{step} handed off to the refreshed release")
     end)
@@ -183,7 +201,11 @@ defmodule Workstation.CLI.Plain do
     case System.cmd(bin, argv, into: IO.stream(:stdio, :line), stderr_to_stdout: true) do
       {_output, 0} ->
         # The remaining chain completed under the new release; the child
-        # printed its own chain lines and final banner.
+        # printed its own chain lines and final banner. The note is
+        # consumed exactly once: cleared here so no later run re-derives
+        # a handoff that already finished.
+        clear = Keyword.get(opts, :handoff_clear, &Engine.clear_update_handoff/1)
+        clear.(opts)
         :ok
 
       {_output, code} ->

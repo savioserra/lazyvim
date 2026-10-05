@@ -204,6 +204,47 @@ defmodule Workstation.CLITest.EngineTest do
     refute File.exists?(note_path(home))
   end
 
+  test "an in-place refresh is identified by stamp, not by path (live handoff incident)", %{home: home} do
+    # The live 2026-10-05 incident: the refreshed release reuses the SAME
+    # release root, so path identity made the refreshed code see its own
+    # handoff note as foreign-stale and re-hand off forever (each child
+    # slicing off one more step until an empty --resume-from exited 2).
+    # Identity is the installer's stamp: old stamp in the note, new stamp
+    # in the caller — the refreshed code is the handoff TARGET and consumes.
+    File.mkdir_p!(Path.dirname(note_path(home)))
+    File.write!(note_path(home), Jason.encode!(%{"from_release" => "old-head"}))
+
+    assert {:ok, nil} = Engine.update_handoff(home: home, release_identity: "new-head")
+    refute File.exists?(note_path(home))
+  end
+
+  test "a note naming the caller's own stamp hands off and survives", %{home: home} do
+    File.mkdir_p!(Path.dirname(note_path(home)))
+    File.write!(note_path(home), Jason.encode!(%{"from_release" => "pulled-head"}))
+
+    assert {:ok, "pulled-head"} = Engine.update_handoff(home: home, release_identity: "pulled-head")
+
+    # Survives deliberately: a crashed re-exec must re-derive the handoff
+    # instead of finishing the chain under stale code; the successful
+    # parent clears it (plain_test pins that half).
+    assert File.exists?(note_path(home))
+  end
+
+  test "release identity prefers the installer stamp over the path", %{home: home} do
+    scratch = Path.dirname(home)
+
+    stamped = Path.join(scratch, "stamped-release")
+    File.mkdir_p!(stamped)
+    File.write!(Path.join(stamped, ".built-from"), "b44162c3\ntrailing junk line\n")
+
+    assert Engine.release_identity(stamped) == "b44162c3"
+
+    unstamped = Path.join(scratch, "unstamped-release")
+    File.mkdir_p!(unstamped)
+
+    assert Engine.release_identity(unstamped) == unstamped
+  end
+
   test "a malformed handoff note is an error, never a silent continue", %{home: home} do
     File.mkdir_p!(Path.dirname(note_path(home)))
     File.write!(note_path(home), "not json")
