@@ -198,17 +198,22 @@ defmodule Workstation.CLI.Router do
   defp dispatch(:apply, result, _mode) do
     home = resolve_home(result)
 
-    with {:ok, plan} <- evaluate(:plan, home, result) do
-      cond do
-        result.flags[:headless] ->
+    # The terminal gate precedes any engine work: a run that cannot proceed
+    # interactively must fail with the terminal contract error, not an
+    # unrelated engine error discovered while planning.
+    cond do
+      result.flags[:headless] ->
+        with {:ok, plan} <- evaluate(:plan, home, result) do
           Plain.run(:apply, destination: home, plan: plan)
+        end
 
-        usable_terminal?() ->
+      usable_terminal?() ->
+        with {:ok, plan} <- evaluate(:plan, home, result) do
           run_tui(Apply, destination: home, plan: plan)
+        end
 
-        true ->
-          fail(1, @no_terminal)
-      end
+      true ->
+        fail(1, @no_terminal)
     end
   end
 
