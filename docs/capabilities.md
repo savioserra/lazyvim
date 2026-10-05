@@ -192,6 +192,15 @@ after a backend failure. Update refreshes the installed release from the
 freshly pulled checkout before the lifecycle steps so pin and engine changes
 take effect. See [installation and daily use](../README.md).
 
+The launcher shim (`workstation/bin/workstation`) resolves the checkout repo
+anchor — the directory holding the `elixir/` umbrella — for EVERY verb and
+exports `WORKSTATION_ENGINE_REPO` when one exists, so a checkout-launched
+release resolves package assets and update steps without a preset
+environment (the anchor gate is `.github/scripts/shim-anchor.sh`, run by
+`check.sh` when a release tarball is built). A bare host matches neither
+anchor shape and exports nothing: the release keeps its own fail-closed
+detection.
+
 ## Neovim package and profile
 
 `packages/nvim` declares the base/standard/Go language intents as

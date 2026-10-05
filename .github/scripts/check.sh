@@ -40,6 +40,13 @@ else
 	printf 'no release tarball built; skipping (build with: cd elixir && mise exec -- env MIX_ENV=prod mix release workstation --overwrite)\n'
 fi
 
+step 'shim engine-repo anchor (non-bootstrap verb through the checkout shim)'
+if [ -f elixir/workstation-0.1.0-linux-x64.tar.gz ]; then
+	sh .github/scripts/shim-anchor.sh || fail=1
+else
+	printf 'no release tarball built; skipping (build with: cd elixir && mise exec -- env MIX_ENV=prod mix release workstation --overwrite)\n'
+fi
+
 step 'whitespace (git diff --check)'
 git diff --check || fail=1
 

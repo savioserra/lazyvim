@@ -17,6 +17,25 @@ done
 script_dir=$(CDPATH='' cd -P "$(dirname "$script")" && pwd -P)
 engine_root=$(CDPATH='' cd -P "$script_dir/.." && pwd -P)
 
+# The checkout repo anchor (the directory holding the elixir/ umbrella). The
+# shim lives at <repo>/workstation/bin/workstation, so the anchor is
+# engine_root itself for a self-contained engine tree, or its parent for the
+# checkout layout. A bare host matches neither and exports nothing — the
+# release keeps its own fail-closed detection. Exporting for EVERY verb (not
+# only bootstrap) is what makes a checkout-launched release anchor-aware:
+# non-bootstrap verbs resolve the engine checkout (package assets, update
+# steps) through WORKSTATION_ENGINE_REPO and fail closed without it.
+repo_anchor=""
+if [ -f "$engine_root/elixir/mix.exs" ]; then
+	repo_anchor=$engine_root
+elif [ "$(basename "$engine_root")" = workstation ] && [ -f "$engine_root/../elixir/mix.exs" ]; then
+	repo_anchor=$engine_root/..
+fi
+if [ -n "$repo_anchor" ]; then
+	WORKSTATION_ENGINE_REPO=$repo_anchor
+	export WORKSTATION_ENGINE_REPO
+fi
+
 # Carry the original rendezvous across repeated lifecycle launches.
 # These are untrusted hints; only owned-account retirement validates/uses them.
 if [ "${WORKSTATION_SESSION_CAPTURED:-}" != 1 ]; then
@@ -56,22 +75,9 @@ chmod 700 "$XDG_RUNTIME_DIR"
 release=$HOME/.local/opt/workstation/bin/workstation
 
 if [ "${1:-}" = bootstrap ]; then
-	# A checkout drives its own acquisition: point the installer at the repo
-	# anchor (the directory holding the elixir/ umbrella). The shim lives at
-	# <repo>/workstation/bin/workstation, so the anchor is engine_root itself
-	# for a self-contained engine tree, or its parent for the checkout
-	# layout. A bare host matches neither and keeps the runtime-only
-	# contract; the installer re-validates the umbrella before building.
-	repo_anchor=""
-	if [ -f "$engine_root/elixir/mix.exs" ]; then
-		repo_anchor=$engine_root
-	elif [ "$(basename "$engine_root")" = workstation ] && [ -f "$engine_root/../elixir/mix.exs" ]; then
-		repo_anchor=$engine_root/..
-	fi
-	if [ -n "$repo_anchor" ]; then
-		WORKSTATION_ENGINE_REPO=$repo_anchor
-		export WORKSTATION_ENGINE_REPO
-	fi
+	# A checkout drives its own acquisition: the installer is pointed at the
+	# repo anchor resolved above (it re-validates the umbrella before
+	# building); a bare host keeps the runtime-only contract.
 	# The installer is shell, not downloaded code; it installs the pinned
 	# editor runtime and — when invoked from an engine checkout with a mise
 	# toolchain — builds and installs the engine release. The handoff to the
