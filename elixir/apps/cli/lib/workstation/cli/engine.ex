@@ -118,7 +118,10 @@ defmodule Workstation.CLI.Engine do
 
   defp apply_current(opts) do
     with {:ok, plan} <- composed_plan(opts) do
-      guarded(fn ->
+      # guarded/3 calls the closure with the step opts (fun.(opts)) — the
+      # 0-arity variant BadArity-crashed the live update chain exactly here
+      # (apply ok, then the apply step died before the engine ran).
+      guarded(fn _opts ->
         generation = ApplyEngine.execute(plan, %{"home" => home(opts)})
         %{"step" => "apply", "status" => "ok", "generation" => generation}
       end)
