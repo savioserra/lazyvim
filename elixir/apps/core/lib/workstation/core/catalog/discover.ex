@@ -90,9 +90,12 @@ defmodule Workstation.Core.Catalog.Discover do
   end
 
   # Test-tree exclusion: the beam's compile_info records the source path a
-  # module was compiled from. Anything under a /test/ directory is a fixture
-  # by construction and never a live catalog member — deterministic in every
-  # environment, and a no-op in releases where no test beams exist.
+  # module was compiled from. The exclusion keys on the `test` path SEGMENT
+  # being an ancestor of the recorded source file (remainder of the path
+  # ends with the file's basename) — not a "/test/" substring hunt, which
+  # silently misses relative recorded paths such as
+  # "test/support/probe.ex". Deterministic in every environment, and a
+  # no-op in releases where no test beams exist.
   defp test_source?(module) do
     case :code.which(module) do
       path when is_list(path) ->
@@ -106,10 +109,24 @@ defmodule Workstation.Core.Catalog.Discover do
             _ -> []
           end
 
-        info |> Keyword.get(:source, []) |> List.to_string() |> String.contains?("/test/")
+        info |> Keyword.get(:source, []) |> List.to_string() |> test_tree_path?()
 
       _ ->
         false
+    end
+  end
+
+  defp test_tree_path?(source) do
+    segments = Path.split(source)
+
+    case Enum.find_index(segments, &(&1 == "test")) do
+      nil ->
+        false
+
+      index ->
+        remainder = Enum.drop(segments, index + 1)
+        # A path ENDING in a `test` file (no remainder) is not a test tree.
+        remainder != [] and Path.join(remainder) |> String.ends_with?(Path.basename(source))
     end
   end
 

@@ -49,11 +49,56 @@ defmodule Workstation.Core.Catalog.DiscoverTest do
 
   test "a conforming fixture compiled from test/support is excluded from discovery" do
     # The fixture is a real provider (behaviour + valid spec) that sits in
-    # the test build's code path; only the deterministic /test/ source-path
+    # the test build's code path; only the deterministic test-tree source
     # exclusion keeps it out of the live catalog.
     {:module, _} = Code.ensure_loaded(Workstation.Core.Catalog.Packages.GhostFixture)
     refute Workstation.Core.Catalog.Packages.GhostFixture in Discover.providers()
     refute Enum.any?(Packages.packages(), &(&1.id == "ghost-fixture"))
+  end
+
+  test "a relative recorded test path is excluded by segment semantics, not substring" do
+    # A "/test/" substring check missed beams whose compile_info recorded a
+    # RELATIVE source path ("test/support/…" carries no leading slash);
+    # exclusion keys on the `test` path segment being an ancestor of the
+    # recorded source file.
+    source = "test/support/workstation/core/catalog/packages/relative_probe.ex"
+
+    [{_module, beam}] =
+      Code.compile_string(
+        ~s(defmodule Workstation.Core.Catalog.Packages.RelativeProbe do
+             @behaviour Workstation.Core.Catalog.Spec
+
+             @impl true
+             def spec, do: %{id: "relative-probe", foundation: "foundation/base", contributes: []}
+           end),
+        source
+      )
+
+    dir = Path.join(System.tmp_dir!(), "discover-probe-#{System.unique_integer([:positive])}")
+    File.mkdir_p!(dir)
+    beam_path = Path.join(dir, "Elixir.Workstation.Core.Catalog.Packages.RelativeProbe.beam")
+    File.write!(beam_path, beam)
+
+    on_exit(fn ->
+      File.rm(beam_path)
+      File.rmdir(dir)
+      :code.purge(Workstation.Core.Catalog.Packages.RelativeProbe)
+    end)
+
+    assert Code.prepend_path(dir)
+
+    # compile_string loaded the module from memory, and the code server
+    # caches the negative :code.which lookup — purge AND delete so
+    # discovery resolves — and reads — the tmp beam with its recorded
+    # relative test path.
+    mod = Workstation.Core.Catalog.Packages.RelativeProbe
+    :code.purge(mod)
+    :code.delete(mod)
+
+    # Conforms on every axis (namespace, behaviour, spec/0, valid spec) —
+    # only the recorded relative test path excludes it.
+    refute Workstation.Core.Catalog.Packages.RelativeProbe in Discover.providers()
+    refute Enum.any?(Packages.packages(), &(&1.id == "relative-probe"))
   end
 
   test "duplicate package ids are rejected naming every declaring module" do
