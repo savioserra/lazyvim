@@ -119,6 +119,34 @@ hard-cut; retired paths are deleted in the lane that retires them.
   owned).
 - Distribution: one checksummed `mix release` tarball + sha256 sidecar
   (linux glibc/libstdc++, see §1); never escript. macOS arm64 out of scope.
+- **Launcher repo anchor + package autodiscovery (lane autodiscovery):
+  COMPLETE.** The launcher now resolves the checkout repo anchor for EVERY
+  verb (not only bootstrap): launched from a checkout it exports
+  `WORKSTATION_ENGINE_REPO`, so a bare `workstation apply` on the real host
+  collects the checkout catalog instead of failing with the anchor-blind
+  engine error (exit 4); a bare host exports nothing (gate:
+  `.github/scripts/shim-anchor.sh`, a non-bootstrap verb through the shim in
+  a test-home fixture with the env unset). The hand-written registration
+  list is gone: package specs are DISCOVERED via the
+  `Workstation.Core.Catalog.Spec` behaviour (`:code.all_available/0` +
+  conformance, deterministic test-tree exclusion by the beam's recorded
+  compile path, actionable shape/duplicate-id errors) — adding a package is
+  dropping in a conforming module under
+  `Workstation.Core.Catalog.Packages.*`, zero engine edits. `Workstation.Core.Graph`
+  adds optional ordering-only `after` edges (systemd `After=` semantics:
+  sequence only when the target is present and enabled; no necessity, no
+  pull-in), keeps `requires` necessity, resolves dependency-equal ties by
+  id sort (declaration order is dead) and reports cycle paths in cycle
+  errors. Integer ordering fields (`order`/`position`/`priority`) are
+  banned on package specs and recorded envelopes — rejected at discovery
+  and load. Goldens re-recorded from discovery with the per-pair reorder
+  justification in the feat commit message; no reordered pair is
+  load-bearing (all `requires` edges still precede their dependents; the
+  only semantic-adjacent move is the synthetic tied intent pair in
+  `nvim-profile`, deliberately tied at intent order 20).
+- Real-host re-sync after this lane is supervisor-owned (the launcher
+  anchor fix means the host shim now exports the anchor itself; no env
+  override needed).
 
 ## Distribution
 
@@ -162,7 +190,15 @@ of the way:
    installs the pinned editor runtime and, when driven from an engine checkout
    with a `mise` toolchain, builds the engine release from `elixir/` and stages
    it under `$HOME/.local/opt/workstation` (private, engine-owned).
-3. **Handoff**: `exec` of the installed release binary — the Elixir engine IS
+3. **Anchor**: launched from an engine checkout (an `elixir/mix.exs` sibling
+   of the script's `engine_root`, or `engine_root` itself when the checkout is
+   nested under `workstation/`), the launcher exports
+   `WORKSTATION_ENGINE_REPO` so EVERY verb — not only bootstrap — collects
+   the checkout catalog; on a bare host no anchor exists and nothing is
+   exported (installed-release behavior is unchanged). Gate:
+   `.github/scripts/shim-anchor.sh` drives a non-bootstrap verb through the
+   shim in a test-home fixture with the env unset.
+4. **Handoff**: `exec` of the installed release binary — the Elixir engine IS
    the engine runtime; the launcher never interprets lifecycle verbs.
 
 The `~/.local/bin/workstation` symlink is provisioned and verified by the
@@ -183,6 +219,12 @@ pi-ntfy-notifier), `foundation/theme`, `foundation/fonts`,
 `foundation/secrets`. The declaration is status-wire metadata only — it never
 enters graph resolution, envelopes or plan bytes, so catalog order and golden
 bytes are unaffected.
+
+Package ordering is edge-driven, never positional: `requires` edges carry
+necessity plus ordering; the optional `after` edge is ordering-only and
+applies only when the target is present and enabled; ties between
+dependency-equal packages resolve by id sort. Integer ordering fields are
+banned on package specs (`Workstation.Core.Catalog.Spec.validate!/2`).
 
 ## Layout
 
@@ -232,21 +274,28 @@ real home. The drift anchor is `Workstation.Core.GoldenGenerateTest` (native
 engine regenerates the committed tree byte for byte; `generation.txt`
 addresses the exact manifest bytes), and `Workstation.Core.GoldenReplayTest`
 replays every recorded profile and fails if any profile stops being replayed. Each profile directory contains `input.json` plus
-`expected/{plan.json,manifest.json,generation.txt}`. Profiles: `minimal`
-(foundation shell fragments), `full-home` (the complete catalog in declaration
-order), `theme` (theme/tmux/agent closure: chezmoi-data envelope, template
-files, symlink), `conflicts` (two declarers, one shared target: directory
-merges plus an exact single-owner directory), `shell-order` (explicit fragment
-order keys with the collection-order tie-break), `nvim-profile` (composed
-profile intents with the same tie-break).
+`expected/{plan.json,manifest.json,generation.txt}`. reproduce the expected bytes exactly — a mismatch is an implementation bug;
+expected bytes are never regenerated to match a wrong implementation.
+Profiles: `minimal` (foundation shell fragments), `full-home` (the complete
+catalog in discovery order — module-name sort), `theme` (theme/tmux/agent
+closure: chezmoi-data envelope, template files, symlink), `conflicts` (two
+declarers, one shared target: directory merges plus an exact single-owner
+directory), `shell-order` (explicit fragment order keys with the
+collection-order tie-break inside a package), `nvim-profile` (composed
+profile intents with the same within-collection tie-break).
 
 `input.json` is the only replay input: engine-agnostic normalized recipe
-envelopes (`packages[].{id,requires,supported_hosts,contributes[].{provider,spec}}`,
+envelopes (`packages[].{id,requires,after?,supported_hosts,contributes[].{provider,spec}}`,
 inline `assets` map). Normalization is part of the contract: derived
 `components` are dropped and re-derived through provider validation at replay
-time; asset bodies are inlined under `"<package id>:<asset path>"`; absolute
-symlink destinations under the recording home are pinned to `/home/golden`;
-packages stay in construction order. Replay rebuilds recipes through the same
+time; asset bodies are inlined under `"<package id>:<asset path>"`;
+absolute symlink destinations under the recording home are pinned to
+`/home/golden`; packages stay in discovery order (module-name sort — the
+record order is metadata only, execution order is derived per composition);
+`after` lists are recorded only when declared (nil-drop, like every absent
+field), and order/position/priority fields are rejected on both live specs
+and recorded envelopes — integer ordering knobs are banned.
+Replay rebuilds recipes through the same
 domain validation the engine applies at collection (unknown fields rejected),
 resolves the graph for `host`, plans against a fresh journal, and must
 reproduce the expected bytes exactly — a mismatch is an implementation bug;

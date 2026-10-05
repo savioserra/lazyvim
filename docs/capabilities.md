@@ -35,8 +35,10 @@ bootstrap, never an engine dependency.
 | `Workstation.CLI.Engine` | One-shot lifecycle driver (`bootstrap`, `apply`, `update`, `sync`, `verify`, `pull`) under the apply lock |
 | `Workstation.CLI.TUI.*` | Interactive apply/update screens (optimus CLI + term_ui) |
 | `Workstation.Core.Plan` | The shared collect -> graph -> plan -> baseline composition |
-| `Workstation.Core.Catalog.Packages` | Native catalog: one pure-data contribution module per package, declaration order load-bearing |
-| `Workstation.Core.Graph` | Host selection, dependency validation, topological ordering |
+| `Workstation.Core.Catalog.Packages` | Native catalog: one pure-data contribution module per package, DISCOVERED at runtime (no registration list) |
+| `Workstation.Core.Catalog.Spec` | The package-spec provider behaviour + spec shape validation (including the banned integer-ordering fields) |
+| `Workstation.Core.Catalog.Discover` | Runtime provider discovery (`:code.all_available/0` + behaviour conformance, test-tree exclusion, duplicate-id rejection) |
+| `Workstation.Core.Graph` | Host selection, `requires` (necessity + ordering) and `after` (ordering-only) edges, topological ordering with id-sort ties |
 | `Workstation.Core.Source.*` | Recipe providers (`Source.Chezmoi`, `Source.ChezmoiData`, `Source.Shell`, `Source.NvimProfile`) |
 | `Workstation.Core.ApplyEngine` | Preconditions, publish, backend apply, journal record, post-apply verify |
 | `Workstation.Core.Provisioner` | Chezmoi backend with an exact generation |
@@ -49,14 +51,27 @@ bootstrap, never an engine dependency.
 
 A package contributes its catalog identity through a **pure-data Elixir
 module** under `elixir/apps/core/lib/workstation/core/catalog/packages/`
-(one module per package, registered in declaration order in
-`Workstation.Core.Catalog.Packages.packages/0`). The spec map declares the
-package identity, host support, dependencies, provisioning recipes
-(`Workstation.Core.Source` constructors), lifecycle steps
-(`Workstation.Core.Update` step atoms) and the descriptive
+(one module per package) that declares `@behaviour
+Workstation.Core.Catalog.Spec` and implements `spec/0`. There is no
+registration list: discovery (`Workstation.Core.Catalog.Discover`) scans
+the loaded code namespace for `Workstation.Core.Catalog.Packages.*`
+providers via `:code.all_available/0`, keeps behaviour-conforming modules
+(test-tree sources are excluded deterministically by the beam's recorded
+compile path), validates every spec shape, rejects duplicate ids and
+orders providers by module name. Adding a package means dropping in a
+conforming module — zero engine edits.
+
+The spec map declares the package identity, host support, dependencies,
+provisioning recipes (`Workstation.Core.Source` constructors), lifecycle
+steps (`Workstation.Core.Update` step atoms) and the descriptive
 `foundation: "foundation/<layer>"` taxonomy entry; payload lives under
-`packages/<name>/` and is referenced by relative path. There is no factory,
-no invocation and no Lua in the contract: collection is data inspection
+`packages/<name>/` and is referenced by relative path. Ordering between
+packages comes exclusively from `requires` (necessity + ordering) and the
+optional `after` (ordering-only) edges; integer ordering fields
+(`order`, `position`, `priority`) are banned on package specs and
+rejected at discovery, and graph ties among dependency-equal packages
+resolve by id sort. There is no factory, no invocation and no Lua in the
+contract: collection is data inspection
 (`Catalog.Packages.packages/0`), validation is structural
 (`Workstation.Core.Catalog.validations/0` + `Graph`), and the whole path is
 deterministic and golden-graded.
@@ -79,8 +94,9 @@ reversal, never auto-removal). Native attributes are `private`,
 combinations are rejected instead of pretending arbitrary POSIX modes are
 encoded. Recipe content is exactly one inline body or a package-relative
 asset confined to the owner package (no symlink traversal). The catalog
-does not deep-merge records, and packages are never discovered from the
-filesystem.
+does not deep-merge records, and package identity is declared only by the
+conforming module itself — a package never needs to know that other
+packages exist beyond the edges it declares.
 
 Example (the actual theme declaration, abridged):
 
@@ -90,31 +106,36 @@ defmodule Workstation.Core.Catalog.Packages.Theme do
   Theme tokens (packages/theme) — a payload-only package.
   """
 
-  @behaviour Workstation.Core.Catalog.Package
+  @behaviour Workstation.Core.Catalog.Spec
 
   @impl true
-  def specification do
+  def spec do
     %{
       id: "theme",
       requires: ["foundation"],
-      supported_hosts: [:darwin, :linux],
+      supported_hosts: %{"darwin" => true, "linux" => true},
       foundation: "foundation/theme",
-      spec:
-        Workstation.Core.Source.chezmoi_data(
-          envelope: "theme",
-          to: "packages/theme/tokens.lua"
-        )
+      contributes: [Workstation.Core.Catalog.Packages.theme_data()]
     }
   end
 end
 ```
 
-`spec` maps whose payload needs token substitution compose recipes with the
-`Workstation.Core.Source` constructors; `chezmoi_data` is the single
-source-root `.chezmoidata.toml` token envelope (the theme canonical tokens
-are DATA and are read as bytes, never executed).
+`contributes` entries whose payload needs token substitution compose
+recipes with the `Workstation.Core.Source` constructors; the theme package
+uses `chezmoi_data` — the single source-root `.chezmoidata.toml` token
+envelope (the theme canonical tokens are DATA and are read as bytes, never
+executed).
 
 ## Package graph
+
+`requires` edges carry necessity (the dependency must exist and be enabled
+for the host) plus ordering. The optional `after` edge is ordering-only
+(systemd `After=` semantics): it sequences the declarer after the target
+only when the target is present and enabled on the host — it never pulls a
+package in and never fails on absence. Use `after` for pure sequencing
+between otherwise-independent packages; use `requires` only when the
+dependency is genuinely needed.
 
 ```text
 foundation
