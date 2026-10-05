@@ -10,6 +10,8 @@ defmodule Workstation.Core.Catalog.Packages.Secrets do
   (20) and ntfy (40) fragments on the shared startup file.
   """
 
+  @behaviour Workstation.Core.Catalog.Spec
+
   alias Workstation.Core.Catalog.Packages
 
   @spec spec() :: map()

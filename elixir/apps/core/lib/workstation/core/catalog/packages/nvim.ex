@@ -33,6 +33,8 @@ defmodule Workstation.Core.Catalog.Packages.Nvim do
   the live-profile branch of `Workstation.Core.Catalog.load/1`.
   """
 
+  @behaviour Workstation.Core.Catalog.Spec
+
   alias Workstation.Core.Catalog.Packages
 
   @marker "__WORKSTATION_ENGINE_PINS__"

@@ -35,6 +35,7 @@ defmodule Workstation.Core.Catalog do
   @type package :: %{
           required(:id) => String.t(),
           required(:requires) => [String.t()],
+          optional(:after) => [String.t()] | nil,
           optional(:supported_hosts) => %{optional(String.t()) => boolean()} | nil,
           optional(:foundation) => String.t(),
           required(:contributes) => [recipe()]
@@ -66,6 +67,13 @@ defmodule Workstation.Core.Catalog do
   # from the recorded bytes on every host with a home-anchored recipe
   # (invisible to goldens, which pin the canonical bytes on both sides).
   @live_profile "live"
+
+  # The banned design: integer ordering fields on a package spec (the
+  # discovery layer rejects them on native declarations through
+  # `Workstation.Core.Catalog.Spec.validate!/2`; recorded envelopes are
+  # rejected here with the same rule). Ordering between packages comes only
+  # from requires/after edges — ties resolve by id sort.
+  @banned_spec_keys ~w(order position priority)
 
   @doc """
   Load and fully denormalize one decoded golden input. Every recipe is
@@ -103,6 +111,19 @@ defmodule Workstation.Core.Catalog do
         requires = Map.get(raw, "requires") || []
         validate_string_list(requires, "#{id}.requires")
 
+        # Ordering-only edges: validated as string lists here; Graph applies
+        # them only when the target is present and enabled (no pull-in).
+        after_edges = Map.get(raw, "after") || []
+        validate_string_list(after_edges, "#{id}.after")
+
+        Enum.each(@banned_spec_keys, fn key ->
+          Map.has_key?(raw, key) &&
+            raise_arg(
+              "#{id} declares \"#{key}\" — integer ordering fields are banned on package " <>
+                "specs; order packages with requires/after edges instead (ties resolve by id sort)"
+            )
+        end)
+
         supported_hosts =
           case Map.get(raw, "supported_hosts") do
             nil ->
@@ -129,7 +150,19 @@ defmodule Workstation.Core.Catalog do
             %{provider: provider, spec: denormalize(id, provider, spec, assets, live_home, home)}
           end)
 
-        %{id: id, requires: requires, supported_hosts: supported_hosts, contributes: contributes}
+        # Nil-drop convention: an absent/empty after list keeps the loaded
+        # package byte-shape equal to a native spec without the key (the
+        # envelope records "after" only when declared).
+        package = %{
+          id: id,
+          requires: requires,
+          supported_hosts: supported_hosts,
+          contributes: contributes
+        }
+
+        package = if after_edges == [], do: package, else: Map.put(package, :after, after_edges)
+
+        package
       end)
 
     %__MODULE__{profile: profile, host: host, home: home, packages: packages, assets: assets}
@@ -153,11 +186,11 @@ defmodule Workstation.Core.Catalog do
   end
 
   @doc """
-  The native catalog's declared package specifications, in registry
-  declaration order — the complete capability set (nvim included):
+  The native catalog's declared package specifications, in discovery order
+  (module-name / id sort) — the complete capability set (nvim included):
   package data validated by the recipe constructors, with asset references
   kept package-relative exactly like the declarations declare them.
-  Composition semantics (host selection, requires graph, topological
+  Composition semantics (host selection, requires/after graph, topological
   order, cycle and unknown-dependency rejection) live in
   `Workstation.Core.Graph` through `compose/1`.
   """

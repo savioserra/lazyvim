@@ -15,8 +15,9 @@ defmodule Workstation.Core.Golden do
 
   Envelope rules (mirroring the Lua generator's header contract):
 
-  * catalog profiles record the dependency closure of their seeds in catalog
-    declaration order — `minimal` seeds `foundation`, `theme` seeds
+  * catalog profiles record the dependency closure of their seeds in
+    discovery order (module-name / id sort — there is no registration
+    list): `minimal` seeds `foundation`, `theme` seeds
     `theme`/`tmux`/`agent`, `full-home` records the complete catalog;
     `conflicts`, `shell-order` and `nvim-profile` are synthetic literal
     envelopes, validated by the engine at replay time;
@@ -172,8 +173,10 @@ defmodule Workstation.Core.Golden do
     }
   end
 
-  # The catalog closure of the profile's seeds, in declaration order (the
-  # recorded construction order). Mirrors golden.lua catalog_closure.
+  # The catalog closure of the profile's seeds, in discovery order (module
+  # name / id sort — the recorded construction order). Mirrors golden.lua
+  # catalog_closure. Only `requires` edges pull packages into the closure:
+  # `after` edges are sequencing-only and never widen the recording.
   defp catalog_packages(profile) do
     packages = Catalog.Packages.packages()
     by_id = Map.new(packages, &{&1.id, &1})
@@ -210,12 +213,25 @@ defmodule Workstation.Core.Golden do
         Enum.map_reduce(package.contributes, assets, &normalize_recipe(package.id, &1, &2))
 
       record =
-        %{"id" => package.id, "requires" => package.requires || [], "contributes" => contributes}
+        %{
+          "id" => package.id,
+          "requires" => package.requires || [],
+          "contributes" => contributes
+        }
+        |> put_after(Map.get(package, :after))
         |> put_supported_hosts(package.supported_hosts)
 
       {record, assets}
     end)
   end
+
+  # Ordering-only edges are recorded only when declared (nil-dropped like
+  # every absent field); the graph applies them only between present,
+  # enabled packages.
+  defp put_after(record, edges) when is_list(edges) and edges != [],
+    do: Map.put(record, "after", edges)
+
+  defp put_after(record, _), do: record
 
   # The recorded hosts shape is a host->true table (verbatim Lua semantics);
   # native declarations already carry that map form (the graph gates on it),

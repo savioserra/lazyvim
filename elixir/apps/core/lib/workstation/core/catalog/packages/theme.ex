@@ -14,6 +14,8 @@ defmodule Workstation.Core.Catalog.Packages.Theme do
   there instead of silently rebranding the home.
   """
 
+  @behaviour Workstation.Core.Catalog.Spec
+
   alias Workstation.Core.Catalog.Packages
 
   @spec spec() :: map()

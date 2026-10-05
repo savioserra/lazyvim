@@ -11,6 +11,8 @@ defmodule Workstation.Core.Catalog.Packages.Node do
   the three loader fragments.
   """
 
+  @behaviour Workstation.Core.Catalog.Spec
+
   alias Workstation.Core.Catalog.Packages
 
   @startup_files [".profile", ".bashrc", ".zshrc"]

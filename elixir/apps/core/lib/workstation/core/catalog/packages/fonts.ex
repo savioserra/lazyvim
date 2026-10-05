@@ -10,6 +10,8 @@ defmodule Workstation.Core.Catalog.Packages.Fonts do
   foundation without contributing engine-rendered state.
   """
 
+  @behaviour Workstation.Core.Catalog.Spec
+
   @spec spec() :: map()
   def spec do
     %{

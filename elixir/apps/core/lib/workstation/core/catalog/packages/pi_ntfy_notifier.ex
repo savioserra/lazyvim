@@ -11,6 +11,8 @@ defmodule Workstation.Core.Catalog.Packages.PiNtfyNotifier do
   handler.
   """
 
+  @behaviour Workstation.Core.Catalog.Spec
+
   alias Workstation.Core.Catalog.Packages
 
   @extension_dir ".pi/agent/extensions/ntfy-notifier"

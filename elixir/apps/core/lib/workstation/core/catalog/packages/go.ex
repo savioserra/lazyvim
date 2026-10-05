@@ -9,6 +9,8 @@ defmodule Workstation.Core.Catalog.Packages.Go do
   home.
   """
 
+  @behaviour Workstation.Core.Catalog.Spec
+
   alias Workstation.Core.Catalog.Packages
 
   @spec spec() :: map()

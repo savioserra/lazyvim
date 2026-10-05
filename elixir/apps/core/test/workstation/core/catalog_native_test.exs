@@ -58,25 +58,25 @@ defmodule Workstation.Core.CatalogNativeTest do
   test "composition resolves the complete native graph without any stub" do
     graph = Catalog.compose(host: "linux")
 
-    # Post-order DFS over the declaration order: dependencies first, ties in
-    # catalog order — theme and agent land before their dependents, tmux
-    # stays last.
+    # Post-order DFS over the id-sorted specs: dependencies first, ties by
+    # id sort — theme and agent land before their dependents, typescript
+    # (the last id) stays last.
     assert Enum.map(graph.ordered, & &1.id) == [
              "foundation",
-             "fonts",
              "node",
              "theme",
              "agent",
-             "pi-skills",
-             "pi-ntfy-notifier",
              "go",
+             "nvim",
+             "elixir",
+             "fonts",
              "herdr",
              "herdr-pi",
+             "pi-ntfy-notifier",
+             "pi-skills",
              "secrets",
-             "nvim",
-             "typescript",
-             "elixir",
-             "tmux"
+             "tmux",
+             "typescript"
            ]
 
     assert graph.enabled["theme"] and graph.enabled["tmux"]
@@ -97,6 +97,52 @@ defmodule Workstation.Core.CatalogNativeTest do
     # HOME-writing dependent fails closed on its disabled dependency.
     assert_raise ArgumentError, ~r/agent requires unsupported capability theme/, fn ->
       Catalog.compose(host: "windows")
+    end
+  end
+
+  describe "recorded envelope edge contract" do
+    # A minimal decoded input.json envelope: the shape the golden
+    # generator records and Catalog.load denormalizes.
+    defp envelope(packages, home \\ "/home/golden") do
+      %{
+        "profile" => "envelope-edge",
+        "host" => "linux",
+        "home" => home,
+        "packages" => packages,
+        "data" => %{},
+        "remove_file" => []
+      }
+    end
+
+    test "a recorded after edge survives load and sequences composition" do
+      catalog =
+        envelope([
+          %{
+            "id" => "b",
+            "requires" => [],
+            "after" => ["a"],
+            "contributes" => []
+          },
+          %{"id" => "a", "requires" => [], "contributes" => []}
+        ])
+        |> Catalog.load()
+
+      # Nil-drop convention: an empty/absent after list keeps the loaded
+      # package byte-shape equal to the native spec (no :after key).
+      assert Map.has_key?(Enum.find(catalog.packages, &(&1.id == "a")), :after) == false
+      assert Enum.find(catalog.packages, &(&1.id == "b")).after == ["a"]
+
+      graph = Catalog.compose(host: "linux", specifications: catalog.packages)
+      assert Enum.map(graph.ordered, & &1.id) == ["a", "b"]
+    end
+
+    test "a recorded integer ordering field is rejected with the ban message" do
+      assert_raise ArgumentError, ~r/integer ordering fields are banned/, fn ->
+        envelope([
+          %{"id" => "a", "requires" => [], "order" => 3, "contributes" => []}
+        ])
+        |> Catalog.load()
+      end
     end
   end
 

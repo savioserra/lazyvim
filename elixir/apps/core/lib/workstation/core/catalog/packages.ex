@@ -1,22 +1,26 @@
 defmodule Workstation.Core.Catalog.Packages do
   @moduledoc """
-  The native package catalog registry: one pure-data contribution module
-  per workstation package.
+  The native package catalog: one pure-data contribution module per
+  workstation package, DISCOVERED at runtime — there is no registration
+  list to edit.
 
-  Why a registry of data modules: the plan pipeline (`Catalog.native ->
-  Graph.order -> Source.plan`) must compose the workstation's desired state
-  without evaluating any Lua, so every package declares its contribution
-  (recipes, requirements, options, assets) as pure data.
-  `CatalogNativeTest` is the drift anchor that fails the moment a declared
-  contribution drifts from the committed golden recording (fragment bytes,
-  asset targets, option flags, declaration order).
+  Why data modules: the plan pipeline (`Catalog.native -> Graph.order ->
+  Source.plan`) must compose the workstation's desired state without
+  evaluating any Lua, so every package declares its contribution (recipes,
+  requirements, options, assets) as pure data. Adding a package means
+  dropping a conforming `Workstation.Core.Catalog.Spec` provider under
+  this namespace — discovery (`Workstation.Core.Catalog.Discover`) finds
+  it via `:code.all_available/0` + behaviour conformance, validates its
+  shape, and rejects duplicate ids. `CatalogNativeTest` is the drift
+  anchor that fails the moment a declared contribution drifts from the
+  committed golden recording (fragment bytes, asset targets, option
+  flags).
 
-  Declaration order is load-bearing twice: it is the graph's tie-break for
-  equal-priority contributors (`Workstation.Core.Graph` post-order DFS), and
-  it is the recorded construction order of the golden envelopes. Parity
-  anchor for the recorded order: `workstation/lua/workstation/catalog.lua`
-  (deleted with the retired runtime); the editor capability (`Nvim`)
-  completes the set.
+  Package ordering comes exclusively from `requires`/`after` edges:
+  graph ties among dependency-equal packages resolve by id sort, so no
+  module's position in any list is load-bearing. Parity anchor for the
+  recorded order: `workstation/lua/workstation/catalog.lua` (deleted with
+  the retired runtime); the editor capability (`Nvim`) completes the set.
 
   The recipe helpers mirror `workstation/lua/workstation/provision/recipes.lua`
   (chezmoi / shell) plus the two domain compositors their contributors import
@@ -27,53 +31,15 @@ defmodule Workstation.Core.Catalog.Packages do
   stays pure data.
   """
 
+  alias Workstation.Core.Catalog.Discover
   alias Workstation.Core.Source.{Chezmoi, NvimProfile, Shell}
 
-  # Package modules are referenced by alias here because unqualified atoms
-  # inside a module attribute would resolve against the top-level namespace
-  # and silently miss Workstation.Core.Catalog.Packages.* at runtime.
-  alias Workstation.Core.Catalog.Packages.{
-    Agent,
-    ElixirLang,
-    Fonts,
-    Foundation,
-    Go,
-    Herdr,
-    HerdrPi,
-    Node,
-    Nvim,
-    PiNtfyNotifier,
-    PiSkills,
-    Secrets,
-    Theme,
-    Tmux,
-    Typescript
-  }
-
-  # Declaration order is load-bearing (nvim between secrets and typescript):
-  # graph ties among foundation's children follow this order, and theme must
-  # stay a dependent.
-  @package_modules [
-    Foundation,
-    Fonts,
-    Node,
-    Agent,
-    PiSkills,
-    PiNtfyNotifier,
-    Go,
-    Herdr,
-    HerdrPi,
-    Secrets,
-    Nvim,
-    Typescript,
-    ElixirLang,
-    Theme,
-    Tmux
-  ]
-
-  @doc "Native package modules in catalog declaration order (the complete catalog)."
+  @doc """
+  Discovered package-spec provider modules, sorted by module name (the
+  complete catalog — there is no registration order).
+  """
   @spec modules() :: [module()]
-  def modules, do: @package_modules
+  def modules, do: Discover.providers()
 
   # The catalog taxonomy: every package declares the foundation layer it
   # belongs to (`foundation: "foundation/<layer>"` in its spec map). The
@@ -92,7 +58,7 @@ defmodule Workstation.Core.Catalog.Packages do
     foundation/secrets
   )
 
-  @doc "Package id -> declared foundation layer, in declaration order."
+  @doc "Package id -> declared foundation layer, in discovery order."
   @spec taxonomy() :: %{String.t() => String.t()}
   def taxonomy do
     Map.new(packages(), fn spec ->
@@ -103,13 +69,15 @@ defmodule Workstation.Core.Catalog.Packages do
   end
 
   @doc """
-  The native catalog's package specifications in declaration order: the
-  materialize.specifications surface of the Lua engine (id, requires,
-  supported_hosts, contributes), with contributes validated by their owning
-  recipe constructors.
+  The native catalog's package specifications in discovery order (module
+  name / id sort): the materialize.specifications surface of the Lua engine
+  (id, requires, after, supported_hosts, contributes), with contributes
+  validated by their owning recipe constructors.
   """
   @spec packages() :: [map()]
-  def packages, do: Enum.map(modules(), & &1.spec())
+  def packages do
+    Enum.map(modules(), & &1.spec())
+  end
 
   # --- recipe helpers (parity anchors of provision/recipes.lua + domain compositors) ---
 

@@ -10,6 +10,8 @@ defmodule Workstation.Core.Catalog.Packages.PiSkills do
   skill payloads.
   """
 
+  @behaviour Workstation.Core.Catalog.Spec
+
   alias Workstation.Core.Catalog.Packages
 
   @skills ["lazyvim", "secrets"]

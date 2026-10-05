@@ -9,6 +9,8 @@ defmodule Workstation.Core.Catalog.Packages.Herdr do
   reason.
   """
 
+  @behaviour Workstation.Core.Catalog.Spec
+
   alias Workstation.Core.Catalog.Packages
 
   @spec spec() :: map()

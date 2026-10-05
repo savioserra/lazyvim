@@ -13,6 +13,8 @@ defmodule Workstation.Core.Catalog.Packages.ElixirLang do
   language's own module namespace must never collide with the host language.
   """
 
+  @behaviour Workstation.Core.Catalog.Spec
+
   alias Workstation.Core.Catalog.Packages
 
   @intent %{

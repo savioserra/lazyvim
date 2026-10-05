@@ -11,6 +11,8 @@ defmodule Workstation.Core.Catalog.Packages.Typescript do
   gain Elixir equivalents).
   """
 
+  @behaviour Workstation.Core.Catalog.Spec
+
   alias Workstation.Core.Catalog.Packages
 
   @intent %{

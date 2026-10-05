@@ -4,11 +4,22 @@ defmodule Workstation.Core.Graph do
   host-aware execution order.
 
   Order is deterministic and host-aware: specs unsupported on the host are
-  excluded, dependencies must exist for every spec and must be supported for
-  every enabled spec, cycles are rejected, and the topological result is a
-  post-order DFS over the declaration order so equal-priority contributors
-  keep catalog order. Unknown providers and duplicate ids are rejected here,
+  excluded, `requires` dependencies must exist for every spec and must be
+  supported for every enabled spec, cycles are rejected with the cycle path
+  in the error, and the topological result is a post-order DFS over the
+  id-sorted specs — dependency-equal packages resolve by id sort, never by
+  declaration order. Unknown providers and duplicate ids are rejected here,
   never silently ignored downstream.
+
+  Two edge kinds connect packages:
+
+  * `requires` — necessity plus ordering: the dependency must exist, be
+    enabled on the host, and is sequenced first (missing or unsupported
+    dependencies are rejected);
+  * `after` — ordering only (systemd `After=` semantics): the edge
+    sequences the package after the target ONLY when the target is present
+    and enabled on the host. A missing or disabled target neither fails
+    the composition nor pulls the package in.
   """
 
   defstruct [:ordered, :enabled]
@@ -16,6 +27,7 @@ defmodule Workstation.Core.Graph do
   @type specification :: %{
           required(:id) => String.t(),
           optional(:requires) => [String.t()] | nil,
+          optional(:after) => [String.t()] | nil,
           optional(:supported_hosts) => %{optional(String.t()) => boolean()} | nil,
           optional(:foundation) => String.t(),
           optional(:contributes) => [term()] | nil
@@ -23,8 +35,9 @@ defmodule Workstation.Core.Graph do
 
   @doc """
   Resolve `specifications` (the validated catalog packages) for `host`.
-  Returns `%Graph{}` with `ordered` (topological, declaration-stable) and
-  `enabled` (the set of included ids).
+  Returns `%Graph{}` with `ordered` (topological, id-stable) and `enabled`
+  (the set of included ids). The input list order never leaks into the
+  result: iteration starts from the id-sorted specs.
   """
   @spec order(%{required(:host) => String.t(), required(:specifications) => [specification()]}) ::
           %__MODULE__{}
@@ -39,9 +52,18 @@ defmodule Workstation.Core.Graph do
       end)
 
     Enum.each(specifications, fn spec ->
+      id = Map.fetch!(spec, :id)
+
       Enum.each(Map.get(spec, :requires) || [], fn dependency ->
         Map.has_key?(capabilities, dependency) ||
-          raise ArgumentError, "#{Map.fetch!(spec, :id)} requires unknown capability #{dependency}"
+          raise ArgumentError, "#{id} requires unknown capability #{dependency}"
+
+        is_binary(dependency) || raise ArgumentError, "#{id} has a non-string requires edge"
+      end)
+
+      Enum.each(Map.get(spec, :after) || [], fn dependency ->
+        is_binary(dependency) or
+          raise ArgumentError, "#{id} has a non-string after edge: #{inspect(dependency)}"
       end)
     end)
 
@@ -58,8 +80,12 @@ defmodule Workstation.Core.Graph do
         {id, supported?}
       end)
 
+    # The tie-break is the id sort: dependency-equal specs resolve by id,
+    # so no declaration or registration order can leak into the plan.
     {visited_results, _visited} =
-      Enum.map_reduce(specifications, %{}, fn spec, visited ->
+      specifications
+      |> Enum.sort_by(& &1.id)
+      |> Enum.map_reduce(%{}, fn spec, visited ->
         visit(spec.id, capabilities, enabled, visited, [])
       end)
 
@@ -79,7 +105,8 @@ defmodule Workstation.Core.Graph do
         {[], visited}
 
       id in stack ->
-        raise ArgumentError, "capability dependency cycle at #{id}"
+        cycle = [id | stack] |> Enum.reverse() |> Enum.join(" -> ")
+        raise ArgumentError, "capability dependency cycle at #{id}: #{cycle}"
 
       true ->
         spec = Map.fetch!(capabilities, id)
@@ -90,14 +117,21 @@ defmodule Workstation.Core.Graph do
             raise ArgumentError, "#{id} requires unsupported capability #{dependency}"
         end)
 
+        # Post-order DFS: dependencies first. requires edges are necessity
+        # (existence + host support already validated); after edges are
+        # sequencing-only — a target that is absent or disabled is skipped
+        # without failing or pulling anything in. `visit` returns early for
+        # ids outside `enabled`, so a missing after target is a no-op.
+        children = (Map.get(spec, :requires) || []) ++ (Map.get(spec, :after) || [])
+
         {nested, visited} =
-          Enum.map_reduce(Map.get(spec, :requires) || [], visited, fn dependency, acc ->
+          Enum.map_reduce(children, visited, fn dependency, acc ->
             visit(dependency, capabilities, enabled, acc, stack)
           end)
 
-        # Post-order DFS: dependencies first. Each visit emits a (possibly
-        # nested) list; the visited check keeps every id emitted exactly
-        # once, so flattening cannot duplicate contributors.
+        # Each visit emits a (possibly nested) list; the visited check keeps
+        # every id emitted exactly once, so flattening cannot duplicate
+        # contributors.
         {List.flatten(nested ++ [spec]), Map.put(visited, id, true)}
     end
   end

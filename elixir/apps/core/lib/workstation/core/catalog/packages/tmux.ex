@@ -12,6 +12,8 @@ defmodule Workstation.Core.Catalog.Packages.Tmux do
   managed source state.
   """
 
+  @behaviour Workstation.Core.Catalog.Spec
+
   alias Workstation.Core.Catalog.Packages
 
   @spec spec() :: map()

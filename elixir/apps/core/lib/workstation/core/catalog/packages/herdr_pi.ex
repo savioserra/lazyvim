@@ -10,6 +10,8 @@ defmodule Workstation.Core.Catalog.Packages.HerdrPi do
   verification stays with the factory's Lua `verify` handler.
   """
 
+  @behaviour Workstation.Core.Catalog.Spec
+
   alias Workstation.Core.Catalog.Packages
 
   @hook_target ".pi/agent/extensions/herdr-agent-state.ts"

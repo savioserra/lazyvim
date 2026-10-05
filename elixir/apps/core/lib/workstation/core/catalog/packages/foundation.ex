@@ -11,6 +11,8 @@ defmodule Workstation.Core.Catalog.Packages.Foundation do
   generation-digested engine output (see `Workstation.Core.ShellProgram`).
   """
 
+  @behaviour Workstation.Core.Catalog.Spec
+
   alias Workstation.Core.Catalog.Packages
 
   @startup_files [".profile", ".bashrc", ".zshrc"]

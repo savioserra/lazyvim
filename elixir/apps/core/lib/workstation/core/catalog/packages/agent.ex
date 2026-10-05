@@ -12,6 +12,8 @@ defmodule Workstation.Core.Catalog.Packages.Agent do
   chezmoidata envelope, hence the `theme` requirement alongside `node`.
   """
 
+  @behaviour Workstation.Core.Catalog.Spec
+
   alias Workstation.Core.Catalog.Packages
 
   @spec spec() :: map()
