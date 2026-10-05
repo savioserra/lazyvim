@@ -143,16 +143,26 @@ local function specification_requires(id)
 	end
 	return nil
 end
+assert(vim.deep_equal(specification_requires("theme"), { "foundation" }), "theme requires drifted")
 assert(vim.deep_equal(specification_requires("nvim"), { "foundation", "node", "go" }), "nvim requires drifted")
 assert(vim.deep_equal(specification_requires("typescript"), { "node", "nvim" }), "typescript requires drifted")
+assert(vim.deep_equal(specification_requires("elixir"), { "nvim" }), "elixir requires drifted")
 assert(vim.deep_equal(specification_requires("herdr"), { "foundation" }), "herdr requires drifted")
 assert(vim.deep_equal(specification_requires("herdr-pi"), { "agent", "herdr" }), "herdr-pi requires drifted")
+assert(vim.deep_equal(specification_requires("agent"), { "node", "theme" }), "agent requires drifted")
+assert(vim.deep_equal(specification_requires("tmux"), { "foundation", "theme" }), "tmux requires drifted")
 -- Herdr is runtime-optional: neither the agent capability nor its engine requires it.
 for _, id in ipairs({ "agent", "pi-skills", "pi-ntfy-notifier" }) do
 	assert(index_of(linux, "herdr") > index_of(linux, id), "herdr must not gate " .. id)
 end
--- The composed profile preserves the explicit Go, TypeScript, standard order.
-assert(#profile == 3 and profile[1].id == "go" and profile[2].id == "typescript" and profile[3].id == "standard")
+-- The composed profile preserves the explicit Go, TypeScript, Elixir, standard order.
+assert(
+	#profile == 4
+		and profile[1].id == "go"
+		and profile[2].id == "typescript"
+		and profile[3].id == "elixir"
+		and profile[4].id == "standard"
+)
 
 assert_fails("duplicate package identity", function()
 	materialize.from_catalog({

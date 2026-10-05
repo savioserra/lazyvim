@@ -1,5 +1,6 @@
 local commands = require("workstation.commands")
 local managed_node = require("packages.node.managed")
+local provision = require("workstation.provision.recipes")
 
 local agent_package = "@earendil-works/pi-coding-agent"
 local assigned_agents = { "worker", "delegate" }
@@ -131,7 +132,39 @@ end
 return function()
 	return {
 		id = "agent",
-		requires = { "node" },
+		requires = { "node", "theme" },
+		-- Derived pi UI themes render from the theme capability's data
+		-- envelope: pi only reads theme files, so they are safe managed state,
+		-- while pi's own settings.json (where the user picks
+		-- "workstation-light/workstation-dark") stays pi-owned.
+		-- The pi-subagents role definitions carry memory frontmatter (intrinsic
+		-- to pi-subagents — no Hermes/Pi parent-memory dependency) and shadow
+		-- the bundled builtins wholesale; re-diff these copies against the
+		-- package builtins after pi-subagents upgrades or prompts drift.
+		contributes = {
+			provision.chezmoi({
+				target = ".pi/agent/agents/worker.md",
+				kind = "file",
+				asset = "files/.pi/agent/agents/worker.md",
+			}),
+			provision.chezmoi({
+				target = ".pi/agent/agents/reviewer.md",
+				kind = "file",
+				asset = "files/.pi/agent/agents/reviewer.md",
+			}),
+			provision.chezmoi({
+				target = ".pi/agent/themes/workstation-dark.json",
+				kind = "file",
+				template = true,
+				asset = "files/.pi/agent/themes/workstation-dark.json",
+			}),
+			provision.chezmoi({
+				target = ".pi/agent/themes/workstation-light.json",
+				kind = "file",
+				template = true,
+				asset = "files/.pi/agent/themes/workstation-light.json",
+			}),
+		},
 		setup = function(context)
 			local npm = managed_node.executable(context, "npm")
 			local pi = managed_node.executable(context, "pi")

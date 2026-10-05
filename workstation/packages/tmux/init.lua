@@ -36,7 +36,7 @@ end
 return function()
 	return {
 		id = "tmux",
-		requires = { "foundation" },
+		requires = { "foundation", "theme" },
 		supported_hosts = { linux = true, darwin = true },
 		contributes = {
 			provision.chezmoi({
@@ -44,9 +44,12 @@ return function()
 				kind = "file",
 				asset = "files/.tmux.conf",
 			}),
+			-- The bar's palette-role block renders from the theme capability's
+			-- .chezmoidata.toml envelope; the layout and segments stay static.
 			provision.chezmoi({
 				target = ".config/tmux/themes/tmux2k.conf",
 				kind = "file",
+				template = true,
 				asset = "files/.config/tmux/themes/tmux2k.conf",
 			}),
 			-- The XDG tmux config stays a link to the managed legacy config so

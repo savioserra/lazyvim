@@ -125,20 +125,49 @@ for _, host in ipairs({ "linux", "darwin", "wsl" }) do
 	end
 	assert(next(expected_specs) == nil)
 	local node_root = paths.local_dir .. "/opt/nvm/versions/node/v" .. canonical_node
-	local event_index = platform == "linux" and 9 or 8
-	assert(events[7][2]:find("JetBrainsMonoNerdFont", 1, true))
-	if platform == "linux" then
-		assert(events[8][1] == "font-cache")
+	-- Anchor on event content, not position: the catalog may interleave
+	-- zero-dependency packages (for example theme) anywhere before Node.
+	local fonts_write, font_cache, alias_write
+	for index, event in ipairs(events) do
+		if type(event[2]) == "string" and event[2]:find("JetBrainsMonoNerdFont", 1, true) then
+			fonts_write = index
+		elseif event[1] == "font-cache" then
+			font_cache = index
+		elseif
+			event[1] == "write"
+			and event[2] == paths.local_dir .. "/opt/nvm/alias/default"
+			and event[3] == canonical_node .. "\n"
+		then
+			alias_write = index
+		end
 	end
-	assert(vim.deep_equal(events[event_index], { "directory", paths.local_dir .. "/opt/nvm" }))
-	assert(vim.deep_equal(events[event_index + 1], { "directory", node_root }))
 	assert(
-		vim.deep_equal(
-			events[event_index + 2],
-			{ "write", paths.local_dir .. "/opt/nvm/alias/default", canonical_node .. "\n" }
-		)
+		fonts_write and alias_write,
+		host
+			.. ": fonts or Node alias write missing (fonts="
+			.. tostring(fonts_write)
+			.. ", alias="
+			.. tostring(alias_write)
+			.. "): "
+			.. table.concat(
+				vim.iter(events)
+					:map(function(event)
+						return event[1]
+					end)
+					:totable(),
+				", "
+			)
 	)
-	assert(events[event_index + 3][1] == "runtime")
+	if platform == "linux" then
+		assert(font_cache == fonts_write + 1, "font cache refresh must immediately follow the fonts write")
+	end
+	assert(
+		vim.deep_equal(events[alias_write - 2], { "directory", paths.local_dir .. "/opt/nvm" })
+			and vim.deep_equal(events[alias_write - 1], { "directory", node_root })
+			and events[alias_write + 1] ~= nil
+			and events[alias_write + 1][1] == "runtime",
+		"Node runtime lifecycle order drifted"
+	)
 	-- Behavioral invariant: the managed runtime is configured before any
 	-- dependent capability setup runs, whatever the catalog contains.
 	local runtime_index, first_dependent
@@ -152,7 +181,13 @@ for _, host in ipairs({ "linux", "darwin", "wsl" }) do
 	end
 	assert(
 		runtime_index and first_dependent and runtime_index < first_dependent,
-		"dependent capability setup ran before runtime configuration"
+		"dependent capability setup ran before runtime configuration (runtime="
+			.. tostring(runtime_index)
+			.. ", first_dependent="
+			.. tostring(first_dependent)
+			.. ": "
+			.. tostring(first_dependent and events[first_dependent][2])
+			.. ")"
 	)
 	-- Repeat emits identical narrow ownership declarations. Integrity/idempotence
 	-- and non-exact recursive mutable-state preservation are exercised by provision.test.lua.

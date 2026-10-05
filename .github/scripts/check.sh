@@ -18,6 +18,13 @@ if [ ! -x "$backend" ]; then
 	done
 fi
 [ -x "$backend" ] || { printf 'trusted chezmoi backend not found\n' >&2; exit 1; }
+# The Elixir umbrella suite runs mix through the caller's mise toolchain, whose
+# data dir the per-suite fixture HOME would hide; export it before isolation.
+# tests/elixir.test.lua skips cleanly when it is absent or the build is cold.
+if [ -d "$installed_home/.local/share/mise" ]; then
+	WORKSTATION_MISE_DATA_DIR=$installed_home/.local/share/mise
+	export WORKSTATION_MISE_DATA_DIR
+fi
 for suite in tests/*.test.lua; do
 	# The real-check regression needs the frozen formatter too; no tool paths
 	# are rediscovered from the new fixture HOME.

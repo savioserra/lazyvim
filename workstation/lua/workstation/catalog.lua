@@ -11,5 +11,9 @@ return {
 	require("packages.secrets"),
 	require("packages.nvim"),
 	require("packages.typescript"),
+	require("packages.elixir"),
+	-- Declared after the core capabilities: graph ties among foundation's
+	-- children follow declaration order, and theme must stay a dependent.
+	require("packages.theme"),
 	require("packages.tmux"),
 }

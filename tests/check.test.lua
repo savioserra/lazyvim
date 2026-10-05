@@ -81,7 +81,9 @@ write(
 		.. "\n",
 	true
 )
-local env = { HOME = home, WORKSTATION_HOME = home, PATH = bin .. ":" .. vim.env.PATH }
+-- The nested check keeps the gate's time bound: suites that shell out to
+-- slower toolchains (Elixir/mix) must honor this marker and skip.
+local env = { HOME = home, WORKSTATION_HOME = home, WORKSTATION_NESTED_CHECK = "1", PATH = bin .. ":" .. vim.env.PATH }
 for _, name in ipairs({
 	"TMPDIR",
 	"TMP",

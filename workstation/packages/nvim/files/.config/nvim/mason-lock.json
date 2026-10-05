@@ -3,6 +3,7 @@
   "delve": "v1.27.0",
   "docker-compose-language-service": "1.0.0",
   "dockerfile-language-server": "0.15.0",
+  "elixir-ls": "0.31.1",
   "emmet-language-server": "2.8.0",
   "eslint-lsp": "4.10.0",
   "gofumpt": "v0.11.0",

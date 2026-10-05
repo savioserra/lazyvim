@@ -100,7 +100,7 @@
   },
   {
    "legacy": "chezmoi/dot_config/nvim/mason-lock.json",
-   "sha256": "e93ba961135edf2a98ebddccb7fcc102eb692b6565a001fcdbcd90741e9dfd05"
+   "sha256": "de0a0cd9583f9f51d3325c26692c846e58c17148844491bf29ab331941678f4c"
   },
   {
    "legacy": "chezmoi/dot_config/nvim/neoconf.json",
@@ -279,6 +279,35 @@
     "lazyvim.plugins.extras.formatting.prettier"
    ],
    "plugin_module": "languages.plugins.typescript"
+  },
+  {
+   "language_cases": [
+    {
+     "language": "elixir",
+     "filename": "behavior-test.ex",
+     "client": "elixirls",
+     "contents": "defmodule Behavior do\n  def answer, do: 42\nend\n"
+    }
+   ],
+   "id": "elixir",
+   "lazyvim_extras": [
+    "lazyvim.plugins.extras.lang.elixir"
+   ],
+   "mason_packages": [
+    "elixir-ls"
+   ],
+   "formatter_cases": [
+    {
+     "language": "elixir",
+     "expected": "defmodule T do\n  def answer do\n    42\n  end\nend\n",
+     "project_files": {
+      "mix.exs": "defmodule FormatTest.MixProject do\n  use Mix.Project\n\n  def project do\n    [app: :format_test, version: \"0.1.0\"]\n  end\nend\n"
+     },
+     "filename": "format-test.ex",
+     "contents": "defmodule T do\ndef answer do\n42\nend\nend\n"
+    }
+   ],
+   "plugin_module": "languages.plugins.elixir"
   },
   {
    "language_cases": [

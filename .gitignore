@@ -6,6 +6,15 @@
 .build/
 node_modules/
 
+# Elixir umbrella build artifacts (pins live in elixir/mix.lock).
+elixir/_build/
+elixir/deps/
+elixir/tmp/
+*.ez
+
+# BEAM crash dumps are never source; elixir/.gitignore covers the subtree.
+/erl_crash.dump
+
 # Neovim runtime data belongs under XDG data/state/cache, not in Git.
 .nvim-data/
 .nvim-state/

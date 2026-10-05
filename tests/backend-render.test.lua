@@ -56,7 +56,7 @@ end
 local application = require("workstation.app").create()
 local plan = source.plan(application)
 assert(#plan.entries > 40, "expected the full migrated payload, got " .. #plan.entries)
-assert(plan.profile and #plan.profile == 3, "composed profile is missing language intents")
+assert(plan.profile and #plan.profile == 4, "composed profile is missing language intents")
 install_backend()
 install_nvim()
 
@@ -76,6 +76,10 @@ paths.write(paths.home .. "/.config/keep", "user state\n")
 paths.write(paths.home .. "/.profile", "# user shell setup\n")
 
 local generation = provisioner.apply(plan)
+assert(
+	paths.read(paths.join(generation, ".chezmoidata.toml")) == plan.data.bytes,
+	"the staged data envelope does not match the planned tokens"
+)
 assert(not paths.exists(paths.home .. "/.local/share/lazyvim"), "tombstone survived first apply")
 assert(paths.read(paths.home .. "/.config/keep") == "user state\n", "unrelated user state was touched")
 assert(paths.read(paths.home .. "/.profile"):find("# user shell setup", 1, true), "user shell text lost")
@@ -90,9 +94,35 @@ local function assert_deployed()
 	assert(bit.band(vim.uv.fs_stat(paths.home .. "/.profile").mode, 4095) == 493, "shell file lost exec mode")
 	assert(bit.band(vim.uv.fs_stat(paths.home .. "/.bashrc").mode, 4095) == 493, "shell file lost exec mode")
 	local profile = paths.read(paths.home .. "/.config/nvim/lua/languages/profile.lua")
+	-- Theme consumers deploy fully rendered: no template syntax survives, and
+	-- the palette bytes come from the token envelope, not from the asset.
+	local tmux2k = paths.read(paths.home .. "/.config/tmux/themes/tmux2k.conf")
+	assert(not tmux2k:find("{{", 1, true), "tmux2k payload kept unrendered template syntax")
+	assert(tmux2k:find("@tmux2k%-blue 'blue'", 1, false), "rendered tmux2k payload lost the accent slot")
+	assert(tmux2k:find("@tmux2k%-pane%-border 'brightblack'", 1, false), "rendered tmux2k payload lost the chrome slot")
+	local function assert_derived_theme(appearance, accent)
+		local path = paths.join(paths.home, ".pi/agent/themes/workstation-" .. appearance .. ".json")
+		local theme = vim.json.decode(paths.read(path))
+		assert(theme.name == "workstation-" .. appearance, "derived theme name drifted: " .. appearance)
+		assert(theme.appearance == appearance, "derived theme appearance drifted: " .. appearance)
+		assert(not theme.name:find("/"), "derived theme names must stay pairable in pi settings")
+		assert(theme.vars.accent == accent, appearance .. " palette did not render from the token envelope")
+		assert(theme.colors.accent == "accent" and theme.colors.success == "ok", appearance .. " role mapping drifted")
+		for role, value in pairs(theme.colors) do
+			assert(theme.vars[value] ~= nil, appearance .. " colors reference a dangling var: " .. role)
+		end
+	end
+	assert_derived_theme("dark", "#7aa2f7")
+	assert_derived_theme("light", "#2e7de9")
 	local composed = assert(loadfile(paths.join(paths.home, ".config/nvim/lua/languages/profile.lua")))()
-	assert(composed[1].id == "go" and composed[2].id == "typescript" and composed[3].id == "standard")
+	assert(
+		composed[1].id == "go"
+			and composed[2].id == "typescript"
+			and composed[3].id == "elixir"
+			and composed[4].id == "standard"
+	)
 	assert(paths.read(paths.home .. "/.config/nvim/lua/languages/plugins/typescript.lua"):find("typescript", 1, true))
+	assert(paths.read(paths.home .. "/.config/nvim/lua/languages/plugins/elixir.lua"):find("elixirLS", 1, true))
 	local shell = paths.read(paths.home .. "/.profile")
 	for _, marker in ipairs({
 		"# chezmoi: managed user-local bin",
@@ -156,7 +186,14 @@ assert(#baseline.files == 44, "frozen baseline must account for all 44 legacy fi
 assert(#baseline.tombstones == 17, "frozen baseline must keep 17 tombstones")
 
 local permitted_differences = {
-	["chezmoi/dot_pi/private_agent/skills/lazyvim/SKILL.md"] = "skill guidance updated for the generated-source layout",
+	["chezmoi/dot_pi/private_agent/skills/lazyvim/SKILL.md"] = {
+		reason = "skill guidance updated for the generated-source layout",
+		marker = "no checked-in chezmoi",
+	},
+	["chezmoi/dot_config/tmux/themes/tmux2k.conf"] = {
+		reason = "palette roles render from the theme capability envelope; guidance comments updated",
+		marker = "packages/theme/tokens.lua",
+	},
 }
 local non_deploying = {
 	["chezmoi/.chezmoiignore"] = "ignore policy superseded by recipe selection",
@@ -215,8 +252,8 @@ local function assert_legacy_parity(phase)
 				phase .. ": expected permitted difference missing for " .. target
 			)
 			assert(
-				deployed:find("no checked%-in chezmoi", 1),
-				phase .. ": permitted difference is not the documented skill update: " .. target
+				deployed:find(permitted_differences[record.legacy].marker, 1, true),
+				phase .. ": permitted difference is not the documented update: " .. target
 			)
 		elseif disposition == "profile" then
 			local deployed_profile = assert(loadfile(paths.join(paths.home, target)))()
@@ -229,9 +266,9 @@ local function assert_legacy_parity(phase)
 			end
 		end
 	end
-	assert(checked.bytes == 32, phase .. ": byte-parity count drifted: " .. checked.bytes)
+	assert(checked.bytes == 31, phase .. ": byte-parity count drifted: " .. checked.bytes)
 	assert(
-		checked.permitted == 1 and checked.profile == 1 and checked.non_deploying == 10,
+		checked.permitted == 2 and checked.profile == 1 and checked.non_deploying == 10,
 		phase .. ": disposition counts drifted"
 	)
 	for target, link in pairs(baseline.symlinks) do

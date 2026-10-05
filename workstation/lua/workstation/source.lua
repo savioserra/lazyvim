@@ -1,3 +1,4 @@
+local chezmoi_data_provider = require("workstation.provision.chezmoi_data")
 local chezmoi_provider = require("workstation.provision.chezmoi")
 local policy = require("workstation.provision.policy")
 local shell_provider = require("workstation.provision.shell")
@@ -15,6 +16,7 @@ local M = {}
 -- rejected here, never silently ignored.
 M.registry = {
 	[chezmoi_provider.id] = true,
+	[chezmoi_data_provider.id] = true,
 	[shell_provider.id] = true,
 	["nvim-profile"] = true,
 }
@@ -51,6 +53,24 @@ local function collect(application)
 		end
 	end
 	return collected
+end
+
+---Extract the single optional chezmoi data envelope. At most one package may
+---declare it: the source-root name is shared engine state, not a composable
+---target, so two declarers could only fight over one file.
+local function extract_data_envelope(collected)
+	local record, count = nil, 0
+	for _, candidate in ipairs(collected) do
+		if candidate.provider == chezmoi_data_provider.id then
+			count = count + 1
+			assert(count == 1, "at most one package may declare the .chezmoidata.toml envelope")
+			record = candidate
+		end
+	end
+	if record == nil then
+		return nil
+	end
+	return { owner = record.owner, bytes = chezmoi_data_provider.validate_spec(record.spec) }
 end
 
 local function compose_profile(application, collected)
@@ -215,6 +235,9 @@ local function build_entry(record, ancestors)
 		attribution = record.attribution or { record.owner },
 		expected = chezmoi_provider.expected_state(spec, bytes),
 	}
+	-- Fingerprints are content addresses: the encode is canonical (bytewise
+	-- key order) so two processes derive the identical id for identical
+	-- content. vim.json.encode randomizes key order per process otherwise.
 	entry.fingerprint = state.sha256(vim.json.encode({
 		target = entry.target,
 		operation = entry.operation,
@@ -222,7 +245,7 @@ local function build_entry(record, ancestors)
 		mode = entry.mode,
 		bytes = bytes and state.sha256(bytes) or nil,
 		link = entry.link,
-	}))
+	}, { sort_keys = true }))
 	return entry
 end
 
@@ -259,6 +282,11 @@ local function detect_conflicts(entries, removals)
 					table.insert(existing.attribution, owner)
 				end
 			end
+			-- Merged attribution is a set of owners, recorded in one canonical
+			-- order: duplicated targets share an identical source name, whose
+			-- relative position after the by-name sort is unspecified, so the
+			-- merge must not leak that arbitrary order into the plan.
+			table.sort(existing.attribution)
 		else
 			by_target[entry.target] = entry
 			table.insert(merged, entry)
@@ -422,6 +450,9 @@ end
 local function build_manifest(plan)
 	local manifest = {}
 	local seen = {}
+	-- The source-root engine files (.chezmoiremove, the optional data envelope)
+	-- are manifest entries without being plan targets: they stage with the
+	-- generation and verify byte-for-byte, but never deploy into the home.
 	local function include(name, entry)
 		if not seen[name] then
 			seen[name] = true
@@ -451,6 +482,14 @@ local function build_manifest(plan)
 		mode = 420,
 		sha256 = state.sha256(plan.remove_file),
 	})
+	if plan.data then
+		include(".chezmoidata.toml", {
+			name = ".chezmoidata.toml",
+			type = "file",
+			mode = 420,
+			sha256 = state.sha256(plan.data.bytes),
+		})
+	end
 	for _, entry in ipairs(manifest) do
 		assert(entry.type ~= "file" or entry.sha256 ~= nil, "manifest file entry has no digest: " .. entry.name)
 	end
@@ -464,6 +503,7 @@ end
 ---journal, package assets and target metadata; performs no target mutation.
 function M.plan(application)
 	local collected = collect(application)
+	local data = extract_data_envelope(collected)
 	local profile_record, profile = compose_profile(application, collected)
 	if profile_record then
 		table.insert(collected, profile_record)
@@ -491,7 +531,11 @@ function M.plan(application)
 			else
 				table.insert(entries, entry)
 			end
-		elseif record.provider ~= shell_provider.id and record.provider ~= "nvim-profile" then
+		elseif
+			record.provider ~= chezmoi_data_provider.id
+			and record.provider ~= shell_provider.id
+			and record.provider ~= "nvim-profile"
+		then
 			fail("unhandled provider " .. record.provider)
 		end
 	end
@@ -542,9 +586,13 @@ function M.plan(application)
 		remove_file = policy.remove_file(remove_additions),
 		journal_revision = journal and journal.revision or 0,
 		baseline_generation = journal and journal.generation or nil,
+		data = data,
 	}
 	plan.manifest = build_manifest(plan)
-	plan.generation = state.sha256(vim.json.encode(plan.manifest))
+	-- The generation id is a content address over the manifest encoded as
+	-- canonical JSON (bytewise key order); see the golden generator header and
+	-- docs/chezmoi.md for the recorded contract.
+	plan.generation = state.sha256(vim.json.encode(plan.manifest, { sort_keys = true }))
 	if profile then
 		application.context.nvim_profile = profile
 	end

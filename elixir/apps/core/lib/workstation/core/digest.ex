@@ -1,0 +1,10 @@
+defmodule Workstation.Core.Digest do
+  @moduledoc """
+  Byte digests shared by the plan pipeline. Lowercase hex, matching
+  `vim.fn.sha256` so fingerprints, manifest digests and generation ids are
+  byte-identical to the Lua engine's recorded values.
+  """
+
+  @spec sha256(binary()) :: String.t()
+  def sha256(data) when is_binary(data), do: Base.encode16(:crypto.hash(:sha256, data), case: :lower)
+end

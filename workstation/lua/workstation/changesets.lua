@@ -191,10 +191,11 @@ function M.plan_patches(plan, baseline)
 		for _, manifest_entry in ipairs(baseline.manifest) do
 			local name = manifest_entry.name
 			if manifest_entry.type == "file" and not present[name] then
-				if name == ".chezmoiremove" then
-					-- The generated tombstone file is engine metadata: its
-					-- changes are previewed as one attributed aggregate change
-					-- below, never as a retired recipe.
+				if name == ".chezmoiremove" or name == ".chezmoidata.toml" then
+					-- Generated engine metadata: .chezmoiremove changes are
+					-- previewed as one attributed aggregate change below, and
+					-- the data envelope is never a retired recipe; neither is
+					-- ever reported as a deleted owned target.
 				else
 					local indexed = baseline.source_index[name] or {}
 					local diff = patch(name, paths.join(baseline.directory, name), nil)

@@ -1,0 +1,15 @@
+# Mix build artifacts stay out of Git; the canonical pins live in mix.lock.
+/deps/
+/_build/
+/tmp/
+erl_crash.dump
+*.ez
+
+# Per-app coverage HTML from `mix test --cover`: generated evidence, never source.
+cover/
+
+# Release distribution artifacts (§1): built with `MIX_ENV=prod mix release
+# workstation` + tar, checksum sidecar next to it; rebuilt locally, never
+# committed.
+/workstation-*.tar.gz
+/workstation-*.tar.gz.sha256

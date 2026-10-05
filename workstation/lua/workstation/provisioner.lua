@@ -199,6 +199,9 @@ local function publish(plan)
 	end
 	assert(staged, "cannot allocate a staging generation in " .. root)
 	local bytes = { [".chezmoiremove"] = plan.remove_file }
+	if plan.data then
+		bytes[".chezmoidata.toml"] = plan.data.bytes
+	end
 	for _, entry in ipairs(plan.entries) do
 		bytes[entry.source_name] = entry.bytes
 	end

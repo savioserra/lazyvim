@@ -8,6 +8,7 @@ local M = {}
 -- owning package and are imported directly by their contributors.
 
 M.chezmoi = require("workstation.provision.chezmoi").recipe
+M.chezmoi_data = require("workstation.provision.chezmoi_data").recipe
 M.shell = require("workstation.provision.shell").recipe
 
 return M
