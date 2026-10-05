@@ -113,6 +113,11 @@ if [ -n "$repo" ]; then
 	[ -x "$release_stage/workstation/bin/workstation" ] || fail 'built release lacks bin/workstation'
 	if [ -e "$parent/workstation" ]; then mv "$parent/workstation" "$lock/workstation-previous"; fi
 	mv "$release_stage/workstation" "$parent/workstation"
+	# Stamp the activated release with the source HEAD it was built from:
+	# the engine's update-refresh staleness check compares this stamp
+	# against the checkout to skip no-op rebuilds. A non-git checkout
+	# stamps empty, which only costs an honest rebuild.
+	git -C "$repo" rev-parse HEAD >"$parent/workstation/.built-from" 2>/dev/null || : >"$parent/workstation/.built-from"
 fi
 
 # Runtime and release activation have committed; the caller (the shim's

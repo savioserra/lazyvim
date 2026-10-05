@@ -108,26 +108,135 @@ defmodule Workstation.CLI.Engine do
   defp verify_record(opts), do: elem(Update.Verify.run(core_opts(opts)), 1)
 
   defp bootstrap_locked(opts) do
-    with {:ok, record} <- guarded(fn _opts -> elem(Update.Bootstrap.run(core_opts(opts)), 1) end, opts, "bootstrap_failed") do
+    bootstrap_run = opts[:bootstrap_run] || (&Update.Bootstrap.run/1)
+
+    with {:ok, record} <- guarded(fn _opts -> elem(bootstrap_run.(core_opts(opts)), 1) end, opts, "bootstrap_failed") do
       case release_refresh(opts) do
-        :ok -> {:ok, record}
-        {:error, output} -> {:error, "bootstrap_failed", "release refresh failed:\n#{output}"}
+        {:ok, refreshed?} ->
+          case refresh_note(refreshed?, opts) do
+            :ok -> {:ok, Map.put(record, "release_refreshed", refreshed?)}
+            {:error, message} -> {:error, "bootstrap_failed", message}
+          end
+
+        {:error, output} ->
+          {:error, "bootstrap_failed", "release refresh failed:\n#{output}"}
       end
     end
   end
+
+  # The release handoff note (docs/capabilities.md, "release refresh and
+  # handoff"): a REFRESHED bootstrap leaves a note naming the release that
+  # wrote it, because this process is still executing the OLD loaded code
+  # while the on-disk release just changed under it; the plain runner
+  # probes the note after every step and hands the remaining chain to the
+  # new release. A non-refreshing bootstrap REMOVES any leftover note —
+  # after a refresh-free bootstrap, this process and the disk agree, so a
+  # stale note from an earlier crashed handoff must not trigger a spurious
+  # handoff later.
+  defp refresh_note(false, opts) do
+    File.rm(update_handoff_path(opts))
+    :ok
+  end
+
+  defp refresh_note(true, opts) do
+    path = update_handoff_path(opts)
+
+    case File.mkdir_p(Path.dirname(path)) do
+      :ok -> write_handoff_note(path)
+      {:error, reason} -> {:error, "cannot record the release handoff note: #{inspect(reason)}"}
+    end
+  end
+
+  defp write_handoff_note(path) do
+    note = Jason.encode!(%{"from_release" => :code.root_dir() |> to_string()})
+
+    case File.write(path, note) do
+      :ok -> :ok
+      {:error, reason} -> {:error, "cannot record the release handoff note: #{inspect(reason)}"}
+    end
+  end
+
+  @doc """
+  Probe the release handoff note left by a refreshed bootstrap step.
+
+  Returns `{:ok, release_root}` when the caller is still executing the
+  release the note names — the on-disk release changed mid-run while this
+  process keeps its old loaded code, so the remaining update steps belong
+  to the new release (the plain runner re-execs it with `--resume-from`).
+  The note deliberately SURVIVES this return: if the re-exec dies, the
+  next update run re-derives the same handoff instead of silently
+  finishing the chain under stale code.
+
+  Returns `{:ok, nil}` when there is nothing to hand off — no note, or the
+  caller already IS a different (newer) release than the note names, which
+  is the handoff target case: the note is consumed so it cannot trigger
+  another handoff later. A malformed note is an error, never a silent
+  continue: the note is engine state this module wrote.
+  """
+  @spec update_handoff(keyword()) :: {:ok, String.t() | nil} | {:error, String.t()}
+  def update_handoff(opts \\ []) when is_list(opts) do
+    path = update_handoff_path(opts)
+
+    case File.read(path) do
+      {:error, :enoent} ->
+        {:ok, nil}
+
+      {:error, reason} ->
+        {:error, "cannot read the release handoff note: #{inspect(reason)}"}
+
+      {:ok, raw} ->
+        case parse_note(raw) do
+          {:ok, from_release} ->
+            if from_release == current_release() do
+              {:ok, from_release}
+            else
+              _ = File.rm(path)
+              {:ok, nil}
+            end
+
+          :error ->
+            {:error, "malformed release handoff note at #{path}"}
+        end
+    end
+  end
+
+  # Self-written state: exactly the one documented key, non-empty string.
+  defp parse_note(raw) do
+    case Jason.decode(raw) do
+      {:ok, %{"from_release" => release}} when is_binary(release) and release != "" ->
+        {:ok, release}
+
+      _other ->
+        :error
+    end
+  end
+
+  # The release root of the code this process is executing (the OTP root
+  # under the installed release; under mix it is the build tree's OTP
+  # root — consistent within one process, which is all the identity
+  # comparison needs).
+  defp current_release, do: :code.root_dir() |> to_string()
+
+  defp update_handoff_path(opts),
+    do: Path.join([state_root(home(opts)), "update", "handoff.json"])
 
   defp apply_current(opts) do
     with {:ok, plan} <- composed_plan(opts) do
       # guarded/3 calls the closure with the step opts (fun.(opts)) — the
       # 0-arity variant BadArity-crashed the live update chain exactly here
-      # (apply ok, then the apply step died before the engine ran).
-      guarded(fn _opts ->
-        generation = ApplyEngine.execute(plan, %{"home" => home(opts)})
-        %{"step" => "apply", "status" => "ok", "generation" => generation}
-      end)
+      # (apply ok, then the apply step died before the engine ran). The
+      # body is a single call into the NAMED apply_execute/2, so the step
+      # contract stays grep-able and an arity drift dies inside a named
+      # call with a clear stack, not as an anonymous BadArity.
+      guarded(&apply_execute(plan, &1), opts)
     else
       {:error, message} -> {:error, "apply_failed", message}
     end
+  end
+
+  defp apply_execute(plan, opts) do
+    generation = ApplyEngine.execute(plan, %{"home" => home(opts)})
+    %{"step" => "apply", "status" => "ok", "generation" => generation}
   end
 
   # The shared Core composition (Plan.composed_plan/2), coded for this
@@ -141,36 +250,147 @@ defmodule Workstation.CLI.Engine do
     end
   end
 
-  ## release refresh
+  @doc """
+  Refresh the installed engine release from the anchored checkout.
 
-  # The refresh runs the shim's installer (the exact acquisition path a fresh
-  # machine takes), pointed at the engine checkout with the destination home
-  # as HOME. Output matters only when it fails.
-  defp release_refresh(opts) do
+  This is the engine half of the update lifecycle's "release refresh"
+  contract (docs/capabilities.md): the bootstrap step keeps the installed
+  release from going stale after `pull`. Returns `{:ok, refreshed?}` where
+  `refreshed?` is true only when the installer actually rebuilt and
+  activated a release, `{:error, output}` when the build failed — a failed
+  refresh aborts the chain instead of silently continuing under stale code.
+
+  Gating, in order: a release is refreshable only when the engine checkout
+  carries (or anchors) a buildable `elixir/` umbrella, the platform is one
+  the launcher supports, and the `mise` toolchain is on PATH — anything
+  else skips honestly (a release installed without a checkout manages its
+  own acquisition; failing because a toolchain is absent is not an error).
+  When the installed release carries a `.built-from` stamp equal to the
+  checkout's current HEAD the refresh is a no-op: the on-disk release was
+  already built from the source this update just pulled, so rebuilding it
+  (and re-execing mid-chain) would be pure waste — this equality is also
+  what makes the update handoff terminate.
+
+  `opts[:installer]` injects the installer invocation for tests (same
+  `System.cmd` result shape); production runs the checkout's own
+  `bootstrap/install-runtime.sh` — the exact acquisition path a fresh
+  machine takes.
+  """
+  @spec release_refresh(keyword()) :: {:ok, boolean()} | {:error, String.t()}
+  def release_refresh(opts) when is_list(opts) do
     root = engine_root(opts)
     home = home(opts)
 
-    if release_refreshable?(root) do
-      installer = Path.join(root, "bootstrap/install-runtime.sh")
-
-      case System.cmd("sh", [installer, root],
-             env: [{"HOME", home}, {"WORKSTATION_ENGINE_REPO", root}],
-             stderr_to_stdout: true
-           ) do
-        {_output, 0} -> :ok
-        {output, _status} -> {:error, String.trim_trailing(output, "\n")}
+    with {:ok, anchor} <- build_anchor(root),
+         {:ok, platform} <- platform(),
+         true <- toolchain?() do
+      if release_stale?(anchor, home) do
+        run_installer(opts, root, anchor, platform, home)
+      else
+        {:ok, false}
       end
     else
-      :ok
+      nil -> {:ok, false}
+      false -> {:ok, false}
     end
   end
 
-  # The refresh needs a buildable release source and the toolchain that
-  # builds it. A release installed without an engine checkout (or without
-  # mise on PATH) manages its own acquisition: skipping is the honest
-  # answer, failing because a toolchain is absent is not.
-  defp release_refreshable?(root),
-    do: File.exists?(Path.join(root, "elixir/mix.exs")) and System.find_executable("mise") != nil
+  ## release refresh plumbing
+
+  # The repo anchor — the directory holding the elixir/ umbrella — mirrors
+  # the launcher's resolution exactly: the checkout itself for a
+  # self-contained engine tree, its parent for the standard
+  # <repo>/workstation checkout layout. Without an anchor there is no
+  # buildable release source and the refresh skips.
+  defp build_anchor(root) do
+    cond do
+      File.exists?(Path.join(root, "elixir/mix.exs")) -> {:ok, root}
+      Path.basename(root) == "workstation" and File.exists?(Path.join(root, "../elixir/mix.exs")) ->
+        {:ok, Path.expand("..", root)}
+      true -> nil
+    end
+  end
+
+  # The installer needs the same platform tag the launcher derives. An
+  # unsupported platform never runs a release at all, so there is nothing
+  # to refresh.
+  defp platform do
+    arch = :erlang.system_info(:system_architecture) |> to_string()
+
+    case :os.type() do
+      {:unix, :linux} -> if arch =~ ~r/x86_64|amd64/, do: {:ok, "linux_x86_64"}
+      {:unix, :darwin} -> if arch =~ ~r/arm64|aarch64/, do: {:ok, "darwin_arm64"}
+      _ -> nil
+    end
+  end
+
+  defp toolchain?, do: System.find_executable("mise") != nil
+
+  # Staleness vs the pulled HEAD: the installer stamps every activated
+  # release with the source HEAD it built from; a release whose stamp is
+  # missing or differs from the checkout's current HEAD is stale. A
+  # checkout that cannot answer rev-parse (not a git tree) is always
+  # stale — rebuild, conservatively.
+  defp release_stale?(anchor, home) do
+    case release_stamp(home) do
+      {:ok, stamp} -> stamp != checkout_head(anchor)
+      :error -> true
+    end
+  end
+
+  defp release_stamp(home) do
+    path = Path.join([home, ".local", "opt", "workstation", ".built-from"])
+
+    case File.read(path) do
+      {:ok, stamp} -> {:ok, String.trim_trailing(stamp)}
+      {:error, _} -> :error
+    end
+  end
+
+  # Same config-isolated git contract as the pull step: the operator's
+  # ambient git configuration must not influence which HEAD the refresh
+  # compares against.
+  defp checkout_head(anchor) do
+    case System.cmd("git", ["-C", anchor, "rev-parse", "HEAD"],
+           stderr_to_stdout: true,
+           env: git_isolation()
+         ) do
+      {out, 0} -> String.trim_trailing(out)
+      {_out, _code} -> nil
+    end
+  end
+
+  defp git_isolation do
+    [
+      {"GIT_CONFIG_NOSYSTEM", "1"},
+      {"GIT_CONFIG_GLOBAL", "/dev/null"},
+      {"GIT_CONFIG_SYSTEM", "/dev/null"},
+      {"GIT_TERMINAL_PROMPT", "0"}
+    ]
+  end
+
+  # The installer is shell, not downloaded code; it validates the checkout's
+  # pins, installs the pinned editor runtime, and — pointed at the anchor by
+  # WORKSTATION_ENGINE_REPO — builds and activates the release, stamping it
+  # with the source HEAD. A non-zero exit is the refresh failure text.
+  defp run_installer(opts, checkout, anchor, platform, home) do
+    installer = Path.join(checkout, "bootstrap/install-runtime.sh")
+    fun = opts[:installer] || default_installer(checkout, installer, platform, home, anchor)
+
+    case fun.(anchor, home) do
+      {_output, 0} -> {:ok, true}
+      {output, _status} -> {:error, String.trim_trailing(output, "\n")}
+    end
+  end
+
+  defp default_installer(checkout, installer, platform, home, anchor) do
+    fn _anchor, _home ->
+      System.cmd("sh", [installer, checkout, platform],
+        env: [{"HOME", home}, {"WORKSTATION_ENGINE_REPO", anchor}],
+        stderr_to_stdout: true
+      )
+    end
+  end
 
   ## plumbing
 
@@ -180,7 +400,7 @@ defmodule Workstation.CLI.Engine do
 
   defp engine_root(opts), do: Update.engine_root(core_opts(opts))
 
-  defp core_opts(opts), do: Keyword.delete(opts, :collector)
+  defp core_opts(opts), do: opts |> Keyword.delete(:collector) |> Keyword.delete(:installer) |> Keyword.delete(:bootstrap_run)
 
   defp with_lock(purpose, opts, fun) do
     home = home(opts)
