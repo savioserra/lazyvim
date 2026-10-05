@@ -128,7 +128,7 @@ locally):
 ```sh
 cd elixir
 mise exec -- env MIX_ENV=prod mix release workstation --overwrite
-(cd _build/prod/rel && tar -czf ../../workstation-0.1.0-linux-x64.tar.gz workstation)
+(cd _build/prod/rel && tar -czf ../../../workstation-0.1.0-linux-x64.tar.gz workstation)
 sha256sum workstation-0.1.0-linux-x64.tar.gz > workstation-0.1.0-linux-x64.tar.gz.sha256
 ```
 
