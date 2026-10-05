@@ -550,15 +550,21 @@ defmodule Workstation.CLITest.EnvContract do
       end
     end
 
-    # TERM=dumb refuses apply even before plan evaluation.
+    # TERM=dumb refuses apply even before plan evaluation — and the refusal
+    # happens before any state-root read, but the run still brackets the
+    # engine state root to the sandbox: a mutating verb must never resolve
+    # engine state from the real $HOME inside the suite (the 17:37 incident
+    # shape).
     test "TERM=dumb refuses apply" do
-      {_root, home} = temp_test_root()
+      {root, home} = temp_test_root()
       original = System.get_env("TERM")
+      original_ws_home = System.get_env("WORKSTATION_HOME")
 
       try do
         System.put_env("TERM", "dumb")
+        System.put_env("WORKSTATION_HOME", root)
 
-        {result, _stdout, stderr} = run_main_with_env(["apply", "--home", home], "WORKSTATION_HOME", nil)
+        {result, _stdout, stderr} = run_main_with_env(["apply", "--home", home], "TERM", "dumb")
 
         assert {:shutdown, 1} = result
         assert stderr =~ "no usable terminal"
@@ -570,14 +576,32 @@ defmodule Workstation.CLITest.EnvContract do
     # --headless is the ONLY way a non-interactive caller reaches the plain
     # runner; on this pipe the gate passing is proven by the plain runner's
     # stdout ("Apply to ...") appearing at all, with the run NOT exiting 1.
+    # MUTATING RUN: the engine state root must be bracketed to the sandbox.
+    # The 2026-10-05 17:37 real-host write happened here — this run used to
+    # resolve the state root from the real $HOME while only the destination
+    # was sandboxed, so a mid-WIP empty plan was journaled into production
+    # state (revision 22). $WORKSTATION_HOME is the state-root bracket;
+    # --home still wins for the destination.
     test "--headless bypasses the gate and reaches the plain runner" do
-      {_root, home} = temp_test_root()
+      {root, home} = temp_test_root()
+      original_ws_home = System.get_env("WORKSTATION_HOME")
 
-      {result, stdout, _stderr} =
-        run_main_with_env(["apply", "--headless", "--home", home], "TERM", "xterm-256color")
+      try do
+        System.put_env("WORKSTATION_HOME", root)
 
-      assert stdout =~ "Apply to "
-      refute result == {:shutdown, 1}
+        {result, stdout, _stderr} =
+          run_main_with_env(["apply", "--headless", "--home", home], "TERM", "xterm-256color")
+
+        assert stdout =~ "Apply to "
+        refute result == {:shutdown, 1}
+
+        # The journal belongs to the sandbox state root, never the real one.
+        assert File.exists?(Path.join([root, ".local", "state", "workstation", "journal"]))
+      after
+        if original_ws_home,
+          do: System.put_env("WORKSTATION_HOME", original_ws_home),
+          else: System.delete_env("WORKSTATION_HOME")
+      end
     end
   end
 end
