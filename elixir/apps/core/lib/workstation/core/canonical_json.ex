@@ -38,45 +38,58 @@ defmodule Workstation.Core.CanonicalJSON do
   a validated plan, so failing closed beats guessing an encoding.
   """
   @spec encode(json_value()) :: binary()
-  def encode(value), do: value |> enc() |> IO.iodata_to_binary()
+  def encode(value), do: value |> enc(:lua) |> IO.iodata_to_binary()
 
-  defp enc(nil) do
+  @doc """
+  Encode engine-record JSON (the journal's applied/failed/pending records):
+  identical to `encode/1` except an empty object encodes as `{}` — the journal
+  readers require object shapes for `targets`, `source_index` and `fragments`,
+  and an empty-catalog apply must record a parseable journal, so the Lua
+  empty-table quirk must never leak into recorded state (the 2026-10-05
+  real-host incident: an empty plan wrote `[]` and every later apply refused
+  to parse its own journal).
+  """
+  @spec encode_record(json_value()) :: binary()
+  def encode_record(value), do: value |> enc(:record) |> IO.iodata_to_binary()
+
+  defp enc(nil, _mode) do
     # Map values that are literally nil mirror a missing Lua field: the key
     # itself is dropped by the caller building the map, so reaching nil here
     # means a list element or a top level nil, which Lua could not encode.
     raise ArgumentError, "canonical JSON cannot encode nil; drop the key or use :null"
   end
 
-  defp enc(:null), do: "null"
-  defp enc(true), do: "true"
-  defp enc(false), do: "false"
-  defp enc(value) when is_binary(value), do: quote_string(value)
-  defp enc(value) when is_integer(value), do: Integer.to_string(value)
+  defp enc(:null, _mode), do: "null"
+  defp enc(true, _mode), do: "true"
+  defp enc(false, _mode), do: "false"
+  defp enc(value, _mode) when is_binary(value), do: quote_string(value)
+  defp enc(value, _mode) when is_integer(value), do: Integer.to_string(value)
 
-  defp enc(value) when is_float(value) do
+  defp enc(value, _mode) when is_float(value) do
     raise ArgumentError, "canonical JSON cannot encode float #{inspect(value)}; the plan carries integers only"
   end
 
-  defp enc(value) when is_atom(value) do
+  defp enc(value, _mode) when is_atom(value) do
     raise ArgumentError, "canonical JSON cannot encode atom #{inspect(value)}"
   end
 
-  defp enc(value) when is_list(value) do
-    "[" <> Enum.map_join(value, ",", &enc/1) <> "]"
+  defp enc(value, mode) when is_list(value) do
+    "[" <> Enum.map_join(value, ",", &enc(&1, mode)) <> "]"
   end
 
-  defp enc(value) when is_map(value) do
-    # A Lua table with no entries is an array to vim.json.encode, so every
-    # empty map must encode as [] for byte parity.
+  defp enc(value, mode) when is_map(value) do
+    # A Lua table with no entries is an array to vim.json.encode, so plan
+    # bytes (:lua) must encode every empty map as [] for byte parity. Engine
+    # records (:record) demand the object shape — see encode_record/1.
     case :maps.to_list(value) do
       [] ->
-        "[]"
+        if mode == :lua, do: "[]", else: "{}"
 
       pairs ->
         members =
           Enum.sort_by(pairs, fn {key, _} -> key end)
           |> Enum.map(fn
-            {key, value} when is_binary(key) -> [quote_string(key), ?:, enc(value)]
+            {key, value} when is_binary(key) -> [quote_string(key), ?:, enc(value, mode)]
             {key, _value} -> raise ArgumentError, "canonical JSON object keys must be strings, got #{inspect(key)}"
           end)
 

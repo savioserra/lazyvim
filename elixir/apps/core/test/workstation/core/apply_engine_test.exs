@@ -76,10 +76,11 @@ defmodule Workstation.Core.ApplyEngineTest do
                "revision" => 1,
                "at" => at,
                "targets" => targets,
-               # An empty fragments journal encodes as [] — the anchor's
-               # vim.json.encode({}) cannot distinguish an empty table from an
-               # empty array, and the journal bytes keep that parity.
-               "fragments" => [],
+               # Journal records are object-faithful (CanonicalJSON
+               # encode_record/1): an empty fragments journal is {} — the
+               # golden-pinned vim.json empty-table quirk poisoned the real
+               # journal once and every reader demands map shapes.
+               "fragments" => %{},
                "manifest" => manifest,
                "source_index" => source_index
              } = record
@@ -122,6 +123,42 @@ defmodule Workstation.Core.ApplyEngineTest do
 
       # The pending attempt record was cleared after the success.
       assert Journal.pending(Path.join([home | EngineState.state_components()])) == []
+    end
+
+    test "an empty catalog plan records an object-shaped journal and a second apply succeeds", %{home: home} do
+      # The 2026-10-05 incident: an empty plan once recorded targets and
+      # source_index as JSON arrays, and every later reader bricked on the
+      # list shape. The writer must always record objects ({} when empty)
+      # and the re-apply must stay a success.
+      plan = build_plan(entries: [])
+      install_fake_chezmoi(home, [])
+
+      assert ApplyEngine.execute(plan, %{"home" => home}) == plan.generation
+
+      state_root = Path.join([home | EngineState.state_components()])
+      path = Path.join([state_root, "journal", "applied.json"])
+      record = Jason.decode!(File.read!(path))
+      assert record["targets"] == %{}
+      assert record["source_index"] == %{}
+      assert record["revision"] == 1
+
+      assert ApplyEngine.execute(plan, %{"home" => home}) == plan.generation
+      assert Jason.decode!(File.read!(path))["revision"] == 2
+    end
+
+    test "record_applied rejects list-shaped targets and source index fail-closed", %{home: home} do
+      plan = build_plan(entries: [])
+      install_fake_chezmoi(home, [])
+
+      assert_raise ArgumentError, ~r/journal record targets must be a JSON object/, fn ->
+        Journal.record_applied(home, plan.generation, [], %{}, plan.manifest, %{})
+      end
+
+      assert_raise ArgumentError, ~r/journal record source index must be a JSON object/, fn ->
+        Journal.record_applied(home, plan.generation, %{}, %{}, plan.manifest, [])
+      end
+
+      assert Journal.applied(Path.join([home | EngineState.state_components()])) == nil
     end
 
     test "the journal tree is private: state components 0700, journal files 0600", %{home: home} do
@@ -251,7 +288,9 @@ defmodule Workstation.Core.ApplyEngineTest do
   ## fixtures
 
   defp build_plan(opts \\ []) do
-    entries = [file_entry() | Keyword.get(opts, :extra_entries, [])]
+    entries =
+      Keyword.get_lazy(opts, :entries, fn -> [file_entry() | Keyword.get(opts, :extra_entries, [])] end)
+
     data = if bytes = Keyword.get(opts, :data), do: %{owner: "tooling", bytes: bytes}, else: nil
     remove_file = Policy.remove_file([])
 

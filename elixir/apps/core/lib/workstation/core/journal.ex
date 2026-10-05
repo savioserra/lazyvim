@@ -169,6 +169,20 @@ conflict-aware through the journal, never a blind replay.
   def record_applied(home, generation, targets, fragments, manifest, source_index) do
     assert_generation!(generation)
 
+    # The applied record is the ownership claim every later precondition and
+    # baseline check trusts, and the readers demand object shapes (a JSON
+    # array decodes as a list, which silently poisons the journal — the
+    # 2026-10-05 real-host incident). Fail closed at the sole write site
+    # instead of ever recording a journal no reader can consume.
+    unless is_map(targets),
+      do: raise(ArgumentError, "journal record targets must be a JSON object; got #{inspect(targets)}")
+
+    unless is_map(source_index),
+      do: raise(ArgumentError, "journal record source index must be a JSON object; got #{inspect(source_index)}")
+
+    unless is_list(manifest),
+      do: raise(ArgumentError, "journal record manifest must be a JSON array; got #{inspect(manifest)}")
+
     previous = applied(Path.join([home | EngineState.state_components()])) || %{}
 
     record = %{
@@ -242,7 +256,10 @@ conflict-aware through the journal, never a blind replay.
     file = File.open!(temp, [:write, :exclusive])
 
     try do
-      IO.binwrite(file, Workstation.Core.CanonicalJSON.encode(value))
+      # Object-faithful encoding: journal readers require map shapes for
+      # targets/source_index/fragments, so an empty map records as {} — the
+      # golden-pinned Lua quirk (empty object -> []) must not poison state.
+      IO.binwrite(file, Workstation.Core.CanonicalJSON.encode_record(value))
       File.chmod!(temp, 0o600)
     after
       File.close(file)
