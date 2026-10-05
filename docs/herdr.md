@@ -39,6 +39,14 @@ cleanup on it.
 
 ## Usage notes
 
+- Theme: the engine documents one canonical choice but never writes herdr's
+  live `config.toml` (the binary owns it: onboarding, Settings edits,
+  `herdr config reset-keys`). Set once in herdr's Settings:
+  `[theme] name = "terminal"`, `auto_switch = true` — herdr then follows the
+  host terminal's ANSI palette exactly like tmux and nvim here, with optional
+  `[theme.custom]` accents derived from the shared tokens
+  ([theme](theme.md)). Enforcement (a `modify_` fragment patching only the
+  `[theme.custom]` block) is a deliberate non-goal until branding is wanted.
 - Managed `.local/bin/herdr` shadows any system package (for example an
   Omarchy-provided `/usr/bin/herdr`) through the managed PATH. pi-subagents
   locates the client via `HERDR_BIN` (not `HERDR_BIN_PATH`, which Herdr itself

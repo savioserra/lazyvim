@@ -19,6 +19,21 @@ core -X-> catalog/packages/providers/chezmoi/Neovim
 `workstation.app` materializes the graph; `workstation.source` interprets
 collected recipe envelopes through the explicitly registered providers and
 builds the deterministic source plan shared by `diff`, `apply` and `plan`.
+Read-side commands (`status`, `plan`, `diff`, `json`) are canonical in the
+Elixir engine: the `workstation` release binary (`elixir/apps/cli`, invoked
+directly against a private test home) collects the catalog natively
+(`Workstation.Core.Catalog.live/1`) — no Lua in that path. The mutation
+verbs are canonical in the Elixir engine as well: `update` graduated in
+lane c3, `apply` is sandbox-graduated (c3) and proved once on the real
+host by the authorized reconcile apply (journal revision 15 → 16 at
+generation `e4b7736…`, empty post-apply delta — see `docs/elixir.md`);
+the Lua one-shot no longer holds the canonical mutation role. The public
+launcher still dispatches every verb through `run.lua`: the retained Lua
+core remains the serving path for the lifecycle verbs (`apply`, `update`,
+`setup`, `sync`, `verify`, `bootstrap`) and the real-home reads because
+the Elixir CLI has no lifecycle verbs and refuses real homes; rerouting
+the launcher is the blocked retirement step (see `docs/elixir.md` and the
+c5 lane report).
 Bootstrap-owned pinned Neovim hosts Lua without user configuration; Neovim
 lifecycle behavior is an ordinary package. `bin/workstation` is the sole
 public entry point.
@@ -27,20 +42,22 @@ public entry point.
 
 | Path under `workstation/` | Contract |
 | --- | --- |
-| `apps/cli/run.lua` | Engine command dispatch through the public launcher |
+| `apps/cli/run.lua` | Engine command dispatch through the public launcher (all verbs; read verbs are parity anchors pending the Elixir lifecycle) |
 | `lua/workstation/catalog.lua` | Explicit ordered inventory; one registration per package |
 | `lua/workstation/core/contract.lua` | Combined contribution validation |
 | `lua/workstation/core/materialize.lua` | Invoke factories and split specifications from handlers |
 | `lua/workstation/core/graph.lua` | Host selection, dependency validation, topological ordering |
 | `lua/workstation/core/runner.lua` | Lifecycle dispatch |
-| `lua/workstation/provision/recipes.lua` | Public pure recipe constructors (`provision.chezmoi`, `provision.shell`) |
+| `lua/workstation/provision/recipes.lua` | Public pure recipe constructors (`provision.chezmoi`, `provision.chezmoi_data`, `provision.shell`) |
 | `lua/workstation/provision/chezmoi.lua` | Chezmoi provider: option validation, native name encoding, confined assets |
+| `lua/workstation/provision/chezmoi_data.lua` | Chezmoi data provider: the single source-root `.chezmoidata.toml` token envelope |
 | `lua/workstation/provision/shell.lua` | Shared-shell fragment compositor with exact-block retirement |
 | `lua/workstation/provision/policy.lua` | Engine-owned legacy tombstones (exact seventeen) |
 | `lua/workstation/source.lua` | Provider registry, plan assembly, conflict detection, reconciliation |
 | `lua/workstation/state.lua` | Immutable generations, fail-closed lock, private journal and fingerprints |
 | `lua/workstation/changesets.lua` | Attributable change sets and generated-source Git-style patches |
 | `packages/<name>/` | Combined capability metadata, recipes, lifecycle behavior and `files/` payload |
+| `packages/theme/tokens.lua` | Canonical theme tokens: slot/palette layers, per-appearance palettes, consumer choices |
 | `packages/nvim/compose.lua` | nvim-owned profile compositor (`nvim-profile` provider) |
 | `lua/workstation/commands.lua` | Checked child processes |
 | `lua/workstation/paths.lua` | Target paths and isolated writable roots |
@@ -128,7 +145,7 @@ herdr
 | `foundation` | CLI archive members | — | CLI versions | All |
 | `fonts` | Font archives, then host registration/cache | — | Host visibility | All |
 | `node` | nvm and Node archives, then default/environment | — | NVM and Node version | All |
-| `agent` | Exact global pi npm package; internal pi packages from `pi-packages.json`, installed via the pinned pi CLI; subagent skill policy; acp.json delegate-off | — | npm/CLI version, per-package lock integrity, pinned settings entries, extension discovery tools | All |
+| `agent` | Exact global pi npm package; internal pi packages from `pi-packages.json`, installed via the pinned pi CLI; subagent skill policy; pi-subagents role definitions with per-project memory frontmatter; acp.json delegate-off | — | npm/CLI version, per-package lock integrity, pinned settings entries, role definition files with memory frontmatter, extension discovery tools | All |
 | `pi-skills` | — | — | Managed skill files and Pi discovery | All |
 | `pi-ntfy-notifier` | Source-managed extension | — | Manifest version, extension files, node test suite | All |
 | `go` | Exact toolchain archive; go link recipe | — | Go version | Linux/WSL/macOS |
@@ -137,6 +154,7 @@ herdr
 | `secrets` | Pinned op archive member; op env fragment | — | Managed 1Password CLI version; never account or vault state | All supported hosts |
 | `nvim` | — | Locks and parsers | Startup, locks, mason coverage, base/standard/Go behavior | All |
 | `typescript` | — | — | Own Mason expectations, plugin module and behavior/formatter cases through nvim leaf helpers | All |
+| `theme` | Single source-root `.chezmoidata.toml` token envelope via `provision.chezmoi_data`; deploys no home target | — | Envelope bytes against the tokens module; requires `foundation` | All |
 | `tmux` | Plugin checkout; tmux config/theme/link recipes | — | Commits, server, theme | Linux/macOS |
 
 ## Validation
@@ -149,7 +167,6 @@ envelopes. Registered providers reject unknown options, unsafe targets
 combinations, unconfined assets and ambiguous modify inputs. The assembler
 rejects duplicate exclusive targets, incompatible ancestor types/attributes,
 removals overlapping ownership and exact directories encompassing other owners.
-The old text listing only core-level rejections is superseded:
 
 The contract and materializer reject:
 
@@ -218,7 +235,16 @@ catalog by the next apply, never followed.
 The agent capability also owns the subagent skill policy (worker/delegate get the
 managed lazyvim skill) and `~/.pi/acp.json` with `delegate: false`, keeping
 pi-subagents as the only delegation surface while billion-context-pi compression
-tools stay enabled. One JavaScript verifier per pinned package lives under
+tools stay enabled. It also ships the engine-owned pi-subagents role definitions
+(`~/.pi/agent/agents/{worker,reviewer}.md`, sourced from
+`workstation/packages/agent/files/.pi/agent/agents/`). These shadow the bundled
+builtins and carry `memory: {scope: project, path: fleet}` frontmatter — per-agent
+memory is intrinsic to pi-subagents (the first 200 lines of
+`<repo>/.pi/agent-memory/fleet/MEMORY.md` are injected into each run; worker
+appends, reviewer recalls; no Hermes dependency). The fleet memory seed for this
+repo is tracked at `.pi/agent-memory/fleet/MEMORY.md`. After a pi-subagents
+upgrade, re-diff the shipped definitions against the package builtins. One
+JavaScript verifier per pinned package lives under
 `workstation/packages/agent/verify/` and checks Pi discovery through the
 resource loader.
 

@@ -69,6 +69,17 @@ nvim leaf helpers; `workstation/packages/nvim/` owns editor sync, locks and
 base/standard/Go verification; `node` owns the host runtime. Deployed Neovim
 imports runtime configuration only, never package factories or engine modules.
 
+`packages/elixir/files/languages/plugins/elixir.lua` follows the same split
+for Elixir/HEEx: the `packages/elixir` capability declares the profile intent
+(the `lazyvim.plugins.extras.lang.elixir` extra, Mason's `elixir-ls`, attaching
+as the `elixirls` client) and verifies real LSP attach plus `mix format`
+formatting through the leaf helpers, while the deployed module constrains
+ElixirLS (dialyzer and dep fetching off) and pins conform-owned
+`mix format` as the autoformatter. Unlike `node` for TypeScript, the BEAM
+toolchain is a host prerequisite here — `elixir`/`erlang` must resolve on
+PATH (mise- or system-managed); no engine-owned elixir runtime capability
+exists yet.
+
 ## Plugin ownership
 
 | File | Owns |

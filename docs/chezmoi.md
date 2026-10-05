@@ -32,6 +32,15 @@ Repository `AGENTS.md` files are instructions, not payload: no recipe can
 declare them, so no ignore policy is needed and a test proves they cannot
 deploy.
 
+Generation ids and target fingerprints are content addresses over canonical
+JSON: compact bytes with object keys sorted ascending bytewise
+(`vim.json.encode(_, { sort_keys = true })`). Per-process key-order seeding
+never reaches them, so identical content yields identical ids in every
+process; the golden suite asserts this across two separate engine processes.
+Ids recorded before this canonical encoding are opaque and may all shift
+once; journal and staleness logic compare ids only against values produced
+by the same engine, so recorded ownership is unaffected.
+
 Shared shell startup files (`.profile`, `.bashrc`, `.zshrc`) compose from
 individually owned fragments (`marker` + single-line literal `body`, explicit
 `order`). Removing a fragment removes exactly its recorded marker+body block
@@ -103,6 +112,13 @@ Every final removal literal is revalidated against active ownership and
 engine-private state - static policy aggregation gets no bypass - and removal
 literals with glob metacharacters or control bytes are rejected so one owned
 target can never expand into several removals.
+
+The generation carries one more engine-owned source-root file: a single
+optional `.chezmoidata.toml` envelope contributed through
+`provision.chezmoi_data`. It is staged, hashed in the manifest and
+byte-verified like every source file, but it is never a home target: chezmoi
+merges it into template data, and the theme capability owns it (see
+[theme](theme.md)). At most one package may declare it.
 
 Package `kind = "remove"` recipes operate on **recorded ownership**: a target
 that exists but was never journaled conflicts instead of being destructively

@@ -80,7 +80,10 @@ Setup removes stale `~/.tmux/plugins/tmux-fingers` checkouts.
 Colors resolve through terminal palette slots instead of hardcoded hex, so
 the bar follows the active terminal theme everywhere: Omarchy retints panes
 via OSC 4 on theme switch and the bar restyles without a tmux reload, and
-plain terminals follow their own palette.
+plain terminals follow their own palette. The slot values render from the
+shared theme capability envelope at apply time
+([theme](theme.md)); this file is a `template = true` recipe and the tmux
+package requires `theme`.
 
 | Color role | Value |
 | --- | --- |
