@@ -38,6 +38,16 @@ defmodule Workstation.Core.Preconditions do
     home = context["home"] || EngineState.home()
     state_root = EngineState.state_root()
     journal = if Map.has_key?(context, "journal"), do: context["journal"], else: Journal.applied(state_root)
+
+    # Journal shape guard: the ownership lookups below dereference
+    # journal["targets"][target] directly. A list-shaped index (journals
+    # written before object-faithful record encoding, or hand edits) must
+    # fail with the actionable rebuild error here, not with an Access
+    # crash part-way through the checks.
+    if journal && not is_map(journal["targets"]) do
+      raise(ArgumentError, "journal targets index is missing; rebuild the plan")
+    end
+
     pending = if Map.has_key?(context, "pending"), do: context["pending"], else: Journal.pending(state_root)
 
     current_revision = (journal && journal["revision"]) || 0

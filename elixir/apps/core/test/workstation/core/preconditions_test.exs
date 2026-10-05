@@ -301,6 +301,35 @@ defmodule Workstation.Core.PreconditionsTest do
     assert Preconditions.check(plan([], %{"removals" => [%{"owner" => "x", "target" => "owned"}]}), context) == :ok
   end
 
+  test "a list-shaped journal targets index fails with the rebuild error, never an Access crash", %{home: home} do
+    # The 2026-10-05 real-host crash shape: a journal written before
+    # object-faithful record encoding carried "targets": [] and the
+    # ownership lookups dereferenced it with a string key mid-check.
+    File.write!(Path.join(home, "mystery"), "never journaled")
+
+    poisoned = journal(%{"targets" => []})
+
+    assert_raise ArgumentError, ~r/journal targets index is missing; rebuild the plan/, fn ->
+      Preconditions.check(
+        plan([], %{"removals" => [%{"owner" => "x", "target" => "mystery"}]}),
+        %{"home" => home, "journal" => poisoned, "pending" => []}
+      )
+    end
+
+    # The pending-attempt ownership lookup crashed the same way on the
+    # poisoned index; the guard fires before any record is inspected.
+    assert_raise ArgumentError, ~r/journal targets index is missing; rebuild the plan/, fn ->
+      Preconditions.check(
+        plan([entry(%{})]),
+        %{
+          "home" => home,
+          "journal" => poisoned,
+          "pending" => [%{"generation" => String.duplicate("99", 32), "targets" => ["mystery"]}]
+        }
+      )
+    end
+  end
+
   test "fragment integrity uses the journal's recorded fragment bodies", %{home: home} do
     fragment = %{"id" => "app", "marker" => "# m", "body" => "export NEW=1", "order" => 1}
 
