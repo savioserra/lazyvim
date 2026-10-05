@@ -87,6 +87,8 @@ check_member() {
 
 command -v jq >/dev/null 2>&1 ||
 	fail "jq is required for the golden comparison but was not found"
+command -v timeout >/dev/null 2>&1 ||
+	fail "timeout is required so an interactive-capable invocation can never hang the gate"
 
 check_member plan "$GOLDEN_DIR/expected/plan.json"
 check_member manifest "$GOLDEN_DIR/expected/manifest.json"
@@ -113,12 +115,16 @@ mkdir -p "$TUI_INPUT_DIR"
 TUI_INPUT_FILE="$TUI_INPUT_DIR/keys"
 : >"$TUI_INPUT_DIR/keys"
 # `workstation tui --home <marked>` must at minimum boot its runtime and exit
-# cleanly on immediate EOF; a crash (non-0/non-clean) fails the smoke.
+# cleanly on immediate EOF; a crash (non-0/non-clean) fails the smoke. The
+# timeout is the hang guard: a gate that waits forever on an interactive
+# prompt is a CI-killer, so the release invocation is bounded and an overshoot
+# is a loud failure, never a stuck run.
 TUI_EXIT=0
-TERM=dumb "$BIN" tui --home "$SMOKE_HOME" <"$TUI_INPUT_DIR/keys" >/dev/null 2>&1 ||
+TERM=dumb timeout 60 "$BIN" tui --home "$SMOKE_HOME" <"$TUI_INPUT_DIR/keys" >/dev/null 2>&1 ||
 	TUI_EXIT=$?
 case "$TUI_EXIT" in
 0 | 1 | 2) ;;
+124) fail "packaged TUI ignored EOF and overshot the 60s gate timeout" ;;
 *) fail "packaged TUI did not boot cleanly (exit $TUI_EXIT)" ;;
 esac
 
