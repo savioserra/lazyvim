@@ -32,6 +32,12 @@ defmodule Workstation.Core.Catalog.DiscoverTest do
   test "discovery finds exactly the native providers, in module-name order" do
     assert Discover.providers() == @native_modules
     assert length(Packages.modules()) == 15
+
+    # Production composition consumes the VALIDATED discovery seam — the
+    # spec-shape and duplicate-id rejections apply to the real catalog,
+    # not only to direct validate_specs calls.
+    assert Packages.packages() == Discover.specs()
+    assert length(Packages.packages()) == length(Packages.modules())
   end
 
   test "discovered specs are the native catalog, id-sorted with no duplicates" do

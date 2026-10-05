@@ -75,9 +75,14 @@ defmodule Workstation.Core.Catalog.Packages do
   validated by their owning recipe constructors.
   """
   @spec packages() :: [map()]
-  def packages do
-    Enum.map(modules(), & &1.spec())
-  end
+  @doc """
+  The discovered catalog: every provider's spec, validated at discovery
+  time (shape + duplicate ids) exactly as this module's documentation
+  promises — production composition must never bypass the contributor
+  contract a direct `module.spec()` call would skip.
+  """
+  @spec packages() :: [map()]
+  def packages, do: Discover.specs()
 
   # --- recipe helpers (parity anchors of provision/recipes.lua + domain compositors) ---
 
