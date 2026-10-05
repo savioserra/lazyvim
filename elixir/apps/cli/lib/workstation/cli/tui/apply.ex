@@ -104,22 +104,46 @@ defmodule Workstation.CLI.TUI.Apply do
   Table rows for the plan body's entries, in canonical engine order. The row
   id is the entry's `source_name` — the identity key the production entry
   view carries (the recorded golden projection spells the same value `name`).
+
+  One source can carry several operations in one generation, so a duplicated
+  `source_name` gets a stable occurrence suffix (`name#2`); unique names keep
+  the bare production key. Row ids must be unique — the table widget refuses
+  duplicate identities at init.
   """
   @spec entries_from_plan(map()) :: [map()]
   def entries_from_plan(plan) do
-    plan
-    |> get_in(["plan", "entries"])
-    |> case do
-      entries when is_list(entries) -> entries
-      _other -> []
-    end
-    |> Enum.map(fn entry ->
-      %{
-        "id" => entry["source_name"],
-        "operation" => entry["operation"] || entry["type"],
-        "target" => entry["target"]
-      }
-    end)
+    entries =
+      plan
+      |> get_in(["plan", "entries"])
+      |> case do
+        entries when is_list(entries) -> entries
+        _other -> []
+      end
+
+    counts = Enum.frequencies_by(entries, & &1["source_name"])
+
+    {rows, _seen} =
+      Enum.map_reduce(entries, %{}, fn entry, seen ->
+        name = entry["source_name"]
+
+        {id, seen} =
+          if counts[name] > 1 do
+            occurrence = Map.get(seen, name, 0) + 1
+            {"#{name}##{occurrence}", Map.put(seen, name, occurrence)}
+          else
+            {name, seen}
+          end
+
+        row = %{
+          "id" => id,
+          "operation" => entry["operation"] || entry["type"],
+          "target" => entry["target"]
+        }
+
+        {row, seen}
+      end)
+
+    rows
   end
 
   @impl TermUI.Elm

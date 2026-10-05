@@ -325,5 +325,26 @@ defmodule Workstation.CLI.TUI.ApplyTest do
 
       assert Apply.entries_from_plan(%{"generation" => "g"}) == []
     end
+
+    test "duplicated source names get a stable occurrence suffix" do
+      plan = %{
+        "generation" => "g",
+        "plan" => %{
+          "entries" => [
+            %{"source_name" => "dot_gitconfig", "type" => "file", "target" => ".gitconfig"},
+            %{"source_name" => "dot_tmux.conf", "type" => "file", "target" => ".tmux.conf"},
+            %{"source_name" => "dot_tmux.conf", "type" => "modify", "target" => ".tmux.conf"},
+            %{"source_name" => "dot_tmux.conf", "type" => "file", "target" => "other/tmux.conf"}
+          ]
+        }
+      }
+
+      ids = Apply.entries_from_plan(plan) |> Enum.map(& &1["id"])
+
+      # unique names keep the bare production key; a source carrying several
+      # operations is disambiguated by occurrence, deterministically ordered
+      assert ids == ["dot_gitconfig", "dot_tmux.conf#1", "dot_tmux.conf#2", "dot_tmux.conf#3"]
+      assert Enum.uniq(ids) == ids
+    end
   end
 end
