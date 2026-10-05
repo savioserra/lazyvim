@@ -123,7 +123,15 @@ defmodule Workstation.CLI.Router do
         update: [
           name: "update",
           about: "pull, bootstrap, apply, sync, verify — abort on first failure (TUI by default)",
-          options: lifecycle_options(),
+          options:
+            lifecycle_options() ++
+              [
+                resume_from: [
+                  long: "--resume-from",
+                  help: "internal: resume the update chain at these comma-separated steps (set by the release handoff)",
+                  value_name: "STEPS"
+                ]
+              ],
           flags: [headless: [long: "--headless", help: "force the non-interactive plain runner"]]
         ],
         sync: [
@@ -221,8 +229,14 @@ defmodule Workstation.CLI.Router do
     home = resolve_home(result)
 
     cond do
+      # The handoff flag is internal to the release-refresh flow, which
+      # always re-execs with --headless; refuse the ambiguous combination
+      # instead of silently ignoring the resume list in the TUI.
+      result.options[:resume_from] != nil and not result.flags[:headless] ->
+        fail(2, "error: --resume-from is an internal handoff flag and requires --headless")
+
       result.flags[:headless] ->
-        Plain.run(:update, destination: home)
+        Plain.run(:update, destination: home, resume_from: result.options[:resume_from])
 
       usable_terminal?() ->
         run_tui(Update, destination: home)

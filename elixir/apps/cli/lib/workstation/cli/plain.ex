@@ -19,8 +19,20 @@ defmodule Workstation.CLI.Plain do
   4 when the executor reports a failure. Update aborts on the first failing
   lifecycle step (docs/capabilities.md) and reports the remaining steps as
   skipped.
+
+  The update chain carries the release handoff (docs/capabilities.md,
+  "release refresh and handoff"): after every step the runner probes
+  `Workstation.CLI.Engine.update_handoff/1`; when a refreshed bootstrap
+  left its handoff note the remaining steps are printed as handed off and
+  the runner runs the NEW release with `--resume-from`, forwarding its
+  output and exit code, so apply/sync/verify execute under the freshly
+  built engine instead of the stale code this process loaded at boot. The
+  BEAM has no exec(2), so the handoff is a supervised child whose status
+  becomes this run's exit status — the observable two-phase contract is
+  one command, one exit code.
   """
 
+  alias Workstation.CLI.Engine
   alias Workstation.CLI.TUI.Apply
   alias Workstation.CLI.TUI.Executor
   alias Workstation.CLI.TUI.Update
@@ -42,7 +54,7 @@ defmodule Workstation.CLI.Plain do
         run_apply(destination, Keyword.fetch!(opts, :plan), Keyword.get(opts, :executor, &Executor.apply_executor/1))
 
       :update ->
-        run_update(destination, Keyword.get(opts, :executor, &Executor.update_executor/1))
+        run_update(destination, Keyword.get(opts, :executor, &Executor.update_executor/1), opts)
     end
   end
 
@@ -70,25 +82,25 @@ defmodule Workstation.CLI.Plain do
     end
   end
 
-  defp run_update(destination, executor) do
-    steps = Update.steps()
-    total = length(steps)
+  defp run_update(destination, executor, opts) do
+    steps = resume_steps(opts[:resume_from])
+    probe = Keyword.get(opts, :handoff_probe, &Engine.update_handoff/1)
+    total = length(Update.steps())
 
     IO.puts("Update #{destination} (#{total} steps)")
 
-    Enum.reduce_while(Enum.with_index(steps, 1), :ok, fn {step, index}, :ok ->
+    steps
+    |> Enum.reduce_while(:ok, fn {step, index}, :ok ->
       case executor.(%{"step" => step}) do
         :ok ->
           IO.puts("  [#{index}/#{total}] #{step} ok")
-          {:cont, :ok}
+          after_step(probe, steps, index, total)
 
         {:error, reason} ->
           IO.puts("  [#{index}/#{total}] #{step} failed: #{reason}")
 
-          remaining = Enum.drop(steps, index)
-
-          remaining
-          |> Enum.with_index(index + 1)
+          steps
+          |> Enum.drop_while(fn {_s, i} -> i <= index end)
           |> Enum.each(fn {skipped, n} -> IO.puts("  [#{n}/#{total}] #{skipped} skipped") end)
 
           {:halt, {:error, {step, reason}}}
@@ -99,8 +111,83 @@ defmodule Workstation.CLI.Plain do
         IO.puts("Updated")
         :ok
 
+      {:handoff, release, remaining} ->
+        handoff(release, remaining, total)
+
       {:error, {step, reason}} ->
         fail(4, "error: update failed at #{step}: #{reason}")
+    end
+  end
+
+  # --resume-from (the release handoff's re-exec contract): a comma-
+  # separated sub-chain of the lifecycle, validated against the real steps
+  # and run with their ORIGINAL chain numbering so the two-phase run reads
+  # as one sequence. Unknown, empty, or duplicate names are usage errors.
+  defp resume_steps(nil), do: Update.steps() |> Enum.with_index(1)
+
+  defp resume_steps(csv) do
+    names = String.split(csv, ",", trim: true)
+    known = Update.steps()
+
+    cond do
+      names == [] ->
+        fail(2, "error: --resume-from requires a comma-separated step list")
+
+      names != Enum.uniq(names) ->
+        fail(2, "error: --resume-from lists a step twice: #{csv}")
+
+      true ->
+        Enum.each(names, fn name ->
+          unless name in known do
+            fail(2, "error: --resume-from: unknown update step #{inspect(name)} (known: #{Enum.join(known, ", ")})")
+          end
+        end)
+
+        known
+        |> Enum.with_index(1)
+        |> Enum.filter(fn {step, _index} -> step in names end)
+    end
+  end
+
+  # The handoff probe runs after EVERY step: a note can only exist when a
+  # bootstrap refreshed the release (or an earlier run crashed between the
+  # refresh and its exec), and in both cases the remaining chain belongs to
+  # the new release. A no-note probe is one file read that misses. The
+  # probe is injectable (`:handoff_probe`) with the same seam contract as
+  # `:executor`: production default, stand-ins for tests.
+  defp after_step(probe, steps, index, total) do
+    case probe.([]) do
+      {:ok, nil} ->
+        {:cont, :ok}
+
+      {:ok, release} ->
+        remaining = Enum.drop_while(steps, fn {_s, i} -> i <= index end)
+        {:halt, {:handoff, release, remaining}}
+
+      {:error, message} ->
+        IO.puts("  [#{index}/#{total}] handoff failed: #{message}")
+        {:halt, {:error, {"handoff", message}}}
+    end
+  end
+
+  defp handoff(release, remaining, total) do
+    Enum.each(remaining, fn {step, index} ->
+      IO.puts("  [#{index}/#{total}] #{step} handed off to the refreshed release")
+    end)
+
+    IO.puts("Update handed off to #{release}")
+
+    bin = Path.join([release, "bin", "workstation"])
+    argv = ["update", "--headless", "--resume-from", Enum.map_join(remaining, ",", fn {step, _} -> step end)]
+
+    case System.cmd(bin, argv, into: IO.stream(:stdio, :line), stderr_to_stdout: true) do
+      {_output, 0} ->
+        # The remaining chain completed under the new release; the child
+        # printed its own chain lines and final banner.
+        :ok
+
+      {_output, code} ->
+        fail(4, "error: update failed under the handed-off release (exit #{code})")
     end
   end
 

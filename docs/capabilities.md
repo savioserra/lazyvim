@@ -211,7 +211,27 @@ Bootstrap's engine step owns the `~/.local/bin/workstation` launcher symlink:
 identical canonical target, conflicting user files refused, no completion
 after a backend failure. Update refreshes the installed release from the
 freshly pulled checkout before the lifecycle steps so pin and engine changes
-take effect. See [installation and daily use](../README.md).
+take effect: when the engine checkout carries a buildable `elixir/` umbrella
+(the anchor resolution matches the launcher shim's), the platform is
+supported and the `mise` toolchain is present, the bootstrap step runs the
+same `bootstrap/install-runtime.sh` acquisition a fresh machine takes. The
+installer stamps every activated release with the source HEAD it built
+(`.built-from` beside the release); a stamp equal to the current checkout
+HEAD makes the refresh a no-op, so the update handoff terminates, and a
+failed build aborts the chain instead of continuing under stale code. A bare
+host (no checkout) keeps the runtime-only bootstrap contract — the update
+chain refreshes nothing engine-side there, and the designed engine-upgrade
+path is re-running the acquisition from a checkout (`workstation bootstrap`).
+
+Because a refresh changes the release ON DISK while the running process
+keeps its OLD loaded code, the chain hands off: the refreshed bootstrap
+leaves a handoff note under the destination state root, the headless runner
+probes it after every step, and on a live handoff the remaining steps
+(`apply`, `sync`, `verify`) execute under the new release via
+`workstation update --headless --resume-from <steps>` — one command, one
+exit code, the child's output forwarded. The TUI does not survive a rebuild:
+interactive operators re-run `workstation update`, which the refresh stamp
+makes a fast no-op rebuild path. See [installation and daily use](../README.md).
 
 The launcher shim (`workstation/bin/workstation`) resolves the checkout repo
 anchor — the directory holding the `elixir/` umbrella — for EVERY verb and

@@ -479,6 +479,23 @@ takes — and compose their plan through the shared Core composition
 interactive-first: on a usable terminal they run the TUI screens; there is
 no silent degradation.
 
+The update chain's bootstrap step carries the release-refresh contract
+(`Workstation.CLI.Engine.release_refresh/1`): gated on the checkout's
+`elixir/` umbrella, a supported platform and `mise` on PATH (anything else
+skips honestly), stamp-gated on the installer-written `.built-from` (stamp
+== checkout HEAD → no-op rebuild), fail-closed on installer failure. A
+refreshed bootstrap leaves a handoff note (`<state_root>/update/
+handoff.json`, `from_release` = the writing release's OTP root) because the
+running process still executes the old loaded code; the plain runner probes
+`Workstation.CLI.Engine.update_handoff/1` after every step and hands the
+remaining chain to the new release as `update --headless --resume-from
+<steps>` (a child whose output and exit status are forwarded — the BEAM has
+no exec(2)). The note naming the caller's own release survives the handoff
+decision (a crashed re-exec re-derives the same handoff); a note naming a
+DIFFERENT release is consumed with no handoff (this process IS the target).
+`bootstrap_run`/`installer`/`collector` are the engine's test seams, same
+pattern as the plain runner's `executor`/`handoff_probe`.
+
 ## TTY contract (interactive-first, no fallback)
 
 A terminal is usable when stdout is a real terminal and `TERM` is set and
