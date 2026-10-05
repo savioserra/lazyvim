@@ -227,3 +227,20 @@ required.
 - `journal["targets"][target]`-style string-key Access on possibly-list
   journal fields crashed real applies on empty baselines — latent since
   db477afe; guarded fail-closed in 7235557d.
+
+## Update/overlay lane (2026-10-05)
+
+- Engine.guarded/3 step contract: EVERY lifecycle step closure takes ONE
+  arg (merged run opts) — a zero-arity closure passes tests until the
+  real update chain runs (BadArityError mid-chain at engine.ex:209);
+  fixed in 51a80d3d, regression = headless run_update in a split-bracket
+  fixture home (cli engine_test.exs).
+- Journal.record_applied is home-ARG-anchored; Journal.applied's read
+  guard is GLOBAL-env-anchored — under a split destination/state-root
+  bracket the guarded read answers :absent; tests must assert the
+  destination-anchored applied.json file directly.
+- Overlay primitive is claim/release/pub (2026-10-05, 49877373): sub/
+  unsub are GONE; pub/2 fans out every event on the EventBus
+  {:domain, name} topic — standalone Overlay boots MUST start EventBus
+  first (missing registry fails pub loudly, by design); theme followers
+  subscribe to {:domain, "theme"} instead of claiming ownership.
