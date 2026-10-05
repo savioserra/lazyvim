@@ -105,9 +105,18 @@ hard-cut; retired paths are deleted in the lane that retires them.
   its own release from the checkout), rewrote the check matrix Elixir-native,
   and declared the catalog taxonomy (foundation/* layers, status-wire
   metadata, byte-neutral for plan bytes and goldens). Goldens are
-  byte-identical; see the lane report for the deleted-file inventory and
-  the residual capability-layer notes (tool/plugin provisioning that the
-  Lua handlers owned).
+  byte-identical; the terminal contract holds on the release binary (PTY
+  smoke engages the TUI, non-TTY without `--headless` exits 1 with the
+  terminal error, `--headless` publishes normally), and the real host is
+  green end-to-end: `verify` exit 0, `diff` empty, one true no-op apply
+  advanced the journal exactly revision 19 → 20 with the generation stable
+  (`e4b77364…`). Engine-path purity: the only `nvim` invocation left in the
+  Elixir tree is the runtime-acquisition pin check (`System.cmd(nvim,
+  ["--version"])` in `Update.Bootstrap.verify_runtime!/2`) — the managed
+  capability verifying its own payload, never the engine executing through
+  nvim. See the lane report for the deleted-file inventory and the residual
+  capability-layer notes (tool/plugin provisioning that the Lua handlers
+  owned).
 - Distribution: one checksummed `mix release` tarball + sha256 sidecar
   (linux glibc/libstdc++, see §1); never escript. macOS arm64 out of scope.
 
