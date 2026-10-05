@@ -428,6 +428,29 @@ in tests: pull runs against local fixture repositories, bootstrap against
 in-memory deterministic archive fixtures with pre-seeded or `file://`
 caches behind the fixture-only `allow_file_urls` opt.
 
+### Journal record contract (2026-10-05 real-host incident)
+
+An empty-catalog apply once wrote the real journal's revision 22 with
+`targets`/`source_index` as JSON arrays (`[]`), and every later apply
+refused to parse its own state ("journal source index is missing; rebuild
+the plan" from `Changesets`, then Access crashes on the unguarded
+`journal["targets"][target]` string-key lookups — latent at db477afe and
+earlier). Two contract fixes, both regression-pinned:
+
+* Engine-record JSON (the journal's applied/failed/pending records) is
+  written with `Workstation.Core.CanonicalJSON.encode_record/1`: object-
+  faithful — an empty map encodes `{}`, never the Lua empty-table quirk
+  (`{}` → `[]`) that plan bytes must keep for golden byte parity.
+  `encode/1` stays plan-faithful; `encode_record/1` is the journal seam.
+* `Workstation.Core.Preconditions.check` fails closed before any ownership
+  lookup when the journal's `targets` index is not a JSON object
+  ("journal targets index is missing; rebuild the plan"), for the applied
+  record and the pending-attempt path alike.
+
+The empty-plan shape is itself pinned: an empty catalog applied to a fresh
+test home records a parseable journal (`targets`/`source_index` = `{}`),
+and a second apply over that journal succeeds.
+
 ## Wire schema (retired lane b3 shell-out contract)
 
 The b3 engine shell-out (`workstation/lua/workstation/report.lua collect
