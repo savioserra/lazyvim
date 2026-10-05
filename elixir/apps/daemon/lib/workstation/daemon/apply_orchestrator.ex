@@ -24,13 +24,17 @@ defmodule Workstation.Daemon.ApplyOrchestrator do
   The orchestrator itself serializes in-daemon requests through its
   GenServer mailbox (one orchestrated generation at a time for the whole
   daemon) before any lock is taken, so sessions queue here instead of racing
-  on the filesystem. The flag-gated engine applier
+  on the filesystem. The lock file semantics themselves live in
+  `Workstation.Core.ApplyLock` (shared verbatim with the one-shot CLI
+  driver); the flag-gated engine applier
   (`Workstation.Daemon.Apply`) runs its real pipeline inside `with_lock/2`;
   the refusal path keeps exercising the same lock while the graduation gate
   is closed.
   """
 
   use GenServer
+
+  alias Workstation.Core.ApplyLock
 
   @lock_name "apply.lock"
   @doc """
@@ -90,59 +94,10 @@ defmodule Workstation.Daemon.ApplyOrchestrator do
     {:reply, release_lock(lock_path(state.state_root), token), state}
   end
 
-  # Exclusive create, mode 0600, body = owner metadata + token. Mirrors
-  # state.lua: wx open fails with :eexist when ANY file is there, and the
-  # existing body is then read to report the owner — never stolen.
-  defp acquire_lock(state_root, purpose) do
-    path = lock_path(state_root)
-    token = make_ref()
-    body = Workstation.Core.CanonicalJSON.encode(%{"owner" => owner_metadata(), "purpose" => purpose, "token" => reference_string(token)})
+  # Exclusive create, mode 0600, body = owner metadata + token, never
+  # stolen: the exact `Workstation.Core.ApplyLock` contract, shared with the
+  # one-shot CLI driver so both callers race on one filesystem fact.
+  defp acquire_lock(state_root, purpose), do: ApplyLock.acquire(state_root, purpose)
 
-    # :file (not Elixir File.open/3) because the 0600 mode must be set at
-    # create time; Elixir's File.open has no mode argument.
-    case :file.open(String.to_charlist(path), [:exclusive, :write, {:mode, 0o600}]) do
-      {:ok, file} ->
-        :ok = :file.write(file, body)
-        :ok = :file.close(file)
-        {:ok, token, path}
-
-      {:error, :eexist} ->
-        owner =
-          case Workstation.Core.EngineState.read_json(path) do
-            {:ok, %{"owner" => owner}} when is_binary(owner) -> owner
-            {:ok, _other} -> "unreadable or malformed lock"
-            :absent -> "unreadable or malformed lock"
-            {:error, :malformed} -> "unreadable or malformed lock"
-          end
-
-        {:error, {:locked, owner, path}}
-
-      {:error, reason} ->
-        # Fail closed: an environment error (permissions, missing state tree)
-        # must look exactly like a held lock to the caller, never like "free".
-        {:error, {:locked, "lock unavailable (#{inspect(reason)})", path}}
-    end
-  end
-
-  defp release_lock(path, token) do
-    expected = reference_string(token)
-
-    case Workstation.Core.EngineState.read_json(path) do
-      {:ok, %{"token" => recorded}} when recorded == expected ->
-        case File.rm(path) do
-          :ok -> :ok
-          {:error, reason} -> {:error, {:not_owner, reason}}
-        end
-
-      _other ->
-        # Someone else owns the file now (or it is gone); leave it alone.
-        {:error, :not_owner}
-    end
-  end
-
-  defp owner_metadata do
-    "uid=#{Workstation.Core.EngineState.uid()} node=#{inspect(node())}"
-  end
-
-  defp reference_string(ref), do: inspect(ref)
+  defp release_lock(path, token), do: ApplyLock.release(path, token)
 end

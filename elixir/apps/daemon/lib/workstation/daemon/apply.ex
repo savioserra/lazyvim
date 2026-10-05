@@ -14,9 +14,9 @@ defmodule Workstation.Daemon.Apply do
   both surfaces serialize through.
 
   When the gate is open, `run/2` executes the real one-shot pipeline —
-  compose the live native catalog (`Catalog.live/1`, no external engine
-  process), build the server-side plan (`Catalog` → `Graph` →
-  `Source.plan`), then under the apply orchestrator's exclusive lock (the
+  compose the desired plan through the shared Core composition
+  (`Workstation.Core.Plan.composed_plan/2`: live native catalog, no
+  external engine process), then under the apply orchestrator's exclusive lock (the
   SAME lock file the one-shot apply takes): preconditions, publish, backend
   apply, journal record, post-apply verification. The wire request carries
   only the requested generation and display rows — plan bytes are never
@@ -29,7 +29,7 @@ defmodule Workstation.Daemon.Apply do
   quoting it exactly.
   """
 
-  alias Workstation.Core.{ApplyEngine, Catalog, EngineState, Graph, Journal, Source}
+  alias Workstation.Core.{ApplyEngine, EngineState, Plan}
   alias Workstation.Daemon.ApplyOrchestrator
 
   @engine_apply_default false
@@ -72,36 +72,22 @@ defmodule Workstation.Daemon.Apply do
     end
   end
 
-  # Server-side plan: the live native catalog, then the same read-side
-  # composition the CLI evaluates in-process. The
-  # plan is built OUTSIDE the lock (the one-shot builds `M.plan`
-  # unlocked too) — staleness between collection and lock acquisition is
-  # exactly the window the in-lock preconditions exist to catch.
+  # Server-side plan: the shared Core composition (`Workstation.Core.Plan`),
+  # the same read-side composition the one-shot CLI evaluates in-process. The
+  # plan is built OUTSIDE the lock (the one-shot composes unlocked too) —
+  # staleness between collection and lock acquisition is exactly the window
+  # the in-lock preconditions exist to catch. Errors are coded for this
+  # surface: `code`/`prefix` distinguish the apply gate from the update chain.
   defp collect_plan(collector, home, code \\ "apply_refused", prefix \\ "apply") do
-    collect = collector || fn -> {:ok, Catalog.live(home)} end
+    case Plan.composed_plan(home, collector) do
+      {:ok, plan} ->
+        {:ok, plan}
 
-    try do
-      with {:ok, catalog} <- collect.() do
-        graph = Graph.order(%{host: catalog.host, specifications: catalog.packages})
+      {:error, {:collect_failed, reason}} ->
+        {:error, {code, prefix <> " plan collection failed: #{inspect(reason)}"}}
 
-        # The plan records the journal state it was composed against (the Lua
-        # changeset baseline): preconditions later compare this stamp against
-        # the in-lock journal and refuse a plan the journal advanced past,
-        # while the identical desired generation stays an idempotent no-op.
-        # Source.plan is pure (a replay probes no filesystem), so the real
-        # baseline lands only here, at the composition boundary.
-        {:ok,
-         Source.with_baseline(
-           Source.plan(%{graph: graph}),
-           Journal.applied(EngineState.state_root())
-         )}
-      else
-        {:error, reason} ->
-          {:error, {code, prefix <> " plan collection failed: #{inspect(reason)}"}}
-      end
-    rescue
-      error in [ArgumentError] ->
-        {:error, {code, Exception.message(error)}}
+      {:error, message} ->
+        {:error, {code, message}}
     end
   end
 

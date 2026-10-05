@@ -3,22 +3,20 @@ defmodule Workstation.CLITest do
 
   alias Workstation.CLI.Router
 
-  @marker Router.test_root_marker()
-
   defp repo_root do
     Path.expand("../../..", File.cwd!())
   end
 
-  defp temp_test_root(with_marker \\ true) do
+  # Fixture homes are plain directories: since the launcher fused to the
+  # engine, the CLI is the product front door on real homes (the TUI confirm
+  # screen and the explicit --headless flag are the mutation gates), so the
+  # graduation-era test-root-marker refusal no longer exists.
+  defp temp_test_root do
     root =
       Path.join(System.tmp_dir!(), "ws-cli-test-#{System.unique_integer([:positive])}")
 
     home = Path.join(root, "home")
     File.mkdir_p!(home)
-
-    if with_marker do
-      File.touch!(Path.join(home, @marker))
-    end
 
     on_exit(fn -> File.rm_rf!(root) end)
     {root, home}
@@ -95,31 +93,12 @@ defmodule Workstation.CLITest do
   end
 
   describe "safety guards" do
-    test "missing --home is refused" do
-      {_root, _home} = temp_test_root()
-
-      assert {:shutdown, 2} = run_main(["status"])
-    end
-
     # The b8 graduation flip removed --engine/--core; a stale caller must
     # get the usage error, not a silently ignored unknown flag.
     test "the retired --engine switch is a usage error" do
       {_root, home} = temp_test_root()
 
       assert {:shutdown, 2} = run_main(["status", "--engine", repo_root(), "--home", home])
-    end
-
-    test "the real $HOME is refused" do
-      real_home = System.get_env("HOME") || raise("HOME must be set in the test environment")
-
-      assert {:shutdown, 77} = run_main(["status", "--home", real_home])
-    end
-
-    test "a home without the test-root marker is refused" do
-      {_root, home} = temp_test_root(false)
-      refute File.exists?(Path.join(home, @marker))
-
-      assert {:shutdown, 77} = run_main(["status", "--home", home])
     end
 
     test "an unknown subcommand is a usage error" do
@@ -324,6 +303,71 @@ defmodule Workstation.CLITest do
     end
   end
 
+  describe "TUI-default contract (apply/update)" do
+    # ExUnit runs with piped stdio, so the gate is exercised exactly as a
+    # non-interactive caller hits it: no flag and no terminal is exit 1 with
+    # the no-terminal message, before any executor can run.
+    test "apply without --headless on a non-terminal refuses with exit 1" do
+      {_root, home} = temp_test_root()
+
+      {result, output} = capture_main_with_stderr(["apply", "--home", home])
+
+      assert {:shutdown, 1} = result
+      assert output =~ "workstation: no usable terminal; pass --headless for non-interactive runs"
+    end
+
+    test "update without --headless on a non-terminal refuses with exit 1" do
+      {_root, home} = temp_test_root()
+
+      {result, output} = capture_main_with_stderr(["update", "--home", home])
+
+      assert {:shutdown, 1} = result
+      assert output =~ "workstation: no usable terminal; pass --headless for non-interactive runs"
+    end
+  end
+
+  # Like capture_main but captures stderr (not stdout): the contract refusals
+  # print on stderr, and the plain runner prints progress on stdout — this
+  # helper is for the refusal shape, where the message is what matters.
+  defp capture_main_with_stderr(argv) do
+    me = self()
+
+    {pid, ref} =
+      spawn_monitor(fn ->
+        output =
+          ExUnit.CaptureIO.capture_io(:stderr, fn ->
+            result =
+              try do
+                Router.main(argv)
+                :ok
+              catch
+                :exit, {:shutdown, code} -> {:shutdown, code}
+              end
+
+            send(me, {:main_result, result})
+          end)
+
+        send(me, {:main_output, output})
+      end)
+
+    result =
+      receive do
+        {:main_result, result} -> result
+        {:DOWN, ^ref, :process, ^pid, reason} -> {:down, reason}
+      after
+        120_000 -> flunk("router main did not finish")
+      end
+
+    output =
+      receive do
+        {:main_output, output} -> output
+      after
+        5_000 -> ""
+      end
+
+    {result, output}
+  end
+
   # Minimal canonical JSON mirror: compact separators,
   # object keys sorted ascending bytewise, arrays in order.
   defp canonical_json(value) when is_map(value) do
@@ -340,4 +384,200 @@ defmodule Workstation.CLITest do
   end
 
   defp canonical_json(value), do: Jason.encode!(value)
+end
+
+defmodule Workstation.CLITest.EnvContract do
+  @moduledoc """
+  The environment-sensitive slices of the CLI contract: home resolution
+  ($WORKSTATION_HOME / $HOME) and the TERM half of the TUI-default gate.
+  Serialized (`async: false`) because System env is one VM-wide fact and the
+  async sibling suite must not observe a mutated environment.
+  """
+
+  use ExUnit.Case, async: false
+
+  alias Workstation.CLI.Router
+
+  defp temp_test_root do
+    root = Path.join(System.tmp_dir!(), "ws-cli-test-#{System.unique_integer([:positive])}")
+    home = Path.join(root, "home")
+    File.mkdir_p!(home)
+    on_exit(fn -> File.rm_rf!(root) end)
+    {root, home}
+  end
+
+  # Runs Router.main/1 off the test process with one env var overridden for
+  # the run; the spawned process inherits the mutated environment at spawn.
+  # Returns {result, stdout, stderr}: json output rides stdout, contract
+  # refusals ride stderr.
+  defp run_main_with_env(argv, key, value) do
+    original = System.get_env(key)
+    if value, do: System.put_env(key, value), else: System.delete_env(key)
+
+    try do
+      me = self()
+
+      {pid, ref} =
+        spawn_monitor(fn ->
+          stderr =
+            ExUnit.CaptureIO.capture_io(:stderr, fn ->
+              stdout =
+                ExUnit.CaptureIO.capture_io(fn ->
+                  result =
+                    try do
+                      Router.main(argv)
+                      :ok
+                    catch
+                      :exit, {:shutdown, code} -> {:shutdown, code}
+                    end
+
+                  send(me, {:main_result, result})
+                end)
+
+              send(me, {:main_stdout, stdout})
+            end)
+
+          send(me, {:main_stderr, stderr})
+        end)
+
+      result =
+        receive do
+          {:main_result, result} -> result
+          {:DOWN, ^ref, :process, ^pid, reason} -> {:down, reason}
+        after
+          120_000 -> flunk("router main did not finish")
+        end
+
+      stdout =
+        receive do
+          {:main_stdout, stdout} -> stdout
+        after
+          5_000 -> ""
+        end
+
+      stderr =
+        receive do
+          {:main_stderr, stderr} -> stderr
+        after
+          5_000 -> ""
+        end
+
+      {result, stdout, stderr}
+    after
+      if original, do: System.put_env(key, original), else: System.delete_env(key)
+    end
+  end
+
+  describe "home resolution" do
+    # The flag beats $WORKSTATION_HOME, which beats $HOME — the launcher shim
+    # rebases both to one destination, so verbs address the intended home.
+    test "--home wins over $WORKSTATION_HOME" do
+      {_r1, home} = temp_test_root()
+      {_r2, env_home} = temp_test_root()
+
+      {:ok, output, _stderr} =
+        run_main_with_env(["json", "status", "--home", home], "WORKSTATION_HOME", env_home)
+
+      assert Jason.decode!(output)["destination"] == Path.expand(home)
+    end
+
+    test "$WORKSTATION_HOME wins over $HOME" do
+      {_root, env_home} = temp_test_root()
+      real_home = System.get_env("HOME") || raise("HOME must be set in the test environment")
+
+      {:ok, output, _stderr} = run_main_with_env(["json", "status"], "WORKSTATION_HOME", env_home)
+
+      wire = Jason.decode!(output)
+      assert wire["destination"] == Path.expand(env_home)
+      refute wire["destination"] == real_home
+    end
+
+    test "no resolvable home is a usage error" do
+      home_override = System.get_env("WORKSTATION_HOME")
+      home_original = System.get_env("HOME")
+      System.delete_env("WORKSTATION_HOME")
+      System.delete_env("HOME")
+
+      try do
+        assert {:shutdown, 2} =
+                 (fn ->
+                    me = self()
+
+                    {pid, ref} =
+                      spawn_monitor(fn ->
+                        result =
+                          try do
+                            Router.main(["status"])
+                            :ok
+                          catch
+                            :exit, {:shutdown, code} -> {:shutdown, code}
+                          end
+
+                        send(me, {:main_result, result})
+                      end)
+
+                    receive do
+                      {:main_result, result} -> result
+                      {:DOWN, ^ref, :process, ^pid, reason} -> {:down, reason}
+                    after
+                      120_000 -> flunk("router main did not finish")
+                    end
+                  end).()
+      after
+        if home_override, do: System.put_env("WORKSTATION_HOME", home_override), else: :ok
+        if home_original, do: System.put_env("HOME", home_original), else: :ok
+      end
+    end
+  end
+
+  describe "TUI gate environment sensitivity" do
+    # ExUnit stdio is always piped, so usable_terminal?/0 must be false under
+    # every TERM here; the TERM half of the conjunction is what these pin.
+    test "usable_terminal? mirrors the TERM heuristic" do
+      original = System.get_env("TERM")
+
+      try do
+        System.put_env("TERM", "xterm-256color")
+        refute Router.usable_terminal?()
+
+        System.put_env("TERM", "dumb")
+        refute Router.usable_terminal?()
+
+        System.delete_env("TERM")
+        refute Router.usable_terminal?()
+      after
+        if original, do: System.put_env("TERM", original), else: System.delete_env("TERM")
+      end
+    end
+
+    # TERM=dumb refuses apply even before plan evaluation.
+    test "TERM=dumb refuses apply" do
+      {_root, home} = temp_test_root()
+      original = System.get_env("TERM")
+
+      try do
+        System.put_env("TERM", "dumb")
+
+        {result, _stdout, stderr} = run_main_with_env(["apply", "--home", home], "WORKSTATION_HOME", nil)
+
+        assert {:shutdown, 1} = result
+        assert stderr =~ "no usable terminal"
+      after
+        if original, do: System.put_env("TERM", original), else: System.delete_env("TERM")
+      end
+    end
+
+    # --headless is the ONLY way a non-interactive caller reaches the plain
+    # runner; on this pipe the gate passing is proven by the plain runner's
+    # stdout ("Apply to ...") appearing at all, with the run NOT exiting 1.
+    test "--headless bypasses the gate and reaches the plain runner" do
+      {_root, home} = temp_test_root()
+
+      {result, stdout, _stderr} =
+        run_main_with_env(["apply", "--headless", "--home", home], "TERM", "xterm-256color")
+
+      assert stdout =~ "Apply to "
+      refute result == {:shutdown, 1}
+    end
+  end
 end

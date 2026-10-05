@@ -1,19 +1,24 @@
 defmodule Workstation.CLI.Plain do
   @moduledoc """
-  Non-TTY fallback for the apply/update front door (brief §3 b7).
+  The headless runner for the apply/update front door (the `--headless`
+  contract): the same run the TUI screens render, emitted line-oriented on
+  stdout, with zero terminal interaction.
 
-  When TERM is unset or `dumb`, or `--no-tui` is passed, the same run the
-  TUI screens render is emitted line-oriented on stdout. Two invariants
-  come from the wire contract: this is never an alternate machine schema
-  (the hard-cut Output schemas remain the only machine contract — these
-  lines are human progress, not wire), and there is never an interactive
-  prompt on a pipe: without `--yes` the run refuses up front with the usage
-  exit code 2 instead of blocking on input it could never read.
+  There is no silent degradation: this runner runs ONLY when the operator
+  passed `--headless` (or the caller injected this executor seam directly,
+  as tests do). The Router refuses a non-interactive `apply`/`update`
+  without `--headless` before any executor runs, so a piped invocation can
+  never fall back to plain silently.
 
-  Exit codes stay the CLI table (Workstation.CLI.Router): 0 ok, 2 usage
-  (missing `--yes`, unknown command), 4 when the executor reports a
-  failure. Update aborts on the first failing lifecycle step
-  (docs/capabilities.md) and reports the remaining steps as skipped.
+  Two invariants come from the wire contract: this is never an alternate
+  machine schema (the hard-cut Output schemas remain the only machine
+  contract — these lines are human progress, not wire), and there is never
+  an interactive prompt on a pipe.
+
+  Exit codes stay the CLI table (Workstation.CLI.Router): 0 ok, 2 usage,
+  4 when the executor reports a failure. Update aborts on the first failing
+  lifecycle step (docs/capabilities.md) and reports the remaining steps as
+  skipped.
   """
 
   alias Workstation.CLI.TUI.Apply
@@ -21,24 +26,16 @@ defmodule Workstation.CLI.Plain do
   alias Workstation.CLI.TUI.Update
 
   @doc """
-  Run the plain fallback for `:apply` or `:update`.
+  Run the headless runner for `:apply` or `:update`.
 
-  Options mirror the TUI screens: `:destination`, `:plan` (apply), `:yes`,
-  and `:executor` (same callback contract). Defaults are the production
-  executors (`Workstation.CLI.TUI.Executor`, the daemon-orchestrated path);
-  the pure dry-run stand-ins remain injectable for tests.
+  Options mirror the TUI screens: `:destination`, `:plan` (apply), and
+  `:executor` (same callback contract). Defaults are the production
+  executors (`Workstation.CLI.TUI.Executor`, the in-process engine path);
+  pure stand-ins remain injectable for tests.
   """
   @spec run(:apply | :update, keyword()) :: :ok
   def run(command, opts) when command in [:apply, :update] do
     destination = Keyword.fetch!(opts, :destination)
-
-    unless Keyword.get(opts, :yes, false) do
-      # A pipe can never answer a prompt: refusing beats hanging forever.
-      fail(
-        2,
-        "error: #{command} without a terminal requires --yes (no prompt is offered on a pipe)"
-      )
-    end
 
     case command do
       :apply ->

@@ -11,7 +11,7 @@ defmodule Workstation.CLI.OutputTest do
   alias Workstation.CLI.Output
 
   defp status(journal) do
-    Output.status("workstation", "elixir", "~", "linux-x64", [], [], journal)
+    Output.status("workstation", "elixir", "~", "linux-x64", [], [], journal, %{})
   end
 
   test "an absent journal is the explicit null token, never a dropped key" do

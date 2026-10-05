@@ -1,35 +1,41 @@
 defmodule Workstation.CLI.Router do
   @moduledoc """
-  `workstation` command line (optimus) for the read-only front end.
+  `workstation` command line — the fused front door of the engine.
 
-  Subcommands `status`, `plan`, and `diff` render one hard-cut output schema
-  per command (`Workstation.CLI.Output`), evaluated in-process through the
-  Elixir core (`Workstation.CLI.Core`). The evaluated catalog is the native
-  live envelope (`Workstation.Core.Catalog.live/1`) — no external engine
-  process; `--input <file>` substitutes a recorded golden envelope for
-  offline replay.
+  Read verbs (`status`, `plan`, `diff`, `json <command>`) evaluate the live
+  native catalog in-process (`Workstation.CLI.Core`) and render one hard-cut
+  output schema per command (`Workstation.CLI.Output`); `--input <file>`
+  substitutes a recorded golden envelope for offline replay.
 
-  `json <command>` is the machine form: canonical JSON of the hard-cut wire,
-  one document on stdout.
+  Lifecycle verbs run the engine in this process (`Workstation.CLI.Engine`):
+  `bootstrap`, `apply`, `update`, `sync`, `verify`, `pull`. `apply` and
+  `update` are interactive-first — the TUI is the DEFAULT for verbs with a
+  screen, and there is no silent degradation: on a usable terminal they run
+  the TUI screens; `--headless` forces the plain runner; a non-terminal
+  stdout WITHOUT `--headless` is a hard error, never a plain fallback. The
+  other lifecycle verbs are plain runs by nature (no screen exists).
 
-  Safety contract (hard requirement carried over from the strangler window):
-  evaluation may write journal state under whatever `HOME` it is pointed
-  at, so the CLI never runs against the real home directory. `--home` is
-  mandatory, must not equal the real `$HOME`, and must carry the
-  `.workstation-test-root` marker created by `.github/scripts/test-home.sh`.
+  `--home` selects the destination home (default: `$WORKSTATION_HOME`, else
+  `$HOME` — the launcher shim rebases both to the same destination, so verbs
+  address the intended home either way). `--engine-root` selects the engine
+  checkout for the bootstrap/update steps (default: `$WORKSTATION_ENGINE_REPO`,
+  else checkout-walk detection).
 
-  Exit codes (docs/elixir.md carries the table): 0 ok; 2 usage; 3
-  conflict-or-precondition (core evaluation failed: bad envelope, graph or
-  plan conflict, invariant); 4 engine failure (native collection error:
-  unresolved engine checkout, missing or empty package asset); 77 refused
-  home (real `$HOME` or missing test-root marker).
+  Exit codes (docs/elixir.md carries the table): 0 ok; 1 no usable terminal
+  for an interactive verb; 2 usage; 3 conflict-or-precondition (evaluation
+  failure or apply-lock contention); 4 engine failure (native collection
+  error, lifecycle step failure).
   """
 
   alias Workstation.CLI.Core
+  alias Workstation.CLI.Engine
+  alias Workstation.CLI.Plain
   alias Workstation.CLI.Render
+  alias Workstation.CLI.TUI
+  alias Workstation.CLI.TUI.{Apply, Update}
   alias Workstation.Core.CanonicalJSON
 
-  @test_root_marker ".workstation-test-root"
+  @no_terminal "workstation: no usable terminal; pass --headless for non-interactive runs"
 
   def main(argv) do
     case Optimus.parse(parser(), argv) do
@@ -63,24 +69,24 @@ defmodule Workstation.CLI.Router do
   defp parser do
     Optimus.new!(
       name: "workstation",
-      description: "Read-only front end over the workstation Lua engine (lane b3).",
+      description: "workstation engine front end: read verbs report, lifecycle verbs mutate.",
       allow_unknown_args: false,
       parse_double_dash: true,
       subcommands: [
         status: [
           name: "status",
           about: "engine status report",
-          options: subcommand_options(),
+          options: read_options()
         ],
         plan: [
           name: "plan",
           about: "engine plan report",
-          options: subcommand_options(),
+          options: read_options()
         ],
         diff: [
           name: "diff",
           about: "engine diff report",
-          options: subcommand_options(),
+          options: read_options()
         ],
         json: [
           name: "json",
@@ -89,31 +95,62 @@ defmodule Workstation.CLI.Router do
             status: [
               name: "status",
               about: "raw status JSON",
-              options: subcommand_options(),
+              options: read_options()
             ],
             plan: [
               name: "plan",
               about: "raw plan JSON",
-              options: subcommand_options(),
+              options: read_options()
             ],
             diff: [
               name: "diff",
               about: "raw diff JSON",
-              options: subcommand_options(),
+              options: read_options()
             ]
           ]
+        ],
+        bootstrap: [
+          name: "bootstrap",
+          about: "provision a home: managed tool pins, chezmoi backend, launcher",
+          options: lifecycle_options()
+        ],
+        apply: [
+          name: "apply",
+          about: "apply the current desired state (TUI by default; --headless for plain)",
+          options: lifecycle_options(),
+          flags: [headless: [long: "--headless", help: "force the non-interactive plain runner"]]
+        ],
+        update: [
+          name: "update",
+          about: "pull, bootstrap, apply, sync, verify — abort on first failure (TUI by default)",
+          options: lifecycle_options(),
+          flags: [headless: [long: "--headless", help: "force the non-interactive plain runner"]]
+        ],
+        sync: [
+          name: "sync",
+          about: "reconcile the journal's generation with the freshly collected desired state",
+          options: lifecycle_options()
+        ],
+        verify: [
+          name: "verify",
+          about: "verify the launcher and every applied target fingerprint",
+          options: lifecycle_options()
+        ],
+        pull: [
+          name: "pull",
+          about: "fast-forward the engine checkout (never resets a diverged tree)",
+          options: lifecycle_options()
         ]
       ]
     )
   end
 
-  defp subcommand_options do
+  defp read_options do
     [
       home: [
         value_name: "DIR",
         long: "--home",
-        help: "private test home created by .github/scripts/test-home.sh (mandatory)",
-        required: true
+        help: "destination home (default: $WORKSTATION_HOME, else $HOME)"
       ],
       input: [
         value_name: "FILE",
@@ -123,24 +160,124 @@ defmodule Workstation.CLI.Router do
     ]
   end
 
+  defp lifecycle_options do
+    [
+      home: [
+        value_name: "DIR",
+        long: "--home",
+        help: "destination home (default: $WORKSTATION_HOME, else $HOME)"
+      ],
+      engine_root: [
+        value_name: "DIR",
+        long: "--engine-root",
+        help: "engine checkout for bootstrap/update (default: $WORKSTATION_ENGINE_REPO, else detection)"
+      ]
+    ]
+  end
+
   ## dispatch
 
   defp dispatch_from_result(_result), do: {:ok, IO.puts(Optimus.help(parser()))}
 
   defp dispatch(command, result, mode) when command in [:status, :plan, :diff] do
-    home = result.options.home
+    home = resolve_home(result)
 
-    with :ok <- guard_real_home(home),
-         :ok <- guard_test_root(home),
-         {:ok, wire} <- evaluate(command, home, result),
+    with {:ok, wire} <- evaluate(command, home, result),
          :ok <- emit(command, wire, mode) do
       :ok
+    end
+  end
+
+  defp dispatch(command, result, _mode) when command in [:bootstrap, :sync, :verify, :pull] do
+    case apply(Engine, command, [lifecycle_opts(result)]) do
+      {:ok, record} -> emit_record(record)
+      {:error, code, message} -> fail(lifecycle_exit(code), "error: #{code}: #{message}")
+    end
+  end
+
+  defp dispatch(:apply, result, _mode) do
+    home = resolve_home(result)
+
+    with {:ok, plan} <- evaluate(:plan, home, result) do
+      cond do
+        result.flags[:headless] ->
+          Plain.run(:apply, destination: home, plan: plan)
+
+        usable_terminal?() ->
+          run_tui(Apply, destination: home, plan: plan)
+
+        true ->
+          fail(1, @no_terminal)
+      end
+    end
+  end
+
+  defp dispatch(:update, result, _mode) do
+    home = resolve_home(result)
+
+    cond do
+      result.flags[:headless] ->
+        Plain.run(:update, destination: home)
+
+      usable_terminal?() ->
+        run_tui(Update, destination: home)
+
+      true ->
+        fail(1, @no_terminal)
     end
   end
 
   defp dispatch(other, _result, _mode) do
     fail(2, "error: unknown command #{inspect(other)}")
   end
+
+  ## interactive contract
+
+  # TTY heuristic (r2, recorded): the release VM runs -noshell, where the
+  # classic `io:columns/1` probe answers enotsup even on a real PTY and
+  # prim_tty:isatty/1 is not callable from user code (badarg; NIF load
+  # context). On Linux, procfs exposes what fd 1 actually is: a terminal is
+  # /dev/pts/N, /dev/tty* or /dev/console; a redirect is pipe:[..],
+  # socket:[..] or /dev/null. Non-Linux or missing /proc reads as NOT a
+  # terminal — fail-closed toward the explicit --headless flag, which is the
+  # intended contract direction. Known limit: exotic filesystems mounting
+  # fd 1 elsewhere read as non-TTY; the --headless escape hatch covers them.
+  defp stdout_is_tty? do
+    case :file.read_link(~c"/proc/self/fd/1") do
+      {:ok, target} ->
+        String.match?(List.to_string(target), ~r{^/dev/(pts/\d+|tty[^/]*|console)$})
+
+      _error ->
+        false
+    end
+  end
+
+  @doc """
+  The TUI-default contract: interactive verbs engage the TUI only on a real
+  terminal with a capable TERM. Without both, the caller must pass
+  `--headless` explicitly — the CLI hard-errors otherwise and never degrades
+  to the plain runner silently.
+  """
+  @spec usable_terminal?() :: boolean()
+  def usable_terminal? do
+    stdout_is_tty?() and capable_term?()
+  end
+
+  defp capable_term? do
+    case System.get_env("TERM") do
+      term when term in [nil, "", "dumb"] -> false
+      _term -> true
+    end
+  end
+
+  defp run_tui(screen, opts) do
+    case TUI.run(screen, opts) do
+      :ok -> :ok
+      {:error, reason} -> fail(4, "error: #{screen} failed: #{inspect(reason)}")
+    end
+  end
+
+  ## read verbs
 
   # The core is the only front end; json mode emits canonical bytes of the
   # wire. Engine-tagged failures are native collection failures (see the
@@ -161,46 +298,55 @@ defmodule Workstation.CLI.Router do
   defp render(:plan, %{"schema" => "workstation.plan.v1"} = wire), do: Render.core_plan(wire)
   defp render(:diff, %{"schema" => "workstation.diff.v1"} = wire), do: Render.core_diff(wire)
 
-  defp format_engine_error(reason) when is_binary(reason), do: reason
-  defp format_engine_error(reason), do: "engine failure: #{inspect(reason)}"
+  ## lifecycle plumbing
 
-  ## safety guards
+  defp lifecycle_opts(result) do
+    home = resolve_home(result)
 
-  @doc """
-  Refuse when the requested home is the real `$HOME` (compared by device
-  and inode, so symlinks and aliases are caught). The engine mutates its
-  home, so it must never see the operator's actual home directory.
-  """
-  def real_home_guard_path, do: System.get_env("HOME") || ""
+    [home: home]
+    |> put_engine_root(result)
+  end
 
-  defp guard_real_home(home) do
-    if same_file?(home, real_home_guard_path()) do
-      fail(77, """
-      error: refusing --home #{home}: equals the real $HOME
-      create a private test root with: sh .github/scripts/test-home.sh
-      """)
-    else
-      :ok
+  defp put_engine_root(opts, result) do
+    case result.options[:engine_root] do
+      nil -> opts
+      root -> Keyword.put(opts, :engine_root, Path.expand(root))
     end
   end
 
-  @doc "Marker file name written by .github/scripts/test-home.sh inside the test root."
-  def test_root_marker, do: @test_root_marker
+  defp emit_record(%{"step" => step, "status" => "ok"} = record) do
+    details =
+      record
+      |> Map.drop(["step", "status"])
+      |> Enum.map_join(", ", fn
+        {"packages", packages} when is_list(packages) -> "packages=#{length(packages)}"
+        {key, value} -> "#{key}=#{value}"
+      end)
 
-  defp guard_test_root(home) do
-    marker = Path.join(resolve_path(home), @test_root_marker)
-
-    if File.exists?(marker) do
-      :ok
-    else
-      fail(77, """
-      error: refusing --home #{home}: missing #{@test_root_marker} marker
-      create it with: sh .github/scripts/test-home.sh
-      """)
-    end
+    {:ok, IO.puts("#{step}: ok" <> (if details == "", do: "", else: " (#{details})"))}
   end
+
+  defp lifecycle_exit("locked"), do: 3
+
+  defp lifecycle_exit(_other), do: 4
 
   ## plumbing
+
+  defp resolve_home(result) do
+    case result.options[:home] do
+      nil ->
+        case System.get_env("WORKSTATION_HOME") || System.get_env("HOME") do
+          home when is_binary(home) and home != "" -> home
+          _other -> fail(2, "error: no destination home resolved; pass --home DIR")
+        end
+
+      home ->
+        Path.expand(home)
+    end
+  end
+
+  defp format_engine_error(reason) when is_binary(reason), do: reason
+  defp format_engine_error(reason), do: "engine failure: #{inspect(reason)}"
 
   defp fail(exit_code, message) do
     IO.puts(:stderr, String.trim_trailing(message, "\n"))
@@ -212,26 +358,5 @@ defmodule Workstation.CLI.Router do
     |> List.wrap()
     |> Enum.map(&"error: #{&1}")
     |> Enum.join("\n")
-  end
-
-  defp resolve_path(""), do: ""
-
-  defp resolve_path(path), do: Path.expand(path)
-
-  # Symlink-safe "same directory" identity: compare device and inode.
-  defp same_file?(_a, ""), do: false
-
-  defp same_file?(a, b) do
-    case {file_identity(a), file_identity(b)} do
-      {{:ok, id}, {:ok, id}} -> true
-      _ -> false
-    end
-  end
-
-  defp file_identity(path) do
-    case File.stat(path) do
-      {:ok, %{major_device: device, inode: inode}} -> {:ok, {device, inode}}
-      {:error, _} -> :error
-    end
   end
 end

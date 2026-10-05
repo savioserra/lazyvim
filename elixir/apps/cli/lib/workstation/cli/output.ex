@@ -7,7 +7,9 @@ defmodule Workstation.CLI.Output do
 
     * `workstation.status.v1` — {schema, engine{name, version, mode
       "lua"|"elixir"}, destination, platform, packages[{id, requires,
-      supported_hosts}], graph_order, journal{generation, revision, at}|null}
+      supported_hosts}], graph_order, journal{generation, revision, at}|null,
+      taxonomy: %{package_id => declared foundation layer} (live-catalog metadata,
+      absent from envelopes/plan bytes by design)}
     * `workstation.plan.v1` — nested envelope: {schema, generation, plan,
       manifest, patches, target_states}. The `plan` body is the
       parity-locked golden plan view (byte-identical to
@@ -41,11 +43,13 @@ defmodule Workstation.CLI.Output do
   Build the status wire. `packages` are the collected envelope packages
   (id/requires/supported_hosts verbatim), `graph_order` the resolved
   package ids, `journal` the applied record or nil when nothing was ever
-  applied.
+  applied, `taxonomy` the live catalog's package -> foundation declaration
+  (descriptive metadata only; it never enters envelopes or plan bytes).
   """
-  @spec status(String.t(), String.t(), String.t(), String.t(), [map()], [String.t()], map() | nil) ::
-          map()
-  def status(engine_name, mode, destination, platform, packages, graph_order, journal) do
+  @spec status(String.t(), String.t(), String.t(), String.t(), [map()], [String.t()], map() | nil, %{
+          String.t() => String.t()
+        }) :: map()
+  def status(engine_name, mode, destination, platform, packages, graph_order, journal, taxonomy) do
     %{
       "schema" => @status_schema,
       "engine" => %{"name" => engine_name, "version" => cli_version(), "mode" => mode},
@@ -53,6 +57,7 @@ defmodule Workstation.CLI.Output do
       "platform" => platform,
       "packages" => packages,
       "graph_order" => graph_order,
+      "taxonomy" => taxonomy,
       # Explicit null token: the canonical encoder drops literal nils, but
       # the status schema keeps journal present as JSON null when nothing
       # was ever applied.

@@ -73,6 +73,32 @@ case "$actual" in "NVIM v$pin_version"|"NVIM v$pin_version
 # Sibling renames; the exit trap restores the previous tree on failed activation.
 if [ -e "$parent/nvim" ]; then mv "$parent/nvim" "$backup"; fi
 mv "$stage" "$parent/nvim"
-# Keep bootstrap serialized through the Lua backend handoff. Runtime activation
-# has committed; a backend failure reports failure without undoing valid runtime.
-"$parent/nvim/bin/nvim" -l "$root/apps/cli/run.lua" bootstrap
+
+# Engine release acquisition: when driven from an engine checkout with a mise
+# toolchain (the shim always passes the checkout; the engine's release refresh
+# sets WORKSTATION_ENGINE_REPO to the same effect), build the Elixir OTP
+# release from source and stage it under the private opt root. This is the
+# same acquisition path a fresh machine takes and the only way the public
+# launcher ever obtains an engine. Without a checkout the runtime install
+# above is the whole contract.
+repo=${WORKSTATION_ENGINE_REPO:-}
+if [ -n "$repo" ]; then
+	if [ ! -f "$repo/elixir/mix.exs" ]; then
+		fail "engine checkout at $repo has no elixir/ umbrella"
+	fi
+	if ! command -v mise >/dev/null 2>&1; then
+		fail 'engine checkout present but mise is not on PATH; the release cannot be built'
+	fi
+	release_stage=$lock/workstation-stage
+	mkdir "$release_stage"
+	if ! (cd "$repo/elixir" && mise exec -- env MIX_ENV=prod mix release workstation --overwrite) >"$release_stage/build.log" 2>&1; then
+		[ ! -f "$release_stage/build.log" ] || { echo 'workstation bootstrap: release build failed:' >&2; tail -20 "$release_stage/build.log" >&2; }
+		fail 'engine release build failed'
+	fi
+	[ -x "$release_stage/workstation/bin/workstation" ] || fail 'built release lacks bin/workstation'
+	if [ -e "$parent/workstation" ]; then mv "$parent/workstation" "$lock/workstation-previous"; fi
+	mv "$release_stage/workstation" "$parent/workstation"
+fi
+
+# Runtime and release activation have committed; the caller (the shim's
+# bootstrap verb) hands off to the engine release's own bootstrap from here.

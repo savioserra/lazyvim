@@ -162,7 +162,8 @@ defmodule Workstation.CLI.Core do
          catalog.host,
          packages,
          Enum.map(graph.ordered, &Map.get(&1, :id)),
-         journal
+         journal,
+         Catalog.Packages.taxonomy()
        )}
     end
   end

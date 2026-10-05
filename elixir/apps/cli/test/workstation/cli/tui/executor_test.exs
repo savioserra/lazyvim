@@ -1,15 +1,16 @@
 defmodule Workstation.CLI.TUI.ExecutorTest do
   use ExUnit.Case, async: false
 
-  # The production executor seam (b8 wiring): over a real daemon it must
-  # surface the honest not_graduated refusal; without a daemon it must fail
-  # closed. Serial: WORKSTATION_HOME is process-global and the daemon tree
-  # binds a real unix socket per test home.
+  # The production executor seam (fusion wiring): the one-shot in-process
+  # engine (`Workstation.CLI.Engine`) under the target home's apply lock.
+  # Payloads are validated before the engine is touched, and a confirm
+  # carrying a generation the freshly built plan does not match is the
+  # honest stale refusal — never a silent apply of something else.
+  # Serial: WORKSTATION_HOME is process-global.
   alias Workstation.CLI.TUI.Executor
-  alias Workstation.Daemon.Listener
 
   setup do
-    home = Path.join(System.tmp_dir!(), "b8-executor-#{System.unique_integer([:positive])}")
+    home = Path.join(System.tmp_dir!(), "fusion-executor-#{System.unique_integer([:positive])}")
     File.mkdir_p!(home)
     previous = System.get_env("WORKSTATION_HOME")
     System.put_env("WORKSTATION_HOME", home)
@@ -22,43 +23,25 @@ defmodule Workstation.CLI.TUI.ExecutorTest do
     %{home: home}
   end
 
-  test "without a daemon the executors refuse instead of mutating locklessly" do
-    assert {:error, :daemon_unavailable} =
-             Executor.apply_executor(%{"generation" => "gen-1", "entries" => []})
-
-    assert {:error, :daemon_unavailable} = Executor.update_executor(%{"step" => "pull"})
-
-    # Malformed payloads never reach the socket path either.
-    assert {:error, :daemon_unavailable} = Executor.apply_executor(%{})
-    assert {:error, :daemon_unavailable} = Executor.update_executor(%{})
+  test "malformed payloads are refused before the engine runs" do
+    assert {:error, "malformed apply request"} = Executor.apply_executor(%{})
+    assert {:error, "malformed apply request"} = Executor.apply_executor(%{"generation" => "gen-1"})
+    assert {:error, "malformed update request"} = Executor.update_executor(%{})
+    assert {:error, "malformed update request"} = Executor.update_executor(%{"step" => 42})
   end
 
-  test "over a live daemon the executors surface the honest not_graduated gate" do
-    start_supervised!(Workstation.Daemon.Application.supervisor_spec())
-    wait_for_file(Listener.socket_path())
-
-    assert {:error, {:daemon, "not_graduated", message}} =
-             Executor.apply_executor(%{"generation" => "gen-1", "entries" => []})
-
-    assert message =~ "no mutation path"
-
-    assert {:error, {:daemon, "not_graduated", _}} = Executor.update_executor(%{"step" => "pull"})
+  test "a confirm for a generation the built plan does not match refuses stale" do
+    # The fixture home's freshly collected plan carries the checkout's real
+    # (digest) generation; "gen-1" can never match it, so this pins the
+    # confirm-exactly-what-you-saw contract at the seam. The refusal happens
+    # before the backend runs: nothing is written to the fixture home.
+    assert {:error, message} = Executor.apply_executor(%{"generation" => "gen-1", "entries" => []})
+    assert message =~ "stale plan"
+    assert message =~ "gen-1"
   end
 
-  test "daemon error codes stay binaries (no atom minting from the wire)" do
-    start_supervised!(Workstation.Daemon.Application.supervisor_spec())
-    wait_for_file(Listener.socket_path())
-
-    # An unknown step is refused by the daemon's strict schema; the executor
-    # hands the code through as a binary for the screen to render.
-    assert {:error, {:daemon, "invalid_params", _}} = Executor.update_executor(%{"step" => "reboot"})
-  end
-
-  defp wait_for_file(path, tries \\ 100)
-
-  defp wait_for_file(_path, 0), do: flunk("listener socket never appeared")
-
-  defp wait_for_file(path, tries) do
-    if File.exists?(path), do: :ok, else: (Process.sleep(20) && wait_for_file(path, tries - 1))
+  test "unknown lifecycle steps are refused by the engine, message verbatim" do
+    assert {:error, message} = Executor.update_executor(%{"step" => "reboot"})
+    assert message =~ "unknown lifecycle step"
   end
 end

@@ -4,7 +4,7 @@ defmodule Workstation.Core.ShellProgram do
   `workstation/lua/workstation/provision/shell.lua` — the emitted modify
   program bytes are load-bearing: they are part of generated source state, so
   generation digests, change sets and baseline comparisons only agree when
-  this port reproduces them exactly, including fragment order and the
+  this provider reproduces them exactly, including fragment order and the
   sequence tie-break.
 
   Capabilities contribute stable, individually owned fragments (marker +

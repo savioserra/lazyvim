@@ -1,5 +1,7 @@
 #!/bin/sh
-# Sole public entry point. Only runtime installation precedes the Lua engine.
+# Sole public entry point. Runtime and release acquisition precede the engine.
+# The engine itself is the Elixir OTP release: no Lua, no nvim invocation —
+# nvim is a managed capability installed under the engine-owned opt root.
 set -eu
 
 script=$0
@@ -15,7 +17,7 @@ done
 script_dir=$(CDPATH='' cd -P "$(dirname "$script")" && pwd -P)
 engine_root=$(CDPATH='' cd -P "$script_dir/.." && pwd -P)
 
-# Carry the original rendezvous across Lua and repeated lifecycle launches.
+# Carry the original rendezvous across repeated lifecycle launches.
 # These are untrusted hints; only owned-account retirement validates/uses them.
 if [ "${WORKSTATION_SESSION_CAPTURED:-}" != 1 ]; then
 	WORKSTATION_SESSION_RUNTIME_DIR=${XDG_RUNTIME_DIR:-}
@@ -47,16 +49,34 @@ esac
 umask 077
 mkdir -p "$TMPDIR"
 chmod 700 "$XDG_RUNTIME_DIR"
-pinned_nvim=$HOME/.local/opt/nvim/bin/nvim
+
+# The installed engine release: built from the checkout by the installer
+# (same acquisition path the engine's own release refresh drives), staged
+# under the private opt root. Nothing else is ever executed.
+release=$HOME/.local/opt/workstation/bin/workstation
+
 if [ "${1:-}" = bootstrap ]; then
-	# This local helper is shell, not downloaded code. No Lua runtime is needed.
-	exec sh "$engine_root/bootstrap/install-runtime.sh" "$engine_root" "$platform"
+	# The installer is shell, not downloaded code; it installs the pinned
+	# editor runtime and — when invoked from an engine checkout with a mise
+	# toolchain — builds and installs the engine release. The handoff to the
+	# engine's own bootstrap (backend capability, public launcher, refresh)
+	# happens here, after acquisition committed.
+	sh "$engine_root/bootstrap/install-runtime.sh" "$engine_root" "$platform"
+	if [ ! -x "$release" ]; then
+		echo 'workstation: bootstrap installed the runtime but no engine release; build it from elixir/ (mise exec -- env MIX_ENV=prod mix release workstation --overwrite) and re-run workstation bootstrap' >&2
+		exit 1
+	fi
+	# Runtime roots above stay private. Ordinary files must use the same default
+	# modes as their native chezmoi recipes; private state sets explicit 0700/0600.
+	umask 022
+	exec "$release" bootstrap
 fi
-if [ ! -x "$pinned_nvim" ]; then
-	echo "workstation: pinned nvim missing; run workstation bootstrap" >&2
+
+if [ ! -x "$release" ]; then
+	echo 'workstation: engine release missing; run workstation bootstrap' >&2
 	exit 1
 fi
 # Runtime roots above stay private. Ordinary files must use the same default
 # modes as their native chezmoi recipes; private state sets explicit 0700/0600.
 umask 022
-exec "$pinned_nvim" -l "$engine_root/apps/cli/run.lua" "$@"
+exec "$release" "$@"

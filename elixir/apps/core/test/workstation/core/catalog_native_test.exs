@@ -16,6 +16,7 @@ defmodule Workstation.Core.CatalogNativeTest do
   use ExUnit.Case, async: true
 
   alias Workstation.Core.Catalog
+  alias Workstation.Core.Catalog.Packages
   alias Workstation.Core.EngineState
 
   @native_count 15
@@ -40,7 +41,14 @@ defmodule Workstation.Core.CatalogNativeTest do
     assert length(recorded.packages) == @native_count
 
     native = Catalog.native(host: recorded.host, home: Catalog.canonical_home())
-    assert native.packages == recorded.packages
+
+    # The declared foundation layer (lane fusion-final-r2 taxonomy) is
+    # status-wire metadata: it lives in the native declarations but outside
+    # the frozen envelope contract, so the identity anchor compares the
+    # envelope shape exactly and strips the declaration from both sides.
+    strip_taxonomy = fn packages -> Enum.map(packages, &Map.delete(&1, :foundation)) end
+
+    assert strip_taxonomy.(native.packages) == strip_taxonomy.(recorded.packages)
 
     # Asset bodies: the native filesystem reads must equal the recorded
     # inlined bytes for every asset key.
@@ -129,5 +137,48 @@ defmodule Workstation.Core.CatalogNativeTest do
     assert %{spec: %Workstation.Core.Source.Chezmoi{to: to}} = launcher
     assert to == Path.join(live_home, ".local/opt/nvim/bin/nvim")
     refute String.starts_with?(to, Catalog.canonical_home())
+  end
+
+  describe "catalog taxonomy" do
+    # The taxonomy is descriptive metadata (status wire only): every package
+    # declares the foundation layer it belongs to, the layer set is closed,
+    # and the declaration never reaches envelopes or plan bytes.
+    test "every package declares a known foundation layer" do
+      taxonomy = Packages.taxonomy()
+
+      assert map_size(taxonomy) == length(Packages.modules())
+
+      for {id, foundation} <- taxonomy do
+        assert foundation in ~w(
+                 foundation/base
+                 foundation/editor
+                 foundation/runtime
+                 foundation/terminal
+                 foundation/agent
+                 foundation/theme
+                 foundation/fonts
+                 foundation/secrets
+               ), "#{id}: unknown foundation #{foundation}"
+      end
+    end
+
+    test "the owner-declared anchors hold" do
+      taxonomy = Packages.taxonomy()
+
+      assert taxonomy["nvim"] == "foundation/editor"
+      assert taxonomy["tmux"] == "foundation/terminal"
+      assert taxonomy["theme"] == "foundation/theme"
+      assert taxonomy["fonts"] == "foundation/fonts"
+      assert taxonomy["secrets"] == "foundation/secrets"
+      assert taxonomy["foundation"] == "foundation/base"
+
+      for agent <- ~w(agent herdr herdr-pi pi-skills pi-ntfy-notifier) do
+        assert taxonomy[agent] == "foundation/agent"
+      end
+
+      for runtime <- ~w(node go elixir typescript) do
+        assert taxonomy[runtime] == "foundation/runtime"
+      end
+    end
   end
 end

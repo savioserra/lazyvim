@@ -73,12 +73,22 @@ defmodule Workstation.CLI.PlainTest do
     {result, stdout <> stderr}
   end
 
-  test "without --yes the run refuses with the usage exit code and never prompts" do
-    assert {{:shutdown, 2}, output} = run_plain(:apply, destination: @destination, plan: @plan)
-    assert output =~ "--yes"
-    assert output =~ "no prompt is offered on a pipe"
+  test "the headless runner is gate-free: the router owns the --headless consent" do
+    # Plain.run is reachable only behind the router's --headless gate; it
+    # carries no flag handling of its own and never prompts (there is no
+    # prompt code on this path at all).
+    {:ok, output} =
+      run_plain(:apply,
+        destination: @destination,
+        plan: @plan,
+        executor: fn %{"generation" => generation, "entries" => entries} ->
+          assert generation == "gen-1"
+          assert length(entries) == 2
+          :ok
+        end
+      )
 
-    assert {{:shutdown, 2}, _output} = run_plain(:update, destination: @destination)
+    assert output =~ "Applied generation gen-1"
   end
 
   test "apply prints the plan, the tick progress, and the result" do
@@ -86,10 +96,9 @@ defmodule Workstation.CLI.PlainTest do
       run_plain(:apply,
         destination: @destination,
         plan: @plan,
-        yes: true,
         executor: fn %{"generation" => generation, "entries" => entries} ->
-          # Request-map contract (b8): the executor sees exactly what the
-          # daemon op schema validates.
+          # Request-map contract: the executor sees exactly the confirmed
+          # generation and the rendered entry rows.
           assert generation == "gen-1"
           assert length(entries) == 2
           :ok
@@ -109,7 +118,6 @@ defmodule Workstation.CLI.PlainTest do
       run_plain(:apply,
         destination: @destination,
         plan: @plan,
-        yes: true,
         executor: fn %{"generation" => _gen, "entries" => _entries} -> {:error, "engine refused"} end
       )
 
@@ -121,7 +129,6 @@ defmodule Workstation.CLI.PlainTest do
     {:ok, output} =
       run_plain(:update,
         destination: @destination,
-        yes: true,
         executor: &Update.dry_run_executor/1
       )
 
@@ -137,7 +144,6 @@ defmodule Workstation.CLI.PlainTest do
     {{:shutdown, 4}, output} =
       run_plain(:update,
         destination: @destination,
-        yes: true,
         executor: fn
           %{"step" => "sync"} -> {:error, "no space left"}
           %{} -> :ok
@@ -155,15 +161,11 @@ defmodule Workstation.CLI.PlainTest do
     assert output =~ "unknown command"
   end
 
-  test "the default executor is the daemon-orchestrated path, which fails closed" do
-    # One spelling per concept: plain fallback and screens share the executor
-    # seam. The default is now the production executor (b8 wiring); with no
-    # daemon serving the destination it must refuse, never "succeed".
-    assert {{:shutdown, 4}, output} =
-             run_plain(:apply, destination: @destination, plan: @plan, yes: true)
-
-    assert output =~ "apply failed"
-    # The pure stand-ins stay injectable and always succeed (tests only).
+  test "the default executor is the in-process engine seam; stand-ins stay injectable" do
+    # The production default behind the screens and this runner is
+    # Workstation.CLI.TUI.Executor — the engine under the apply lock. Its
+    # behavior is pinned in ExecutorTest on a fixture home; here only the
+    # pure stand-in contract stays (tests only, always succeed).
     assert Apply.dry_run_executor(%{"entries" => []}) == :ok
     assert Update.dry_run_executor(%{"step" => "pull"}) == :ok
   end
