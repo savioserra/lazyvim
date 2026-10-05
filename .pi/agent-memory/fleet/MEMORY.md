@@ -184,3 +184,25 @@ required.
 - OTP :socket send needs BINARIES — bitstring size is in BITS (`size(32)`), iolists break `:socket.send`; frame length = `<<size::unsigned-big-integer-size(32)>>`.
 - Depth guard must walk validated containers only; params-optional for hello, required-else-invalid_params for op envelopes; Overlay.unsub must demonitor the REF, never the domain string.
 - Capability children flatten AFTER infra children (Listener,Sessions,EventBus,CapabilityRegistry,ApplyOrchestrator) under :rest_for_one.
+
+## Autodiscovery lane (2026-10-05)
+
+- Catalog specs are DISCOVERED (Workstation.Core.Catalog.Spec behaviour +
+  Discover, :code.all_available/0 filtered to the Packages.* namespace,
+  test/support excluded via beam compile_info source path, module-name
+  sort); @package_modules registry is GONE — adding a package = drop in a
+  conforming module, zero engine edits.
+- Integer ordering (order/position/priority) is BANNED on package specs and
+  recorded envelopes; ordering is requires (necessity+order) or `after`
+  (ordering-only, systemd After= semantics: applies only when target
+  present+enabled, no pull-in); dependency-equal ties = id sort.
+- :code.all_available/0 may list modules from a PREVIOUS compilation
+  (Code.ensure_loaded can fail with {:error,:nofile}) — always filter by
+  namespace prefix before touching modules, and treat "declared behaviour
+  but spec/0 missing" as an error.
+- Elixir map literal gotcha: `%{a: 1, key => v}` with a variable key is a
+  syntax error — keyword shorthand must be last (%{key => v, a: 1}).
+- inspect/1 strips the "Elixir." prefix from alias atoms (inspect(Alpha) ==
+  "Alpha") — regexes on inspect output must not expect the prefix.
+- Single-writer discipline: commit per green unit (feat → test → docs),
+  never hold a large uncommitted batch across a deadline.
