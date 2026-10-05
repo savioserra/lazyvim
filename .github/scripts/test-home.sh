@@ -10,9 +10,10 @@ umask 077
 root=$(mktemp -d /tmp/workstation-test.XXXXXX)
 printf 'test-home: %s\n' "$root" >&2
 mkdir "$root/home" "$root/tmp" "$root/config" "$root/data" "$root/state" "$root/cache" "$root/run"
-# Marker required by the Elixir CLI (Workstation.CLI.Router): a --home target
-# without .workstation-test-root is refused, so every boundary home is
-# recognizable as fixture state at the point it is created.
+# Recognizability marker for fixture homes created across this boundary: a
+# --home target whose root contains .workstation-test-root is fixture state,
+# which is what check.sh and the test flows assert on (the CLI itself no
+# longer refuses unmarked homes; the marker documents provenance only).
 : > "$root/home/.workstation-test-root"
 # Fixture archive defaults are 0644/0755, independent of caller umask. The
 # enclosing root and writable directories remain private (0700).
