@@ -72,14 +72,10 @@ defmodule Workstation.Core.Catalog.Packages do
   The native catalog's package specifications in discovery order (module
   name / id sort): the materialize.specifications surface of the Lua engine
   (id, requires, after, supported_hosts, contributes), with contributes
-  validated by their owning recipe constructors.
-  """
-  @spec packages() :: [map()]
-  @doc """
-  The discovered catalog: every provider's spec, validated at discovery
-  time (shape + duplicate ids) exactly as this module's documentation
-  promises — production composition must never bypass the contributor
-  contract a direct `module.spec()` call would skip.
+  validated by their owning recipe constructors. Delegates to
+  `Discover.specs/0`, so the contributor contract (spec shape, duplicate
+  ids, banned integer-ordering fields) is enforced on the production seam,
+  not only on the test one.
   """
   @spec packages() :: [map()]
   def packages, do: Discover.specs()
