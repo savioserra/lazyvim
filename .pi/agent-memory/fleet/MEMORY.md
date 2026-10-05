@@ -244,3 +244,20 @@ required.
   {:domain, name} topic — standalone Overlay boots MUST start EventBus
   first (missing registry fails pub loudly, by design); theme followers
   subscribe to {:domain, "theme"} instead of claiming ownership.
+
+## Release-refresh lane (2026-10-05)
+
+- Update chain engine-upgrade contract (6d2665c2/7cc3f020): bootstrap step
+  refreshes the installed release (anchor+platform+mise gated, .built-from
+  stamp vs pulled HEAD skips no-ops, installer failure aborts); refreshed
+  bootstrap leaves <state_root>/update/handoff.json and the plain runner
+  re-runs remaining steps as `update --headless --resume-from <steps>`
+  child (BEAM has NO exec(2) — child + exit-forwarding is the handoff).
+- Update.engine_root VALIDATES candidates (bootstrap/bootstrap.pins +
+  versions.json + bin/workstation) and falls through to the dev anchor on
+  an invalid explicit root — fixtures for "checkout without elixir/" must
+  carry the three anchor files AND be named .../workstation.
+- Enum.reduce_while returns the {:halt, x} PAYLOAD unwrapped — outer case
+  clauses match x, never {:halt, x}.
+- Installer stamps releases with .built-from = source HEAD; a release
+  without a stamp is always stale (conservative rebuild).
