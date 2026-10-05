@@ -6,7 +6,9 @@ defmodule Workstation.Daemon.Capabilities.Theme do
   Resolution logic is pure and lives in `Workstation.Core.Theme`; this
   module is the thin daemon shell — schema on the way in, resolved palette
   on the way out, one best-effort `Workstation.Daemon.Overlay.pub/2` event
-  on success so domain subscribers can follow theme changes.
+  on success: the owner (if any) receives it directly, and followers
+  subscribed to the `{:domain, "theme"}` event-bus topic see every resolved
+  theme without contending for ownership.
   """
 
   use Workstation.Daemon.Capability

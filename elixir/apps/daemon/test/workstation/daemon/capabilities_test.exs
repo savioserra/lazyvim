@@ -97,8 +97,11 @@ defmodule Workstation.Daemon.CapabilitiesTest do
 
   describe "dispatch" do
     # The theme capability publishes on the overlay domain as part of its
-    # resolve, so the dispatch tests boot the overlay primitive.
+    # resolve, so the dispatch tests boot the overlay primitive — and the
+    # event bus its pub fanout needs (same :rest_for_one order as the
+    # daemon tree).
     setup do
+      start_supervised!(Workstation.Daemon.EventBus)
       start_supervised!(Workstation.Daemon.Overlay)
       :ok
     end

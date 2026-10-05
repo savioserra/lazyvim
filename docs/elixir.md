@@ -348,10 +348,12 @@ budget, 16-session ceiling, JSON depth ≤ 32; Zoi schemas are strict
 from the capability registry (`Workstation.Daemon.Capabilities`, behaviour
 `Workstation.Daemon.Capability` with `ops/0, schema/1, handle/3, domains/0,
 children/0`); duplicate op or pubsub-domain names fail the build.
-`Workstation.Daemon.Overlay` is the generic pubsub primitive (exclusive
-domain ownership via `sub/unsub/pub`); theme demotes to a domain client —
+`Workstation.Daemon.Overlay` is the domain-ownership primitive (exclusive
+`claim/release`, ordered best-effort owner delivery via `pub`, plus a
+`{:domain, name}` event-bus fanout so followers observe domain events
+without claiming ownership); theme demotes to a domain client —
 its resolve matrix lives in `Workstation.Core.Theme` (pure core) and the
-capability publishes resolved themes on the `"theme"` domain it registers;
+capability publishes resolved themes on the `"theme"` domain it claims;
 hello advertises the union of registered domains. `theme.resolve` applies
 overlay sets in explicit array order, later wins per role, over the palette
 mirror in `Workstation.Core.Theme.Tokens` (byte-parity-anchored to the theme

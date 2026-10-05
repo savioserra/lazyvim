@@ -6,7 +6,10 @@ defmodule Workstation.Daemon.EventBus do
   and op events from many processes and every subscriber gets its own copy
   synchronously in its own mailbox; a central broadcaster would serialize
   sessions on it and turn one slow subscriber into daemon-wide backpressure.
-  Topics are static (`:session`, `:op`, `:apply`).
+  Topics come in two families: the static daemon topics (`:session`, `:op`,
+  `:apply`) and the dynamic domain fanout family `{:domain, name}` — one
+  registry key per overlay domain, fed by `Workstation.Daemon.Overlay.pub/2`
+  so processes can FOLLOW a domain's events without claiming its ownership.
 
   Events carry identifiers and op NAMES only — never request params — so a
   subscriber cannot become a secret leak even though params are scrubbed from
@@ -14,7 +17,7 @@ defmodule Workstation.Daemon.EventBus do
   module holds only the subscribe/publish contract.
   """
 
-  @type topic :: :session | :op | :apply
+  @type topic :: :session | :op | :apply | {:domain, String.t()}
   @type event :: term()
 
   @doc false
