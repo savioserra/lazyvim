@@ -2,8 +2,10 @@
 
 ## Goal
 
-Maintain a reproducible engine-owned workstation source state for Neovim and tmux on Linux,
-WSL-as-Linux, and macOS (arm64).
+Maintain a reproducible engine-owned workstation source state. The engine is
+Elixir-only (the OTP release is the engine; Neovim is a managed host
+capability, never an engine dependency) for Linux, WSL-as-Linux, and macOS
+(arm64).
 
 ## Read first
 
@@ -22,7 +24,9 @@ Read the nearest scoped `AGENTS.md` and follow the owning reference:
 
 - Edit source, not deployed state. Every home-state payload and recipe lives with its owning package under `workstation/packages/`; home source state is generated per target by the engine, never checked in. Never implicitly overwrite a clone or delete a legacy payload.
 - `workstation/bin/workstation` is the sole public lifecycle interface. Chezmoi is the explicit-source/destination file backend; no public chezmoi aliases, source-path discovery, externals, lifecycle scripts or root wrappers.
-- Register each lifecycle capability once under `workstation/packages/` in the explicit catalog. Keep core domain-neutral: no catalog/package/Neovim imports. Detailed composition and lifecycle rules belong to `docs/capabilities.md`.
+- Register each lifecycle capability once as a native data module in the Elixir catalog (`elixir/apps/core/lib/workstation/core/catalog/packages.ex`); payload files stay with the owning package under `workstation/packages/`. Keep core domain-neutral: no catalog/package/Neovim imports. Detailed composition and lifecycle rules belong to `docs/elixir.md`.
+- The engine path is Elixir-only: no Lua execution and no nvim invocation anywhere in the engine (`workstation/packages/**/*.lua` are data/payload files read as bytes, never run). `workstation/bin/workstation` stays plain POSIX sh: sandbox, runtime/release acquisition, then exec of the engine release.
+- Interactive verbs render the TUI by default; non-interactive callers pass `--headless` explicitly — a non-TTY run without the flag hard-errors instead of degrading silently.
 - Bootstrap owns pinned Neovim/backend and launcher; setup owns other downloads. No Node bootstrap dependency, unpinned downloads, `sudo` or OS-package-manager installation of managed tools.
 - Keep language composition in the Neovim profile. Do not recreate the retired root Go CLI (`go.mod`, `internal/`, `cmd/`), nested Go service modules, daemons, actor runtimes or any Makefile; Go is an editor toolchain here.
 - Never commit generated plugin/Mason/parser/cache/session/history state or secret values. Secret-reference/vault work requires explicit user `/skill:secrets` invocation; authentication stays user-owned.
@@ -50,9 +54,9 @@ replace Linux/WSL and native macOS arm64 acceptance.
 | Global npm capability | Exact version, registry integrity, feature setup/verify, docs |
 | Pi extension package | Entry in `workstation/packages/agent/pi-packages.json` (exact version + integrity), agent setup/verify, Pi discovery verifier, docs |
 | Pi skill | `workstation/packages/pi-skills/files/.pi/agent/skills/<name>/SKILL.md`, `pi-skills` verification, docs |
-| tmux plugin pin | `workstation/packages/tmux/init.lua`, `docs/tmux.md` |
-| Workstation package | combined contribution, package catalog, tests, docs |
+| tmux plugin pin | `workstation/packages/tmux/init.lua` (payload data; the checkouts themselves provision via the capability layer, not engine recipes), `docs/tmux.md` |
+| Workstation package | native catalog module (`elixir/apps/core/.../catalog/packages/<name>.ex`), payload assets, tests, docs |
 | Neovim language | `nvim-profile` recipe in the owning package, lockfiles if needed, behavior case |
-| Removed deployed source | provider `kind = "remove"` recipe (recorded ownership or already-absent no-op) or an engine policy tombstone (`workstation/lua/workstation/provision/policy.lua`) |
+| Removed deployed source | provider `kind = "remove"` recipe (recorded ownership or already-absent no-op) or an engine policy tombstone (`Workstation.Core.Policy` in `elixir/apps/core`) |
 | New platform condition | canonical asset metadata, capability support, package backend, CI/test coverage |
 

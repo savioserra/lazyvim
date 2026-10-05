@@ -6,24 +6,16 @@
 sh .github/scripts/check.sh
 ```
 
-Requires installed pinned Neovim and locked Mason StyLua (available after sync).
-The runner freezes their absolute paths, then `test-home.sh` gives each suite/check
-fresh private HOME/WORKSTATION_HOME, TMP, XDG and cache with cleared ambient state.
-Only prerequisite PATH is retained, not auth/agent/session/tool configuration.
-Never run fixtures directly against an applied home: they write fake Node/npm state.
-Owned 0700 `/tmp/workstation-test.*` roots are printed and retained for inspection;
-no caller path is recursively deleted. Fixture umask is 022 inside that boundary.
+The fused engine's matrix is Elixir-native: the full `mix test` suite
+(hermetic fixture homes, no host state touched), the byte-identical golden
+replay (`mix workstation.goldens` vs `tests/goldens`), `sh -n` + ShellCheck
+over the remaining shell scripts, the release boot smoke when a local release
+tarball is built, and `git diff --check`. ShellCheck is required in Linux CI;
+report local absence.
 
-The checker runs all `tests/*.test.lua` (graph/profile, provider contract,
-journal/preconditions, real backend renders, provisioning, CLI/update/launcher,
-cold bootstrap, package parity, checker/harness regressions), Lua/JSON syntax,
-generated pin projection, StyLua, each shell file separately with `sh -n` and
-available ShellCheck, then `git diff --check`. ShellCheck is required in Linux
-CI; report local absence. The real-render suite needs a trusted installed
-backend: the canonical pinned path wins, otherwise a retained evidence
-extraction (for example `~/.local/opt/chezmoi-2.72.0/chezmoi`) is used and its
-ACTUAL version is reported by the suite — existing-2.72.0 renders are file
-semantics evidence, never pinned-2.72.1 lifecycle acceptance.
+The retired Lua suites, the `nvim -l` syntax pass and StyLua died with the Lua
+engine; `tests/goldens/` stays canonical and is regenerated, never hand-edited.
+Never run fixtures directly against an applied home: they write fake Node/npm state.
 For bounded Linux source checks, use a cleared environment, network denial,
 120-second deadline and a **4 MiB per-file** limit (`ulimit -f 4096` in a shell
 using 1024-byte blocks; use the byte-equivalent setting otherwise).

@@ -3,120 +3,116 @@
 ## Dependency direction
 
 ```text
-apps/cli/run.lua
-  -> workstation.app
-      -> workstation.catalog -> package factories -> package-local host behavior
-      -> workstation.core.materialize -> specifications + handlers
-      -> workstation.core.graph + workstation.core.runner
-  -> workstation.source (composition root of the provider registry)
-      -> workstation.provision.chezmoi / .shell / packages.nvim.compose
-      -> workstation.state (generations, lock, journal)
-  -> workstation.provisioner -> chezmoi backend with an exact generation
+workstation/bin/workstation (POSIX sh: sandbox + runtime/release acquisition)
+  -> exec elixir release binary
+      -> Workstation.CLI.Router (verbs, TTY contract)
+          -> Workstation.CLI.Core (read side) / Workstation.CLI.Engine (lifecycle)
+      -> Workstation.Core.Plan (shared composition)
+          -> Workstation.Core.Catalog.Packages (native catalog data modules)
+          -> Workstation.Core.Graph (host selection, requires, topological order)
+          -> Workstation.Core.Source.* (provider registry: chezmoi, chezmoi_data,
+             shell, nvim-profile) -> deterministic source plan
+      -> Workstation.Core.ApplyEngine (under Core.ApplyLock) / Update.* steps
+          -> Workstation.Core.Provisioner (chezmoi backend, exact generation)
+          -> Workstation.Core.Journal + EngineState (generations, lock, journal)
 
 core -X-> catalog/packages/providers/chezmoi/Neovim
 ```
 
-`workstation.app` materializes the graph; `workstation.source` interprets
-collected recipe envelopes through the explicitly registered providers and
-builds the deterministic source plan shared by `diff`, `apply` and `plan`.
-Read-side commands (`status`, `plan`, `diff`, `json`) are canonical in the
-Elixir engine: the `workstation` release binary (`elixir/apps/cli`, invoked
-directly against a private test home) collects the catalog natively
-(`Workstation.Core.Catalog.live/1`) — no Lua in that path. The mutation
-verbs are canonical in the Elixir engine as well: `update` graduated in
-lane c3, `apply` is sandbox-graduated (c3) and proved once on the real
-host by the authorized reconcile apply (journal revision 15 → 16 at
-generation `e4b7736…`, empty post-apply delta — see `docs/elixir.md`);
-the Lua one-shot no longer holds the canonical mutation role. The public
-launcher still dispatches every verb through `run.lua`: the retained Lua
-core remains the serving path for the lifecycle verbs (`apply`, `update`,
-`setup`, `sync`, `verify`, `bootstrap`) and the real-home reads because
-the Elixir CLI has no lifecycle verbs and refuses real homes; rerouting
-the launcher is the blocked retirement step (see `docs/elixir.md` and the
-c5 lane report).
-Bootstrap-owned pinned Neovim hosts Lua without user configuration; Neovim
-lifecycle behavior is an ordinary package. `bin/workstation` is the sole
-public entry point.
+The engine is Elixir-only: the release binary executes every verb in-process,
+there is no Lua execution and no nvim invocation anywhere in the engine path,
+and `Workstation.Core.Plan.composed_plan/2` is the single plan composition the
+daemon applier and the one-shot CLI driver share. `bin/workstation` is the
+sole public entry point; nvim is a managed host capability installed at
+bootstrap, never an engine dependency.
 
 ## Module boundaries
 
-| Path under `workstation/` | Contract |
+| Module | Contract |
 | --- | --- |
-| `apps/cli/run.lua` | Engine command dispatch through the public launcher (all verbs; read verbs are parity anchors pending the Elixir lifecycle) |
-| `lua/workstation/catalog.lua` | Explicit ordered inventory; one registration per package |
-| `lua/workstation/core/contract.lua` | Combined contribution validation |
-| `lua/workstation/core/materialize.lua` | Invoke factories and split specifications from handlers |
-| `lua/workstation/core/graph.lua` | Host selection, dependency validation, topological ordering |
-| `lua/workstation/core/runner.lua` | Lifecycle dispatch |
-| `lua/workstation/provision/recipes.lua` | Public pure recipe constructors (`provision.chezmoi`, `provision.chezmoi_data`, `provision.shell`) |
-| `lua/workstation/provision/chezmoi.lua` | Chezmoi provider: option validation, native name encoding, confined assets |
-| `lua/workstation/provision/chezmoi_data.lua` | Chezmoi data provider: the single source-root `.chezmoidata.toml` token envelope |
-| `lua/workstation/provision/shell.lua` | Shared-shell fragment compositor with exact-block retirement |
-| `lua/workstation/provision/policy.lua` | Engine-owned legacy tombstones (exact seventeen) |
-| `lua/workstation/source.lua` | Provider registry, plan assembly, conflict detection, reconciliation |
-| `lua/workstation/state.lua` | Immutable generations, fail-closed lock, private journal and fingerprints |
-| `lua/workstation/changesets.lua` | Attributable change sets and generated-source Git-style patches |
-| `packages/<name>/` | Combined capability metadata, recipes, lifecycle behavior and `files/` payload |
-| `packages/theme/tokens.lua` | Canonical theme tokens: slot/palette layers, per-appearance palettes, consumer choices |
-| `packages/nvim/compose.lua` | nvim-owned profile compositor (`nvim-profile` provider) |
-| `lua/workstation/commands.lua` | Checked child processes |
-| `lua/workstation/paths.lua` | Target paths and isolated writable roots |
-| `lua/workstation/provision.lua` | Verified archive provisioning |
-| `lua/workstation/platforms/` | Runtime-wide paths, detection, and base environment |
-| `lua/workstation/app.lua` | Catalog composition and runner creation |
+| `Workstation.CLI.Router` | Verb parsing, TTY-default contract (`--headless`), exit codes |
+| `Workstation.CLI.Core` | Read-side evaluation (`status`, `plan`, `diff`, `json`) with state-root bracketing |
+| `Workstation.CLI.Engine` | One-shot lifecycle driver (`bootstrap`, `apply`, `update`, `sync`, `verify`, `pull`) under the apply lock |
+| `Workstation.CLI.TUI.*` | Interactive apply/update screens (optimus CLI + term_ui) |
+| `Workstation.Core.Plan` | The shared collect -> graph -> plan -> baseline composition |
+| `Workstation.Core.Catalog.Packages` | Native catalog: one pure-data contribution module per package, declaration order load-bearing |
+| `Workstation.Core.Graph` | Host selection, dependency validation, topological ordering |
+| `Workstation.Core.Source.*` | Recipe providers (`Source.Chezmoi`, `Source.ChezmoiData`, `Source.Shell`, `Source.NvimProfile`) |
+| `Workstation.Core.ApplyEngine` | Preconditions, publish, backend apply, journal record, post-apply verify |
+| `Workstation.Core.Provisioner` | Chezmoi backend with an exact generation |
+| `Workstation.Core.Policy` | Engine-owned legacy tombstones |
+| `Workstation.Core.{Journal,EngineState,ApplyLock}` | Immutable generations, fail-closed private state tree, exclusive apply lock |
+| `packages/<name>/` | Package payload assets (`files/`, `dot-*` targets) and data files |
+| `packages/theme/tokens.lua` | Canonical theme tokens (DATA: slot/palette layers, per-appearance palettes, consumer choices) — read as bytes, never executed |
 
 ## Contribution contract
 
-Each catalog entry is a side-effect-free factory. It returns one combined record:
+A package contributes its catalog identity through a **pure-data Elixir
+module** under `elixir/apps/core/lib/workstation/core/catalog/packages/`
+(one module per package, registered in declaration order in
+`Workstation.Core.Catalog.Packages.packages/0`). The spec map declares the
+package identity, host support, dependencies, provisioning recipes
+(`Workstation.Core.Source` constructors), lifecycle steps
+(`Workstation.Core.Update` step atoms) and the descriptive
+`foundation: "foundation/<layer>"` taxonomy entry; payload lives under
+`packages/<name>/` and is referenced by relative path. There is no factory,
+no invocation and no Lua in the contract: collection is data inspection
+(`Catalog.Packages.packages/0`), validation is structural
+(`Workstation.Core.Catalog.validations/0` + `Graph`), and the whole path is
+deterministic and golden-graded.
 
-```lua
-local provision = require("workstation.provision.recipes")
+Each `contributes` entry is a
+`{ provider, spec }` envelope; the `Workstation.Core.Source` constructors
+copy options and perform no I/O, target writes or registration. Core
+validates only the generic envelope shape; each registered provider
+validates its own specs and rejects unknown options. Kinds: `file`,
+`directory`, `symlink`, `modify` (one whole inline body or package-relative
+asset - structured fragments are the `Source.Shell` compositor's input
+alone and are rejected here) and `remove`. Packages may declare whole-body
+`modify` programs for engine-seeded, runtime-extended mutable targets: the
+recipe embeds its baseline, apply never byte-compares the target, and a
+package-owned merge reconciles runtime drift. `lazy-lock.json` under the
+nvim package is the reference implementation; see [nvim](nvim.md). Such
+recipes inherit the documented whole-body retirement semantics (unsupported
+reversal, never auto-removal). Native attributes are `private`,
+`executable`, `exact` and `template`; conflicting or unrepresentable
+combinations are rejected instead of pretending arbitrary POSIX modes are
+encoded. Recipe content is exactly one inline body or a package-relative
+asset confined to the owner package (no symlink traversal). The catalog
+does not deep-merge records, and packages are never discovered from the
+filesystem.
 
-return function(environment)
-  return {
-    id = "example",
-    requires = { "foundation" },
-    supported_hosts = { linux = true, darwin = true },
-    contributes = {
-      provision.chezmoi({
-        target = ".config/example/tool.conf",
-        kind = "file",
-        asset = "files/.config/example/tool.conf",
-      }),
-      provision.shell({
-        target = ".profile",
-        fragment = { id = "example-env", order = 50, marker = "# managed: example", body = "export EXAMPLE=1" },
-      }),
-    },
-    setup = function(context) end,
-    sync = function(context) end,
-    verify = function(context) end,
-  }
+Example (the actual theme declaration, abridged):
+
+```elixir
+defmodule Workstation.Core.Catalog.Packages.Theme do
+  @moduledoc """
+  Theme tokens (packages/theme) — a payload-only package.
+  """
+
+  @behaviour Workstation.Core.Catalog.Package
+
+  @impl true
+  def specification do
+    %{
+      id: "theme",
+      requires: ["foundation"],
+      supported_hosts: [:darwin, :linux],
+      foundation: "foundation/theme",
+      spec:
+        Workstation.Core.Source.chezmoi_data(
+          envelope: "theme",
+          to: "packages/theme/tokens.lua"
+        )
+    }
+  end
 end
 ```
 
-Only `id`, `requires`, `supported_hosts`, `contributes`, `setup`, `sync`, and
-`verify` are allowed. `contributes` is a dense array of
-`{ provider = <id>, spec = <options> }` envelopes; the pure constructors copy
-options and perform no I/O, target writes or registration. Core validates only
-the generic envelope shape; each registered provider validates its own specs
-and rejects unknown options. Kinds: `file`, `directory`, `symlink`, `modify`
-(one whole inline body or package-relative asset - structured fragments are the
-`provision.shell` compositor's input alone and are rejected here) and `remove`.
-Packages may declare whole-body `modify` programs for engine-seeded,
-runtime-extended mutable targets: the recipe embeds its baseline, apply never
-byte-compares the target, and a package-owned merge reconciles runtime
-drift. `lazy-lock.json` under the nvim package is the reference
-implementation; see [nvim](nvim.md). Such recipes inherit the documented
-whole-body retirement semantics (unsupported reversal, never auto-removal).
-Native
-attributes are `private`, `executable`, `exact` and `template`; conflicting or
-unrepresentable combinations are rejected instead of pretending arbitrary POSIX
-modes are encoded. File/modifier content is exactly one inline body or a
-package-relative asset confined to the owner package (no symlink traversal).
-The materializer copies metadata into graph specifications and indexes
-lifecycle handlers by the same ID; it does not deep-merge records. Packages are
-never discovered from the filesystem.
+`spec` maps whose payload needs token substitution compose recipes with the
+`Workstation.Core.Source` constructors; `chezmoi_data` is the single
+source-root `.chezmoidata.toml` token envelope (the theme canonical tokens
+are DATA and are read as bytes, never executed).
 
 ## Package graph
 
@@ -159,66 +155,69 @@ herdr
 
 ## Validation
 
-The contract and materializer reject missing or duplicate package identities,
-non-factory catalog entries, invalid dependency or host-support values, unknown
-contribution fields, non-function lifecycle handlers and malformed recipe
-envelopes. Registered providers reject unknown options, unsafe targets
+The catalog and graph reject missing or duplicate package identities, invalid
+dependency or host-support values, unknown contribution fields, unknown
+lifecycle step names and malformed recipe envelopes (`Workstation.Core.Catalog.validations/0`).
+Registered providers reject unknown options, unsafe targets
 (absolute, traversing, engine-state overlap), conflicting attribute
 combinations, unconfined assets and ambiguous modify inputs. The assembler
 rejects duplicate exclusive targets, incompatible ancestor types/attributes,
 removals overlapping ownership and exact directories encompassing other owners.
 
-The contract and materializer reject:
+The catalog rejects:
 
 - missing or duplicate package identities;
-- non-factory catalog entries;
+- unknown lifecycle steps or contribution fields;
 - invalid dependency or host-support values;
-- unknown contribution fields;
-- non-function lifecycle handlers.
+- undeclared foundation layers.
 
-The graph rejects duplicate IDs, unknown dependencies, dependency cycles, and enabled packages that require unsupported packages. The runner rejects missing handler tables and unknown lifecycle names.
+The graph rejects duplicate IDs, unknown dependencies, dependency cycles, and enabled packages that require unsupported packages.
 
 ## Lifecycle phases
 
 | Phase | Input state | Responsibility |
 | --- | --- | --- |
-| `bootstrap` | Whole source checkout, shell prerequisites | Install verified pinned runtime/backend, then conflict-safe public launcher |
+| `bootstrap` | Whole source checkout, shell prerequisites | Install verified pinned runtime/backend, then the engine provisions and verifies the conflict-safe public launcher symlink |
 | `plan` | Source declarations and journal | Validate and preview attributable change sets, generated-source patches, target preconditions and unsupported reversals; mutate nothing |
 | `diff` | Same desired-state generation as apply | Ensure backend, preview file changes only; no retirement/setup/sync/verify |
 | `apply` | Validated plan | Retire owned real-account legacy service (never scratch), publish the immutable generation, apply through the backend, refresh Node pin/PATH, setup |
-| `setup` | Applied target home | Provision package archives and configure host state; reject missing Node pin before Node/nvm provisioning |
+| `setup` | Applied target home | Provision package archives and configure host state |
 | `sync` | Configured applications | Restore mutable application state |
 | `verify` | Complete target home | Assert versions and observable behavior |
-| `diff` | Source and target | Ensure backend, preview file changes only |
-| `update` | Git clone | Checked pull --ff-only, fresh launcher bootstrap, apply, sync, verify; stop at first failure |
+| `update` | Git clone | Checked pull --ff-only, release refresh, bootstrap, apply, sync, verify; stop at first failure |
 
-Bootstrap retains an identical canonical launcher symlink, refuses conflicting
-paths and never reports completion after a backend failure. Update re-executes
-the newly pulled launcher before each lifecycle step, including bootstrap so pin
-changes take effect. See [installation and daily use](../README.md).
+Bootstrap's engine step owns the `~/.local/bin/workstation` launcher symlink:
+identical canonical target, conflicting user files refused, no completion
+after a backend failure. Update refreshes the installed release from the
+freshly pulled checkout before the lifecycle steps so pin and engine changes
+take effect. See [installation and daily use](../README.md).
 
 ## Neovim package and profile
 
-`packages.nvim` declares the base/standard/Go language intents as
-`nvim-profile` recipes (validated and composed by the nvim-owned compositor
-`packages/nvim/compose.lua`); language capabilities such as `typescript`
-declare their own intents the same way. The compositor orders intents by an
+`packages/nvim` declares the base/standard/Go language intents as
+`nvim-profile` recipes; language capabilities such as `typescript`
+declare their own intents the same way. The engine composes them
+(`Workstation.Core.Source.NvimProfile.compose/1`): intents are ordered by an
 explicit `order` key (Go, TypeScript, standard) with graph collection order as
-the tie-breaker, validates the assembled list and emits ONE attributed chezmoi
-recipe that serializes the deployed `.config/nvim/lua/languages/profile.lua`.
-The deployed profile is plain runtime Lua; a tampered deployed copy can never
-alter the graph or the desired source because composition is source-derived.
-`nvim` requires `foundation`, `node` and `go` explicitly; `typescript` requires
-`node` and `nvim`. Dependencies are never inferred from deployed profile state.
+the tie-breaker, the assembled list is validated (mirroring the deployed
+`packages/nvim/profile.lua` contract) and ONE attributed chezmoi recipe is
+emitted that serializes the deployed
+`.config/nvim/lua/languages/profile.lua`. The deployed profile is plain
+runtime Lua owned by the editor capability; a tampered deployed copy can
+never alter the graph or the desired source because composition is
+source-derived. `nvim` requires `foundation`, `node` and `go` explicitly;
+`typescript` requires `node` and `nvim`. Dependencies are never inferred
+from deployed profile state.
 
 | Consumer | Use |
 | --- | --- |
-| `packages/nvim/files/.config/nvim/lua/config/lazy.lua` | Build ordered lazy.nvim specs (deployed payload) |
-| `packages/nvim/profile.lua` | Validate entries, recipes and serialize the composed profile |
-| `packages/nvim/compose.lua` | nvim-owned `nvim-profile` compositor |
-| `packages/nvim/init.lua` | Locks, synchronization, own behavior verification |
-| `packages/nvim/leaf.lua` | Headless child/module/case helpers shared with language capabilities |
-| `packages/nvim/child.lua` | Configured-editor child operations |
+| `packages/nvim/files/.config/nvim/**` | Editor runtime payload (lazy.nvim bootstrap, own behavior verification) |
+| `.config/nvim/lua/languages/profile.lua` (deployed) | Generated profile consumed by the editor runtime; serialized by `Workstation.Core.Source.NvimProfile.compose/1` |
+
+The former package-side compositor and child-verification helpers
+(`packages/nvim/{compose,profile,init,leaf,child}.lua`) were engine-side Lua
+and died with the engine; the profile contract they enforced now lives in
+`Workstation.Core.Source.NvimProfile`.
 
 ## Pi resources
 
@@ -261,20 +260,23 @@ and shutdown/reload releases owned resources without duplicate handlers. Keep
 checks independent of credentials; live notification delivery requires separate
 authorization and must not expose tokens.
 
-## Package-local backend rule
+## Package payload rule
 
-Feature-specific host branches remain under the package:
+Host-specific or feature-specific payload logic remains under the owning
+package as data or package-owned assets — the engine has no per-package code
+hooks and never executes package modules:
 
 ```text
-packages/fonts/linux.lua
-packages/fonts/darwin.lua
-packages/node/unix.lua
+packages/fonts/files/
+packages/node/files/
+packages/agent/verify/
 ```
 
-Reuse `lua/workstation/commands.lua`, `lua/workstation/paths.lua` and
-`lua/workstation/provision.lua` for checked children, target paths and archive
-provisioning. Use `lua/workstation/platforms/` only for runtime-wide detection,
-paths and environment (paths relative to `workstation/`).
+Everything the engine must know about a package is declared in its native
+catalog module (`elixir/apps/core/lib/workstation/core/catalog/packages/`);
+anything requiring host execution is expressed as a provisioning recipe the
+backend executes, a verify assertion the engine evaluates, or package-owned
+payload the host tool consumes.
 
 ## Verification requirements
 

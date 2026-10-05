@@ -1,40 +1,20 @@
-# Workstation runtime rationale
+# Lua engine — deleted
 
-The current [package/lifecycle contract](capabilities.md) and
-[backend/cutover procedure](chezmoi.md) own implementation and operating guidance.
-This page records rationale, not another installation workflow.
+The Lua engine is gone. `workstation/lua/` (engine, app shell, launcher) and
+`packages/*/compose.lua` (factory modules) were removed; the Elixir OTP
+release executes every verb in-process (`docs/elixir.md`). This page only
+records the boundary decisions that survive the deletion:
 
-## Decision and constraints
+- The engine is Elixir-only: zero `nvim -l` and zero `vim.system` in the
+  engine path; nvim exists on hosts only as a managed capability installed
+  at bootstrap.
+- `packages/theme/tokens.lua` and other package payload Lua files are DATA
+  consumed as bytes (chezmoi token envelopes), never executed.
+- `packages/nvim/**` is editor runtime payload; the profile composition
+  contract it mirrors lives in `Workstation.Core.Source.NvimProfile`.
+- Parity-anchor retention of the Lua read path was explicitly OVERRULED by
+  the owner; the golden envelopes under `tests/goldens/` remain the
+  canonical cross-engine contract and are graded by `mix workstation.goldens`.
 
-Pinned Neovim is the operational Lua host, not the composition boundary. Core
-validates, materializes, orders and dispatches without importing packages or
-Neovim. A standalone lifecycle Lua runtime would require a separate approved
-decision, trustworthy pinned cross-platform binaries, adapter work and bootstrap
-verification. It is not implemented or a prerequisite here.
-
-## Historical context (not current instructions)
-
-The initial Lua migration used `dot_local/share/lazyvim/lua/setup/` with separate
-capability/feature catalogs, then a deployed engine under
-`~/.local/share/workstation`. Chezmoi externals installed Neovim and run-after
-scripts invoked setup/sync; `home/` and `.chezmoiroot` belonged to that layout.
-TASK-34 inverts this ownership: the repo-native engine owns downloads and invokes
-the file backend. Git history preserves authorization, failed attempts and
-superseded plans; they are not current how-to instructions.
-
-Old tmux observer/service experiments do not establish a standalone runtime or
-extension contract. Pi resources follow [their current contract](capabilities.md#pi-resources);
-user sessions/authentication stay outside the lifecycle.
-
-## Rejected implicit dependencies
-
-| Option | Reason |
-| --- | --- |
-| Managed Node as bootstrap host | Circular: Node provisioning would require Node |
-| System Lua/Neovim | Not reliably installed or pinned on fresh hosts |
-| Per-platform lifecycle implementations | Duplicate domain behavior |
-| Filesystem package discovery | Hides ordering and weakens reproducibility |
-| Deployed/generated engine mirror | Competing source ownership and unsafe clone cleanup |
-
-References: [Neovim -l](https://neovim.io/doc/user/starting/),
-[Neovim Lua](https://neovim.io/doc/user/lua/).
+Historical rationale for the original Lua core is preserved in git history
+(`docs/lua-migration.md` before the fusion-final lanes).

@@ -1,9 +1,10 @@
 # Elixir migration
 
-Umbrella scaffold and testing for the Elixir/OTP strangler migration of the
-workstation engine. Policy (see the [index](index.md)): no deprecated or
-backward-compatibility APIs — one current version per wire schema, hard-cut;
-a Lua path retires only after its command graduates.
+Umbrella layout of the workstation engine. The engine IS the Elixir/OTP
+release; the Lua runtime is deleted outright (launcher fused, engine deleted,
+lane fusion-final-r2 below). Policy (see the [index](index.md)): no deprecated
+or backward-compatibility APIs — one current version per wire schema,
+hard-cut; retired paths are deleted in the lane that retires them.
 
 ## Status
 
@@ -59,6 +60,8 @@ a Lua path retires only after its command graduates.
   `apps/daemon/test/workstation/daemon/apply_test.exs`. Evidence:
   `/tmp/fleet/c5/reconcile_evidence.json`, `/tmp/fleet/reports/c5b-retirement-finish.md`.
 - **Lua engine retirement (lane c5): partial, core retirement BLOCKED.**
+  [SUPERSEDED by lane fusion-final-r2 — the block and every unblock rung
+  below are resolved; history retained for the graduation trail.]
   Retired: the collect bridge (`workstation/lua/workstation/report.lua`,
   the CLI Engine client, the sanitized bridge boundary and its specs), the
   Lua golden generator (`golden.lua`), and every Lua suite without a
@@ -87,6 +90,24 @@ a Lua path retires only after its command graduates.
   unblock rung but not the block itself: the Elixir CLI still has no
   `apply`/`update`/`setup`/`sync`/`verify` lifecycle verbs, so rerouting
   `bin/workstation` would orphan the lifecycle verbs it exists to serve.
+- **Launcher fused, Lua engine deleted, TUI-default contract, catalog
+  taxonomy (lane fusion-final-r2): COMPLETE.** The c5 blockers are resolved
+  in order: the Elixir CLI gained the full lifecycle (`bootstrap`, `apply`,
+  `update`, `sync`, `verify`, `pull` — interactive-first with the TUI as the
+  default and `--headless` for non-interactive runs), the composition
+  (`collect -> graph -> plan -> baseline`) exists once in
+  `Workstation.Core.Plan` and is shared by the daemon applier and the one-shot
+  driver, and the c5 journal-reconciliation precondition had already fallen.
+  This lane deleted `workstation/lua/workstation/**` and every Lua suite
+  whose subject died with it, fused `workstation/bin/workstation` to
+  sandbox + runtime/release acquisition + exec of the engine release (the
+  engine provisions the `~/.local/bin/workstation` launcher and refreshes
+  its own release from the checkout), rewrote the check matrix Elixir-native,
+  and declared the catalog taxonomy (foundation/* layers, status-wire
+  metadata, byte-neutral for plan bytes and goldens). Goldens are
+  byte-identical; see the lane report for the deleted-file inventory and
+  the residual capability-layer notes (tool/plugin provisioning that the
+  Lua handlers owned).
 - Distribution: one checksummed `mix release` tarball + sha256 sidecar
   (linux glibc/libstdc++, see §1); never escript. macOS arm64 out of scope.
 
@@ -120,6 +141,40 @@ sha256sum workstation-0.1.0-linux-x64.tar.gz > workstation-0.1.0-linux-x64.tar.g
   the release core is the same engine the goldens pin. It never touches the
   real `$HOME`.
 
+## Launcher (workstation/bin/workstation) and host acquisition
+
+The public launcher is plain POSIX sh with exactly three jobs, then it is out
+of the way:
+
+1. **Sandbox**: symlink-loop resolution (≤40 hops), original rendezvous
+   capture (`WORKSTATION_SESSION_*`), `DBUS_SESSION_BUS_ADDRESS` unset,
+   `HOME`/`WORKSTATION_HOME`/`USERPROFILE`/XDG rebase to the destination.
+2. **Acquisition** (bootstrap only): `workstation/bootstrap/install-runtime.sh`
+   installs the pinned editor runtime and, when driven from an engine checkout
+   with a `mise` toolchain, builds the engine release from `elixir/` and stages
+   it under `$HOME/.local/opt/workstation` (private, engine-owned).
+3. **Handoff**: `exec` of the installed release binary — the Elixir engine IS
+   the engine runtime; the launcher never interprets lifecycle verbs.
+
+The `~/.local/bin/workstation` symlink is provisioned and verified by the
+ENGINE (`Update.Bootstrap` — refusing to replace conflicting user files), not
+by shell. After `pull`, `bootstrap`/`update` refresh the installed release
+from the checkout through the same installer (`Workstation.CLI.Engine
+release_refresh`), so the launcher never outlives its engine.
+
+## Catalog taxonomy
+
+Every package declares the foundation layer it belongs to (`foundation:
+"foundation/<layer>"` in its spec map; `Workstation.Core.Catalog.Packages.taxonomy/0`
+is the closed map, `CatalogNativeTest` pins it). Declared layers:
+`foundation/base` (the foundation package), `foundation/editor` (nvim),
+`foundation/runtime` (node, go, elixir, typescript), `foundation/terminal`
+(tmux), `foundation/agent` (agent, herdr, herdr-pi, pi-skills,
+pi-ntfy-notifier), `foundation/theme`, `foundation/fonts`,
+`foundation/secrets`. The declaration is status-wire metadata only — it never
+enters graph resolution, envelopes or plan bytes, so catalog order and golden
+bytes are unaffected.
+
 ## Layout
 
 | Path | Role |
@@ -143,13 +198,13 @@ mise exec -- mix deps.get   # once, warms elixir/deps
 mise exec -- mix test       # umbrella suite
 ```
 
-The canonical gate (`sh .github/scripts/check.sh`) also runs the umbrella
-through `tests/elixir.test.lua`: it executes `mix test` only when `mise` is on
-PATH, `elixir/deps` and `elixir/_build/test` are warm, and check.sh supplied
-the real mise data dir (`WORKSTATION_MISE_DATA_DIR`, passed through the
-test-home boundary). Any other state skips with a printed reason and exit 0 —
-cold clones, missing toolchain, and nested meta-checks
-(`WORKSTATION_NESTED_CHECK=1`) never pay the toolchain cost inside the gate.
+The canonical gate (`sh .github/scripts/check.sh`) is Elixir-native: the full
+`mix test` umbrella suite, the byte-identical golden replay
+(`mix workstation.goldens` into a scratch root, `diff -r` against
+`tests/goldens`), `sh -n` + ShellCheck over the remaining shell scripts
+(`workstation/bin/workstation`, `workstation/bootstrap/install-runtime.sh`,
+`.github/scripts/*.sh`), the release boot smoke when a local tarball is
+built, and `git diff --check`.
 
 ## Goldens (Elixir replay contract)
 
@@ -276,7 +331,8 @@ serving unauthenticated.
 ## Update lifecycle (apps/core `Workstation.Core.Update.*`, apps/daemon `Workstation.Daemon.Update`)
 
 The UPDATE lifecycle is ported one step per module, semantics anchored to
-the Lua update verb (`workstation/apps/cli/run.lua`) and the lifecycle
+the retired Lua update verb (`workstation/apps/cli/run.lua`, deleted with
+the engine in lane fusion-final-r2) and the lifecycle
 phases of `docs/capabilities.md`:
 
 * `pull` — checked fast-forward of the engine-owned checkout (fetch +
@@ -325,33 +381,59 @@ the output-wire schema below.
 
 ## CLI (apps/cli, `workstation` on the release PATH)
 
-`workstation <status|plan|diff> --home <private root> [--json]` evaluates
-the command in-process through the Elixir core (`Workstation.CLI.Core`):
-the pipeline is the one the goldens grade, `Catalog.live -> Catalog.load ->
-Graph.order -> Source.plan`, with native live collection — no engine
-shell-out and no Lua anywhere in the path. The retired `--engine` and
-`--core` switches are usage errors (exit 2). `--input <envelope.json>`
-substitutes a recorded golden envelope for the live collection, so
-`workstation plan --home <root> --input tests/goldens/minimal/input.json`
-reproduces the recorded plan offline (no engine, no network; pinned by
-`Workstation.CLITest`). `workstation json <status|plan|diff> ...` prints
-the raw output-schema document for boundary debugging. ExUnit coverage
-lives in `apps/cli/test/workstation/cli_test.exs`.
+`workstation <status|plan|diff> --home <root> [--json]` evaluates the read
+side in-process (`Workstation.CLI.Core`); `--input <envelope.json>`
+substitutes a recorded golden envelope for offline replay;
+`workstation json <status|plan|diff> ...` prints the raw output-schema
+document for boundary debugging.
 
-Safety guards (fail closed, never touch the real home):
+Lifecycle verbs run the engine in this process (`Workstation.CLI.Engine`):
+`bootstrap`, `apply`, `update`, `sync`, `verify`, `pull`. Mutations take the
+target home's exclusive apply lock (`Workstation.Core.ApplyLock`,
+`<state_root>/apply.lock`) — the same lock file the daemon orchestrator
+takes — and compose their plan through the shared Core composition
+(`Workstation.Core.Plan.composed_plan/2`). `apply` and `update` are
+interactive-first: on a usable terminal they run the TUI screens; there is
+no silent degradation.
 
-- `--home` is mandatory (exit 2 without it) and must not equal the real
-  `$HOME`;
-- `--home` without a `.workstation-test-root` marker is refused (the marker
-  is created by `.github/scripts/test-home.sh`, so only fixture homes
-  pass);
-- the state root (`WORKSTATION_HOME`) is bracketed around evaluation and
-  restored, so the core reads exactly the selected `--home` and never the
-  operator's state;
-- before the fail-closed journal read, `EngineState` performs the same 0700
-  state-root repair the Lua engine performed on every journal access
-  (`state.lua guarded_directory`): a symlinked or foreign-owned component
-  still fails closed.
+## TTY contract (interactive-first, no fallback)
+
+A terminal is usable when stdout is a real terminal and `TERM` is set and
+not `dumb` (`Workstation.CLI.Router.usable_terminal?/0`). The TTY probe is
+procfs-based and recorded: the release VM runs `-noshell`, where the classic
+`:io.columns/1` probe answers `enotsup` even on a real PTY and
+`prim_tty:isatty/1` is not callable from user code — so fd 1 is resolved
+through `/proc/self/fd/1` (`/dev/pts/N`, `/dev/tty*`, `/dev/console` count;
+pipes, sockets and `/dev/null` do not) and the `TERM` check runs on top.
+Non-Linux or missing `/proc` reads as NOT a terminal — fail-closed toward
+the explicit `--headless` flag, which is the intended contract direction.
+On an interactive verb (`apply`, `update`):
+
+- usable terminal, no flag → the TUI screens;
+- `--headless` → the plain runner regardless of terminal state;
+- otherwise (non-TTY, no `TERM`, or `dumb`) WITHOUT `--headless` → hard
+  error, exit 1: `workstation: no usable terminal; pass --headless for
+  non-interactive runs`.
+
+Every internal non-interactive invocation (check matrix, test harnesses,
+scripts) passes `--headless` explicitly. The heuristic's known limit: a
+usable terminal behind a pager or multiplexer that strips `TERM` is treated
+as unusable — pass `--headless` there.
+
+Safety guards (fail closed, never touch the operator's state):
+
+- the destination resolves `--home` > `$WORKSTATION_HOME` > `$HOME` (the
+  launcher shim rebases both env vars to the same destination, so verbs
+  address the intended home either way); there is no marker/refusal
+  machinery on the CLI — the fused front door serves real homes, and the
+  mutation gates ARE the contract: the TUI confirm screen (which echoes the
+  collected plan and applies only the requested generation) or an explicit
+  `--headless`;
+- read-side evaluation brackets `WORKSTATION_HOME` around the core and
+  restores the previous value, so the core reads exactly the selected home
+  and never the operator's state;
+- before the fail-closed journal read, `EngineState` performs the 0700
+  state-root repair: a symlinked or foreign-owned component fails closed.
 
 ## CLI output wires (lane b5 hard-cut schemas)
 
@@ -359,9 +441,12 @@ Safety guards (fail closed, never touch the real home):
 reporter's `workstation.report/1` envelope stays an internal wire of the
 Engine bridge and is never emitted as a CLI contract:
 
-- `workstation.status.v1` — `{schema, engine{name, version, mode
-  "lua"|"elixir"}, destination, platform, packages[{id, requires,
-  supported_hosts}], graph_order, journal{generation, revision, at}|null}`;
+- `workstation.status.v1` — `{schema, engine{name, version, mode "elixir"},
+  destination, platform, packages[{id, requires, supported_hosts}],
+  graph_order, taxonomy, journal{generation, revision, at}|null}` where
+  `taxonomy` is the catalog's package -> foundation declaration
+  (`foundation/<layer>`; descriptive metadata — it never enters envelopes
+  or plan bytes);
 - `workstation.plan.v1` — `{schema, generation, plan, manifest, patches,
   target_states}`. The `plan` body and `manifest` are the recorded golden
   artifacts verbatim (byte-identical to
@@ -380,12 +465,10 @@ yields byte-identical stdout.
 | Code | Meaning |
 | --- | --- |
 | 0 | ok |
+| 1 | no usable terminal for an interactive verb (pass `--headless`) |
 | 2 | usage (unknown command/arguments, missing mandatory options) |
-| 3 | conflict-or-precondition (core evaluation failed: bad envelope, graph or plan conflict, invariant) |
-| 4 | backend-or-engine failure (engine bridge error, undecodable wire) |
-| 5 | update backend failed (update wire undecodable / update bridge error) |
-| 70 | unsupported engine wire schema (`InsufficientEngineSupport`, loud wire upgrade) |
-| 77 | refused `--home` (real `$HOME` or missing test-root marker) |
+| 3 | conflict-or-precondition (core evaluation failed: bad envelope, graph or plan conflict, invariant; apply-lock contention) |
+| 4 | engine failure (native collection error, lifecycle step failure, TUI failure) |
 
 Human TTY text for the core plan mirrors `changesets.lua print_report`
 layout; the documented deviations keep the wire the single source of truth:
