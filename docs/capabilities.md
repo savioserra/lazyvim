@@ -235,10 +235,17 @@ so identity is the installer's `.built-from` stamp (path fallback for
 unstamped dev releases) — the refreshed code consumes the note as its handoff
 target, the caller's own stamp means "hand off and leave the note for a
 crashed re-exec to re-derive", and the parent clears the note only after the
-child exits 0 (parent success = child exit 0 + note consumed). A handoff
-decision after the final step is a no-op: there is never an empty
-`--resume-from` child, and a failing child status — including exit-2 argv
-validation — is echoed once, never retried. The TUI does not survive a
+child exits 0 (parent success = child exit 0 + note consumed). Identity is
+captured, never re-read: the note records the WRITER's identity as of before
+the installer re-stamps the release, and the caller captures its own
+identity once at chain start — both sides must describe the code actually
+executing, not the code currently on disk. The note names identity only;
+the re-exec derives its child binary from the release ROOT
+(`<root>/bin/workstation`, guarded to be an existing executable), never
+from the identity token — spawning the stamp as a path is the 2026-10-05
+P0. A handoff decision after the final step is a no-op: there is never an
+empty `--resume-from` child, and a failing child status — including exit-2
+argv validation — is echoed once, never retried. The TUI does not survive a
 rebuild: interactive operators re-run `workstation update`, which the
 refresh stamp makes a fast no-op rebuild path. See
 [installation and daily use](../README.md).

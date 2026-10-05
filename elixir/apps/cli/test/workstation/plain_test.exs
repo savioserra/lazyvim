@@ -40,7 +40,10 @@ defmodule Workstation.CLITest.PlainTest do
 
     output =
       ExUnit.CaptureIO.capture_io(:stdio, fn ->
-        assert :ok = Plain.run(:update, destination: "HOME", executor: executor, handoff_probe: probe)
+        assert :ok =
+                 Plain.run(:update, destination: "HOME",
+                   executor: executor, handoff_probe: probe, handoff_release_root: release
+                 )
       end)
 
     assert Agent.get(exec_pid, &Enum.reverse/1) == ["pull", "bootstrap", "apply"]
@@ -86,7 +89,9 @@ defmodule Workstation.CLITest.PlainTest do
       ExUnit.CaptureIO.capture_io(:stdio, fn ->
         assert :ok =
                  Plain.run(:update, destination: "HOME",
-                   executor: fn %{"step" => _step} -> :ok end, handoff_probe: probe
+                   executor: fn %{"step" => _step} -> :ok end,
+                   handoff_probe: probe,
+                   handoff_release_root: release
                  )
       end)
 
@@ -114,7 +119,9 @@ defmodule Workstation.CLITest.PlainTest do
     ExUnit.CaptureIO.capture_io(:stdio, fn ->
       assert :ok =
                Plain.run(:update, destination: "HOME",
-                 executor: fn %{"step" => _step} -> :ok end, handoff_probe: probe
+                 executor: fn %{"step" => _step} -> :ok end,
+                 handoff_probe: probe,
+                 handoff_release_root: release
                )
     end)
 
@@ -139,7 +146,9 @@ defmodule Workstation.CLITest.PlainTest do
       assert catch_exit(
                ExUnit.CaptureIO.capture_io(:stdio, fn ->
                  Plain.run(:update, destination: "HOME",
-                   executor: fn %{"step" => _step} -> :ok end, handoff_probe: probe
+                   executor: fn %{"step" => _step} -> :ok end,
+                   handoff_probe: probe,
+                   handoff_release_root: release
                  )
                end)
              ) == {:shutdown, 4}
@@ -184,7 +193,9 @@ defmodule Workstation.CLITest.PlainTest do
         assert catch_exit(
                  ExUnit.CaptureIO.capture_io(:stdio, fn ->
                    Plain.run(:update, destination: "HOME",
-                     executor: fn %{"step" => _step} -> :ok end, handoff_probe: probe
+                     executor: fn %{"step" => _step} -> :ok end,
+                     handoff_probe: probe,
+                     handoff_release_root: release
                    )
                  end)
                ) == {:shutdown, 4}
@@ -206,13 +217,102 @@ defmodule Workstation.CLITest.PlainTest do
         assert catch_exit(
                  ExUnit.CaptureIO.capture_io(:stdio, fn ->
                    Plain.run(:update, destination: "HOME",
-                     executor: fn %{"step" => _step} -> :ok end, handoff_probe: probe
+                     executor: fn %{"step" => _step} -> :ok end,
+                     handoff_probe: probe,
+                     handoff_release_root: release
                    )
                  end)
                ) == {:shutdown, 4}
       end)
 
     assert output =~ "update failed under the handed-off release (exit 3)"
+  end
+
+  test "the composition spawns the release ROOT, never the note's identity value", %{root: root} do
+    # The P0 in 0fb69a4f shipped because the unit tests injected a
+    # PATH-SHAPED probe value while production passed the identity stamp:
+    # the note and the probe must meet through the real Engine probe, and
+    # the spawn bin must be derived from the release root — a stamp-shaped
+    # note value used as a spawn path raised a raw :enoent ErlangError on
+    # the live host. This test composes the REAL
+    # Engine.update_handoff/1 (no :handoff_probe injection) with the real
+    # spawn-path derivation (only the release root is a fixture) and a
+    # STAMP-shaped note value.
+    release = fake_release(root, 0)
+    previous_ws = System.get_env("WORKSTATION_HOME")
+    System.put_env("WORKSTATION_HOME", root)
+    on_exit(fn -> restore_env("WORKSTATION_HOME", previous_ws) end)
+
+    # Caller identity as the chain-start capture would produce it: the
+    # PRE-refresh stamp. The note names the same writer identity (what a
+    # pre-install capture records), NOT a path — the old bug treated the
+    # identity as the child bin.
+    note = note_path(root)
+    File.mkdir_p!(Path.dirname(note))
+    File.write!(note, Jason.encode!(%{"from_release" => "pre-refresh-stamp"}))
+
+    output =
+      ExUnit.CaptureIO.capture_io(:stdio, fn ->
+        assert :ok =
+                 Plain.run(:update, destination: "HOME",
+                   executor: fn %{"step" => _step} -> :ok end,
+                   release_identity: "pre-refresh-stamp",
+                   handoff_release_root: release
+                 )
+      end)
+
+    # The real probe consumed the stamp-shaped note (identity equal to the
+    # chain-start capture) and the child ran the remaining chain.
+    assert output =~ "[2/5] bootstrap handed off to the refreshed release"
+    assert output =~ "Update handed off to #{release}"
+
+    assert File.read!(Path.join(root, "child.argv")) |> String.trim_trailing("\n") ==
+             "update --headless --resume-from bootstrap,apply,sync,verify"
+
+    # The spawned BIN is the release root's launcher — recorded by the
+    # child itself as $0 — never the identity token.
+    assert File.read!(Path.join(root, "child.bin")) |> String.trim_trailing("\n") ==
+             Path.join([release, "bin", "workstation"])
+
+    # Parent success = child exit 0 + note consumed (default clear against
+    # the bracketed WORKSTATION_HOME).
+    refute File.exists?(note)
+  end
+
+  test "a handed-off release without an executable bin fails cleanly, note intact", %{root: root} do
+    # The live P0 surfaced as a raw :enoent ErlangError (exit 1, note
+    # stranded): the launcher-shape guard must turn a missing or
+    # non-executable bin into the controlled engine failure (exit 4)
+    # before any spawn.
+    release = Path.join([root, "empty-release"])
+    File.mkdir_p!(Path.join([release, "bin"]))
+    probe = fn _opts -> {:ok, release} end
+
+    previous_ws = System.get_env("WORKSTATION_HOME")
+    System.put_env("WORKSTATION_HOME", root)
+    on_exit(fn -> restore_env("WORKSTATION_HOME", previous_ws) end)
+
+    note = note_path(root)
+    File.mkdir_p!(Path.dirname(note))
+    File.write!(note, Jason.encode!(%{"from_release" => "stale"}))
+
+    output =
+      ExUnit.CaptureIO.capture_io(:stderr, fn ->
+        assert catch_exit(
+                 ExUnit.CaptureIO.capture_io(:stdio, fn ->
+                   Plain.run(:update, destination: "HOME",
+                     executor: fn %{"step" => _step} -> :ok end,
+                     handoff_probe: probe,
+                     handoff_release_root: release
+                   )
+                 end)
+               ) == {:shutdown, 4}
+      end)
+
+    assert output =~ "no executable workstation binary at #{Path.join([release, "bin", "workstation"])}"
+
+    # The failure precedes the spawn: the note survives for re-derivation.
+    assert File.exists?(note)
   end
 
   test "an invalid --resume-from list is a usage error, never a chain run" do
@@ -288,7 +388,7 @@ defmodule Workstation.CLITest.PlainTest do
 
     File.write!(
       bin,
-      "#!/bin/sh\nprintf '%s\\n' \"$*\" >> #{root}/child.argv\nprintf '%s\\n' \"$WORKSTATION_HOME\" >> #{root}/child.env\necho Updated\nexit #{exit_code}\n"
+      "#!/bin/sh\nprintf '%s\\n' \"$*\" >> #{root}/child.argv\nprintf '%s\\n' \"$WORKSTATION_HOME\" >> #{root}/child.env\nprintf '%s\\n' \"$0\" >> #{root}/child.bin\necho Updated\nexit #{exit_code}\n"
     )
 
     File.chmod!(bin, 0o755)

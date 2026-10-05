@@ -178,6 +178,34 @@ defmodule Workstation.CLITest.EngineTest do
     assert File.exists?(note_path(home))
   end
 
+  test "the handoff note records the identity captured BEFORE the installer re-stamps (P0 in 0fb69a4f)",
+       %{home: home} do
+    # The live P0: the note was written from a POST-install identity read.
+    # The installer re-stamps the release, so the note then described the
+    # NEW code; the refreshed process compared it against a fresh read of
+    # the same stamp, saw its own note as its own identity, and handed off
+    # forever (each generation re-deriving the note, the last one spawning
+    # an empty --resume-from). The writer identity must be captured before
+    # the installer runs — pinned here with an explicit value that no
+    # post-install read could produce, since the fake installer leaves the
+    # stamp untouched.
+    {_spy, installer} = spy_install()
+
+    assert {:ok, _record} =
+             Engine.run_step("bootstrap",
+               home: home,
+               engine_root: repo_root(),
+               bootstrap_run: bootstrap_stub(),
+               installer: installer,
+               writer_identity: "pre-refresh-stamp"
+             )
+
+    assert {:ok, %{"from_release" => "pre-refresh-stamp"}} =
+             note_path(home)
+             |> File.read!()
+             |> Jason.decode()
+  end
+
   test "a refresh-free bootstrap clears a leftover handoff note and never calls the installer", %{home: home} do
     File.mkdir_p!(Path.dirname(stamp_path(home)))
     File.write!(stamp_path(home), repo_head() <> "\n")

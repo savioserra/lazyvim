@@ -126,7 +126,7 @@ defmodule Workstation.Core.Catalog.Discover do
       index ->
         remainder = Enum.drop(segments, index + 1)
         # A path ENDING in a `test` file (no remainder) is not a test tree.
-        remainder != [] and Path.join(remainder) |> String.ends_with?(Path.basename(source))
+        remainder != [] and List.last(remainder) == Path.basename(source)
     end
   end
 

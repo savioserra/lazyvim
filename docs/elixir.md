@@ -485,22 +485,30 @@ The update chain's bootstrap step carries the release-refresh contract
 skips honestly), stamp-gated on the installer-written `.built-from` (stamp
 == checkout HEAD → no-op rebuild), fail-closed on installer failure. A
 refreshed bootstrap leaves a handoff note (`<state_root>/update/
-handoff.json`, `from_release` = the writing release's CODE IDENTITY — the
-`.built-from` stamp, path fallback for unstamped dev releases; an in-place
-refresh reuses the release root, so identity can never be the path) because
-the running process still executes the old loaded code; the plain runner
-probes `Workstation.CLI.Engine.update_handoff/1` after every step and hands the
+handoff.json`, `from_release` = the WRITER's code identity — the
+`.built-from` stamp, path fallback for unstamped dev releases — CAPTURED
+BEFORE the installer runs, because the refresh re-stamps the release and a
+post-install read would describe the new code; an in-place refresh reuses
+the release root, so identity can never be the path) because the running
+process still executes the old loaded code; the plain runner captures its
+caller identity once at chain start (before pull/bootstrap) and probes
+`Workstation.CLI.Engine.update_handoff/1` after every step, threading the
+capture through the probe's `:release_identity` seam, and hands the
 remaining chain to the new release as `update --headless --resume-from
 <steps>` (a child whose output and exit status are forwarded — the BEAM has
-no exec(2)). Note lifecycle: the caller's own identity → hand off and the
-note SURVIVES (a crashed re-exec re-derives); a different identity →
-consumed with no handoff (this process IS the target); the successful
-parent clears the note after the child exits 0; a refresh-free bootstrap
-clears any leftover. A handoff decision after the final step hands off
-nothing (no empty `--resume-from` child — the 2026-10-05 live incident's
-exit-2 trigger), and a failing child status is echoed once, never retried.
-`bootstrap_run`/`installer`/`collector` are the engine's test seams, same
-pattern as the plain runner's `executor`/`handoff_probe`/`handoff_clear`.
+no exec(2)). The child binary is derived from the release ROOT
+(`<root>/bin/workstation`, guarded to be an existing executable — the guard
+turns a missing bin into the controlled exit-4 failure instead of a raw
+:enoent ErlangError), never from the identity token. Note lifecycle: the
+caller's own identity → hand off and the note SURVIVES (a crashed re-exec
+re-derives); a different identity → consumed with no handoff (this process
+IS the target); the successful parent clears the note after the child exits
+0; a refresh-free bootstrap clears any leftover. A handoff decision after
+the final step hands off nothing (no empty `--resume-from` child — the
+2026-10-05 live incident's exit-2 trigger), and a failing child status is
+echoed once, never retried. `bootstrap_run`/`installer`/`collector`/
+`writer_identity` are the engine's test seams, same pattern as the plain
+runner's `executor`/`handoff_probe`/`handoff_clear`/`handoff_release_root`.
 
 ## TTY contract (interactive-first, no fallback)
 

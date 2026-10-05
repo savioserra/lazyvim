@@ -84,6 +84,16 @@ defmodule Workstation.CLI.Plain do
 
   defp run_update(destination, executor, opts) do
     steps = resume_steps(opts[:resume_from])
+
+    # The CALLER's code identity, captured ONCE at chain start — before
+    # the bootstrap step can re-stamp the release mid-run. A fresh read
+    # after the refresh would describe the NEW code, not the code THIS
+    # process executes (the P0 in 0fb69a4f: a post-refresh note then
+    # matched a post-refresh probe and the chain handed off forever). The
+    # default probe (Engine.update_handoff/1) consumes it via the
+    # :release_identity seam; injected test probes just ignore it.
+    identity = Keyword.get(opts, :release_identity) || Engine.release_identity()
+    opts = Keyword.put(opts, :release_identity, identity)
     probe = Keyword.get(opts, :handoff_probe, &Engine.update_handoff/1)
     total = length(Update.steps())
 
@@ -94,7 +104,7 @@ defmodule Workstation.CLI.Plain do
       case executor.(%{"step" => step}) do
         :ok ->
           IO.puts("  [#{index}/#{total}] #{step} ok")
-          after_step(probe, steps, index, total)
+          after_step(probe, opts, steps, index, total)
 
         {:error, reason} ->
           IO.puts("  [#{index}/#{total}] #{step} failed: #{reason}")
@@ -111,8 +121,8 @@ defmodule Workstation.CLI.Plain do
         IO.puts("Updated")
         :ok
 
-      {:handoff, release, remaining} ->
-        handoff(release, remaining, total, opts)
+      {:handoff, remaining} ->
+        handoff(remaining, total, opts)
 
       {:error, {step, reason}} ->
         fail(4, "error: update failed at #{step}: #{reason}")
@@ -149,7 +159,10 @@ defmodule Workstation.CLI.Plain do
     end
   end
 
-  # The handoff probe runs after EVERY step: a note can only exist when a
+  # The handoff probe runs after EVERY step and receives this run's opts
+  # (the caller identity is threaded on :release_identity — the default
+  # Engine.update_handoff/1 probe consumes it; injected probes share the
+  # same `(opts)` contract as `:executor`): a note can only exist when a
   # bootstrap refreshed the release (or an earlier run crashed between the
   # refresh and its exec), and in both cases the remaining chain belongs to
   # the new release. A no-note probe is one file read that misses. When the
@@ -157,19 +170,19 @@ defmodule Workstation.CLI.Plain do
   # (the empty --resume-from child was the live 2026-10-05 incident's exit-2
   # trigger), so the run finishes normally and the parent clears the note.
   # The probe is injectable (`:handoff_probe`) with the same seam contract
-  # as `:executor`: production default, stand-ins for tests.
-  defp after_step(probe, steps, index, total) do
-    case probe.([]) do
+  # as `:executor`.
+  defp after_step(probe, opts, steps, index, total) do
+    case probe.(opts) do
       {:ok, nil} ->
         {:cont, :ok}
 
-      {:ok, release} ->
+      {:ok, _release} ->
         remaining = Enum.drop_while(steps, fn {_s, i} -> i <= index end)
 
         if remaining == [] do
           {:cont, :ok}
         else
-          {:halt, {:handoff, release, remaining}}
+          {:halt, {:handoff, remaining}}
         end
 
       {:error, message} ->
@@ -178,24 +191,34 @@ defmodule Workstation.CLI.Plain do
     end
   end
 
-  # The handoff re-exec: spawn `<release>/bin/workstation` with the
+  # The handoff re-exec: spawn `<release root>/bin/workstation` with the
   # remaining steps, forwarding output and exit status (the BEAM has no
   # exec(2); the observable contract is one command, one exit code). The
-  # child inherits this process' environment — including any
-  # WORKSTATION_HOME bracket — because it re-derives engine state the same
-  # way the parent did. Parent success = child exit 0 + note consumed:
-  # the parent clears the note itself (a crashed re-exec must leave it for
-  # re-derivation), and a nonzero child status — including exit 2 argv
-  # validation, which is never retried — fails the run with the child's
-  # status echoed.
-  defp handoff(release, remaining, total, opts) do
+  # bin is derived from the release ROOT, never the identity value —
+  # identity is the built-code stamp, an opaque token that may carry a
+  # path fallback but is not guaranteed to be a path; spawning it verbatim
+  # raised a raw :enoent ErlangError on the live host (the P0 in
+  # 0fb69a4f). The child inherits this process' environment — including
+  # any WORKSTATION_HOME bracket — because it re-derives engine state the
+  # same way the parent did. Parent success = child exit 0 + note
+  # consumed: the parent clears the note itself (a crashed re-exec must
+  # leave it for re-derivation), and a nonzero child status — including
+  # exit 2 argv validation, which is never retried — fails the run with
+  # the child's status echoed. A missing or non-executable bin fails
+  # cleanly (exit 4) instead of a raw ErlangError.
+  defp handoff(remaining, total, opts) do
+    root = Keyword.get(opts, :handoff_release_root) || to_string(:code.root_dir())
+    bin = Path.join([root, "bin", "workstation"])
+
     Enum.each(remaining, fn {step, index} ->
       IO.puts("  [#{index}/#{total}] #{step} handed off to the refreshed release")
     end)
 
-    IO.puts("Update handed off to #{release}")
+    IO.puts("Update handed off to #{root}")
 
-    bin = Path.join([release, "bin", "workstation"])
+    unless executable?(bin) do
+      fail(4, "error: the handed-off release has no executable workstation binary at #{bin}")
+    end
     argv = ["update", "--headless", "--resume-from", Enum.map_join(remaining, ",", fn {step, _} -> step end)]
 
     case System.cmd(bin, argv, into: IO.stream(:stdio, :line), stderr_to_stdout: true) do
@@ -210,6 +233,17 @@ defmodule Workstation.CLI.Plain do
 
       {_output, code} ->
         fail(4, "error: update failed under the handed-off release (exit #{code})")
+    end
+  end
+
+  # The launcher-shape guard: the spawn target must be a regular file with
+  # any execute bit — System.cmd on a missing bin raises a raw :enoent
+  # ErlangError (exit 1, stranded handoff note), which the two-phase
+  # contract reports as a controlled engine failure instead.
+  defp executable?(bin) do
+    case File.stat(bin) do
+      {:ok, %{type: :regular, mode: mode}} -> Bitwise.band(mode, 0o111) != 0
+      _other -> false
     end
   end
 

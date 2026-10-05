@@ -110,10 +110,17 @@ defmodule Workstation.CLI.Engine do
   defp bootstrap_locked(opts) do
     bootstrap_run = opts[:bootstrap_run] || (&Update.Bootstrap.run/1)
 
-    with {:ok, record} <- guarded(fn _opts -> elem(bootstrap_run.(core_opts(opts)), 1) end, opts, "bootstrap_failed") do
+    with {:ok, record} <- guarded(fn _opts -> elem(bootstrap_run.(core_opts(opts)), 1) end, opts, "bootstrap_failed"),
+         # Capture the WRITER's identity BEFORE the installer runs: the
+         # refresh re-stamps the release, so a post-install read would
+         # describe the NEW code — the refreshed process would then see its
+         # own note as its own identity and hand off forever (the P0 in
+         # 0fb69a4f). Tests inject :writer_identity to pin the pre/post
+         # distinction a same-process read cannot express.
+         writer_identity = Keyword.get(opts, :writer_identity, release_identity()) do
       case release_refresh(opts) do
         {:ok, refreshed?} ->
-          case refresh_note(refreshed?, opts) do
+          case refresh_note(refreshed?, writer_identity, opts) do
             :ok -> {:ok, Map.put(record, "release_refreshed", refreshed?)}
             {:error, message} -> {:error, "bootstrap_failed", message}
           end
@@ -125,32 +132,35 @@ defmodule Workstation.CLI.Engine do
   end
 
   # The release handoff note (docs/capabilities.md, "release refresh and
-  # handoff"): a REFRESHED bootstrap leaves a note naming the CODE IDENTITY
-  # (the installer's .built-from stamp) of the release that wrote it,
-  # because this process is still executing the OLD loaded code while the
-  # on-disk release just changed under it; the plain runner probes the note
-  # after every step and hands the remaining chain to the new release. The
+  # handoff"): a REFRESHED bootstrap leaves a note naming the WRITER's
+  # code identity, CAPTURED BEFORE THE INSTALLER RUNS (see
+  # bootstrap_locked/1 — the refresh re-stamps the release, so a
+  # post-install read would describe the NEW code). The writer is still
+  # executing the OLD loaded code while the on-disk release just changed
+  # under it; the plain runner probes the note after every step and hands
+  # the remaining chain to the new release. The note names identity, never
+  # location: the runner derives the child bin from the release ROOT. The
   # parent clears the note itself when the handed-off child exits 0, and a
   # non-refreshing bootstrap REMOVES any leftover note — after a
   # refresh-free bootstrap, this process and the disk agree, so a stale
   # note from an earlier crashed handoff must not trigger a spurious
   # handoff later.
-  defp refresh_note(false, opts) do
+  defp refresh_note(false, _writer_identity, opts) do
     clear_update_handoff(opts)
     :ok
   end
 
-  defp refresh_note(true, opts) do
+  defp refresh_note(true, writer_identity, opts) do
     path = update_handoff_path(opts)
 
     case File.mkdir_p(Path.dirname(path)) do
-      :ok -> write_handoff_note(path)
+      :ok -> write_handoff_note(path, writer_identity)
       {:error, reason} -> {:error, "cannot record the release handoff note: #{inspect(reason)}"}
     end
   end
 
-  defp write_handoff_note(path) do
-    note = Jason.encode!(%{"from_release" => release_identity()})
+  defp write_handoff_note(path, writer_identity) do
+    note = Jason.encode!(%{"from_release" => writer_identity})
 
     case File.write(path, note) do
       :ok -> :ok
