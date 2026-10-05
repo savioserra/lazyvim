@@ -22,13 +22,15 @@ else
 fi
 
 step 'shell syntax (sh -n) and ShellCheck when available'
-find workstation .github/scripts -type f \( -name '*.sh' -o -name 'workstation' \) -print |
-	while IFS= read -r file; do
-		sh -n "$file" || exit 1
-		if command -v shellcheck >/dev/null 2>&1; then
-			shellcheck -s sh "$file" || exit 1
-		fi
-	done || fail=1
+{
+	find workstation .github/scripts -type f \( -name '*.sh' -o -name 'workstation' \) -print
+	[ -f install.sh ] && printf '%s\n' install.sh
+} | while IFS= read -r file; do
+	sh -n "$file" || exit 1
+	if command -v shellcheck >/dev/null 2>&1; then
+		shellcheck -s sh "$file" || exit 1
+	fi
+done || fail=1
 if ! command -v shellcheck >/dev/null 2>&1; then
 	printf 'ShellCheck unavailable here; required in the Linux CI job.\n' >&2
 fi

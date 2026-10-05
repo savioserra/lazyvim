@@ -29,7 +29,15 @@ listed in [`docs/tools.md`](docs/tools.md).
 engine payload, not a Git clone. Follow the guarded [cutover procedure](docs/chezmoi.md#breaking-cutover)
 with the operator; never clone over or erase it.
 
+One-line bootstrap — the installer performs exactly the guarded sequence below and
+enforces the same stop rule (audit it first with `curl -fsSL <url> -o install.sh && sh install.sh`;
+overrides: `WORKSTATION_REPO`, `WORKSTATION_REF`, `WORKSTATION_DEST`):
+
 ```sh
+curl -fsSL https://raw.githubusercontent.com/savioserra/lazyvim/main/install.sh | sh
+```
+
+Or manually:
 git clone https://github.com/savioserra/lazyvim.git "$HOME/.local/share/workstation"
 "$HOME/.local/share/workstation/workstation/bin/workstation" bootstrap
 "$HOME/.local/bin/workstation" apply

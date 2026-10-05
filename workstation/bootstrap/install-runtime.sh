@@ -101,6 +101,7 @@ if [ -n "$repo" ]; then
 		export LANG LC_ALL
 		mise exec -- mix local.hex --force || exit 1
 		mise exec -- mix local.rebar --force || exit 1
+		mise exec -- env MIX_ENV=prod mix deps.get || exit 1
 		mise exec -- env MIX_ENV=prod mix release workstation --overwrite
 	) >"$release_stage/build.log" 2>&1; then
 		[ ! -f "$release_stage/build.log" ] || { echo 'workstation bootstrap: release build failed:' >&2; tail -20 "$release_stage/build.log" >&2; }
