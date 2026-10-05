@@ -206,3 +206,24 @@ required.
   "Alpha") — regexes on inspect output must not expect the prefix.
 - Single-writer discipline: commit per green unit (feat → test → docs),
   never hold a large uncommitted batch across a deadline.
+
+## Incident: 2026-10-05 17:37 real-host write (trust entry)
+
+- A bare `mix test` run of `Workstation.CLITest.EnvContract` (cli_test.exs
+  "--headless bypasses the gate" test) executed a REAL Router.main(apply)
+  with `--home` pointed at a sandbox but the ENGINE STATE ROOT unbracketed:
+  EngineState.state_root resolves WORKSTATION_HOME||HOME globally, under
+  bare mix test that is /root, so the apply journaled revision 22 (empty
+  mid-WIP plan) into PRODUCTION ~/.local/state/workstation. No `workstation
+  apply` was typed — the suite itself was the mutator. Rule reinforced:
+  ANY test that can mutate must pin WORKSTATION_HOME (and --home) to the
+  fixture for the whole run; the two gate tests now do and assert the
+  journal lands in the sandbox (24906b08).
+- Journal record writes must use CanonicalJSON.encode_record/1 (object
+  faithful, {} when empty) — encode/1 mirrors Lua {}→[] for golden parity
+  and POISONED the real journal (source_index [] vs reader is_map) after
+  the incident write; readers fail closed on list-shaped indexes
+  (preconditions.check).
+- `journal["targets"][target]`-style string-key Access on possibly-list
+  journal fields crashed real applies on empty baselines — latent since
+  db477afe; guarded fail-closed in 7235557d.
