@@ -91,7 +91,18 @@ if [ -n "$repo" ]; then
 	fi
 	release_stage=$lock/workstation-stage
 	mkdir "$release_stage"
-	if ! (cd "$repo/elixir" && mise exec -- env MIX_ENV=prod mix release workstation --overwrite) >"$release_stage/build.log" 2>&1; then
+	# Fresh machines have no Hex/Rebar in the fixture-less HOME and mix would
+	# prompt; the acquisition must be non-interactive by contract. Locale is
+	# pinned because env -i hosts often run a latin1 name encoding.
+	if ! (
+		cd "$repo/elixir" || exit 1
+		LANG=${LANG:-C.UTF-8}
+		LC_ALL=${LC_ALL:-C.UTF-8}
+		export LANG LC_ALL
+		mise exec -- mix local.hex --force || exit 1
+		mise exec -- mix local.rebar --force || exit 1
+		mise exec -- env MIX_ENV=prod mix release workstation --overwrite
+	) >"$release_stage/build.log" 2>&1; then
 		[ ! -f "$release_stage/build.log" ] || { echo 'workstation bootstrap: release build failed:' >&2; tail -20 "$release_stage/build.log" >&2; }
 		fail 'engine release build failed'
 	fi
