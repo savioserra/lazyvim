@@ -285,3 +285,24 @@ required.
 - :code.root_dir() under `mix test` is the mise erlang bin dir, not a
   release — any test exercising spawn-from-root must pass the fixture
   root explicitly (Plain :handoff_release_root seam).
+
+## Client/daemon refactor gotchas (engine lane, 2026-10-06)
+
+- term_ui 2.0.0-rc.2 backend replays recorded frames ONLY through the Elm
+  loop: op tasks must run outside the screen (TermUI.Command.async/2) and
+  event frames come back via TermUI.Runtime.send_message/2 — calling
+  send_message/2 without a runtime (pid gone) crashes; guard by run ref
+  and swallow {:error, :runtime_not_running}.
+- Do NOT hold a Session's socket in an op task and send on it from two
+  processes: only the session process sends frames (ErlangError otherwise);
+  op tasks publish to the EventBus :op topic and the session forwards.
+- file:// remotes need uploadpack.allowReachableSHA1InWant only for fetch;
+  ls-remote works bare, but git ls-remote against a LOCAL path wants a
+  repo with at least one ref — bare init + one commit, else
+  "No local HEAD" ambiguity; prefer a real clone for behind fixtures.
+- Exit-code contract tests: exit({:shutdown, code}) propagates through
+  catch_exit/1 as {:shutdown, code}; mixing Process.exit(self(), code)
+  (bare int) breaks exit/1 clause-matching — keep the tuple form.
+- The graduation gate (Workstation.Daemon.Apply.enabled?/0) defaults OPEN
+  since the daemon became the only mutation engine; flag-off refusal tests
+  stay green via explicit Application.put_env in setup.

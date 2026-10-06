@@ -148,6 +148,62 @@ hard-cut; retired paths are deleted in the lane that retires them.
   anchor fix means the host shim now exports the anchor itself; no env
   override needed).
 
+## Architecture: the client/daemon split (THE design)
+
+The daemon is the ONLY mutation engine and the only source of live state.
+The CLI — and the TUI screens, which are views over the same protocol — are
+thin protocol clients; the CLI relates to the daemon exactly like `iex`
+relates to a running node, and the TUI is a LiveView over daemon state.
+There is no in-process mutation path: every verb — reads (`status`, `plan`,
+`diff`), lifecycle mutations (`bootstrap`, `apply`, `update`, `sync`,
+`verify`) and control (`daemon stop`, `op.abort`) — rides the socket
+protocol below. The lock has exactly one owner, so a daemon that cannot be
+reached or spawned is a clear operator error (`daemon_unavailable`, exit
+4), never a silent fallback. The one deliberate offline exception is
+`--input <envelope.json>` read replay, which evaluates a RECORDED envelope
+in-process and never consults a daemon by definition.
+
+Ensure-daemon (`Workstation.CLI.DaemonClient`): the first verb resolves the
+per-user socket (`Listener.socket_path/1`); when absent or dead it spawns a
+daemon DETACHED from the same installed release bin (the launcher shim's
+engine-repo anchor rides along in the environment), then waits — bounded —
+for the hello handshake before speaking. `workstation daemon stop` retires
+the daemon manually; no OS service manager is involved. A daemon stays
+pinned to the home it booted for; a client asking for a different
+destination is told to stop it and let ensure-daemon spawn one for that
+home.
+
+Live streaming: long ops (`apply.run`, `update.run`) publish structured
+progress on the EventBus `:op` topic (`Workstation.Daemon.Events`:
+`run.started`/`step.started`/`step.done`/`run.log`/`run.finished`, each
+stamped with an `op_ref`); the owning session forwards the frames to the
+connected client while the op runs. The headless CLI renders the same
+stream as lines (the familiar `[1/5] pull ok` shape, now event-driven);
+the TUI screens transition rows on the frames instead of driving steps
+themselves. Abort (`x` in the TUI) sends `op.abort` with the stream token;
+the daemon cancels the op at its NEXT STEP BOUNDARY — never mid-step, a
+boundary is the only honest cancellation point for a lock-holding chain —
+and reports the `aborted` outcome. `q` during a run DETACHES: the daemon
+keeps the lock and finishes without a viewer.
+
+Update across release refresh: a chained `update.run` whose `bootstrap`
+refreshes the installed release writes the handoff note (writer identity
+captured BEFORE the installer re-stamps; see the update-lifecycle section)
+and STOPS THE DAEMON. The client observes the disconnect, re-spawns the
+daemon from the refreshed release, and resumes the remaining chain under
+the same lock — one banner, one chain, exit 0, note cleared on success.
+
+Passive availability (supervisor-directed engine scope): the daemon serves
+`update.check` — a read-only `git ls-remote origin` against the install
+repo's origin compared to local HEAD, TTL-cached (10 min) and bounded
+(5 s), answering `up_to_date`, `behind{local,remote,remote_ref}` or
+`unknown{reason}`. `status` merges the verdict as an additive optional
+`update` object (`available` true/false with the shas when behind; ABSENT
+when unknown — offline looks like no-news), and the TUI fires the check
+asynchronously on screen open and after a completed update, surfacing
+`↑ update available (abc1234 → def5678) — [u] update` in the accent role
+only when behind; `[u]` hands off to the standard update flow.
+
 ## Distribution
 
 One artifact pair per platform, checked into `elixir/` (gitignored, rebuilt
@@ -360,18 +416,31 @@ mirror in `Workstation.Core.Theme.Tokens` (byte-parity-anchored to the theme
 goldens fixture; re-branding still edits only `tokens.lua`). Secrets never
 transit a schema and logs scrub params.
 
-Lifecycle ops (lane b8 graduation wiring): `apply.run` and `update.run` exist
-so the orchestrator + TUI mutation path is live end-to-end. Both are
-dispatched inside the orchestrator's apply lock — the same lock file the Lua
-one-shot apply takes — and were held at the `not_graduated` gate until the
-c3 graduation run flipped the flag: the op surface, wire schema, and lock
-serialization never churned across the flip. Flag-off behavior (the shipped
-default) still answers `not_graduated` for the mutating steps, and the
-flag-off refusal tests stay. The screen-level executors
-(`Workstation.CLI.TUI.Executor`) speak this surface and surface the refusal
-as the only reachable mutation outcome; the pure `dry_run_executor/1`
-stand-ins stay the screens' defaults so an accidental unconfigured run can
-never mutate anything.
+Lifecycle ops: the mutating surface is `apply.run` (generation + entries)
+and `update.run` (a `steps` SUB-CHAIN — `pull`, `bootstrap`, `apply`,
+`sync`, `verify` — or the whole lifecycle in one op), plus the bootstrap-
+and reconciliation-only verbs `bootstrap.run`, `sync.run`, `verify.run`
+that the CLI's like-named verbs route to. Both mutating ops are dispatched
+inside the orchestrator's apply lock — the same lock file the Lua one-shot
+apply took — and were held at the `not_graduated` gate until the c3
+c graduation run flipped the flag: the op surface, wire schema, and lock
+serialization never churned across the flip. Flag-off behavior still
+answers `not_graduated` for the mutating steps, and the flag-off refusal
+tests stay. Reads (`status.run`/`plan.run`/`diff.run`) serve the hard-cut
+wires from the daemon's own pinned home; `update.check` (read-only,
+TTL-cached, see the architecture section) and `theme.resolve` complete the
+surface. Ops that take perceptible time run in a supervised task
+(`Workstation.Daemon.TaskSupervisor`) OUTSIDE the session process — the
+session stays frame-responsive and forwards the op's event frames while
+it runs; the op registers under its stream token in
+`Workstation.Daemon.OpRegistry` so ANY session can deliver `op.abort`,
+which the task honours at its next step boundary. A session serves one
+op at a time; additional op frames queue behind it.
+
+The screens' executors (`Workstation.CLI.TUI.Executor`) speak this surface
+and surface a refusal as the only reachable mutation outcome; the pure
+`dry_run_executor/1` stand-ins stay the screens' defaults so an accidental
+unconfigured run can never mutate anything.
 
 Peer credentials — recorded deviation (OTP 28 pin): the named `:peercred`
 socket option is typespec-declared but unimplemented in the pinned OTP 28
@@ -411,24 +480,41 @@ phases of `docs/capabilities.md`:
 * `verify` — launcher canonicity plus per-package fingerprint verification
   of every applied target against the journal's ownership record.
 
-`update.run` serves ONE step per request; every step runs under the same
+`update.run` serves a steps SUB-CHAIN per request (the whole lifecycle or
+any suffix — the resume vocabulary below); every step runs under the same
 exclusive apply lock the applier and the Lua one-shot serialize through.
-The c1 graduation flag (`Workstation.Daemon.Apply.enabled?/0`, OFF by
-default) gates the MUTATION steps (pull, bootstrap, apply) — the read-only
-steps (sync, verify) serve regardless, so flipping the flag opens the
-mutating steps without a wire change. The sandbox graduation ran with the
-flag ON end-to-end (`/tmp/fleet/c3/updateC.log`); the shipped default stays
-OFF and routine real-host mutation stays behind the operator's flag — the
-one authorized real reconcile apply (lane c5, recorded in Status) advanced
-the journal to revision 16 with an empty post-apply delta. Step failures
-surface as `update_failed` with the verbatim engine message; gated steps
-answer `not_graduated`;
+The c1 graduation flag (`Workstation.Daemon.Apply.enabled?/0`) gates the
+MUTATION steps (pull, bootstrap, apply) — the read-only steps (sync,
+verify) serve regardless; with the daemon as the only mutation engine the
+flag is OPEN in the shipped release (the daemon refusing would leave no
+mutation path at all) and the flag-off refusal tests pin the gate's
+shape. Step failures surface as `update_failed` with the verbatim engine
+message; gated steps answer `not_graduated`;
 contention answers `locked`.
 No step writes engine state outside the apply orchestration, and the
 network-bound paths (git fetch, artifact download) have no external network
 in tests: pull runs against local fixture repositories, bootstrap against
 in-memory deterministic archive fixtures with pre-seeded or `file://`
 caches behind the fixture-only `allow_file_urls` opt.
+
+Release refresh INSIDE the chain (the hard part, daemon-side since the
+client/server refactor): when the chain's `bootstrap` refreshes the
+installed release, the daemon captures the writer identity BEFORE the
+installer re-stamps the release (`.built-from` stamp; an in-place refresh
+reuses the release root, so identity can never be the path), writes the
+handoff note (`<state_root>/update/handoff.json` with the writer stamp and
+the REMAINING steps), finishes the op with the `handoff` outcome, and
+STOPS ITSELF (the running release just became stale code). The CLIENT
+observes the disconnect mid-update, re-spawns the daemon from the
+REFRESHED release (ensure-daemon, bounded handshake), and re-sends the
+remaining chain — the fresh daemon validates the note's identity against
+its own stamp, resumes the remaining steps under the same lock, clears the
+note on success, and reports one chain. The aged-stamp discriminator
+survives: the note of a DIFFERENT (aged) identity is consumed with no
+handoff; a refresh-free bootstrap clears any stranded note (the
+transitional self-heal); a failing resumed chain echoes the failure once,
+never retried. Composition tests pin writer-before-stamp and
+release-root child derivation.
 
 ### Journal record contract (2026-10-05 real-host incident)
 
@@ -464,51 +550,42 @@ the output-wire schema below.
 
 ## CLI (apps/cli, `workstation` on the release PATH)
 
-`workstation <status|plan|diff> --home <root> [--json]` evaluates the read
-side in-process (`Workstation.CLI.Core`); `--input <envelope.json>`
-substitutes a recorded golden envelope for offline replay;
-`workstation json <status|plan|diff> ...` prints the raw output-schema
-document for boundary debugging.
+Every verb is a daemon client (`Workstation.CLI.DaemonClient`): reads send
+`status.run`/`plan.run`/`diff.run` (the daemon assembles the hard-cut wire
+daemon-side — the CLI renders it unchanged), lifecycle verbs send
+`bootstrap.run`/`apply.run`/`update.run`/`sync.run`/`verify.run`, control
+surfaces send `daemon.stop`/`op.abort` over a short-lived connection that
+never spawns anything. `workstation json <status|plan|diff>` prints the raw
+wire for boundary debugging. Ensure-daemon runs before every verb (see the
+architecture section); there is NO in-process fallback — a daemon that
+cannot be reached or spawned is the verb's error.
+`--input <envelope.json>` is the offline replay exception: a recorded
+envelope evaluated in-process, no daemon involved, same wire.
 
-Lifecycle verbs run the engine in this process (`Workstation.CLI.Engine`):
-`bootstrap`, `apply`, `update`, `sync`, `verify`, `pull`. Mutations take the
-target home's exclusive apply lock (`Workstation.Core.ApplyLock`,
-`<state_root>/apply.lock`) — the same lock file the daemon orchestrator
-takes — and compose their plan through the shared Core composition
-(`Workstation.Core.Plan.composed_plan/2`). `apply` and `update` are
-interactive-first: on a usable terminal they run the TUI screens; there is
-no silent degradation.
+Headless lifecycle runs are CLIENT-driven RENDERINGS of ONE daemon op: the
+plain runner (`Workstation.CLI.Plain`) sends the op, renders the live
+event stream as lines, and folds the op's eventual result into the chain
+verdict — the daemon owns the locks, the step sequencing and the refresh
+handoff; the client never drives steps itself. Exit codes are unchanged
+(0 ok, first failure stops the chain and reports it, `locked` answers 3,
+everything else 4).
 
-The update chain's bootstrap step carries the release-refresh contract
-(`Workstation.CLI.Engine.release_refresh/1`): gated on the checkout's
-`elixir/` umbrella, a supported platform and `mise` on PATH (anything else
-skips honestly), stamp-gated on the installer-written `.built-from` (stamp
-== checkout HEAD → no-op rebuild), fail-closed on installer failure. A
-refreshed bootstrap leaves a handoff note (`<state_root>/update/
-handoff.json`, `from_release` = the WRITER's code identity — the
-`.built-from` stamp, path fallback for unstamped dev releases — CAPTURED
-BEFORE the installer runs, because the refresh re-stamps the release and a
-post-install read would describe the new code; an in-place refresh reuses
-the release root, so identity can never be the path) because the running
-process still executes the old loaded code; the plain runner captures its
-caller identity once at chain start (before pull/bootstrap) and probes
-`Workstation.CLI.Engine.update_handoff/1` after every step, threading the
-capture through the probe's `:release_identity` seam, and hands the
-remaining chain to the new release as `update --headless --resume-from
-<steps>` (a child whose output and exit status are forwarded — the BEAM has
-no exec(2)). The child binary is derived from the release ROOT
-(`<root>/bin/workstation`, guarded to be an existing executable — the guard
-turns a missing bin into the controlled exit-4 failure instead of a raw
-:enoent ErlangError), never from the identity token. Note lifecycle: the
-caller's own identity → hand off and the note SURVIVES (a crashed re-exec
-re-derives); a different identity → consumed with no handoff (this process
-IS the target); the successful parent clears the note after the child exits
-0; a refresh-free bootstrap clears any leftover. A handoff decision after
-the final step hands off nothing (no empty `--resume-from` child — the
-2026-10-05 live incident's exit-2 trigger), and a failing child status is
-echoed once, never retried. `bootstrap_run`/`installer`/`collector`/
-`writer_identity` are the engine's test seams, same pattern as the plain
-runner's `executor`/`handoff_probe`/`handoff_clear`/`handoff_release_root`.
+`apply` and `update` are interactive-first: on a usable terminal they run
+the TUI screens (which speak the identical op surface through
+`Workstation.CLI.TUI.Executor`); there is no silent degradation.
+
+The release-refresh handoff lives ENTIRELY daemon-side since the client/
+server refactor: the chained `update.run` captures the writer identity
+BEFORE its installer runs, writes the handoff note
+(`<state_root>/update/handoff.json`), stops itself, and the CLIENT
+re-spawns the daemon from the refreshed release and resumes the remaining
+steps under the same lock — one banner, one chain, exit 0, note cleared on
+success (the update-lifecycle section below carries the full contract,
+including the aged-stamp discriminator and the stranded-note self-heal).
+The child binary is derived from the release ROOT
+(`<root>/bin/workstation`, guarded to be an existing executable), never
+from the identity token. `bootstrap_run`/`installer`/`handoff_release_root`
+remain the engine's test seams.
 
 ## TTY contract (interactive-first, no fallback)
 
@@ -533,6 +610,26 @@ Every internal non-interactive invocation (check matrix, test harnesses,
 scripts) passes `--headless` explicitly. The heuristic's known limit: a
 usable terminal behind a pager or multiplexer that strips `TERM` is treated
 as unusable — pass `--headless` there.
+
+The screens themselves are event-driven clients: the apply screen sends
+ONE `apply.run` op on confirm and the update screen ONE `update.run`
+sub-chain op on open; rows transition (`pending → running → ok/failed/
+skipped`) on the daemon's event frames — the screens never drive steps —
+and the op task runs outside the Elm loop (`TermUI.Command.async/2`) with
+event frames queued back via `TermUI.Runtime.send_message/2`, so every
+transition resolves through pure `update/2` and the deterministic backend
+can replay a recorded run. `x` aborts (op.abort, next step boundary),
+`q` detaches (the daemon keeps running), the completion toast carries the
+verdict, and the passive availability indicator (supervisor-directed
+scope) re-checks `update.check` on open and after a completed chain —
+silent unless the branch is behind, in which case the accent footer shows
+`↑ update available (local → remote) — [u] update` and `[u]` hands off to
+the standard update flow (the update screen re-runs its own chain; the
+apply screen asks the router to launch the update screen). Known
+rendering deferral: per-entry apply progress — the daemon's `apply.run`
+stream reports run boundaries only (entry-level events would need core
+applier hooks, and core/ is frozen by contract), so the apply screen
+renders run-boundary states, not a percent bar.
 
 Safety guards (fail closed, never touch the operator's state):
 
@@ -560,7 +657,13 @@ Engine bridge and is never emitted as a CLI contract:
   graph_order, taxonomy, journal{generation, revision, at}|null}` where
   `taxonomy` is the catalog's package -> foundation declaration
   (`foundation/<layer>`; descriptive metadata — it never enters envelopes
-  or plan bytes);
+  or plan bytes). Since the client/daemon refactor the daemon MAY add an
+  optional `update` object when its TTL-cached availability check
+  resolved: `{available: true, local, remote, remote_ref}` when the
+  branch is behind, `{available: false}` when up to date, and ABSENT when
+  unknown — offline looks like no-news, and the absence keeps the wire
+  byte-stable for the golden and offline-replay contracts (the human
+  render gains one `update:` line; `--json` passes the object through).
 - `workstation.plan.v1` — `{schema, generation, plan, manifest, patches,
   target_states}`. The `plan` body and `manifest` are the recorded golden
   artifacts verbatim (byte-identical to

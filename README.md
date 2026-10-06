@@ -70,10 +70,32 @@ workstation update   # git pull --ff-only, fresh bootstrap, apply, sync, verify
 workstation status   # inspect paths, the explicit package graph and the catalog taxonomy
 ```
 
-Interactive verbs (`apply`, `update`, `bootstrap`, `sync`) render the terminal
-UI when stdout is a usable terminal. Scripts and CI pass `--headless` to run
-the plain executor; a non-interactive run WITHOUT the flag hard-errors instead
-of degrading silently.
+Interactive verbs (`apply`, `update`) render the terminal UI when stdout is
+a usable terminal. Scripts and CI pass `--headless` to run the plain
+executor; a non-interactive run WITHOUT the flag hard-errors instead of
+degrading silently.
+
+### Client/daemon model
+
+Every verb speaks to the workstation **daemon** — a per-user background
+process that is the only mutation engine and the only source of live state
+(“`iex` to a running node”). The first verb resolves the daemon's Unix
+socket; when absent or dead the client spawns a daemon detached from the
+installed release and waits (bounded) for its handshake. There is no
+in-process fallback: a daemon that cannot start is a clear error, since
+the apply lock must have exactly one owner. `workstation daemon stop`
+retires it manually; no OS service manager is involved.
+
+Long verbs stream their progress live: headless runs render the familiar
+`[1/5] pull ok` lines from the daemon's event stream, the TUI transitions
+rows on the same events, and `update` survives its own release refresh —
+the daemon hands off across the rebuild and the client re-spawns it, so
+one banner, one chain, one exit code. Interactive screens accept `x` to
+abort at the next step boundary (`q` merely detaches; the daemon keeps
+running). The daemon also watches passively: `status` reports an
+`update_available` verdict, and the TUI shows `↑ update available … — [u]
+update` only when the install branch is behind its origin — silence means
+up to date or unknown.
 
 Update invokes the freshly pulled launcher for **bootstrap before apply**, so new
 runtime/backend/release pins are installed. Every child is checked; the first failure

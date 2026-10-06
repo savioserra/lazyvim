@@ -207,6 +207,31 @@ The graph rejects duplicate IDs, unknown dependencies, dependency cycles, and en
 | `verify` | Complete target home | Assert versions and observable behavior |
 | `update` | Git clone | Checked pull --ff-only, release refresh, bootstrap, apply, sync, verify; stop at first failure |
 
+Every lifecycle verb is served by the workstation DAEMON (`apps/daemon`) —
+the only mutation engine and the only source of live state. The CLI and
+TUI are thin protocol clients over the per-user Unix socket: reads map to
+`status.run`/`plan.run`/`diff.run`, lifecycle verbs to
+`bootstrap.run`/`apply.run`/`update.run`/`sync.run`/`verify.run`, and
+`update` carries the whole chain in ONE op (a `steps` sub-chain). The
+client's ensure-daemon spawns a daemon detached from the installed release
+when the socket is absent or dead (bounded handshake; `workstation daemon
+stop` retires it manually); there is no in-process fallback — a missing
+daemon is an operator error, because the apply lock must have exactly one
+owner. Long ops stream structured events (`run.started`/`step.started`/
+`step.done`/`run.log`/`run.finished`, stamped with an `op_ref`) that both
+the headless lines and the TUI rows render; `op.abort` cancels the running
+op at its NEXT STEP BOUNDARY (never mid-step — a boundary is the only
+honest cancellation point for a lock-holding chain) and reports `aborted`;
+detaching (`q`) lets the daemon finish without a viewer. The daemon also
+serves the read-only `update.check` — `git ls-remote origin` vs local HEAD
+on the install repo the update verb pulls, 5 s bound, 10-minute TTL cache —
+answering `up_to_date`, `behind{local,remote,remote_ref}` or
+`unknown{reason}`; `status` merges it as an additive optional `update`
+object (absent when unknown), and the TUI shows the passive accent
+indicator `↑ update available (abc1234 → def5678) — [u] update` only when
+behind, with `[u]` launching the standard update flow. See the engine
+architecture in [docs/elixir.md](elixir.md).
+
 Bootstrap's engine step owns the `~/.local/bin/workstation` launcher symlink:
 identical canonical target, conflicting user files refused, no completion
 after a backend failure. Update refreshes the installed release from the
@@ -224,31 +249,32 @@ chain refreshes nothing engine-side there, and the designed engine-upgrade
 path is re-running the acquisition from a checkout (`workstation bootstrap`).
 
 Because a refresh changes the release ON DISK while the running process
-keeps its OLD loaded code, the chain hands off: the refreshed bootstrap
-leaves a handoff note under the destination state root, the headless runner
-probes it after every step, and on a live handoff the remaining steps
-(`apply`, `sync`, `verify`) execute under the new release via
-`workstation update --headless --resume-from <steps>` — one command, one
-exit code, the child's output forwarded. The handoff compares release
-IDENTITY, not location: an in-place refresh reuses the same release root,
-so identity is the installer's `.built-from` stamp (path fallback for
-unstamped dev releases) — the refreshed code consumes the note as its handoff
-target, the caller's own stamp means "hand off and leave the note for a
-crashed re-exec to re-derive", and the parent clears the note only after the
-child exits 0 (parent success = child exit 0 + note consumed). Identity is
-captured, never re-read: the note records the WRITER's identity as of before
-the installer re-stamps the release, and the caller captures its own
-identity once at chain start — both sides must describe the code actually
-executing, not the code currently on disk. The note names identity only;
-the re-exec derives its child binary from the release ROOT
+keeps its OLD loaded code, the chain hands off — ENTIRELY daemon-side
+since the client/daemon refactor: the daemon's chained `update.run`
+captures the WRITER's identity as of before the installer re-stamps the
+release (`.built-from` stamp; an in-place refresh reuses the same release
+root, so identity can never be the path), writes the handoff note under
+the destination state root (writer stamp + the REMAINING steps), answers
+the op with the `handoff` outcome, and stops itself. The CLIENT observes
+the disconnect, re-spawns the daemon from the REFRESHED release
+(ensure-daemon, bounded handshake), and re-sends the remaining sub-chain —
+the fresh daemon consumes the note, resumes the remaining steps under the
+same lock, clears the note after the resumed chain exits 0, and the
+operator sees one banner, one chain, one exit code. Identity is compared,
+never assumed: the refreshed code consuming a note of its OWN stamp is the
+resume target; an AGED stamp (the note predates the operator's newer
+checkout) means the note is stale — it is consumed with no resume (the
+designed engine-upgrade path is re-running `workstation bootstrap`, which
+also self-heals a stranded note), so the chain never resurrects steps an
+operator already superseded. The note names identity only; the client's
+re-spawn derives its daemon binary from the release ROOT
 (`<root>/bin/workstation`, guarded to be an existing executable), never
 from the identity token — spawning the stamp as a path is the 2026-10-05
-P0. A handoff decision after the final step is a no-op: there is never an
-empty `--resume-from` child, and a failing child status — including exit-2
-argv validation — is echoed once, never retried. The TUI does not survive a
-rebuild: interactive operators re-run `workstation update`, which the
-refresh stamp makes a fast no-op rebuild path. See
-[installation and daily use](../README.md).
+P0. A handoff decision after the final step is a no-op (never an empty
+resume), and a failing resumed chain is echoed once, never retried. The
+TUI does not survive a rebuild: interactive operators re-run
+`workstation update`, which the refresh stamp makes a fast no-op rebuild
+path. See [installation and daily use](../README.md).
 
 The launcher shim (`workstation/bin/workstation`) resolves the checkout repo
 anchor — the directory holding the `elixir/` umbrella — for EVERY verb and
