@@ -210,4 +210,121 @@ defmodule Workstation.CLI.Render do
       Enum.map(records, &changeset_line/1)
     ])
   end
+
+  ## capability-domain grouped view (workstation.capabilities.v1)
+
+  alias Workstation.CLI.Capabilities
+
+  # The grouped capability listing (docs/capabilities.md domain order):
+  # domain rollups, then per-package rollups, then the file leaves. The
+  # planned counts describe the PLAN's would-change set (plan.run patches),
+  # never live drift — the wording says so. `files: true` (the --files flag)
+  # flattens to the old file-grained listing for scripts that wanted it.
+  @domain_pad 12
+  @package_pad 12
+
+  @doc "Render the grouped capabilities envelope (`Workstation.CLI.Capabilities.group/1`)."
+  @spec capabilities(map(), keyword()) :: String.t()
+  def capabilities(envelope, opts \\ []) do
+    domains = Map.get(envelope, "domains", [])
+
+    header = [
+      "workstation capabilities  generation #{Map.get(envelope, "generation", "?")}  " <>
+        "applied #{Map.get(envelope, "applied_generation") || "none"}",
+      "#{length(domains)} domains · #{Capabilities.total_files(envelope)} files · " <>
+        "#{Capabilities.total_planned(envelope)} would change",
+      scope_line(opts)
+    ]
+
+    body =
+      if(domains == [] and (envelope["unattributed_files"] || 0) == 0,
+        do: ["no catalog entries — run `workstation bootstrap`"],
+        else: Enum.map(domains, &domain_lines(&1, opts))
+      )
+
+    unattributed = Map.get(envelope, "unattributed", [])
+
+    unattributed_lines =
+      if unattributed == [] or Keyword.get(opts, :domain),
+        do: [],
+        else: unattributed_lines(unattributed, opts)
+
+    join(header ++ [nil] ++ List.flatten(body) ++ unattributed_lines)
+  end
+
+  defp scope_line(opts) do
+    domain = Keyword.get(opts, :domain)
+    package = Keyword.get(opts, :package)
+
+    case {domain, package} do
+      {nil, nil} -> nil
+      {domain, nil} -> "scope: domain #{domain}"
+      {nil, package} -> "scope: package #{package}"
+      {domain, package} -> "scope: domain #{domain} package #{package}"
+    end
+  end
+
+  defp domain_lines(domain, opts) do
+    packages = Map.get(domain, "packages", [])
+
+    rollup =
+      "#{pad(domain["name"], @domain_pad)} targets #{domain["targets"]}   " <>
+        "files #{domain["files"]}   planned #{domain["planned"]}"
+
+    package_bodies =
+      if Keyword.get(opts, :files) do
+        Enum.flat_map(packages, fn package ->
+          Enum.map(package["entries"] || [], &file_line(&1, "    "))
+        end)
+      else
+        Enum.flat_map(packages, fn package ->
+          package_lines(package, opts)
+        end)
+      end
+
+    [rollup, package_bodies]
+  end
+
+  defp package_lines(package, opts) do
+    header =
+      "  #{pad(package["name"], @package_pad)} files #{package["files"]}   planned #{package["planned"]}"
+
+    # The default listing keeps the top level rollup-only (the owner's
+    # no-raw-file-dump rule); file leaves surface only with explicit
+    # drill-down (--package scope, or the deprecated flat --files). The
+    # TUI browser drills down interactively.
+    files =
+      if opts[:package] != nil or opts[:files] == true,
+        do: Enum.map(package["entries"] || [], &file_line(&1, "    ")),
+        else: []
+
+    [header, files]
+  end
+
+  defp unattributed_lines(rows, _opts) do
+    header =
+      "#{pad("unattributed", @domain_pad)} files #{length(rows)}   planned #{count_planned(rows)}"
+
+    [header, Enum.map(rows, &file_line(&1, "    "))]
+  end
+
+  defp count_planned(rows), do: Enum.count(rows, & &1["planned"])
+
+  defp file_line(row, indent) do
+    attributes =
+      Enum.reject(
+        [row["operation"], row["mode"], row["planned"] && "would change", also_note(row)],
+        &is_nil/1
+      )
+
+    "#{indent}#{String.pad_trailing(row["target"] || "?", 45)} #{Enum.join(attributes, "  ")}"
+  end
+
+  defp also_note(%{"also" => also}) when is_list(also) and also != [],
+    do: "also: #{Enum.join(also, ",")}"
+
+  defp also_note(_row), do: nil
+
+  defp pad(value, width) when is_binary(value), do: String.pad_trailing(value, width)
+  defp pad(value, width), do: String.pad_trailing(to_string(value), width)
 end

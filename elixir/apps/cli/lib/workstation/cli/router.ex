@@ -44,6 +44,7 @@ defmodule Workstation.CLI.Router do
   """
 
   alias Workstation.CLI.Core
+  alias Workstation.CLI.Capabilities
   alias Workstation.CLI.DaemonClient
   alias Workstation.CLI.Plain
   alias Workstation.CLI.Render
@@ -76,6 +77,7 @@ defmodule Workstation.CLI.Router do
 
       {:error, _subcommand_path, errors} ->
         fail(2, format_errors(errors))
+
       :version ->
         {:ok, IO.puts("workstation #{Application.spec(:cli, :vsn) || "0.0.0"}")}
 
@@ -112,6 +114,13 @@ defmodule Workstation.CLI.Router do
           name: "diff",
           about: "engine diff report",
           options: read_options()
+        ],
+        capabilities: [
+          name: "capabilities",
+          about:
+            "capability-domain grouped listing (rollups by package attribution; drift-free informational output)",
+          options: read_options() ++ scope_options(),
+          flags: capability_flags()
         ],
         json: [
           name: "json",
@@ -153,7 +162,8 @@ defmodule Workstation.CLI.Router do
               [
                 resume_from: [
                   long: "--resume-from",
-                  help: "internal: resume the update chain at these comma-separated steps (set by the release handoff)",
+                  help:
+                    "internal: resume the update chain at these comma-separated steps (set by the release handoff)",
                   value_name: "STEPS"
                 ]
               ],
@@ -208,6 +218,37 @@ defmodule Workstation.CLI.Router do
     ]
   end
 
+  # Scope flags of the grouped `capabilities` listing: drill to one domain
+  # (docs/capabilities.md naming: editor, terminal, theme, ...) or one
+  # package inside its domain (nvim, tmux, ...).
+  defp scope_options do
+    [
+      domain: [
+        value_name: "DOMAIN",
+        long: "--domain",
+        help: "scope the listing to one capability domain (e.g. editor)"
+      ],
+      package: [
+        value_name: "PACKAGE",
+        long: "--package",
+        help: "scope the listing to one package (implies file drill-down)"
+      ]
+    ]
+  end
+
+  defp capability_flags do
+    [
+      json: [
+        long: "--json",
+        help: "emit the grouped envelope as canonical JSON (workstation.capabilities.v1)"
+      ],
+      files: [
+        long: "--files",
+        help: "flatten to the old file-grained listing (deprecated spelling)"
+      ]
+    ]
+  end
+
   defp lifecycle_options do
     [
       home: [
@@ -218,7 +259,8 @@ defmodule Workstation.CLI.Router do
       engine_root: [
         value_name: "DIR",
         long: "--engine-root",
-        help: "engine checkout for bootstrap/update (default: $WORKSTATION_ENGINE_REPO, else detection)"
+        help:
+          "engine checkout for bootstrap/update (default: $WORKSTATION_ENGINE_REPO, else detection)"
       ]
     ]
   end
@@ -233,6 +275,36 @@ defmodule Workstation.CLI.Router do
     with {:ok, wire} <- evaluate(command, home, result),
          :ok <- emit(command, wire, mode) do
       :ok
+    end
+  end
+
+  # The grouped capabilities verb: TWO read ops folded by
+  # `Workstation.CLI.Capabilities` (taxonomy from the status wire, file
+  # inventory from the plan wire). Informational output — planned changes
+  # stay exit 0, matching the read verbs' drift-free contract.
+  defp dispatch(:capabilities, result, _mode) do
+    home = resolve_home(result)
+
+    with {:ok, status} <- evaluate(:status, home, result),
+         {:ok, plan} <- evaluate(:plan, home, result) do
+      envelope =
+        %{"status" => status, "plan" => plan}
+        |> Capabilities.group()
+        |> Capabilities.scope(domain: result.options[:domain], package: result.options[:package])
+
+      if result.flags[:json] do
+        {:ok, IO.puts(CanonicalJSON.encode(envelope))}
+      else
+        {:ok,
+         IO.puts(
+           Render.capabilities(
+             envelope,
+             domain: result.options[:domain],
+             package: result.options[:package],
+             files: result.flags[:files] == true
+           )
+         )}
+      end
     end
   end
 
@@ -270,8 +342,11 @@ defmodule Workstation.CLI.Router do
             {:ok, :ok}
 
           {:error, {:already_running, socket_path}} ->
-            fail(4, "error: a daemon is already running at #{socket_path} " <>
-                      "(stop it with `workstation daemon stop`)")
+            fail(
+              4,
+              "error: a daemon is already running at #{socket_path} " <>
+                "(stop it with `workstation daemon stop`)"
+            )
 
           {:error, reason} ->
             fail(4, "error: daemon boot failed: #{inspect(reason)}")
@@ -461,7 +536,9 @@ defmodule Workstation.CLI.Router do
   # (`Workstation.Daemon.Read.status_schema/0` et al) — plain-text rendering
   # must match the wire the daemon actually answers (the stale `status/1`
   # slash forms matched nothing and crashed every plain `status`).
-  defp render(:status, %{"schema" => "workstation.status.v1"} = wire), do: Render.core_status(wire)
+  defp render(:status, %{"schema" => "workstation.status.v1"} = wire),
+    do: Render.core_status(wire)
+
   defp render(:plan, %{"schema" => "workstation.plan.v1"} = wire), do: Render.core_plan(wire)
   defp render(:diff, %{"schema" => "workstation.diff.v1"} = wire), do: Render.core_diff(wire)
 
@@ -491,7 +568,7 @@ defmodule Workstation.CLI.Router do
         {key, value} -> "#{key}=#{value}"
       end)
 
-    {:ok, IO.puts("#{step}: ok" <> (if details == "", do: "", else: " (#{details})"))}
+    {:ok, IO.puts("#{step}: ok" <> if(details == "", do: "", else: " (#{details})"))}
   end
 
   defp lifecycle_exit("locked"), do: 3
