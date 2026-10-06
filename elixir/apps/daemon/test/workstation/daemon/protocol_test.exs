@@ -57,7 +57,24 @@ defmodule Workstation.Daemon.ProtocolTest do
       assert caps["version"] == 1
       # The served op set is derived from the capability registry, not
       # hardcoded here; hello is the handshake op, the rest are capabilities.
-      assert caps["ops"] == ["apply.run", "hello", "theme.resolve", "update.run"]
+      assert caps["ops"] == [
+               "apply.run",
+               "bootstrap.run",
+               "daemon.stop",
+               "diff.run",
+               "hello",
+               "plan.run",
+               "pull.run",
+               "status.run",
+               "sync.run",
+               "theme.resolve",
+               "update.run",
+               "verify.run"
+             ]
+      # The pinned-home advertisement: the client's --home honesty check
+      # compares its resolved destination against exactly this field.
+      assert is_binary(caps["home"])
+
       # Domains come from the capabilities that register them.
       assert caps["domains"] == ["theme"]
       assert caps["caps"]["max_request_bytes"] == 1_048_576

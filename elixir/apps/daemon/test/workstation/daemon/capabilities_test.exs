@@ -44,7 +44,7 @@ defmodule Workstation.Daemon.CapabilitiesTest do
 
       assert {:ok, Workstation.Daemon.Capabilities.Theme} = Capabilities.owner("theme.resolve")
       assert {:ok, Workstation.Daemon.Capabilities.Apply} = Capabilities.owner("apply.run")
-      assert {:ok, Workstation.Daemon.Capabilities.Update} = Capabilities.owner("update.run")
+      assert {:ok, Workstation.Daemon.Capabilities.Lifecycle} = Capabilities.owner("update.run")
     end
   end
 

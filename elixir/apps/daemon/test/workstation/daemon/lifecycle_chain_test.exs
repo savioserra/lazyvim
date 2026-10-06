@@ -1,17 +1,22 @@
-defmodule Workstation.Daemon.UpdateTest do
+defmodule Workstation.Daemon.LifecycleChainTest do
   @moduledoc """
-  The daemon's update orchestrator over the REAL socket (and at module level
-  where sandbox injection needs it): the graduation gate still answers
-  `not_graduated` for the MUTATION steps while it is closed, the read-only
-  steps serve real reconciliation/verification against the sandbox home,
-  contention reports the recorded lock owner, and with the gate open the
-  apply step delegates to the c1 executor under the caller's lock.
+  The update-chain step semantics over the REAL socket and at module level
+  (module level is where sandbox injection needs it): the read-only steps
+  serve real reconciliation/verification and fail honestly on an empty
+  home, contention on a MUTATING step reports the recorded lock owner, and
+  the apply step delegates to the daemon applier under the caller's lock.
+
+  The chain is deliberately never graduation-gated (bootstrap provisions
+  the release, pre-graduation included); the apply-pipeline flag is pinned
+  in the apply/lifecycle suites. This suite was the Daemon.Update suite —
+  the orchestrator merged into `Workstation.Daemon.Lifecycle` when the
+  daemon became the only mutation engine (engine work, M1).
   """
 
   use ExUnit.Case, async: false
 
   alias Workstation.Core.{Catalog, Digest, EngineState, Graph, Journal, Source}
-  alias Workstation.Daemon.{ApplyOrchestrator, Listener, Protocol, Update}
+  alias Workstation.Daemon.{ApplyOrchestrator, Lifecycle, Listener, Protocol}
 
   setup do
     home = Path.join(System.tmp_dir!(), "c2-daemon-update-#{System.unique_integer([:positive])}")
@@ -31,25 +36,13 @@ defmodule Workstation.Daemon.UpdateTest do
     %{home: home}
   end
 
-  describe "the graduation gate" do
-    test "gates the mutation steps off with the honest refusal, lock released" do
-      for step <- Update.steps() |> Enum.filter(&Update.mutation_step?/1) do
-        reply = request("update.run", %{"step" => step})
-
-        assert %{"ok" => false, "error" => %{"code" => "not_graduated", "message" => message}} = reply
-        assert message == Workstation.Daemon.Apply.not_graduated_message()
-      end
-
-      refute File.exists?(ApplyOrchestrator.lock_path(EngineState.state_root()))
-    end
-
-    test "serves the read-only steps, which fail honestly on an empty home" do
+  describe "the chain steps" do
+    test "serve the read-only steps, which fail honestly on an empty home" do
       for step <- ["sync", "verify"] do
         reply = request("update.run", %{"step" => step})
 
-        # The code differs from the gate refusal: the step EXECUTED (nothing
-        # applied to reconcile/verify in a fresh sandbox) and the lock is
-        # released once it answers.
+        # The step EXECUTED (nothing applied to reconcile/verify in a fresh
+        # sandbox) and the lock is released once it answers.
         assert %{"ok" => false, "error" => %{"code" => "update_failed", "message" => message}} = reply
         assert message =~ "no applied generation"
       end
@@ -57,10 +50,10 @@ defmodule Workstation.Daemon.UpdateTest do
       refute File.exists?(ApplyOrchestrator.lock_path(EngineState.state_root()))
     end
 
-    test "a held lock reports its owner instead of running the step" do
+    test "a held lock reports its owner instead of running the mutating step" do
       {:ok, token, _path} = ApplyOrchestrator.acquire("held by test")
 
-      reply = request("update.run", %{"step" => "verify"})
+      reply = request("update.run", %{"step" => "apply"})
 
       assert %{"ok" => false, "error" => %{"code" => "locked", "message" => message}} = reply
       assert message =~ "apply lock held by uid="
@@ -68,45 +61,7 @@ defmodule Workstation.Daemon.UpdateTest do
       :ok = ApplyOrchestrator.release(token)
     end
 
-    test "with the gate open the read-only step no longer answers the gate" do
-      Application.put_env(:daemon, :engine_apply, true)
-
-      reply = request("update.run", %{"step" => "verify"})
-
-      # The step executes (and honestly fails on the empty sandbox) — the
-      # wire proof that the gate no longer intercepts it.
-      assert %{"ok" => false, "error" => %{"code" => "update_failed"}} = reply
-    end
-  end
-
-  describe "with the gate open" do
-    test "the apply step delegates to the c1 executor under the caller's lock", %{home: home} do
-      Application.put_env(:daemon, :engine_apply, true)
-      generation = fixture_plan_generation(home)
-      install_fake_chezmoi(home, fixture_target(home))
-
-      assert {:ok, %{"generation" => ^generation}} =
-               Update.run("apply", home: home, collector: fn -> {:ok, sandbox_catalog(home)} end)
-
-      record = applied_record(home)
-      assert record["generation"] == generation
-
-      # The orchestration serialized through the SAME lock; it is released.
-      refute File.exists?(ApplyOrchestrator.lock_path(EngineState.state_root()))
-    end
-
-    test "the mutation steps answer the same gate when the flag is off" do
-      Application.delete_env(:daemon, :engine_apply)
-
-      # Module-level gate checks run BEFORE any step body: pull never
-      # touches git and bootstrap never touches the network here.
-      for step <- ["pull", "bootstrap", "apply"] do
-        assert {:error, {"not_graduated", _message}} = Update.run(step)
-      end
-    end
-
     test "the served verify step reports per-package status over the wire", %{home: home} do
-      Application.put_env(:daemon, :engine_apply, true)
       publish_launcher!(home)
       seed_targets!(home, %{"fixture" => [{".config/fixture/rc", "export FIXTURE=1\n"}]})
 
@@ -114,6 +69,22 @@ defmodule Workstation.Daemon.UpdateTest do
 
       assert %{"ok" => true, "result" => %{"step" => "verify", "status" => "ok", "packages" => packages}} = reply
       assert [%{"package" => "fixture", "targets" => 1, "status" => "ok", "drifted" => []}] = packages
+    end
+  end
+
+  describe "the apply step at module level" do
+    test "delegates to the daemon applier under the caller's lock", %{home: home} do
+      generation = fixture_plan_generation(home)
+      install_fake_chezmoi(home, fixture_target(home))
+
+      assert {:ok, %{"generation" => ^generation}} =
+               Lifecycle.run_step("apply", home: home, collector: fn -> {:ok, sandbox_catalog(home)} end)
+
+      record = applied_record(home)
+      assert record["generation"] == generation
+
+      # The orchestration serialized through the SAME lock; it is released.
+      refute File.exists?(ApplyOrchestrator.lock_path(EngineState.state_root()))
     end
   end
 

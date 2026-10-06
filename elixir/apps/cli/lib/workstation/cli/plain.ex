@@ -22,7 +22,7 @@ defmodule Workstation.CLI.Plain do
 
   The update chain carries the release handoff (docs/capabilities.md,
   "release refresh and handoff"): after every step the runner probes
-  `Workstation.CLI.Engine.update_handoff/1`; when a refreshed bootstrap
+  `Workstation.Daemon.Lifecycle.update_handoff/1`; when a refreshed bootstrap
   left its handoff note the remaining steps are printed as handed off and
   the runner runs the NEW release with `--resume-from`, forwarding its
   output and exit code, so apply/sync/verify execute under the freshly
@@ -32,7 +32,7 @@ defmodule Workstation.CLI.Plain do
   one command, one exit code.
   """
 
-  alias Workstation.CLI.Engine
+  alias Workstation.Daemon.Lifecycle
   alias Workstation.CLI.TUI.Apply
   alias Workstation.CLI.TUI.Executor
   alias Workstation.CLI.TUI.Update
@@ -90,11 +90,11 @@ defmodule Workstation.CLI.Plain do
     # after the refresh would describe the NEW code, not the code THIS
     # process executes (the P0 in 0fb69a4f: a post-refresh note then
     # matched a post-refresh probe and the chain handed off forever). The
-    # default probe (Engine.update_handoff/1) consumes it via the
+    # default probe (Lifecycle.update_handoff/1) consumes it via the
     # :release_identity seam; injected test probes just ignore it.
-    identity = Keyword.get(opts, :release_identity) || Engine.release_identity()
+    identity = Keyword.get(opts, :release_identity) || Lifecycle.release_identity()
     opts = Keyword.put(opts, :release_identity, identity)
-    probe = Keyword.get(opts, :handoff_probe, &Engine.update_handoff/1)
+    probe = Keyword.get(opts, :handoff_probe, &Lifecycle.update_handoff/1)
     total = length(Update.steps())
 
     IO.puts("Update #{destination} (#{total} steps)")
@@ -161,7 +161,7 @@ defmodule Workstation.CLI.Plain do
 
   # The handoff probe runs after EVERY step and receives this run's opts
   # (the caller identity is threaded on :release_identity — the default
-  # Engine.update_handoff/1 probe consumes it; injected probes share the
+  # Lifecycle.update_handoff/1 probe consumes it; injected probes share the
   # same `(opts)` contract as `:executor`): a note can only exist when a
   # bootstrap refreshed the release (or an earlier run crashed between the
   # refresh and its exec), and in both cases the remaining chain belongs to
@@ -227,7 +227,7 @@ defmodule Workstation.CLI.Plain do
         # printed its own chain lines and final banner. The note is
         # consumed exactly once: cleared here so no later run re-derives
         # a handoff that already finished.
-        clear = Keyword.get(opts, :handoff_clear, &Engine.clear_update_handoff/1)
+        clear = Keyword.get(opts, :handoff_clear, &Lifecycle.clear_update_handoff/1)
         clear.(opts)
         :ok
 

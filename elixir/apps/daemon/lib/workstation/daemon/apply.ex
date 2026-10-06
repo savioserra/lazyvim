@@ -1,13 +1,14 @@
 defmodule Workstation.Daemon.Apply do
   @moduledoc """
-  The daemon's engine applier, behind the graduation gate.
+  The daemon's engine applier — the one mutation path since the client/
+  server refactor.
 
-  The gate ships OFF: `apply.run` keeps answering the honest `not_graduated`
-  refusal until the graduation lane flips the flag
-  (`Application.put_env(:daemon, :engine_apply, true)` — the compile-time
-  default here is the OFF that ships). A daemon that mutated home state
-  through an ungraduated path would fake a graduation, so the wiring exists
-  and the refusal is the default, never the other way round. The UPDATE
+  The graduation gate is RETIRED OPEN: the daemon is the engine's only
+  mutation surface, so `apply.run` serves the real pipeline by default
+  (`@engine_apply_default true`). The application environment key remains
+  settable (`Application.put_env(:daemon, :engine_apply, false)`) purely so
+  the refusal path stays exercisable in tests — a closed gate answers the
+  honest `not_graduated` refusal on every gated mutation surface. The UPDATE
   lifecycle (`Workstation.Daemon.Update`) re-uses this module as its `apply`
   step executor: `run_current/1` runs the same pipeline without taking the
   lock itself, because the update orchestrator already holds the one lock
@@ -32,14 +33,14 @@ defmodule Workstation.Daemon.Apply do
   alias Workstation.Core.{ApplyEngine, EngineState, Plan}
   alias Workstation.Daemon.ApplyOrchestrator
 
-  @engine_apply_default false
+  @engine_apply_default true
 
   @not_graduated_message "the Elixir engine applier is not graduated; this daemon serves no mutation path"
 
   @doc """
-  The one refusal body for every gated mutation surface (`apply.run` with
-  the gate closed, and the update lifecycle's mutation steps until the
-  graduation lane flips the flag): ONE spelling, because two strings for
+  The one refusal body for every gated mutation surface (an `apply.run` or
+  update-lifecycle mutation step with the gate explicitly closed in the
+  application environment): ONE spelling, because two strings for
   the same gate would let drift fake a distinction between two locks that
   are in fact the same gate.
   """

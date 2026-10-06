@@ -35,9 +35,9 @@ defmodule Workstation.Daemon.ApplyTest do
   end
 
   describe "the graduation gate" do
-    test "ships OFF by default" do
+    test "ships ON by default — the daemon is THE mutation engine" do
       Application.delete_env(:daemon, :engine_apply)
-      refute Apply.enabled?()
+      assert Apply.enabled?()
     end
 
     test "with the gate open, apply.run executes the real pipeline against the sandbox home", %{home: home} do
@@ -130,9 +130,10 @@ defmodule Workstation.Daemon.ApplyTest do
 
       # Over the socket there is no sandbox collector injection: the step
       # EXECUTES and fails honestly on the sandbox home. The wire proof is
-      # the code — a step failure, never the graduation gate.
+      # the code — the apply step's own failure code, never the graduation
+      # gate and never the chain code.
       reply = request("update.run", %{"step" => "apply"})
-      assert %{"ok" => false, "error" => %{"code" => "update_failed"}} = reply
+      assert %{"ok" => false, "error" => %{"code" => "apply_failed"}} = reply
     end
 
     test "a sandbox catalog failure is an apply_refused protocol error, never a crash", %{home: home} do

@@ -2,40 +2,62 @@ defmodule Workstation.CLI.Router do
   @moduledoc """
   `workstation` command line — the fused front door of the engine.
 
-  Read verbs (`status`, `plan`, `diff`, `json <command>`) evaluate the live
-  native catalog in-process (`Workstation.CLI.Core`) and render one hard-cut
-  output schema per command (`Workstation.CLI.Output`); `--input <file>`
-  substitutes a recorded golden envelope for offline replay.
+  The engine is CLIENT/SERVER: the daemon is the only mutation engine and
+  the only source of live state; the CLI is a thin protocol client
+  (`Workstation.CLI.DaemonClient`). Every verb dispatch reduces to: ensure
+  the daemon is up (spawn it detached from the same release when absent),
+  send one op, render the result. Read verbs (`status`, `plan`, `diff`,
+  `json <command>`) send `status.run` / `plan.run` / `diff.run`; lifecycle
+  verbs send `bootstrap.run` / `sync.run` / `verify.run` / `pull.run` and
+  the per-step `update.run`; `apply` confirms through `apply.run` via the
+  plain runner or TUI screen. There is NO in-process fallback: a daemon
+  that cannot be reached or spawned is a clear operator error. The one
+  in-process path is `--input <file>` golden replay, which is offline by
+  definition (`Workstation.CLI.Core` over a recorded envelope, no daemon
+  involved).
 
-  Lifecycle verbs run the engine in this process (`Workstation.CLI.Engine`):
-  `bootstrap`, `apply`, `update`, `sync`, `verify`, `pull`. `apply` and
-  `update` are interactive-first — the TUI is the DEFAULT for verbs with a
-  screen, and there is no silent degradation: on a usable terminal they run
-  the TUI screens; `--headless` forces the plain runner; a non-terminal
-  stdout WITHOUT `--headless` is a hard error, never a plain fallback. The
-  other lifecycle verbs are plain runs by nature (no screen exists).
+  `apply` and `update` are interactive-first — the TUI is the DEFAULT for
+  verbs with a screen, and there is no silent degradation: on a usable
+  terminal they run the TUI screens; `--headless` forces the plain runner;
+  a non-terminal stdout WITHOUT `--headless` is a hard error, never a
+  plain fallback. The other lifecycle verbs are plain runs by nature (no
+  screen exists).
+
+  `workstation daemon` runs the resident daemon in the foreground;
+  `workstation daemon stop` stops a running daemon (the manual stop path —
+  nothing stops a daemon behind the operator's back).
 
   `--home` selects the destination home (default: `$WORKSTATION_HOME`, else
   `$HOME` — the launcher shim rebases both to the same destination, so verbs
-  address the intended home either way). `--engine-root` selects the engine
-  checkout for the bootstrap/update steps (default: `$WORKSTATION_ENGINE_REPO`,
-  else checkout-walk detection).
+  address the intended home either way). The daemon serves exactly the home
+  it booted with; ensure-daemon spawns it with the resolved `--home`, and a
+  client that resolves a DIFFERENT home than a running daemon refuses to
+  speak to it. `--engine-root` selects the engine checkout for the
+  bootstrap/update steps (default: `$WORKSTATION_ENGINE_REPO`, else
+  checkout-walk detection) and rides to the daemon through the spawn
+  environment.
 
   Exit codes (docs/elixir.md carries the table): 0 ok; 1 no usable terminal
   for an interactive verb; 2 usage; 3 conflict-or-precondition (evaluation
   failure or apply-lock contention); 4 engine failure (native collection
-  error, lifecycle step failure).
+  error, lifecycle step failure, daemon unavailable).
   """
 
   alias Workstation.CLI.Core
-  alias Workstation.CLI.Engine
+  alias Workstation.CLI.DaemonClient
   alias Workstation.CLI.Plain
   alias Workstation.CLI.Render
   alias Workstation.CLI.TUI
   alias Workstation.CLI.TUI.{Apply, Update}
+  alias Workstation.CLI.Control
   alias Workstation.Core.CanonicalJSON
 
   @no_terminal "workstation: no usable terminal; pass --headless for non-interactive runs"
+
+  # Op budget for the read ops; lifecycle calls use the executors' longer
+  # budget (lock queues and engine steps take minutes).
+  @read_timeout_ms 120_000
+  @lifecycle_timeout_ms 600_000
 
   def main(argv) do
     case Optimus.parse(parser(), argv) do
@@ -148,6 +170,17 @@ defmodule Workstation.CLI.Router do
           name: "pull",
           about: "fast-forward the engine checkout (never resets a diverged tree)",
           options: lifecycle_options()
+        ],
+        daemon: [
+          name: "daemon",
+          about: "run the resident daemon in the foreground (ensure-daemon spawns it detached)",
+          args: [
+            action: [
+              value_name: "ACTION",
+              nargs: :optional,
+              help: "stop — stop a running daemon (the manual stop path)"
+            ]
+          ]
         ]
       ]
     )
@@ -197,9 +230,34 @@ defmodule Workstation.CLI.Router do
   end
 
   defp dispatch(command, result, _mode) when command in [:bootstrap, :sync, :verify, :pull] do
-    case apply(Engine, command, [lifecycle_opts(result)]) do
-      {:ok, record} -> emit_record(record)
-      {:error, code, message} -> fail(lifecycle_exit(code), "error: #{code}: #{message}")
+    case DaemonClient.call(lifecycle_op(command), %{}, client_opts(result, @lifecycle_timeout_ms)) do
+      {:ok, record} ->
+        emit_record(record)
+
+      {:error, {tag, message}} when is_atom(tag) ->
+        fail(4, "error: #{tag}: #{message}")
+
+      {:error, code, message} ->
+        fail(lifecycle_exit(code), "error: #{code}: #{message}")
+    end
+  end
+
+  # `daemon stop` is the MANUAL stop path — nothing stops a running daemon
+  # behind the operator's back. Failure to reach or stop a daemon is an
+  # operator-facing error (exit 4).
+  # `daemon stop` is the MANUAL stop path — nothing stops a running daemon
+  # behind the operator's back. Failure to reach or stop a daemon is an
+  # operator-facing error (exit 4).
+  defp dispatch(:daemon, result, _mode) do
+    case result.args[:daemon][:action] do
+      "stop" ->
+        case Control.stop() do
+          :ok -> {:ok, IO.puts("daemon: stopped")}
+          {:error, reason} -> fail(4, "error: daemon stop failed: #{reason}")
+        end
+
+      other ->
+        fail(2, "error: unknown daemon action #{inspect(other)} (expected: stop)")
     end
   end
 
@@ -298,31 +356,70 @@ defmodule Workstation.CLI.Router do
 
   ## read verbs
 
-  # The core is the only front end; json mode emits canonical bytes of the
-  # wire. Engine-tagged failures are native collection failures (see the
-  # exit-code contract in the moduledoc).
+  # Live reads belong to the daemon: the CLI is a thin client, so the wire
+  # is assembled once daemon-side (Workstation.Daemon.Read) and the CLI
+  # renders it unchanged. `--input <file>` is the recorded-envelope replay:
+  # fully offline (Workstation.CLI.Core), no daemon involved, same wire.
+  # Exit codes are unchanged: core evaluation (envelope) failures are
+  # precondition (3), daemon unavailability and native collection failures
+  # are engine (4).
   defp evaluate(command, home, result) do
-    case Core.evaluate(command, home, input: result.options[:input]) do
-      {:ok, wire} -> {:ok, wire}
-      {:error, {:core, reason}} -> fail(3, "error: core evaluation failed: #{reason}")
-      {:error, {:engine, reason}} -> fail(4, "error: #{format_engine_error(reason)}")
+    case result.options[:input] do
+      nil ->
+        case DaemonClient.call(read_op(command), %{}, client_opts(result, @read_timeout_ms)) do
+          {:ok, wire} ->
+            {:ok, wire}
+
+          {:error, {tag, message}} when is_atom(tag) ->
+            # Daemon transport failure: unavailable, died mid-op, or
+            # timed out — engine-exit operator error, message verbatim.
+            fail(4, "error: #{tag}: #{message}")
+
+          {:error, code, message} ->
+            fail(client_exit(code), "error: #{code}: #{message}")
+        end
+
+      input ->
+        case Core.evaluate(command, home, input: input) do
+          {:ok, wire} ->
+            {:ok, wire}
+
+          {:error, {:core, reason}} ->
+            fail(3, "error: core evaluation failed: #{reason}")
+
+          {:error, {:engine, reason}} ->
+            fail(4, "error: #{format_engine_error(reason)}")
+        end
     end
   end
+
+  defp read_op(:status), do: "status.run"
+  defp read_op(:plan), do: "plan.run"
+  defp read_op(:diff), do: "diff.run"
+
+  defp lifecycle_op(command), do: "#{command}.run"
+
+  # Client-side daemon failures use the operator vocabulary directly
+  # ("daemon_unavailable", "daemon_died", …); `locked` keeps its
+  # precondition exit so the lock-contention contract is unchanged.
+  defp client_exit("locked"), do: 3
+  defp client_exit(_other), do: 4
 
   defp emit(_command, wire, json: true), do: {:ok, IO.puts(CanonicalJSON.encode(wire))}
 
   defp emit(command, wire, json: false), do: {:ok, IO.puts(render(command, wire))}
 
-  defp render(:status, %{"schema" => "workstation.status.v1"} = wire), do: Render.core_status(wire)
-  defp render(:plan, %{"schema" => "workstation.plan.v1"} = wire), do: Render.core_plan(wire)
-  defp render(:diff, %{"schema" => "workstation.diff.v1"} = wire), do: Render.core_diff(wire)
+  defp render(:status, %{"schema" => "workstation.status/1"} = wire), do: Render.core_status(wire)
+  defp render(:plan, %{"schema" => "workstation.plan/1"} = wire), do: Render.core_plan(wire)
+  defp render(:diff, %{"schema" => "workstation.diff/1"} = wire), do: Render.core_diff(wire)
 
   ## lifecycle plumbing
 
-  defp lifecycle_opts(result) do
-    home = resolve_home(result)
-
-    [home: home]
+  # Client-call options: the resolved home the daemon must serve, plus the
+  # engine root override riding to the spawn environment (a daemon booted
+  # earlier keeps its own environment — documented in the moduledoc).
+  defp client_opts(result, timeout_ms) do
+    [home: resolve_home(result), timeout_ms: timeout_ms]
     |> put_engine_root(result)
   end
 

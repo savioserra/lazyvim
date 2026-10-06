@@ -1,64 +1,62 @@
-defmodule Workstation.CLI.Engine do
+defmodule Workstation.Daemon.Lifecycle do
   @moduledoc """
-  The one-shot in-process lifecycle driver behind the fused `workstation`
-  CLI: `apply`, `bootstrap`, `sync`, `verify`, `pull`, and the per-step
-  `run_step/2` that the update screens and plain runner chain in order.
+  The daemon-side lifecycle executor — the ONLY mutation engine surface
+  since the client/server refactor. The `bootstrap.run`, `sync.run`,
+  `verify.run`, and `pull.run` ops run one lifecycle verb; the `update.run`
+  op chains one update step (`run_step/2`), which the client's plain runner
+  and update screen drive in order.
 
-  Every mutation runs in THIS process under the target home's exclusive apply
-  lock — `Workstation.Core.ApplyLock`, `<state_root>/apply.lock`, the same
-  file the daemon orchestrator takes — so a one-shot run and a daemon
-  orchestration can never interleave on one home. There is no engine daemon
-  on this path and no Lua: the CLI release binary IS the engine runtime.
-  Plans are collected fresh through the shared Core composition
-  (`Workstation.Core.Plan.composed_plan/2`), exactly like the daemon's
-  applier; the baseline stamp makes a journal that advanced past a rendered
-  screen a refusal, and an identical desired generation an idempotent no-op.
-
-  Lock scope is PER STEP (mirroring the daemon's update chain): each mutating
+  Every mutation runs under the target home's exclusive apply lock — the
+  SAME `<state_root>/apply.lock` file the one-shot era used, so nothing
+  outside the daemon can interleave on one home. In-daemon requests queue
+  through `Workstation.Daemon.ApplyOrchestrator` (one orchestrated
+  generation at a time for the whole daemon) BEFORE the file lock is taken,
+  so two concurrent client ops queue instead of racing; the lock purpose
+  strings are preserved verbatim from the one-shot driver, because they are
+  operator-facing lock metadata. Lock scope stays PER STEP: each mutating
   step acquires and releases around itself, so a step failure never wedges
-  the lock and two concurrent chains interleave only at step boundaries.
-  `verify/1` and `pull/1` touch no mutable home state and stay lockless.
+  the lock. `verify` and `pull` touch no mutable home state and stay
+  lockless.
 
   Error vocabulary: every failure is `{:error, code, message}` — `"locked"`
   under contention, otherwise a step code carrying the verbatim engine
   message (the preconditions raise `ArgumentError` with actionable text).
-  The screens and the plain runner render the message, never a stacktrace.
+  The wire layer maps the code to the client's exit-code contract.
+
+  Options pass through to the core steps: `:home` (defaults to the daemon's
+  pinned home), `:engine_root`, plus the test seams `:collector` (sandbox
+  plan injection), `:installer`, `:bootstrap_run`, `:writer_identity`,
+  and `:release_identity`.
   """
 
-  alias Workstation.Core.{ApplyEngine, ApplyLock, EngineState, Plan, Update}
+  alias Workstation.Core.{ApplyEngine, EngineState, Plan, Update}
+  alias Workstation.Daemon.ApplyOrchestrator
+
+  ## verb surface (one lifecycle verb per op)
 
   @doc """
-  One-shot apply: fresh live plan executed under the apply lock. The plan's
-  own generation is the truth; `opts[:requested_generation]` (the confirm-
-  exactly-what-you-saw contract from the apply screen) is passed through to
-  the engine when present.
+  Run one lifecycle verb. The lock purposes and error codes are the verb
+  contracts recorded in docs/capabilities.md: `bootstrap` under
+  `bootstrap.run` (code `bootstrap_failed`), `sync` under `sync.run`
+  (code `sync_failed`), `verify` and `pull` lockless with their own codes.
   """
-  @spec apply(keyword()) :: {:ok, map()} | {:error, String.t(), String.t()}
-  def apply(opts \\ []) when is_list(opts) do
-    with_lock "apply.run", opts, fn ->
-      with {:ok, plan} <- composed_plan(opts) do
-        guarded(fn _opts ->
-          params = %{"home" => home(opts)}
-
-          params =
-            case opts[:requested_generation] do
-              nil -> params
-              generation -> Map.put(params, "requested_generation", generation)
-            end
-
-          generation = ApplyEngine.execute(plan, params)
-
-          %{"step" => "apply", "status" => "ok", "generation" => generation}
-        end)
-      end
+  @spec verb(String.t(), keyword()) :: {:ok, map()} | {:error, String.t(), String.t()}
+  def verb(verb, opts \\ []) when is_binary(verb) and is_list(opts) do
+    case verb do
+      "bootstrap" -> with_lock("bootstrap.run", opts, fn -> bootstrap_locked(opts) end)
+      "sync" -> with_lock("sync.run", opts, fn -> guarded(&sync_record/1, opts, "sync_failed") end)
+      "verify" -> guarded(&verify_record/1, opts, "verify_failed")
+      "pull" -> guarded(&pull_record/1, opts, "pull_failed")
+      other -> {:error, "update_failed", "unknown lifecycle verb #{inspect(other)}"}
     end
   end
 
   @doc """
-  Run one lifecycle step. Mutating steps (`bootstrap`, `apply`, `sync`)
-  acquire the apply lock around themselves; `pull` and `verify` are
-  lockless. `opts` pass through to the core steps (`:home`, `:engine_root`,
-  `:collector` for sandboxed plan injection).
+  Run one update-chain step (the `update.run` op body). Mutating steps
+  (`bootstrap`, `apply`, `sync`) acquire the apply lock around themselves;
+  `pull` and `verify` are lockless. The chain's lock purposes and error
+  codes (`update_failed` for pull/sync/verify, `apply_failed` for apply)
+  are the ones the plain runner's output contract was written against.
   """
   @spec run_step(String.t(), keyword()) :: {:ok, map()} | {:error, String.t(), String.t()}
   def run_step(step, opts \\ []) when is_binary(step) and is_list(opts) do
@@ -84,20 +82,6 @@ defmodule Workstation.CLI.Engine do
   def bootstrap(opts \\ []) when is_list(opts) do
     with_lock("bootstrap.run", opts, fn -> bootstrap_locked(opts) end)
   end
-
-  @doc "Reconcile the journal's generation with the freshly collected desired state."
-  @spec sync(keyword()) :: {:ok, map()} | {:error, String.t(), String.t()}
-  def sync(opts \\ []) when is_list(opts) do
-    with_lock("sync.run", opts, fn -> guarded(&sync_record/1, opts, "sync_failed") end)
-  end
-
-  @doc "Verify the launcher symlink and every applied target fingerprint (read-only, lockless)."
-  @spec verify(keyword()) :: {:ok, map()} | {:error, String.t(), String.t()}
-  def verify(opts \\ []) when is_list(opts), do: guarded(&verify_record/1, opts, "verify_failed")
-
-  @doc "Fast-forward the engine checkout (read-only for the home, lockless)."
-  @spec pull(keyword()) :: {:ok, map()} | {:error, String.t(), String.t()}
-  def pull(opts \\ []) when is_list(opts), do: guarded(&pull_record/1, opts, "pull_failed")
 
   ## step bodies
 
@@ -137,7 +121,7 @@ defmodule Workstation.CLI.Engine do
   # bootstrap_locked/1 — the refresh re-stamps the release, so a
   # post-install read would describe the NEW code). The writer is still
   # executing the OLD loaded code while the on-disk release just changed
-  # under it; the plain runner probes the note after every step and hands
+  # under it; the client probes the note after every step and hands
   # the remaining chain to the new release. The note names identity, never
   # location: the runner derives the child bin from the release ROOT. The
   # parent clears the note itself when the handed-off child exits 0, and a
@@ -265,7 +249,7 @@ defmodule Workstation.CLI.Engine do
       # body is a single call into the NAMED apply_execute/2, so the step
       # contract stays grep-able and an arity drift dies inside a named
       # call with a clear stack, not as an anonymous BadArity.
-      guarded(&apply_execute(plan, &1), opts)
+      guarded(&apply_execute(plan, &1), opts, "apply_failed")
     else
       {:error, message} -> {:error, "apply_failed", message}
     end
@@ -437,35 +421,54 @@ defmodule Workstation.CLI.Engine do
 
   defp engine_root(opts), do: Update.engine_root(core_opts(opts))
 
-  defp core_opts(opts), do: opts |> Keyword.delete(:collector) |> Keyword.delete(:installer) |> Keyword.delete(:bootstrap_run)
+  defp core_opts(opts),
+    do:
+      opts
+      |> Keyword.delete(:collector)
+      |> Keyword.delete(:installer)
+      |> Keyword.delete(:bootstrap_run)
+      |> Keyword.delete(:writer_identity)
+      |> Keyword.delete(:release_identity)
 
+  # Daemon-side locking: requests QUEUE on the orchestrator mailbox (one
+  # orchestrated generation for the whole daemon) before the file lock is
+  # taken, so concurrent client ops serialize instead of failing with
+  # `locked` against each other. The purpose strings are the one-shot
+  # driver's, verbatim — they are operator-facing lock metadata.
+  #
+  # The orchestrator runs `fun` in ITS OWN process (the GenServer handling
+  # the call), so an uncaught raise inside the fun would take down the
+  # orchestrator — socket death for every session. The fun therefore folds
+  # EVERY failure into a result tuple: the per-step `guarded/3` catches the
+  # engine's ArgumentError contract, and the catch-all below is the last
+  # line of defense for anything else.
   defp with_lock(purpose, opts, fun) do
     home = home(opts)
-    state_root = state_root(home)
 
     # The lock lives inside the guarded state tree, and a fresh destination
     # has no tree yet: establish the write-side anchor before locking —
-    # idempotent, final at 0700. The daemon only ever serves homes whose
-    # tree already exists; the one-shot CLI is the first-boot path.
+    # idempotent, final at 0700.
     EngineState.ensure_roots!(home)
 
-    case ApplyLock.acquire(state_root, purpose) do
-      {:ok, token, path} ->
+    result =
+      ApplyOrchestrator.with_lock(purpose, fn ->
         try do
           fun.()
-        after
-          ApplyLock.release(path, token)
+        rescue
+          error -> {:error, "lifecycle_failed", Exception.message(error)}
         end
+      end)
 
-      {:error, {:locked, owner, _path}} ->
-        {:error, "locked", "apply lock held by #{owner}"}
+    case result do
+      {:error, {:locked, owner, _path}} -> {:error, "locked", "apply lock held by #{owner}"}
+      other -> other
     end
   end
 
   # A step's engine failure surfaces verbatim: the message is the operator
   # interface (preconditions raise ArgumentError with actionable text), and
   # any engine raise folds to the step's error code, never a stacktrace.
-  defp guarded(fun, opts \\ [], code \\ "apply_failed") do
+  defp guarded(fun, opts, code) do
     {:ok, fun.(opts)}
   rescue
     error in [ArgumentError] -> {:error, code, Exception.message(error)}

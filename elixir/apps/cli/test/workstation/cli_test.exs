@@ -108,21 +108,11 @@ defmodule Workstation.CLITest do
     end
   end
 
-  describe "native collection" do
-    @describetag :collect
-
-    test "json output is canonical JSON (compact, keys sorted)" do
-      {_root, home} = temp_test_root()
-
-      {result, output} = capture_main(["json", "status", "--home", home])
-
-      assert result == :ok
-      wire = Jason.decode!(output)
-      assert String.trim_trailing(output, "\n") == canonical_json(wire)
-    end
-
-  end
-
+  # The live-read slices of this suite (canonical-json wire shape, status/diff
+  # live-catalog evaluation) moved to Workstation.CLI.LiveTest: live verbs
+  # route through the daemon now, and those tests need a serialized in-process
+  # daemon tree (engine work, M1). Only the --input offline-replay slices
+  # stay here.
   describe "core evaluation (graduated default)" do
     defp golden_dir(profile), do: Path.join([repo_root(), "tests", "goldens", profile])
 
@@ -263,44 +253,6 @@ defmodule Workstation.CLITest do
 
       assert {:shutdown, 3} = run_main(core_argv("plan", home, ["--input", envelope]))
     end
-
-    test "status and diff evaluate the live home through the native catalog" do
-      {_root, home} = temp_test_root()
-
-      {status_result, status_output} = capture_main(core_argv("json status", home, []))
-      assert status_result == :ok
-
-      status_wire = Jason.decode!(status_output)
-
-      assert %{
-               "schema" => "workstation.status.v1",
-               "engine" => %{"mode" => "elixir"},
-               "packages" => packages,
-               "graph_order" => graph_order,
-               "journal" => nil
-             } = status_wire
-
-      # An empty test home still composes the full native catalog: packages
-      # live in the engine checkout, the home is only the destination.
-      assert is_list(packages) and packages != []
-      assert Enum.all?(packages, &is_map_key(&1, "id"))
-      assert is_list(graph_order) and graph_order != []
-
-      {diff_result, diff_output} = capture_main(core_argv("json diff", home, []))
-      assert diff_result == :ok
-
-      diff_wire = Jason.decode!(diff_output)
-
-      assert %{"schema" => "workstation.diff.v1", "generation" => generation, "backend_diff" => records} =
-               diff_wire
-
-      assert is_binary(generation) and byte_size(generation) == 64
-
-      # The plan of the full catalog records one changeset per entry against
-      # the empty destination.
-      assert is_list(records) and records != []
-      assert Enum.all?(records, &is_map_key(&1, "operation"))
-    end
   end
 
   describe "TUI-default contract (apply/update)" do
@@ -392,6 +344,12 @@ defmodule Workstation.CLITest.EnvContract do
   ($WORKSTATION_HOME / $HOME) and the TERM half of the TUI-default gate.
   Serialized (`async: false`) because System env is one VM-wide fact and the
   async sibling suite must not observe a mutated environment.
+
+  The home-resolution pins ride the `--input` offline-replay path (engine
+  work, M1): live reads are daemon-routed now, and the daemon pins its own
+  home — so the RESOLUTION precedence this suite pins is exercised where it
+  actually lives, in the Router's flag > $WORKSTATION_HOME > $HOME chain,
+  against an envelope that deliberately names a different home.
   """
 
   use ExUnit.Case, async: false
@@ -471,12 +429,16 @@ defmodule Workstation.CLITest.EnvContract do
   describe "home resolution" do
     # The flag beats $WORKSTATION_HOME, which beats $HOME — the launcher shim
     # rebases both to one destination, so verbs address the intended home.
+    # --input keeps these offline (envelope home is a red herring on
+    # purpose): the wire's destination must be the RESOLVED home, never the
+    # ambient environment and never the recorded envelope's home.
     test "--home wins over $WORKSTATION_HOME" do
       {_r1, home} = temp_test_root()
       {_r2, env_home} = temp_test_root()
+      envelope = offline_envelope()
 
       {:ok, output, _stderr} =
-        run_main_with_env(["json", "status", "--home", home], "WORKSTATION_HOME", env_home)
+        run_main_with_env(["json", "status", "--home", home, "--input", envelope], "WORKSTATION_HOME", env_home)
 
       assert Jason.decode!(output)["destination"] == Path.expand(home)
     end
@@ -484,8 +446,10 @@ defmodule Workstation.CLITest.EnvContract do
     test "$WORKSTATION_HOME wins over $HOME" do
       {_root, env_home} = temp_test_root()
       real_home = System.get_env("HOME") || raise("HOME must be set in the test environment")
+      envelope = offline_envelope()
 
-      {:ok, output, _stderr} = run_main_with_env(["json", "status"], "WORKSTATION_HOME", env_home)
+      {:ok, output, _stderr} =
+        run_main_with_env(["json", "status", "--input", envelope], "WORKSTATION_HOME", env_home)
 
       wire = Jason.decode!(output)
       assert wire["destination"] == Path.expand(env_home)
@@ -573,35 +537,21 @@ defmodule Workstation.CLITest.EnvContract do
       end
     end
 
-    # --headless is the ONLY way a non-interactive caller reaches the plain
-    # runner; on this pipe the gate passing is proven by the plain runner's
-    # stdout ("Apply to ...") appearing at all, with the run NOT exiting 1.
-    # MUTATING RUN: the engine state root must be bracketed to the sandbox.
-    # The 2026-10-05 17:37 real-host write happened here — this run used to
-    # resolve the state root from the real $HOME while only the destination
-    # was sandboxed, so a mid-WIP empty plan was journaled into production
-    # state (revision 22). $WORKSTATION_HOME is the state-root bracket;
-    # --home still wins for the destination.
-    test "--headless bypasses the gate and reaches the plain runner" do
-      {root, home} = temp_test_root()
-      original_ws_home = System.get_env("WORKSTATION_HOME")
+    # The --headless bypass pin moved to Workstation.CLI.LiveTest: the
+    # headless chain now needs a daemon pinned to the sandbox home (engine
+    # work, M1), which cannot share this module's env bracketing.
+  end
 
-      try do
-        System.put_env("WORKSTATION_HOME", root)
+  # A minimal valid catalog envelope whose recorded home is deliberately
+  # NOT any sandbox home: resolution precedence must send the wire's
+  # destination to the resolved home, never the envelope's.
+  defp offline_envelope do
+    path = Path.join(System.tmp_dir!(), "ws-env-envelope-#{System.unique_integer([:positive])}.json")
 
-        {result, stdout, _stderr} =
-          run_main_with_env(["apply", "--headless", "--home", home], "TERM", "xterm-256color")
+    File.write!(path, ~s({"profile": "env-resolution", "host": "linux", "home": "/home/golden",
+      "packages": [], "assets": {}}))
 
-        assert stdout =~ "Apply to "
-        refute result == {:shutdown, 1}
-
-        # The journal belongs to the sandbox state root, never the real one.
-        assert File.exists?(Path.join([root, ".local", "state", "workstation", "journal"]))
-      after
-        if original_ws_home,
-          do: System.put_env("WORKSTATION_HOME", original_ws_home),
-          else: System.delete_env("WORKSTATION_HOME")
-      end
-    end
+    on_exit(fn -> File.rm(path) end)
+    path
   end
 end

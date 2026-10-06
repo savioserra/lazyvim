@@ -14,6 +14,7 @@ defmodule Workstation.Daemon.Protocol do
   knowledge.
   """
 
+  alias Workstation.Core.CanonicalJSON
   alias Workstation.Daemon.Capabilities
 
   @protocol_name "workstation.daemon/1"
@@ -87,6 +88,13 @@ defmodule Workstation.Daemon.Protocol do
       "version" => @version,
       "ops" => ops(),
       "domains" => Capabilities.domains(),
+      # The daemon serves exactly ONE home — the one it booted with. The
+      # client compares it against its resolved destination and refuses to
+      # speak to a daemon pinned to a different home (an ops-set without a
+      # home parameter plus this advertisement is what keeps `--home`
+      # honest: a mismatch is a loud operator error, never a silent
+      # mutation of some other home).
+      "home" => Workstation.Core.EngineState.home(),
       "caps" => %{
         "max_request_bytes" => @max_request_bytes,
         "max_response_bytes" => @max_response_bytes,
@@ -197,7 +205,14 @@ defmodule Workstation.Daemon.Protocol do
   @spec encode_result(term(), term()) ::
           {:ok, iodata()} | {:error, {:response_too_large, pos_integer()}}
   def encode_result(id, payload) do
-    body = Jason.encode!(%{"id" => id, "ok" => true, "result" => payload})
+    # The result body rides the envelope VERBATIM in its canonical form
+    # (core CanonicalJSON: sorted keys, the :null token for schema-required
+    # nulls). Jason-encoding the payload would corrupt :null into the STRING
+    # "null" — atoms encode as strings — so the canonical encoder, the one
+    # serializer the wire's flavor is defined against, emits the body and it
+    # is spliced into the envelope raw. A bare nil in a payload is the
+    # canonical encoder's fail-closed contract (drop the key or use :null).
+    body = ~s({"id":#{Jason.encode!(id)},"ok":true,"result":#{CanonicalJSON.encode(payload)}})
     size = byte_size(body)
 
     if size > @max_response_bytes do
