@@ -311,9 +311,9 @@ defmodule Workstation.CLI.TUI.ShellTest do
     send_event(runtime, Event.resize(100, 30))
     assert latest_frame() |> body_text() =~ "loading plan"
 
-    # Let the seam land; the browser replaces the loading state.
-    Process.sleep(400)
-    assert settled_frame(runtime) |> body_text() =~ "▸ editor — 2 packages"
+    # The seam lands asynchronously; ride the draws until the browser
+    # replaces the loading state (bounded — no magic sleep).
+    await_frame(fn frame -> body_text(frame) =~ "▸ editor — 2 packages" end)
   end
 
   # -- embedded apply / update screens ---------------------------------------
@@ -347,7 +347,12 @@ defmodule Workstation.CLI.TUI.ShellTest do
     assert settled_frame(runtime) |> body_text() =~ "Confirm apply"
     assert Frame.row_text(settled_frame(runtime), 30) =~ "y confirm apply"
     send_text(runtime, "y")
-    assert settled_frame(runtime) |> body_text() =~ "Applied generation gen-3"
+
+    # The run is an async executor round-trip: a single quiet window can
+    # close before its answer lands (the one shell_test flake read the
+    # in-flight frame as settled), so ride the draws until the applied
+    # frame arrives — bounded, never a hang.
+    await_frame(fn frame -> body_text(frame) =~ "Applied generation gen-3" end)
 
     # The screen's own [u] handoff — now it swaps screens, not processes.
     send_text(runtime, "u")

@@ -24,6 +24,7 @@ defmodule Workstation.CLITest.TUI do
 
   @receive_timeout 2_000
   @quiet_ms 100
+  @settle_timeout_ms 5_000
 
   @doc "Starts a screen on the deterministic backend and returns the runtime pid."
   def start_screen!(module, opts \\ []) do
@@ -69,6 +70,44 @@ defmodule Workstation.CLITest.TUI do
       {:backend, :flush, _count} -> collect_last(latest)
     after
       @quiet_ms -> latest
+    end
+  end
+
+  @doc """
+  Waits — bounded — for a frame whose body satisfies `predicate`, riding
+  async wire loads to completion. A single `latest_frame/0` drain can go
+  quiet before a slow loader/executor answer lands and then read the
+  in-flight frame as settled (the shell_test embedded-apply flake): this
+  helper drains the in-flight burst, then keeps consuming draw frames —
+  every load completion delivers `{:wire_loaded, ...}` and redraws through
+  the app's `update/2` — until one matches, or `:timeout_ms` (default
+  #{@settle_timeout_ms}) is spent. Returns the matching frame; flunks on
+  timeout, so a missed state is a bounded, self-describing failure, never
+  a hang.
+  """
+  @spec await_frame((TermUI.Frame.t() -> boolean()), keyword()) :: TermUI.Frame.t()
+  def await_frame(predicate, opts \\ []) when is_function(predicate, 1) do
+    timeout_ms = Keyword.get(opts, :timeout_ms, @settle_timeout_ms)
+    deadline = System.monotonic_time(:millisecond) + timeout_ms
+
+    # The in-flight burst first: the matching frame may already be the
+    # settled one, with nothing further in flight.
+    frame = latest_frame()
+    if predicate.(frame), do: frame, else: await_match(predicate, deadline)
+  end
+
+  defp await_match(predicate, deadline) do
+    remaining = max(deadline - System.monotonic_time(:millisecond), 0)
+
+    receive do
+      {:backend, :draw, %TermUI.Frame{} = frame} ->
+        if predicate.(frame), do: frame, else: await_match(predicate, deadline)
+
+      {:backend, :flush, _count} ->
+        await_match(predicate, deadline)
+    after
+      remaining ->
+        flunk("await_frame: no frame matched the predicate within the settle budget")
     end
   end
 
