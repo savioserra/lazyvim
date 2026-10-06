@@ -168,7 +168,10 @@ per-user socket (`Listener.socket_path/1`); when absent or dead it spawns a
 daemon DETACHED from the same installed release bin (the launcher shim's
 engine-repo anchor rides along in the environment), then waits — bounded —
 for the hello handshake before speaking. `workstation daemon stop` retires
-the daemon manually; no OS service manager is involved. A daemon stays
+the daemon manually; no OS service manager is involved. A clean stop
+retires the listener immediately but deliberately leaves the 0-byte socket
+file in place — the daemon never deletes a file it cannot prove is its own
+dead socket — and the next boot proves it dead and reclaims it. A daemon stays
 pinned to the home it booted for; a client asking for a different
 destination is told to stop it and let ensure-daemon spawn one for that
 home.
