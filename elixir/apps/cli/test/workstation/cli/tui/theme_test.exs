@@ -31,7 +31,24 @@ defmodule Workstation.CLI.TUI.ThemeTest do
     assert Theme.base_colors(:light) == Map.new(Tokens.palette(:light))
 
     assert Map.keys(Theme.base_colors(:dark)) |> Enum.sort() ==
-             [:accent, :bg, :chrome, :err, :muted, :ok, :text, :warn] |> Enum.sort()
+             [
+               :accent,
+               :bg,
+               :chrome,
+               :err,
+               :inactive,
+               :muted,
+               :ok,
+               :ramp_end,
+               :ramp_mid,
+               :ramp_start,
+               :selected_bg,
+               :selected_fg,
+               :shortcut,
+               :text,
+               :warn
+             ]
+             |> Enum.sort()
   end
 
   test "missing home falls back to the base palette, fail-closed" do

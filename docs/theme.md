@@ -16,9 +16,13 @@ hardcode a color or slot name for a role carried here. Two layers per role:
 
 Roles: `accent`, `ok`, `warn`, `err`, `chrome` (muted chrome/borders),
 `text` (on accent surfaces in the slot layer, primary foreground in the
-palette layer), plus `bg` and `muted` in the palette layer. Slot values are
-validated against the 16 ANSI names plus `default`; palette values must be
-`#rrggbb`.
+palette layer), plus `bg` and `muted` in the palette layer. The btop-grammar
+affordance roles complete the set: `shortcut` (key-cap letters in tab strips
+and border buttonbars), the `selected_bg`/`selected_fg` pair (selection is
+never color-alone), `inactive` (dimmed chrome: inactive tabs, stale rows),
+and the `ramp_start`/`ramp_mid`/`ramp_end` trio (magnitude ramp: freshness,
+drift age, load). Slot values are validated against the 16 ANSI names plus
+`default`; palette values must be `#rrggbb`.
 
 ## Distribution
 
@@ -44,11 +48,17 @@ plan.
 
 ## Tests
 
-- `tests/theme.test.lua`: token shape, deterministic envelope bytes,
-  fail-closed mutation rejection, provider contract, plan/manifest wiring.
-- `tests/capabilities.test.lua`: `theme` requires `foundation` (catalog
-  discipline: every HOME-writing capability stays a runtime-late dependent);
-  `agent` and `tmux` requires drift guards.
-- `tests/backend-render.test.lua`: real chezmoi renders both consumers; no
-  template syntax survives, palette bytes match the envelope, and derived
-  theme names stay pairable (no `/`).
+- `elixir/apps/core/test/workstation/core/theme/tokens_test.exs`: parity
+  anchor — the mirror's rendered `.chezmoidata.toml` envelope is
+  byte-identical to the committed theme goldens fixture, contract values
+  match `tokens.lua`, the role set is complete, and every palette role is
+  overlay-settable.
+- `elixir/apps/cli/test/workstation/cli/tui/theme_test.exs`: the CLI base
+  palette mirrors the core tokens exactly; daemon resolutions carry the
+  closed role set.
+- `elixir/apps/core/test/workstation/golden_generate_test.exs`: the plan
+  pipeline regenerates the committed goldens byte-for-byte, so any engine
+  edit that forgets the Elixir mirror or the rendered envelope fails the
+  drift anchor.
+- `mix workstation.goldens` re-records the committed goldens after a
+  deliberate token change (regenerate, never patch).

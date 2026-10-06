@@ -11,6 +11,7 @@
 		"text": "{{ .theme.palette.light.text }}",
 		"bg": "{{ .theme.palette.light.bg }}",
 		"muted": "{{ .theme.palette.light.muted }}",
+		"selectedBg": "{{ .theme.palette.light.selected_bg }}",
 		"accentBg": "#cfdaf5",
 		"bgAlt": "#d6d8e0"
 	},
@@ -26,7 +27,7 @@
 		"dim": "chrome",
 		"text": "text",
 		"thinkingText": "muted",
-		"selectedBg": "accentBg",
+		"selectedBg": "selectedBg",
 		"scrollbarTrack": "chrome",
 		"scrollbarThumb": "muted",
 		"searchMatchBg": "accentBg",

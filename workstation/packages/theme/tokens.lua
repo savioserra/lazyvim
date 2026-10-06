@@ -17,7 +17,7 @@ local M = {}
 -- literal color or slot name for a role carried here. Re-branding edits only
 -- this file.
 
-M.version = 1
+M.version = 2
 
 M.slots = {
 	accent = "blue",
@@ -26,6 +26,13 @@ M.slots = {
 	err = "red",
 	chrome = "brightblack",
 	text = "black",
+	shortcut = "magenta",
+	selected_bg = "blue",
+	selected_fg = "black",
+	inactive = "brightblack",
+	ramp_start = "green",
+	ramp_mid = "yellow",
+	ramp_end = "red",
 }
 
 M.palette = {
@@ -36,6 +43,13 @@ M.palette = {
 		err = "#f7768e",
 		chrome = "#414868",
 		text = "#c0caf5",
+		shortcut = "#bb9af7",
+		selected_bg = "#292e42",
+		selected_fg = "#c0caf5",
+		inactive = "#565f89",
+		ramp_start = "#9ece6a",
+		ramp_mid = "#e0af68",
+		ramp_end = "#f7768e",
 		bg = "#1a1b26",
 		muted = "#565f89",
 	},
@@ -46,6 +60,13 @@ M.palette = {
 		err = "#f52a65",
 		chrome = "#a1a6c5",
 		text = "#3760bf",
+		shortcut = "#7847bd",
+		selected_bg = "#cfdaf5",
+		selected_fg = "#3760bf",
+		inactive = "#6172b0",
+		ramp_start = "#587539",
+		ramp_mid = "#8c6c3e",
+		ramp_end = "#f52a65",
 		bg = "#e1e2e7",
 		muted = "#6172b0",
 	},
@@ -55,8 +76,11 @@ M.consumers = {
 	herdr = { name = "terminal", auto_switch = true },
 }
 
-local slot_roles = { "accent", "ok", "warn", "err", "chrome", "text" }
-local palette_roles = { "accent", "ok", "warn", "err", "chrome", "text", "bg", "muted" }
+-- Role order is the emission order for every derived artifact; new roles
+-- append after the base six: keyboard/selection affordances (shortcut,
+-- selected pair, inactive), then the magnitude ramp trio start->mid->end.
+local slot_roles = { "accent", "ok", "warn", "err", "chrome", "text", "shortcut", "selected_bg", "selected_fg", "inactive", "ramp_start", "ramp_mid", "ramp_end" }
+local palette_roles = { "accent", "ok", "warn", "err", "chrome", "text", "shortcut", "selected_bg", "selected_fg", "inactive", "ramp_start", "ramp_mid", "ramp_end", "bg", "muted" }
 local appearances = { "dark", "light" }
 
 -- Terminal NAMED colors tmux2k resolves through the live palette; the same

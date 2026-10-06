@@ -29,10 +29,12 @@ defmodule Workstation.CLI.TUI.Theme do
 
   @default_appearance :dark
 
-  # The closed palette role set (docs/theme.md): the six consumer roles plus
-  # the palette-only bg/muted pair. A daemon resolution carrying any other
-  # key is refused wholesale — a partial theme is worse than the base one.
-  @roles [:accent, :ok, :warn, :err, :chrome, :text, :bg, :muted]
+  # The closed palette role set (docs/theme.md): the six consumer roles, the
+  # btop-grammar affordance roles (shortcut, selected pair, inactive, ramp
+  # trio) and the palette-only bg/muted pair. A daemon resolution carrying
+  # any other key is refused wholesale — a partial theme is worse than the
+  # base one.
+  @roles [:accent, :ok, :warn, :err, :chrome, :text, :shortcut, :selected_bg, :selected_fg, :inactive, :ramp_start, :ramp_mid, :ramp_end, :bg, :muted]
 
   # Short budgets on purpose: screen startup must not wait on a wedged
   # daemon. The daemon's own frame timeout is 5s; a client that waits that
@@ -40,7 +42,22 @@ defmodule Workstation.CLI.TUI.Theme do
   @connect_timeout_ms 1_000
   @recv_timeout_ms 2_000
 
-  @type role :: :accent | :ok | :warn | :err | :chrome | :text | :bg | :muted
+  @type role ::
+          :accent
+          | :ok
+          | :warn
+          | :err
+          | :chrome
+          | :text
+          | :shortcut
+          | :selected_bg
+          | :selected_fg
+          | :inactive
+          | :ramp_start
+          | :ramp_mid
+          | :ramp_end
+          | :bg
+          | :muted
   @type colors :: %{optional(role()) => String.t()}
   @type resolution :: %{colors: colors(), source: :daemon | :base}
 

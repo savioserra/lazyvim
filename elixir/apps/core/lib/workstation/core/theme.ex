@@ -19,7 +19,23 @@ defmodule Workstation.Core.Theme do
   # Roles overlays may patch: the full palette surface. Slot-only roles
   # (terminal named slots) are not overridable with concrete hex values.
   # String-keyed: JSON object keys arrive as binaries.
-  @settable_roles ["accent", "ok", "warn", "err", "chrome", "text", "bg", "muted"]
+  @settable_roles [
+    "accent",
+    "ok",
+    "warn",
+    "err",
+    "chrome",
+    "text",
+    "shortcut",
+    "selected_bg",
+    "selected_fg",
+    "inactive",
+    "ramp_start",
+    "ramp_mid",
+    "ramp_end",
+    "bg",
+    "muted"
+  ]
 
   @typedoc "Resolved theme: the appearance plus its full role-to-hex palette."
   @type resolved :: %{String.t() => term()}
