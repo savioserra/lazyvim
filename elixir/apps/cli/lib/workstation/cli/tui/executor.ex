@@ -25,17 +25,20 @@ defmodule Workstation.CLI.TUI.Executor do
 
   @doc """
   Apply executor: the confirm path of the apply screen. The payload is the
-  screen's request map (generation + entry rows); the generation rides to
-  the daemon as the requested generation, so a confirm applies exactly the
-  state the operator saw or refuses as stale.
+  screen's request map (generation + entry rows, plus an optional `events`
+  sink — a `(daemon event map) -> any` callback receiving the op's live
+  progress stream); the generation rides to the daemon as the requested
+  generation, so a confirm applies exactly the state the operator saw or
+  refuses as stale.
   """
   @spec apply_executor(map()) :: :ok | {:error, String.t()}
-  def apply_executor(%{"generation" => generation, "entries" => entries})
+  def apply_executor(%{"generation" => generation, "entries" => entries} = request)
       when is_binary(generation) and is_list(entries) do
     fold(
       DaemonClient.call(
         "apply.run",
         %{"generation" => generation, "entries" => entries},
+        on_event: events_pipe(request),
         timeout_ms: @lifecycle_timeout_ms
       )
     )
@@ -44,15 +47,29 @@ defmodule Workstation.CLI.TUI.Executor do
   def apply_executor(_payload), do: {:error, "malformed apply request"}
 
   @doc """
-  Update executor: one lifecycle step per request (the update screen's
-  abort-on-first-failure semantics map one op onto one chain link).
+  Update executor: ONE daemon op for the whole step sub-chain (the daemon
+  owns the locks and the step sequencing; the screen renders its event
+  stream). The optional `events` sink is the same callback contract as the
+  apply executor's — it is how the screen receives
+  step.started/step.done transitions instead of driving steps itself.
   """
   @spec update_executor(map()) :: :ok | {:error, String.t()}
-  def update_executor(%{"step" => step}) when is_binary(step) do
-    fold(DaemonClient.call("update.run", %{"step" => step}, timeout_ms: @lifecycle_timeout_ms))
+  def update_executor(%{"steps" => steps} = request) when is_list(steps) do
+    fold(DaemonClient.call("update.run", %{"steps" => steps}, on_event: events_pipe(request), timeout_ms: @lifecycle_timeout_ms))
   end
 
   def update_executor(_payload), do: {:error, "malformed update request"}
+
+  # The events sink arrives inside the request map (an optional
+  # `(event) -> any` fun); the daemon streams op progress frames and each
+  # is handed to the sink verbatim. Absent sink = drop (headless verbs
+  # without rendering callers).
+  defp events_pipe(request) do
+    case request["events"] do
+      fun when is_function(fun, 1) -> fun
+      _other -> fn _event -> :ok end
+    end
+  end
 
   # Daemon op results fold to the screens' two-value contract. Daemon
   # transport failures are atom-tagged pairs, matched before the wire's

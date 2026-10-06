@@ -166,6 +166,9 @@ defmodule Workstation.Daemon.UpdateCheck do
     fetch = opts[:fetch] || default_fetch(repo, opts)
     timeout = opts[:timeout_ms] || @ls_remote_timeout_ms
 
+    # Order matters: the fetch returns {output, exit-code} tuples OR
+    # {:error, reason}; the two-tuple catch-all must come LAST or it
+    # swallows the timeout/failure clauses (found as compile warnings).
     case fetch.(repo, branch, remote_ref) do
       {output, 0} ->
         case remote_head(output, remote_ref) do
@@ -179,14 +182,14 @@ defmodule Workstation.Daemon.UpdateCheck do
             %{"status" => "unknown", "reason" => "remote has no branch #{branch}"}
         end
 
-      {_output, _status} ->
-        %{"status" => "unknown", "reason" => "cannot reach the git remote (offline?)"}
-
       {:error, :timeout} ->
         %{"status" => "unknown", "reason" => "git ls-remote timed out after #{timeout} ms"}
 
       {:error, reason} ->
         %{"status" => "unknown", "reason" => "git ls-remote failed: #{inspect(reason)}"}
+
+      {_output, _status} ->
+        %{"status" => "unknown", "reason" => "cannot reach the git remote (offline?)"}
     end
   end
 
@@ -225,10 +228,12 @@ defmodule Workstation.Daemon.UpdateCheck do
   # staleness probe: the operator's ambient git configuration must not
   # influence engine reads, and a credential prompt must never hang.
   defp git(repo, args, opts) do
+    # {:error, reason} MUST precede the {_out, _status} catch-all: a
+    # two-tuple error result also matches the generic exit-code clause.
     case (opts[:fetch_raw] || &git_raw/2).(repo, args) do
       {out, 0} -> {:ok, out}
-      {_out, _status} -> {:error, "git #{hd(args)} failed"}
       {:error, reason} -> {:error, "git #{hd(args)} failed: #{inspect(reason)}"}
+      {_out, _status} -> {:error, "git #{hd(args)} failed"}
     end
   end
 

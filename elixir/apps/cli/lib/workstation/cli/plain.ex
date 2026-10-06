@@ -20,16 +20,18 @@ defmodule Workstation.CLI.Plain do
   lifecycle step (docs/capabilities.md) and reports the remaining steps as
   skipped.
 
-  The update chain carries the release handoff (docs/capabilities.md,
-  "release refresh and handoff"): after every step the runner probes
-  `Workstation.Daemon.Lifecycle.update_handoff/1`; when a refreshed bootstrap
-  left its handoff note the remaining steps are printed as handed off and
-  the runner runs the NEW release with `--resume-from`, forwarding its
-  output and exit code, so apply/sync/verify execute under the freshly
-  built engine instead of the stale code this process loaded at boot. The
-  BEAM has no exec(2), so the handoff is a supervised child whose status
-  becomes this run's exit status — the observable two-phase contract is
-  one command, one exit code.
+  The update chain is ONE daemon op (`update.run` with the full step
+  sub-chain): the daemon owns the locks, the steps, and the handoff note;
+  this runner renders the daemon's event stream as lines (the familiar
+  `[1/5] pull ok` shape, now event-driven — never self-driven) and carries
+  the release handoff the daemon REPORTS: a mid-chain refresh halts the
+  daemon-side chain, the result arrives with `handed_off: true` plus the
+  un-run steps, and this runner re-execs the refreshed release with
+  `--resume-from`, forwarding its output and exit code, so the remaining
+  steps execute under the freshly built engine instead of the stale code
+  this process loaded at boot. The BEAM has no exec(2), so the handoff is
+  a supervised child whose status becomes this run's exit status — the
+  observable two-phase contract is one command, one exit code.
   """
 
   alias Workstation.Daemon.Lifecycle
@@ -42,7 +44,7 @@ defmodule Workstation.CLI.Plain do
 
   Options mirror the TUI screens: `:destination`, `:plan` (apply), and
   `:executor` (same callback contract). Defaults are the production
-  executors (`Workstation.CLI.TUI.Executor`, the in-process engine path);
+  executors (`Workstation.CLI.TUI.Executor`, the socket client path);
   pure stand-ins remain injectable for tests.
   """
   @spec run(:apply | :update, keyword()) :: :ok
@@ -84,49 +86,100 @@ defmodule Workstation.CLI.Plain do
 
   defp run_update(destination, executor, opts) do
     steps = resume_steps(opts[:resume_from])
-
-    # The CALLER's code identity, captured ONCE at chain start — before
-    # the bootstrap step can re-stamp the release mid-run. A fresh read
-    # after the refresh would describe the NEW code, not the code THIS
-    # process executes (the P0 in 0fb69a4f: a post-refresh note then
-    # matched a post-refresh probe and the chain handed off forever). The
-    # default probe (Lifecycle.update_handoff/1) consumes it via the
-    # :release_identity seam; injected test probes just ignore it.
-    identity = Keyword.get(opts, :release_identity) || Lifecycle.release_identity()
-    opts = Keyword.put(opts, :release_identity, identity)
-    probe = Keyword.get(opts, :handoff_probe, &Lifecycle.update_handoff/1)
     total = length(Update.steps())
 
     IO.puts("Update #{destination} (#{total} steps)")
 
-    steps
-    |> Enum.reduce_while(:ok, fn {step, index}, :ok ->
-      case executor.(%{"step" => step}) do
-        :ok ->
-          IO.puts("  [#{index}/#{total}] #{step} ok")
-          after_step(probe, opts, steps, index, total)
+    # The daemon owns the chain and the handoff note; this process renders
+    # its event stream and tracks the settled steps so a failure (or an
+    # abort) reports the UNRUN steps as skipped with original numbering.
+    {:ok, seen} = Agent.start_link(fn -> %{ok: MapSet.new(), failed: nil} end)
 
-        {:error, reason} ->
-          IO.puts("  [#{index}/#{total}] #{step} failed: #{reason}")
+    on_event = fn event ->
+      render_event(event, steps, total)
+      track_event(seen, event)
+    end
 
-          steps
-          |> Enum.drop_while(fn {_s, i} -> i <= index end)
-          |> Enum.each(fn {skipped, n} -> IO.puts("  [#{n}/#{total}] #{skipped} skipped") end)
+    request = %{"steps" => Enum.map(steps, &elem(&1, 0)), "events" => on_event}
 
-          {:halt, {:error, {step, reason}}}
-      end
-    end)
-    |> case do
-      :ok ->
+    case executor.(request) do
+      {:ok, %{"handed_off" => true} = record} ->
+        case handoff_steps(record["remaining_steps"], steps) do
+          [] ->
+            # Nothing left to hand off (the chain ended on the refresher):
+            # the empty --resume-from child was the live 2026-10-05
+            # incident's exit-2 trigger — finish normally instead.
+            IO.puts("Updated")
+            :ok
+
+          remaining ->
+            handoff(remaining, total, record, opts)
+        end
+
+      {:ok, _record} ->
         IO.puts("Updated")
         :ok
 
-      {:handoff, remaining} ->
-        handoff(remaining, total, opts)
+      {:error, {:daemon_died, message}} ->
+        fail(4, "error: the daemon died mid-update: #{message}")
 
-      {:error, {step, reason}} ->
-        fail(4, "error: update failed at #{step}: #{reason}")
+      {:error, {:daemon_unavailable, message}} ->
+        fail(4, "error: #{message}")
+
+      {:error, {"aborted", _message}} ->
+        skipped_tail(seen, steps, total)
+        fail(4, "error: update aborted at a step boundary")
+
+      {:error, {_code, _message}} ->
+        skipped_tail(seen, steps, total)
+
+        case Agent.get(seen, & &1)[:failed] do
+          {step, detail} -> fail(4, "error: update failed at #{step}: #{detail}")
+          nil -> fail(4, "error: update failed")
+        end
     end
+  end
+
+  # The headless half of the research contract: the SAME event stream the
+  # TUI renders, as lines. `step.done` keeps the familiar `[1/5] pull ok`
+  # shape (now daemon-driven); `run.log` lines render under the `|` prefix;
+  # `step.started`/`run.started`/`run.finished` render nothing (the chain
+  # banner and the tail already say it).
+  defp render_event(%{"type" => "step.done", "step" => step, "ok" => true} = _event, steps, total) do
+    IO.puts("  [#{step_index(step, steps)}/#{total}] #{step} ok")
+  end
+
+  defp render_event(%{"type" => "step.done", "step" => step, "ok" => false, "detail" => detail}, steps, total) do
+    IO.puts("  [#{step_index(step, steps)}/#{total}] #{step} failed: #{detail}")
+  end
+
+  defp render_event(%{"type" => "run.log", "line" => line}, _steps, _total) do
+    IO.puts("  | #{line}")
+  end
+
+  defp render_event(_event, _steps, _total), do: :ok
+
+  defp track_event(seen, %{"type" => "step.done", "step" => step, "ok" => true}),
+    do: Agent.update(seen, fn state -> %{state | ok: MapSet.put(state.ok, step)} end)
+
+  defp track_event(seen, %{"type" => "step.done", "step" => step, "ok" => false, "detail" => detail}),
+    do: Agent.update(seen, fn state -> %{state | failed: {step, detail}} end)
+
+  defp track_event(_seen, _event), do: :ok
+
+  defp step_index(step, steps) do
+    {_, index} = Enum.find(steps, fn {name, _} -> name == step end)
+    index
+  end
+
+  # Everything the daemon did not settle is reported skipped, in chain
+  # order (the daemon stops at the first failure or abort boundary).
+  defp skipped_tail(seen, steps, total) do
+    done = Agent.get(seen, & &1)[:ok]
+
+    steps
+    |> Enum.reject(fn {step, _} -> MapSet.member?(done, step) end)
+    |> Enum.each(fn {step, index} -> IO.puts("  [#{index}/#{total}] #{step} skipped") end)
   end
 
   # --resume-from (the release handoff's re-exec contract): a comma-
@@ -159,36 +212,12 @@ defmodule Workstation.CLI.Plain do
     end
   end
 
-  # The handoff probe runs after EVERY step and receives this run's opts
-  # (the caller identity is threaded on :release_identity — the default
-  # Lifecycle.update_handoff/1 probe consumes it; injected probes share the
-  # same `(opts)` contract as `:executor`): a note can only exist when a
-  # bootstrap refreshed the release (or an earlier run crashed between the
-  # refresh and its exec), and in both cases the remaining chain belongs to
-  # the new release. A no-note probe is one file read that misses. When the
-  # just-completed step was the LAST one there is nothing left to hand off
-  # (the empty --resume-from child was the live 2026-10-05 incident's exit-2
-  # trigger), so the run finishes normally and the parent clears the note.
-  # The probe is injectable (`:handoff_probe`) with the same seam contract
-  # as `:executor`.
-  defp after_step(probe, opts, steps, index, total) do
-    case probe.(opts) do
-      {:ok, nil} ->
-        {:cont, :ok}
-
-      {:ok, _release} ->
-        remaining = Enum.drop_while(steps, fn {_s, i} -> i <= index end)
-
-        if remaining == [] do
-          {:cont, :ok}
-        else
-          {:halt, {:handoff, remaining}}
-        end
-
-      {:error, message} ->
-        IO.puts("  [#{index}/#{total}] handoff failed: #{message}")
-        {:halt, {:error, {"handoff", message}}}
-    end
+  # Map the daemon's remaining-steps list back onto this run's chain
+  # numbering: the re-exec child reads `[n/total] step handed off` lines
+  # with the SAME indices the parent printed, so the two-phase run reads
+  # as one sequence.
+  defp handoff_steps(remaining, steps) when is_list(remaining) do
+    Enum.filter(steps, fn {step, _index} -> step in remaining end)
   end
 
   # The handoff re-exec: spawn `<release root>/bin/workstation` with the
@@ -206,8 +235,14 @@ defmodule Workstation.CLI.Plain do
   # exit 2 argv validation, which is never retried — fails the run with
   # the child's status echoed. A missing or non-executable bin fails
   # cleanly (exit 4) instead of a raw ErlangError.
-  defp handoff(remaining, total, opts) do
-    root = Keyword.get(opts, :handoff_release_root) || to_string(:code.root_dir())
+  defp handoff(remaining, total, record, opts) do
+    # The daemon REPORTS the refreshed release root (it knows where its
+    # installer landed); the client root is the stale release this process
+    # booted from and only a fallback. Tests pin it via the
+    # :handoff_release_root seam.
+    root =
+      Keyword.get(opts, :handoff_release_root) || record["release_root"] || to_string(:code.root_dir())
+
     bin = Path.join([root, "bin", "workstation"])
 
     Enum.each(remaining, fn {step, index} ->

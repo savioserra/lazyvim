@@ -53,7 +53,7 @@ defmodule Workstation.CLI.TUI.ExecutorTest do
     # The wire enum IS the contract now: an off-list step is invalid_params
     # at the protocol boundary (the in-process engine's unknown-step
     # message is unreachable from the client surface by construction).
-    assert {:error, message} = Executor.update_executor(%{"step" => "reboot"})
+    assert {:error, message} = Executor.update_executor(%{"steps" => ["reboot"]})
     assert message =~ "invalid_params"
   end
 

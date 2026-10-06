@@ -90,6 +90,14 @@ defmodule Workstation.Daemon.Capabilities.Lifecycle do
           {:ok, record}
         end
 
+      {:handoff, record, []} ->
+        # The chain ENDED on the refresher (nothing left to hand off — the
+        # live 2026-10-05 incident's exit-2 trigger was an empty
+        # --resume-from child). Report the plain ok result; the daemon stop
+        # still fires (the release is refreshed).
+        :ok = Shutdown.stop_after("release refresh handoff")
+        {:ok, record}
+
       {:handoff, record, remaining} ->
         # A mid-chain refresh halted the chain: the daemon is stale the
         # moment this reply flushes. The result carries the handoff marker

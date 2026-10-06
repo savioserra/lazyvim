@@ -238,8 +238,19 @@ defmodule Workstation.Daemon.Lifecycle do
       case release_refresh(opts) do
         {:ok, refreshed?} ->
           case refresh_note(refreshed?, writer_identity, opts) do
-            :ok -> {:ok, Map.put(record, "release_refreshed", refreshed?)}
-            {:error, message} -> {:error, "bootstrap_failed", message}
+            :ok ->
+              # A refresh made a NEW on-disk release the chain must finish
+              # under: report WHERE it landed so the client's re-exec
+              # spawns the refreshed bin, not the stale root this process
+              # booted from (the client's :code.root_dir() stays the old
+              # release until the daemon restarts under the new one).
+              record
+              |> Map.put("release_refreshed", refreshed?)
+              |> then(&if refreshed?, do: Map.put(&1, "release_root", installed_release_root(opts)), else: &1)
+              |> then(&{:ok, &1})
+
+            {:error, message} ->
+              {:error, "bootstrap_failed", message}
           end
 
         {:error, output} ->
@@ -403,6 +414,11 @@ defmodule Workstation.Daemon.Lifecycle do
       {:error, message} -> {:error, message}
     end
   end
+
+  # Where the refresh installs: the same release root the launcher shim
+  # execs from (docs/capabilities.md "release refresh and handoff"). The
+  # handoff record reports it so the CLIENT re-execs the refreshed bin.
+  defp installed_release_root(opts), do: Path.join([home(opts), ".local", "opt", "workstation"])
 
   @doc """
   Refresh the installed engine release from the anchored checkout.

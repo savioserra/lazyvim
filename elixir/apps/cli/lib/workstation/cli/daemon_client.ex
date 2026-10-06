@@ -104,12 +104,12 @@ defmodule Workstation.CLI.DaemonClient do
 
   @doc """
   Send one op to an ALREADY-RUNNING daemon — the no-spawn path used by
-  control surfaces (`workstation daemon stop`): stopping must never start
-  anything. Returns the op result, or `{:error, reason}` when no daemon is
-  reachable (worded for direct operator display).
+  control surfaces (`workstation daemon stop`, `op.abort`): control must
+  never start anything. Returns the op result, or `{:error, reason}` when
+  no daemon is reachable (worded for direct operator display).
   """
-  @spec control(String.t(), keyword()) :: {:ok, map()} | {:error, String.t()}
-  def control(op, opts \\ []) when is_binary(op) do
+  @spec control(String.t(), map(), keyword()) :: {:ok, map()} | {:error, String.t()}
+  def control(op, params \\ %{}, opts \\ []) when is_binary(op) and is_map(params) and is_list(opts) do
     home = Keyword.get(opts, :home) || EngineState.home()
     sock_path = Listener.socket_path(home)
     hello_timeout = Keyword.get(opts, :handshake_timeout_ms, @handshake_timeout_ms)
@@ -117,7 +117,7 @@ defmodule Workstation.CLI.DaemonClient do
 
     with {:ok, sock} <- reach(sock_path, home, hello_timeout) do
       try do
-        case request(sock, op, %{}, timeout_ms: op_timeout) do
+        case request(sock, op, params, timeout_ms: op_timeout) do
           {:ok, result} -> {:ok, result}
           # The structural {code, message} op-refusal shape is matched LAST:
           # the tagged client-side failures (daemon_died/timeout/unavailable)
@@ -130,6 +130,24 @@ defmodule Workstation.CLI.DaemonClient do
       after
         :socket.close(sock)
       end
+    end
+  end
+
+  @doc """
+  Abort an in-flight op by its stream token (every event frame carries the
+  `op_ref`; the TUI forwards it from the first run event). Rides a second,
+  short-lived control connection — the daemon honours cross-session aborts
+  through its op registry, and the op stops at the NEXT STEP BOUNDARY: a
+  cancelled mutation is never killed half-way. Best-effort by contract: a
+  racing finish answers `aborted: false` and surfaces as an error message,
+  never a crash.
+  """
+  @spec abort(String.t(), keyword()) :: :ok | {:error, String.t()}
+  def abort(op_ref, opts \\ []) when is_binary(op_ref) do
+    case control("op.abort", %{"op_ref" => op_ref}, opts) do
+      {:ok, %{"aborted" => true}} -> :ok
+      {:ok, %{"aborted" => false}} -> {:error, "no running op for that stream token"}
+      {:error, message} -> {:error, message}
     end
   end
 

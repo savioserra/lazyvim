@@ -1,10 +1,12 @@
 defmodule Workstation.CLITest.PlainTest do
   @moduledoc """
-  The plain runner's release handoff: after a refreshed bootstrap step the
-  remaining update steps must execute under the NEW release (the
-  `--resume-from` child), never with the stale code the original process
-  loaded at boot — the live `workstation update` crashed on exactly this
-  gap when a mid-run release refresh left the chain running old code.
+  The plain runner's release handoff: a refreshed bootstrap halts the
+  daemon-side chain and the op result reports `handed_off` plus the steps
+  that did not run — the remaining steps must execute under the NEW
+  release (the `--resume-from` child), never with the stale code the
+  original process loaded at boot — the live `workstation update` crashed
+  on exactly this gap when a mid-run release refresh left the chain
+  running old code.
   """
 
   use ExUnit.Case, async: false
@@ -18,35 +20,36 @@ defmodule Workstation.CLITest.PlainTest do
     %{root: root}
   end
 
-  test "a handoff decision after bootstrap re-runs the remaining steps under the new release", %{root: root} do
+  test "a daemon-reported handoff re-runs the remaining steps under the new release", %{root: root} do
     release = fake_release(root, 0)
-    {:ok, probe_pid} = Agent.start_link(fn -> 0 end)
 
-    # The probe yields nothing after pull and bootstrap (no refresh), then
-    # reports a refreshed release — the chain must stop there and hand
-    # sync/verify to the new release.
-    probe = fn _opts ->
-      calls = Agent.get_and_update(probe_pid, fn n -> {n, n + 1} end)
+    # The daemon OWNS the decision now: one update.run op carries the whole
+    # chain, and the result reports handed_off plus the steps that did NOT
+    # run (a refreshed bootstrap halts the daemon-side chain before the
+    # next step). The runner only renders and re-execs.
+    {:ok, exec_pid} = Agent.start_link(fn -> nil end)
 
-      if calls < 2, do: {:ok, nil}, else: {:ok, release}
-    end
+    executor = fn %{"steps" => steps, "events" => events} ->
+      Agent.update(exec_pid, fn _ -> steps end)
 
-    {:ok, exec_pid} = Agent.start_link(fn -> [] end)
+      Enum.each(Enum.take(steps, 3), fn step ->
+        events.(%{"type" => "step.done", "step" => step, "ok" => true, "detail" => nil})
+      end)
 
-    executor = fn %{"step" => step} ->
-      Agent.update(exec_pid, &[step | &1])
-      :ok
+      {:ok, %{"handed_off" => true, "remaining_steps" => ["sync", "verify"]}}
     end
 
     output =
       ExUnit.CaptureIO.capture_io(:stdio, fn ->
         assert :ok =
                  Plain.run(:update, destination: "HOME",
-                   executor: executor, handoff_probe: probe, handoff_release_root: release
+                   executor: executor, handoff_release_root: release
                  )
       end)
 
-    assert Agent.get(exec_pid, &Enum.reverse/1) == ["pull", "bootstrap", "apply"]
+    # The executor saw the WHOLE chain as one op — there is no per-step
+    # client drive anymore.
+    assert Agent.get(exec_pid, & &1) == ["pull", "bootstrap", "apply", "sync", "verify"]
 
     # The remaining steps are reported as handed off with their original
     # chain numbering, and the child receives the resume contract.
@@ -83,14 +86,14 @@ defmodule Workstation.CLITest.PlainTest do
     end)
 
     release = fake_release(root, 0)
-    probe = fn _opts -> {:ok, release} end
 
     output =
       ExUnit.CaptureIO.capture_io(:stdio, fn ->
         assert :ok =
                  Plain.run(:update, destination: "HOME",
-                   executor: fn %{"step" => _step} -> :ok end,
-                   handoff_probe: probe,
+                   executor: fn %{"steps" => _s, "events" => _e} ->
+                     {:ok, %{"handed_off" => true, "remaining_steps" => ["bootstrap", "apply", "sync", "verify"]}}
+                   end,
                    handoff_release_root: release
                  )
       end)
@@ -106,7 +109,6 @@ defmodule Workstation.CLITest.PlainTest do
 
   test "parent success clears the handoff note (consumed exactly once)", %{root: root} do
     release = fake_release(root, 0)
-    probe = fn _opts -> {:ok, release} end
 
     previous_ws = System.get_env("WORKSTATION_HOME")
     System.put_env("WORKSTATION_HOME", root)
@@ -116,23 +118,26 @@ defmodule Workstation.CLITest.PlainTest do
     File.mkdir_p!(Path.dirname(note))
     File.write!(note, Jason.encode!(%{"from_release" => "stale"}))
 
+    {:ok, clear_pid} = Agent.start_link(fn -> 0 end)
+
     ExUnit.CaptureIO.capture_io(:stdio, fn ->
       assert :ok =
                Plain.run(:update, destination: "HOME",
-                 executor: fn %{"step" => _step} -> :ok end,
-                 handoff_probe: probe,
-                 handoff_release_root: release
+                 executor: fn %{"steps" => _s, "events" => _e} ->
+                   {:ok, %{"handed_off" => true, "remaining_steps" => ["sync", "verify"]}}
+                 end,
+                 handoff_release_root: release,
+                 handoff_clear: fn _opts -> Agent.update(clear_pid, &(&1 + 1)) end
                )
     end)
 
-    # Parent success = child exit 0 + note consumed: the cleared note can
-    # never re-derive a handoff that already finished.
-    refute File.exists?(note)
+    # Parent success = child exit 0 + note consumed exactly once: the
+    # cleared note can never re-derive a handoff that already finished.
+    assert Agent.get(clear_pid, & &1) == 1
   end
 
   test "a failed handed-off child leaves the note for re-derivation", %{root: root} do
     release = fake_release(root, 3)
-    probe = fn _opts -> {:ok, release} end
 
     previous_ws = System.get_env("WORKSTATION_HOME")
     System.put_env("WORKSTATION_HOME", root)
@@ -146,8 +151,9 @@ defmodule Workstation.CLITest.PlainTest do
       assert catch_exit(
                ExUnit.CaptureIO.capture_io(:stdio, fn ->
                  Plain.run(:update, destination: "HOME",
-                   executor: fn %{"step" => _step} -> :ok end,
-                   handoff_probe: probe,
+                   executor: fn %{"steps" => _s, "events" => _e} ->
+                     {:ok, %{"handed_off" => true, "remaining_steps" => ["sync", "verify"]}}
+                   end,
                    handoff_release_root: release
                  )
                end)
@@ -159,24 +165,22 @@ defmodule Workstation.CLITest.PlainTest do
     assert File.exists?(note)
   end
 
-  test "a handoff decision after the last step never spawns a child", %{root: root} do
-    # The live incident's exit-2 trigger: a probe firing after the final
-    # step produced an EMPTY --resume-from child. There is nothing left to
-    # hand off, so the run must finish normally — proven here by a release
-    # root with no bin/workstation at all (a spawn would fail loudly).
+  test "an empty remaining handoff never spawns a child", %{root: root} do
+    # The live incident's exit-2 trigger: an empty --resume-from child.
+    # The daemon reports handed_off with nothing left only in a degenerate
+    # case, but the client-side guard must hold regardless: nothing left to
+    # hand off = finish normally — proven here by a release root with no
+    # bin/workstation at all (a spawn would fail loudly).
     release = Path.join(root, "never-spawned")
-    {:ok, exec_pid} = Agent.start_link(fn -> 0 end)
-
-    probe = fn _opts ->
-      ran = Agent.get_and_update(exec_pid, fn n -> {n, n + 1} end)
-      if ran >= 5, do: {:ok, release}, else: {:ok, nil}
-    end
 
     output =
       ExUnit.CaptureIO.capture_io(:stdio, fn ->
         assert :ok =
                  Plain.run(:update, destination: "HOME",
-                   executor: fn %{"step" => _step} -> :ok end, handoff_probe: probe
+                   executor: fn %{"steps" => _s, "events" => _e} ->
+                     {:ok, %{"handed_off" => true, "remaining_steps" => []}}
+                   end,
+                   handoff_release_root: release
                  )
       end)
 
@@ -186,15 +190,15 @@ defmodule Workstation.CLITest.PlainTest do
 
   test "a validation exit under the handed-off release fails fast, exactly once", %{root: root} do
     release = fake_release(root, 2)
-    probe = fn _opts -> {:ok, release} end
 
     output =
       ExUnit.CaptureIO.capture_io(:stderr, fn ->
         assert catch_exit(
                  ExUnit.CaptureIO.capture_io(:stdio, fn ->
                    Plain.run(:update, destination: "HOME",
-                     executor: fn %{"step" => _step} -> :ok end,
-                     handoff_probe: probe,
+                     executor: fn %{"steps" => _s, "events" => _e} ->
+                       {:ok, %{"handed_off" => true, "remaining_steps" => ["sync", "verify"]}}
+                     end,
                      handoff_release_root: release
                    )
                  end)
@@ -210,15 +214,15 @@ defmodule Workstation.CLITest.PlainTest do
 
   test "a nonzero child exit fails the run with the child's status", %{root: root} do
     release = fake_release(root, 3)
-    probe = fn _opts -> {:ok, release} end
 
     output =
       ExUnit.CaptureIO.capture_io(:stderr, fn ->
         assert catch_exit(
                  ExUnit.CaptureIO.capture_io(:stdio, fn ->
                    Plain.run(:update, destination: "HOME",
-                     executor: fn %{"step" => _step} -> :ok end,
-                     handoff_probe: probe,
+                     executor: fn %{"steps" => _s, "events" => _e} ->
+                       {:ok, %{"handed_off" => true, "remaining_steps" => ["sync", "verify"]}}
+                     end,
                      handoff_release_root: release
                    )
                  end)
@@ -228,25 +232,23 @@ defmodule Workstation.CLITest.PlainTest do
     assert output =~ "update failed under the handed-off release (exit 3)"
   end
 
-  test "the composition spawns the release ROOT, never the note's identity value", %{root: root} do
+  test "the composition spawns the daemon-REPORTED release ROOT, never the note's identity value", %{root: root} do
     # The P0 in 0fb69a4f shipped because the unit tests injected a
     # PATH-SHAPED probe value while production passed the identity stamp:
-    # the note and the probe must meet through the real Engine probe, and
-    # the spawn bin must be derived from the release root — a stamp-shaped
-    # note value used as a spawn path raised a raw :enoent ErlangError on
-    # the live host. This test composes the REAL
-    # Engine.update_handoff/1 (no :handoff_probe injection) with the real
-    # spawn-path derivation (only the release root is a fixture) and a
-    # STAMP-shaped note value.
+    # the note and the spawn must meet through the real daemon report, and
+    # the spawn bin must be derived from the reported release ROOT — a
+    # stamp-shaped note value used as a spawn path raised a raw :enoent
+    # ErlangError on the live host. This test composes the REAL result
+    # shape (the daemon merges release_root into the handoff record) with
+    # the real spawn-path derivation and a STAMP-shaped note value.
     release = fake_release(root, 0)
     previous_ws = System.get_env("WORKSTATION_HOME")
     System.put_env("WORKSTATION_HOME", root)
     on_exit(fn -> restore_env("WORKSTATION_HOME", previous_ws) end)
 
-    # Caller identity as the chain-start capture would produce it: the
-    # PRE-refresh stamp. The note names the same writer identity (what a
-    # pre-install capture records), NOT a path — the old bug treated the
-    # identity as the child bin.
+    # The note names the WRITER identity (what a pre-install capture
+    # records), NOT a location — the old bug treated the identity as the
+    # child bin. The client must never read it for spawning.
     note = note_path(root)
     File.mkdir_p!(Path.dirname(note))
     File.write!(note, Jason.encode!(%{"from_release" => "pre-refresh-stamp"}))
@@ -255,22 +257,27 @@ defmodule Workstation.CLITest.PlainTest do
       ExUnit.CaptureIO.capture_io(:stdio, fn ->
         assert :ok =
                  Plain.run(:update, destination: "HOME",
-                   executor: fn %{"step" => _step} -> :ok end,
-                   release_identity: "pre-refresh-stamp",
-                   handoff_release_root: release
+                   executor: fn %{"steps" => _s, "events" => _e} ->
+                     {:ok,
+                      %{
+                        "handed_off" => true,
+                        "remaining_steps" => ["bootstrap", "apply", "sync", "verify"],
+                        "release_root" => release
+                      }}
+                   end
                  )
       end)
 
-    # The real probe consumed the stamp-shaped note (identity equal to the
-    # chain-start capture) and the child ran the remaining chain.
+    # The daemon-reported release root drove the spawn; the child ran the
+    # remaining chain.
     assert output =~ "[2/5] bootstrap handed off to the refreshed release"
     assert output =~ "Update handed off to #{release}"
 
     assert File.read!(Path.join(root, "child.argv")) |> String.trim_trailing("\n") ==
              "update --headless --resume-from bootstrap,apply,sync,verify"
 
-    # The spawned BIN is the release root's launcher — recorded by the
-    # child itself as $0 — never the identity token.
+    # The spawned BIN is the reported release root's launcher — recorded by
+    # the child itself as $0 — never the identity token.
     assert File.read!(Path.join(root, "child.bin")) |> String.trim_trailing("\n") ==
              Path.join([release, "bin", "workstation"])
 
@@ -286,7 +293,6 @@ defmodule Workstation.CLITest.PlainTest do
     # before any spawn.
     release = Path.join([root, "empty-release"])
     File.mkdir_p!(Path.join([release, "bin"]))
-    probe = fn _opts -> {:ok, release} end
 
     previous_ws = System.get_env("WORKSTATION_HOME")
     System.put_env("WORKSTATION_HOME", root)
@@ -301,9 +307,10 @@ defmodule Workstation.CLITest.PlainTest do
         assert catch_exit(
                  ExUnit.CaptureIO.capture_io(:stdio, fn ->
                    Plain.run(:update, destination: "HOME",
-                     executor: fn %{"step" => _step} -> :ok end,
-                     handoff_probe: probe,
-                     handoff_release_root: release
+                     executor: fn %{"steps" => _s, "events" => _e} ->
+                       {:ok,
+                        %{"handed_off" => true, "remaining_steps" => ["sync", "verify"], "release_root" => release}}
+                     end
                    )
                  end)
                ) == {:shutdown, 4}
@@ -322,7 +329,6 @@ defmodule Workstation.CLITest.PlainTest do
                  Plain.run(:update,
                    destination: "HOME",
                    executor: fn _payload -> flunk("the executor must not run for an invalid resume list") end,
-                   handoff_probe: fn _opts -> {:ok, nil} end,
                    resume_from: "nope"
                  )
                ) == {:shutdown, 2}
@@ -338,7 +344,6 @@ defmodule Workstation.CLITest.PlainTest do
                  Plain.run(:update,
                    destination: "HOME",
                    executor: fn _payload -> flunk("the executor must not run for an invalid resume list") end,
-                   handoff_probe: fn _opts -> {:ok, nil} end,
                    resume_from: "apply,apply"
                  )
                ) == {:shutdown, 2}
@@ -354,7 +359,6 @@ defmodule Workstation.CLITest.PlainTest do
                  Plain.run(:update,
                    destination: "HOME",
                    executor: fn _payload -> flunk("the executor must not run for an invalid resume list") end,
-                   handoff_probe: fn _opts -> {:ok, nil} end,
                    resume_from: ","
                  )
                ) == {:shutdown, 2}
@@ -363,19 +367,41 @@ defmodule Workstation.CLITest.PlainTest do
     assert output =~ "requires a comma-separated step list"
   end
 
-  test "a probe error fails the chain instead of continuing under stale code" do
-    output =
-      ExUnit.CaptureIO.capture_io(:stderr, fn ->
-        assert catch_exit(
-                 Plain.run(:update,
-                   destination: "HOME",
-                   executor: fn %{"step" => _step} -> :ok end,
-                   handoff_probe: fn _opts -> {:error, "cannot read the release handoff note: eacces"} end
-                 )
-               ) == {:shutdown, 4}
+  test "an aborted op fails the chain and marks the un-run steps skipped" do
+    # M2 abort semantics over the wire: the daemon answers the abort at the
+    # NEXT step boundary, the result arrives as the aborted error code, and
+    # everything the daemon did not settle renders skipped with its
+    # original chain numbering.
+    stdout =
+      ExUnit.CaptureIO.capture_io(:stdio, fn ->
+        stderr_lines =
+          ExUnit.CaptureIO.capture_io(:stderr, fn ->
+            assert catch_exit(
+                     Plain.run(:update, destination: "HOME",
+                       executor: fn %{"steps" => _s, "events" => events} ->
+                         events.(%{"type" => "step.done", "step" => "pull", "ok" => true, "detail" => nil})
+                         {:error, {"aborted", "update aborted at a step boundary"}}
+                       end
+                     )
+                   ) == {:shutdown, 4}
+          end)
+
+        send(self(), {:plain_stderr, stderr_lines})
       end)
 
-    assert output =~ "update failed at handoff: cannot read the release handoff note: eacces"
+    stderr =
+      receive do
+        {:plain_stderr, lines} -> lines
+      after
+        1_000 -> ""
+      end
+
+    output = stdout <> stderr
+
+    assert output =~ "[1/5] pull ok"
+    assert output =~ "[2/5] bootstrap skipped"
+    assert output =~ "[5/5] verify skipped"
+    assert output =~ "update aborted at a step boundary"
   end
 
   # The child stand-in: records its argv (space-joined, the resume contract

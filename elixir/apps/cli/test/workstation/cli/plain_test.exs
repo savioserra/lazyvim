@@ -129,7 +129,17 @@ defmodule Workstation.CLI.PlainTest do
     {:ok, output} =
       run_plain(:update,
         destination: @destination,
-        executor: &Update.dry_run_executor/1
+        executor: fn %{"steps" => steps, "events" => events} ->
+          # ONE daemon op carries the whole chain; the runner renders the
+          # step.done events it streams (same shapes the TUI screen eats).
+          assert steps == Update.steps()
+
+          Enum.each(steps, fn step ->
+            events.(%{"type" => "step.done", "step" => step, "ok" => true, "detail" => nil})
+          end)
+
+          {:ok, %{}}
+        end
       )
 
     for step <- Update.steps() do
@@ -144,15 +154,26 @@ defmodule Workstation.CLI.PlainTest do
     {{:shutdown, 4}, output} =
       run_plain(:update,
         destination: @destination,
-        executor: fn
-          %{"step" => "sync"} -> {:error, "no space left"}
-          %{} -> :ok
+        executor: fn %{"steps" => _steps, "events" => events} ->
+          events.(%{"type" => "step.done", "step" => "pull", "ok" => true, "detail" => nil})
+          events.(%{"type" => "step.done", "step" => "bootstrap", "ok" => true, "detail" => nil})
+          events.(%{"type" => "step.done", "step" => "apply", "ok" => true, "detail" => nil})
+
+          events.(%{
+            "type" => "step.done",
+            "step" => "sync",
+            "ok" => false,
+            "detail" => "no space left"
+          })
+
+          {:error, {"update_failed", "sync failed: no space left"}}
         end
       )
 
     assert output =~ "[3/5] apply ok"
     assert output =~ "[4/5] sync failed: no space left"
     assert output =~ "[5/5] verify skipped"
+    assert output =~ "update failed at sync: no space left"
     refute output =~ "Updated"
   end
 
@@ -167,6 +188,6 @@ defmodule Workstation.CLI.PlainTest do
     # behavior is pinned in ExecutorTest on a fixture home; here only the
     # pure stand-in contract stays (tests only, always succeed).
     assert Apply.dry_run_executor(%{"entries" => []}) == :ok
-    assert Update.dry_run_executor(%{"step" => "pull"}) == :ok
+    assert Update.dry_run_executor(%{"steps" => Update.steps()}) == :ok
   end
 end
