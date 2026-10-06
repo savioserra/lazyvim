@@ -44,7 +44,8 @@ launcher=$DEST/workstation/bin/workstation
 [ -x "$launcher" ] || die "launcher missing or not executable: $launcher"
 
 # Interactive verbs render the TUI on a terminal and hard-error without one,
-# so a piped run (curl | sh) must pass --headless explicitly.
+# so a piped run (curl | sh) must pass --headless explicitly. Only bootstrap
+# and apply have TUI/plain dispatch; sync and verify are always plain.
 verb() {
 	if [ -t 1 ]; then
 		"$1" "$2"
@@ -62,9 +63,9 @@ bin=${HOME}/.local/bin/workstation
 say 'applying managed files'
 verb "$bin" apply
 say 'restoring mutable application state'
-verb "$bin" sync
+"$bin" sync
 say 'verifying installed versions and behavior'
-verb "$bin" verify
+"$bin" verify
 
 say 'done: workstation is installed, applied and verified'
 case ":${PATH}:" in
