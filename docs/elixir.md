@@ -628,15 +628,20 @@ as unusable — pass `--headless` there.
 A bare `workstation` on a usable terminal opens the **TUI application
 shell** (`Workstation.CLI.TUI.Shell`) — one full-screen app instead of a
 prompt. The shell is a second Elm component (`TermUI.Elm`) that owns a tab
-strip (`1..7`, `←/→` wrap, `?` help-and-back, `q` quit) and renders every
+strip (`1..7` tabs, `←/→` switch — on the capabilities tab they drill
+instead, `?` help-and-back, `q` quit) and renders every
 read view in-app: `status` and `plan` (the verb text, scrollable), `diff`,
 the **capabilities browser** (domain-grouped rollups, `↑/↓` move, `enter`
-toggles drill-down to packages then file rows, `left` collapses), the
-**daemon health pane** (handshake state, uptime, update verdict), and
-`help`. Read tabs load over the client/daemon protocol through
-`Workstation.CLI.Core` (the same seams as the verbs — the daemon stays the
-only source of live state) and every pane has explicit loading, empty,
-error and daemon-disconnected states.
+or `→` expands a rollup down to packages then file rows, `←` or
+`backspace` collapses), the
+**daemon health pane** (a live `status.run` probe: reachability, engine,
+destination, platform, package/graph/journal counts — the status wire
+exposes no pid/uptime, and the update verdict lives on the home tab), and
+`help`. Read tabs load over the client/daemon protocol with the same
+daemon ops as the verbs (`Workstation.CLI.DaemonClient` — the daemon stays
+the only source of live state; `Workstation.CLI.Core` is the `--input`
+offline evaluator and is not on the shell path) and every pane has
+explicit loading, empty, error and daemon-disconnected states.
 
 `apply` and `update` open as **screens inside the app** (the shell embeds
 `Workstation.CLI.TUI.Apply`/`Update` in a body rect and forwards keys and
@@ -646,7 +651,7 @@ keeps running daemon-side. The standalone entry points (`workstation
 apply`, `workstation update` from a shell) are unchanged and keep their
 text-first flows for scripts; the shell only adds the in-app route to the
 same components. The TTY contract above governs the bare verb too: a
-non-TTY bare `workstation` prints the one-line hint and the help, never a
+non-TTY bare `workstation` prints the verb help and exits 0, never a
 hang. Tests drive the shell through `TermUI.Runtime` with fake wires and
 recorded event streams, so every state is replayable.
 

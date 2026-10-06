@@ -75,8 +75,8 @@ workstation capabilities  # capability-domain rollups with per-package/file dril
 On a usable terminal the bare verb opens the TUI application shell: every
 read view and the capabilities browser are tabs in one app, and `apply`/
 `update` open as screens within it (their daemon-event-driven behavior is
-unchanged). Without a TTY the bare verb prints a one-line hint and the
-help instead of hanging.
+unchanged). Without a TTY the bare verb prints the verb help instead of
+hanging (exit 0, no TUI start).
 
 Interactive verbs (`apply`, `update`) render the terminal UI when stdout is
 a usable terminal. Scripts and CI pass `--headless` to run the plain
