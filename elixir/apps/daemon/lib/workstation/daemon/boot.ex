@@ -18,6 +18,7 @@ defmodule Workstation.Daemon.Boot do
 
   alias Workstation.Core.EngineState
   alias Workstation.Daemon.Application
+  alias Workstation.Daemon.Listener
 
   @doc """
   Start the daemon tree and park. Returns only on a start failure —
@@ -35,10 +36,22 @@ defmodule Workstation.Daemon.Boot do
     # Application tree module.)
     Elixir.Application.put_env(:daemon, :update_check, true)
 
-    case Application.start(:normal, []) do
-      :ok ->
+    # The same tree the OTP callback and the tests boot: supervisor_spec/0
+    # is the single source of the rest_for_one wiring (same name, same
+    # order) — started here directly because this tree outlives no
+    # application master: the park() below is its keeper.
+    case Supervisor.start_link(Application.children(),
+           strategy: :rest_for_one,
+           name: Workstation.Daemon.Supervisor
+         ) do
+      {:ok, _supervisor} ->
         Logger.info("workstation daemon serving #{EngineState.home()}")
         park()
+
+      # Belt-and-braces refusal: the Registry pre-check in the CLI already
+      # refuses a served home; this arm covers a direct in-VM double boot.
+      {:error, {:already_started, _supervisor}} ->
+        {:error, {:already_running, Listener.socket_path(EngineState.home())}}
 
       {:error, reason} ->
         {:error, reason}

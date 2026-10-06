@@ -51,6 +51,7 @@ defmodule Workstation.CLI.Router do
   alias Workstation.CLI.TUI.{Apply, Update}
   alias Workstation.CLI.Control
   alias Workstation.Core.CanonicalJSON
+  alias Workstation.Daemon.Boot
 
   @no_terminal "workstation: no usable terminal; pass --headless for non-interactive runs"
 
@@ -177,7 +178,11 @@ defmodule Workstation.CLI.Router do
           args: [
             action: [
               value_name: "ACTION",
-              nargs: :optional,
+              # The BARE verb is the foreground boot (the ensure-daemon
+              # spawn target); optimus args are required unless told so,
+              # and an ACTION-required verb would strand the spawn on a
+              # usage error. The only explicit action today is `stop`.
+              required: false,
               help: "stop — stop a running daemon (the manual stop path)"
             ]
           ]
@@ -242,14 +247,29 @@ defmodule Workstation.CLI.Router do
     end
   end
 
-  # `daemon stop` is the MANUAL stop path — nothing stops a running daemon
-  # behind the operator's back. Failure to reach or stop a daemon is an
-  # operator-facing error (exit 4).
-  # `daemon stop` is the MANUAL stop path — nothing stops a running daemon
-  # behind the operator's back. Failure to reach or stop a daemon is an
-  # operator-facing error (exit 4).
+  # `workstation daemon` (no action) is the FOREGROUND boot: `Boot.run`
+  # starts the tree and parks the caller, keeping this VM alive serving the
+  # state socket — ensure-daemon spawns exactly this verb, detached, with
+  # stdio into the daemon state dir's log. `daemon stop` is the MANUAL stop
+  # path — nothing stops a running daemon behind the operator's back.
+  # Failure to boot or stop a daemon is an operator-facing error (exit 4).
   defp dispatch(:daemon, result, _mode) do
     case result.args[:daemon][:action] do
+      nil ->
+        case Boot.run() do
+          :ok ->
+            # Boot.run parked forever; this arm returns only if parking
+            # was interrupted (the VM is going down either way).
+            {:ok, :ok}
+
+          {:error, {:already_running, socket_path}} ->
+            fail(4, "error: a daemon is already running at #{socket_path} " <>
+                      "(stop it with `workstation daemon stop`)")
+
+          {:error, reason} ->
+            fail(4, "error: daemon boot failed: #{inspect(reason)}")
+        end
+
       "stop" ->
         case Control.stop() do
           :ok -> {:ok, IO.puts("daemon: stopped")}
@@ -430,9 +450,13 @@ defmodule Workstation.CLI.Router do
 
   defp emit(command, wire, json: false), do: {:ok, IO.puts(render(command, wire))}
 
-  defp render(:status, %{"schema" => "workstation.status/1"} = wire), do: Render.core_status(wire)
-  defp render(:plan, %{"schema" => "workstation.plan/1"} = wire), do: Render.core_plan(wire)
-  defp render(:diff, %{"schema" => "workstation.diff/1"} = wire), do: Render.core_diff(wire)
+  # The hard-cut read wires are the daemon's .v1 schemas
+  # (`Workstation.Daemon.Read.status_schema/0` et al) — plain-text rendering
+  # must match the wire the daemon actually answers (the stale `status/1`
+  # slash forms matched nothing and crashed every plain `status`).
+  defp render(:status, %{"schema" => "workstation.status.v1"} = wire), do: Render.core_status(wire)
+  defp render(:plan, %{"schema" => "workstation.plan.v1"} = wire), do: Render.core_plan(wire)
+  defp render(:diff, %{"schema" => "workstation.diff.v1"} = wire), do: Render.core_diff(wire)
 
   ## lifecycle plumbing
 

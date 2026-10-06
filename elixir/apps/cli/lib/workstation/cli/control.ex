@@ -21,8 +21,11 @@ defmodule Workstation.CLI.Control do
   """
   @spec stop() :: :ok | {:error, String.t()}
   def stop do
+    # The op's wire result is %{{"stopping" => true}} — a plain `:ok` arm
+    # can never match and would crash the operator's stop with a
+    # CaseClauseError exactly when it succeeded.
     case DaemonClient.control("daemon.stop") do
-      :ok -> :ok
+      {:ok, %{"stopping" => true}} -> :ok
       {:error, reason} -> {:error, reason}
     end
   end

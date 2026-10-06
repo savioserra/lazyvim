@@ -56,7 +56,10 @@ defmodule Workstation.CLI.Plain do
         run_apply(destination, Keyword.fetch!(opts, :plan), Keyword.get(opts, :executor, &Executor.apply_executor/1))
 
       :update ->
-        run_update(destination, Keyword.get(opts, :executor, &Executor.update_executor/1), opts)
+        # The WIRE executor: run_update needs the op record (the handoff
+        # marker and remaining steps); the folded TUI shape would collapse
+        # every success to :ok and crash this case clause.
+        run_update(destination, Keyword.get(opts, :executor, &Executor.update_wire_executor/1), opts)
     end
   end
 

@@ -32,8 +32,12 @@ defmodule Workstation.Umbrella.MixProject do
   # same name: `workstation` on PATH must be the product CLI (docs/elixir.md
   # §CLI), while OTP lifecycle access (start/stop/rpc/eval — used by the
   # daemon boot path and ops) stays available under `_ctl`. The dispatcher
-  # forwards control verbs unchanged and boots the release VM for every CLI
-  # verb, handing argv straight to `Workstation.CLI.Router.main/1`.
+  # forwards the control verbs (`Workstation.CLI.ControlVerbs`) unchanged
+  # and boots the release VM for every CLI verb, handing argv straight to
+  # `Workstation.CLI.Router.main/1`. `daemon` is deliberately not a control
+  # verb: the Router owns it (the bare verb is the foreground boot the
+  # ensure-daemon spawn targets), so the verb list lives in the CLI app
+  # where that contract is tested.
   defp releases do
     [
       workstation: [
@@ -43,8 +47,6 @@ defmodule Workstation.Umbrella.MixProject do
       ]
     ]
   end
-
-  @control_verbs ~w(start start_iex daemon daemon_iex eval rpc remote restart stop pid version)
 
   @doc false
   def cli_dispatch_step(%Mix.Release{} = release) do
@@ -57,7 +59,7 @@ defmodule Workstation.Umbrella.MixProject do
     set -eu
     dir=$(cd "$(dirname "$0")" && pwd)
     case "${1:-}" in
-    #{Enum.map_join(@control_verbs, "|", &("  " <> &1))})
+    #{Enum.map_join(Workstation.CLI.ControlVerbs.list(), "|", &("  " <> &1))})
       exec "$dir/workstation_ctl" "$@" ;;
     *)
       exec "$dir/workstation_ctl" eval 'Workstation.CLI.Router.main(System.argv())' "$@" ;;

@@ -39,6 +39,21 @@ defmodule Workstation.CLI.RenderTest do
     assert "journal: generation=g1 revision=2 at=1700000000" in lines(journaled)
   end
 
+  test "core_status folds the wire's null journal (canonical-JSON :null) to none" do
+    # Regression (2026-10-06 smoke): a fresh home's status wire carries
+    # "journal": null, and the CLI's canonical-JSON decode surfaces it as
+    # the :null atom — the renderer must answer "journal: none", not crash
+    # Access on it (plain `workstation status` on a fresh home).
+    wire = %{
+      "schema" => "workstation.status.v1",
+      "platform" => "linux-x64",
+      "packages" => [],
+      "journal" => :null
+    }
+
+    assert "journal: none" in lines(Render.core_status(wire))
+  end
+
   test "core_status renders the availability line only when the check resolved" do
     behind =
       Render.core_status(%{

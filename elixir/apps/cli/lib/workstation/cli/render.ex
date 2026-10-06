@@ -33,12 +33,14 @@ defmodule Workstation.CLI.Render do
 
     journal_line =
       case Map.get(wire, "journal") do
-        nil ->
-          "journal: none"
-
-        journal ->
+        # A fresh home's journal is null on the wire (canonical-JSON null
+        # decodes to the :null atom here) — anything but a map is "none".
+        journal when is_map(journal) ->
           "journal: generation=#{journal["generation"]} revision=#{render_value(journal["revision"])}" <>
             maybe_at(journal)
+
+        _ ->
+          "journal: none"
       end
 
     join([

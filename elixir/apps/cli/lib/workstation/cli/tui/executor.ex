@@ -55,10 +55,26 @@ defmodule Workstation.CLI.TUI.Executor do
   """
   @spec update_executor(map()) :: :ok | {:error, String.t()}
   def update_executor(%{"steps" => steps} = request) when is_list(steps) do
-    fold(DaemonClient.call("update.run", %{"steps" => steps}, on_event: events_pipe(request), timeout_ms: @lifecycle_timeout_ms))
+    fold(update_wire_executor(request))
   end
 
   def update_executor(_payload), do: {:error, "malformed update request"}
+
+  @doc """
+  The UNFOLDED update executor for the headless runner: the raw
+  `DaemonClient.call` shapes (`{:ok, record}` with the handoff marker, or
+  the tagged refusal pairs) — `Workstation.CLI.Plain.run_update` must see
+  the record to drive the release handoff, while the TUI screens consume
+  the folded `:ok | {:error, message}` shape (`update_executor/1`).
+  """
+  @spec update_wire_executor(map()) ::
+          {:ok, map()}
+          | {:error, {atom() | String.t(), String.t()} | String.t()}
+  def update_wire_executor(%{"steps" => steps} = request) when is_list(steps) do
+    DaemonClient.call("update.run", %{"steps" => steps}, on_event: events_pipe(request), timeout_ms: @lifecycle_timeout_ms)
+  end
+
+  def update_wire_executor(_payload), do: {:error, {"invalid_params", "malformed update request"}}
 
   # The events sink arrives inside the request map (an optional
   # `(event) -> any` fun); the daemon streams op progress frames and each
