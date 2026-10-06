@@ -623,6 +623,33 @@ scripts) passes `--headless` explicitly. The heuristic's known limit: a
 usable terminal behind a pager or multiplexer that strips `TERM` is treated
 as unusable — pass `--headless` there.
 
+### TUI application shell (the bare verb)
+
+A bare `workstation` on a usable terminal opens the **TUI application
+shell** (`Workstation.CLI.TUI.Shell`) — one full-screen app instead of a
+prompt. The shell is a second Elm component (`TermUI.Elm`) that owns a tab
+strip (`1..7`, `←/→` wrap, `?` help-and-back, `q` quit) and renders every
+read view in-app: `status` and `plan` (the verb text, scrollable), `diff`,
+the **capabilities browser** (domain-grouped rollups, `↑/↓` move, `enter`
+toggles drill-down to packages then file rows, `left` collapses), the
+**daemon health pane** (handshake state, uptime, update verdict), and
+`help`. Read tabs load over the client/daemon protocol through
+`Workstation.CLI.Core` (the same seams as the verbs — the daemon stays the
+only source of live state) and every pane has explicit loading, empty,
+error and daemon-disconnected states.
+
+`apply` and `update` open as **screens inside the app** (the shell embeds
+`Workstation.CLI.TUI.Apply`/`Update` in a body rect and forwards keys and
+resizes), keeping their daemon-event-driven behavior — the screens never
+drive steps, `x` aborts at the next boundary, `q` detaches and a running op
+keeps running daemon-side. The standalone entry points (`workstation
+apply`, `workstation update` from a shell) are unchanged and keep their
+text-first flows for scripts; the shell only adds the in-app route to the
+same components. The TTY contract above governs the bare verb too: a
+non-TTY bare `workstation` prints the one-line hint and the help, never a
+hang. Tests drive the shell through `TermUI.Runtime` with fake wires and
+recorded event streams, so every state is replayable.
+
 The screens themselves are event-driven clients: the apply screen sends
 ONE `apply.run` op on confirm and the update screen ONE `update.run`
 sub-chain op on open; rows transition (`pending → running → ok/failed/

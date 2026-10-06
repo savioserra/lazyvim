@@ -174,6 +174,40 @@ herdr
 | `theme` | Single source-root `.chezmoidata.toml` token envelope via `provision.chezmoi_data`; deploys no home target | — | Envelope bytes against the tokens module; requires `foundation` | All |
 | `tmux` | Plugin checkout; tmux config/theme/link recipes | — | Commits, server, theme | Linux/macOS |
 
+## Capability domains
+
+The desired state is presented grouped by **capability domain** — the
+`foundation/<name>` lifecycle layers the catalog already declares —
+wherever it is listed: the `workstation capabilities` verb (text and
+`--json`), and the TUI capabilities browser. One pure view,
+`Workstation.CLI.Capabilities.group/1`, folds the existing `status` and
+`plan` wires into that envelope, so the CLI listing and the browser cannot
+disagree about structure or counts.
+
+Grain contract: domains and packages are rollup rows (package count, file
+count, how many files would change, last applied generation in the
+header); file rows are the drill-down leaves. Never a raw file dump at the
+top level. Every file appears exactly once, under its primary package
+(`hd(attribution)`), with remaining contributors shown as an `also` note;
+entries without attribution land in an honest `unattributed` bucket.
+
+Domain order is lifecycle order; the mapping today:
+
+| Domain | Packages |
+| --- | --- |
+| `base` | `foundation` |
+| `fonts` | `fonts` |
+| `runtime` | `node`, `go` |
+| `editor` | `nvim`, `nvim-typescript`, `helix` |
+| `terminal` | `tmux`, `herdr`, `herdr-pi` |
+| `theme` | `theme` |
+| `agent` | `agent`, `pi-skills`, `pi-ntfy-notifier` |
+| `secrets` | `secrets` |
+
+A foundation name outside the pinned lifecycle order still renders
+(appended, sorted) rather than vanishing — a wrong-grained taxonomy is
+surfaced, not hidden.
+
 ## Validation
 
 The catalog and graph reject missing or duplicate package identities, invalid

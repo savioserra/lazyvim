@@ -61,6 +61,7 @@ commands below (managed shell files also do this for future shells).
 ## Daily lifecycle
 
 ```sh
+workstation          # TUI home (TTY): tabs for status/plan/diff/capabilities/daemon/help
 workstation plan     # attributable change-set/patch preview; mutates nothing
 workstation diff     # preview file-backend changes (not a setup simulation)
 workstation apply    # guarded legacy retirement, files, then package setup
@@ -68,7 +69,14 @@ workstation sync     # separately restore mutable application state
 workstation verify   # check installed versions and behavior
 workstation update   # git pull --ff-only, fresh bootstrap, apply, sync, verify
 workstation status   # inspect paths, the explicit package graph and the catalog taxonomy
+workstation capabilities  # capability-domain rollups with per-package/file drill-down
 ```
+
+On a usable terminal the bare verb opens the TUI application shell: every
+read view and the capabilities browser are tabs in one app, and `apply`/
+`update` open as screens within it (their daemon-event-driven behavior is
+unchanged). Without a TTY the bare verb prints a one-line hint and the
+help instead of hanging.
 
 Interactive verbs (`apply`, `update`) render the terminal UI when stdout is
 a usable terminal. Scripts and CI pass `--headless` to run the plain
