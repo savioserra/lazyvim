@@ -1,13 +1,15 @@
 defmodule Workstation.Daemon.ApplyTest do
   @moduledoc """
-  The graduation gate around the daemon's engine applier. Ships OFF (the
-  `not_graduated` refusal stays the wire answer and the lock still serializes
-  the refusal), and when the flag is flipped the real pipeline runs end to
-  end against a SANDBOX home: server-side plan from a sandbox catalog
-  fixture, backend apply through the pinned argv, journal record, and the
-  `locked` mapping under contention. The update lifecycle re-uses this
-  module as its `apply` step (Workstation.Daemon.Update); its mutation
-  steps answer the same gate and its read-only steps serve now.
+  The graduation gate around the daemon's engine applier — RETIRED OPEN
+  (`apply.run` serves the real pipeline by default; the `not_graduated`
+  refusal is pinned by explicitly closing the gate in the application
+  environment, and the lock still serializes the refusal). With the gate
+  open the real pipeline runs end to end against a SANDBOX home:
+  server-side plan from a sandbox catalog fixture, backend apply through
+  the pinned argv, journal record, and the `locked` mapping under
+  contention. The update lifecycle (`Workstation.Daemon.Lifecycle`)
+  executes its `apply` step itself and is never graduation-gated; this
+  module stays the gated `apply.run` op surface.
   """
 
   use ExUnit.Case, async: false

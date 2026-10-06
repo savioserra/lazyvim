@@ -8,11 +8,11 @@ defmodule Workstation.Daemon.Apply do
   (`@engine_apply_default true`). The application environment key remains
   settable (`Application.put_env(:daemon, :engine_apply, false)`) purely so
   the refusal path stays exercisable in tests — a closed gate answers the
-  honest `not_graduated` refusal on every gated mutation surface. The UPDATE
-  lifecycle (`Workstation.Daemon.Update`) re-uses this module as its `apply`
-  step executor: `run_current/1` runs the same pipeline without taking the
-  lock itself, because the update orchestrator already holds the one lock
-  both surfaces serialize through.
+  honest `not_graduated` refusal on every gated mutation surface. The update
+  lifecycle (`Workstation.Daemon.Lifecycle`) executes its `apply` step
+  itself — a fresh server-side plan run inline through `ApplyEngine.execute`
+  inside the step's own lock acquisition — so this module stays the
+  `apply.run` op surface.
 
   When the gate is open, `run/2` executes the real one-shot pipeline —
   compose the desired plan through the shared Core composition
@@ -95,54 +95,27 @@ defmodule Workstation.Daemon.Apply do
   # plan is built OUTSIDE the lock (the one-shot composes unlocked too) —
   # staleness between collection and lock acquisition is exactly the window
   # the in-lock preconditions exist to catch. Errors are coded for this
-  # surface: `code`/`prefix` distinguish the apply gate from the update chain.
-  defp collect_plan(collector, home, code \\ "apply_refused", prefix \\ "apply") do
+  # surface (`apply_refused`).
+  defp collect_plan(collector, home) do
     case Plan.composed_plan(home, collector) do
       {:ok, plan} ->
         {:ok, plan}
 
       {:error, {:collect_failed, reason}} ->
-        {:error, {code, prefix <> " plan collection failed: #{inspect(reason)}"}}
+        {:error, {"apply_refused", "apply plan collection failed: #{inspect(reason)}"}}
 
       {:error, message} ->
-        {:error, {code, message}}
-    end
-  end
-
-  @doc """
-  The update chain's `apply` step: a fresh server-side plan executed under
-  the CALLER's orchestrator lock — the update orchestrator already holds
-  the apply lock, and a nested `with_lock` would deadlock on the same
-  GenServer, so this entry point never acquires; that is the delegation
-  contract, not a convenience. No requested generation exists on this
-  surface (the chain applies the CURRENT desired state, nothing client
-  supplied to be stale), so the built plan's own generation is the truth.
-  """
-  @spec run_current(keyword()) :: {:ok, map()} | {:error, {String.t(), String.t()}}
-  def run_current(opts \\ []) when is_list(opts) do
-    home = opts[:home] || EngineState.home()
-
-    with {:ok, plan} <- collect_plan(opts[:collector], home, "update_failed", "update apply") do
-      execute_current(plan, home)
-    end
-  end
-
-  defp execute_current(plan, home) do
-    try do
-      generation = ApplyEngine.execute(plan, %{"home" => home})
-      {:ok, %{"generation" => generation}}
-    rescue
-      error in ArgumentError ->
-        {:error, {"update_failed", Exception.message(error)}}
+        {:error, {"apply_refused", message}}
     end
   end
 
   defp execute_locked(plan, requested_generation, home) do
     # The lock fun runs in the ORCHESTRATOR process: a raise here would kill
     # that GenServer (socket death for every session) — the same failure mode
-    # Update.guarded/1 guards on the update chain. Engine failures therefore
-    # fold to an error result INSIDE the fun, so the lock is released and the
-    # caller receives an error frame, never a crashed daemon.
+    # Workstation.Daemon.Lifecycle.guarded/3 guards on the update chain.
+    # Engine failures therefore fold to an error result INSIDE the fun, so the
+    # lock is released and the caller receives an error frame, never a crashed
+    # daemon.
     result =
       ApplyOrchestrator.with_lock("apply.run generation=#{requested_generation}", fn ->
         guarded(fn ->

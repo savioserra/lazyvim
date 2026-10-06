@@ -420,12 +420,17 @@ Lifecycle ops: the mutating surface is `apply.run` (generation + entries)
 and `update.run` (a `steps` SUB-CHAIN — `pull`, `bootstrap`, `apply`,
 `sync`, `verify` — or the whole lifecycle in one op), plus the bootstrap-
 and reconciliation-only verbs `bootstrap.run`, `sync.run`, `verify.run`
-that the CLI's like-named verbs route to. Both mutating ops are dispatched
-inside the orchestrator's apply lock — the same lock file the Lua one-shot
-apply took — and were held at the `not_graduated` gate until the c3
-c graduation run flipped the flag: the op surface, wire schema, and lock
+that the CLI's like-named verbs route to. Both mutating ops serialize
+through the orchestrator's apply lock — the same lock file the Lua one-shot
+apply took — at different scopes: `apply.run` runs its whole pipeline
+inside one acquisition, `update.run` acquires PER STEP (`bootstrap`,
+`apply`, `sync`; `pull` and `verify` are lockless). The `not_graduated`
+graduation gate (`Workstation.Daemon.Apply.enabled?/0`, flipped open at
+graduation) covers the `apply.run` op ONLY — the `update.run` chain is
+deliberately never gated, because `bootstrap` installs the release the
+daemon itself runs from; the op surface, wire schema, and lock
 serialization never churned across the flip. Flag-off behavior still
-answers `not_graduated` for the mutating steps, and the flag-off refusal
+answers `not_graduated` on `apply.run`, and the flag-off refusal
 tests stay. Reads (`status.run`/`plan.run`/`diff.run`) serve the hard-cut
 wires from the daemon's own pinned home; `update.check` (read-only,
 TTL-cached, see the architecture section) and `theme.resolve` complete the
@@ -457,7 +462,7 @@ auth is the daemon's only trust boundary, the listener verifies the
 capability at boot and exits `{:peercred_unavailable, why}` rather than
 serving unauthenticated.
 
-## Update lifecycle (apps/core `Workstation.Core.Update.*`, apps/daemon `Workstation.Daemon.Update`)
+## Update lifecycle (apps/core `Workstation.Core.Update.*`, apps/daemon `Workstation.Daemon.Lifecycle`)
 
 The UPDATE lifecycle is ported one step per module, semantics anchored to
 the retired Lua update verb (`workstation/apps/cli/run.lua`, deleted with
@@ -473,24 +478,28 @@ phases of `docs/capabilities.md`:
   sibling-rename activation), the pinned chezmoi backend artifact, and the
   canonical public launcher symlink (conflicting paths are refused, never
   replaced);
-* `apply` — delegates to the engine applier (`Workstation.Daemon.Apply.run_current/1`)
-  while already holding the orchestrator's apply lock;
+* `apply` — a fresh server-side plan executed inline
+  (`Workstation.Core.ApplyEngine.execute`) under the step's own apply-lock
+  acquisition;
 * `sync` — re-collect + plan reconciliation: the freshly built generation
   must still match the journal's applied generation;
 * `verify` — launcher canonicity plus per-package fingerprint verification
   of every applied target against the journal's ownership record.
 
 `update.run` serves a steps SUB-CHAIN per request (the whole lifecycle or
-any suffix — the resume vocabulary below); every step runs under the same
-exclusive apply lock the applier and the Lua one-shot serialize through.
+any suffix — the resume vocabulary below); locks are acquired PER STEP —
+`bootstrap`, `apply`, and `sync` each take the exclusive apply lock the
+one-shot apply serializes through, while `pull` and `verify` run lockless.
 The c1 graduation flag (`Workstation.Daemon.Apply.enabled?/0`) gates the
-MUTATION steps (pull, bootstrap, apply) — the read-only steps (sync,
-verify) serve regardless; with the daemon as the only mutation engine the
-flag is OPEN in the shipped release (the daemon refusing would leave no
-mutation path at all) and the flag-off refusal tests pin the gate's
-shape. Step failures surface as `update_failed` with the verbatim engine
-message; gated steps answer `not_graduated`;
-contention answers `locked`.
+`apply.run` op ONLY — the lifecycle chain is deliberately never gated,
+because `bootstrap` installs the release (a chain that honored the gate
+could never refresh the daemon's own code); with the daemon as the only
+mutation engine the flag is OPEN in the shipped release (the daemon
+refusing would leave no mutation path at all) and the flag-off refusal
+tests pin the gate's shape. Step failures surface with the verbatim engine
+message under the step's code (`update_failed` for pull/sync/verify,
+`bootstrap_failed`, `apply_failed`); a flag-off `apply.run` answers
+`not_graduated`; contention answers `locked`.
 No step writes engine state outside the apply orchestration, and the
 network-bound paths (git fetch, artifact download) have no external network
 in tests: pull runs against local fixture repositories, bootstrap against

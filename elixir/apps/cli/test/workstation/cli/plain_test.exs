@@ -182,9 +182,10 @@ defmodule Workstation.CLI.PlainTest do
     assert output =~ "unknown command"
   end
 
-  test "the default executor is the in-process engine seam; stand-ins stay injectable" do
+  test "the default executor is the socket client executor; stand-ins stay injectable" do
     # The production default behind the screens and this runner is
-    # Workstation.CLI.TUI.Executor — the engine under the apply lock. Its
+    # Workstation.CLI.TUI.Executor — the socket client path; the daemon
+    # owns the apply lock. Its
     # behavior is pinned in ExecutorTest on a fixture home; here only the
     # pure stand-in contract stays (tests only, always succeed).
     assert Apply.dry_run_executor(%{"entries" => []}) == :ok

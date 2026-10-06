@@ -72,7 +72,7 @@ required.
 - A raise inside ApplyOrchestrator.with_lock's fun runs in the ORCHESTRATOR
   process: an uncaught non-ArgumentError kills it and the session gets an
   unrescuable EXIT (socket dies, no reply). Wrap locked step bodies in
-  try/rescue/catch (Workstation.Daemon.Update.guarded/1); keep engine
+  try/rescue/catch (Workstation.Daemon.Lifecycle.guarded/3); keep engine
   failures ArgumentError (ApplyEngine.run_backend now converts missing
   backend File.Error).
 - This sandbox's /tmp has served STALE page-cache bytes for a just-tarred
