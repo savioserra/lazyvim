@@ -71,6 +71,34 @@ defmodule Workstation.CLI.TUI.Executor do
     end
   end
 
+  @doc """
+  Update-availability check executor (supervisor-directed scope): one
+  `update.check` op — read-only, daemon-side, TTL-cached — returning the
+  raw verdict for `Workstation.CLI.TUI.UpdateHint` to fold. The screens
+  fire it asynchronously; transport failures ride the same result shape
+  and fold to silence there.
+  """
+  @spec update_check_executor() :: {:ok, map()} | {:error, String.t()}
+  def update_check_executor do
+    case DaemonClient.call("update.check", %{}) do
+      {:ok, verdict} when is_map(verdict) -> {:ok, verdict}
+      {:error, {tag, message}} when is_atom(tag) -> {:error, message}
+      {:error, {code, message}} when is_binary(code) -> {:error, "#{code}: #{message}"}
+      {:error, code, message} -> {:error, "#{code}: #{message}"}
+    end
+  end
+
+  @doc """
+  Abort executor: forwards `op.abort` for an in-flight stream token. The
+  daemon cancels the op at its NEXT STEP BOUNDARY (never mid-step) and the
+  chain settles as aborted; best-effort — a racing finish is an error
+  value, never a crash.
+  """
+  @spec abort_executor(String.t()) :: :ok | {:error, String.t()}
+  def abort_executor(op_ref) when is_binary(op_ref) do
+    DaemonClient.abort(op_ref)
+  end
+
   # Daemon op results fold to the screens' two-value contract. Daemon
   # transport failures are atom-tagged pairs, matched before the wire's
   # binary-code pairs; every message is operator-facing verbatim.

@@ -2,33 +2,42 @@ defmodule Workstation.CLI.TUI.Apply do
   @moduledoc """
   The §5 apply screen: header (destination + generation), capability table
   (id / operation / target, cursor keys), footer key-hints (≤ 40 columns),
-  confirm dialog (`a`), animated apply with Progress 0→100 (`y`), token-
-  guarded success/error Toast, cancel (`n`/Escape), quit (`q`).
+  confirm dialog (`a`), daemon-driven apply with live abort, token-guarded
+  success/error Toast, cancel (`n`/Escape), quit (`q`).
 
   The screen owns the INTERACTION contract only. The apply itself is the
-  `:executor` callback invoked once on confirm: production runs wire
-  `Workstation.CLI.TUI.Executor` — the daemon-orchestrated path (b8), which
-  serializes through the daemon's apply lock and answers `not_graduated`
-  until the engine applier graduates — so an unconfigured screen can render
-  and confirm but has no mutation path at all (`dry_run_executor/1`, pure,
-  always `:ok`).
+  `:executor` callback invoked once on confirm — ONE daemon op
+  (`apply.run`, generation + entries) whose task runs OUTSIDE the Elm loop
+  (`Command.async/2`); the op's event frames come back through
+  `TermUI.send_message/2` and its eventual result as the async
+  completion, so every transition resolves through pure `update/2` and the
+  deterministic backend can replay a recorded run. Production runs wire
+  `Workstation.CLI.TUI.Executor`; an unconfigured screen still renders and
+  confirms on the pure `dry_run_executor/1` with no mutation path at all.
 
-  Progress is theatrical by design: the executor result is known before the
-  first tick, and the 0→100 animation keeps the same shape the real applier
-  will report (b8), so the screen contract does not churn at graduation.
-  Timer ticks carry the run's `make_ref/0` token; late ticks from a
-  superseded run are dropped in update/2 instead of corrupting state.
+  Progress is EVENT-driven at the boundaries the daemon actually reports:
+  `apply.run` publishes `run.started`/`run.finished` (entry-level progress
+  would need core applier hooks, and core/ is frozen by contract — the
+  deferral is recorded in docs/capabilities.md). While the op runs the
+  footer states the fact and offers `x` abort (`op.abort`; the daemon
+  cancels at its next step boundary) and `q` detach (the daemon keeps the
+  lock and finishes without a viewer); the completion toast carries the
+  executor's verdict.
+
+  The passive availability indicator (supervisor-directed engine scope)
+  fires `update.check` asynchronously on screen open; when the branch is
+  behind, the footer surfaces the accent indicator and `u` hands off to
+  the standard update flow (the router launches the update screen).
   """
 
   use TermUI.Elm
 
-  alias TermUI.{Command, Event, Frame, Layout, Style}
-  alias TermUI.Widget.{AlertDialog, Helpers, Progress, Table}
+  alias TermUI.{Command, Event, Frame, Layout, Runtime, Style}
+  alias TermUI.Widget.{AlertDialog, Helpers, Table}
   alias TermUI.Widget.Table.Column
   alias TermUI.Widget.Toast.Manager
 
-  alias Workstation.CLI.TUI.Executor
-  alias Workstation.CLI.TUI.Theme
+  alias Workstation.CLI.TUI.{Executor, Theme, UpdateHint}
 
   @enforce_keys [
     :destination,
@@ -37,12 +46,12 @@ defmodule Workstation.CLI.TUI.Apply do
     :table,
     :dialog,
     :toasts,
-    :progress,
     :phase,
+    :run,
     :theme,
     :dimensions,
     :executor,
-    :tick_ms,
+    :check,
     :toast_ms
   ]
   defstruct [
@@ -52,13 +61,14 @@ defmodule Workstation.CLI.TUI.Apply do
     :table,
     :dialog,
     :toasts,
-    :progress,
     :phase,
     :run,
     :theme,
     :dimensions,
     :executor,
-    :tick_ms,
+    :check,
+    :update_hint,
+    :tui_caller,
     :toast_ms
   ]
 
@@ -72,30 +82,30 @@ defmodule Workstation.CLI.TUI.Apply do
           table: Table.t(),
           dialog: AlertDialog.t(),
           toasts: Manager.t(),
-          progress: Progress.t(),
           phase: phase(),
-          run: %{ref: run_token(), outcome: :ok | {:error, term()}} | nil,
+          run: %{ref: run_token(), op_ref: String.t() | nil, outcome: :ok | {:error, term()}} | nil,
           theme: Theme.colors(),
           dimensions: {pos_integer(), pos_integer()},
           executor: (map() -> :ok | {:error, term()}),
-          tick_ms: pos_integer(),
+          check: (() -> {:ok, map()} | {:error, term()}),
+          update_hint: UpdateHint.hint() | nil,
+          tui_caller: pid() | nil,
           toast_ms: pos_integer()
         }
-
-  @ticks 10
 
   # Footer hints stay ≤ 40 display columns; the frame clips anyway, but the
   # budget keeps every hint readable on the smallest supported terminal.
   @ready_footer "a confirm · ↑↓ move · enter select · q quit"
   @dialog_footer "y confirm apply · n/esc cancel · q quit"
+  @running_footer "applying · x abort · q detach"
   @done_footer "q quit"
   @header_rows 2
 
   @doc """
   Default executor: the pure pre-graduation stand-in. Production runs use
-  `Workstation.CLI.TUI.Executor` (the daemon-orchestrated path, b8 wiring);
-  the pure stand-in stays the default so an accidental unconfigured run can
-  never mutate anything.
+  `Workstation.CLI.TUI.Executor` (the daemon-orchestrated path); the pure
+  stand-in stays the default so an accidental unconfigured run can never
+  mutate anything.
   """
   @spec dry_run_executor(map()) :: :ok
   def dry_run_executor(_request), do: :ok
@@ -165,16 +175,20 @@ defmodule Workstation.CLI.TUI.Apply do
           dismiss_message: :dialog_cancel
         ),
       toasts: Manager.new(id: :apply_toasts),
-      progress: Progress.init(value: 0, label: "apply"),
       phase: :ready,
+      run: nil,
       theme: Keyword.fetch!(opts, :theme),
       dimensions: Keyword.fetch!(opts, :dimensions),
       executor: Keyword.get(opts, :executor, &Executor.apply_executor/1),
-      tick_ms: Keyword.get(opts, :tick_ms, 100),
+      check: Keyword.get(opts, :check, &Executor.update_check_executor/0),
+      update_hint: nil,
+      tui_caller: Keyword.get(opts, :tui_caller),
       toast_ms: Keyword.get(opts, :toast_ms, 5_000)
     }
 
-    state
+    # Screen-open effect: one asynchronous availability check (silent
+    # unless the branch is behind).
+    {state, check_commands(state)}
   end
 
   @doc """
@@ -218,23 +232,46 @@ defmodule Workstation.CLI.TUI.Apply do
   def update({:text, "n"}, %{phase: :dialog} = state), do: %{state | phase: :ready}
   def update({:key, :escape}, %{phase: :dialog} = state), do: %{state | phase: :ready}
 
-  def update({:text, "q"}, state), do: {state, [Command.shutdown(:normal)]}
-
-  def update({:apply_tick, ref}, %{phase: :running, run: %{ref: ref}} = state) do
-    value = min(state.progress.value + div(100, @ticks), 100)
-    progress = Progress.set_value(state.progress, value)
-
-    if value < 100 do
-      {%{state | progress: progress}, [Command.timer(state.tick_ms, {:apply_tick, ref})]}
-    else
-      finish_run(%{state | progress: progress})
-    end
+  # Abort: forwards op.abort with the stream token; the daemon settles the
+  # op at its next boundary and the completion path paints the verdict (a
+  # racing finish surfaces as the abort executor's error value, dropped).
+  def update({:text, "x"}, %{phase: :running, run: %{op_ref: op_ref}} = state)
+      when is_binary(op_ref) do
+    {state, [Command.async(fn -> Executor.abort_executor(op_ref) end, fn _result -> :noop end)]}
   end
 
-  # A tick whose token does not match the live run (cancelled/superseded) is
-  # dropped: token-guarding is what keeps timer effects from acting on stale
-  # state once the run lifecycle can be interrupted.
-  def update({:apply_tick, _stale_ref}, state), do: state
+  def update(:noop, state), do: state
+
+  # Handoff to the standard update flow: only offered while the indicator
+  # is showing (the `[u]` affordance) and the screen is idle. The request
+  # rides to the CLI process that launched the TUI (injected as
+  # `:tui_caller`), which then runs the update screen.
+  def update({:text, "u"}, %{phase: phase, update_hint: hint, tui_caller: caller} = state)
+      when phase in [:ready, :done] and hint != nil do
+    if is_pid(caller), do: send(caller, {:tui_request, {:run_update, state.destination}})
+    {state, [Command.shutdown(:normal)]}
+  end
+
+  def update({:text, "q"}, state), do: {state, [Command.shutdown(:normal)]}
+
+  def update({:apply_event, ref, %{"type" => "run.started", "op_ref" => op_ref}},
+             %{phase: :running, run: %{ref: ref}} = state) do
+    %{state | run: %{state.run | op_ref: op_ref}}
+  end
+
+  def update({:apply_event, _stale_ref, _event}, state), do: state
+
+  def update({:apply_done, ref, outcome}, %{phase: :running, run: %{ref: ref}} = state) do
+    finish_run(%{state | run: %{state.run | outcome: outcome}})
+  end
+
+  def update({:apply_done, _stale_ref, _outcome}, state), do: state
+
+  # The check result folds through UpdateHint: only "behind" surfaces,
+  # everything else (up_to_date, unknown, transport error) is silent.
+  def update({:check_done, verdict}, state) do
+    %{state | update_hint: UpdateHint.fold(verdict)}
+  end
 
   def update({:term_ui_toast_expire, _manager_id, _toast_id, _token} = expire, state),
     do: %{state | toasts: Manager.expire(state.toasts, expire)}
@@ -262,16 +299,26 @@ defmodule Workstation.CLI.TUI.Apply do
 
   ## run lifecycle
 
+  # ONE daemon op on confirm; the events sink queues each frame back into
+  # THIS runtime's Elm loop (self() during init/update is the runtime
+  # process), token-guarded by the run reference.
   defp start_run(state) do
     ref = make_ref()
+    runtime = self()
 
-    # The executor receives the wire-shaped request, not the raw rows: the
-    # daemon op surface (apply.run) is the graduation contract, so the screen
-    # hands over exactly what the protocol schema validates.
-    run = %{ref: ref, outcome: state.executor.(%{"generation" => state.generation, "entries" => state.entries})}
+    request = %{
+      "generation" => state.generation,
+      "entries" => state.entries,
+      "events" => fn event -> Runtime.send_message(runtime, {:apply_event, ref, event}) end
+    }
 
-    {%{state | phase: :running, run: run, progress: Progress.set_value(state.progress, 0)},
-     [Command.timer(state.tick_ms, {:apply_tick, ref})]}
+    command =
+      Command.async(fn -> state.executor.(request) end, fn
+        {:ok, outcome} -> {:apply_done, ref, outcome}
+        {:error, reason} -> {:apply_done, ref, {:error, inspect(reason, pretty: false)}}
+      end)
+
+    {%{state | phase: :running, run: %{ref: ref, op_ref: nil, outcome: nil}}, [command]}
   end
 
   defp finish_run(state) do
@@ -287,7 +334,19 @@ defmodule Workstation.CLI.TUI.Apply do
         duration: state.toast_ms
       )
 
-    {%{state | phase: :done, toasts: toasts}, commands}
+    {%{state | phase: :done, run: nil, toasts: toasts}, commands}
+  end
+
+  defp check_commands(state) do
+    # Total mapper (a raising check degrades to silence, never takes the
+    # loop down) that unwraps the runtime's {:ok, _} envelope: the screen
+    # sees the executor's own {:ok, verdict} | {:error, message} shape.
+    [
+      Command.async(state.check, fn
+        {:ok, result} -> {:check_done, result}
+        {:error, reason} -> {:check_done, {:error, inspect(reason, pretty: false)}}
+      end)
+    ]
   end
 
   ## rendering
@@ -310,9 +369,28 @@ defmodule Workstation.CLI.TUI.Apply do
     )
   end
 
-  defp footer_frame(%{phase: :running} = state, dims), do: Progress.view(state.progress, dims)
+  defp footer_frame(%{phase: :running}, dims), do: Helpers.frame([@running_footer], dims)
   defp footer_frame(%{phase: :dialog}, dims), do: Helpers.frame([@dialog_footer], dims)
+
+  defp footer_frame(%{phase: :done, update_hint: hint} = state, dims) when hint != nil do
+    # The indicator leads the idle footer (accent segment, the locked
+    # wording) — an 80-column terminal cannot fit it after the ready
+    # hints, so when it shows it shares the line with only the essentials.
+    Helpers.frame(
+      [[accent_text(state, UpdateHint.text(hint)), " · ", @done_footer]],
+      dims
+    )
+  end
+
   defp footer_frame(%{phase: :done}, dims), do: Helpers.frame([@done_footer], dims)
+
+  defp footer_frame(%{phase: :ready, update_hint: hint} = state, dims) when hint != nil do
+    Helpers.frame(
+      [[accent_text(state, UpdateHint.text(hint)), " · ", "a confirm · q quit"]],
+      dims
+    )
+  end
+
   defp footer_frame(_state, dims), do: Helpers.frame([@ready_footer], dims)
 
   defp accent_text(state, text) do

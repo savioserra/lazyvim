@@ -5,30 +5,43 @@ defmodule Workstation.CLI.TUI.Update do
   semantics of docs/capabilities.md: a failed step leaves the remaining
   steps skipped, never partially executed).
 
-  The chain is driven as self-messages (`Command.message/1`) so every step
-  transition resolves through pure `update/2` — no process state outside
-  the Elm loop, which is what makes the deterministic backend able to
-  replay an entire update deterministically. The step executor is the same
-  strangler seam as the apply screen: production runs wire
-  `Workstation.CLI.TUI.Executor` — the daemon-orchestrated path (b8), one
-  lifecycle op per chain link, abort on first daemon refusal — while
-  `dry_run_executor/1` remains the pure, always-`:ok` default for tests and
-  offline runs.
+  The chain is ONE daemon op (`update.run` over the full `steps`
+  sub-chain): the daemon owns the locks, the step sequencing and the
+  handoff; the screen RENDERS the op's event frames — `step.started`,
+  `step.done`, `run.finished` — as row transitions, it never drives steps
+  itself. The op task runs outside the Elm loop (`Command.async/2`); each
+  event frame is queued back into the loop with
+  `TermUI.send_message/2`, and the op's eventual result arrives as the
+  async completion. Every transition therefore resolves through pure
+  `update/2`, which is what lets the deterministic backend replay an
+  entire run from a recorded event list.
 
-  A run token (`make_ref/0`) rides in every chain message; a message whose
-  token does not match the live run is dropped, so a restart of the chain
-  can never interleave with a previous one.
+  Run token: a `make_ref/0` rides in every chain message and event; a
+  message whose token does not match the live run is dropped, so a
+  re-launched chain can never interleave with a previous one.
+
+  Abort semantics (docs/capabilities.md): `x` forwards `op.abort` with the
+  stream's `op_ref`; the daemon cancels the chain at its NEXT STEP
+  BOUNDARY — never mid-step — and reports the `"aborted"` outcome, and the
+  still-pending steps render skipped. `q` during a run DETACHES: the
+  daemon keeps the lock and finishes (or aborts) the chain without a
+  viewer; a later `workstation update` re-attaches to the journal's state.
+
+  The passive availability indicator (supervisor-directed engine scope)
+  fires `update.check` asynchronously on open and after every completed
+  chain; when the branch is behind, the footer surfaces the accent
+  indicator and `u` re-runs the update flow (a fresh chain over the same
+  step list).
   """
 
   use TermUI.Elm
 
-  alias TermUI.{Command, Event, Frame, Layout, Style}
+  alias TermUI.{Command, Event, Frame, Layout, Runtime, Style}
   alias TermUI.Widget.{Helpers, Table}
   alias TermUI.Widget.Table.Column
   alias TermUI.Widget.Toast.Manager
 
-  alias Workstation.CLI.TUI.Executor
-  alias Workstation.CLI.TUI.Theme
+  alias Workstation.CLI.TUI.{Executor, Theme, UpdateHint}
 
   @enforce_keys [
     :destination,
@@ -40,6 +53,7 @@ defmodule Workstation.CLI.TUI.Update do
     :theme,
     :dimensions,
     :executor,
+    :check,
     :toast_ms
   ]
   defstruct [
@@ -52,12 +66,16 @@ defmodule Workstation.CLI.TUI.Update do
     :theme,
     :dimensions,
     :executor,
+    :check,
+    :update_hint,
+    :tui_caller,
     :toast_ms
   ]
 
   @type phase :: :running | :done
   @type step :: String.t()
   @type run_token :: reference()
+  @type op_ref :: String.t() | nil
 
   # Step rows stay string-keyed maps: they are table rows AND plan-wire
   # shaped payloads (id/status), so the table column lookup works directly.
@@ -69,15 +87,18 @@ defmodule Workstation.CLI.TUI.Update do
           table: Table.t(),
           toasts: Manager.t(),
           phase: phase(),
-          run: %{ref: run_token()} | nil,
+          run: %{ref: run_token(), op_ref: op_ref()} | nil,
           theme: Theme.colors(),
           dimensions: {pos_integer(), pos_integer()},
           executor: (map() -> :ok | {:error, term()}),
+          check: (() -> {:ok, map()} | {:error, term()}),
+          update_hint: UpdateHint.hint() | nil,
+          tui_caller: pid() | nil,
           toast_ms: pos_integer()
         }
 
   @ready_footer "q quit"
-  @running_footer "updating · q quit"
+  @running_footer "updating · x abort · q detach"
   @header_rows 2
 
   @doc "Lifecycle steps in execution order (docs/capabilities.md)."
@@ -86,18 +107,27 @@ defmodule Workstation.CLI.TUI.Update do
 
   @doc """
   Default executor: the pure pre-graduation stand-in. Production runs use
-  `Workstation.CLI.TUI.Executor` (the daemon-orchestrated path, b8 wiring);
-  the pure stand-in stays the default so an accidental unconfigured run can
-  never mutate anything.
+  `Workstation.CLI.TUI.Executor` (the daemon-orchestrated path); the pure
+  stand-in replays a synthetic ok event list so an accidental unconfigured
+  run can never mutate anything while still exercising the event path.
   """
   @spec dry_run_executor(map()) :: :ok
+  def dry_run_executor(%{"steps" => steps, "events" => events}) when is_list(steps) do
+    Enum.each(steps, fn step ->
+      events.(%{"type" => "step.started", "step" => step})
+      events.(%{"type" => "step.done", "step" => step, "ok" => true, "duration_ms" => 0})
+    end)
+
+    events.(%{"type" => "run.finished", "outcome" => "ok"})
+    :ok
+  end
+
   def dry_run_executor(_request), do: :ok
 
   @impl TermUI.Elm
   def init(opts) do
     destination = Keyword.fetch!(opts, :destination)
     steps = Enum.map(steps(), &%{"id" => &1, "status" => "pending"})
-    ref = make_ref()
 
     state = %__MODULE__{
       destination: destination,
@@ -105,16 +135,21 @@ defmodule Workstation.CLI.TUI.Update do
       table: Table.init(rows: steps, columns: columns(), row_id: "id", selection_mode: :none),
       toasts: Manager.new(id: :update_toasts),
       phase: :running,
-      run: %{ref: ref},
+      run: nil,
       theme: Keyword.fetch!(opts, :theme),
       dimensions: Keyword.fetch!(opts, :dimensions),
       executor: Keyword.get(opts, :executor, &Executor.update_executor/1),
+      check: Keyword.get(opts, :check, &Executor.update_check_executor/0),
+      update_hint: nil,
+      tui_caller: Keyword.get(opts, :tui_caller),
       toast_ms: Keyword.get(opts, :toast_ms, 5_000)
     }
 
-    # The first chain link is an init effect: the step list starts moving
-    # without any user input, mirroring `workstation update` semantics.
-    {state, [Command.message({:run_step, ref})]}
+    # The chain and the availability check are init effects: the step list
+    # starts moving and the indicator consults the daemon without any user
+    # input, mirroring `workstation update` semantics.
+    {state, chain_commands} = start_chain(state)
+    {state, chain_commands ++ check_commands(state)}
   end
 
   @doc "Same event normalization contract as the apply screen."
@@ -132,16 +167,65 @@ defmodule Workstation.CLI.TUI.Update do
   def event_to_msg(_event, _state), do: :ignore
 
   @impl TermUI.Elm
-  def update({:run_step, ref}, %{phase: :running, run: %{ref: ref}} = state) do
-    case Enum.find(state.steps, &(&1["status"] == "pending")) do
-      nil -> finish_run(state, :ok)
-      step -> run_step(state, step)
-    end
+  def update({:update_event, ref, %{"type" => "run.started", "op_ref" => op_ref}},
+             %{phase: :running, run: %{ref: ref}} = state) do
+    %{state | run: %{state.run | op_ref: op_ref}}
   end
 
-  def update({:run_step, _stale_ref}, state), do: state
+  def update({:update_event, ref, %{"type" => "step.started", "step" => step}},
+             %{phase: :running, run: %{ref: ref}} = state) do
+    set_status(state, step, "running")
+  end
+
+  def update({:update_event, ref, %{"type" => "step.done", "step" => step, "ok" => ok}},
+             %{phase: :running, run: %{ref: ref}} = state)
+      when is_boolean(ok) do
+    status = if ok, do: "ok", else: "failed"
+    set_status(state, step, status)
+  end
+
+  def update({:update_event, _stale_ref, _event}, state), do: state
+
+  def update({:chain_done, ref, outcome}, %{phase: :running, run: %{ref: ref}} = state) do
+    finish_run(state, outcome)
+  end
+
+  def update({:chain_done, _stale_ref, _outcome}, state), do: state
+
+  # The check result folds through UpdateHint: only "behind" surfaces,
+  # everything else (up_to_date, unknown, transport error) is silent.
+  def update({:check_done, verdict}, state) do
+    %{state | update_hint: UpdateHint.fold(verdict)}
+  end
+
+  # Re-run the update flow from the finished screen: only offered while
+  # the indicator is showing (the `[u]` affordance), never while running.
+  def update({:text, "u"}, %{phase: :done, update_hint: hint} = state) when hint != nil do
+    steps = Enum.map(state.steps, &%{&1 | "status" => "pending"})
+
+    state = %__MODULE__{
+      state
+      | steps: steps,
+        table: Table.set_rows(state.table, steps),
+        phase: :running,
+        run: nil
+    }
+
+    {state, commands} = start_chain(state)
+    {state, commands}
+  end
+
+  # Abort: forwards op.abort with the stream token; the daemon settles the
+  # chain at its next step boundary and the ordinary event path paints the
+  # outcome (a racing finish surfaces as the abort executor's error value,
+  # silently dropped here — the chain result carries the verdict).
+  def update({:text, "x"}, %{phase: :running, run: %{op_ref: op_ref}} = state)
+      when is_binary(op_ref) do
+    {state, [Command.async(fn -> Executor.abort_executor(op_ref) end, fn _result -> :noop end)]}
+  end
 
   def update({:text, "q"}, state), do: {state, [Command.shutdown(:normal)]}
+  def update(:noop, state), do: state
 
   def update({:term_ui_toast_expire, _manager_id, _toast_id, _token} = expire, state),
     do: %{state | toasts: Manager.expire(state.toasts, expire)}
@@ -166,31 +250,27 @@ defmodule Workstation.CLI.TUI.Update do
 
   ## chain
 
-  defp run_step(state, step) do
-    id = step["id"]
+  # ONE daemon op for the whole sub-chain. The events sink queues each
+  # frame back into THIS runtime's Elm loop (self() during init/update is
+  # the runtime process), token-guarded by the run reference.
+  defp start_chain(%{executor: executor, steps: steps} = state) do
+    ref = make_ref()
+    runtime = self()
 
-    # Wire-shaped request per chain link: the daemon op surface (update.run)
-    # is the graduation contract, so the chain hands over exactly what the
-    # protocol schema validates.
-    case state.executor.(%{"step" => id}) do
-      :ok ->
-        state = set_status(state, id, "ok")
+    request = %{
+      "steps" => Enum.map(steps, & &1["id"]),
+      "events" => fn event ->
+        Runtime.send_message(runtime, {:update_event, ref, event})
+      end
+    }
 
-        case Enum.any?(state.steps, &(&1["status"] == "pending")) do
-          true -> {state, [Command.message({:run_step, state.run.ref})]}
-          false -> finish_run(state, :ok)
-        end
+    command =
+      Command.async(fn -> executor.(request) end, fn
+        {:ok, outcome} -> {:chain_done, ref, outcome}
+        {:error, reason} -> {:chain_done, ref, {:error, inspect(reason, pretty: false)}}
+      end)
 
-      {:error, reason} ->
-        # Abort on first failure: the failing step is marked, everything
-        # still pending is skipped — the remaining steps never half-run.
-        state =
-          state
-          |> set_status(id, "failed")
-          |> mark_pending_skipped()
-
-        finish_run(state, {:error, {id, reason}})
-    end
+    {%{state | phase: :running, run: %{ref: ref, op_ref: nil}}, [command]}
   end
 
   defp finish_run(state, :ok) do
@@ -200,10 +280,12 @@ defmodule Workstation.CLI.TUI.Update do
         duration: state.toast_ms
       )
 
-    {%{state | phase: :done, run: nil, toasts: toasts}, commands}
+    # A completed chain re-checks availability (the fresh journal may have
+    # pulled the remote head): silent unless the branch is still behind.
+    {%{state | phase: :done, run: nil, toasts: toasts}, commands ++ check_commands(state)}
   end
 
-  defp finish_run(state, {:error, {_id, reason}}) do
+  defp finish_run(state, {:error, reason}) do
     # No step name in the toast: the failing step is already marked
     # "failed" in the table, and the toast box clips at 40 columns.
     {toasts, commands} =
@@ -212,7 +294,23 @@ defmodule Workstation.CLI.TUI.Update do
         duration: state.toast_ms
       )
 
+    # Abort-on-first-failure: the daemon never half-runs the tail, so every
+    # step it did not settle renders skipped with its original position.
+    state = mark_pending_skipped(state)
+
     {%{state | phase: :done, run: nil, toasts: toasts}, commands}
+  end
+
+  defp check_commands(state) do
+    # Total mapper (a raising check degrades to silence, never takes the
+    # loop down) that unwraps the runtime's {:ok, _} envelope: the screen
+    # sees the executor's own {:ok, verdict} | {:error, message} shape.
+    [
+      Command.async(state.check, fn
+        {:ok, result} -> {:check_done, result}
+        {:error, reason} -> {:check_done, {:error, inspect(reason, pretty: false)}}
+      end)
+    ]
   end
 
   defp set_status(state, id, status) do
@@ -257,6 +355,13 @@ defmodule Workstation.CLI.TUI.Update do
   end
 
   defp footer_frame(%{phase: :running}, dims), do: Helpers.frame([@running_footer], dims)
+
+  defp footer_frame(%{phase: :done, update_hint: hint} = state, dims) when hint != nil do
+    # The indicator rides the idle footer as an accent segment (the locked
+    # wording), followed by the ordinary quit affordance.
+    Helpers.frame([[@ready_footer, "  ", accent_text(state, UpdateHint.text(hint))]], dims)
+  end
+
   defp footer_frame(_state, dims), do: Helpers.frame([@ready_footer], dims)
 
   defp accent_text(state, text) do

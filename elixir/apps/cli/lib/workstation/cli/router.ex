@@ -347,10 +347,31 @@ defmodule Workstation.CLI.Router do
     end
   end
 
+  # One TUI session, with one documented handoff: a screen that ran the
+  # update-availability indicator may ask for the standard update flow
+  # (`[u] update`) by sending `{:tui_request, {:run_update, destination}}`
+  # to this process (injected as `:tui_caller`) and shutting down. The
+  # update screen itself never asks, so the handoff cannot loop.
   defp run_tui(screen, opts) do
-    case TUI.run(screen, opts) do
-      :ok -> :ok
-      {:error, reason} -> fail(4, "error: #{screen} failed: #{inspect(reason)}")
+    caller = self()
+
+    case TUI.run(screen, Keyword.put_new(opts, :tui_caller, caller)) do
+      :ok ->
+        case tui_request() do
+          {:run_update, destination} -> run_tui(Update, destination: destination)
+          nil -> :ok
+        end
+
+      {:error, reason} ->
+        fail(4, "error: #{screen} failed: #{inspect(reason)}")
+    end
+  end
+
+  defp tui_request do
+    receive do
+      {:tui_request, request} -> request
+    after
+      0 -> nil
     end
   end
 

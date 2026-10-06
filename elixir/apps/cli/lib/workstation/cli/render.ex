@@ -47,9 +47,25 @@ defmodule Workstation.CLI.Render do
       "packages: #{packages}",
       "graph_order: #{render_value(Map.get(wire, "graph_order", []))}",
       "destination: #{Map.get(wire, "destination", "?")}",
-      journal_line
+      journal_line,
+      update_line(Map.get(wire, "update"))
     ])
   end
+
+  # The availability line (supervisor-directed scope): one human line when
+  # the daemon's TTL-cached check RESOLVES — `update: available (local →
+  # remote)` when the branch is behind, `update: up to date` otherwise —
+  # and ABSENT when the verdict is unknown (offline must look like
+  # no-news). `status --json` needs no render-side change: the wire's
+  # additive optional `update` object passes through verbatim, and its
+  # absence IS the unknown case.
+  defp update_line(%{"available" => true, "local" => local, "remote" => remote})
+       when is_binary(local) and is_binary(remote) do
+    "update: available (#{local} → #{remote})"
+  end
+
+  defp update_line(%{"available" => false}), do: "update: up to date"
+  defp update_line(_unknown), do: nil
 
   defp render_value(value) when is_binary(value), do: value
   defp render_value(value), do: inspect(value, pretty: false, limit: 20)

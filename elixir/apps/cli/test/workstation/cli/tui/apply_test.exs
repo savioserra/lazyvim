@@ -3,7 +3,7 @@ defmodule Workstation.CLI.TUI.ApplyTest do
 
   import Workstation.CLITest.TUI
 
-  alias TermUI.{Command, Frame}
+  alias TermUI.{Command, Event, Frame}
   alias Workstation.CLI.TUI.Apply
   alias Workstation.CLI.TUI.Theme
 
@@ -43,9 +43,12 @@ defmodule Workstation.CLI.TUI.ApplyTest do
             destination: @destination,
             plan: @plan,
             theme: Theme.base_colors(:dark),
-            tick_ms: 1,
             toast_ms: 60_000,
-            executor: &Apply.dry_run_executor/1
+            executor: &Apply.dry_run_executor/1,
+            # Tests never touch a daemon: the availability check defaults
+            # to the daemon op, so every screen run pins a silent verdict
+            # unless the test asserts the indicator itself.
+            check: fn -> {:ok, %{"status" => "up_to_date"}} end
           ],
           extra
         )
@@ -232,58 +235,159 @@ defmodule Workstation.CLI.TUI.ApplyTest do
     end
   end
 
-  describe "pure update/2 contract" do
-    defp state do
-      Apply.init(
-        destination: @destination,
-        plan: @plan,
-        theme: Theme.base_colors(:dark),
-        dimensions: {64, 12},
-        tick_ms: 5,
-        toast_ms: 1_000,
-        # The pure contract tests need a succeeding executor: the default is
-        # the daemon-orchestrated path, which refuses without a daemon.
-        executor: &Apply.dry_run_executor/1
-      )
+  describe "availability indicator (supervisor-directed scope)" do
+    test "a behind verdict surfaces the accent footer and the [u] affordance" do
+      runtime =
+        start_apply(
+          toast_ms: 30,
+          check: fn ->
+            {:ok, %{"status" => "behind", "local" => "abc1234", "remote" => "def5678"}}
+          end
+        )
+
+      # Consume the open frame, expire the completion toast, then force a
+      # deterministic redraw and assert the settled footer.
+      _early = latest_frame()
+      Process.sleep(50)
+      send_event(runtime, Event.resize(80, 12))
+      frame = latest_frame()
+
+      assert frame |> Frame.row_text(12) =~
+               "↑ update available (abc1234 → def5678) — [u] update"
     end
 
-    test "progress advances 0→100 in timer ticks through update/2" do
+    test "up_to_date, unknown and errors stay silent" do
+      for verdict <- [
+            {:ok, %{"status" => "up_to_date"}},
+            {:ok, %{"status" => "unknown", "reason" => "offline"}},
+            {:error, "no daemon is running"}
+          ] do
+        start_apply(check: fn -> verdict end)
+        frame = latest_frame()
+        refute frame |> Frame.row_text(12) =~ "update available"
+      end
+    end
+  end
+
+  describe "pure update/2 contract" do
+    defp state do
+      {state, _check_start} =
+        Apply.init(
+          destination: @destination,
+          plan: @plan,
+          theme: Theme.base_colors(:dark),
+          dimensions: {64, 12},
+          toast_ms: 1_000,
+          # The pure contract tests need a succeeding executor: the default is
+          # the daemon-orchestrated path, which refuses without a daemon.
+          executor: &Apply.dry_run_executor/1,
+          check: fn -> {:ok, %{"status" => "up_to_date"}} end
+        )
+
+      state
+    end
+
+    test "the run is one async op; run.started captures the stream token" do
       state = state()
-      assert state.progress.value == 0
-
       state = Apply.update({:text, "a"}, state)
-      {state, commands} = Apply.update({:text, "y"}, state)
+      {state, [%Command{kind: :async}]} = Apply.update({:text, "y"}, state)
+      %{run: %{ref: ref, op_ref: nil}} = state
+      assert state.phase == :running
+
+      state =
+        Apply.update(
+          {:apply_event, ref, %{"type" => "run.started", "op" => "apply.run", "op_ref" => "op-7"}},
+          state
+        )
+
+      assert %{run: %{op_ref: "op-7"}} = state
+    end
+
+    test "apply_done settles the run with the token-guarded toast" do
+      state = state()
+      state = Apply.update({:text, "a"}, state)
+      {state, [%Command{kind: :async}]} = Apply.update({:text, "y"}, state)
       %{run: %{ref: ref}} = state
-      assert [%Command{kind: :timer, value: {5, {:apply_tick, ^ref}}}] = commands
 
-      # Nine mid-run ticks keep returning timer commands; the tenth lands on
-      # 100 and resolves into the toast + its own expiry timer command.
-      {state, [_timer]} = Apply.update({:apply_tick, ref}, state)
-      assert state.progress.value == 10
+      {state, commands} = Apply.update({:apply_done, ref, :ok}, state)
 
-      {state, commands} =
-        Enum.reduce(2..10, {state, []}, fn _tick, {state, _prev} ->
-          Apply.update({:apply_tick, ref}, state)
-        end)
-
-      assert state.progress.value == 100
       assert state.phase == :done
-
-      # The final tick resolves into a toast whose expiry is a timer command
-      # (token-guarded), not a silent disappearance.
+      assert state.run == nil
       assert [%Command{kind: :timer}] = commands
       assert [%{id: :apply_result, type: :success}] = state.toasts.toasts
     end
 
-    test "stale ticks from a superseded run are dropped" do
-      state = state()
+    test "executor failure reports an error toast" do
+      state = %{state() | executor: fn _request -> {:error, "engine refused"} end}
+
       state = Apply.update({:text, "a"}, state)
 
-      {state, [%Command{kind: :timer, value: {_ms, {:apply_tick, _started_ref}}}]} =
-        Apply.update({:text, "y"}, state)
+      {state, [%Command{kind: :async}]} = Apply.update({:text, "y"}, state)
 
-      assert %Apply{} = Apply.update({:apply_tick, make_ref()}, state)
-      assert state.progress.value == 0
+      %{run: %{ref: ref}} = state
+      {state, _commands} = Apply.update({:apply_done, ref, {:error, "engine refused"}}, state)
+
+      assert state.phase == :done
+      assert [%{id: :apply_result, type: :error}] = state.toasts.toasts
+    end
+
+    test "stale events and results from a superseded run are dropped" do
+      state = state()
+      state = Apply.update({:text, "a"}, state)
+      {state, [%Command{kind: :async}]} = Apply.update({:text, "y"}, state)
+
+      stale_event = %{"type" => "run.started", "op" => "apply.run", "op_ref" => "op-x"}
+
+      assert %Apply{} = state = Apply.update({:apply_event, make_ref(), stale_event}, state)
+      assert %{run: %{op_ref: nil}} = state
+
+      assert %Apply{} = state = Apply.update({:apply_done, make_ref(), :ok}, state)
+      assert state.phase == :running
+    end
+
+    test "check_done folds only behind verdicts into the hint" do
+      state = state()
+
+      state =
+        Apply.update(
+          {:check_done, {:ok, %{"status" => "behind", "local" => "abc1234", "remote" => "def5678"}}},
+          state
+        )
+
+      assert state.update_hint == %{"local" => "abc1234", "remote" => "def5678"}
+
+      state = Apply.update({:check_done, {:ok, %{"status" => "unknown", "reason" => "offline"}}}, state)
+      assert state.update_hint == nil
+    end
+
+    test "u hands off to the standard update flow only with a surfaced hint" do
+      test_pid = self()
+
+      {state, _check} =
+        Apply.init(
+          destination: @destination,
+          plan: @plan,
+          theme: Theme.base_colors(:dark),
+          dimensions: {64, 12},
+          toast_ms: 1_000,
+          executor: &Apply.dry_run_executor/1,
+          check: fn -> {:ok, %{"status" => "up_to_date"}} end,
+          tui_caller: test_pid
+        )
+
+      # No hint: u is inert.
+      assert %Apply{phase: :ready} = Apply.update({:text, "u"}, state)
+
+      state =
+        Apply.update(
+          {:check_done, {:ok, %{"status" => "behind", "local" => "abc1234", "remote" => "def5678"}}},
+          state
+        )
+
+      assert {_state, [%Command{kind: :shutdown, value: :normal}]} =
+               Apply.update({:text, "u"}, state)
+
+      assert_receive {:tui_request, {:run_update, @destination}}
     end
 
     test "q is Command.shutdown(:normal)" do
