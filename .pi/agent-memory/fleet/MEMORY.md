@@ -306,3 +306,30 @@ required.
 - The graduation gate (Workstation.Daemon.Apply.enabled?/0) defaults OPEN
   since the daemon became the only mutation engine; flag-off refusal tests
   stay green via explicit Application.put_env in setup.
+
+## Daemon-stop cycle + host-ops gotchas (supervisor, 2026-10-06)
+
+- Optimus FLATTENS matched subcommand positionals: for argv ["daemon","stop"],
+  result.args == %{action: "stop"} — result.args[:daemon][:action] is always
+  nil. Pin parse shape through the REAL parser (Router.parser/0, made public)
+  in daemon_verb_test.exs; audit grep "args[:daemon]" before adding verbs.
+- Boot.run must Process.flag(:trap_exit, true) BEFORE Supervisor.start_link
+  so failing child starts ({:error, {:already_running, sock}}) arrive as
+  {:EXIT, sup_pid, reason} and render as rc-4 operator errors — otherwise the
+  raw child EXIT kills the caller and the daemon survives a "stop".
+- pgrep self-match trap: `pgrep -f 'Router.main.*-- daemon'` inside bash -c
+  matches the WRAPPER's own cmdline (false "still running"/"booted one").
+  Match 'beam.smp' or the release erts path instead; trust the daemon's own
+  rc/output over process-grep invariants.
+- Host release refresh: bare `workstation bootstrap` does NOT refresh an
+  existing engine release (release_refreshed=false is honest — the shim skips
+  when an engine exists). The refresh path is `workstation update` (bootstrap
+  step rebuilds when $parent/workstation/.built-from != checkout HEAD; stamp
+  written by install-runtime.sh). Rebuild by hand: cd elixir && mise exec --
+  env MIX_ENV=prod mix release workstation --overwrite (tarball is a separate
+  check.sh artifact, installer copies _build/prod/rel/workstation directly).
+- Stop semantics ruling precedent (gate v3 d1): a clean stop leaves the
+  0-byte socket FILE by design (listener.ex fail-closed: never unlink a
+  socket you can't prove is yours; next boot proves-dead-and-rebinds).
+  Gate criteria saying "socket gone" must mean ENDPOINT death (rc 0 +
+  beam gone + status-over-stale-file reclaims), not file unlink.
