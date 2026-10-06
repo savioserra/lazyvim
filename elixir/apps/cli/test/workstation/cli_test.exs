@@ -522,7 +522,6 @@ defmodule Workstation.CLITest.EnvContract do
     test "TERM=dumb refuses apply" do
       {root, home} = temp_test_root()
       original = System.get_env("TERM")
-      original_ws_home = System.get_env("WORKSTATION_HOME")
 
       try do
         System.put_env("TERM", "dumb")
