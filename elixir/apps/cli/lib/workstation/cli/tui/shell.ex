@@ -94,7 +94,8 @@ defmodule Workstation.CLI.TUI.Shell do
     :update_executor,
     :check,
     :update_hint,
-    :toast_ms
+    :toast_ms,
+    :now
   ]
 
   @type t :: %__MODULE__{
@@ -158,7 +159,10 @@ defmodule Workstation.CLI.TUI.Shell do
       update_executor: Keyword.get(opts, :update_executor, &Executor.update_executor/1),
       check: Keyword.get(opts, :check, &Executor.update_check_executor/0),
       update_hint: nil,
-      toast_ms: Keyword.get(opts, :toast_ms, 5_000)
+      toast_ms: Keyword.get(opts, :toast_ms, 5_000),
+      # Render clock: injected so ramp (staleness) renders are deterministic
+      # under replay; production takes the boot time exactly once.
+      now: Keyword.get(opts, :now, DateTime.utc_now())
     }
 
     # Boot effects: the home tab's three reads and the passive
@@ -524,22 +528,23 @@ defmodule Workstation.CLI.TUI.Shell do
         Enum.map(@tabs, fn {id, label} -> {id, label, false} end)
       end
 
-    accent = accent_style(state)
-    dim = Style.new(fg: :bright_black)
+    styles = theme_styles(state)
 
     spans =
       entries
       |> Enum.with_index()
       |> Enum.flat_map(fn {{id, label, active}, index} ->
-        text = "#{index + 1} #{label}"
+        # btop grammar: the key lives in the title, rendered in the
+        # shortcut slot; the label follows in accent (active) or the
+        # inactive role (dimmed chrome).
+        label_style =
+          if active or id == state.tab, do: styles.accent, else: styles.inactive
 
-        style =
-          cond do
-            active or id == state.tab -> accent
-            true -> dim
-          end
-
-        [{text, style}, {"  ", Style.new()}]
+        [
+          {"#{index + 1}", styles.shortcut},
+          {label, label_style},
+          {"  ", Style.new()}
+        ]
       end)
 
     Helpers.frame([spans], {width, height})
@@ -565,10 +570,17 @@ defmodule Workstation.CLI.TUI.Shell do
        when tab in [:status, :plan, :diff] do
     case Map.get(state.cache, tab) do
       {:ok, _wire} ->
-        TextView.view(Map.get(views, tab) || TextView.init(""), dims)
+        # btop border-as-buttonbar: the pane's own action hints (scroll,
+        # refresh) live on the box border with a position counter.
+        TextView.bordered_view(Map.get(views, tab) || TextView.init(""), dims, %{
+          title: Atom.to_string(tab),
+          border: border_style(state),
+          shortcut: theme_styles(state).shortcut,
+          chrome: theme_styles(state).chrome
+        })
 
       {:error, message} ->
-        error_frame("#{tab}: #{message_text(message)}", dims)
+        error_frame(state, "#{tab}: #{message_text(message)}", dims)
 
       _loading ->
         placeholder("loading #{tab} — the daemon is collecting state", dims)
@@ -578,13 +590,13 @@ defmodule Workstation.CLI.TUI.Shell do
   defp body_frame(%{op: nil, tab: :capabilities} = state, dims) do
     case caps_readiness(state) do
       :ready ->
-        CapabilitiesBrowser.view(state.caps, dims, accent_rgb(state))
+        CapabilitiesBrowser.view(state.caps, dims, theme_styles(state))
 
       {:loading, missing} ->
         placeholder("loading #{Enum.join(missing, ", ")} — the daemon is collecting state", dims)
 
       {:error, message} ->
-        error_frame("capabilities: #{message_text(message)}", dims)
+        error_frame(state, "capabilities: #{message_text(message)}", dims)
     end
   end
 
@@ -594,22 +606,31 @@ defmodule Workstation.CLI.TUI.Shell do
 
   # Read failures split into the transport shape (daemon unreachable —
   # the recovery hint names the start command) and every other failure
-  # (the verbatim message; r retries either way).
-  defp error_frame(message, {width, height}) do
+  # (the verbatim message; r retries either way). Errors read err.
+  defp error_frame(state, message, {width, height}) do
     text = message_text(message)
+    err = theme_styles(state).err
 
     if disconnected?(text) do
       Helpers.frame(
         [
-          "daemon unreachable",
-          text,
+          [{"daemon unreachable", err}],
+          [{text, err}],
           "",
           "start it with `workstation daemon` — retry with r"
         ],
         {width, height}
       )
     else
-      Helpers.frame(["read failed", text, "", "retry with r"], {width, height})
+      Helpers.frame(
+        [
+          [{"read failed", err}],
+          [{text, err}],
+          "",
+          "retry with r"
+        ],
+        {width, height}
+      )
     end
   end
 
@@ -646,10 +667,14 @@ defmodule Workstation.CLI.TUI.Shell do
   end
 
   defp home_frame(state, {width, height}) do
-    Helpers.frame(home_lines(state), {width, height})
+    Helpers.frame(home_rows(state), {width, height})
   end
 
-  defp home_lines(state) do
+  # Per-domain accents (btop: one semantic color per panel): status/daemon
+  # and capabilities read accent, pending plan/diff rows warn, an
+  # unreachable daemon reads err. The journal line rides the magnitude
+  # ramp by applied-at age: fresh ok, aging warn, stale err.
+  defp home_rows(state) do
     hint_line =
       if state.update_hint do
         [UpdateHint.text(state.update_hint)]
@@ -660,12 +685,12 @@ defmodule Workstation.CLI.TUI.Shell do
     keys = "keys: 1-7 tabs · ←→ switch · r refresh · ? help · a apply" <> u_hint(state) <> " · q quit"
 
     [
-      "engine: " <> engine_line(state),
-      "journal: " <> journal_line(state),
-      "plan: " <> plan_line(state),
-      "diff: " <> diff_line(state),
-      "capabilities: " <> caps_line(state),
-      "daemon: " <> daemon_line(state)
+      ["engine: ", {engine_line(state), domain_style(state, :accent)}],
+      ["journal: ", journal_value(state)],
+      ["plan: ", {plan_line(state), pending_style(state, :plan)}],
+      ["diff: ", {diff_line(state), pending_style(state, :diff)}],
+      ["capabilities: ", {caps_line(state), domain_style(state, :accent)}],
+      ["daemon: ", {daemon_line(state), daemon_value_style(state)}]
     ] ++
       hint_line ++
       [
@@ -674,6 +699,48 @@ defmodule Workstation.CLI.TUI.Shell do
         "verbs: standalone entry points keep working (workstation apply --headless, …)"
       ]
   end
+
+  defp domain_style(state, role), do: theme_styles(state)[role]
+
+  # Journal value span: ramp slot by applied-at age; a journal without an
+  # applied-at stamp stays unlabeled and untinted.
+  defp journal_value(%{cache: %{status: {:ok, status}}} = state) do
+    case status["journal"] do
+      journal when is_map(journal) ->
+        text = "generation #{journal["generation"]} (applied#{applied_at(journal)})"
+        {text, ramp_style(state, journal["applied_at"])}
+
+      _other ->
+        {"none — nothing applied yet", Style.new()}
+    end
+  end
+
+  defp journal_value(_state), do: {"…", Style.new()}
+
+  # fresh <24h ok · aging <7d warn · stale ≥7d err; an absent or
+  # unparseable stamp renders plain.
+  @fresh_after_seconds 86_400
+  @aging_after_seconds 604_800
+
+  defp ramp_style(state, applied_at) do
+    styles = theme_styles(state)
+
+    case stamp_age_seconds(state, applied_at) do
+      nil -> Style.new()
+      age when age < @fresh_after_seconds -> styles.ramp_start
+      age when age < @aging_after_seconds -> styles.ramp_mid
+      _age -> styles.ramp_end
+    end
+  end
+
+  defp stamp_age_seconds(state, applied_at) when is_binary(applied_at) do
+    case DateTime.from_iso8601(applied_at) do
+      {:ok, stamp, _offset} -> max(DateTime.diff(state.now, stamp, :second), 0)
+      {:error, _reason} -> nil
+    end
+  end
+
+  defp stamp_age_seconds(_state, _applied_at), do: nil
 
   defp u_hint(%{update_hint: hint}) when hint != nil, do: " · u update"
   defp u_hint(_state), do: ""
@@ -691,18 +758,6 @@ defmodule Workstation.CLI.TUI.Shell do
   defp engine_line(%{cache: %{status: {:error, message}}}),
     do: "unavailable — #{message_text(message)}"
   defp engine_line(_state), do: "loading…"
-
-  defp journal_line(%{cache: %{status: {:ok, status}}}) do
-    case status["journal"] do
-      journal when is_map(journal) ->
-        "generation #{journal["generation"]} (applied#{applied_at(journal)})"
-
-      _other ->
-        "none — nothing applied yet"
-    end
-  end
-
-  defp journal_line(_state), do: "…"
 
   defp applied_at(%{"applied_at" => at}) when is_binary(at), do: " #{at}"
   defp applied_at(_journal), do: ""
@@ -759,7 +814,40 @@ defmodule Workstation.CLI.TUI.Shell do
 
   defp daemon_line(_state), do: "probing…"
 
+  defp pending_style(state, wire) do
+    if pending?(state, wire), do: theme_styles(state).warn, else: Style.new()
+  end
+
+  # Would-change surfaces read warn when something is pending; a clean
+  # surface stays quiet (saturated color is reserved for data).
+  defp pending?(state, :plan) do
+    case Map.get(state.cache, :plan) do
+      {:ok, plan} ->
+        body = plan["plan"] || %{}
+        length(body["entries"] || []) > 0 or length(body["removals"] || []) > 0
+
+      _other ->
+        false
+    end
+  end
+
+  defp pending?(state, :diff) do
+    case Map.get(state.cache, :diff) do
+      {:ok, diff} -> length(diff["backend_diff"] || []) > 0
+      _other -> false
+    end
+  end
+
+  defp daemon_value_style(state) do
+    case Map.get(state.cache, :status) do
+      {:ok, _wire} -> theme_styles(state).accent
+      {:error, _message} -> theme_styles(state).err
+      _loading -> Style.new()
+    end
+  end
+
   defp daemon_frame(state, {width, height}) do
+    styles = theme_styles(state)
     status = Map.get(state.cache, :status)
 
     lines =
@@ -768,20 +856,23 @@ defmodule Workstation.CLI.TUI.Shell do
           engine = wire["engine"] || %{}
           journal = wire["journal"]
 
+          journal_span =
+            if is_map(journal) do
+              ["journal     : ", {"generation #{journal["generation"]}", ramp_style(state, journal["applied_at"])}]
+            else
+              "journal     : none"
+            end
+
           [
             "daemon health (live probe: status.run)",
             "",
-            "state       : reachable",
+            ["state       : ", {"reachable", styles.accent}],
             "engine      : #{Map.get(engine, "name", "?")} #{Map.get(engine, "version", "?")} (#{Map.get(engine, "mode", "?")})",
             "destination : #{Map.get(wire, "destination", "?")}",
             "platform    : #{Map.get(wire, "platform", "?")}",
             "packages    : #{length(wire["packages"] || [])} in the collected desired state",
             "graph order : #{length(wire["graph_order"] || [])} resolved",
-            "journal     : " <>
-              if(is_map(journal),
-                do: "generation #{journal["generation"]}",
-                else: "none"
-              ),
+            journal_span,
             "",
             "the daemon is the only mutation engine; the shell's reads and ops",
             "are protocol calls, never in-process fallbacks.",
@@ -795,8 +886,8 @@ defmodule Workstation.CLI.TUI.Shell do
           [
             "daemon health (live probe: status.run)",
             "",
-            "state : unreachable",
-            text,
+            ["state : ", {"unreachable", styles.err}],
+            [{text, styles.err}],
             "",
             "start it with `workstation daemon` — the client spawns it detached",
             "from the same release when absent; retry with r"
@@ -810,24 +901,85 @@ defmodule Workstation.CLI.TUI.Shell do
   end
 
   defp footer_frame(state, {width, height}) do
-    # The capabilities tab keeps the arrows for drill-down, so its footer
-    # names the drill grammar instead of the switch grammar.
-    base =
-      if state.tab == :capabilities do
-        "1-7 tabs · ↑↓ move · enter/→ expand · ←/backspace collapse · r refresh · ? help · q quit"
-      else
-        "1-7 tabs · ←→ switch · r refresh · ? help · q quit"
-      end
+    # Global footer keeps the frame keys only (btop grammar: chrome bar,
+    # glowing key caps). Tab-specific action hints live on their views'
+    # borders; home's a/u stay documented in the home body.
+    styles = theme_styles(state)
 
-    line =
-      if state.tab == :home do
-        home_keys = "a apply" <> u_hint(state)
-        [[{home_keys, accent_style(state)}, " · ", base]]
-      else
-        [base]
-      end
+    line = [
+      {"1-7", styles.shortcut},
+      " tabs",
+      {" · ", styles.chrome},
+      {"←→", styles.shortcut},
+      " switch",
+      {" · ", styles.chrome},
+      {"r", styles.shortcut},
+      " refresh",
+      {" · ", styles.chrome},
+      {"?", styles.shortcut},
+      " help",
+      {" · ", styles.chrome},
+      {"q", styles.shortcut},
+      " quit"
+    ]
 
-    Helpers.frame(line, {width, height})
+    Helpers.frame([line], {width, height})
+  end
+
+  # The resolved btop-grammar role styles for one render: every visual
+  # claim routes through the theme envelope roles (never literals).
+  defp theme_styles(state) do
+    %{
+      accent: role_style(state, :accent, fallback: Style.new(attrs: [:bold]), attrs: [:bold]),
+      ok: role_style(state, :ok, fallback: :green),
+      warn: role_style(state, :warn, fallback: :yellow),
+      err: role_style(state, :err, fallback: :red),
+      shortcut: role_style(state, :shortcut, fallback: Style.new(attrs: [:bold])),
+      inactive: role_style(state, :inactive, fallback: :bright_black),
+      chrome: role_style(state, :chrome, fallback: :bright_black),
+      ramp_start: role_style(state, :ramp_start, fallback: :green),
+      ramp_mid: role_style(state, :ramp_mid, fallback: :yellow),
+      ramp_end: role_style(state, :ramp_end, fallback: :red),
+      selected: selected_style(state),
+      plain: Style.new()
+    }
+  end
+
+  defp role_style(state, role, opts) do
+    {fallback, opts} = Keyword.pop(opts, :fallback)
+
+    case Theme.to_term_ui_color(state.theme[role]) do
+      {:rgb, r, g, b} ->
+        Style.new(Keyword.put(opts, :fg, {:rgb, r, g, b}))
+
+      nil ->
+        case fallback do
+          %Style{} = style -> style
+          color -> Style.new(Keyword.put(opts, :fg, color))
+        end
+    end
+  end
+
+  # Selection is a bg+fg pair (never color-alone); without the pair the
+  # cursor falls back to reverse video.
+  defp selected_style(state) do
+    bg = Theme.to_term_ui_color(state.theme[:selected_bg])
+    fg = Theme.to_term_ui_color(state.theme[:selected_fg])
+
+    case {bg, fg} do
+      {{:rgb, r, g, b}, {:rgb, r2, g2, b2}} ->
+        Style.new(bg: {:rgb, r, g, b}, fg: {:rgb, r2, g2, b2}, attrs: [:bold])
+
+      _missing ->
+        Style.new(attrs: [:reverse])
+    end
+  end
+
+  defp border_style(state) do
+    case Theme.to_term_ui_color(state.theme[:chrome]) do
+      {:rgb, r, g, b} -> Style.new(fg: {:rgb, r, g, b})
+      nil -> Style.new(fg: :bright_black)
+    end
   end
 
   defp accent_style(state) do

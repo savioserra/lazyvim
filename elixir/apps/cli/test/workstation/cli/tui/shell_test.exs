@@ -140,16 +140,54 @@ defmodule Workstation.CLI.TUI.ShellTest do
 
     assert frame |> Frame.row_text(1) =~ "workstation — #{@destination}"
     strip = Frame.row_text(frame, 2)
-    assert strip =~ "1 home"
-    assert strip =~ "2 capabilities"
-    assert strip =~ "3 status"
-    assert strip =~ "4 plan"
-    assert strip =~ "5 diff"
-    assert strip =~ "6 daemon"
-    assert strip =~ "7 help"
+    assert strip =~ "1home"
+    assert strip =~ "2capabilities"
+    assert strip =~ "3status"
+    assert strip =~ "4plan"
+    assert strip =~ "5diff"
+    assert strip =~ "6daemon"
+    assert strip =~ "7help"
     assert frame |> Frame.row_text(30) =~ "1-7 tabs"
     assert frame |> Frame.row_text(30) =~ "r refresh"
     assert frame |> Frame.row_text(30) =~ "? help"
+  end
+
+  # -- btop grammar: slots pinned by frame cells -----------------------------
+
+  test "tab strip renders the key in the shortcut slot, active accent, inactive dimmed" do
+    runtime = start_shell()
+    frame = settled_frame(runtime)
+
+    # Digit prefix in the shortcut slot (dark base #bb9af7).
+    assert Frame.cell(frame, 2, 1).char == "1"
+    assert Frame.cell(frame, 2, 1).fg == {187, 154, 247}
+
+    # Active tab label rides the accent role (dark base #7aa2f7).
+    assert Frame.cell(frame, 2, 2).char == "h"
+    assert Frame.cell(frame, 2, 2).fg == {122, 162, 247}
+
+    # Inactive tabs ride the inactive role (dark base #565f89): "1home"
+    # + two spaces puts "2capabilities" at column 8.
+    assert Frame.cell(frame, 2, 8).char == "2"
+    assert Frame.cell(frame, 2, 8).fg == {187, 154, 247}
+    assert Frame.cell(frame, 2, 9).char == "c"
+    assert Frame.cell(frame, 2, 9).fg == {86, 95, 137}
+  end
+
+  test "footer keeps frame keys only, key caps in the shortcut slot" do
+    runtime = start_shell()
+    send_text(runtime, "2")
+    frame = settled_frame(runtime)
+
+    footer = Frame.row_text(frame, 30)
+    assert footer =~ "1-7 tabs · ←→ switch · r refresh · ? help · q quit"
+    # The drill grammar moved to the browser border — the global footer
+    # keeps frame keys only.
+    refute footer =~ "expand"
+    refute footer =~ "collapse"
+
+    # Key caps glow in the shortcut slot.
+    assert Frame.cell(frame, 30, 1).fg == {187, 154, 247}
   end
 
   test "home lists every verb's surface once the reads land" do
@@ -278,7 +316,7 @@ defmodule Workstation.CLI.TUI.ShellTest do
     # (not another tab's) loses the file rows.
     send_key(runtime, :left)
     frame = settled_frame(runtime)
-    assert Frame.row_text(frame, 2) =~ "2 capabilities"
+    assert Frame.row_text(frame, 2) =~ "2capabilities"
     assert body_text(frame) =~ "▾ editor"
     refute body_text(frame) =~ ".config/nvim/init.lua"
 
@@ -326,7 +364,7 @@ defmodule Workstation.CLI.TUI.ShellTest do
     send_text(runtime, "a")
     frame = settled_frame(runtime)
 
-    assert Frame.row_text(frame, 2) =~ "8 apply"
+    assert Frame.row_text(frame, 2) =~ "8apply"
     text = body_text(frame)
     assert text =~ "workstation apply"
     assert text =~ "generation gen-3"
@@ -357,7 +395,7 @@ defmodule Workstation.CLI.TUI.ShellTest do
     # The screen's own [u] handoff — now it swaps screens, not processes.
     send_text(runtime, "u")
     frame = settled_frame(runtime)
-    assert Frame.row_text(frame, 2) =~ "8 update"
+    assert Frame.row_text(frame, 2) =~ "8update"
     assert body_text(frame) =~ "workstation update"
   end
 
@@ -369,9 +407,9 @@ defmodule Workstation.CLI.TUI.ShellTest do
 
     send_text(runtime, "q")
     frame = settled_frame(runtime)
-    assert Frame.row_text(frame, 2) =~ "1 home"
+    assert Frame.row_text(frame, 2) =~ "1home"
     assert body_text(frame) =~ "engine: workstation 9.9.9-test"
-    refute Frame.row_text(frame, 2) =~ "8 apply"
+    refute Frame.row_text(frame, 2) =~ "8apply"
   end
 
   test "u on home opens the update screen when the probe found updates" do
@@ -381,7 +419,7 @@ defmodule Workstation.CLI.TUI.ShellTest do
     send_text(runtime, "u")
     frame = settled_frame(runtime)
 
-    assert Frame.row_text(frame, 2) =~ "8 update"
+    assert Frame.row_text(frame, 2) =~ "8update"
     assert body_text(frame) =~ "workstation update"
   end
 
@@ -401,10 +439,10 @@ defmodule Workstation.CLI.TUI.ShellTest do
     frame = settled_frame(runtime)
 
     refute body_text(frame) =~ "update available"
-    refute Frame.row_text(frame, 2) =~ "8 update"
+    refute Frame.row_text(frame, 2) =~ "8update"
 
     send_text(runtime, "u")
-    assert settled_frame(runtime) |> Frame.row_text(2) =~ "1 home"
+    assert settled_frame(runtime) |> Frame.row_text(2) =~ "1home"
   end
 
   # -- daemon tab ------------------------------------------------------------
@@ -431,6 +469,107 @@ defmodule Workstation.CLI.TUI.ShellTest do
     assert text =~ "workstation daemon"
   end
 
+  # -- btop grammar: borders, ramps, per-domain accents ----------------------
+
+  @tag :btop_browser
+  test "capabilities browser carries its action bar on the border with a cursor counter" do
+    runtime = start_shell()
+    send_text(runtime, "2")
+    frame = settled_frame(runtime)
+
+    # The box titles itself; the bottom border is the drill grammar with
+    # the cursor position counter.
+    assert Frame.row_text(frame, 3) =~ "┌ capabilities"
+    bottom = Frame.row_text(frame, 29)
+    assert bottom =~ "enter expand · backspace collapse · r refresh"
+    assert bottom =~ "1/2"
+
+    # The cursor renders as the selected bg+fg pair (never color-alone).
+    # Data rows start at frame row 4 (inside the border).
+    selected = Frame.cell(frame, 4, 2)
+    assert selected.bg == {41, 46, 66}
+    assert selected.fg == {192, 202, 245}
+
+    # Drill into editor → nvim package → its planned file row reads warn
+    # (would-change), and the counter follows the grown outline.
+    send_key(runtime, :enter)
+    settled_frame(runtime)
+    send_key(runtime, :down)
+    send_key(runtime, :down)
+    send_key(runtime, :enter)
+    frame = settled_frame(runtime)
+
+    assert Frame.row_text(frame, 7) =~ ".config/nvim/init.lua"
+    assert Frame.cell(frame, 7, 2).fg == {224, 175, 104}
+    assert Frame.row_text(frame, 29) =~ "3/5"
+
+    # Moving the cursor onto the planned row swaps warn for the pair.
+    send_key(runtime, :down)
+    frame = settled_frame(runtime)
+    selected = Frame.cell(frame, 7, 2)
+    assert selected.bg == {41, 46, 66}
+    assert selected.fg == {192, 202, 245}
+  end
+
+  test "plan pane titles its border with the scroll/refresh action bar and a position counter" do
+    runtime = start_shell()
+    send_text(runtime, "4")
+    frame = settled_frame(runtime)
+
+    assert Frame.row_text(frame, 3) =~ "┌ plan"
+    bottom = Frame.row_text(frame, 29)
+    assert bottom =~ "↑↓ scroll · r refresh"
+    assert bottom =~ ~r/1\/\d+/
+
+    # Key caps in the shortcut slot: "└" + two dashes put "↑" at column 4.
+    assert Frame.cell(frame, 29, 4).char == "↑"
+    assert Frame.cell(frame, 29, 4).fg == {187, 154, 247}
+  end
+
+  test "journal line rides the magnitude ramp by applied-at age (fresh/aging/stale)" do
+    # fresh (<24h) → ramp_start (ok slot family)
+    runtime = start_shell(now: ~U[2026-02-13T12:00:00Z])
+    frame = settled_frame(runtime)
+    assert Frame.row_text(frame, 4) =~ "journal: generation 2"
+    assert Frame.cell(frame, 4, 10).fg == {158, 206, 106}
+
+    # aging (<7d) → ramp_mid (warn family)
+    runtime = start_shell(now: ~U[2026-02-16T10:00:00Z])
+    frame = settled_frame(runtime)
+    assert Frame.cell(frame, 4, 10).fg == {224, 175, 104}
+
+    # stale (≥7d) → ramp_end (err family)
+    runtime = start_shell(now: ~U[2026-05-01T10:00:00Z])
+    frame = settled_frame(runtime)
+    assert Frame.cell(frame, 4, 10).fg == {247, 118, 142}
+  end
+
+  test "daemon tab tints reachable state accent and unreachable err" do
+    runtime = start_shell()
+    send_text(runtime, "6")
+    frame = settled_frame(runtime)
+
+    assert Frame.row_text(frame, 5) =~ "state       : reachable"
+    assert Frame.cell(frame, 5, 15).fg == {122, 162, 247}
+
+    runtime = start_shell(load: loader(%{status: {:error, {"daemon_unavailable", "ENOENT"}}}))
+    send_text(runtime, "6")
+    frame = settled_frame(runtime)
+
+    assert Frame.row_text(frame, 5) =~ "state : unreachable"
+    assert Frame.cell(frame, 5, 9).fg == {247, 118, 142}
+  end
+
+  test "read failures render in the err slot" do
+    runtime = start_shell(load: loader(%{status: {:error, {"plan_stale", "nope"}}}))
+
+    send_text(runtime, "3")
+    frame = settled_frame(runtime)
+
+    assert Frame.row_text(frame, 3) =~ "read failed"
+    assert Frame.cell(frame, 3, 1).fg == {247, 118, 142}
+  end
+
   # -- resize ----------------------------------------------------------------
 
   test "resize reflows the chrome and the embedded screen" do
@@ -438,7 +577,7 @@ defmodule Workstation.CLI.TUI.ShellTest do
     settled_frame(runtime)
     send_text(runtime, "a")
     frame = settled_frame(runtime)
-    assert Frame.row_text(frame, 2) =~ "8 apply"
+    assert Frame.row_text(frame, 2) =~ "8apply"
     assert Frame.row_text(frame, 3) =~ "workstation apply"
 
     send_event(runtime, Event.resize(120, 40))

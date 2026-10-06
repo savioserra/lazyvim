@@ -267,11 +267,21 @@ defmodule Workstation.CLI.TUI.Shell.CapabilitiesBrowser do
   defp also_note(_other), do: ""
 
   @doc """
-  Render the outline. The cursor is the reverse-video row; planned counts
-  carry the accent tint; everything else is plain text.
+  Render the outline as a bordered box (btop grammar): the tab name titles
+  the border, the bottom border is the action bar (drill keys + refresh,
+  key caps in the shortcut slot) with the cursor position counter, the
+  cursor renders as the selected bg+fg pair (never color-alone), and file
+  rows that would change read warn.
   """
-  @spec view(t(), TermUI.Widget.dimensions(), Style.t()) :: TermUI.Frame.t()
-  def view(%__MODULE__{rows: []}, {width, height}, _accent) do
+  @spec view(t(), TermUI.Widget.dimensions(), %{
+          required(:shortcut) => Style.t(),
+          required(:chrome) => Style.t(),
+          required(:warn) => Style.t(),
+          required(:selected) => Style.t(),
+          required(:plain) => Style.t(),
+          optional(atom()) => term()
+        }) :: TermUI.Frame.t()
+  def view(%__MODULE__{rows: []}, {width, height}, _styles) do
     Helpers.frame(
       [
         "no catalog entries",
@@ -281,23 +291,31 @@ defmodule Workstation.CLI.TUI.Shell.CapabilitiesBrowser do
     )
   end
 
-  def view(%__MODULE__{} = browser, {width, height}, accent) do
-    offset = window_offset(browser, height)
+  def view(%__MODULE__{} = browser, {width, height}, styles) do
+    visible = max(height - 2, 1)
+    offset = window_offset(browser, visible)
 
     rows =
       browser.rows
       |> Enum.drop(offset)
-      |> Enum.take(height)
+      |> Enum.take(visible)
       |> Enum.with_index()
       |> Enum.map(fn {row, index} ->
         if offset + index == browser.selected do
-          cursor_row(row, accent)
+          cursor_row(row, styles.selected)
         else
-          row_text(row)
+          row_spans(row, styles)
         end
       end)
 
-    Helpers.frame(rows, {width, height})
+    bar = %{title: "capabilities", border: styles.chrome, shortcut: styles.shortcut, chrome: styles.chrome}
+    box = Helpers.border(rows, {width, height}, title: bar.title, border_style: bar.border)
+
+    bottom = buttonbar_row(width, browser.selected, length(browser.rows), bar)
+
+    # Helpers.border/3 returns the full box; the bottom border becomes the
+    # action bar (btop border-as-buttonbar).
+    Helpers.frame(List.replace_at(box, -1, bottom), {width, height})
   end
 
   # The window follows the cursor: the selected row stays visible when the
@@ -311,14 +329,42 @@ defmodule Workstation.CLI.TUI.Shell.CapabilitiesBrowser do
     |> clamp(0, max(length(rows) - height, 0))
   end
 
-  defp cursor_row(row, accent) do
-    case accent do
-      {r, g, b} ->
-        [{row_text(row), Style.new(fg: {:rgb, r, g, b}, attrs: [:bold])}]
+  defp cursor_row(row, selected) do
+    [{row_text(row), selected}]
+  end
 
-      nil ->
-        [{row_text(row), Style.new(attrs: [:reverse])}]
-    end
+  # Would-change file rows read warn; everything else stays plain (the
+  # saturated color is reserved for the data that matters).
+  defp row_spans(%{planned: planned} = row, styles) when is_integer(planned) and planned > 0 and row.kind == :file do
+    [{row_text(row), styles.warn}]
+  end
+
+  defp row_spans(row, _styles), do: [{row_text(row), Style.new()}]
+
+  # Bottom border as action bar: drill grammar + refresh with the cursor
+  # position counter (n/total rows) flush right.
+  defp buttonbar_row(width, selected, total, bar) do
+    hints = [
+      {"enter", bar.shortcut},
+      {" expand", Style.new()},
+      {" · ", bar.chrome},
+      {"backspace", bar.shortcut},
+      {" collapse", Style.new()},
+      {" · ", bar.chrome},
+      {"r", bar.shortcut},
+      {" refresh", Style.new()}
+    ]
+
+    counter = {"#{selected + 1}/#{total}", bar.chrome}
+    hints_width = Enum.reduce(hints, 0, fn {text, _}, acc -> acc + Helpers.text_width(text) end)
+    counter_width = Helpers.text_width(elem(counter, 0))
+
+    # 1 corner + 2 pad + hints + spacer + counter + 2 (dash + corner)
+    spacer = max(width - hints_width - counter_width - 5, 1)
+
+    [{"└", bar.border}, {String.duplicate("─", 2), bar.border}] ++
+      hints ++
+      [{String.duplicate(" ", spacer), bar.border}, counter, {"─┘", bar.border}]
   end
 
   defp row_text(row), do: String.duplicate("  ", row.depth) <> String.trim_leading(row.text)
