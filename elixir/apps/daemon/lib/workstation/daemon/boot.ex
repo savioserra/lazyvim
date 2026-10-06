@@ -23,11 +23,19 @@ defmodule Workstation.Daemon.Boot do
   @doc """
   Start the daemon tree and park. Returns only on a start failure —
   `{:error, {:already_running, socket_path}}` when another daemon owns the
-  socket, `{:error, {:peercred_unavailable, why}}` when the platform cannot
+  socket (a live peer on the socket path, or an in-VM double boot),
+  `{:error, {:peercred_unavailable, why}}` when the platform cannot
   authenticate peers.
   """
   @spec run() :: :ok | {:error, term()}
   def run do
+    # Trap exits BEFORE the tree start: a failed child start (a live peer
+    # already owning the state socket, an unbootable daemon dir, ...) makes
+    # the dying supervisor EXIT-signal its linked starter, and without this
+    # flag the raw EXIT kills the caller before the `{:error, reason}`
+    # returns below can ever be used. The flag is sticky; park/0 relies on
+    # it being set.
+    Process.flag(:trap_exit, true)
     # The resident daemon opts IN to the update-availability check (the
     # status wire's `update` field and the `update.check` op resolve the
     # engine repo for real). Tests boot the supervisor spec directly and
@@ -53,6 +61,16 @@ defmodule Workstation.Daemon.Boot do
       {:error, {:already_started, _supervisor}} ->
         {:error, {:already_running, Listener.socket_path(EngineState.home())}}
 
+      # A failed child start surfaces as the supervisor's shutdown wrapper
+      # around the child's own exit reason. Unwrap it, and map the live-peer
+      # refusal to the documented {:error, {:already_running, socket_path}}
+      # shape — the same refusal an in-VM double boot reports above.
+      {:error, {:shutdown, {:failed_to_start_child, Listener, {:already_running, socket_path}}}} ->
+        {:error, {:already_running, socket_path}}
+
+      {:error, {:shutdown, {:failed_to_start_child, _child, reason}}} ->
+        {:error, reason}
+
       {:error, reason} ->
         {:error, reason}
     end
@@ -61,10 +79,9 @@ defmodule Workstation.Daemon.Boot do
   # Park forever, draining the mailbox: the VM's permanent applications
   # (daemon tree included) keep the release alive while this process
   # breathes. Messages are consumed, never acted on — lifecycle belongs to
-  # the supervisor and to `daemon stop`.
+  # the supervisor and to `daemon stop`. trap_exit was raised by run/0
+  # before the tree start, so supervisor deaths drain here as messages too.
   defp park do
-    Process.flag(:trap_exit, true)
-
     # Drain-and-sleep forever: the mailbox is consumed (drained by the
     # trap_exit flag + selective receive), never acted on — lifecycle
     # belongs to the supervisor and to `daemon stop`.

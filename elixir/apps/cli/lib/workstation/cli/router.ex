@@ -89,7 +89,9 @@ defmodule Workstation.CLI.Router do
 
   ## parser
 
-  defp parser do
+  # Public for the parse-shape regression (DaemonVerbTest pins the
+  # ["daemon", "stop"] flattened positional through THIS spec, not a copy).
+  def parser do
     Optimus.new!(
       name: "workstation",
       description: "workstation engine front end: read verbs report, lifecycle verbs mutate.",
@@ -254,7 +256,12 @@ defmodule Workstation.CLI.Router do
   # path — nothing stops a running daemon behind the operator's back.
   # Failure to boot or stop a daemon is an operator-facing error (exit 4).
   defp dispatch(:daemon, result, _mode) do
-    case result.args[:daemon][:action] do
+    # Optimus FLATTENS the matched subcommand's positionals into result.args:
+    # for argv ["daemon", "stop"] the result is %{action: "stop"} — there is
+    # no :daemon nesting. (Reading result.args[:daemon][:action] was always
+    # nil and routed every daemon verb into the boot arm; the parse shape is
+    # pinned by DaemonVerbTest against the real parser below.)
+    case result.args[:action] do
       nil ->
         case Boot.run() do
           :ok ->
