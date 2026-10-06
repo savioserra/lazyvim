@@ -12,10 +12,14 @@ defmodule Workstation.Core.CanonicalJSON do
   * an EMPTY object encodes as `[]`, because a Lua table cannot distinguish
     an empty map from an empty list — the goldens rely on this (`assets: []`,
     `fragments_journal: []`);
-  * `nil` map values drop the key entirely (Lua `nil` fields do not exist),
-    while the distinct `:null` token (the `vim.NIL` anchor) emits `null` —
-    that is how `baseline_generation` stays an explicit null on a fresh
-    journal while absent `link`/`exact`/`template` keys disappear;
+  * callers building maps drop `nil` values entirely (a Lua `nil` field does
+    not exist), while the distinct `:null` token (the `vim.NIL` anchor) emits
+    `null` — that is how `baseline_generation` stays an explicit null on a
+    fresh journal while absent `link`/`exact`/`template` keys disappear;
+    a raw `nil` that does reach the encoder also emits `null` (never a
+    dropped key), so nil-able envelope fields such as `applied_generation`
+    (fresh home, no journal) and a file row's `mode` encode deterministically
+    instead of crashing;
   * control bytes (< 0x20 and DEL 0x7f) escape as `\\u00xx` lowercase four-digit
     hex, with the named shortcuts `\\b \\t \\n \\f \\r`; slash is never escaped;
     non-ASCII UTF-8 passes through raw;
@@ -35,7 +39,8 @@ defmodule Workstation.Core.CanonicalJSON do
   Encode a plain-data value to the exact `vim.json.encode(sort_keys)` bytes.
   Raises `ArgumentError` on values outside the supported shape (floats,
   atoms other than `:null`/booleans, non-binary keys) — those cannot occur in
-  a validated plan, so failing closed beats guessing an encoding.
+  a validated plan, so failing closed beats guessing an encoding. `nil` is
+  inside the shape and encodes as the JSON literal `null`.
   """
   @spec encode(json_value()) :: binary()
   def encode(value), do: value |> enc(:lua) |> IO.iodata_to_binary()
@@ -52,12 +57,13 @@ defmodule Workstation.Core.CanonicalJSON do
   @spec encode_record(json_value()) :: binary()
   def encode_record(value), do: value |> enc(:record) |> IO.iodata_to_binary()
 
-  defp enc(nil, _mode) do
-    # Map values that are literally nil mirror a missing Lua field: the key
-    # itself is dropped by the caller building the map, so reaching nil here
-    # means a list element or a top level nil, which Lua could not encode.
-    raise ArgumentError, "canonical JSON cannot encode nil; drop the key or use :null"
-  end
+  # A raw nil encodes as the JSON literal null, never a dropped key. Callers
+  # drop nil map values when building Lua-parity plan shapes, but nil-able
+  # envelope fields (applied_generation with no journal, a file row's mode)
+  # pass straight through, and dropping keys there would destabilize the
+  # output shape. No input that previously encoded successfully contained a
+  # nil, so this cannot change any pre-existing byte output.
+  defp enc(nil, mode), do: enc(:null, mode)
 
   defp enc(:null, _mode), do: "null"
   defp enc(true, _mode), do: "true"

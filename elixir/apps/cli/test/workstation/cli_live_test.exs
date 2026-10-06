@@ -118,6 +118,33 @@ defmodule Workstation.CLI.LiveTest do
     refute Map.has_key?(wire, "update")
   end
 
+  # Regression (final-gate P1): a fresh home's capabilities envelope carries
+  # nil-able fields — `applied_generation` (no journal yet) and a file row's
+  # `mode` — and the canonical-JSON encoder crashed with "canonical JSON
+  # cannot encode nil" exactly on this verb. The encoder now emits the JSON
+  # `null` literal for nil, so the fresh-home read is rc 0 with the same
+  # envelope shape.
+  test "capabilities --json answers rc 0 on a fresh home (nil fields encode as null)", %{home: home} do
+    {result, output} = capture_main(["capabilities", "--json", "--home", home])
+
+    assert result == :ok
+    wire = Jason.decode!(output)
+
+    assert %{
+             "schema" => "workstation.capabilities.v1",
+             "applied_generation" => nil,
+             "domains" => domains
+           } = wire
+
+    # An empty test home still composes the full catalog, so the envelope
+    # carries real file rows (the other half of the nil field surface).
+    assert is_list(domains) and domains != []
+
+    # The envelope is canonical JSON (compact, keys sorted) — the same
+    # bytes-then-decode parity the other live verbs pin.
+    assert String.trim_trailing(output, "\n") == canonical_json(wire)
+  end
+
   defp capture_main(argv) do
     me = self()
 

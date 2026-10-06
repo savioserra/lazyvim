@@ -91,12 +91,17 @@ defmodule Workstation.Core.PipelineTest do
       assert Workstation.Core.CanonicalJSON.encode(%{}) == "[]"
     end
 
-    test "passes non-ASCII through and fails closed on engine-impossible values" do
+    test "passes non-ASCII through and encodes nil as the null literal" do
       assert Workstation.Core.CanonicalJSON.encode(%{"k" => "é"}) == ~s({"k":"é"})
 
-      assert_raise ArgumentError, ~r/cannot encode nil/, fn ->
-        Workstation.Core.CanonicalJSON.encode(%{"k" => nil})
-      end
+      # A raw nil encodes as the JSON literal null (never a dropped key), so
+      # nil-able envelope fields keep their shape; see capabilities --json on
+      # a fresh home (nil applied_generation, nil file-row mode).
+      assert Workstation.Core.CanonicalJSON.encode(%{"k" => nil}) == ~s({"k":null})
+      assert Workstation.Core.CanonicalJSON.encode([nil]) == "[null]"
+      assert Workstation.Core.CanonicalJSON.encode(nil) == "null"
+      assert Workstation.Core.CanonicalJSON.encode_record(%{"a" => nil, "b" => 1}) ==
+               ~s({"a":null,"b":1})
     end
   end
 end
