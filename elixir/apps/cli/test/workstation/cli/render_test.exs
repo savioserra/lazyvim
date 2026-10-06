@@ -39,6 +39,33 @@ defmodule Workstation.CLI.RenderTest do
     assert "journal: generation=g1 revision=2 at=1700000000" in lines(journaled)
   end
 
+  test "core_status renders the availability line only when the check resolved" do
+    behind =
+      Render.core_status(%{
+        "platform" => "linux-x64",
+        "packages" => [],
+        "journal" => nil,
+        "update" => %{"available" => true, "local" => "abc1234", "remote" => "def5678", "remote_ref" => "refs/heads/main"}
+      })
+
+    assert "update: available (abc1234 → def5678)" in lines(behind)
+
+    current =
+      Render.core_status(%{
+        "platform" => "linux-x64",
+        "packages" => [],
+        "journal" => nil,
+        "update" => %{"available" => false}
+      })
+
+    assert "update: up to date" in lines(current)
+
+    # Unknown (offline, no origin, disabled): ABSENT — offline must look
+    # like no-news, never like a difference.
+    unknown = Render.core_status(%{"platform" => "linux-x64", "packages" => [], "journal" => nil})
+    refute Enum.any?(lines(unknown), &String.starts_with?(&1, "update:"))
+  end
+
   # --- plan ---------------------------------------------------------------------
 
   defp plan_wire do

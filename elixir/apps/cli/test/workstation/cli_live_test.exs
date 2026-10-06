@@ -15,7 +15,7 @@ defmodule Workstation.CLI.LiveTest do
 
   use ExUnit.Case, async: false
 
-  alias Workstation.CLI.Router
+  alias Workstation.CLI.{DaemonClient, Router}
   alias Workstation.Daemon.Listener
 
   setup do
@@ -104,6 +104,19 @@ defmodule Workstation.CLI.LiveTest do
   end
 
   ## main plumbing (same contract as Workstation.CLITest's helpers)
+
+  # The availability check is OPT-IN at daemon boot (the release boot sets
+  # the env flag; a supervisor_spec test tree does not), so the live tree
+  # answers the disabled "unknown" — and the status wire stays free of the
+  # `update` object entirely (offline must look like no-news).
+  test "update.check answers the disabled unknown and status carries no update object", %{home: home} do
+    assert {:ok, %{"status" => "unknown", "reason" => "update check disabled"}} =
+             DaemonClient.control("update.check", %{})
+
+    {_result, output} = capture_main(["json", "status", "--home", home])
+    wire = Jason.decode!(output)
+    refute Map.has_key?(wire, "update")
+  end
 
   defp capture_main(argv) do
     me = self()

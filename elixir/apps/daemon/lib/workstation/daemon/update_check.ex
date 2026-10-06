@@ -68,12 +68,12 @@ defmodule Workstation.Daemon.UpdateCheck do
   end
 
   @doc "One TTL-cached check (the op surface)."
-  @spec check_cached() :: verdict()
-  def check_cached, do: GenServer.call(__MODULE__, :check)
+  @spec check_cached(GenServer.server()) :: verdict()
+  def check_cached(name \\ __MODULE__), do: GenServer.call(name, :check)
 
   @doc "Drop the cached verdict (tests)."
-  @spec reset() :: :ok
-  def reset, do: GenServer.call(__MODULE__, :reset)
+  @spec reset(GenServer.server()) :: :ok
+  def reset(name \\ __MODULE__), do: GenServer.call(name, :reset)
 
   @impl true
   def init(state) do
@@ -153,12 +153,16 @@ defmodule Workstation.Daemon.UpdateCheck do
   defp check_repo(repo, opts) do
     with {:ok, branch} <- git(repo, ["rev-parse", "--abbrev-ref", "HEAD"], opts),
          branch = String.trim_trailing(branch),
-         false <- branch == "" or branch == "HEAD",
          {:ok, local} <- git(repo, ["rev-parse", "HEAD"], opts) do
-      compare(repo, branch, "refs/heads/#{branch}", String.trim_trailing(local), opts)
+      # A detached or unborn HEAD has no remote counterpart to compare
+      # against — unknown, never a guess.
+      if branch == "" or branch == "HEAD" do
+        %{"status" => "unknown", "reason" => "detached or unborn HEAD"}
+      else
+        compare(repo, branch, "refs/heads/#{branch}", String.trim_trailing(local), opts)
+      end
     else
       {:error, reason} -> %{"status" => "unknown", "reason" => reason}
-      false -> %{"status" => "unknown", "reason" => "detached or unborn HEAD"}
     end
   end
 

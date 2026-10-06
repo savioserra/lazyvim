@@ -248,7 +248,7 @@ defmodule Workstation.CLI.TUI.ApplyTest do
       # Consume the open frame, expire the completion toast, then force a
       # deterministic redraw and assert the settled footer.
       _early = latest_frame()
-      Process.sleep(50)
+      Process.sleep(200)
       send_event(runtime, Event.resize(80, 12))
       frame = latest_frame()
 

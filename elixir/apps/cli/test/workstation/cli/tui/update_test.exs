@@ -151,7 +151,7 @@ defmodule Workstation.CLI.TUI.UpdateTest do
       # Consume the run frames, let the toast expire, then force a
       # deterministic redraw and assert the settled footer.
       _early = latest_frame()
-      Process.sleep(50)
+      Process.sleep(200)
       send_event(runtime, Event.resize(80, 12))
       frame = latest_frame()
 
@@ -167,7 +167,7 @@ defmodule Workstation.CLI.TUI.UpdateTest do
           ] do
         runtime = start_update(check: fn -> verdict end, toast_ms: 30)
         _early = latest_frame()
-        Process.sleep(50)
+        Process.sleep(200)
         send_event(runtime, Event.resize(80, 12))
         frame = latest_frame()
         refute frame |> Frame.row_text(12) =~ "update available"

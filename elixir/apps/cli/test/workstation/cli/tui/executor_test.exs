@@ -57,6 +57,18 @@ defmodule Workstation.CLI.TUI.ExecutorTest do
     assert message =~ "invalid_params"
   end
 
+  test "update_check_executor returns the disabled verdict and abort_executor surfaces a racing finish" do
+    # The supervisor_spec tree boots WITHOUT the boot opt-in: the check is
+    # the disabled unknown (never a network query in tests).
+    assert {:ok, %{"status" => "unknown", "reason" => "update check disabled"}} =
+             Executor.update_check_executor()
+
+    # Abort is best-effort: a token with no in-flight op (here the op isn't
+    # even served by this minimal tree) answers as an error value, never a
+    # crash — the screens drop the error and the chain verdict rules.
+    assert {:error, _message} = Executor.abort_executor("op-does-not-exist")
+  end
+
   defp wait_for_file(path, tries \\ 100)
 
   defp wait_for_file(_path, 0), do: flunk("listener socket never appeared")
