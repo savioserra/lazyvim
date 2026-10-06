@@ -267,7 +267,18 @@ defmodule Workstation.CLI.Router do
 
   ## dispatch
 
-  defp dispatch_from_result(_result), do: {:ok, IO.puts(Optimus.help(parser()))}
+  # Bare `workstation`: on a usable terminal the verb IS the TUI home —
+  # the application shell (owner directive 1); anywhere else the plain
+  # verb help prints and the process exits 0. The non-TTY contract: the
+  # bare verb NEVER hangs and NEVER starts a TUI blind.
+  defp dispatch_from_result(result) do
+    if usable_terminal?() do
+      home = resolve_home(result)
+      TUI.Shell.DaemonEntry.run(destination: home)
+    else
+      {:ok, IO.puts(Optimus.help(parser()))}
+    end
+  end
 
   defp dispatch(command, result, mode) when command in [:status, :plan, :diff] do
     home = resolve_home(result)
@@ -593,7 +604,14 @@ defmodule Workstation.CLI.Router do
   defp format_engine_error(reason) when is_binary(reason), do: reason
   defp format_engine_error(reason), do: "engine failure: #{inspect(reason)}"
 
-  defp fail(exit_code, message) do
+  @doc """
+  The shared failure surface: one stderr line, then the given exit code.
+  Public because the TUI boot path (bare-verb shell) reports its
+  daemon-unavailable failure through the exact same contract as the verbs
+  (exit 4 — engine failure, daemon unavailable).
+  """
+  @spec fail(non_neg_integer(), String.t()) :: no_return()
+  def fail(exit_code, message) do
     IO.puts(:stderr, String.trim_trailing(message, "\n"))
     exit({:shutdown, exit_code})
   end
