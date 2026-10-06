@@ -185,9 +185,11 @@ defmodule Workstation.CLI.TUI.ShellTest do
     send_key(runtime, :left)
     assert settled_frame(runtime) |> body_text() =~ "workstation status (core)"
 
-    # Wrap backwards to the last tab (help), then ? returns to the last
-    # data tab (home — the tab we left when entering help).
-    for _ <- 1..3, do: send_key(runtime, :left)
+    # Wrap backwards to the last tab (help): home → ← wraps to help. The
+    # walk goes home by digit because the capabilities tab keeps ←/→ for
+    # its own drill-down — arrows no longer cross it.
+    send_text(runtime, "1")
+    send_key(runtime, :left)
     assert settled_frame(runtime) |> body_text() =~ "workstation — keys"
 
     send_text(runtime, "?")
@@ -259,8 +261,8 @@ defmodule Workstation.CLI.TUI.ShellTest do
     refute text =~ ".config/nvim/init.lua"
 
     # Drill into editor → first package → files: enter toggles the row
-    # under the cursor; left collapses it again. Package order follows
-    # the envelope (helix sorts before nvim).
+    # under the cursor. Package order follows the envelope (helix sorts
+    # before nvim).
     send_key(runtime, :enter)
     frame = settled_frame(runtime)
     assert body_text(frame) =~ "▾ editor"
@@ -270,11 +272,27 @@ defmodule Workstation.CLI.TUI.ShellTest do
     send_key(runtime, :enter)
     assert settled_frame(runtime) |> body_text() =~ ".config/nvim/init.lua"
 
-    # Collapse back to rollups (nvim, then jump home, then the domain).
+    # ← collapses the package under the cursor AND STAYS on the tab: on
+    # the capabilities tab the arrows drill instead of switching tabs,
+    # so the strip still shows capabilities active and the browser frame
+    # (not another tab's) loses the file rows.
     send_key(runtime, :left)
-    send_key(runtime, :home)
-    send_key(runtime, :left)
-    refute settled_frame(runtime) |> body_text() =~ ".config/nvim/init.lua"
+    frame = settled_frame(runtime)
+    assert Frame.row_text(frame, 2) =~ "2 capabilities"
+    assert body_text(frame) =~ "▾ editor"
+    refute body_text(frame) =~ ".config/nvim/init.lua"
+
+    # backspace pops the remaining drill level (the editor domain) back
+    # to rollups; → re-expands it (enter's toggle twin).
+    send_key(runtime, :up)
+    send_key(runtime, :up)
+    send_key(runtime, :backspace)
+    frame = settled_frame(runtime)
+    assert body_text(frame) =~ "▸ editor — 2 packages"
+    refute body_text(frame) =~ "▾ editor"
+
+    send_key(runtime, :right)
+    assert settled_frame(runtime) |> body_text() =~ "▾ editor"
   end
 
   test "capabilities loading state names the missing wire" do

@@ -8,9 +8,11 @@ defmodule Workstation.CLI.TUI.Shell.CapabilitiesBrowser do
   degrade into a raw file dump; unattributed entries surface under their
   own honest domain row instead of vanishing.
 
-  Pure data + view: the shell owns the keyboard (↑↓ move, enter/→ expand,
-  ← collapse) and forwards messages; expansion state is keyed by outline
-  path so a data refresh (`r`) keeps the drilled-open subtree open.
+  Pure data + view: the shell owns the keyboard and forwards messages —
+  ↑↓ move, enter/→ expand, ←/backspace collapse (the shell routes the
+  arrows and backspace here only while the capabilities tab is active);
+  expansion state is keyed by outline path so a data refresh (`r`) keeps
+  the drilled-open subtree open.
   """
 
   alias TermUI.Style
@@ -68,6 +70,11 @@ defmodule Workstation.CLI.TUI.Shell.CapabilitiesBrowser do
   def update({:key, :enter} = msg, t), do: toggle_or_step(msg, t)
   def update({:key, :right}, t), do: expand_at(t)
   def update({:key, :left}, t), do: collapse_at(t)
+
+  # backspace is the drill-axis pop key (one level out), same collapse
+  # as ←; `q` stays the shell-wide quit (the footer's documented key).
+  def update({:key, :backspace}, t), do: collapse_at(t)
+
   def update(_message, t), do: t
 
   defp toggle_or_step(_msg, t) do

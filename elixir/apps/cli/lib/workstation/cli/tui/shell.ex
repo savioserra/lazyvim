@@ -234,6 +234,17 @@ defmodule Workstation.CLI.TUI.Shell do
     switch_tab(tab_id, state)
   end
 
+  # On the capabilities tab the arrows drill (the browser's documented
+  # expand/collapse keys) and backspace pops one drill level; every
+  # other tab keeps ←/→ for tab switching (digits always switch).
+  def update({:key, arrow}, %{tab: :capabilities} = state) when arrow in [:left, :right] do
+    route({:key, arrow}, state)
+  end
+
+  def update({:key, :backspace}, %{tab: :capabilities} = state) do
+    route({:key, :backspace}, state)
+  end
+
   def update({:key, :left}, state), do: step_tab(state, -1)
   def update({:key, :right}, state), do: step_tab(state, 1)
 
@@ -799,7 +810,14 @@ defmodule Workstation.CLI.TUI.Shell do
   end
 
   defp footer_frame(state, {width, height}) do
-    base = "1-7 tabs · ←→ switch · r refresh · ? help · q quit"
+    # The capabilities tab keeps the arrows for drill-down, so its footer
+    # names the drill grammar instead of the switch grammar.
+    base =
+      if state.tab == :capabilities do
+        "1-7 tabs · ↑↓ move · enter/→ expand · ←/backspace collapse · r refresh · ? help · q quit"
+      else
+        "1-7 tabs · ←→ switch · r refresh · ? help · q quit"
+      end
 
     line =
       if state.tab == :home do
