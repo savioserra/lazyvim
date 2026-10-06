@@ -22,8 +22,14 @@ defmodule Workstation.Daemon.Capability do
           | {:error, {String.t(), String.t()}}
           | :protocol_mismatch
 
-  @typedoc "Session context handed to op handlers: the calling session pid, or nil off-wire."
-  @type ctx :: pid() | nil
+  @typedoc """
+  Session context handed to op handlers. Off-wire callers pass nil (or a
+  pid, the pre-streaming spelling, still accepted). The streaming session
+  passes a map: `session` is the calling session pid and `op_ref` the op's
+  stream token — the handle the op uses to publish progress events
+  (`Workstation.Daemon.Events`).
+  """
+  @type ctx :: %{optional(:session) => pid(), optional(:op_ref) => String.t()} | pid() | nil
 
   @doc "Wire op names served by this capability."
   @callback ops() :: [String.t()]
@@ -32,10 +38,10 @@ defmodule Workstation.Daemon.Capability do
   @callback schema(String.t()) :: Zoi.Schema.t() | nil
 
   @doc """
-  Handle one op with already-schema-validated params. `ctx` is the calling
-  session pid (nil when exercised off-wire). `handle/3` never raises for
-  expected protocol failures; unexpected exceptions are the session's
-  internal-error boundary.
+  Handle one op with already-schema-validated params. `ctx` identifies the
+  calling session (pid, nil off-wire, or the streaming session map with the
+  op's `op_ref` token). `handle/3` never raises for expected protocol
+  failures; unexpected exceptions are the session's internal-error boundary.
   """
   @callback handle(String.t(), map(), ctx()) :: handle_result()
 
@@ -44,6 +50,25 @@ defmodule Workstation.Daemon.Capability do
 
   @doc "Supervised children this capability contributes (rare; infra stays central)."
   @callback children() :: [Supervisor.child_spec() | module()]
+
+  @doc """
+  The op's stream token for `ctx`: the session's `op_ref` on the wire, or a
+  fresh one off-wire (events published to no subscriber are no-ops, so an
+  in-process caller needs no coordination to run the same handles).
+  """
+  @spec op_ref(ctx()) :: String.t()
+  def op_ref(%{op_ref: ref}) when is_binary(ref), do: ref
+  def op_ref(_ctx), do: Workstation.Daemon.Events.new_ref()
+
+  @doc """
+  Caller-supplied op options for `ctx` (fixture seams for module-level
+  tests — home, installer, bootstrap run). The wire session never sets
+  them: on the wire ops serve the daemon's own pinned environment, so a
+  client cannot smuggle options through params (they never reach ctx).
+  """
+  @spec opts(ctx()) :: keyword()
+  def opts(%{opts: opts}) when is_list(opts), do: opts
+  def opts(_ctx), do: []
 
   @doc false
   defmacro __using__(_opts) do

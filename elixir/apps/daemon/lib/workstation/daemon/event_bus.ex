@@ -37,11 +37,40 @@ defmodule Workstation.Daemon.EventBus do
     :ok
   end
 
-  @doc "Deliver `event` to every current subscriber of `topic`."
+  @doc "Stop receiving `{topic, event}` messages (idempotent)."
+  @spec unsubscribe(topic()) :: :ok
+  def unsubscribe(topic) do
+    Registry.unregister(Workstation.Daemon.EventBus, topic)
+    :ok
+  end
+
+  @doc """
+  Deliver `event` to every current subscriber of `topic`.
+
+  Publishing into a bus that is NOT RUNNING (a supervision tree being torn
+  down — `:rest_for_one` stops the bus before the sessions, so a session
+  draining its last frames can publish into a dead registry) is a no-op,
+  not a crash: there is nobody left to owe the event, and a teardown race
+  must never surface as a session crash log.
+  """
   @spec publish(topic(), event()) :: :ok
   def publish(topic, event) do
-    Registry.dispatch(Workstation.Daemon.EventBus, topic, fn subscribers ->
-      Enum.each(subscribers, fn {pid, :ok} -> send(pid, {:daemon_event, topic, event}) end)
-    end)
+    case :erlang.whereis(Workstation.Daemon.EventBus) do
+      :undefined ->
+        :ok
+
+      _bus ->
+        try do
+          Registry.dispatch(Workstation.Daemon.EventBus, topic, fn subscribers ->
+            Enum.each(subscribers, fn {pid, :ok} -> send(pid, {:daemon_event, topic, event}) end)
+          end)
+        rescue
+          # The bus died between the whereis check and the dispatch (the
+          # teardown race, narrowed but not eliminated).
+          ArgumentError -> :ok
+        end
+
+        :ok
+    end
   end
 end

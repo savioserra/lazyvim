@@ -31,7 +31,7 @@ defmodule Workstation.Daemon.Apply do
   """
 
   alias Workstation.Core.{ApplyEngine, EngineState, Plan}
-  alias Workstation.Daemon.ApplyOrchestrator
+  alias Workstation.Daemon.{ApplyOrchestrator, Events}
 
   @engine_apply_default true
 
@@ -67,10 +67,27 @@ defmodule Workstation.Daemon.Apply do
   @spec run(String.t(), keyword()) :: {:ok, map()} | {:error, {String.t(), String.t()}}
   def run(requested_generation, opts \\ []) when is_binary(requested_generation) and is_list(opts) do
     home = opts[:home] || EngineState.home()
+    op_ref = opts[:op_ref]
 
-    with {:ok, plan} <- collect_plan(opts[:collector], home) do
-      execute_locked(plan, requested_generation, home)
+    if op_ref,
+      do:
+        Events.emit(op_ref, "run.started", %{"op" => "apply.run", "generation" => requested_generation})
+
+    result =
+      with {:ok, plan} <- collect_plan(opts[:collector], home) do
+        execute_locked(plan, requested_generation, home)
+      end
+
+    case result do
+      {:ok, _record} ->
+        if op_ref, do: Events.emit(op_ref, "run.finished", %{"outcome" => "ok"})
+
+      {:error, {code, message}} ->
+        if op_ref,
+          do: Events.emit(op_ref, "run.finished", %{"outcome" => "failed", "error" => "#{code}: #{message}"})
     end
+
+    result
   end
 
   # Server-side plan: the shared Core composition (`Workstation.Core.Plan`),

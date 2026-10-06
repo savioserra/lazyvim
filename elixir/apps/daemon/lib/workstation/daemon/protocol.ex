@@ -233,6 +233,25 @@ defmodule Workstation.Daemon.Protocol do
     <<byte_size(body)::unsigned-big-integer-size(@header_bytes * 8), body::binary>>
   end
 
+  @doc """
+  Encode an out-of-band progress event frame: `{"event": {...}}` with NO id
+  — events belong to an op STREAM (the `op_ref` token inside), not to a
+  request/response pair. Events are plain JSON scalars by contract
+  (`Workstation.Daemon.Events`), so Jason is exact here; the response cap
+  still bounds the frame (a runaway log line cannot exceed the wire).
+  """
+  @spec encode_event(map()) :: {:ok, iodata()} | {:error, {:response_too_large, pos_integer()}}
+  def encode_event(%{} = event) do
+    body = Jason.encode!(%{"event" => event})
+    size = byte_size(body)
+
+    if size > @max_response_bytes do
+      {:error, {:response_too_large, size}}
+    else
+      {:ok, <<size::unsigned-big-integer-size(@header_bytes * 8), body::binary>>}
+    end
+  end
+
   @doc "Protocol error code for ops outside the served set."
   @spec unknown_op() :: {String.t(), String.t()}
   def unknown_op, do: {"unknown_op", "op is not served by this daemon"}

@@ -12,8 +12,10 @@ defmodule Workstation.DaemonTest do
     Workstation.Daemon.Listener,
     Workstation.Daemon.Sessions,
     Workstation.Daemon.EventBus,
+    Workstation.Daemon.OpRegistry,
     Workstation.Daemon.CapabilityRegistry,
-    Workstation.Daemon.ApplyOrchestrator
+    Workstation.Daemon.ApplyOrchestrator,
+    Workstation.Daemon.TaskSupervisor
   ]
 
   setup do
@@ -38,7 +40,8 @@ defmodule Workstation.DaemonTest do
     # which_children reports newest-first, i.e. REVERSE start order; the
     # contract pins the start order (rest_for_one), so compare reversed.
     assert Enum.reverse(names) == @infrastructure ++ [
-             Workstation.Daemon.Overlay
+             Workstation.Daemon.Overlay,
+             Workstation.Daemon.UpdateCheck
            ]
 
     # The listener served its socket under the temp home.

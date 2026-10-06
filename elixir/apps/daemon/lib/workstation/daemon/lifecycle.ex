@@ -30,9 +30,142 @@ defmodule Workstation.Daemon.Lifecycle do
   """
 
   alias Workstation.Core.{ApplyEngine, EngineState, Plan, Update}
-  alias Workstation.Daemon.ApplyOrchestrator
+  alias Workstation.Daemon.{ApplyOrchestrator, Events}
+
+  # The update chain's canonical order (mirror of Workstation.Core.Update.steps/0,
+  # pinned by a daemon test). A `steps` chain must be a non-empty order-
+  # preserving subsequence — the chain is a RESUME primitive, not a
+  # permutation surface.
+  @canonical_steps ["pull", "bootstrap", "apply", "sync", "verify"]
+
+  @doc "The canonical update-chain step order."
+  @spec canonical_steps() :: [String.t()]
+  def canonical_steps, do: @canonical_steps
+
+  @doc """
+  Validate a `steps` chain request: a non-empty, order-preserving subsequence
+  of the canonical steps with no duplicates. Returns the steps or an
+  `{:error, message}` worded for the wire's `invalid_params`.
+  """
+  @spec valid_chain?([term()]) :: {:ok, [String.t()]} | {:error, String.t()}
+  def valid_chain?(steps) when is_list(steps) do
+    if steps != [] and Enum.all?(steps, &is_binary/1) do
+      canonical = @canonical_steps
+
+      if Enum.uniq(steps) == steps and subsequence?(steps, canonical) do
+        {:ok, steps}
+      else
+        {:error,
+         "steps must be a non-empty subsequence of #{inspect(canonical)} in canonical order"}
+      end
+    else
+      {:error, "steps must be a non-empty array of step names"}
+    end
+  end
+
+  def valid_chain?(_other), do: {:error, "steps must be a non-empty array of step names"}
+
+  defp subsequence?(steps, canonical), do: do_subsequence?(steps, canonical)
+
+  defp do_subsequence?([], _rest), do: true
+
+  defp do_subsequence?([step | steps], rest) do
+    case Enum.drop_while(rest, &(&1 != step)) do
+      [^step | new_rest] -> do_subsequence?(steps, new_rest)
+      _other -> false
+    end
+  end
 
   ## verb surface (one lifecycle verb per op)
+
+  @doc """
+  Run an ordered update chain as ONE daemon-side op under the live event
+  stream: `run.started`, `step.started`/`step.done` per step, `run.finished`.
+  This is what the client's update verb drives since the streaming refactor —
+  the daemon owns the chain, the client renders it; the one-in-flight op and
+  the abort contract live on the session (`op.abort` honours the NEXT
+  boundary — the only honest cancellation point for a lock-holding chain).
+
+  Each step still runs through `run_step/2` (same locks, same codes, same
+  handoff note contract), so the chain is the per-step op repeated. The
+  result is one of:
+
+    * `{:ok, record, refreshed?}` — the whole chain ran; `refreshed?` says
+      whether any step refreshed the release (the wire layer's daemon-stop
+      trigger for the verbs whose LAST step is a bootstrap);
+    * `{:handoff, record, remaining}` — a bootstrap REFRESHED the release
+      mid-chain: the daemon is about to stop itself (stale code), so the
+      chain halts instead of running the remaining steps into a dying VM;
+      the client re-spawns from the refreshed release and resumes them;
+    * `{:aborted, next_step}` / `{:failed, code, message}` — the abort and
+      error outcomes (both emit `run.finished`).
+
+  The chain checks the abort flag before every step: an aborted chain
+  finishes the step in flight (a cancelled mutation must not leave a half
+  applied generation), skips the rest, and fails with the `aborted` code
+  after emitting `run.finished{outcome: aborted}`.
+  """
+  @spec run_chain([String.t()], Events.op_ref(), keyword()) ::
+          {:ok, map(), boolean()}
+          | {:handoff, map(), [String.t()]}
+          | {:error, String.t(), String.t()}
+  def run_chain(steps, op_ref, opts \\ []) when is_list(steps) and is_binary(op_ref) and is_list(opts) do
+    Events.emit(op_ref, "run.started", %{"op" => "update.run", "steps" => steps})
+
+    outcome =
+      chain_fold(steps, op_ref, opts, {:run, nil, false, []})
+
+    case outcome do
+      {:run, record, refreshed?, _done} ->
+        Events.emit(op_ref, "run.finished", %{"outcome" => "ok"})
+        {:ok, record, refreshed?}
+
+      {:handoff, record, remaining} ->
+        Events.emit(op_ref, "run.finished", %{"outcome" => "handoff", "remaining" => remaining})
+        {:handoff, record, remaining}
+
+      {:aborted, _next_step} ->
+        Events.emit(op_ref, "run.finished", %{"outcome" => "aborted"})
+        {:error, "aborted", "update aborted at a step boundary"}
+
+      {:failed, code, message} ->
+        Events.emit(op_ref, "run.finished", %{"outcome" => "failed", "error" => "#{code}: #{message}"})
+        {:error, code, message}
+    end
+  end
+
+  # The per-step fold. State: {:run, last_record, refreshed?, done_steps} |
+  # terminal. A successful bootstrap that REFRESHED the release halts the
+  # chain in the `:handoff` state BEFORE the next step — the daemon stops
+  # itself right after this op's reply flushes, and running further steps
+  # into a stopping VM would kill a mutation mid-flight.
+  defp chain_fold([], _op_ref, _opts, {:run, record, refreshed?, _done}),
+    do: {:run, record, refreshed?, []}
+
+  defp chain_fold([step | rest], op_ref, opts, {:run, _last, refreshed?, done}) do
+    if Events.aborted?(op_ref) do
+      {:aborted, step}
+    else
+      case Events.step(op_ref, step, fn -> run_step(step, opts) end) do
+        {:ok, record, _duration} ->
+          # Only the bootstrap step refreshes (capabilities/lifecycle pins
+          # @refresh_steps = ["bootstrap"]); a REFRESHED bootstrap halts the
+          # chain BEFORE the next step — the daemon stops itself right after
+          # this op's reply flushes, and running further steps into a
+          # stopping VM would kill a mutation mid-flight.
+          if record["release_refreshed"] == true do
+            {:handoff, record, rest}
+          else
+            chain_fold(rest, op_ref, opts, {:run, record, refreshed? or record["release_refreshed"] == true, done ++ [step]})
+          end
+
+        {:error, code, message, _duration} ->
+          {:failed, code, message}
+      end
+    end
+  end
+
+  defp chain_fold(_rest, _op_ref, _opts, terminal), do: terminal
 
   @doc """
   Run one lifecycle verb. The lock purposes and error codes are the verb

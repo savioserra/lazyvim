@@ -107,6 +107,55 @@ defmodule Workstation.Daemon.LifecycleHandoffTest do
     assert File.exists?(note_path(home))
   end
 
+  test "a refreshed bootstrap halts a chain mid-flight: the handoff outcome carries the remaining steps",
+       %{home: home} do
+    {_spy, installer} = spy_install()
+
+    assert {:handoff, record, ["sync", "verify"]} =
+             Lifecycle.run_chain(["bootstrap", "sync", "verify"], Workstation.Daemon.Events.new_ref(),
+               home: home,
+               engine_root: repo_root(),
+               bootstrap_run: bootstrap_stub(),
+               installer: installer,
+               writer_identity: "pre-refresh-stamp"
+             )
+
+    # The chain folds NO further step after the refresher: the daemon stops
+    # itself right after this op's reply flushes, and the remaining steps
+    # belong to the refreshed release (the client resumes them there).
+    assert record["release_refreshed"] == true
+  end
+
+  test "the update.run wire op reports the mid-chain handoff and schedules the daemon stop", %{home: home} do
+    {_spy, installer} = spy_install()
+
+    # The wire-layer stop must not halt the test VM: the shutdown hook seam
+    # replaces the halt, never the bookkeeping.
+    Application.put_env(:daemon, :shutdown_hook, fn _delay_ms, reason -> send(self(), {:daemon_shutdown, reason}) end)
+    Workstation.Daemon.Shutdown.reset()
+
+    on_exit(fn ->
+      Application.delete_env(:daemon, :shutdown_hook)
+      Workstation.Daemon.Shutdown.reset()
+    end)
+
+    assert {:ok, result} =
+             Workstation.Daemon.Capabilities.Lifecycle.handle("update.run", %{"steps" => ["bootstrap", "sync"]}, %{
+               op_ref: Workstation.Daemon.Events.new_ref(),
+               opts: [
+                 home: home,
+                 engine_root: repo_root(),
+                 bootstrap_run: bootstrap_stub(),
+                 installer: installer,
+                 writer_identity: "pre-refresh-stamp"
+               ]
+             })
+
+    assert result["handed_off"] == true
+    assert result["remaining_steps"] == ["sync"]
+    assert_received {:daemon_shutdown, "release refresh handoff"}
+  end
+
   test "the handoff note records the identity captured BEFORE the installer re-stamps (P0 in 0fb69a4f)",
        %{home: home} do
     # The live P0: the note was written from a POST-install identity read.

@@ -68,7 +68,8 @@ defmodule Workstation.Daemon.Capabilities do
     Workstation.Daemon.Capabilities.Apply,
     Workstation.Daemon.Capabilities.Lifecycle,
     Workstation.Daemon.Capabilities.Read,
-    Workstation.Daemon.Capabilities.Control
+    Workstation.Daemon.Capabilities.Control,
+    Workstation.Daemon.Capabilities.UpdateCheck
   ]
 
   @typedoc "Session context passed through to capability handlers."

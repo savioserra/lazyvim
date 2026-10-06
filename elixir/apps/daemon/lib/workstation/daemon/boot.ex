@@ -27,6 +27,14 @@ defmodule Workstation.Daemon.Boot do
   """
   @spec run() :: :ok | {:error, term()}
   def run do
+    # The resident daemon opts IN to the update-availability check (the
+    # status wire's `update` field and the `update.check` op resolve the
+    # engine repo for real). Tests boot the supervisor spec directly and
+    # never opt in, so a test tree cannot fire an unplanned network query.
+    # (Elixir.Application spelled out: this module aliases the daemon's own
+    # Application tree module.)
+    Elixir.Application.put_env(:daemon, :update_check, true)
+
     case Application.start(:normal, []) do
       :ok ->
         Logger.info("workstation daemon serving #{EngineState.home()}")

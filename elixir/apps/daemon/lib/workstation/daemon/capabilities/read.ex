@@ -14,7 +14,7 @@ defmodule Workstation.Daemon.Capabilities.Read do
   @behaviour Workstation.Daemon.Capability
 
   alias Workstation.Core.EngineState
-  alias Workstation.Daemon.Read
+  alias Workstation.Daemon.{Read, UpdateCheck}
 
   @empty_schema Zoi.object(%{}, unrecognized_keys: :error)
 
@@ -36,10 +36,37 @@ defmodule Workstation.Daemon.Capabilities.Read do
       end
 
     case Read.evaluate(command, EngineState.home(), input: nil) do
-      {:ok, wire} -> {:ok, wire}
+      {:ok, wire} -> {:ok, merge_update_availability(command, wire)}
       {:error, {tag, reason}} -> {:error, {Atom.to_string(tag), reason}}
     end
   end
+
+  # The status wire gains `update` when the (TTL-cached) availability check
+  # RESOLVES — `true`/`false` with the shas when behind — and stays ABSENT
+  # when the verdict is unknown: offline must look like no-news, never like
+  # a difference, and byte-stability of the wire for the no-check case is
+  # what the golden and offline-replay contracts were written against. The
+  # merge is status-only and daemon-only (offline --input replay never
+  # consults the network).
+  defp merge_update_availability(:status, wire) do
+    case Application.get_env(:daemon, :update_check, false) && UpdateCheck.check_cached() do
+      %{
+        "status" => "behind",
+        "local" => local,
+        "remote" => remote,
+        "remote_ref" => remote_ref
+      } ->
+        Map.put(wire, "update", %{"available" => true, "local" => local, "remote" => remote, "remote_ref" => remote_ref})
+
+      %{"status" => "up_to_date"} ->
+        Map.put(wire, "update", %{"available" => false})
+
+      _unknown_or_disabled ->
+        wire
+    end
+  end
+
+  defp merge_update_availability(_other, wire), do: wire
 
   @impl true
   def domains, do: []

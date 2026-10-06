@@ -1,7 +1,10 @@
 defmodule Workstation.Daemon.Capabilities.Apply do
   @moduledoc """
   Apply capability: serves `apply.run` — one orchestrated real-host apply
-  generation over the c1 apply engine (`Workstation.Daemon.Apply`).
+  generation over the c1 apply engine (`Workstation.Daemon.Apply`), with
+  progress events on the op's stream (`run.started`/`run.finished`; the
+  engine has no per-entry hook, so entry-level progress would need core
+  changes and is deferred).
 
   Mutation stays behind the graduation gate (`Workstation.Daemon.Apply.enabled?/0`,
   compile-time OFF): a refused op still takes the apply lock and answers
@@ -10,6 +13,8 @@ defmodule Workstation.Daemon.Capabilities.Apply do
   """
 
   use Workstation.Daemon.Capability
+
+  alias Workstation.Daemon.Capability
 
   alias Workstation.Daemon.ApplyOrchestrator
 
@@ -30,9 +35,9 @@ defmodule Workstation.Daemon.Capabilities.Apply do
   def schema(@op), do: @apply_run_params_schema
 
   @impl true
-  def handle(@op, %{"generation" => generation}, _ctx) do
+  def handle(@op, %{"generation" => generation}, ctx) do
     if Workstation.Daemon.Apply.enabled?() do
-      Workstation.Daemon.Apply.run(generation)
+      Workstation.Daemon.Apply.run(generation, op_ref: Capability.op_ref(ctx))
     else
       lifecycle_op("apply.run generation=#{generation}")
     end

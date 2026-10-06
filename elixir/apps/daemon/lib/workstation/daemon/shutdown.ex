@@ -31,14 +31,25 @@ defmodule Workstation.Daemon.Shutdown do
     else
       :persistent_term.put({__MODULE__, :stopping}, true)
 
-      # Unlinked: the stopping daemon must not die WITH its caller's
-      # session — it outlives the op by exactly the flush window.
-      spawn(fn ->
-        Process.sleep(delay_ms)
-        Logger.info("workstation daemon stopping: #{reason}")
-        _ = Application.stop(:daemon)
-        System.halt(0)
-      end)
+      # The test seam (Application env :daemon, :shutdown_hook) replaces the
+      # HALT itself, never the bookkeeping: a supervisor-spec test tree
+      # cannot let the real System.halt/1 kill the mix run, but the
+      # pending-stop idempotency must hold identically (Workstation.Daemon.Shutdown.reset/0
+      # clears the marker between tests).
+      case Application.get_env(:daemon, :shutdown_hook) do
+        hook when is_function(hook, 2) ->
+          hook.(delay_ms, reason)
+
+        _real ->
+          # Unlinked: the stopping daemon must not die WITH its caller's
+          # session — it outlives the op by exactly the flush window.
+          spawn(fn ->
+            Process.sleep(delay_ms)
+            Logger.info("workstation daemon stopping: #{reason}")
+            _ = Application.stop(:daemon)
+            System.halt(0)
+          end)
+      end
 
       :ok
     end
@@ -47,4 +58,8 @@ defmodule Workstation.Daemon.Shutdown do
   @doc "Whether a stop has already been scheduled (diagnostics)."
   @spec stopping?() :: boolean()
   def stopping?, do: :persistent_term.get({__MODULE__, :stopping}, false)
+
+  @doc "Clear the pending-stop marker (tests; the real daemon never resets)."
+  @spec reset() :: :ok
+  def reset, do: :persistent_term.put({__MODULE__, :stopping}, false)
 end

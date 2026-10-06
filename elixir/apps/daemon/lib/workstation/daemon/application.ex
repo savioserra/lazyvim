@@ -14,7 +14,10 @@ defmodule Workstation.Daemon.Application do
   Infrastructure children are central and fixed; the capability layer's
   children (`Workstation.Daemon.Capabilities.children/0`) are flattened in
   AFTER them, so a capability child starts after the registry it depends on
-  and — under `:rest_for_one` — never outlives it. The Listener restarts by
+  and — under `:rest_for_one` — never outlives it. `OpRegistry` and
+  `TaskSupervisor` sit with the infrastructure: op tasks are the daemon's
+  serving machinery, not a capability's private helper. The Listener
+  restarts by
   closing and re-binding its socket — takeover probes a live peer and fails
   with `:already_running` when another generation really is serving, so an
   overlap window cannot produce two daemons on one socket path.
@@ -28,8 +31,10 @@ defmodule Workstation.Daemon.Application do
     Workstation.Daemon.Listener,
     Workstation.Daemon.Sessions,
     Workstation.Daemon.EventBus,
+    Workstation.Daemon.OpRegistry,
     Workstation.Daemon.CapabilityRegistry,
-    Workstation.Daemon.ApplyOrchestrator
+    Workstation.Daemon.ApplyOrchestrator,
+    Workstation.Daemon.TaskSupervisor
   ]
 
   @doc "The tree children in rest_for_one order (shared by boot and tests)."

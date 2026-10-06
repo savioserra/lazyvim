@@ -49,8 +49,9 @@ defmodule Workstation.Daemon.LifecycleTest do
       {:ok, _hello_frame} = recv_frame(sock)
 
       :ok = :socket.send(sock, Protocol.encode_frame(Jason.encode!(%{"v" => 1, "id" => "l1", "op" => op, "params" => params})))
-      {:ok, frame} = recv_frame(sock)
-      Jason.decode!(frame)
+      # Ops stream progress events ahead of the reply now (the daemon owns
+      # the chain); drain the event frames until the id-matched result.
+      recv_result(sock, "l1")
     after
       :socket.close(sock)
     end
@@ -58,9 +59,18 @@ defmodule Workstation.Daemon.LifecycleTest do
 
   defp hello_body, do: Jason.encode!(%{"v" => 1, "id" => "h1", "op" => "hello", "params" => %{"protocol" => Protocol.protocol_name()}})
 
+  defp recv_result(sock, id) do
+    case recv_frame(sock) do
+      {:ok, %{"id" => ^id} = reply} -> reply
+      {:ok, %{"event" => _event}} -> recv_result(sock, id)
+      {:ok, other} -> flunk("unexpected frame: " <> inspect(other))
+    end
+  end
+
   defp recv_frame(sock) do
     {:ok, <<length::unsigned-big-integer-size(32)>>} = :socket.recv(sock, 4, 2_000)
-    recv_exact(sock, length, [])
+    {:ok, body} = recv_exact(sock, length, [])
+    {:ok, Jason.decode!(body)}
   end
 
   defp recv_exact(_sock, 0, chunks), do: {:ok, IO.iodata_to_binary(Enum.reverse(chunks))}

@@ -8,8 +8,10 @@ defmodule Workstation.Daemon.CapabilitiesTest do
     Workstation.Daemon.Listener,
     Workstation.Daemon.Sessions,
     Workstation.Daemon.EventBus,
+    Workstation.Daemon.OpRegistry,
     Workstation.Daemon.CapabilityRegistry,
-    Workstation.Daemon.ApplyOrchestrator
+    Workstation.Daemon.ApplyOrchestrator,
+    Workstation.Daemon.TaskSupervisor
   ]
 
   # --- the registry contract --------------------------------------------------

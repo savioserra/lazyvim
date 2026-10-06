@@ -68,6 +68,7 @@ defmodule Workstation.Daemon.ProtocolTest do
                "status.run",
                "sync.run",
                "theme.resolve",
+               "update.check",
                "update.run",
                "verify.run"
              ]
