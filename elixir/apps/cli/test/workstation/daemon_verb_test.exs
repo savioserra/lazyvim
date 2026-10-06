@@ -89,10 +89,22 @@ defmodule Workstation.CLI.DaemonVerbTest do
 
     # The manual stop path through the live socket, with the daemon's
     # delayed self-stop hooked (the real path halts the VM — a
-    # supervisor-spec test tree must not), then the parker is killed and
-    # the tree torn down.
+    # supervisor-spec test tree must not). The beam-exit probe is re-aimed
+    # at a flag the hook sets: the in-process daemon's OS pid IS this test
+    # VM (the real `kill -0` probe would see it alive and the stop verb
+    # would rightly refuse to claim a beam death that cannot happen here),
+    # and the tree's teardown can lag the boot process, so "the daemon is
+    # alive" means "the stop hook has not fired yet". The ladder's real
+    # signal mechanics are pinned by ControlTest against child processes.
+    stopped = :atomics.new(1, signed: false)
+
     Elixir.Application.put_env(:daemon, :shutdown_hook, fn _delay_ms, _reason ->
+      :atomics.put(stopped, 1, 1)
       spawn(fn -> Supervisor.stop(Workstation.Daemon.Supervisor) end)
+    end)
+
+    Elixir.Application.put_env(:cli, :beam_alive, fn _pid ->
+      :atomics.get(stopped, 1) == 0
     end)
 
     try do
@@ -103,6 +115,7 @@ defmodule Workstation.CLI.DaemonVerbTest do
       # OUT, so undo the opt-in with the shutdown hook.
       Elixir.Application.delete_env(:daemon, :update_check)
       Elixir.Application.delete_env(:daemon, :shutdown_hook)
+      Elixir.Application.delete_env(:cli, :beam_alive)
       Process.exit(parker, :kill)
       _ = Shutdown.reset()
       File.rm(socket_path)
@@ -138,8 +151,21 @@ defmodule Workstation.CLI.DaemonVerbTest do
 
     # The real stop halts the VM; a supervisor-spec test tree must not —
     # hook the halt to a supervisor stop (identical teardown, no halt).
+    # The stop verb's beam-exit probe is re-aimed at a flag the hook sets:
+    # the in-process daemon's OS pid IS this test VM (the real `kill -0`
+    # probe would see it alive and refuse to claim a beam death that cannot
+    # happen here), and the tree's teardown can lag the boot process, so
+    # "the daemon is alive" means "the stop hook has not fired yet". The
+    # ladder's real signal mechanics are pinned by ControlTest.
+    stopped = :atomics.new(1, signed: false)
+
     Elixir.Application.put_env(:daemon, :shutdown_hook, fn _delay_ms, _reason ->
+      :atomics.put(stopped, 1, 1)
       spawn(fn -> Supervisor.stop(Workstation.Daemon.Supervisor) end)
+    end)
+
+    Elixir.Application.put_env(:cli, :beam_alive, fn _pid ->
+      :atomics.get(stopped, 1) == 0
     end)
 
     try do
@@ -158,6 +184,7 @@ defmodule Workstation.CLI.DaemonVerbTest do
     after
       Elixir.Application.delete_env(:daemon, :update_check)
       Elixir.Application.delete_env(:daemon, :shutdown_hook)
+      Elixir.Application.delete_env(:cli, :beam_alive)
       Process.exit(parker, :kill)
       _ = Shutdown.reset()
       File.rm(socket_path)

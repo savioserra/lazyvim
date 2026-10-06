@@ -110,15 +110,42 @@ defmodule Workstation.CLI.DaemonClient do
   """
   @spec control(String.t(), map(), keyword()) :: {:ok, map()} | {:error, String.t()}
   def control(op, params \\ %{}, opts \\ []) when is_binary(op) and is_map(params) and is_list(opts) do
+    case control_with_pid(op, params, opts) do
+      {:ok, result, _daemon_pid} -> {:ok, result}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @doc """
+  `control/2` plus the daemon's OS pid, captured from the connected
+  socket's `SO_PEERCRED` before the request. `workstation daemon stop`
+  needs the pid to CONFIRM the beam actually exits after the acknowledged
+  stop before printing "stopped" (`Workstation.CLI.Control.confirm_exit/2`) —
+  the daemon's own halt can wedge, and it did (a beam alive 7m41s after
+  `daemon: stopped`). The pid is the PEER's ucred pid — the mirror image of
+  the daemon's own per-connection auth read
+  (`Workstation.Daemon.Listener`), so it is as reliable as the connection
+  itself; on any failure it is `nil` and the caller refuses to report
+  success unverified.
+
+  Returns `{:ok, result, daemon_pid}` (`daemon_pid` is a positive integer
+  or `nil`), or `{:error, reason}` shaped exactly like `control/2`.
+  """
+  @spec control_with_pid(String.t(), map(), keyword()) ::
+          {:ok, map(), pos_integer() | nil} | {:error, String.t()}
+  def control_with_pid(op, params \\ %{}, opts \\ [])
+      when is_binary(op) and is_map(params) and is_list(opts) do
     home = Keyword.get(opts, :home) || EngineState.home()
     sock_path = Listener.socket_path(home)
     hello_timeout = Keyword.get(opts, :handshake_timeout_ms, @handshake_timeout_ms)
     op_timeout = Keyword.get(opts, :timeout_ms, @control_timeout_ms)
 
     with {:ok, sock} <- reach(sock_path, home, hello_timeout) do
+      daemon_pid = peer_pid(sock)
+
       try do
         case request(sock, op, params, timeout_ms: op_timeout) do
-          {:ok, result} -> {:ok, result}
+          {:ok, result} -> {:ok, result, daemon_pid}
           # The structural {code, message} op-refusal shape is matched LAST:
           # the tagged client-side failures (daemon_died/timeout/unavailable)
           # are the same tuple arity and must render as plain messages.
@@ -158,6 +185,25 @@ defmodule Workstation.CLI.DaemonClient do
       {:ok, sock} -> {:ok, sock}
       :unavailable -> {:error, "no daemon is running for home #{home}"}
       {:error, {:daemon_unavailable, message}} -> {:error, message}
+    end
+  end
+
+  # SO_PEERCRED of the CONNECTED client socket answers the PEER's (the
+  # daemon's) `struct ucred` — pid first, same 12 bytes the daemon decodes
+  # per connection (`Workstation.Daemon.Listener.ucred_uid/1`). Raw form
+  # `(level 1, opt 17)` because the named option is unimplemented in the
+  # pinned OTP 28 `:socket` NIF. Best-effort: `nil` just means the stop
+  # verb cannot verify the exit and must refuse to claim success.
+  defp peer_pid(sock) do
+    case :socket.getopt_native(sock, {1, 17}, 12) do
+      {:ok,
+       <<pid::native-signed-integer-size(32), _uid::native-signed-integer-size(32),
+         _gid::native-signed-integer-size(32)>>}
+      when pid > 0 ->
+        pid
+
+      _other ->
+        nil
     end
   end
 
