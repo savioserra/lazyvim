@@ -333,3 +333,20 @@ required.
   socket you can't prove is yours; next boot proves-dead-and-rebinds).
   Gate criteria saying "socket gone" must mean ENDPOINT death (rc 0 +
   beam gone + status-over-stale-file reclaims), not file unlink.
+
+## Keycap/border lane (c6, 2026-10-05)
+
+- Elixir Regex on box-drawing rows: NEGATED classes are byte-wise without
+  /u — `[^┌]` excludes the BYTES of ┌ (e2 94 8c), so it also rejects
+  superscripts (U+2070-2079 share leading byte e2) and the match skips
+  islands. Always append /u to glyph-munging regexes.
+- Erlang :string.find/2 returns the SUFFIX from the match (not {pos,len});
+  for a frame column use String.split(part, parts: 2) + String.length.
+- check.sh's parallel umbrella run still races the ApplyTest/ShellTest/
+  UpdateTest/DaemonVerb async-wire tests (different subset per run under
+  load ~3; all green in isolation). New frame-race asserts should use the
+  bounded await_frame helper from day one (tui_case.ex).
+- Token surface is now v3: six closed border_* roles (engine/plan blue,
+  journal/status green, capabilities yellow, diff red) across tokens.lua,
+  Tokens.ex, daemon settable roles, CLI @roles; Tokens.border_roles/0 is
+  the membership list. Regenerate goldens with `mix workstation.goldens`.
