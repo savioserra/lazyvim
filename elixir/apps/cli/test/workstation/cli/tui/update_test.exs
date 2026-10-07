@@ -86,7 +86,11 @@ defmodule Workstation.CLI.TUI.UpdateTest do
       send_text(runtime, "a")
       type_text(runtime, "upda")
 
-      frame = latest_frame()
+      # The typed echo on row 6 is the LAST keystroke's render — a single
+      # drain can race the redraw and hand back a pre-dialog frame, so
+      # await the settled gate instead.
+      frame =
+        await_frame(fn frame -> Frame.row_text(frame, 6) =~ "upda_" end)
 
       assert frame |> Frame.row_text(4) =~ "Confirm update"
       assert frame |> Frame.row_text(5) =~ "Run the update chain"
@@ -121,12 +125,19 @@ defmodule Workstation.CLI.TUI.UpdateTest do
 
       send_text(runtime, "a")
       send_text(runtime, "n")
-      frame = latest_frame()
+
+      # Await the ready footer: it proves the cancel keystroke rendered
+      # (a stale frame can still show the gate dialog).
+      frame =
+        await_frame(fn frame -> Frame.row_text(frame, 12) =~ "a confirm" end)
+
       refute frame |> Frame.row_text(4) =~ "Confirm update"
 
       send_text(runtime, "a")
       send_key(runtime, :escape)
-      frame = latest_frame()
+      frame =
+        await_frame(fn frame -> Frame.row_text(frame, 12) =~ "a confirm" end)
+
       refute frame |> Frame.row_text(4) =~ "Confirm update"
 
       send_text(runtime, "a")
@@ -144,7 +155,12 @@ defmodule Workstation.CLI.TUI.UpdateTest do
       _ready = latest_frame()
       arm(runtime)
 
-      frame = latest_frame()
+      # The completion toast is the chain_done render — the last event;
+      # awaiting it settles every row assert below.
+      frame =
+        await_frame(fn frame ->
+          Frame.row_text(frame, 11) =~ "Update completed"
+        end)
 
       assert frame |> Frame.row_text(1) =~ "update · #{@destination}"
       assert frame |> Frame.row_text(1) =~ "5 steps"
