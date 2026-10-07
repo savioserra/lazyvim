@@ -1,17 +1,23 @@
 defmodule Workstation.CLI.TUI.ShellHomeFrameTest do
   @moduledoc """
-  Home responsiveness as pure frames: the shell's own `view/1` rendered
-  at pinned sizes with fully loaded fixture wires — no runtime, no async
-  (the same pure-test split pure_drill_test.exs uses for the browser).
+  Dashboard responsiveness as pure frames: the shell's own `view/1`
+  rendered at pinned sizes with fully loaded fixture wires — no runtime,
+  no async (the same pure-test split pure_drill_test.exs uses for the
+  browser).
 
-  Stage B contract:
+  The dashboard IS the app — one six-box surface:
 
-    * widths >= 110 columns own the full 2x2 mosaic plus the full-width
-      capabilities band;
-    * below 110 columns the five dashboard boxes stack vertically in the
-      brief priority (engine > journal > domains > plan/diff), each box
-      full width, on bounded-fill tracks that keep the boxes' minimum
-      heights and shrink them proportionally when the body runs short;
+    * preset 0 (full) at widths >= 110 columns owns the slot mosaic:
+      engine/journal and plan/diff quadrant rows, the full-width
+      capabilities band, the full-width status band;
+    * below 110 columns (and whenever preset tracking is dissolved) the
+      visible boxes stack vertically in fixed priority (engine, journal,
+      capabilities, plan, diff, status), each full width on bounded-fill
+      tracks that keep the boxes' minimum heights and shrink them
+      proportionally when the body runs short;
+    * presets 1 (audit) and 2 (minimal) re-tile their own membership —
+      audit: plan|diff on top, engine|journal as a bottom band at any
+      width; minimal: engine|journal filling the body;
     * no border row ever breaks at any size: every top/bottom border
       closes its far corner, and `Shell.Box` border islands elide
       (ellipsis-trimmed, then dropped, right-to-left) before a corner
@@ -19,7 +25,7 @@ defmodule Workstation.CLI.TUI.ShellHomeFrameTest do
   """
 
   # async: false — the width sweep pins every scheduler for ~a minute
-  # (4 parallel render legs); as a sync module it runs exclusively, so
+  # (parallel render legs); as a sync module it runs exclusively, so
   # timing-sensitive runtime suites never fight it for cores.
   use ExUnit.Case, async: false
 
@@ -29,20 +35,21 @@ defmodule Workstation.CLI.TUI.ShellHomeFrameTest do
   alias Workstation.CLI.TUI.Shell
   alias Workstation.CLI.TUI.Shell.Box
   alias Workstation.CLI.TUI.Shell.CapabilitiesBrowser
+  alias Workstation.CLI.TUI.Shell.Dashboard
   alias Workstation.CLI.TUI.Theme
 
   @mosaic_width 110
 
   describe "home mosaic (width >= #{@mosaic_width})" do
-    test "175x83: engine/journal and plan/diff quadrant rows plus the full-width band" do
+    test "175x83: engine/journal and plan/diff quadrant rows plus the two full-width bands" do
       frame = home_frame(175, 83)
       assert_closed_borders(frame)
 
-      assert [engine_row, plan_row, caps_row] = box_top_rows(frame)
+      assert [engine_row, plan_row, caps_row, status_row] = box_top_rows(frame)
 
       # Quadrant pair one on a single border row: engine left, journal right.
       assert Frame.row_text(frame, engine_row) =~ "╭─┐¹engine"
-      assert right_half(frame, engine_row) =~ "┐journal┌"
+      assert right_half(frame, engine_row) =~ "┐³journal┌"
 
       # Quadrant pair two: plan left (with its would-change badge), diff right.
       assert Frame.row_text(frame, plan_row) =~ "╭─┐⁴plan"
@@ -53,15 +60,31 @@ defmodule Workstation.CLI.TUI.ShellHomeFrameTest do
       assert caps_text =~ "╭─┐²capabilities"
       assert String.starts_with?(caps_text, "╭")
       assert String.ends_with?(String.trim_trailing(caps_text), "╮")
+
+      # The status band too — the deep-rows box that absorbed the old
+      # daemon tab (destination, platform, graph order, generation,
+      # revision).
+      status_text = Frame.row_text(frame, status_row)
+      assert status_text =~ "╭─┐⁶status"
+      assert String.starts_with?(status_text, "╭")
+      assert String.ends_with?(String.trim_trailing(status_text), "╮")
+
+      body = full_text(frame)
+      assert body =~ "destination:"
+      assert body =~ "graph order:"
+      assert body =~ "generation:  2"
+      # The status band is a fixed 5 rows, so its tail rows (generation,
+      # revision) elide at this height — the deep rows are pinned by the
+      # runtime suite's status-box tests instead.
     end
 
     test "#{@mosaic_width} columns is still the mosaic (the inclusive boundary)" do
       frame = home_frame(@mosaic_width, 40)
       assert_closed_borders(frame)
 
-      assert [engine_row, plan_row, _caps_row] = box_top_rows(frame)
+      assert [engine_row, plan_row, _caps_row, _status_row] = box_top_rows(frame)
       assert Frame.row_text(frame, engine_row) =~ "╭─┐¹engine"
-      assert right_half(frame, engine_row) =~ "┐journal┌"
+      assert right_half(frame, engine_row) =~ "┐³journal┌"
       assert Frame.row_text(frame, plan_row) =~ "╭─┐⁴plan"
       assert right_half(frame, plan_row) =~ "┐⁵diff┌"
     end
@@ -81,21 +104,90 @@ defmodule Workstation.CLI.TUI.ShellHomeFrameTest do
     end
   end
 
+  describe "presets" do
+    test "audit (preset 1): plan/diff on top, engine/journal band, at any width" do
+      for {width, height} <- [{175, 83}, {@mosaic_width, 40}, {80, 24}] do
+        frame = home_frame(width, height, dashboard: preset(1))
+        assert_closed_borders(frame)
+
+        rows = box_top_rows(frame)
+        titles = Enum.map(rows, &box_title(frame, &1))
+
+        # Two quadrant rows: plan|diff fill the top, engine|journal ride
+        # the fixed bottom band (each pair's right half named in its row).
+        assert titles == ["⁴plan", "¹engine"]
+        assert right_half(frame, hd(rows)) =~ "┐⁵diff┌"
+        assert right_half(frame, List.last(rows)) =~ "┐³journal┌"
+        refute full_text(frame) =~ "²capabilities"
+        refute full_text(frame) =~ "⁶status"
+
+        # The strip dims the hidden boxes as bracket islands.
+        strip = Frame.row_text(frame, 1)
+        assert strip =~ "[2] capabilities"
+        assert strip =~ "[6] status"
+      end
+    end
+
+    test "minimal (preset 2): only engine and journal, filling the body" do
+      for {width, height} <- [{175, 83}, {80, 24}] do
+        frame = home_frame(width, height, dashboard: preset(2))
+        assert_closed_borders(frame)
+
+        rows = box_top_rows(frame)
+        assert Enum.map(rows, &box_title(frame, &1)) == ["¹engine"]
+
+        # One quadrant row: engine left, journal right, both filling.
+        [only_r] = rows
+        assert String.starts_with?(Frame.row_text(frame, only_r), "╭")
+        assert String.ends_with?(String.trim_trailing(Frame.row_text(frame, only_r)), "╮")
+        assert right_half(frame, only_r) =~ "┐³journal┌"
+      end
+    end
+
+    test "dissolved tracking tiles generic slots with the remaining membership" do
+      # Toggle two boxes off preset 0: the tracking dissolves and the
+      # generic tiler re-flows the survivors — no preset rows anymore.
+      dash =
+        Dashboard.new()
+        |> Dashboard.toggle_box(:plan, 175)
+        |> then(fn {:ok, d} -> d end)
+        |> Dashboard.toggle_box(:status, 175)
+        |> then(fn {:ok, d} -> d end)
+
+      frame = home_frame(175, 83, dashboard: dash)
+      assert_closed_borders(frame)
+
+      rows = box_top_rows(frame)
+      titles = Enum.map(rows, &box_title(frame, &1))
+
+      # Slot priority with plan and status gone: engine|journal, then the
+      # lone diff box full width, then the capabilities band.
+      assert titles == ["¹engine", "⁵diff", "²capabilities"]
+
+      # The strip dims both hidden boxes.
+      strip = Frame.row_text(frame, 1)
+      assert strip =~ "[4] plan"
+      assert strip =~ "[6] status"
+    end
+  end
+
   describe "home vertical stack (width < #{@mosaic_width})" do
-    test "80x24: five full-width boxes in priority order, borders closed" do
+    test "80x24: six full-width boxes in priority order, borders closed" do
       frame = home_frame(80, 24)
       assert_closed_borders(frame)
 
       rows = box_top_rows(frame)
       titles = Enum.map(rows, &box_title(frame, &1))
 
-      # Brief priority: engine > journal > domains > plan/diff.
+      # Fixed stack priority: engine > journal > capabilities > plan >
+      # diff > status — every box glowing its keycap.
       assert titles == [
                "¹engine",
-               "journal",
+               "³journal",
                "²capabilities",
                "⁴plan",
-               "⁵diff"
+               "⁵diff",
+               "⁶status"
              ]
 
       # Every stacked box owns the full width: its border opens on the
@@ -109,7 +201,7 @@ defmodule Workstation.CLI.TUI.ShellHomeFrameTest do
 
     test "stacked boxes carry their per-domain border role (F1-full)" do
       frame = home_frame(80, 24)
-      [engine_r, journal_r, caps_r, plan_r, diff_r] = box_top_rows(frame)
+      [engine_r, journal_r, caps_r, plan_r, diff_r, status_r] = box_top_rows(frame)
 
       # Dark-base token hues from the docs/theme.md border role table:
       # engine/plan blue, journal/status green, capabilities yellow,
@@ -120,10 +212,11 @@ defmodule Workstation.CLI.TUI.ShellHomeFrameTest do
       assert Frame.cell(frame, caps_r, 1).fg == {224, 175, 104}
       assert Frame.cell(frame, plan_r, 1).fg == {122, 162, 247}
       assert Frame.cell(frame, diff_r, 1).fg == {247, 118, 142}
+      assert Frame.cell(frame, status_r, 1).fg == {158, 206, 106}
 
       # Enabled buttonbar labels read text (dark base #c0caf5); the
       # keycap stays shortcut. Find the caps band's buttonbar row — the
-      # browser body may spend any number of rows above it.
+      # box body may spend any number of rows above it.
       buttonbar_row =
         Enum.find(caps_r..frame.height, fn row ->
           Frame.row_text(frame, row) =~ "a apply"
@@ -134,7 +227,11 @@ defmodule Workstation.CLI.TUI.ShellHomeFrameTest do
 
       # Column of the label's first glyph (codepoint count of the prefix).
       label_col =
-        caps_bottom |> String.split("apply", parts: 2) |> List.first() |> String.length() |> Kernel.+(1)
+        caps_bottom
+        |> String.split("apply", parts: 2)
+        |> List.first()
+        |> String.length()
+        |> Kernel.+(1)
 
       assert Frame.cell(frame, buttonbar_row, label_col).fg == {192, 202, 245}
     end
@@ -145,7 +242,7 @@ defmodule Workstation.CLI.TUI.ShellHomeFrameTest do
       assert [engine_row, journal_row | _rest] = box_top_rows(narrow)
       # Stacked boxes title on separate rows (no side-by-side halves).
       refute Frame.row_text(narrow, engine_row) =~ "journal"
-      assert box_title(narrow, journal_row) == "journal"
+      assert box_title(narrow, journal_row) == "³journal"
     end
   end
 
@@ -243,6 +340,7 @@ defmodule Workstation.CLI.TUI.ShellHomeFrameTest do
   ## row one column short of its border rows)
 
   @sweep_heights [24, 40, 55, 83]
+  @preset_sweep_heights [24, 55]
   # Chrome glyphs allowed on a box's side-border columns across body rows
   # (the right border swaps to scrollbar glyphs while content overflows).
   @side_glyphs ["│", "╥", "║", "╙", "╟", "╢"]
@@ -250,7 +348,7 @@ defmodule Workstation.CLI.TUI.ShellHomeFrameTest do
 
   describe "width sweep 80..240 (corner parity + column consistency)" do
     @tag timeout: 300_000
-    test "border rows and content rows share identical columns at every width" do
+    test "preset 0 keeps closed borders at every width" do
       # One leg per height class, run concurrently inside the test: a
       # 644-frame render sweep is minutes of pure function calls, and
       # ExUnit only parallelizes across modules.
@@ -275,9 +373,53 @@ defmodule Workstation.CLI.TUI.ShellHomeFrameTest do
 
       assert length(legs) == length(@sweep_heights)
     end
+
+    @tag timeout: 300_000
+    test "presets 1, 2 and dissolved tracking keep closed borders at every width" do
+      legs =
+        @preset_sweep_heights
+        |> Task.async_stream(
+          fn height ->
+            Enum.each(80..240, fn width ->
+              dashboards = [
+                {"preset 1", preset(1)},
+                {"preset 2", preset(2)},
+                {"dissolved", dissolved(width)}
+              ]
+
+              Enum.each(dashboards, fn {what, dash} ->
+                frame = home_frame(width, height, dashboard: dash)
+                assert frame.width == width, "#{what} #{width}x#{height}"
+                assert frame.height == height, "#{what} #{width}x#{height}"
+
+                census = border_census(frame)
+                assert_corner_parity(census, width, height)
+                assert_box_columns(frame, census, width, height)
+                assert_full_width_bars(frame)
+              end)
+            end)
+          end,
+          timeout: :infinity
+        )
+        |> Enum.to_list()
+
+      assert length(legs) == length(@preset_sweep_heights)
+    end
   end
 
   ## helpers
+
+  # preset(1)/(2) via the real cycle path — the same membership the key
+  # presses produce.
+  defp preset(1), do: Dashboard.new() |> Dashboard.cycle(:next)
+  defp preset(2), do: Dashboard.new() |> Dashboard.cycle(:next) |> Dashboard.cycle(:next)
+
+  # A dissolved tracker with the status box toggled off (any width: the
+  # min-size gate only blocks turning a box ON).
+  defp dissolved(width) do
+    {:ok, dash} = Dashboard.toggle_box(Dashboard.new(), :status, width)
+    dash
+  end
 
   # Every border a box draws closes its far corner, and no row paints
   # beyond the frame width (Frame pads rows to exactly `width`).
@@ -324,8 +466,7 @@ defmodule Workstation.CLI.TUI.ShellHomeFrameTest do
     state = %Shell{
       destination: "/tmp/workstation-home-frame-test-home",
       theme: Theme.base_colors(:dark),
-      tab: :home,
-      last_data_tab: :home,
+      dashboard: Keyword.get(opts, :dashboard, Dashboard.new()),
       cache: %{status: {:ok, status_wire()}, plan: {:ok, plan_wire()}, diff: {:ok, diff_wire()}},
       caps: caps_browser(),
       caps_env: caps_envelope(),
@@ -345,7 +486,7 @@ defmodule Workstation.CLI.TUI.ShellHomeFrameTest do
   end
 
   defp full_text(frame) do
-    Enum.map_join(1..frame.height, "\\n", &Frame.row_text(frame, &1))
+    Enum.map_join(1..frame.height, "\n", &Frame.row_text(frame, &1))
   end
 
   # Cell-level chrome census: %{row => %{col => glyph}}, built by walking
@@ -415,7 +556,7 @@ defmodule Workstation.CLI.TUI.ShellHomeFrameTest do
     end)
   end
 
-  # The chrome bars span the terminal: the tab strip (the first row —
+  # The chrome bars span the terminal: the toggle strip (the first row —
   # the only chrome above the body since the header went away) and the
   # footer (the last row) each open with a keycap island on column 1 and
   # their chrome `─` filler carries the bar to the right edge — the run
@@ -427,37 +568,57 @@ defmodule Workstation.CLI.TUI.ShellHomeFrameTest do
     assert Frame.cell(frame, strip_row, 1).char == "┘",
            "strip does not open on column 1"
 
-    for c <- 1..frame.width do
-      assert Frame.cell(frame, strip_row, c).char != " ",
-             "strip hole at column #{c}"
-    end
-
     footer_row = frame.height
 
     assert Frame.cell(frame, footer_row, 1).char == "┘",
            "footer does not open on column 1"
 
+    assert_island_discipline(frame, strip_row, "strip")
+    assert_island_discipline(frame, footer_row, "footer")
     assert_chrome_filler_to_edge(frame, strip_row, "strip")
     assert_chrome_filler_to_edge(frame, footer_row, "footer")
   end
 
-  # Scanning right to left from the terminal edge, the bar must ride the
-  # chrome filler (`─`) without a single blank until the last island's
-  # closing connector.
+  # Islands may carry interior spaces (`p next`, `[4] plan` — the btop
+  # island grammar); what may never happen is a space hugging a
+  # connector glyph — that would mean a gap between islands or a
+  # half-drawn one.
+  defp assert_island_discipline(frame, row, what) do
+    for c <- 1..frame.width do
+      if Frame.cell(frame, row, c).char == " " do
+        left = if c > 1, do: Frame.cell(frame, row, c - 1).char, else: "─"
+        right = if c < frame.width, do: Frame.cell(frame, row, c + 1).char, else: "─"
+
+        refute left in ["┘", "└"], "#{what}: island gap before column #{c}"
+        refute right in ["┘", "└"], "#{what}: island gap after column #{c}"
+      end
+    end
+  end
+
+  # Scanning right to left from the terminal edge, the bar must either
+  # close flush with an island's connector (an exact fit — the islands
+  # span the full width) or ride the chrome filler (`─`) without a
+  # single blank until the last island's closing connector.
   defp assert_chrome_filler_to_edge(frame, row, what) do
-    tail =
-      frame.width
-      |> Stream.iterate(&(&1 - 1))
-      |> Stream.take_while(fn c -> c >= 1 and Frame.cell(frame, row, c).char == "─" end)
-      |> Enum.to_list()
+    last = Frame.cell(frame, row, frame.width).char
 
-    assert tail != [], "#{what} does not ride the chrome filler to column #{frame.width}"
-    assert length(tail) < frame.width, "#{what} has no keycap islands"
+    if last == "└" do
+      :ok
+    else
+      tail =
+        frame.width
+        |> Stream.iterate(&(&1 - 1))
+        |> Stream.take_while(fn c -> c >= 1 and Frame.cell(frame, row, c).char == "─" end)
+        |> Enum.to_list()
 
-    last_island_col = frame.width - length(tail)
+      assert tail != [], "#{what} does not ride the chrome filler to column #{frame.width}"
+      assert length(tail) < frame.width, "#{what} has no keycap islands"
 
-    assert Frame.cell(frame, row, last_island_col).char == "└",
-           "#{what} filler does not meet the last island at column #{last_island_col}"
+      last_island_col = frame.width - length(tail)
+
+      assert Frame.cell(frame, row, last_island_col).char == "└",
+             "#{what} filler does not meet the last island at column #{last_island_col}"
+    end
   end
 
   defp caps_browser, do: CapabilitiesBrowser.init(caps_envelope())

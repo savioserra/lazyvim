@@ -1,25 +1,22 @@
 defmodule Workstation.CLI.TUI.Shell do
   @moduledoc """
-  The workstation TUI application shell — the bare-verb home. One Elm root
+  The workstation TUI application shell — the one dashboard. One Elm root
   (the same `TermUI.Elm` contract as the apply/update screens) owning the
-  global chrome: a tab strip (home, capabilities, status, plan, diff,
-  daemon, help) on the top row, the active tab's body and a footer with
-  the global keys. Every verb is reachable from it:
+  global chrome: a keycap toggle strip on the top row, the six-box
+  dashboard as the entire app, and a footer with the global keys
+  (btop-ia-spec §2). The mosaic IS the app — there are no tabs:
 
-    * read views (status/plan/diff) render the canonical
-      `Workstation.CLI.Render` text in a scrollable pane — the TUI cannot
-      disagree with the verb output because both render the same function;
-    * the capabilities tab is the domain-grouped browser over
-      `Workstation.CLI.Capabilities.group/1` (rollups first, drill-down
-      explicit — the same fold the `workstation capabilities` verb uses);
-    * the daemon tab reports daemon health from a live `status.run` probe
-      (a read — never a mutation);
+    * digits 1-6 toggle the boxes (`Shell.Dashboard.toggle_box`:
+      flip membership, min-size gate, re-tile; a hidden box's strip
+      island renders dimmed as `[n] label`);
+    * p/P cycle the presets (full mosaic / audit / minimal, wrap-around);
+    * `?` toggles the help reference (the paged overlay lands with the
+      overlay lane);
     * `a` / `u` open the apply/update screens INSIDE the app: the shell
-      embeds `Workstation.CLI.TUI.Apply` / `.Update` below the same tab
-      strip, reserving only `q` (leave the screen — a running op keeps
-      running daemon-side, the detach semantics of the standalone screen)
-      and the apply screen's `[u]` handoff, which swaps to the update
-      screen instead of exiting to the CLI process.
+      embeds `Workstation.CLI.TUI.Apply` / `.Update` over the body,
+      reserving only `q` (leave the screen — a running op keeps running
+      daemon-side, the detach semantics of the standalone screen) and the
+      apply screen's `[u]` handoff, which swaps to the update screen.
 
   All reads go through the client (one `DaemonClient.call` per wire, the
   same ops the verbs send); the daemon is the only mutation engine — the
@@ -28,9 +25,9 @@ defmodule Workstation.CLI.TUI.Shell do
   `:update_executor` and `:check` seams are injected funs, so tests replay
   fixed wire/event streams with no daemon involved (deterministic replay).
 
-  Data states are explicit per tab: loading (probe in flight), data,
+  Data states are explicit per box: loading (probe in flight), data,
   error, and the daemon-disconnected shape (transport failure wording
-  surfaced with the recovery hint). Keys are documented in the help tab.
+  surfaced with the recovery hint). Keys are documented in the help pane.
   """
 
   use TermUI.Elm
@@ -40,11 +37,14 @@ defmodule Workstation.CLI.TUI.Shell do
 
   alias Workstation.CLI.Capabilities
   alias Workstation.CLI.DaemonClient
-  alias Workstation.CLI.Render
   alias Workstation.CLI.TUI.{Apply, Executor, Theme, Update, UpdateHint}
-  alias Workstation.CLI.TUI.Shell.{Box, CapabilitiesBrowser, Help, TextView}
+  alias Workstation.CLI.TUI.Shell.{Box, CapabilitiesBrowser, Dashboard, Help, TextView}
 
   @read_timeout_ms 120_000
+
+  # The dashboard's wires: every box subscribes to the same reads the old
+  # tabs did — the placement changed, the data seams did not (§2.5).
+  @wires [:status, :plan, :diff]
 
   ## production entry
 
@@ -63,32 +63,18 @@ defmodule Workstation.CLI.TUI.Shell do
     )
   end
 
-  # Tab order is the strip order; the digit keys address it 1-based.
-  @tabs [
-    {:home, "home"},
-    {:capabilities, "capabilities"},
-    {:status, "status"},
-    {:plan, "plan"},
-    {:diff, "diff"},
-    {:daemon, "daemon"},
-    {:help, "help"}
-  ]
-
   # Mouse coordinates are 0-based cells; the strip is the first row in
   # both layouts (do_view heights [1, ...]), so clicks are addressed at
   # 0-based y 0.
   @strip_row_y 0
 
   @type load_state :: nil | :loading | {:ok, map()} | {:error, String.t()}
-  @type tab_id :: :home | :capabilities | :status | :plan | :diff | :daemon | :help
   @type op_screen :: {:apply, Apply.t()} | {:update, Update.t()}
 
   defstruct [
     :destination,
     :theme,
     :dimensions,
-    :tab,
-    :last_data_tab,
     :cache,
     :load,
     :caps,
@@ -100,15 +86,21 @@ defmodule Workstation.CLI.TUI.Shell do
     :check,
     :update_hint,
     :toast_ms,
-    :now
+    :now,
+    # The six-box dashboard state: visible set + preset tracking.
+    dashboard: Dashboard.new(),
+    # The toggle gate's inline footer error (btop's SizeError toast);
+    # lives exactly one unhandled keypress.
+    flash: nil,
+    # The help reference pane (? toggles; the paged overlay lands with
+    # the overlay lane).
+    help: false
   ]
 
   @type t :: %__MODULE__{
           destination: String.t(),
           theme: Theme.colors(),
           dimensions: {pos_integer(), pos_integer()},
-          tab: tab_id(),
-          last_data_tab: tab_id(),
           cache: %{atom() => load_state()},
           load: (atom() -> {:ok, map()} | {:error, String.t()}),
           caps: CapabilitiesBrowser.t(),
@@ -119,7 +111,10 @@ defmodule Workstation.CLI.TUI.Shell do
           update_executor: (map() -> :ok | {:error, term()}),
           check: (() -> {:ok, map()} | {:error, term()}),
           update_hint: UpdateHint.hint() | nil,
-          toast_ms: pos_integer()
+          toast_ms: pos_integer(),
+          dashboard: Dashboard.t(),
+          flash: String.t() | nil,
+          help: boolean()
         }
 
   @doc """
@@ -152,8 +147,6 @@ defmodule Workstation.CLI.TUI.Shell do
       destination: Keyword.fetch!(opts, :destination),
       theme: Keyword.fetch!(opts, :theme),
       dimensions: Keyword.fetch!(opts, :dimensions),
-      tab: :home,
-      last_data_tab: :home,
       cache: %{},
       load: Keyword.get(opts, :load, &daemon_load(&1, Keyword.fetch!(opts, :destination))),
       caps: CapabilitiesBrowser.init(nil),
@@ -170,10 +163,10 @@ defmodule Workstation.CLI.TUI.Shell do
       now: Keyword.get(opts, :now, DateTime.utc_now())
     }
 
-    # Boot effects: the home tab's three reads and the passive
+    # Boot effects: the dashboard's three reads and the passive
     # availability probe — all asynchronous; the first frame paints
     # immediately in the loading state.
-    {state, wire_commands} = load_commands(state, [:status, :plan, :diff], false)
+    {state, wire_commands} = load_commands(state, @wires, false)
     {state, wire_commands ++ check_commands(state)}
   end
 
@@ -189,17 +182,16 @@ defmodule Workstation.CLI.TUI.Shell do
   def event_to_msg(%Event.Resize{width: width, height: height}, _state),
     do: {:msg, {:resize, width, height}}
 
-  # Mouse: a left click on a strip island is that island's digit keypress
-  # (the same update path — one spelling for tab addressing); the wheel
-  # reuses the pane scroll keys; everything else is inert. The running
-  # op's pseudo-tab is not digit-addressable on the keyboard either, so a
-  # click on it stays inert for the same reason. Coordinates are 0-based
-  # cells (term_ui contract); the strip is 0-based row 0 — the first row
-  # of both layouts.
+  # Mouse: a left click on a strip island is that island's keypress —
+  # a box digit toggle or the p/P preset cycle (the same update path —
+  # one spelling for strip addressing); the wheel reuses the pane scroll
+  # keys; everything else is inert. Coordinates are 0-based cells
+  # (term_ui contract); the strip is 0-based row 0 — the first row of
+  # both layouts.
   def event_to_msg(%Event.Mouse{action: :press, button: :left, y: @strip_row_y, x: x}, state) do
-    case strip_digit_at(state, x) do
+    case strip_key_at(state, x) do
       nil -> :ignore
-      digit -> {:msg, {:text, Integer.to_string(digit)}}
+      key -> {:msg, {:text, key}}
     end
   end
 
@@ -215,14 +207,15 @@ defmodule Workstation.CLI.TUI.Shell do
 
   # `q` leaves the screen (the standalone screen's quit semantics): a
   # running op keeps running daemon-side — the daemon owns the lock and
-  # the journal records the outcome; the shell returns home and re-reads.
-  # op is a {kind, sub} tuple; the nil case falls to the quit clause —
-  # a bare `op` pattern would also bind nil and make q unquit-able.
+  # the journal records the outcome; the shell returns to the dashboard
+  # and re-reads. op is a {kind, sub} tuple; the nil case falls to the
+  # quit clause — a bare `op` pattern would also bind nil and make q
+  # unquit-able.
   def update({:text, "q"}, %{op: op} = state) when not is_nil(op) do
     close_op(state)
   end
 
-  # q on a data tab quits the app (the footer's documented quit key).
+  # q on the dashboard quits the app (the footer's documented quit key).
   def update({:text, "q"}, state), do: {state, [Command.shutdown()]}
 
   # The apply screen's `[u]` handoff, kept INSIDE the app: the same guard
@@ -243,61 +236,68 @@ defmodule Workstation.CLI.TUI.Shell do
     %{state | op: {kind, sub}}
   end
 
-  # Tabs mode: resize only reflows (the runtime re-renders right after
-  # the dispatch). It must NOT route into the active view — the text
-  # panes re-clip at render time, and a routed resize used to clobber
-  # an unstored view with an empty one (blank help/read panes).
-  def update({:resize, width, height}, %{op: nil} = state),
-    do: %{state | dimensions: {width, height}}
+  # Resize re-tiles the dashboard from the visible set and clears preset
+  # tracking (§1.2 — a box resize breaks the preset bond exactly like a
+  # manual toggle). No view routing: the boxes re-clip at render time.
+  def update({:resize, width, height}, %{op: nil} = state) do
+    %{
+      state
+      | dimensions: {width, height},
+        dashboard: Dashboard.clear_tracking(state.dashboard),
+        flash: nil
+    }
+  end
 
   def update(message, %{op: {kind, sub}} = state) do
     {sub, commands} = forward(op_module(kind), message, sub)
     {%{state | op: {kind, sub}}, commands}
   end
 
-  ## -- tabs mode ----------------------------------------------------------
+  ## -- dashboard mode -----------------------------------------------------
 
-  def update({:text, digit}, state) when digit in ~w(1 2 3 4 5 6 7) do
-    {tab_id, _label} = Enum.at(@tabs, String.to_integer(digit) - 1)
-    switch_tab(tab_id, state)
+  # Digits 1-6 toggle dashboard boxes (Config::toggle_box semantics:
+  # flip membership, min-size gate, re-tile); 0 and 7+ are inert (btop
+  # refuses out-of-range digits the same way — they fall through to the
+  # catch-all). A min-size refusal surfaces as the footer's inline flash.
+  def update({:text, digit}, %{op: nil} = state) when digit in ~w(1 2 3 4 5 6) do
+    box = Dashboard.box_for_key(digit)
+
+    case Dashboard.toggle_box(state.dashboard, box, elem(state.dimensions, 0)) do
+      {:ok, dashboard} ->
+        %{state | dashboard: dashboard, flash: nil}
+
+      {:error, min} ->
+        %{state | flash: "#{box} needs >= #{min} columns"}
+    end
   end
 
-  # On the capabilities tab the arrows drill (the browser's documented
-  # expand/collapse keys) and backspace pops one drill level; every
-  # other tab keeps ←/→ for tab switching (digits always switch).
-  def update({:key, arrow}, %{tab: :capabilities} = state) when arrow in [:left, :right] do
-    route({:key, arrow}, state)
+  # p/P cycle the presets (next/previous, wrap-around; §2.2).
+  def update({:text, "p"}, %{op: nil} = state),
+    do: %{state | dashboard: Dashboard.cycle(state.dashboard, :next), flash: nil}
+
+  def update({:text, "P"}, %{op: nil} = state),
+    do: %{state | dashboard: Dashboard.cycle(state.dashboard, :prev), flash: nil}
+
+  # ? toggles the help reference (the paged overlay lands with the
+  # overlay lane; §2.4 keeps the symmetric open/close key).
+  def update({:text, "?"}, %{op: nil} = state), do: %{state | help: not state.help, flash: nil}
+
+  # r refreshes the dashboard's reads — force reload even when cached.
+  def update({:text, "r"}, %{op: nil} = state) do
+    {state, commands} = load_commands(state, @wires, true)
+    {%{state | flash: nil}, commands}
   end
 
-  def update({:key, :backspace}, %{tab: :capabilities} = state) do
-    route({:key, :backspace}, state)
-  end
-
-  def update({:key, :left}, state), do: step_tab(state, -1)
-  def update({:key, :right}, state), do: step_tab(state, 1)
-
-  def update({:text, "?"}, %{tab: :help} = state), do: switch_tab(state.last_data_tab, state)
-  def update({:text, "?"}, state), do: switch_tab(:help, state)
-
-  # r refreshes the active tab's reads — force reload even when cached.
-  def update({:text, "r"}, state) do
-    {state, commands} = load_commands(state, wires_needed(state.tab), true)
-    {state, commands}
-  end
-
-  # a applies the current plan from home — the plan the shell already
-  # loaded; the embedded screen applies exactly what was rendered.
-  def update({:text, "a"}, %{tab: :home, cache: %{plan: {:ok, plan}}} = state) do
+  # a applies the current plan — the plan the shell already loaded; the
+  # embedded screen applies exactly what was rendered.
+  def update({:text, "a"}, %{op: nil, cache: %{plan: {:ok, plan}}} = state) do
     open_apply(plan, state)
   end
 
-  def update({:text, "a"}, state), do: state
-
-  def update({:text, "u"}, %{tab: :home, update_hint: hint} = state) when hint != nil do
+  # u runs the update flow when the availability probe found one.
+  def update({:text, "u"}, %{op: nil, update_hint: hint} = state) when hint != nil do
     open_update(state)
   end
-
-  def update({:text, "u"}, state), do: state
 
   # Wire results land in the cache and refresh the derived views.
   def update({:wire_loaded, command, result}, state) do
@@ -314,18 +314,21 @@ defmodule Workstation.CLI.TUI.Shell do
   def update({:shell_check_done, verdict}, state),
     do: %{state | update_hint: UpdateHint.fold(verdict)}
 
-  # Scroll / browser keys route by tab; every tab's view ignores the
-  # messages that are not its own.
-  def update(message, state), do: route(message, state)
+  # Any unhandled key clears the footer flash: the inline error's
+  # lifetime is exactly one keypress — the layout did not change under
+  # it. Re-dispatch on the cleared state; every real clause sits above.
+  def update(message, %{op: nil, flash: flash} = state) when flash != nil,
+    do: update(message, %{state | flash: nil})
 
-  # state.tab is a tab id (atom), not an index: wrap by index arithmetic
-  # over @tabs.
-  defp step_tab(%{tab: tab} = state, step) do
-    count = length(@tabs)
-    index = Enum.find_index(@tabs, fn {id, _} -> id == tab end) || 0
-    {tab_id, _label} = Enum.at(@tabs, Integer.mod(index + step, count))
-    switch_tab(tab_id, state)
+  # Scroll keys ride the help reference while it is open; every other
+  # message is ignored (the boxes are static summaries until the overlay
+  # lane adds their scrollable deep views).
+  def update(message, %{op: nil, help: true, text_views: views} = state) do
+    view = Map.get(views, :help) || TextView.init(Enum.join(Help.lines(), "\n"))
+    %{state | text_views: Map.put(views, :help, TextView.update(message, view))}
   end
+
+  def update(_message, state), do: state
 
   @impl TermUI.Elm
   def view(state) do
@@ -369,23 +372,7 @@ defmodule Workstation.CLI.TUI.Shell do
 
   defp compose_footer(frame, _footer, %{op: _op}), do: frame
 
-  ## tab switching + data loading
-
-  defp switch_tab(tab_id, state) do
-    last_data_tab = if tab_id == :help, do: state.last_data_tab, else: tab_id
-
-    state = %{state | tab: tab_id, last_data_tab: last_data_tab}
-    {state, commands} = load_commands(state, wires_needed(tab_id), false)
-    {state, commands}
-  end
-
-  defp wires_needed(:home), do: [:status, :plan, :diff]
-  defp wires_needed(:capabilities), do: [:status, :plan]
-  defp wires_needed(:status), do: [:status]
-  defp wires_needed(:plan), do: [:plan]
-  defp wires_needed(:diff), do: [:diff]
-  defp wires_needed(:daemon), do: [:status]
-  defp wires_needed(:help), do: []
+  ## data loading
 
   # Fire one async load per wire that is not already loaded (or all of
   # them on a forced refresh) and mark them loading.
@@ -416,12 +403,9 @@ defmodule Workstation.CLI.TUI.Shell do
     {%{state | cache: cache}, commands}
   end
 
-  # Derived views refresh as their wires land: the rendered read text
-  # (status/plan/diff) and the grouped capabilities envelope (status+plan).
-  defp refresh_derived(state, command, {:ok, wire}) when command in [:status, :plan, :diff] do
-    text_view = TextView.init(render_text(command, wire))
-    state = put_in(state.text_views[command], text_view)
-
+  # Derived views refresh as their wires land: the grouped capabilities
+  # envelope (status+plan) that boxes 2-6 fold into their rows.
+  defp refresh_derived(state, command, {:ok, _wire}) when command in [:status, :plan, :diff] do
     if command in [:status, :plan], do: refresh_caps(state), else: state
   end
 
@@ -440,10 +424,6 @@ defmodule Workstation.CLI.TUI.Shell do
       _other -> state
     end
   end
-
-  defp render_text(:status, wire), do: Render.core_status(wire)
-  defp render_text(:plan, wire), do: Render.core_plan(wire)
-  defp render_text(:diff, wire), do: Render.core_diff(wire)
 
   defp check_commands(state) do
     [
@@ -466,6 +446,9 @@ defmodule Workstation.CLI.TUI.Shell do
     end
   end
 
+  # `a` embeds the apply screen: the plan the dashboard rendered is the
+  # plan the screen applies (help pane closed — the op covers the pane);
+  # `q` leaves without applying, `u` hands off to the update screen.
   defp open_apply(plan, state) do
     {sub, commands} =
       Apply.init(
@@ -478,9 +461,10 @@ defmodule Workstation.CLI.TUI.Shell do
         toast_ms: state.toast_ms
       )
 
-    {%{state | op: {:apply, sub}}, commands}
+    {%{state | op: {:apply, sub}, help: false}, commands}
   end
 
+  # `u` embeds the update screen; same body ownership contract as apply.
   defp open_update(state) do
     {sub, commands} =
       Update.init(
@@ -492,15 +476,15 @@ defmodule Workstation.CLI.TUI.Shell do
         toast_ms: state.toast_ms
       )
 
-    {%{state | op: {:update, sub}}, commands}
+    {%{state | op: {:update, sub}, help: false}, commands}
   end
 
-  # Leaving an op screen returns home and re-reads: an apply may have
-  # changed the world (or the daemon may still hold the lock — the reads
-  # report that honestly).
+  # Leaving an op screen returns to the dashboard and re-reads: an apply
+  # may have changed the world (or the daemon may still hold the lock —
+  # the reads report that honestly).
   defp close_op(state) do
-    state = %{state | op: nil, tab: :home, last_data_tab: :home}
-    {state, commands} = load_commands(state, wires_needed(:home), true)
+    state = %{state | op: nil}
+    {state, commands} = load_commands(state, @wires, true)
     {state, commands}
   end
 
@@ -513,91 +497,52 @@ defmodule Workstation.CLI.TUI.Shell do
     {elem(body, 2), elem(body, 3)}
   end
 
-  ## keyboard routing by tab
-
-  # Scroll / browser keys route by tab; every tab's view ignores the
-  # messages that are not its own. Help stores its (static) view on
-  # first touch so scroll keys work from the first keypress; read tabs
-  # get their views from refresh_derived when the wire lands.
-  defp route(message, %{tab: :help, text_views: views} = state) do
-    view = Map.get(views, :help) || TextView.init(Enum.join(Help.lines(), "\n"))
-    %{state | text_views: Map.put(views, :help, TextView.update(message, view))}
-  end
-
-  defp route(message, %{tab: tab, text_views: views} = state)
-       when tab in [:status, :plan, :diff] do
-    # Only an EXISTING view scrolls: synthesizing an empty one here would
-    # clobber the pane that refresh_derived is about to fill.
-    case Map.get(views, tab) do
-      nil -> state
-      view -> %{state | text_views: Map.put(views, tab, TextView.update(message, view))}
-    end
-  end
-
-  defp route(message, %{tab: :capabilities} = state) do
-    %{state | caps: CapabilitiesBrowser.update(message, state.caps)}
-  end
-
-  defp route(_message, state), do: state
-
   ## rendering
 
   defp strip_frame(state, {width, height}) do
     styles = theme_styles(state)
 
-    # btop buttonbar islands on the strip row: `┘¹home└┘²capabilities└…`.
-    # The keycap rides the shortcut role, bold (btop's glowing cap); the
-    # active tab label is accent (bold), the rest read inactive. A chrome
-    # `─` filler carries
-    # the bar to the terminal edge — islands left, border filler right;
-    # the brief defines no right-side region content, so the filler IS
-    # the right side and the strip reads as one bar at every width.
+    # btop buttonbar islands on the strip row. Visible boxes glow: the
+    # superscript keycap rides the shortcut role (bold — btop's glowing
+    # cap), the label the accent role (bold). Hidden boxes render dimmed
+    # bracket islands `[4] plan` in the inactive role — the shortcut they
+    # advertise is still live (digits toggle), the glow is what signals
+    # membership. The p/P preset islands close the bar (§2.4); a chrome
+    # `─` filler carries it to the terminal edge.
     islands =
-      strip_entries(state)
-      |> Enum.with_index()
-      |> Enum.flat_map(fn {{id, label, _active}, index} ->
-        label_style = if id == state.tab, do: styles.accent, else: styles.inactive
-
-        [
-          {"┘", styles.chrome},
-          {keycap(index + 1), styles.keycap},
-          {label, label_style},
-          {"└", styles.chrome}
-        ]
+      strip_islands(state, styles)
+      |> Enum.map(fn {spans, _key} ->
+        [{"┘", styles.chrome}] ++ spans ++ [{"└", styles.chrome}]
       end)
 
-    Helpers.frame([chrome_bar(islands, width, styles)], {width, height})
+    Helpers.frame([chrome_bar(islands, nil, width, styles)], {width, height})
   end
 
-  defp op_tab_id({:apply, _sub}), do: :apply_op
-  defp op_tab_id({:update, _sub}), do: :update_op
-  defp op_tab_label({:apply, _sub}), do: "apply"
-  defp op_tab_label({:update, _sub}), do: "update"
-
-  # Strip entries in strip order: the seven tabs, then the running op's
-  # pseudo-tab while one is open. Shared by the strip renderer and the
-  # mouse click router so tab addressing has exactly one spelling.
-  defp strip_entries(%{op: op}) do
-    base = Enum.map(@tabs, fn {id, label} -> {id, label, false} end)
-
-    case op do
-      nil -> base
-      op -> base ++ [{op_tab_id(op), op_tab_label(op), true}]
+  # Toggle-strip islands (§2.4): one per dashboard box — glowing when
+  # visible, dimmed bracket-form when hidden — plus the p/P preset
+  # islands. Shared by the strip renderer and the mouse router so click
+  # = keypress has exactly one spelling.
+  defp strip_islands(state, styles) do
+    for island <- Dashboard.islands(state.dashboard) do
+      spans = Enum.map(island.segs, fn {role, text} -> {text, Map.fetch!(styles, role)} end)
+      {spans, island.key}
     end
   end
 
-  # Walks the island cells left to right — each island costs 3 columns
-  # (`┘`, digit, `└`) plus its label, back to back with no separator —
-  # and returns the 1-based digit of the island covering 0-based column
-  # x, or nil when x lands on the chrome filler.
-  defp strip_digit_at(state, x) when is_integer(x) and x >= 0 do
-    strip_entries(state)
-    |> Enum.with_index(1)
-    |> Enum.reduce_while({nil, 0}, fn {{_id, label, _active}, digit}, {_hit, cursor} ->
-      width = 3 + Helpers.text_width(label)
+  # Walks the island cells left to right — each island costs its content
+  # plus the two `┘`/`└` connectors, back to back with no separator — and
+  # returns the key the island covering 0-based column x stands for, or
+  # nil when x lands on the chrome filler. Widths come from the islands
+  # themselves (no styling needed), so the pure test drives it with a
+  # bare dashboard state.
+  defp strip_key_at(state, x) when is_integer(x) and x >= 0 do
+    Dashboard.islands(state.dashboard)
+    |> Enum.reduce_while({nil, 0}, fn island, {_hit, cursor} ->
+      width =
+        2 + Enum.sum(Enum.map(island.segs, fn {_role, text} -> Helpers.text_width(text) end))
 
       if x in cursor..(cursor + width - 1) do
-        {:halt, {digit, cursor}}
+        {:halt, {island.key, cursor}}
       else
         {:cont, {nil, cursor + width}}
       end
@@ -605,29 +550,51 @@ defmodule Workstation.CLI.TUI.Shell do
     |> elem(0)
   end
 
-  defp strip_digit_at(_state, _x), do: nil
+  defp strip_key_at(_state, _x), do: nil
 
-  # One full-width chrome bar: keycap islands, then `─` to the terminal
-  # edge (the shared bar grammar of the tab strip and the global footer).
-  defp chrome_bar(islands, width, styles) do
-    used = Enum.sum(Enum.map(islands, fn {text, _style} -> Helpers.text_width(text) end))
+  # One full-width chrome bar: keycap ISLANDS (each a span group — the
+  # unit of truncation), then `─` to the terminal edge. An island that
+  # does not fit is dropped WHOLE, never half-drawn (btop truncates bars
+  # the same way). The footer flash is reserved FIRST: a min-size
+  # refusal must survive any width — the keys give way, the error never
+  # does. The filler always closes the row at exactly `width` cells.
+  defp chrome_bar(island_groups, flash, width, styles) do
+    flash_span =
+      case flash do
+        nil -> []
+        msg -> [{"  " <> msg, styles.err}]
+      end
 
-    islands ++ [{String.duplicate("─", max(width - used, 0)), styles.chrome}]
+    flash_width =
+      Enum.sum(Enum.map(flash_span, fn {text, _style} -> Helpers.text_width(text) end))
+
+    budget = width - flash_width
+
+    {visible, used} =
+      Enum.reduce_while(island_groups, {[], 0}, fn group, {acc, used} ->
+        w = Enum.sum(Enum.map(group, fn {text, _style} -> Helpers.text_width(text) end))
+
+        if used + w > budget do
+          {:halt, {acc, used}}
+        else
+          {:cont, {acc ++ group, used + w}}
+        end
+      end)
+
+    visible ++ flash_span ++ [{String.duplicate("─", max(width - used - flash_width, 0)), styles.chrome}]
   end
 
   defp body_frame(%{op: {kind, sub}}, _dims), do: op_module(kind).view(sub)
 
-  defp body_frame(%{op: nil, tab: :home} = state, dims), do: home_frame(state, dims)
-  defp body_frame(%{op: nil, tab: :daemon} = state, dims), do: daemon_frame(state, dims)
-  defp body_frame(%{op: nil, tab: :help} = state, dims) do
-    # The key reference is longer than most panes: render it as a boxed
-    # scrollable text view (↑↓ / pgup/pgdn + the border block scrollbar)
-    # so nothing is clipped.
+  # The help reference renders as a boxed scrollable text view (↑↓ /
+  # pgup/pgdn + the border block scrollbar) so nothing clips; the paged
+  # overlay lands with the overlay lane.
+  defp body_frame(%{op: nil, help: true} = state, dims) do
     styles = theme_styles(state)
     view = Map.get(state.text_views, :help) || TextView.init(Enum.join(Help.lines(), "\n"))
 
     TextView.bordered_view(view, dims, %{
-      title: [{keycap(7), styles.keycap}, {"help", styles.text}],
+      title: [{"?", styles.keycap}, {"help", styles.text}],
       border: styles.chrome,
       shortcut: styles.shortcut,
       chrome: styles.chrome,
@@ -635,56 +602,26 @@ defmodule Workstation.CLI.TUI.Shell do
     })
   end
 
-  defp body_frame(%{op: nil, tab: tab, text_views: views} = state, dims)
-       when tab in [:status, :plan, :diff] do
-    case Map.get(state.cache, tab) do
-      {:ok, _wire} ->
-        # btop anatomy: the box title island carries the tab digit + name,
-        # the top-border right island the sync/would-change badge, the
-        # bottom border the action bar (scroll, refresh, position counter)
-        # and overflow rides the right-border block scrollbar.
-        styles = theme_styles(state)
+  # The one dashboard: whatever the layout answers for the visible set is
+  # composed straight onto the body frame — boxes, not tabs.
+  defp body_frame(%{op: nil} = state, dims), do: dashboard_frame(state, dims)
 
-        TextView.bordered_view(Map.get(views, tab) || TextView.init(""), dims, %{
-          title: [{tab_keycap(tab), styles.keycap}, {"#{tab}", styles.text}],
-          right: read_badge(state, tab, styles),
-          border: domain_border(tab, styles),
-          shortcut: styles.shortcut,
-          chrome: styles.chrome,
-          thumb: styles.shortcut
-        })
-
-      {:error, message} ->
-        error_frame(state, tab, "#{tab}: #{message_text(message)}", dims)
-
-      _loading ->
-        placeholder(state, tab, "loading #{tab} — the daemon is collecting state", dims)
-    end
-  end
-
-
-  defp body_frame(%{op: nil, tab: :capabilities} = state, dims) do
+  defp dashboard_frame(state, dims) do
     styles = theme_styles(state)
-    title = [{keycap(2), styles.keycap}, {"capabilities", styles.text}]
 
-    case caps_readiness(state) do
-      :ready ->
-        CapabilitiesBrowser.view(state.caps, dims, Map.put(styles, :title, title))
-
-      {:loading, missing} ->
-        placeholder(state, :capabilities, "loading #{Enum.join(missing, ", ")} — the daemon is collecting state", dims)
-
-      {:error, message} ->
-        error_frame(state, :capabilities, "capabilities: #{message_text(message)}", dims)
-
-    end
+    state.dashboard
+    |> Dashboard.layout(dims)
+    |> Enum.reduce(Helpers.frame([], dims), fn {box, rect}, frame ->
+      Helpers.compose(frame, rect, &box_frame(state, styles, box, &1))
+    end)
   end
-  # Tab keycaps mirror the strip order (1-based over @tabs) so the box
-  # titles advertise the strip shortcut.
-  defp tab_keycap(tab) do
-    index = Enum.find_index(@tabs, fn {id, _label} -> id == tab end) || 0
-    keycap(index + 1)
-  end
+
+  defp box_frame(state, styles, :engine, dims), do: engine_box(state, styles, dims)
+  defp box_frame(state, styles, :capabilities, dims), do: caps_box(state, styles, dims)
+  defp box_frame(state, styles, :journal, dims), do: journal_box(state, styles, dims)
+  defp box_frame(state, styles, :plan, dims), do: plan_box(state, styles, dims)
+  defp box_frame(state, styles, :diff, dims), do: diff_box(state, styles, dims)
+  defp box_frame(state, styles, :status, dims), do: status_box(state, styles, dims)
 
   @doc """
   btop's superscript keycap digit (btop_draw.cpp:87 Symbols::superscript):
@@ -700,20 +637,80 @@ defmodule Workstation.CLI.TUI.Shell do
     Enum.fetch!(digits, n |> max(0) |> min(9))
   end
 
-  # Per-domain border roles (docs/theme.md): every dashboard domain panel
-  # carries its token border role in every state (loading, error, loaded);
-  # tabs outside the domain set keep the chrome frame (home composes its
-  # own boxes, help/daemon are frame chrome).
-  defp domain_border(:capabilities, styles), do: styles.border_capabilities
-  defp domain_border(:status, styles), do: styles.border_status
-  defp domain_border(:plan, styles), do: styles.border_plan
-  defp domain_border(:diff, styles), do: styles.border_diff
-  defp domain_border(_tab, styles), do: styles.chrome
+  defp disconnected?(message) do
+    text = message_text(message)
+    String.contains?(text, "daemon_unavailable") or String.contains?(text, "daemon_died")
+  end
 
-  # Top-border badge per read tab: status carries the journal generation
-  # plus the sync verdict; plan and diff reuse the home would-change and
-  # pending badges.
-  defp read_badge(state, :status, styles) do
+  # Wire failures may carry non-binary reasons (a raised exception folded
+  # by the runtime's async envelope); every render path normalizes first.
+  defp message_text(message) when is_binary(message), do: message
+  defp message_text(message), do: inspect(message)
+
+  defp engine_box(state, styles, dims) do
+    Box.frame(engine_rows(state, styles), dims,
+      border_style: styles.border_engine,
+      title: [{keycap(1), styles.keycap}, {"engine", styles.text}],
+      right: daemon_badge(state, styles)
+    )
+  end
+
+  defp journal_box(state, styles, dims) do
+    Box.frame(journal_rows(state, styles), dims,
+      border_style: styles.border_journal,
+      title: [{keycap(3), styles.keycap}, {"journal", styles.text}],
+      right: journal_counter(state, styles)
+    )
+  end
+
+  # The journal box's border counter: the journal revision — the same
+  # fact the old status read pane showed (§2.1 box 3).
+  defp journal_counter(%{cache: %{status: {:ok, status}}}, styles) do
+    case status["journal"] do
+      journal when is_map(journal) ->
+        [{"rev #{Map.get(journal, "revision", "?")}", styles.chrome}]
+
+      _other ->
+        []
+    end
+  end
+
+  defp journal_counter(_state, _styles), do: []
+
+  defp plan_box(state, styles, dims) do
+    Box.frame(plan_rows(state, styles), dims,
+      border_style: styles.border_plan,
+      title: [{keycap(4), styles.keycap}, {"plan", styles.text}],
+      right: pending_badge(state, :plan, styles)
+    )
+  end
+
+  defp diff_box(state, styles, dims) do
+    Box.frame(diff_rows(state, styles), dims,
+      border_style: styles.border_diff,
+      title: [{keycap(5), styles.keycap}, {"diff", styles.text}],
+      right: pending_badge(state, :diff, styles)
+    )
+  end
+
+  # The status probe's deep rows (§2.1 box 6): the host facts the daemon
+  # tab carried (destination, platform, graph order) plus the journal's
+  # generation/revision pair; the border read badge keeps the sync
+  # verdict from the diff wire.
+  defp status_box(state, styles, dims) do
+    Box.frame(status_rows(state, styles), dims,
+      border_style: styles.border_status,
+      title: [{keycap(6), styles.keycap}, {"status", styles.text}],
+      right: status_badge(state, styles)
+    )
+  end
+
+  defp status_journal(%{cache: %{status: {:ok, status}}}), do: status["journal"]
+  defp status_journal(_state), do: nil
+
+  # The status box's border badge: journal generation plus the sync
+  # verdict from the diff wire (the old status read pane's badge).
+  defp status_badge(state, styles) do
     case status_journal(state) do
       nil ->
         []
@@ -740,191 +737,56 @@ defmodule Workstation.CLI.TUI.Shell do
     end
   end
 
-  defp read_badge(state, :plan, styles), do: pending_badge(state, :plan, styles)
-  defp read_badge(state, :diff, styles), do: pending_badge(state, :diff, styles)
+  defp status_rows(%{cache: %{status: {:ok, wire}}} = _state, styles) do
+    journal = wire["journal"]
 
-  defp status_journal(%{cache: %{status: {:ok, status}}}), do: status["journal"]
-  defp status_journal(_state), do: nil
+    generation_row =
+      case journal do
+        j when is_map(j) ->
+          label_row("generation", "#{j["generation"]}", styles)
 
-  # Loading and failure states keep the box anatomy: the tab island
-  # titles the box, the body carries the honest state verbatim.
-  defp placeholder(state, tab, line, {width, height}) do
-    styles = theme_styles(state)
+        _other ->
+          label_row("generation", "none — nothing applied yet", styles)
+      end
 
-    Box.frame(
-      [
-        [{" " <> line, styles.inactive}],
-        [],
-        [{" retry with r", styles.inactive}]
-      ],
-      {width, height},
-      border_style: domain_border(tab, styles),
-      title: [{tab_keycap(tab), styles.keycap}, {"#{tab}", styles.text}]
-    )
+    revision_row =
+      case journal do
+        j when is_map(j) ->
+          label_row("revision", "rev #{Map.get(j, "revision", "?")}", styles)
+
+        _other ->
+          []
+      end
+
+    [
+      label_row("destination", Map.get(wire, "destination", "?"), styles),
+      label_row("platform", Map.get(wire, "platform", "?"), styles),
+      label_row("graph order", "#{length(wire["graph_order"] || [])} resolved", styles),
+      generation_row,
+      revision_row
+    ]
   end
 
   # Read failures split into the transport shape (daemon unreachable —
   # the recovery hint names the start command) and every other failure
-  # (the verbatim message; r retries either way). Errors read err; the
-  # retry action rides the border as a button.
-  defp error_frame(state, tab, message, {width, height}) do
-    styles = theme_styles(state)
-
-    Box.frame(error_rows(message, styles), {width, height},
-      border_style: domain_border(tab, styles),
-      title: [{tab_keycap(tab), styles.keycap}, {"#{tab}", styles.text}],
-      buttons: [[{"r", styles.shortcut}, {" retry", styles.text}]]
-    )
-  end
-
-  defp error_rows(message, styles) do
+  # (the verbatim message; r retries either way).
+  defp status_rows(%{cache: %{status: {:error, message}}}, styles) do
     if disconnected?(message) do
       [
         [{" daemon unreachable", styles.err}],
-        [{" " <> message, styles.err}],
-        [],
-        [{" start it with `workstation daemon` — retry with r", styles.err}]
+        [{" " <> message_text(message), styles.err}],
+        [{" start it with `workstation daemon` — retry with r", styles.inactive}]
       ]
     else
       [
         [{" read failed", styles.err}],
-        [{" " <> message, styles.err}],
-        [],
-        [{" retry with r", styles.err}]
+        [{" " <> message_text(message), styles.err}],
+        [{" retry with r", styles.inactive}]
       ]
     end
   end
 
-  defp disconnected?(message) do
-    text = message_text(message)
-    String.contains?(text, "daemon_unavailable") or String.contains?(text, "daemon_died")
-  end
-
-  # Wire failures may carry non-binary reasons (a raised exception folded
-  # by the runtime's async envelope); every render path normalizes first.
-  defp message_text(message) when is_binary(message), do: message
-  defp message_text(message), do: inspect(message)
-
-  defp caps_readiness(state) do
-    case {Map.get(state.cache, :status), Map.get(state.cache, :plan)} do
-      {{:ok, _}, {:ok, _}} ->
-        if state.caps_env, do: :ready, else: {:loading, [:status, :plan]}
-
-      {{:error, message}, _} ->
-        {:error, message}
-
-      {_, {:error, message}} ->
-        {:error, message}
-
-      {status, plan} ->
-        missing =
-          for {wire, value} <- [status: status, plan: plan],
-              value in [nil, :loading] do
-            wire
-          end
-
-        {:loading, missing}
-    end
-  end
-
-  # Below this width the 2x2 mosaic halves squeeze below readability and
-  # the home falls back to the vertical stack (brief priority: engine >
-  # journal > domains > plan/diff).
-  @home_mosaic_min_width 110
-
-  # Stack boxes in priority order; each bounded fill claims its minimum
-  # height, shares the surplus as fill, and — when the body cannot honor
-  # every minimum — the layout solver scales the minimums proportionally
-  # instead of clipping a box away. Content beyond a shrunken box elides
-  # inside its (still closed) borders.
-  @stack_box_heights [3, 3, 4, 3, 3]
-
-  defp home_frame(state, dims) do
-    if home_mosaic?(dims), do: mosaic_frame(state, dims), else: stack_frame(state, dims)
-  end
-
-  defp home_mosaic?({width, _height}), do: width >= @home_mosaic_min_width
-
-  defp mosaic_frame(state, dims) do
-    {width, height} = dims
-    styles = theme_styles(state)
-
-    [row1, row2, row3] =
-      Layout.column(Layout.new({width, height}), [
-        Layout.fill(),
-        Layout.fill(),
-        # The capabilities band carries rollup + the domain meters + the
-        # update hint row — four body rows minimum (two domains in the
-        # fixture shape), or the hint clips.
-        Layout.fixed(6)
-      ])
-
-    [left1, right1] = Layout.row(row1, [Layout.percentage(50), Layout.fill()])
-    [left2, right2] = Layout.row(row2, [Layout.percentage(50), Layout.fill()])
-
-    Helpers.frame([], {width, height})
-    |> Helpers.compose(left1, &engine_box(state, styles, &1))
-    |> Helpers.compose(right1, &journal_box(state, styles, &1))
-    |> Helpers.compose(left2, &plan_box(state, styles, &1))
-    |> Helpers.compose(right2, &diff_box(state, styles, &1))
-    |> Helpers.compose(row3, &caps_box(state, styles, &1))
-  end
-
-  # Narrow home: the five dashboard boxes stack full width in the brief's
-  # priority order (engine, journal, domains, then the plan/diff pair).
-  defp stack_frame(state, {width, height}) do
-    styles = theme_styles(state)
-
-    boxes = [
-      &engine_box/3,
-      &journal_box/3,
-      &caps_box/3,
-      &plan_box/3,
-      &diff_box/3
-    ]
-
-    tracks = Enum.map(@stack_box_heights, &Layout.bounded(Layout.fill(), min: &1))
-
-    boxes
-    |> Enum.zip(Layout.column(Layout.new({width, height}), tracks))
-    |> Enum.reduce(Helpers.frame([], {width, height}), fn {box, rect}, frame ->
-      Helpers.compose(frame, rect, &box.(state, styles, &1))
-    end)
-  end
-
-  ## home mosaic (btop dashboard: adjacent rounded boxes, island titles,
-  ## border buttons/counters, block meters — Shell.Box anatomy)
-
-  defp engine_box(state, styles, dims) do
-    Box.frame(engine_rows(state, styles), dims,
-      border_style: styles.border_engine,
-      title: [{keycap(1), styles.keycap}, {"engine", styles.text}],
-      right: daemon_badge(state, styles)
-    )
-  end
-
-  defp journal_box(state, styles, dims) do
-    Box.frame(journal_rows(state, styles), dims,
-      border_style: styles.border_journal,
-      title: [{"journal", styles.text}]
-    )
-  end
-
-  defp plan_box(state, styles, dims) do
-    Box.frame(plan_rows(state, styles), dims,
-      border_style: styles.border_plan,
-      title: [{keycap(4), styles.keycap}, {"plan", styles.text}],
-      right: pending_badge(state, :plan, styles)
-    )
-  end
-
-  defp diff_box(state, styles, dims) do
-    Box.frame(diff_rows(state, styles), dims,
-      border_style: styles.border_diff,
-      title: [{keycap(5), styles.keycap}, {"diff", styles.text}],
-      right: pending_badge(state, :diff, styles)
-    )
-  end
+  defp status_rows(_state, styles), do: [label_row("status", "loading…", styles)]
 
   # The actions box: per-domain block meters over the collected desired
   # state; the bottom border doubles as the home buttonbar (apply/update
@@ -1177,107 +1039,27 @@ defmodule Workstation.CLI.TUI.Shell do
     end
   end
 
-  ## daemon tab (two boxes: liveness + host)
-
-  defp daemon_frame(state, dims) do
-    {width, height} = dims
-    styles = theme_styles(state)
-
-    [left, right] = Layout.row(Layout.new({width, height}), [Layout.percentage(40), Layout.fill()])
-
-    Helpers.frame([], {width, height})
-    |> Helpers.compose(left, &liveness_box(state, styles, &1))
-    |> Helpers.compose(right, &host_box(state, styles, &1))
-  end
-
-  # Liveness: one state row, one probe verb, the border button re-probes.
-  defp liveness_box(state, styles, {width, height}) do
-    Box.frame(liveness_rows(state, styles), {width, height},
-      border_style: styles.chrome,
-      title: [{keycap(6), styles.keycap}, {"daemon", styles.text}],
-      right: daemon_badge(state, styles),
-      buttons: [[{"r", styles.shortcut}, {" re-probe", styles.text}]]
-    )
-  end
-
-  # Host facts and protocol notes; daemon failures land here verbatim
-  # with the recovery hint.
-  defp host_box(state, styles, {width, height}) do
-    Box.frame(host_rows(state, styles), {width, height},
-      border_style: styles.chrome,
-      title: [{"host", styles.text}]
-    )
-  end
-
-  defp liveness_rows(%{cache: %{status: {:ok, wire}}} = state, styles) do
-    engine = wire["engine"] || %{}
-    journal = wire["journal"]
-
-    journal_row =
-      case journal do
-        j when is_map(j) ->
-          label_row("journal", {"generation #{j["generation"]}", ramp_style(state, j["applied_at"])}, styles)
-
-        _other ->
-          label_row("journal", "none", styles)
-      end
-
-    [
-      label_row("state", {"reachable", styles.accent}, styles),
-      label_row(
-        "engine",
-        "#{Map.get(engine, "name", "?")} #{Map.get(engine, "version", "?")} (#{Map.get(engine, "mode", "?")})",
-        styles
-      ),
-      journal_row,
-      [{" the daemon is the only mutation engine", styles.inactive}],
-      [{" reads and ops are protocol calls, never in-process fallbacks", styles.inactive}]
-    ]
-  end
-
-  defp liveness_rows(%{cache: %{status: {:error, _message}}}, styles) do
-    [label_row("state", {"unreachable", styles.err}, styles)]
-  end
-
-  defp liveness_rows(_state, styles), do: [label_row("state", "probing…", styles)]
-
-  defp host_rows(%{cache: %{status: {:ok, wire}}}, styles) do
-    [
-      label_row("destination", Map.get(wire, "destination", "?"), styles),
-      label_row("platform", Map.get(wire, "platform", "?"), styles),
-      label_row("graph order", "#{length(wire["graph_order"] || [])} resolved", styles)
-    ]
-  end
-
-  defp host_rows(%{cache: %{status: {:error, message}}} = _state, styles) do
-    text = message_text(message)
-
-    [
-      [{" " <> text, styles.err}],
-      [{" start it with `workstation daemon` — the client spawns it detached", styles.inactive}],
-      [{" from the same release when absent; retry with r", styles.inactive}]
-    ]
-  end
-
-  defp host_rows(_state, styles), do: [[{" probing…", styles.inactive}]]
-
   defp footer_frame(state, {width, height}) do
-    # Global footer keeps the frame keys only (btop grammar: chrome bar,
-    # glowing key caps). Tab-specific action hints live on their views'
-    # borders; home's a/u stay documented in the home body.
+    # Global footer keeps the frame keys only (btop grammar: island bar,
+    # glowing caps): the digit toggles, the preset cycle, help, quit.
+    # The toggle gate's inline refusal rides the bar's tail (btop's
+    # SizeError toast, least-invasive): one keypress long, then gone.
     styles = theme_styles(state)
+
+    buttons = [
+      {"1-6", " toggle"},
+      {"p/P", " layout"},
+      {"?", " help"},
+      {"q", " quit"}
+    ]
 
     line =
-      [
-        [{"1-7", styles.shortcut}, {" tabs", Style.new()}],
-        [{"←→", styles.shortcut}, {" switch", Style.new()}],
-        [{"r", styles.shortcut}, {" refresh", Style.new()}],
-        [{"?", styles.shortcut}, {" help", Style.new()}],
-        [{"q", styles.shortcut}, {" quit", Style.new()}]
-      ]
-      |> Enum.flat_map(fn button -> [{"┘", styles.chrome}] ++ button ++ [{"└", styles.chrome}] end)
+      buttons
+      |> Enum.map(fn {key, label} ->
+        [{"┘", styles.chrome}, {key, styles.shortcut}, {label, Style.new()}, {"└", styles.chrome}]
+      end)
 
-    Helpers.frame([chrome_bar(line, width, styles)], {width, height})
+    Helpers.frame([chrome_bar(line, state.flash, width, styles)], {width, height})
   end
 
   # The resolved btop-grammar role styles for one render: every visual

@@ -1,37 +1,32 @@
 defmodule Workstation.CLI.TUI.Shell.Help do
   @moduledoc """
-  The help tab's static key reference. Every key the shell and the
+  The help reference's static key listing. Every key the shell and the
   embedded screens answer is listed here — the owner's directive makes
-  documented keys part of each screen's contract, and this tab is the
-  in-TUI place that contract lives (the `workstation` verb help still
+  documented keys part of each screen's contract, and this reference is
+  the in-TUI place that contract lives (the `workstation` verb help still
   covers the plain verbs for non-TTY callers).
   """
 
-  @doc "The help tab's lines (plain text, rendered as-is)."
+  @doc "The help reference's lines (plain text, rendered as-is)."
   @spec lines() :: [String.t()]
   def lines do
     [
       "workstation — keys",
       "",
-      "tabs",
-      "  1..7           switch tab (home, capabilities, status, plan, diff, daemon, help)",
-      "  ←→             switch tab (on the capabilities tab they drill instead)",
-      "  r              refresh this tab's reads",
-      "  ?              toggle help",
+      "dashboard (the one screen)",
+      "  1..6           toggle box (1 engine, 2 capabilities, 3 journal,",
+      "                 4 plan, 5 diff, 6 status)",
+      "  p / P          cycle layouts (full · audit · minimal)",
+      "  r              refresh the reads",
+      "  ?              toggle this help",
       "  q              quit (inside apply/update: leave the screen)",
       "",
-      "home",
+      "home verbs (on the dashboard)",
       "  a              apply the current plan (opens the apply screen)",
       "  u              run the update flow (opens the update screen)",
       "",
-      "capabilities",
+      "capabilities (in place)",
       "  ↑↓ move · enter or → expand · ← or backspace collapse · * marks a file that would change",
-      "",
-      "status · plan · diff",
-      "  ↑↓ / pgup/pgdn scroll · home/end jump",
-      "",
-      "daemon",
-      "  r              re-probe the daemon (a read, never a mutation)",
       "",
       "apply · update (screens inside this app)",
       "  the screens document their keys on their border buttonbars; the",
