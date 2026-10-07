@@ -74,6 +74,11 @@ defmodule Workstation.CLI.TUI.Shell do
     {:help, "help"}
   ]
 
+  # Mouse coordinates are 0-based cells; the strip is the fourth row in
+  # both layouts (do_view heights [3, 1, ...]: header rows 1-3, strip
+  # row 4), so clicks are addressed at 0-based y 3.
+  @strip_row_y 3
+
   @type load_state :: nil | :loading | {:ok, map()} | {:error, String.t()}
   @type tab_id :: :home | :capabilities | :status | :plan | :diff | :daemon | :help
   @type op_screen :: {:apply, Apply.t()} | {:update, Update.t()}
@@ -183,6 +188,25 @@ defmodule Workstation.CLI.TUI.Shell do
 
   def event_to_msg(%Event.Resize{width: width, height: height}, _state),
     do: {:msg, {:resize, width, height}}
+
+  # Mouse: a left click on a strip island is that island's digit keypress
+  # (the same update path — one spelling for tab addressing); the wheel
+  # reuses the pane scroll keys; everything else is inert. The running
+  # op's pseudo-tab is not digit-addressable on the keyboard either, so a
+  # click on it stays inert for the same reason. Coordinates are 0-based
+  # cells (term_ui contract); the strip is 0-based row 3 in both layouts
+  # (header rows 1-3, strip row 4).
+  def event_to_msg(%Event.Mouse{action: :press, button: :left, y: @strip_row_y, x: x}, state) do
+    case strip_digit_at(state, x) do
+      nil -> :ignore
+      digit -> {:msg, {:text, Integer.to_string(digit)}}
+    end
+  end
+
+  def event_to_msg(%Event.Mouse{action: :scroll_up}, _state), do: {:msg, {:key, :up}}
+  def event_to_msg(%Event.Mouse{action: :scroll_down}, _state), do: {:msg, {:key, :down}}
+
+  def event_to_msg(%Event.Mouse{}, _state), do: :ignore
 
   def event_to_msg(_event, _state), do: :ignore
 
@@ -564,14 +588,6 @@ defmodule Workstation.CLI.TUI.Shell do
   end
 
   defp strip_frame(state, {width, height}) do
-    entries =
-      if state.op do
-        Enum.map(@tabs, fn {id, label} -> {id, label, false} end) ++
-          [{op_tab_id(state.op), op_tab_label(state.op), true}]
-      else
-        Enum.map(@tabs, fn {id, label} -> {id, label, false} end)
-      end
-
     styles = theme_styles(state)
 
     # btop buttonbar islands on the strip row: `┘1 home└┘2 capabilities└…`.
@@ -581,7 +597,7 @@ defmodule Workstation.CLI.TUI.Shell do
     # the brief defines no right-side region content, so the filler IS
     # the right side and the strip reads as one bar at every width.
     islands =
-      entries
+      strip_entries(state)
       |> Enum.with_index()
       |> Enum.flat_map(fn {{id, label, _active}, index} ->
         label_style = if id == state.tab, do: styles.accent, else: styles.inactive
@@ -601,6 +617,39 @@ defmodule Workstation.CLI.TUI.Shell do
   defp op_tab_id({:update, _sub}), do: :update_op
   defp op_tab_label({:apply, _sub}), do: "apply"
   defp op_tab_label({:update, _sub}), do: "update"
+
+  # Strip entries in strip order: the seven tabs, then the running op's
+  # pseudo-tab while one is open. Shared by the strip renderer and the
+  # mouse click router so tab addressing has exactly one spelling.
+  defp strip_entries(%{op: op}) do
+    base = Enum.map(@tabs, fn {id, label} -> {id, label, false} end)
+
+    case op do
+      nil -> base
+      op -> base ++ [{op_tab_id(op), op_tab_label(op), true}]
+    end
+  end
+
+  # Walks the island cells left to right — each island costs 3 columns
+  # (`┘`, digit, `└`) plus its label, back to back with no separator —
+  # and returns the 1-based digit of the island covering 0-based column
+  # x, or nil when x lands on the chrome filler.
+  defp strip_digit_at(state, x) when is_integer(x) and x >= 0 do
+    strip_entries(state)
+    |> Enum.with_index(1)
+    |> Enum.reduce_while({nil, 0}, fn {{_id, label, _active}, digit}, {_hit, cursor} ->
+      width = 3 + Helpers.text_width(label)
+
+      if x in cursor..(cursor + width - 1) do
+        {:halt, {digit, cursor}}
+      else
+        {:cont, {nil, cursor + width}}
+      end
+    end)
+    |> elem(0)
+  end
+
+  defp strip_digit_at(_state, _x), do: nil
 
   # One full-width chrome bar: keycap islands, then `─` to the terminal
   # edge (the shared bar grammar of the tab strip and the global footer).

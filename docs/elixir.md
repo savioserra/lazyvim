@@ -653,6 +653,19 @@ the only source of live state; `Workstation.CLI.Core` is the `--input`
 offline evaluator and is not on the shell path) and every pane has
 explicit loading, empty, error and daemon-disconnected states.
 
+Mouse: `TUI.run` writes the SGR tracking bracket itself (`?1000` +
+`?1006` on entry, both disable sequences in an after-clause — a crash
+must never leave the terminal emitting mouse bytes); the pinned `term_ui`
+runtime has no mouse support of its own. The shell routes `Event.Mouse`
+in `Shell.event_to_msg/2`: a left press on a strip island is that
+island's digit keypress (one spelling with the keyboard; the op
+pseudo-tab is not digit-addressable by key either, so clicks on it stay
+inert), the wheel maps to the focused pane's `↑/↓` wherever the pointer
+sits — over chrome included — and every other mouse event is ignored.
+The bracket is pane-local, so under tmux mouse capture applies only
+while the shell runs: after exit (clean or crashed) the terminal stops
+emitting mouse bytes and tmux/terminal selection behaves as before.
+
 `apply` and `update` open as **screens inside the app** (the shell embeds
 `Workstation.CLI.TUI.Apply`/`Update` in a body rect and forwards keys and
 resizes), keeping their daemon-event-driven behavior — the screens never

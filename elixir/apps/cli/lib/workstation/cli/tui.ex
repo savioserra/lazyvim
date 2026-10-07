@@ -18,6 +18,8 @@ defmodule Workstation.CLI.TUI do
   (docs/theme.md).
   """
 
+  alias TermUI.{ANSI, TerminalOutput}
+
   alias Workstation.CLI.TUI.Theme
 
   @doc """
@@ -26,6 +28,13 @@ defmodule Workstation.CLI.TUI do
   `:theme` may pin a resolved color map (tests inject the base palette to
   stay offline); otherwise it is resolved from the destination home's daemon
   with the base palette fallback. `:destination` is required for resolution.
+
+  SGR mouse tracking (`?1000` + `?1006`) is enabled for the run and disabled
+  in an after-clause: the pinned term_ui runtime never sends the sequences,
+  so this front door owns the bracket. Without it terminals never emit mouse
+  bytes; screens that do not route them ignore the events (`event_to_msg`
+  catch-alls), and tests drive the Elm app directly without a TTY, so the
+  writes never fire there.
   """
   @spec run(module(), keyword()) :: :ok | {:error, term()}
   def run(screen, opts) do
@@ -36,6 +45,14 @@ defmodule Workstation.CLI.TUI do
         Theme.resolve(home: home, appearance: appearance).colors
       end)
 
-    TermUI.run(screen, Keyword.put(opts, :theme, theme))
+    TerminalOutput.write(ANSI.enable_mouse_tracking(:normal))
+    TerminalOutput.write(ANSI.enable_sgr_mouse())
+
+    try do
+      TermUI.run(screen, Keyword.put(opts, :theme, theme))
+    after
+      TerminalOutput.write(ANSI.disable_sgr_mouse())
+      TerminalOutput.write(ANSI.disable_mouse_tracking(:normal))
+    end
   end
 end

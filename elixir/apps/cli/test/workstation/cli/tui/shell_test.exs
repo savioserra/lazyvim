@@ -1,3 +1,12 @@
+defmodule Workstation.CLI.TUI.ShellTest.MouseProbeScreen do
+  @moduledoc false
+
+  # Fails during init so `TUI.run/2` returns an error without entering the
+  # render loop: the mouse-bracket assertions only need the byte order
+  # around a guaranteed failure.
+  def init(_opts), do: raise("mouse probe: guaranteed init failure")
+end
+
 defmodule Workstation.CLI.TUI.ShellTest do
   # The shell runs under the same DeterministicBackend harness as the
   # apply/update screen tests: a real TermUI runtime, fixed `:load` /
@@ -10,7 +19,7 @@ defmodule Workstation.CLI.TUI.ShellTest do
 
   import Workstation.CLITest.TUI
 
-  alias TermUI.{Event, Frame}
+  alias TermUI.{Event, Frame, Test.DeterministicBackend}
   alias Workstation.CLI.TUI.{Shell, Theme}
 
   @destination "/tmp/workstation-tui-shell-test-home"
@@ -707,6 +716,128 @@ defmodule Workstation.CLI.TUI.ShellTest do
     row = find_row(frame, "read failed")
     assert row > 4
     assert fg_in_row?(frame, row, {247, 118, 142})
+  end
+
+  # -- mouse -----------------------------------------------------------------
+
+  test "a left click on a strip island is that tab's digit keypress" do
+    runtime = start_shell()
+    loaded_frame(runtime)
+
+    # Islands are back-to-back: 3 columns (`┘`, digit, `└`) plus the
+    # label — `┘1 home└` spans 0-based columns 0..6, so column 10 is
+    # inside `┘2 capabilities└` at any width.
+    send_event(runtime, %Event.Mouse{action: :press, button: :left, x: 10, y: 3})
+
+    assert await_frame(fn f -> body_text(f) =~ "▸ editor" end) |> body_text() =~
+             "▸ editor — 2 packages · 2 files · 1 would change"
+  end
+
+  test "clicks on the chrome filler and off the strip row stay inert" do
+    runtime = start_shell()
+    loaded_frame(runtime)
+
+    # The seven islands cost 61 columns at the harness's 100; column 95
+    # is chrome filler. A click there must not switch tabs.
+    send_event(runtime, %Event.Mouse{action: :press, button: :left, x: 95, y: 3})
+    text = settled_frame(runtime) |> body_text()
+    assert text =~ "rollup:"
+    refute text =~ "▸ editor"
+
+    # Header clicks are not strip clicks.
+    send_event(runtime, %Event.Mouse{action: :press, button: :left, x: 10, y: 1})
+    text = settled_frame(runtime) |> body_text()
+    assert text =~ "rollup:"
+    refute text =~ "▸ editor"
+  end
+
+  test "the wheel reuses the pane scroll keys (position counter steps 1 → 2)" do
+    runtime = start_shell()
+
+    send_text(runtime, "7")
+    frame = await_frame(fn f -> Frame.row_text(f, 5) =~ "7 help" end)
+    # The pane's bottom action bar carries the first-visible/total counter.
+    assert Frame.row_text(frame, 29) =~ ~r/1\/\d+/
+
+    # One wheel notch == one :down wherever the pointer sits — here over
+    # the help box's body cells.
+    send_event(runtime, %Event.Mouse{action: :scroll_down, button: nil, x: 40, y: 15})
+
+    scrolled = await_frame(fn f -> Frame.row_text(f, 29) =~ ~r/2\/\d+/ end)
+    assert Frame.row_text(scrolled, 5) =~ "7 help"
+  end
+
+  test "island clicks resolve through the same walk the renderer draws" do
+    # Plain-map state: the walk only reads :op (op pseudo-tab appended).
+    state = %{op: nil}
+    click = fn x, y, button ->
+      Shell.event_to_msg(%Event.Mouse{action: :press, button: button, x: x, y: y}, state)
+    end
+
+    # Digit boundaries: home costs 3+4=7 columns, capabilities starts at 7.
+    assert click.(3, 3, :left) == {:msg, {:text, "1"}}
+    assert click.(7, 3, :left) == {:msg, {:text, "2"}}
+    # Last island ends at 61 columns; filler → inert.
+    assert click.(60, 3, :left) == {:msg, {:text, "7"}}
+    assert click.(61, 3, :left) == :ignore
+    assert click.(400, 3, :left) == :ignore
+
+    # Only left presses address islands; everything else is inert.
+    assert click.(3, 3, :right) == :ignore
+    assert Shell.event_to_msg(
+             %Event.Mouse{action: :release, button: :left, x: 3, y: 3},
+             state
+           ) == :ignore
+
+    assert Shell.event_to_msg(
+             %Event.Mouse{action: :move, button: nil, x: 3, y: 3},
+             state
+           ) == :ignore
+
+    assert click.(3, 0, :left) == :ignore
+  end
+
+  test "the wheel never touches the chrome, at any pointer position" do
+    state = %{op: nil}
+
+    assert Shell.event_to_msg(
+             %Event.Mouse{action: :scroll_up, button: nil, x: 3, y: 3},
+             state
+           ) == {:msg, {:key, :up}}
+
+    assert Shell.event_to_msg(
+             %Event.Mouse{action: :scroll_down, button: nil, x: 95, y: 3},
+             state
+           ) == {:msg, {:key, :down}}
+
+    assert Shell.event_to_msg(
+             %Event.Mouse{action: :scroll_down, button: nil, x: 4_000, y: 4_000},
+             state
+           ) == {:msg, {:key, :down}}
+  end
+
+  test "TUI.run brackets the run with the mouse enable/disable sequences" do
+    opts = [
+      theme: Theme.base_colors(:dark),
+      destination: @destination,
+      backend:
+        {DeterministicBackend,
+         owner: self(), size: {24, 80}, capabilities: %{colors: :ansi_16, unicode: true}},
+      render_interval: 1
+    ]
+
+    output =
+      ExUnit.CaptureIO.capture_io(fn ->
+        assert {:error, _probe} =
+                 Workstation.CLI.TUI.run(ShellTest.MouseProbeScreen, opts)
+      end)
+
+    assert String.starts_with?(output, "\e[?1000h\e[?1006h"),
+           "enable sequences must be written before the run, got: #{inspect(output)}"
+
+    # The after-clause runs on the probe's init failure: both disable
+    # sequences land, back to back, even when the app never rendered.
+    assert output =~ "\e[?1006l\e[?1000l"
   end
 
   # -- resize ----------------------------------------------------------------
