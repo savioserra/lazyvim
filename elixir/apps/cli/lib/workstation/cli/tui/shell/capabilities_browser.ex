@@ -351,7 +351,7 @@ defmodule Workstation.CLI.TUI.Shell.CapabilitiesBrowser do
 
     rows =
       if subtree == [] do
-        [[{" collapsed — enter to drill", styles.inactive}]]
+        [[{" collapsed — right to drill", styles.inactive}]]
       else
         subtree
         |> Enum.drop(offset)
@@ -407,8 +407,8 @@ defmodule Workstation.CLI.TUI.Shell.CapabilitiesBrowser do
       border_style: styles.border_capabilities,
       title: [{"inspect", styles.text}],
       buttons: [
-        [{"enter", styles.shortcut}, {" expand/collapse", styles.text}],
-        [{"backspace", styles.shortcut}, {" collapse", styles.text}],
+        [{"right", styles.shortcut}, {" drill in", styles.text}],
+        [{"left", styles.shortcut}, {" drill out", styles.text}],
         [{"r", styles.shortcut}, {" refresh", styles.text}]
       ]
     )

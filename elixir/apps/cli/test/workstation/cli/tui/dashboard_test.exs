@@ -217,4 +217,112 @@ defmodule Workstation.CLI.TUI.Shell.DashboardTest do
       assert Enum.find(islands, &(&1.key == "P" and &1.segs == [keycap: "P", text: " prev"]))
     end
   end
+
+  describe "expansion (§1.6: in-place box deep views, never a screen)" do
+    test "new/0 starts with nothing expanded" do
+      assert Dashboard.expansion(Dashboard.new()) == nil
+    end
+
+    test "expand/2 marks the box; contract/1 re-tiles; the shell maps enter/Esc onto it" do
+      for box <- ~w(capabilities plan diff)a do
+        {:ok, expanded} = Dashboard.expand(Dashboard.new(), box)
+        assert Dashboard.expansion(expanded) == box
+
+        contract = Dashboard.contract(expanded)
+        assert Dashboard.expansion(contract) == nil
+        assert contract.preset == 0
+      end
+    end
+
+    test "expand/2 refuses a hidden box (§1.6: no view of an absent box)" do
+      {:ok, dash} = Dashboard.toggle_box(Dashboard.new(), :capabilities, 200)
+
+      assert {:error, :hidden} = Dashboard.expand(dash, :capabilities)
+      assert Dashboard.expansion(dash) == nil
+    end
+
+    test "zoomable?/1 covers exactly the drillable tree box and the read boxes" do
+      assert Dashboard.zoomable?(:capabilities)
+      assert Dashboard.zoomable?(:plan)
+      assert Dashboard.zoomable?(:diff)
+
+      refute Dashboard.zoomable?(:engine)
+      refute Dashboard.zoomable?(:journal)
+      refute Dashboard.zoomable?(:status)
+    end
+
+    test "a preset change dissolves the expansion (the same dissolve rule)" do
+      {:ok, expanded} = Dashboard.expand(Dashboard.new(), :plan)
+      assert Dashboard.expansion(Dashboard.cycle(expanded, :next)) == nil
+      assert Dashboard.expansion(Dashboard.cycle(expanded, :prev)) == nil
+    end
+
+    test "toggling the expanded box off dissolves the expansion" do
+      {:ok, expanded} = Dashboard.expand(Dashboard.new(), :diff)
+      {:ok, dash} = Dashboard.toggle_box(expanded, :diff, 200)
+
+      assert Dashboard.expansion(dash) == nil
+    end
+
+    test "resize clears the preset tracking but the deep view rides (sticky, like btop)" do
+      {:ok, expanded} = Dashboard.expand(Dashboard.new(), :plan)
+
+      dash = Dashboard.clear_tracking(expanded)
+      assert dash.preset == nil
+      assert Dashboard.expansion(dash) == :plan
+      # The visible set survives a resize (only tracking dissolves).
+      assert MapSet.equal?(dash.visible, Dashboard.new().visible)
+    end
+
+    test "an expanded plan box takes over the whole dashboard rect" do
+      {:ok, expanded} = Dashboard.expand(Dashboard.new(), :plan)
+      layout = Dashboard.layout(expanded, {175, 83})
+
+      assert layout == [{:plan, {0, 0, 175, 83}}]
+    end
+
+    test "an expanded diff box takes over the whole dashboard rect at any width" do
+      {:ok, expanded} = Dashboard.expand(Dashboard.new(), :diff)
+      assert Dashboard.layout(expanded, {80, 24}) == [{:diff, {0, 0, 80, 24}}]
+    end
+
+    test "an expanded capabilities box grows its slot band by exactly 8 rows (Proc::y+8)" do
+      {:ok, expanded} = Dashboard.expand(Dashboard.new(), :capabilities)
+      layout = Dashboard.layout(expanded, {175, 83})
+      plain = Dashboard.layout(Dashboard.new(), {175, 83})
+
+      caps = Enum.find(layout, fn {box, _} -> box == :capabilities end)
+      plain_caps = Enum.find(plain, fn {box, _} -> box == :capabilities end)
+      {_, {cx, cy, cw, ch}} = caps
+      {_, {_px, _py, pw, ph}} = plain_caps
+
+      # The drill is the box's band plus exactly 8 rows, same slot, same width.
+      assert {cx, cw, ch} == {elem(plain_caps, 1) |> elem(0), pw, ph + 8}
+      assert ch == 14
+
+      # The two fill bands absorb the delta evenly (4 each); everything
+      # else is untouched.
+      status = Enum.find(layout, fn {box, _} -> box == :status end)
+      assert status == Enum.find(plain, fn {box, _} -> box == :status end)
+
+      fills = Enum.filter(layout, fn {box, _} -> box in ~w(engine journal plan diff)a end)
+      plain_fills = Enum.filter(plain, fn {box, _} -> box in ~w(engine journal plan diff)a end)
+
+      for {{box, {x, y, w, h}}, {pbox, {px, py, pw2, ph2}}} <- Enum.zip(fills, plain_fills) do
+        assert {box, x, w} == {pbox, px, pw2}
+        assert h == ph2 - 4
+
+        # The second fill band moves up by the 4 rows the first one lost.
+        assert y == (if box in ~w(plan diff)a, do: py - 4, else: py)
+      end
+    end
+
+    test "a narrow dashboard grows the drill stack the same way" do
+      {:ok, expanded} = Dashboard.expand(Dashboard.new(), :capabilities)
+      layout = Dashboard.layout(expanded, {100, 30})
+
+      assert Enum.find(layout, fn {box, {_x, _y, _w, h}} -> box == :capabilities and h == 14 end)
+      assert length(layout) == 6
+    end
+  end
 end

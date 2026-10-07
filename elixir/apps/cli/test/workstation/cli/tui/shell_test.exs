@@ -746,8 +746,9 @@ defmodule Workstation.CLI.TUI.ShellTest do
   end
 
   test "island clicks resolve through the same walk the renderer draws" do
-    # Plain-map state: the walk only reads the dashboard's island keys.
-    state = %{dashboard: Workstation.CLI.TUI.Shell.Dashboard.new(), op: nil}
+    # Plain-map state: the walk only reads the dashboard's island keys
+    # and (for body clicks) the layout geometry.
+    state = %{dashboard: Workstation.CLI.TUI.Shell.Dashboard.new(), op: nil, dimensions: {100, 30}}
 
     click = fn x, y, button ->
       Shell.event_to_msg(%Event.Mouse{action: :press, button: button, x: x, y: y}, state)
@@ -774,8 +775,10 @@ defmodule Workstation.CLI.TUI.ShellTest do
              state
            ) == :ignore
 
-    # The strip is 0-based row 0 — a click on the first body row is inert.
-    assert click.(3, 1, :left) == :ignore
+    # The strip is 0-based row 0. A click on the first body row lands in
+    # a box (stack layout at 100x30: full-width boxes) — engine and
+    # journal are not zoomable, so the raw event passes through inert.
+    assert click.(3, 1, :left) == {:msg, %Event.Mouse{action: :press, button: :left, x: 3, y: 1}}
   end
 
   test "the wheel reuses the pane scroll keys (position counter steps 1 → 2)" do
@@ -919,5 +922,112 @@ defmodule Workstation.CLI.TUI.ShellTest do
     row = Enum.find(2..(frame.height - 1), &String.contains?(Frame.row_text(frame, &1), "applied:"))
     assert row, "journal applied row not found on the home frame"
     row
+  end
+
+  ## -- in-box deep views (§1.6: drill/zoom never leave the dashboard) -----
+
+  describe "the box drill (Proc::y+8: enter/click expand in place)" do
+    test "enter expands the capabilities box into its tree drill; enter again restores" do
+      runtime = start_shell()
+      loaded_frame(runtime)
+
+      send_key(runtime, :enter)
+      frame = await_frame(fn f -> body_text(f) =~ " collapsed — right to drill" end)
+
+      # The grown box hosts the browser's panes; the summary meters gave
+      # way to the tree (buttonbar and rollup are the contracted view).
+      assert body_text(frame) =~ "editor"
+      refute body_text(frame) =~ "rollup:"
+      refute body_text(frame) =~ "a apply"
+
+      send_key(runtime, :enter)
+      frame = await_frame(fn f -> body_text(f) =~ "rollup:" end)
+      refute body_text(frame) =~ " collapsed — right to drill"
+    end
+
+    test "the tree drill lives inside the box: right expands the node, left collapses" do
+      runtime = start_shell()
+      loaded_frame(runtime)
+
+      send_key(runtime, :enter)
+      await_frame(fn f -> body_text(f) =~ " collapsed — right to drill" end)
+
+      send_key(runtime, :right)
+      frame = await_frame(fn f -> body_text(f) =~ "init.lua" or body_text(f) =~ "nvim" end)
+      # Still the dashboard: the strip never changed (no views, §1.7).
+      assert Frame.row_text(frame, 1) =~ "¹engine"
+
+      send_key(runtime, :left)
+      await_frame(fn f -> body_text(f) =~ " collapsed — right to drill" end)
+    end
+
+    test "a click inside a zoomable box zooms it; the zoom owns every click until released" do
+      runtime = start_shell()
+      loaded_frame(runtime)
+
+      # At 100x30 the stacked tiler puts diff fifth; click its body band
+      # (row 21, well inside the box) — the zoom takes over the dashboard.
+      send_event(runtime, %Event.Mouse{action: :press, button: :left, x: 50, y: 21})
+      frame = await_frame(fn f -> Frame.row_text(f, 2) =~ "⁵diff" end)
+      assert body_text(frame) =~ "workstation diff (core)"
+
+      # The zoomed box IS the dashboard rect now: a click inside it is
+      # the enter-again contract, wherever it lands.
+      send_event(runtime, %Event.Mouse{action: :press, button: :left, x: 50, y: 3})
+      frame = await_frame(fn f -> not (body_text(f) =~ "workstation diff (core)") end)
+      refute Frame.row_text(frame, 2) =~ "⁵diff"
+    end
+
+    test "a click in another box never steals the capabilities drill" do
+      runtime = start_shell()
+      loaded_frame(runtime)
+
+      send_key(runtime, :enter)
+      frame = await_frame(fn f -> body_text(f) =~ " collapsed — right to drill" end)
+
+      # Click a band BELOW the grown caps box (it now owns rows ~10-23;
+      # plan sits beneath): the drill stays.
+      send_event(runtime, %Event.Mouse{action: :press, button: :left, x: 50, y: 27})
+      assert body_text(latest_frame()) =~ " collapsed — right to drill"
+
+      # Click inside the caps box itself: the enter-again contract.
+      send_event(runtime, %Event.Mouse{action: :press, button: :left, x: 50, y: 12})
+      await_frame(fn f -> body_text(f) =~ "rollup:" end)
+    end
+
+    test "enter zooms the plan read when the capabilities box is hidden" do
+      runtime = start_shell()
+      loaded_frame(runtime)
+
+      send_text(runtime, "2")
+      await_frame(fn f -> Frame.row_text(f, 1) =~ "[2] capabilities" end)
+
+      send_key(runtime, :enter)
+      frame = await_frame(fn f -> Frame.row_text(f, 2) =~ "⁴plan" end)
+      # The zoom is the box's full render text in a scrollable pane.
+      assert body_text(frame) =~ "workstation plan (core)"
+      assert body_text(frame) =~ "generation : gen-3"
+    end
+
+    test "the zoomed read scrolls under the wheel (the pane owns the pointer)" do
+      runtime = start_shell()
+      loaded_frame(runtime)
+
+      send_text(runtime, "2")
+      send_key(runtime, :enter)
+      frame = await_frame(fn f -> Frame.row_text(f, 2) =~ "⁴plan" end)
+
+      # Shrink the window until the read outgrows its pane: the second
+      # canonical size (80×24) clipped further — the overlay re-renders
+      # from (state, dims) like every view.
+      send_event(runtime, %Event.Resize{width: 80, height: 12})
+      frame = await_frame(fn f -> f.width == 80 and Frame.row_text(f, 2) =~ "⁴plan" end)
+      assert Frame.row_text(frame, 11) =~ ~r/1\/\d+/
+
+      # The wheel rides the pane's scroll keys while it is focused.
+      send_event(runtime, %Event.Mouse{action: :scroll_down, button: nil, x: 40, y: 6})
+      scrolled = await_frame(fn f -> Frame.row_text(f, 11) =~ ~r/2\/\d+/ end)
+      assert Frame.row_text(scrolled, 2) =~ "⁴plan"
+    end
   end
 end

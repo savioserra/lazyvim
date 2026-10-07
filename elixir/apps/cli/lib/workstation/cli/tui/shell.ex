@@ -35,7 +35,7 @@ defmodule Workstation.CLI.TUI.Shell do
   alias TermUI.{Command, Event, Layout, Style}
   alias TermUI.Widget.Helpers
 
-  alias Workstation.CLI.Capabilities
+  alias Workstation.CLI.{Capabilities, Render}
   alias Workstation.CLI.DaemonClient
   alias Workstation.CLI.TUI.{Apply, Executor, Theme, Update, UpdateHint}
   alias Workstation.CLI.TUI.Shell.{Box, CapabilitiesBrowser, Dashboard, Help, TextView}
@@ -198,6 +198,17 @@ defmodule Workstation.CLI.TUI.Shell do
   def event_to_msg(%Event.Mouse{action: :scroll_up}, _state), do: {:msg, {:key, :up}}
   def event_to_msg(%Event.Mouse{action: :scroll_down}, _state), do: {:msg, {:key, :down}}
 
+  # A left click inside a zoomable box toggles its deep view (§2.5:
+  # click inside a zoomable box = zoom); the point is addressed in body
+  # coordinates (the strip is row 0, the footer rides the last row).
+  def event_to_msg(%Event.Mouse{action: :press, button: :left, x: x, y: y} = event, %{op: nil} = state)
+      when y >= 1 do
+    case box_at(state, x, y - 1) do
+      box when box in [:capabilities, :plan, :diff] -> {:msg, {:box_click, box}}
+      _other -> {:msg, event}
+    end
+  end
+
   def event_to_msg(%Event.Mouse{}, _state), do: :ignore
 
   def event_to_msg(_event, _state), do: :ignore
@@ -297,6 +308,79 @@ defmodule Workstation.CLI.TUI.Shell do
   # u runs the update flow when the availability probe found one.
   def update({:text, "u"}, %{op: nil, update_hint: hint} = state) when hint != nil do
     open_update(state)
+  end
+
+  ## -- in-box deep views (§1.6: drill/zoom never leave the dashboard) -----
+
+  # Enter = the btop proc-detail key: expand the first visible zoomable
+  # box in place (capabilities tree drill, plan/diff read zoom); Enter
+  # again restores the tiler (btop_input.cpp:462-484 — Enter toggles
+  # show_detailed).
+  def update({:key, :enter}, %{op: nil, help: false} = state) do
+    case Dashboard.expansion(state.dashboard) do
+      nil ->
+        box = Enum.find(~w(capabilities plan diff)a, &Dashboard.visible?(state.dashboard, &1))
+
+        if box do
+          {:ok, dashboard} = Dashboard.expand(state.dashboard, box)
+          %{state | dashboard: dashboard, flash: nil}
+        else
+          state
+        end
+
+      _expanded ->
+        %{state | dashboard: Dashboard.contract(state.dashboard), flash: nil}
+    end
+  end
+
+  # Esc closes overlays outside-in: the help reference first, then the
+  # box deep view (§2.4 — Esc-family keys are symmetric open/close).
+  def update({:key, :escape}, %{op: nil, help: true} = state),
+    do: %{state | help: false, flash: nil}
+
+  def update({:key, :escape}, %{op: nil} = state) do
+    if Dashboard.expansion(state.dashboard) != nil do
+      %{state | dashboard: Dashboard.contract(state.dashboard), flash: nil}
+    else
+      state
+    end
+  end
+
+  # A click inside a zoomable box toggles ITS deep view (§2.5: click
+  # inside a zoomable box = zoom, the proc-detail analog); clicks do not
+  # steal the deep view from the box that owns it.
+  def update({:box_click, box}, %{op: nil, dashboard: dash} = state) do
+    case Dashboard.expansion(dash) do
+      ^box ->
+        %{state | dashboard: Dashboard.contract(dash), flash: nil}
+
+      nil ->
+        {:ok, dashboard} = Dashboard.expand(dash, box)
+        %{state | dashboard: dashboard, flash: nil}
+
+      _other ->
+        state
+    end
+  end
+
+  # Arrows and scroll keys are the boxes' in-pane navigation: a zoomed
+  # read scrolls its pane, everything else drives the capabilities
+  # browser's cursor while box 2 is on the dashboard (the migration map:
+  # arrows stopped being tab switchers, they live inside box 2). The
+  # node drill is right/left (Enter is the box drill's toggle).
+  @nav_keys [:up, :down, :left, :right, :page_up, :page_down, :home, :end, :backspace]
+
+  def update({:key, key}, %{op: nil, help: false} = state) when key in @nav_keys do
+    case scroll_target(state) do
+      {:zoom, id} ->
+        zoom_scroll(state, id, key)
+
+      {:browser, _caps} ->
+        %{state | caps: CapabilitiesBrowser.update({:key, key}, state.caps), flash: nil}
+
+      nil ->
+        if state.flash != nil, do: update({:key, key}, %{state | flash: nil}), else: state
+    end
   end
 
   # Wire results land in the cache and refresh the derived views.
@@ -423,6 +507,24 @@ defmodule Workstation.CLI.TUI.Shell do
     else
       _other -> state
     end
+  end
+
+  # What the scroll/nav keys address right now: a zoomed read's pane
+  # (overlay panes are scrollable while focused, §2.5) or the
+  # capabilities browser's cursor when box 2 is on the dashboard.
+  defp scroll_target(%{dashboard: dash} = state) do
+    case Dashboard.expansion(dash) do
+      expansion when expansion in [:plan, :diff] ->
+        {:zoom, :"#{expansion}_zoom"}
+
+      _expansion ->
+        if Dashboard.visible?(dash, :capabilities), do: {:browser, state.caps}, else: nil
+    end
+  end
+
+  defp zoom_scroll(%{text_views: views} = state, id, key) do
+    view = Map.get(views, id) || zoom_text_view(state, id)
+    %{state | text_views: Map.put(views, id, TextView.update({:key, key}, view))}
   end
 
   defp check_commands(state) do
@@ -612,7 +714,75 @@ defmodule Workstation.CLI.TUI.Shell do
     state.dashboard
     |> Dashboard.layout(dims)
     |> Enum.reduce(Helpers.frame([], dims), fn {box, rect}, frame ->
-      Helpers.compose(frame, rect, &box_frame(state, styles, box, &1))
+      Helpers.compose(frame, rect, &deep_box_frame(state, styles, box, &1))
+    end)
+  end
+
+  # A drilled box swaps its pane for the deep view (§1.6): the
+  # capabilities browser in its grown box, plan/diff as full-dashboard
+  # read zooms. Every other box renders its summary.
+  defp deep_box_frame(state, styles, box, dims) do
+    case {Dashboard.expansion(state.dashboard), box} do
+      {:capabilities, :capabilities} -> capabilities_drill(state, styles, dims)
+      {zoom, pane} when zoom in [:plan, :diff] and zoom == pane -> zoom_pane(state, styles, box, dims)
+      _summary -> box_frame(state, styles, box, dims)
+    end
+  end
+
+  # The in-box tree drill: the browser's own pane layout inside the
+  # grown box 2 (the Proc::y+8 view).
+  defp capabilities_drill(state, styles, dims) do
+    styles =
+      Map.merge(styles, %{title: [{keycap(2), styles.keycap}, {"capabilities", styles.text}]})
+
+    CapabilitiesBrowser.view(state.caps, dims, styles)
+  end
+
+  # The read zoom: the box's full render text in a bordered scrollable
+  # pane filling the dashboard rect — the old read screens, retargeted
+  # to in-place deep views. Without a cached read the summary box is the
+  # honest zoom content.
+  defp zoom_pane(state, styles, box, dims) do
+    case Map.get(state.cache, box) do
+      {:ok, envelope} ->
+        renderer = if box == :plan, do: &Render.core_plan/1, else: &Render.core_diff/1
+        view = Map.get(state.text_views, :"#{box}_zoom") || TextView.init(renderer.(envelope))
+
+        TextView.bordered_view(view, dims, %{
+          title: [
+            {keycap(String.to_integer(Dashboard.box_number(box))), styles.keycap},
+            {Atom.to_string(box), styles.text}
+          ],
+          border: Map.fetch!(styles, :"border_#{box}"),
+          shortcut: styles.shortcut,
+          chrome: styles.chrome,
+          thumb: styles.shortcut
+        })
+
+      _no_read ->
+        box_frame(state, styles, box, dims)
+    end
+  end
+
+  defp zoom_text_view(state, id) do
+    box = if id == :plan_zoom, do: :plan, else: :diff
+
+    case Map.get(state.cache, box) do
+      {:ok, envelope} ->
+        renderer = if box == :plan, do: &Render.core_plan/1, else: &Render.core_diff/1
+        TextView.init(renderer.(envelope))
+
+      _no_read ->
+        TextView.init("")
+    end
+  end
+
+  # The zoomable box under a body point, if any (dashboard coordinates).
+  defp box_at(%{dashboard: dash, dimensions: {width, height}}, x, y) do
+    layout = Dashboard.layout(dash, {width, height - 2})
+
+    Enum.find_value(layout, fn {box, {bx, by, bw, bh}} ->
+      if x >= bx and x < bx + bw and y >= by and y < by + bh, do: box
     end)
   end
 

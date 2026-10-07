@@ -27,16 +27,27 @@ defmodule Workstation.CLI.TUI.Shell.Dashboard do
   segments the shell resolves through the theme (roles-are-the-API), and
   the same tokens drive the mouse hit-test so the strip has exactly one
   spelling for click = keypress.
+
+  Deep views never leave the dashboard (§1.6): at most one box is
+  `expanded` at a time. The capabilities box's in-box drill re-proportions
+  the tiler (+8 rows, the `Proc::y + 8` model) and a zoomed plan/diff box
+  takes over the whole dashboard rect — the dashboard gains views no more
+  than btop's does, only proportions.
   """
 
   alias TermUI.Layout
 
   @enforce_keys [:visible, :preset]
-  defstruct [:visible, :preset]
+  defstruct [:visible, :preset, :expanded]
 
   @type box :: :engine | :capabilities | :journal | :plan | :diff | :status
   @type preset_id :: 0 | 1 | 2
-  @type t :: %__MODULE__{visible: MapSet.t(box()), preset: preset_id() | nil}
+  @type zoomable :: :capabilities | :plan | :diff
+  @type t :: %__MODULE__{
+          visible: MapSet.t(box()),
+          preset: preset_id() | nil,
+          expanded: zoomable() | nil
+        }
 
   # Box order is the strip order; the digit keys address it 1-based.
   @boxes [:engine, :capabilities, :journal, :plan, :diff, :status]
@@ -66,9 +77,9 @@ defmodule Workstation.CLI.TUI.Shell.Dashboard do
   # it toggles freely at any width.
   @min_widths %{capabilities: 62}
 
-  @doc "Engine-seeded start state: preset 0, the full mosaic."
+  @doc "Engine-seeded start state: preset 0, the full mosaic, nothing expanded."
   @spec new() :: t()
-  def new, do: %__MODULE__{visible: MapSet.new(@presets[0]), preset: 0}
+  def new, do: %__MODULE__{visible: MapSet.new(@presets[0]), preset: 0, expanded: nil}
 
   @doc "The box set in strip order."
   @spec boxes() :: [box()]
@@ -82,6 +93,10 @@ defmodule Workstation.CLI.TUI.Shell.Dashboard do
   @spec box_for_key(String.t()) :: box() | nil
   def box_for_key(key), do: Map.get(@box_keys, key)
 
+  @doc "The keycap digit a box's chrome carries (the strip's single spelling)."
+  @spec box_number(box()) :: String.t()
+  def box_number(box), do: Enum.find_value(@box_keys, fn {key, b} -> b == box && key end)
+
   @spec visible?(t(), box()) :: boolean()
   def visible?(%__MODULE__{visible: visible}, box), do: MapSet.member?(visible, box)
 
@@ -89,13 +104,15 @@ defmodule Workstation.CLI.TUI.Shell.Dashboard do
   `Config::toggle_box`: flip membership and re-tile. Toggling a box ON
   that cannot claim its minimum width refuses with the failing minimum
   (btop's SizeError → the shell surfaces it as an inline footer error)
-  and the layout stays put. Either outcome dissolves preset tracking.
+  and the layout stays put. Either outcome dissolves preset tracking —
+  and a box toggled off takes its deep view with it.
   """
   @spec toggle_box(t(), box(), pos_integer()) :: {:ok, t()} | {:error, pos_integer()}
-  def toggle_box(%__MODULE__{visible: visible} = dash, box, width) do
+  def toggle_box(%__MODULE__{visible: visible, expanded: expanded} = dash, box, width) do
     cond do
       MapSet.member?(visible, box) ->
-        {:ok, %{dash | visible: MapSet.delete(visible, box), preset: nil}}
+        expanded = if expanded == box, do: nil, else: expanded
+        {:ok, %{dash | visible: MapSet.delete(visible, box), preset: nil, expanded: expanded}}
 
       width < min_width(box) ->
         {:error, min_width(box)}
@@ -125,12 +142,48 @@ defmodule Workstation.CLI.TUI.Shell.Dashboard do
 
     step = if direction == :next, do: 1, else: -1
     next = Integer.mod(from + step, map_size(@presets))
-    %__MODULE__{visible: MapSet.new(Map.fetch!(@presets, next)), preset: next}
+
+    # A preset change re-proportions everything — the deep view does not
+    # survive it (the same dissolve rule as toggles and resizes).
+    %__MODULE__{visible: MapSet.new(Map.fetch!(@presets, next)), preset: next, expanded: nil}
   end
 
-  @doc "A box resize re-tiles from the visible set and clears tracking (§1.2)."
+  @doc """
+  A box resize re-tiles from the visible set and clears preset tracking
+  (§1.2) — but the deep view survives: it is view state (btop's
+  `show_detailed` is sticky across resizes), and the overlay lane's
+  progress box must ride a terminal resize.
+  """
   @spec clear_tracking(t()) :: t()
   def clear_tracking(%__MODULE__{} = dash), do: %{dash | preset: nil}
+
+  ## -- in-box deep views (§1.6: the dashboard only re-proportions) -------
+
+  @doc "The box's expansion, when any (at most one at a time)."
+  @spec expansion(t()) :: zoomable() | nil
+  def expansion(%__MODULE__{expanded: expanded}), do: expanded
+
+  @doc "The zoomable boxes: the drillable tree box and the two read boxes."
+  @spec zoomable?(box()) :: boolean()
+  def zoomable?(box), do: box in [:capabilities, :plan, :diff]
+
+  @doc """
+  Expand a box in place (btop `show_detailed = true`): refused while the
+  box is hidden — a deep view of a box that is not on the dashboard is a
+  view, and views are banned.
+  """
+  @spec expand(t(), zoomable()) :: {:ok, t()} | {:error, :hidden}
+  def expand(%__MODULE__{visible: visible} = dash, box) do
+    if MapSet.member?(visible, box) do
+      {:ok, %{dash | expanded: box}}
+    else
+      {:error, :hidden}
+    end
+  end
+
+  @doc "Enter again (or Esc) restores the tiler (`show_detailed = false`)."
+  @spec contract(t()) :: t()
+  def contract(%__MODULE__{} = dash), do: %{dash | expanded: nil}
 
   @doc """
   Strip island tokens, one per box then the p/P cycle pair: `key` is the
@@ -209,19 +262,46 @@ defmodule Workstation.CLI.TUI.Shell.Dashboard do
   height}`. Presets 1/2 use their bespoke row structure at every width;
   everything else uses the slot mosaic at `>= #{@mosaic_min_width}`
   columns and the stacked priority renderer below it — preset 0 and a
-  dissolved (custom) set alike.
+  dissolved (custom) set alike. An expanded plan/diff box takes over the
+  whole dashboard rect; an expanded capabilities box re-proportions the
+  tiler around its drill rows (`Proc::y + 8` — the box grows by exactly
+  the drill's 8 rows).
   """
   @spec layout(t(), {pos_integer(), pos_integer()}) :: [{box(), rect()}]
-  def layout(%__MODULE__{preset: preset, visible: visible}, dims) do
-    {width, _height} = dims
+  def layout(%__MODULE__{preset: preset, visible: visible, expanded: expanded}, dims) do
+    {width, height} = dims
 
     cond do
-      preset == 1 -> tile(@audit_rows, visible, dims)
-      preset == 2 -> tile(@minimal_rows, visible, dims)
-      width >= @mosaic_min_width -> tile(@slot_rows, visible, dims)
-      true -> stack(visible, dims)
+      expanded in [:plan, :diff] and MapSet.member?(visible, expanded) ->
+        [{expanded, {0, 0, width, height}}]
+
+      preset == 1 ->
+        tile(@audit_rows, visible, dims)
+
+      preset == 2 ->
+        tile(@minimal_rows, visible, dims)
+
+      width >= @mosaic_min_width ->
+        tile(slot_rows(expanded), visible, dims)
+
+      true ->
+        stack(visible, dims, expanded)
     end
   end
+
+  # The drill rows: the box's 6-row band plus 8 — the exact `y =
+  # Proc::y + 8` in-box expansion (§1.6), enough for the browser's tree
+  # cursor and its descendants.
+  @drill_rows 14
+
+  defp slot_rows(:capabilities) do
+    Enum.map(@slot_rows, fn
+      {[:capabilities], _band} -> {[:capabilities], @drill_rows}
+      row -> row
+    end)
+  end
+
+  defp slot_rows(_expanded), do: @slot_rows
 
   # One tile row per track; the row's visible boxes split it evenly.
   defp tile(rows, visible, {width, height}) do
@@ -262,7 +342,7 @@ defmodule Workstation.CLI.TUI.Shell.Dashboard do
     end
   end
 
-  defp stack(visible, {width, height}) do
+  defp stack(visible, {width, height}, expanded) do
     shown = Enum.filter(@stack_order, &MapSet.member?(visible, &1))
 
     case shown do
@@ -272,7 +352,14 @@ defmodule Workstation.CLI.TUI.Shell.Dashboard do
       shown ->
         tracks =
           Enum.map(shown, fn box ->
-            Layout.bounded(Layout.fill(), min: Map.fetch!(@stack_min_heights, box))
+            min =
+              if box == :capabilities and expanded == :capabilities do
+                @drill_rows
+              else
+                Map.fetch!(@stack_min_heights, box)
+              end
+
+            Layout.bounded(Layout.fill(), min: min)
           end)
 
         Enum.zip(shown, Layout.column(Layout.new({width, height}), tracks))
