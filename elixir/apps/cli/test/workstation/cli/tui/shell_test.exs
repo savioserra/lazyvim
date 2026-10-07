@@ -160,23 +160,19 @@ defmodule Workstation.CLI.TUI.ShellTest do
 
   # -- shell chrome ---------------------------------------------------------
 
-  test "init renders the global chrome: header, numbered tab strip, footer keys" do
+  test "init renders the global chrome: keycap strip, home facts, footer keys" do
     start_shell()
 
-    # Identity counters ride header row 2 once the status read lands.
-    frame = await_frame(fn f -> Frame.row_text(f, 2) =~ "v9.9.9-test" end)
+    # The journal box folds the removed header facts line's gen/rev pair
+    # into its first row once the status read lands.
+    frame = await_frame(fn f -> body_text(f) =~ "rev 7" end)
 
-    # Brand island + destination on the header's first line, identity
-    # counters (engine version · mode · journal gen/rev) on the second,
-    # the double rule third; the strip is the buttonbar row below it.
-    assert frame |> Frame.row_text(1) =~ "workstation"
-    assert frame |> Frame.row_text(1) =~ @destination
-    assert frame |> Frame.row_text(2) =~ "v9.9.9-test"
-    assert frame |> Frame.row_text(2) =~ "test mode"
-    assert frame |> Frame.row_text(2) =~ "gen 2 · rev 7"
-    assert frame |> Frame.row_text(3) =~ "══"
-
-    strip = Frame.row_text(frame, 4)
+    # The strip is the first row (the only chrome above the body): one
+    # keycap island per tab, then the chrome filler to the edge. The old
+    # header (brand island, identity counters, double rule) is gone —
+    # gen/rev live in the journal box, version/platform in the engine
+    # box, the destination in the daemon tab's host box.
+    strip = Frame.row_text(frame, 1)
     assert strip =~ "1home"
     assert strip =~ "2capabilities"
     assert strip =~ "3status"
@@ -184,6 +180,14 @@ defmodule Workstation.CLI.TUI.ShellTest do
     assert strip =~ "5diff"
     assert strip =~ "6daemon"
     assert strip =~ "7help"
+    refute strip =~ @destination
+    refute full_text(frame) =~ "══"
+
+    # The mosaic starts directly under the strip.
+    assert frame |> Frame.row_text(2) =~ "╭"
+    assert body_text(frame) =~ "9.9.9-test"
+    assert body_text(frame) =~ "2 · rev 7"
+
     assert frame |> Frame.row_text(30) =~ "1-7 tabs"
     assert frame |> Frame.row_text(30) =~ "r refresh"
     assert frame |> Frame.row_text(30) =~ "? help"
@@ -198,17 +202,17 @@ defmodule Workstation.CLI.TUI.ShellTest do
     # Buttonbar islands: `┘1home└┘2capabilities└…`. The connector reads
     # chrome, the digit rides the shortcut slot (dark base #bb9af7), the
     # active tab label rides the accent role (dark base #7aa2f7).
-    assert Frame.cell(frame, 4, 1).char == "┘"
-    assert Frame.cell(frame, 4, 2).char == "1"
-    assert Frame.cell(frame, 4, 2).fg == {187, 154, 247}
-    assert Frame.cell(frame, 4, 3).char == "h"
-    assert Frame.cell(frame, 4, 3).fg == {122, 162, 247}
+    assert Frame.cell(frame, 1, 1).char == "┘"
+    assert Frame.cell(frame, 1, 2).char == "1"
+    assert Frame.cell(frame, 1, 2).fg == {187, 154, 247}
+    assert Frame.cell(frame, 1, 3).char == "h"
+    assert Frame.cell(frame, 1, 3).fg == {122, 162, 247}
 
     # Inactive tabs ride the inactive role (dark base #565f89).
-    assert Frame.cell(frame, 4, 9).char == "2"
-    assert Frame.cell(frame, 4, 9).fg == {187, 154, 247}
-    assert Frame.cell(frame, 4, 10).char == "c"
-    assert Frame.cell(frame, 4, 10).fg == {86, 95, 137}
+    assert Frame.cell(frame, 1, 9).char == "2"
+    assert Frame.cell(frame, 1, 9).fg == {187, 154, 247}
+    assert Frame.cell(frame, 1, 10).char == "c"
+    assert Frame.cell(frame, 1, 10).fg == {86, 95, 137}
   end
 
   test "footer keeps frame keys only, key caps in the shortcut slot" do
@@ -255,7 +259,8 @@ defmodule Workstation.CLI.TUI.ShellTest do
     assert text =~ "● reachable"
     assert text =~ "a apply"
     # The probe says an update exists → the affordances show: the hint
-    # rides the header identity row; the button rides the home body.
+    # rides the capabilities band body; the button rides the home
+    # buttonbar.
     assert full_text(frame) =~ "update available"
     assert text =~ "u update"
   end
@@ -289,7 +294,7 @@ defmodule Workstation.CLI.TUI.ShellTest do
 
     send_text(runtime, "?")
     # The restyled home no longer carries that identity line; the gate is
-    # the header counters' version + the gone help title.
+    # the engine box's version + the gone help title.
     frame =
       await_frame(fn f ->
         text = body_text(f)
@@ -397,7 +402,7 @@ defmodule Workstation.CLI.TUI.ShellTest do
     # (not another tab's) loses the file rows.
     send_key(runtime, :left)
     frame = settled_frame(runtime)
-    assert Frame.row_text(frame, 4) =~ "2capabilities"
+    assert Frame.row_text(frame, 1) =~ "2capabilities"
     assert body_text(frame) =~ "▾ editor"
     refute body_text(frame) =~ ".config/nvim/init.lua"
 
@@ -445,13 +450,13 @@ defmodule Workstation.CLI.TUI.ShellTest do
     send_text(runtime, "a")
     frame = await_frame(fn f -> body_text(f) =~ "apply · #{@destination}" end)
 
-    assert Frame.row_text(frame, 4) =~ "8apply"
+    assert Frame.row_text(frame, 1) =~ "8apply"
     text = body_text(frame)
     assert text =~ "apply · #{@destination}"
     assert text =~ "gen gen-3"
     assert text =~ "3 changes"
-    # The screen's own footer is the last body row (no shell footer in
-    # op mode — the shell keeps only header + strip above the screen).
+    # op mode — the shell keeps only the strip above the screen, so the
+    # screen's own footer is the last body row.
     assert Frame.row_text(frame, 30) =~ "a confirm"
   end
 
@@ -482,7 +487,7 @@ defmodule Workstation.CLI.TUI.ShellTest do
     # The screen's own [u] handoff — now it swaps screens, not processes.
     send_text(runtime, "u")
     frame = settled_frame(runtime)
-    assert Frame.row_text(frame, 4) =~ "8update"
+    assert Frame.row_text(frame, 1) =~ "8update"
     assert body_text(frame) =~ "update · #{@destination}"
   end
 
@@ -494,21 +499,21 @@ defmodule Workstation.CLI.TUI.ShellTest do
              "apply · #{@destination}"
 
     send_text(runtime, "q")
-    frame = await_frame(fn f -> Frame.row_text(f, 4) =~ "1home" end)
-    assert Frame.row_text(frame, 4) =~ "1home"
+    frame = await_frame(fn f -> Frame.row_text(f, 1) =~ "1home" end)
+    assert Frame.row_text(frame, 1) =~ "1home"
     assert body_text(frame) =~ "9.9.9-test"
-    refute Frame.row_text(frame, 4) =~ "8apply"
+    refute Frame.row_text(frame, 1) =~ "8apply"
   end
 
   test "u on home opens the update screen when the probe found updates" do
     runtime = start_shell()
     # `u` needs the shell's availability probe verdict — await the hint
-    # (it rides the header identity row, not the body).
+    # (it rides the capabilities band body, not the home body).
     await_frame(fn frame -> full_text(frame) =~ "update available" end)
     send_text(runtime, "u")
     frame = settled_frame(runtime)
 
-    assert Frame.row_text(frame, 4) =~ "8update"
+    assert Frame.row_text(frame, 1) =~ "8update"
     assert body_text(frame) =~ "update · #{@destination}"
   end
 
@@ -531,7 +536,7 @@ defmodule Workstation.CLI.TUI.ShellTest do
 
     send_text(runtime, "u")
     frame = settled_frame(runtime)
-    assert Frame.row_text(frame, 4) =~ "1home"
+    assert Frame.row_text(frame, 1) =~ "1home"
     refute body_text(frame) =~ "update available"
   end
 
@@ -544,7 +549,7 @@ defmodule Workstation.CLI.TUI.ShellTest do
 
     # The tab is a two-box mosaic; the liveness box titles itself with
     # the daemon badge and carries the re-probe button on its border.
-    assert Frame.row_text(frame, 5) =~ "daemon"
+    assert Frame.row_text(frame, 2) =~ "daemon"
     text = body_text(frame)
 
     assert text =~ "reachable"
@@ -583,29 +588,29 @@ defmodule Workstation.CLI.TUI.ShellTest do
     # re-awaiting content that may never be redrawn.
     frame =
       await_frame(fn f ->
-        Frame.row_text(f, 5) =~ "capabilities" and
+        Frame.row_text(f, 2) =~ "capabilities" and
           body_text(f) =~ "collapsed — enter to drill"
       end)
 
     # The box titles itself; the bottom border is the drill grammar with
-    # the cursor position counter. The mosaic body starts under the
-    # 3-row header + strip (rows 1-4), so the title island rides row 5.
-    assert Frame.row_text(frame, 5) =~ "capabilities"
+    # the cursor position counter. The mosaic body starts under the strip
+    # (row 1), so the title island rides row 2.
+    assert Frame.row_text(frame, 2) =~ "capabilities"
     # The drill pane's bottom border carries the cursor counter; the
     # inspector pane below it carries the action-bar buttons.
-    drill_bottom = Frame.row_text(frame, 23)
+    drill_bottom = Frame.row_text(frame, 22)
     assert drill_bottom =~ "1/2"
 
     # The cursor renders as the selected bg+fg pair (never color-alone).
-    # Data rows start at frame row 6 (inside the border).
-    selected = Frame.cell(frame, 6, 2)
+    # Data rows start at frame row 3 (inside the border).
+    selected = Frame.cell(frame, 3, 2)
     assert selected.bg == {41, 46, 66}
     assert selected.fg == {192, 202, 245}
 
     # Drill into editor → nvim package → its planned file row reads warn
     # (would-change), and the counter follows the grown outline. The
     # drill pane lists the active domain's subtree (packages + drilled
-    # files, the domain row itself rides the border title): rows 6-8 are
+    # files, the domain row itself rides the border title): rows 3-5 are
     # helix, nvim, the init.lua file (tmux belongs to the terminal
     # domain); the flat cursor sits on nvim. The panes split the body
     # 40/60, so the drill pane's content starts at column 42 (left box
@@ -617,14 +622,14 @@ defmodule Workstation.CLI.TUI.ShellTest do
     send_key(runtime, :enter)
     frame = settled_frame(runtime)
 
-    assert Frame.row_text(frame, 8) =~ ".config/nvim/init.lua"
-    assert Frame.cell(frame, 8, 42).fg == {224, 175, 104}
-    assert Frame.row_text(frame, 23) =~ "2/3"
+    assert Frame.row_text(frame, 5) =~ ".config/nvim/init.lua"
+    assert Frame.cell(frame, 5, 42).fg == {224, 175, 104}
+    assert Frame.row_text(frame, 22) =~ "2/3"
 
     # Moving the cursor onto the planned row swaps warn for the pair.
     send_key(runtime, :down)
     frame = settled_frame(runtime)
-    selected = Frame.cell(frame, 8, 42)
+    selected = Frame.cell(frame, 5, 42)
     assert selected.bg == {41, 46, 66}
     assert selected.fg == {192, 202, 245}
   end
@@ -634,11 +639,11 @@ defmodule Workstation.CLI.TUI.ShellTest do
     send_text(runtime, "4")
 
     # Await the plan pane itself: a settled drain can predate the tab
-    # switch render under parallel suite load (the mosaic's home row 5
+    # switch render under parallel suite load (the mosaic's home row 2
     # is the engine box, so the plan title discriminates the tabs).
-    frame = await_frame(fn frame -> Frame.row_text(frame, 5) =~ "plan" end)
+    frame = await_frame(fn frame -> Frame.row_text(frame, 2) =~ "plan" end)
 
-    assert Frame.row_text(frame, 5) =~ "plan"
+    assert Frame.row_text(frame, 2) =~ "plan"
     bottom = Frame.row_text(frame, 29)
     assert bottom =~ "┘↑↓ scroll└"
     assert bottom =~ "┘r refresh└"
@@ -677,11 +682,11 @@ defmodule Workstation.CLI.TUI.ShellTest do
 
     frame =
       await_frame(fn frame ->
-        text = Frame.row_text(frame, 6)
+        text = Frame.row_text(frame, 3)
         text =~ "state:" and text =~ "reachable"
       end)
 
-    assert Frame.cell(frame, 6, value_col(frame, 6, "state")).fg == {122, 162, 247}
+    assert Frame.cell(frame, 3, value_col(frame, 3, "state")).fg == {122, 162, 247}
 
     runtime = start_shell(load: loader(%{status: {:error, {"daemon_unavailable", "ENOENT"}}}))
 
@@ -692,11 +697,11 @@ defmodule Workstation.CLI.TUI.ShellTest do
 
     frame =
       await_frame(fn frame ->
-        text = Frame.row_text(frame, 6)
+        text = Frame.row_text(frame, 3)
         text =~ "state:" and text =~ "unreachable"
       end)
 
-    assert Frame.cell(frame, 6, value_col(frame, 6, "state")).fg == {247, 118, 142}
+    assert Frame.cell(frame, 3, value_col(frame, 3, "state")).fg == {247, 118, 142}
   end
 
   test "read failures render in the err slot" do
@@ -710,11 +715,11 @@ defmodule Workstation.CLI.TUI.ShellTest do
     frame =
       await_frame(fn frame ->
         row = find_row(frame, "read failed")
-        row > 4 and fg_in_row?(frame, row, {247, 118, 142})
+        row > 1 and fg_in_row?(frame, row, {247, 118, 142})
       end)
 
     row = find_row(frame, "read failed")
-    assert row > 4
+    assert row > 1
     assert fg_in_row?(frame, row, {247, 118, 142})
   end
 
@@ -727,7 +732,7 @@ defmodule Workstation.CLI.TUI.ShellTest do
     # Islands are back-to-back: 3 columns (`┘`, digit, `└`) plus the
     # label — `┘1 home└` spans 0-based columns 0..6, so column 10 is
     # inside `┘2 capabilities└` at any width.
-    send_event(runtime, %Event.Mouse{action: :press, button: :left, x: 10, y: 3})
+    send_event(runtime, %Event.Mouse{action: :press, button: :left, x: 10, y: 0})
 
     assert await_frame(fn f -> body_text(f) =~ "▸ editor" end) |> body_text() =~
              "▸ editor — 2 packages · 2 files · 1 would change"
@@ -739,12 +744,12 @@ defmodule Workstation.CLI.TUI.ShellTest do
 
     # The seven islands cost 61 columns at the harness's 100; column 95
     # is chrome filler. A click there must not switch tabs.
-    send_event(runtime, %Event.Mouse{action: :press, button: :left, x: 95, y: 3})
+    send_event(runtime, %Event.Mouse{action: :press, button: :left, x: 95, y: 0})
     text = settled_frame(runtime) |> body_text()
     assert text =~ "rollup:"
     refute text =~ "▸ editor"
 
-    # Header clicks are not strip clicks.
+    # A body click (the first body row) is not a strip click.
     send_event(runtime, %Event.Mouse{action: :press, button: :left, x: 10, y: 1})
     text = settled_frame(runtime) |> body_text()
     assert text =~ "rollup:"
@@ -755,7 +760,7 @@ defmodule Workstation.CLI.TUI.ShellTest do
     runtime = start_shell()
 
     send_text(runtime, "7")
-    frame = await_frame(fn f -> Frame.row_text(f, 5) =~ "7 help" end)
+    frame = await_frame(fn f -> Frame.row_text(f, 2) =~ "7 help" end)
     # The pane's bottom action bar carries the first-visible/total counter.
     assert Frame.row_text(frame, 29) =~ ~r/1\/\d+/
 
@@ -764,7 +769,7 @@ defmodule Workstation.CLI.TUI.ShellTest do
     send_event(runtime, %Event.Mouse{action: :scroll_down, button: nil, x: 40, y: 15})
 
     scrolled = await_frame(fn f -> Frame.row_text(f, 29) =~ ~r/2\/\d+/ end)
-    assert Frame.row_text(scrolled, 5) =~ "7 help"
+    assert Frame.row_text(scrolled, 2) =~ "7 help"
   end
 
   test "island clicks resolve through the same walk the renderer draws" do
@@ -775,26 +780,27 @@ defmodule Workstation.CLI.TUI.ShellTest do
     end
 
     # Digit boundaries: home costs 3+4=7 columns, capabilities starts at 7.
-    assert click.(3, 3, :left) == {:msg, {:text, "1"}}
-    assert click.(7, 3, :left) == {:msg, {:text, "2"}}
+    assert click.(3, 0, :left) == {:msg, {:text, "1"}}
+    assert click.(7, 0, :left) == {:msg, {:text, "2"}}
     # Last island ends at 61 columns; filler → inert.
-    assert click.(60, 3, :left) == {:msg, {:text, "7"}}
-    assert click.(61, 3, :left) == :ignore
-    assert click.(400, 3, :left) == :ignore
+    assert click.(60, 0, :left) == {:msg, {:text, "7"}}
+    assert click.(61, 0, :left) == :ignore
+    assert click.(400, 0, :left) == :ignore
 
     # Only left presses address islands; everything else is inert.
-    assert click.(3, 3, :right) == :ignore
+    assert click.(3, 0, :right) == :ignore
     assert Shell.event_to_msg(
-             %Event.Mouse{action: :release, button: :left, x: 3, y: 3},
+             %Event.Mouse{action: :release, button: :left, x: 3, y: 0},
              state
            ) == :ignore
 
     assert Shell.event_to_msg(
-             %Event.Mouse{action: :move, button: nil, x: 3, y: 3},
+             %Event.Mouse{action: :move, button: nil, x: 3, y: 0},
              state
            ) == :ignore
 
-    assert click.(3, 0, :left) == :ignore
+    # The strip is 0-based row 0 — a click on the first body row is inert.
+    assert click.(3, 1, :left) == :ignore
   end
 
   test "the wheel never touches the chrome, at any pointer position" do
@@ -847,8 +853,8 @@ defmodule Workstation.CLI.TUI.ShellTest do
     loaded_frame(runtime)
     send_text(runtime, "a")
     frame = settled_frame(runtime)
-    assert Frame.row_text(frame, 4) =~ "8apply"
-    assert Frame.row_text(frame, 5) =~ "apply · #{@destination}"
+    assert Frame.row_text(frame, 1) =~ "8apply"
+    assert Frame.row_text(frame, 2) =~ "apply · #{@destination}"
 
     send_event(runtime, Event.resize(120, 40))
 
@@ -863,20 +869,22 @@ defmodule Workstation.CLI.TUI.ShellTest do
     # The op survives the resize; the embedded screen re-laid itself out
     # to the body rect of the new size (its box re-renders under the
     # shell chrome).
-    assert Frame.row_text(frame, 5) =~ "apply · #{@destination}"
+    assert Frame.row_text(frame, 2) =~ "apply · #{@destination}"
   end
 
   # -- helpers -----------------------------------------------------------------
 
   defp body_text(frame) do
-    5..(frame.height - 1)
+    # The strip is row 1; the body spans rows 2..(height-1) and the shell
+    # footer is the last row (op mode's own footer included).
+    2..(frame.height - 1)
     |> Enum.map(&Frame.row_text(frame, &1))
     |> Enum.join("\n")
   end
 
-  # The full frame — header included. The header identity row carries the
-  # engine version and the update-availability hint, which body_text
-  # (body only) never sees.
+  # The full frame — strip and footer included; with the header gone,
+  # body_text already covers the loaded home's data rows, so this only
+  # differs by the chrome rows.
   defp full_text(frame) do
     1..frame.height
     |> Enum.map(&Frame.row_text(frame, &1))
@@ -913,7 +921,7 @@ defmodule Workstation.CLI.TUI.ShellTest do
   # "applied:" on the home body — the rollup line reads "applied gen-2"
   # without a colon).
   defp applied_row(frame) do
-    row = Enum.find(5..(frame.height - 1), &String.contains?(Frame.row_text(frame, &1), "applied:"))
+    row = Enum.find(2..(frame.height - 1), &String.contains?(Frame.row_text(frame, &1), "applied:"))
     assert row, "journal applied row not found on the home frame"
     row
   end

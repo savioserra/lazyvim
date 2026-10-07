@@ -737,11 +737,11 @@ split at 204 columns, where content rows dropped a border column):
   rows carry both side borders on exactly the corner columns (`│ content
   │`; the right border swaps to the scrollbar glyphs while overflowing)
   at every swept size.
-- **Full-width chrome bars**: the header double rule, the tab strip and
-  the global footer each span every column — keycap islands ride the
-  left edge and a chrome `─` filler carries the bar to the right edge
-  (the strip never trails off into background blanks), with no blank
-  cell anywhere on the rule, strip or footer rows.
+- **Full-width chrome bars**: the tab strip (the top row) and the
+  global footer each span every column — keycap islands ride the left
+  edge and a chrome `─` filler carries the bar to the right edge (the
+  strip never trails off into background blanks), with no blank cell
+  anywhere on the strip or footer rows.
 - **Island elision**: when a box narrows, the title and right-border
   islands ellipsis-trim (a cut reserves a cell for `…`) and then drop
   whole islands right-to-left; bottom buttonbars drop the position
@@ -751,8 +751,8 @@ split at 204 columns, where content rows dropped a border column):
 - **Update-hint placement**: a surfaced update hint rides the
   capabilities band body when the band has room; on the stacked home the
   persistent `u update` buttonbar button advertises it (at 80x24 the
-  stacked band may clip the hint body — the button and the header context
-  line keep the update reachable).
+  stacked band may clip the hint body — the button keeps the update
+  reachable).
 
 Box anatomy (`Shell.Box`): the title is an island inside the top border
 run (`╭─┐1 engine┌──…`), an optional right island carries counters and

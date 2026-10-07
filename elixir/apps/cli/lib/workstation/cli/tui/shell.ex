@@ -2,9 +2,9 @@ defmodule Workstation.CLI.TUI.Shell do
   @moduledoc """
   The workstation TUI application shell — the bare-verb home. One Elm root
   (the same `TermUI.Elm` contract as the apply/update screens) owning the
-  global chrome: a header (destination), a tab strip (home, capabilities,
-  status, plan, diff, daemon, help), the active tab's body and a footer
-  with the global keys. Every verb is reachable from it:
+  global chrome: a tab strip (home, capabilities, status, plan, diff,
+  daemon, help) on the top row, the active tab's body and a footer with
+  the global keys. Every verb is reachable from it:
 
     * read views (status/plan/diff) render the canonical
       `Workstation.CLI.Render` text in a scrollable pane — the TUI cannot
@@ -74,10 +74,10 @@ defmodule Workstation.CLI.TUI.Shell do
     {:help, "help"}
   ]
 
-  # Mouse coordinates are 0-based cells; the strip is the fourth row in
-  # both layouts (do_view heights [3, 1, ...]: header rows 1-3, strip
-  # row 4), so clicks are addressed at 0-based y 3.
-  @strip_row_y 3
+  # Mouse coordinates are 0-based cells; the strip is the first row in
+  # both layouts (do_view heights [1, ...]), so clicks are addressed at
+  # 0-based y 0.
+  @strip_row_y 0
 
   @type load_state :: nil | :loading | {:ok, map()} | {:error, String.t()}
   @type tab_id :: :home | :capabilities | :status | :plan | :diff | :daemon | :help
@@ -194,8 +194,8 @@ defmodule Workstation.CLI.TUI.Shell do
   # reuses the pane scroll keys; everything else is inert. The running
   # op's pseudo-tab is not digit-addressable on the keyboard either, so a
   # click on it stays inert for the same reason. Coordinates are 0-based
-  # cells (term_ui contract); the strip is 0-based row 3 in both layouts
-  # (header rows 1-3, strip row 4).
+  # cells (term_ui contract); the strip is 0-based row 0 — the first row
+  # of both layouts.
   def event_to_msg(%Event.Mouse{action: :press, button: :left, y: @strip_row_y, x: x}, state) do
     case strip_digit_at(state, x) do
       nil -> :ignore
@@ -344,20 +344,19 @@ defmodule Workstation.CLI.TUI.Shell do
     heights =
       if state.op do
         # In op mode the embedded screen renders its own footer; the shell
-        # keeps only the header and the tab strip (which shows where you
-        # are: the op screen's pseudo-tab is highlighted).
-        [3, 1, :fill]
+        # keeps only the tab strip (which shows where you are: the op
+        # screen's pseudo-tab is highlighted).
+        [1, :fill]
       else
-        [3, 1, :fill, 1]
+        [1, :fill, 1]
       end
 
-    [header, strip, body | rest] = Layout.column(Layout.new({width, height}), heights)
+    [strip, body | rest] = Layout.column(Layout.new({width, height}), heights)
     footer = List.first(rest)
 
     frame = Helpers.frame([], {width, height})
 
     frame
-    |> Helpers.compose(header, &header_frame(state, &1))
     |> Helpers.compose(strip, &strip_frame(state, &1))
     |> Helpers.compose(body, &body_frame(state, &1))
     |> compose_footer(footer, state)
@@ -506,11 +505,10 @@ defmodule Workstation.CLI.TUI.Shell do
   end
 
   defp body_dims(%{dimensions: {_width, height}} = state) do
-    # Body rect of the op-mode layout ([3, 1, :fill] — 3-row brand
-    # header + strip, no shell footer).
-    # Layout.column answers a LIST of rects.
-    [_header, _strip, body] =
-      Layout.column(Layout.new(state.dimensions), [3, 1, max(height - 4, 1)])
+    # Body rect of the op-mode layout ([1, :fill] — the strip only, no
+    # shell footer). Layout.column answers a LIST of rects.
+    [_strip, body] =
+      Layout.column(Layout.new(state.dimensions), [1, max(height - 1, 1)])
 
     {elem(body, 2), elem(body, 3)}
   end
@@ -543,49 +541,6 @@ defmodule Workstation.CLI.TUI.Shell do
   defp route(_message, state), do: state
 
   ## rendering
-
-  defp header_frame(state, {width, height}) do
-    styles = theme_styles(state)
-
-    Helpers.frame(
-      [
-        [{" workstation ", styles.accent}, {state.destination, Style.new()}],
-        identity_row(state, styles),
-        [{String.duplicate("═", width), styles.chrome}]
-      ],
-      {width, height}
-    )
-  end
-
-  # Identity line: engine version + mode + journal generation/revision
-  # from the cached status wire (loading degrades to a quiet phrase),
-  # with the update indicator riding as a warn island when it shows.
-  defp identity_row(state, styles) do
-    base =
-      case Map.get(state.cache, :status) do
-        {:ok, wire} ->
-          engine = wire["engine"] || %{}
-          journal = wire["journal"] || %{}
-
-          [
-            {"v#{Map.get(engine, "version", "?")}", Style.new()},
-            {" · ", styles.chrome},
-            {"#{Map.get(engine, "mode", "?")} mode", Style.new()},
-            {" · ", styles.chrome},
-            {"gen #{Map.get(journal, "generation", "?")}", Style.new()},
-            {" · ", styles.chrome},
-            {"rev #{Map.get(journal, "revision", "?")}", Style.new()}
-          ]
-
-        _loading ->
-          [{"reading engine state…", styles.inactive}]
-      end
-
-    case state.update_hint do
-      nil -> base
-      hint -> base ++ [{" · ", styles.chrome}, {UpdateHint.text(hint), styles.warn}]
-    end
-  end
 
   defp strip_frame(state, {width, height}) do
     styles = theme_styles(state)
@@ -873,9 +828,10 @@ defmodule Workstation.CLI.TUI.Shell do
       Layout.column(Layout.new({width, height}), [
         Layout.fill(),
         Layout.fill(),
-        # The capabilities band carries rollup + meters + the update hint
-        # row — three body rows minimum, or the hint clips.
-        Layout.fixed(5)
+        # The capabilities band carries rollup + the domain meters + the
+        # update hint row — four body rows minimum (two domains in the
+        # fixture shape), or the hint clips.
+        Layout.fixed(6)
       ])
 
     [left1, right1] = Layout.row(row1, [Layout.percentage(50), Layout.fill()])
@@ -1017,7 +973,13 @@ defmodule Workstation.CLI.TUI.Shell do
         style = ramp_style(state, journal["applied_at"])
 
         [
-          label_row("generation", to_string(journal["generation"]), styles),
+          # The removed header facts line's gen/rev pair lives here now:
+          # the journal box's first row reads "generation … · rev …".
+          label_row(
+            "generation",
+            "#{journal["generation"]} · rev #{Map.get(journal, "revision", "?")}",
+            styles
+          ),
           label_row("applied", {applied_at(journal), style}, styles),
           [{" " <> age_bar(state, journal["applied_at"]), style}]
         ]

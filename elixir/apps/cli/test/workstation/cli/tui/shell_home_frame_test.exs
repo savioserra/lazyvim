@@ -214,7 +214,7 @@ defmodule Workstation.CLI.TUI.ShellHomeFrameTest do
   # Chrome glyphs allowed on a box's side-border columns across body rows
   # (the right border swaps to scrollbar glyphs while content overflows).
   @side_glyphs ["│", "╥", "║", "╙", "╟", "╢"]
-  @border_glyphs ["│", "─", "╭", "╮", "╰", "╯", "┬", "┴", "├", "┤", "┘", "└", "═"]
+  @border_glyphs ["│", "─", "╭", "╮", "╰", "╯", "┬", "┴", "├", "┤", "┘", "└"]
 
   describe "width sweep 80..240 (corner parity + column consistency)" do
     @tag timeout: 300_000
@@ -379,22 +379,14 @@ defmodule Workstation.CLI.TUI.ShellHomeFrameTest do
     end)
   end
 
-  # The chrome bars span the terminal: the header's double rule covers
-  # every column; the tab strip (the row below the rule) and the footer
-  # (the last row) open with a keycap island on column 1 and their chrome
-  # `─` filler carries the bar to the right edge — the run from the last
-  # island to the edge is pure filler (a bar that stops early leaves
-  # background blanks and fails the tail check).
+  # The chrome bars span the terminal: the tab strip (the first row —
+  # the only chrome above the body since the header went away) and the
+  # footer (the last row) each open with a keycap island on column 1 and
+  # their chrome `─` filler carries the bar to the right edge — the run
+  # from the last island to the edge is pure filler (a bar that stops
+  # early leaves background blanks and fails the tail check).
   defp assert_full_width_bars(frame) do
-    rule_row = Enum.find(1..frame.height, &(Frame.cell(frame, &1, 1).char == "═"))
-    assert rule_row, "header double rule not found"
-
-    for c <- 1..frame.width do
-      assert Frame.cell(frame, rule_row, c).char == "═",
-             "header rule hole at column #{c}"
-    end
-
-    strip_row = rule_row + 1
+    strip_row = 1
 
     assert Frame.cell(frame, strip_row, 1).char == "┘",
            "strip does not open on column 1"
