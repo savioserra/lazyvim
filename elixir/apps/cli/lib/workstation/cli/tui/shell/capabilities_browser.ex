@@ -15,8 +15,9 @@ defmodule Workstation.CLI.TUI.Shell.CapabilitiesBrowser do
   the drilled-open subtree open.
   """
 
-  alias TermUI.Style
+  alias TermUI.{Layout, Style}
   alias TermUI.Widget.Helpers
+  alias Workstation.CLI.TUI.Shell.Box
 
   defstruct [:envelope, :rows, :expanded, :selected, :offset]
 
@@ -267,13 +268,16 @@ defmodule Workstation.CLI.TUI.Shell.CapabilitiesBrowser do
   defp also_note(_other), do: ""
 
   @doc """
-  Render the outline as a bordered box (btop grammar): the tab name titles
-  the border, the bottom border is the action bar (drill keys + refresh,
-  key caps in the shortcut slot) with the cursor position counter, the
-  cursor renders as the selected bg+fg pair (never color-alone), and file
-  rows that would change read warn.
+  Render the browser as the btop split mosaic: a domains box (the tab's
+  rollup rows) and a drill box (the active domain's expanded subtree)
+  side by side, with an inspector box underneath showing the selected
+  row's detail; the drill grammar rides the inspector's border as
+  buttons, position counters live in the pane borders, the cursor
+  renders as the selected bg+fg pair (never color-alone) and file rows
+  that would change read warn.
   """
   @spec view(t(), TermUI.Widget.dimensions(), %{
+          required(:title) => term(),
           required(:shortcut) => Style.t(),
           required(:chrome) => Style.t(),
           required(:warn) => Style.t(),
@@ -281,91 +285,214 @@ defmodule Workstation.CLI.TUI.Shell.CapabilitiesBrowser do
           required(:plain) => Style.t(),
           optional(atom()) => term()
         }) :: TermUI.Frame.t()
-  def view(%__MODULE__{rows: []}, {width, height}, _styles) do
-    Helpers.frame(
+  def view(%__MODULE__{rows: []}, {width, height}, styles) do
+    Box.frame(
       [
-        "no catalog entries",
-        "run `workstation bootstrap` to provision this home"
+        [{" no catalog entries", styles.plain}],
+        [],
+        [{" run `workstation bootstrap` to provision this home", styles.plain}]
       ],
-      {width, height}
+      {width, height},
+      border_style: styles.chrome,
+      title: styles.title
     )
   end
 
   def view(%__MODULE__{} = browser, {width, height}, styles) do
-    visible = max(height - 2, 1)
-    offset = window_offset(browser, visible)
+    [top_rect, inspect_rect] = Layout.column(Layout.new({width, height}), [Layout.percentage(75), Layout.fill()])
+    [left_rect, right_rect] = Layout.row(top_rect, [Layout.percentage(40), Layout.fill()])
+
+    Helpers.frame([], {width, height})
+    |> Helpers.compose(left_rect, &domains_box(browser, styles, &1))
+    |> Helpers.compose(right_rect, &drill_box(browser, styles, &1))
+    |> Helpers.compose(inspect_rect, &inspector_box(browser, styles, &1))
+  end
+
+  ## split panes
+
+  # The domains pane: every rollup row, cursor highlight following the
+  # flat cursor when it sits on a domain; the border counter is the
+  # highlighted domain's position.
+  defp domains_box(browser, styles, {width, height}) do
+    domains = Enum.filter(browser.rows, &(&1.kind == :domain))
+    visible = max(height - 2, 0)
+    domain_index = Enum.find_index(domains, &(&1.path == active_path(browser))) || 0
+    offset = window_offset(domain_index, length(domains), visible)
 
     rows =
-      browser.rows
+      domains
       |> Enum.drop(offset)
       |> Enum.take(visible)
-      |> Enum.with_index()
+      |> Enum.with_index(offset)
       |> Enum.map(fn {row, index} ->
-        if offset + index == browser.selected do
+        if index == browser.selected do
           cursor_row(row, styles.selected)
         else
           row_spans(row, styles)
         end
       end)
 
-    bar = %{title: "capabilities", border: styles.chrome, shortcut: styles.shortcut, chrome: styles.chrome}
-    box = Helpers.border(rows, {width, height}, title: bar.title, border_style: bar.border)
-
-    bottom = buttonbar_row(width, browser.selected, length(browser.rows), bar)
-
-    # Helpers.border/3 returns the full box; the bottom border becomes the
-    # action bar (btop border-as-buttonbar).
-    Helpers.frame(List.replace_at(box, -1, bottom), {width, height})
+    Box.frame(rows, {width, height},
+      border_style: styles.chrome,
+      title: styles.title,
+      counter: [{"#{domain_index + 1}/#{length(domains)}", styles.chrome}]
+    )
   end
 
-  # The window follows the cursor: the selected row stays visible when the
-  # cursor moves past either edge of the viewport.
-  defp window_offset(%__MODULE__{rows: rows, selected: selected, offset: offset}, height) do
-    cond do
-      selected < offset -> selected
-      selected >= offset + height and height > 0 -> selected - height + 1
-      true -> offset
+  # The drill pane: the active domain's subtree (its package/file rows),
+  # titled by the domain name; collapsed domains show the drill hint.
+  defp drill_box(browser, styles, {width, height}) do
+    {active, subtree} = active_subtree(browser)
+    visible = max(height - 2, 0)
+    cursor_index = subtree_cursor_index(browser)
+    offset = if cursor_index, do: window_offset(cursor_index, length(subtree), visible), else: 0
+
+    rows =
+      if subtree == [] do
+        [[{" collapsed — enter to drill", styles.inactive}]]
+      else
+        subtree
+        |> Enum.drop(offset)
+        |> Enum.take(visible)
+        |> Enum.with_index(offset)
+        |> Enum.map(fn {row, index} ->
+          if index == cursor_index do
+            cursor_row(row, styles.selected)
+          else
+            row_spans(row, styles)
+          end
+        end)
+      end
+
+    counter =
+      if subtree == [] do
+        []
+      else
+        [{"#{(cursor_index || 0) + 1}/#{length(subtree)}", styles.chrome}]
+      end
+
+    title =
+      case active do
+        %{path: path} -> [{" #{path} ", styles.accent}]
+        nil -> [{" drill ", styles.accent}]
+      end
+
+    Box.frame(rows, {width, height},
+      border_style: styles.chrome,
+      title: title,
+      counter: counter
+    )
+  end
+
+  # The inspector: the selected row's kind and full text, with the drill
+  # grammar on the bottom border as buttons.
+  defp inspector_box(browser, styles, {width, height}) do
+    selected_row = Enum.at(browser.rows, browser.selected)
+
+    rows =
+      case selected_row do
+        nil ->
+          [[{" nothing selected", styles.inactive}]]
+
+        row ->
+          [
+            [{" " <> kind_label(row.kind), styles.accent}],
+            [{" " <> row_text(row), row_style(row, styles)}]
+          ]
+      end
+
+    Box.frame(rows, {width, height},
+      border_style: styles.chrome,
+      title: [{" inspect ", styles.accent}],
+      buttons: [
+        [{"enter", styles.shortcut}, {" expand/collapse", styles.chrome}],
+        [{"backspace", styles.shortcut}, {" collapse", styles.chrome}],
+        [{"r", styles.shortcut}, {" refresh", styles.chrome}]
+      ]
+    )
+  end
+
+  defp kind_label(:domain), do: "domain"
+  defp kind_label(:package), do: "package"
+  defp kind_label(:file), do: "file"
+
+  # The active domain: the last domain row at or before the flat cursor.
+  defp active_path(browser) do
+    case active_subtree(browser) do
+      {%{path: path}, _subtree} -> path
+      {nil, _subtree} -> nil
     end
-    |> clamp(0, max(length(rows) - height, 0))
   end
 
-  defp cursor_row(row, selected) do
-    [{row_text(row), selected}]
+  # {active domain row, its subtree rows} — the flat rows after the
+  # active domain up to the next domain row.
+  defp active_subtree(%__MODULE__{rows: rows, selected: selected}) do
+    domain_index =
+      rows
+      |> Enum.take(selected + 1)
+      |> Enum.reverse()
+      |> Enum.find_index(&(&1.kind == :domain))
+
+    case domain_index do
+      nil ->
+        {nil, []}
+
+      index ->
+        # `index` is the DISTANCE back from the flat cursor to the active
+        # domain (a reversed-slice position), never a row index: the
+        # domain's global row is `selected - index`. Splitting at the
+        # slice-local value would present the wrong subtree (rows after
+        # the cursor) under the wrong pane title.
+        global = selected - index
+
+        {_before, rest} = Enum.split(rows, global + 1)
+        active = Enum.at(rows, global)
+        {subtree, _rest} = Enum.split_while(rest, &(&1.kind != :domain))
+        {active, subtree}
+    end
+  end
+
+  # Subtree-relative cursor (nil when the flat cursor is on a domain row
+  # or outside the active subtree).
+  defp subtree_cursor_index(%__MODULE__{rows: rows, selected: selected}) do
+    case Enum.at(rows, selected) do
+      %{kind: :domain} -> nil
+      _row ->
+        domain_index =
+          rows
+          |> Enum.take(selected + 1)
+          |> Enum.reverse()
+          |> Enum.find_index(&(&1.kind == :domain))
+
+        case domain_index do
+          nil -> nil
+          # Subtree-relative cursor: `index - 1` (the domain itself is
+          # distance `index` back, the cursor's subtree slot follows it).
+          index -> index - 1
+        end
+    end
+  end
+
+  # The pane window is the page containing the highlighted row (stateless
+  # and deterministic: the row never scrolls out of its own page).
+  defp window_offset(index, total, visible) do
+    cond do
+      visible <= 0 or total <= 0 -> 0
+      total <= visible -> 0
+      true -> min(div(max(index, 0), visible) * visible, total - visible)
+    end
   end
 
   # Would-change file rows read warn; everything else stays plain (the
   # saturated color is reserved for the data that matters).
-  defp row_spans(%{planned: planned} = row, styles) when is_integer(planned) and planned > 0 and row.kind == :file do
-    [{row_text(row), styles.warn}]
-  end
+  defp row_style(%{kind: :file, planned: planned}, styles) when is_integer(planned) and planned > 0,
+    do: styles.warn
 
-  defp row_spans(row, _styles), do: [{row_text(row), Style.new()}]
+  defp row_style(_row, _styles), do: Style.new()
 
-  # Bottom border as action bar: drill grammar + refresh with the cursor
-  # position counter (n/total rows) flush right.
-  defp buttonbar_row(width, selected, total, bar) do
-    hints = [
-      {"enter", bar.shortcut},
-      {" expand", Style.new()},
-      {" · ", bar.chrome},
-      {"backspace", bar.shortcut},
-      {" collapse", Style.new()},
-      {" · ", bar.chrome},
-      {"r", bar.shortcut},
-      {" refresh", Style.new()}
-    ]
+  defp row_spans(row, styles), do: [{row_text(row), row_style(row, styles)}]
 
-    counter = {"#{selected + 1}/#{total}", bar.chrome}
-    hints_width = Enum.reduce(hints, 0, fn {text, _}, acc -> acc + Helpers.text_width(text) end)
-    counter_width = Helpers.text_width(elem(counter, 0))
-
-    # 1 corner + 2 pad + hints + spacer + counter + 2 (dash + corner)
-    spacer = max(width - hints_width - counter_width - 5, 1)
-
-    [{"└", bar.border}, {String.duplicate("─", 2), bar.border}] ++
-      hints ++
-      [{String.duplicate(" ", spacer), bar.border}, counter, {"─┘", bar.border}]
-  end
+  defp cursor_row(row, selected), do: [{row_text(row), selected}]
 
   defp row_text(row), do: String.duplicate("  ", row.depth) <> String.trim_leading(row.text)
 end

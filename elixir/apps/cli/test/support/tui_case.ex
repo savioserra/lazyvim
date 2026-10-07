@@ -22,9 +22,13 @@ defmodule Workstation.CLITest.TUI do
 
   import ExUnit.Assertions
 
-  @receive_timeout 2_000
+  # Budgets sized for the slowest observed CI box: first draws and wire
+  # answers have been seen at >2s under the full parallel suite, so the
+  # floor for receive/settle waits is generous — a genuine regression
+  # still fails fast (dead sessions never draw), a slow one just waits.
+  @receive_timeout 10_000
   @quiet_ms 100
-  @settle_timeout_ms 5_000
+  @settle_timeout_ms 10_000
 
   @doc "Starts a screen on the deterministic backend and returns the runtime pid."
   def start_screen!(module, opts \\ []) do
@@ -84,16 +88,40 @@ defmodule Workstation.CLITest.TUI do
   #{@settle_timeout_ms}) is spent. Returns the matching frame; flunks on
   timeout, so a missed state is a bounded, self-describing failure, never
   a hang.
+
+  Every frame is matched AS IT ARRIVES, including the ones inside the
+  initial settle drain. Matching only the final settled frame is not
+  enough: an earlier frame of the same burst can be the only one that
+  ever carries the awaited state (an instant fixture answer renders it,
+  a later redraw moves past it, and no further frames ever arrive — the
+  awaited content is then unrecoverable from the mailbox).
   """
   @spec await_frame((TermUI.Frame.t() -> boolean()), keyword()) :: TermUI.Frame.t()
   def await_frame(predicate, opts \\ []) when is_function(predicate, 1) do
     timeout_ms = Keyword.get(opts, :timeout_ms, @settle_timeout_ms)
     deadline = System.monotonic_time(:millisecond) + timeout_ms
 
-    # The in-flight burst first: the matching frame may already be the
-    # settled one, with nothing further in flight.
-    frame = latest_frame()
-    if predicate.(frame), do: frame, else: await_match(predicate, deadline)
+    # The in-flight burst first: the matching frame may already have been
+    # drawn, with nothing further in flight.
+    case drain_matching(predicate, @receive_timeout) do
+      {:ok, frame} -> frame
+      :none -> await_match(predicate, deadline)
+    end
+  end
+
+  # Consumes frames until the mailbox goes quiet, matching each frame as
+  # it arrives. Returns {:ok, frame} on the first match, :none when the
+  # burst settles without one.
+  defp drain_matching(predicate, quiet_timeout) do
+    receive do
+      {:backend, :draw, %TermUI.Frame{} = frame} ->
+        if predicate.(frame), do: {:ok, frame}, else: drain_matching(predicate, @quiet_ms)
+
+      {:backend, :flush, _count} ->
+        drain_matching(predicate, quiet_timeout)
+    after
+      quiet_timeout -> :none
+    end
   end
 
   defp await_match(predicate, deadline) do

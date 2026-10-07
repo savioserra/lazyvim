@@ -55,18 +55,19 @@ defmodule Workstation.CLI.TUI.UpdateTest do
 
   defp chain_finished(outcome), do: %{"type" => "run.finished", "outcome" => outcome}
 
-  # Layout with rows: 12: header 1-2, table header row 3, steps rows 4-8,
-  # footer 12; newest toast box rows 10-12.
+  # Layout with rows: 12: box borders 1/12 (title + counters on 1, phase
+  # buttonbar on 12), table header row 2, steps rows 3-7; the newest toast
+  # box overlays rows 10-12.
   describe "step list run" do
     test "all steps pass and the success toast is token-guarded" do
       start_update()
       frame = latest_frame()
 
-      assert frame |> Frame.row_text(1) =~ "workstation update"
-      assert frame |> Frame.row_text(1) =~ @destination
-      assert frame |> Frame.row_text(2) =~ "5 steps · abort on first failure"
+      assert frame |> Frame.row_text(1) =~ "update · #{@destination}"
+      assert frame |> Frame.row_text(1) =~ "5 steps"
+      assert frame |> Frame.row_text(1) =~ "abort on first failure"
 
-      for {step, row} <- Enum.zip(Update.steps(), 4..8) do
+      for {step, row} <- Enum.zip(Update.steps(), 3..7) do
         assert frame |> Frame.row_text(row) =~ step
         assert frame |> Frame.row_text(row) =~ "ok"
       end
@@ -95,18 +96,23 @@ defmodule Workstation.CLI.TUI.UpdateTest do
           )
       )
 
-      frame = latest_frame()
+      # Same async sink contract: chain_finished (row 7 skipped) is the
+      # last event to render.
+      frame =
+        await_frame(fn frame ->
+          Frame.row_text(frame, 7) =~ "skipped"
+        end)
 
-      assert frame |> Frame.row_text(4) =~ pull
+      assert frame |> Frame.row_text(3) =~ pull
+      assert frame |> Frame.row_text(3) =~ "ok"
+      assert frame |> Frame.row_text(4) =~ bootstrap
       assert frame |> Frame.row_text(4) =~ "ok"
-      assert frame |> Frame.row_text(5) =~ bootstrap
-      assert frame |> Frame.row_text(5) =~ "ok"
-      assert frame |> Frame.row_text(6) =~ apply
-      assert frame |> Frame.row_text(6) =~ "failed"
-      assert frame |> Frame.row_text(7) =~ sync
+      assert frame |> Frame.row_text(5) =~ apply
+      assert frame |> Frame.row_text(5) =~ "failed"
+      assert frame |> Frame.row_text(6) =~ sync
+      assert frame |> Frame.row_text(6) =~ "skipped"
+      assert frame |> Frame.row_text(7) =~ verify
       assert frame |> Frame.row_text(7) =~ "skipped"
-      assert frame |> Frame.row_text(8) =~ verify
-      assert frame |> Frame.row_text(8) =~ "skipped"
 
       assert frame |> Frame.row_text(11) =~ "Update failed: apply_refused"
     end
@@ -127,13 +133,20 @@ defmodule Workstation.CLI.TUI.UpdateTest do
           )
       )
 
-      frame = latest_frame()
+      # The chain events land through the screen's async events sink —
+      # wait for the LAST event (chain_finished flipping sync/verify to
+      # skipped) so every row assert below reads a settled frame.
+      frame =
+        await_frame(fn frame ->
+          Frame.row_text(frame, 6) =~ "skipped"
+        end)
 
-      assert frame |> Frame.row_text(4) =~ "ok"
-      assert frame |> Frame.row_text(7) =~ sync
+      assert frame |> Frame.row_text(3) =~ pull
+      assert frame |> Frame.row_text(3) =~ "ok"
+      assert frame |> Frame.row_text(6) =~ sync
+      assert frame |> Frame.row_text(6) =~ "skipped"
+      assert frame |> Frame.row_text(7) =~ verify
       assert frame |> Frame.row_text(7) =~ "skipped"
-      assert frame |> Frame.row_text(8) =~ verify
-      assert frame |> Frame.row_text(8) =~ "skipped"
     end
   end
 

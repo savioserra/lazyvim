@@ -57,29 +57,33 @@ defmodule Workstation.CLI.TUI.ApplyTest do
 
   defp start_apply(extra \\ []), do: start_screen!(Apply, screen_opts(extra))
 
-  # Layout with rows: 12: header 1-2, table header row 3, entries 4-6,
-  # footer 12; dialog box rows 4-8; newest toast box rows 10-12. Columns
-  # are 80 wide so the longest capability id renders unclipped.
+  # Layout with rows: 12: box borders 1/12 (title + counters on 1, phase
+  # buttonbar on 12), table header row 2, entries 3-5; the confirm dialog
+  # box overlays rows 4-8; the newest toast box overlays rows 10-12. The
+  # table inset starts at column 2 (column 1 is the box border), so cursor
+  # cells are read at column 2. Columns are 80 wide so the longest
+  # capability id renders unclipped.
   describe "view" do
     test "header shows destination and generation, table shows entries, footer hints" do
       start_apply()
       frame = latest_frame()
 
-      assert frame |> Frame.row_text(1) =~ "workstation apply"
-      assert frame |> Frame.row_text(1) =~ @destination
-      assert frame |> Frame.row_text(2) =~ "generation gen-1 · 3 change(s)"
+      assert frame |> Frame.row_text(1) =~ "apply · #{@destination}"
+      assert frame |> Frame.row_text(1) =~ "gen gen-1"
+      assert frame |> Frame.row_text(1) =~ "3 changes"
 
-      assert frame |> Frame.row_text(3) =~ "CAPABILITY"
-      assert frame |> Frame.row_text(3) =~ "OPERATION"
-      assert frame |> Frame.row_text(3) =~ "TARGET"
+      assert frame |> Frame.row_text(2) =~ "CAPABILITY"
+      assert frame |> Frame.row_text(2) =~ "OPERATION"
+      assert frame |> Frame.row_text(2) =~ "TARGET"
 
-      assert frame |> Frame.row_text(4) =~ "modify_executable_dot_bashrc"
-      assert frame |> Frame.row_text(4) =~ "modify"
-      assert frame |> Frame.row_text(4) =~ ".bashrc"
-      assert frame |> Frame.row_text(5) =~ "dot_config/nvim/init.lua"
-      assert frame |> Frame.row_text(6) =~ "dot_tmux.conf"
+      assert frame |> Frame.row_text(3) =~ "modify_executable_dot_bashrc"
+      assert frame |> Frame.row_text(3) =~ "modify"
+      assert frame |> Frame.row_text(3) =~ ".bashrc"
+      assert frame |> Frame.row_text(4) =~ "dot_config/nvim/init.lua"
+      assert frame |> Frame.row_text(5) =~ "dot_tmux.conf"
 
-      assert frame |> Frame.row_text(12) =~ "a confirm · ↑↓ move · enter select · q quit"
+      assert frame |> Frame.row_text(12) =~ "a confirm"
+      assert frame |> Frame.row_text(12) =~ "q quit"
     end
 
     test "header accent renders as resolved rgb color" do
@@ -97,8 +101,8 @@ defmodule Workstation.CLI.TUI.ApplyTest do
       send_text(runtime, "↓")
 
       frame = latest_frame()
-      assert :reverse in Frame.cell(frame, 5, 1).attrs
-      refute :reverse in Frame.cell(frame, 4, 1).attrs
+      assert :reverse in Frame.cell(frame, 4, 2).attrs
+      refute :reverse in Frame.cell(frame, 3, 2).attrs
     end
 
     test "native key events move the cursor the same way" do
@@ -106,8 +110,14 @@ defmodule Workstation.CLI.TUI.ApplyTest do
       send_key(runtime, :down)
       send_key(runtime, :down)
 
-      frame = latest_frame()
-      assert :reverse in Frame.cell(frame, 6, 1).attrs
+      # Key events process through the screen's event loop — wait for
+      # the moved cursor instead of trusting one drain.
+      frame =
+        await_frame(fn frame ->
+          :reverse in Frame.cell(frame, 5, 2).attrs
+        end)
+
+      assert :reverse in Frame.cell(frame, 5, 2).attrs
     end
 
     test "enter selects the cursor row" do
@@ -119,7 +129,7 @@ defmodule Workstation.CLI.TUI.ApplyTest do
       send_key(runtime, :up)
 
       frame = latest_frame()
-      cell = Frame.cell(frame, 5, 1)
+      cell = Frame.cell(frame, 4, 2)
 
       assert :bold in cell.attrs
       assert cell.fg == :cyan
@@ -130,11 +140,11 @@ defmodule Workstation.CLI.TUI.ApplyTest do
       send_key(runtime, :end)
 
       frame = latest_frame()
-      assert :reverse in Frame.cell(frame, 6, 1).attrs
+      assert :reverse in Frame.cell(frame, 5, 2).attrs
 
       send_key(runtime, :home)
       frame = latest_frame()
-      assert :reverse in Frame.cell(frame, 4, 1).attrs
+      assert :reverse in Frame.cell(frame, 3, 2).attrs
     end
   end
 
@@ -149,7 +159,9 @@ defmodule Workstation.CLI.TUI.ApplyTest do
       assert frame |> Frame.row_text(5) =~ "Apply 3 change(s) to #{@destination}?"
       assert frame |> Frame.row_text(7) =~ "[ Yes ]"
       assert frame |> Frame.row_text(7) =~ "[ No ]"
-      assert frame |> Frame.row_text(12) =~ "y confirm apply · n/esc cancel · q quit"
+      assert frame |> Frame.row_text(12) =~ "y confirm apply"
+      assert frame |> Frame.row_text(12) =~ "n cancel"
+      assert frame |> Frame.row_text(12) =~ "q quit"
     end
 
     test "n cancels back to ready" do
@@ -160,7 +172,7 @@ defmodule Workstation.CLI.TUI.ApplyTest do
 
       frame = latest_frame()
       refute frame |> Frame.row_text(4) =~ "Confirm apply"
-      assert frame |> Frame.row_text(12) =~ "a confirm · ↑↓ move · enter select · q quit"
+      assert frame |> Frame.row_text(12) =~ "a confirm"
     end
 
     test "escape cancels back to ready" do

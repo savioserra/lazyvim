@@ -27,6 +27,11 @@ defmodule Workstation.CLI.TUI.Update do
   daemon keeps the lock and finishes (or aborts) the chain without a
   viewer; a later `workstation update` re-attaches to the journal's state.
 
+  Anatomy: ONE full-screen rounded box — `update` island + destination in
+  the top border, step + failure counters in the top-right islands, the
+  phase's buttonbar on the bottom border, and the step table inset inside
+  the box.
+
   The passive availability indicator (supervisor-directed engine scope)
   fires `update.check` asynchronously on open and after every completed
   chain; when the branch is behind, the footer surfaces the accent
@@ -41,7 +46,7 @@ defmodule Workstation.CLI.TUI.Update do
   alias TermUI.Widget.Table.Column
   alias TermUI.Widget.Toast.Manager
 
-  alias Workstation.CLI.TUI.{Executor, Theme, UpdateHint}
+  alias Workstation.CLI.TUI.{Executor, Shell.Box, Theme, UpdateHint}
 
   @enforce_keys [
     :destination,
@@ -97,9 +102,7 @@ defmodule Workstation.CLI.TUI.Update do
           toast_ms: pos_integer()
         }
 
-  @ready_footer "q quit"
-  @running_footer "updating · x abort · q detach"
-  @header_rows 2
+  # Footer grammar renders as buttonbar islands (see footer_buttons/1).
 
   @doc "Lifecycle steps in execution order (docs/capabilities.md)."
   @spec steps() :: [step()]
@@ -238,14 +241,55 @@ defmodule Workstation.CLI.TUI.Update do
   def view(state) do
     {width, height} = state.dimensions
 
-    [header, body, footer] =
-      Layout.column(Layout.new({width, height}), [@header_rows, :fill, 1])
-
     Helpers.frame([], {width, height})
-    |> Helpers.compose(header, fn dims -> header_frame(state, dims) end)
-    |> Helpers.compose(body, fn dims -> Table.view(state.table, dims) end)
-    |> Helpers.compose(footer, fn dims -> footer_frame(state, dims) end)
+    |> Helpers.compose(Layout.new({width, height}), fn dims -> screen_frame(state, dims) end)
     |> overlay_toasts(state)
+  end
+
+  # The boxed op screen: the step table inset inside one rounded box whose
+  # border carries the title, counters, and the phase's buttonbar.
+  defp screen_frame(state, {width, height} = dims) do
+    box =
+      Box.frame([], dims,
+        border_style: role_style(state, :chrome),
+        title: [
+          {" update ", bold_role(state, :accent)},
+          {"· ", role_style(state, :chrome)},
+          {state.destination <> " ", Style.new()}
+        ],
+        right: [
+          [{"#{length(state.steps)} steps", role_style(state, :chrome)}],
+          [{"abort on first failure", role_style(state, :chrome)}]
+        ],
+        buttons: footer_buttons(state)
+      )
+
+    table = Table.view(state.table, {max(width - 2, 1), max(height - 2, 1)})
+
+    # 1-based overlay: the box starts at row/col 1, the table inset sits at
+    # row/col 2 inside the border.
+    Frame.overlay(box, table, 2, 2)
+  end
+
+  # The bottom border is the phase's action bar; every key is its own
+  # island (btop keycaps), the update indicator rides as its own island
+  # when it shows.
+  defp footer_buttons(%{phase: :running} = state) do
+    [[{"updating", bold_role(state, :accent)}]] ++ key_islands(state, x: "abort", q: "detach")
+  end
+
+  defp footer_buttons(%{phase: :done, update_hint: hint} = state) when hint != nil do
+    key_islands(state, q: "quit") ++ [[{UpdateHint.text(hint), bold_role(state, :accent)}]]
+  end
+
+  defp footer_buttons(%{phase: :done} = state), do: key_islands(state, q: "quit")
+
+  # One island per key: the cap rides the bold accent slot, the label
+  # follows plain — btop's border-button grammar.
+  defp key_islands(state, pairs) do
+    Enum.map(pairs, fn {cap, label} ->
+      [{Atom.to_string(cap), bold_role(state, :accent)}, {" #{label}", Style.new()}]
+    end)
   end
 
   ## chain
@@ -344,30 +388,12 @@ defmodule Workstation.CLI.TUI.Update do
     ]
   end
 
-  defp header_frame(state, dims) do
-    Helpers.frame(
-      [
-        [accent_text(state, "workstation update"), "  #{state.destination}"],
-        "#{length(state.steps)} steps · abort on first failure"
-      ],
-      dims
-    )
-  end
+  defp role_style(state, role), do: %Style{fg: Theme.to_term_ui_color(state.theme[role])}
 
-  defp footer_frame(%{phase: :running}, dims), do: Helpers.frame([@running_footer], dims)
-
-  defp footer_frame(%{phase: :done, update_hint: hint} = state, dims) when hint != nil do
-    # The indicator rides the idle footer as an accent segment (the locked
-    # wording), followed by the ordinary quit affordance.
-    Helpers.frame([[@ready_footer, "  ", accent_text(state, UpdateHint.text(hint))]], dims)
-  end
-
-  defp footer_frame(_state, dims), do: Helpers.frame([@ready_footer], dims)
-
-  defp accent_text(state, text) do
-    case Theme.to_term_ui_color(state.theme[:accent]) do
-      {:rgb, r, g, b} -> {text, Style.new(fg: {:rgb, r, g, b}, attrs: [:bold])}
-      nil -> {text, Style.new(attrs: [:bold])}
+  defp bold_role(state, role) do
+    case Theme.to_term_ui_color(state.theme[role]) do
+      {:rgb, r, g, b} -> Style.new(fg: {:rgb, r, g, b}, attrs: [:bold])
+      nil -> Style.new(attrs: [:bold])
     end
   end
 

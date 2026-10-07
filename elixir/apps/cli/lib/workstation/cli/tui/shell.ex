@@ -42,7 +42,7 @@ defmodule Workstation.CLI.TUI.Shell do
   alias Workstation.CLI.DaemonClient
   alias Workstation.CLI.Render
   alias Workstation.CLI.TUI.{Apply, Executor, Theme, Update, UpdateHint}
-  alias Workstation.CLI.TUI.Shell.{CapabilitiesBrowser, Help, TextView}
+  alias Workstation.CLI.TUI.Shell.{Box, CapabilitiesBrowser, Help, TextView}
 
   @read_timeout_ms 120_000
 
@@ -287,9 +287,8 @@ defmodule Workstation.CLI.TUI.Shell do
   # The shell's OWN availability probe (the embedded screens run theirs
   # against the same executor; the message shapes do not collide because
   # the shell prefixes its token).
-  def update({:shell_check_done, verdict}, state) do
-    %{state | update_hint: UpdateHint.fold(verdict)}
-  end
+  def update({:shell_check_done, verdict}, state),
+    do: %{state | update_hint: UpdateHint.fold(verdict)}
 
   # Scroll / browser keys route by tab; every tab's view ignores the
   # messages that are not its own.
@@ -306,6 +305,16 @@ defmodule Workstation.CLI.TUI.Shell do
 
   @impl TermUI.Elm
   def view(state) do
+    try do
+      do_view(state)
+    rescue
+      e ->
+        :persistent_term.put({:tui_probe, :view_crash}, {e, __STACKTRACE__})
+        raise e
+    end
+  end
+
+  def do_view(state) do
     {width, height} = state.dimensions
 
     heights =
@@ -313,9 +322,9 @@ defmodule Workstation.CLI.TUI.Shell do
         # In op mode the embedded screen renders its own footer; the shell
         # keeps only the header and the tab strip (which shows where you
         # are: the op screen's pseudo-tab is highlighted).
-        [1, 1, :fill]
+        [3, 1, :fill]
       else
-        [1, 1, :fill, 1]
+        [3, 1, :fill, 1]
       end
 
     [header, strip, body | rest] = Layout.column(Layout.new({width, height}), heights)
@@ -473,10 +482,11 @@ defmodule Workstation.CLI.TUI.Shell do
   end
 
   defp body_dims(%{dimensions: {_width, height}} = state) do
-    # Body rect of the op-mode layout ([1, 1, :fill] — no shell footer).
+    # Body rect of the op-mode layout ([3, 1, :fill] — 3-row brand
+    # header + strip, no shell footer).
     # Layout.column answers a LIST of rects.
     [_header, _strip, body] =
-      Layout.column(Layout.new(state.dimensions), [1, 1, max(height - 2, 1)])
+      Layout.column(Layout.new(state.dimensions), [3, 1, max(height - 4, 1)])
 
     {elem(body, 2), elem(body, 3)}
   end
@@ -511,12 +521,46 @@ defmodule Workstation.CLI.TUI.Shell do
   ## rendering
 
   defp header_frame(state, {width, height}) do
-    accent = accent_style(state)
+    styles = theme_styles(state)
 
     Helpers.frame(
-      [[{"workstation", accent}, " — #{state.destination}"]],
+      [
+        [{" workstation ", styles.accent}, {state.destination, Style.new()}],
+        identity_row(state, styles),
+        [{String.duplicate("═", width), styles.chrome}]
+      ],
       {width, height}
     )
+  end
+
+  # Identity line: engine version + mode + journal generation/revision
+  # from the cached status wire (loading degrades to a quiet phrase),
+  # with the update indicator riding as a warn island when it shows.
+  defp identity_row(state, styles) do
+    base =
+      case Map.get(state.cache, :status) do
+        {:ok, wire} ->
+          engine = wire["engine"] || %{}
+          journal = wire["journal"] || %{}
+
+          [
+            {"v#{Map.get(engine, "version", "?")}", Style.new()},
+            {" · ", styles.chrome},
+            {"#{Map.get(engine, "mode", "?")} mode", Style.new()},
+            {" · ", styles.chrome},
+            {"gen #{Map.get(journal, "generation", "?")}", Style.new()},
+            {" · ", styles.chrome},
+            {"rev #{Map.get(journal, "revision", "?")}", Style.new()}
+          ]
+
+        _loading ->
+          [{"reading engine state…", styles.inactive}]
+      end
+
+    case state.update_hint do
+      nil -> base
+      hint -> base ++ [{" · ", styles.chrome}, {UpdateHint.text(hint), styles.warn}]
+    end
   end
 
   defp strip_frame(state, {width, height}) do
@@ -530,24 +574,24 @@ defmodule Workstation.CLI.TUI.Shell do
 
     styles = theme_styles(state)
 
-    spans =
+    # btop buttonbar islands on the strip row: `┘1 home└┘2 capabilities└…`.
+    # The digit always rides the shortcut slot; the active tab label is
+    # accent (bold), the rest read inactive.
+    islands =
       entries
       |> Enum.with_index()
-      |> Enum.flat_map(fn {{id, label, active}, index} ->
-        # btop grammar: the key lives in the title, rendered in the
-        # shortcut slot; the label follows in accent (active) or the
-        # inactive role (dimmed chrome).
-        label_style =
-          if active or id == state.tab, do: styles.accent, else: styles.inactive
+      |> Enum.flat_map(fn {{id, label, _active}, index} ->
+        label_style = if id == state.tab, do: styles.accent, else: styles.inactive
 
         [
+          {"┘", styles.chrome},
           {"#{index + 1}", styles.shortcut},
           {label, label_style},
-          {"  ", Style.new()}
+          {"└", styles.chrome}
         ]
       end)
 
-    Helpers.frame([spans], {width, height})
+    Helpers.frame([islands], {width, height})
   end
 
   defp op_tab_id({:apply, _sub}), do: :apply_op
@@ -560,77 +604,154 @@ defmodule Workstation.CLI.TUI.Shell do
   defp body_frame(%{op: nil, tab: :home} = state, dims), do: home_frame(state, dims)
   defp body_frame(%{op: nil, tab: :daemon} = state, dims), do: daemon_frame(state, dims)
   defp body_frame(%{op: nil, tab: :help} = state, dims) do
-    # The key reference is longer than most panes: render it as a
-    # scrollable text view (↑↓ / pgup/pgdn) so nothing is clipped.
+    # The key reference is longer than most panes: render it as a boxed
+    # scrollable text view (↑↓ / pgup/pgdn + the border block scrollbar)
+    # so nothing is clipped.
+    styles = theme_styles(state)
     view = Map.get(state.text_views, :help) || TextView.init(Enum.join(Help.lines(), "\n"))
-    TextView.view(view, dims)
+
+    TextView.bordered_view(view, dims, %{
+      title: [{"7", styles.shortcut}, {" help", styles.accent}],
+      border: styles.chrome,
+      shortcut: styles.shortcut,
+      chrome: styles.chrome,
+      thumb: styles.shortcut
+    })
   end
 
   defp body_frame(%{op: nil, tab: tab, text_views: views} = state, dims)
        when tab in [:status, :plan, :diff] do
     case Map.get(state.cache, tab) do
       {:ok, _wire} ->
-        # btop border-as-buttonbar: the pane's own action hints (scroll,
-        # refresh) live on the box border with a position counter.
+        # btop anatomy: the box title island carries the tab digit + name,
+        # the top-border right island the sync/would-change badge, the
+        # bottom border the action bar (scroll, refresh, position counter)
+        # and overflow rides the right-border block scrollbar.
+        styles = theme_styles(state)
+
         TextView.bordered_view(Map.get(views, tab) || TextView.init(""), dims, %{
-          title: Atom.to_string(tab),
-          border: border_style(state),
-          shortcut: theme_styles(state).shortcut,
-          chrome: theme_styles(state).chrome
+          title: [{tab_digit(tab), styles.shortcut}, {" #{tab}", styles.accent}],
+          right: read_badge(state, tab, styles),
+          border: styles.chrome,
+          shortcut: styles.shortcut,
+          chrome: styles.chrome,
+          thumb: styles.shortcut
         })
 
       {:error, message} ->
-        error_frame(state, "#{tab}: #{message_text(message)}", dims)
+        error_frame(state, tab, "#{tab}: #{message_text(message)}", dims)
 
       _loading ->
-        placeholder("loading #{tab} — the daemon is collecting state", dims)
+        placeholder(state, tab, "loading #{tab} — the daemon is collecting state", dims)
     end
   end
+
 
   defp body_frame(%{op: nil, tab: :capabilities} = state, dims) do
+    styles = theme_styles(state)
+    title = [{"2", styles.shortcut}, {" capabilities ", styles.accent}]
+
     case caps_readiness(state) do
       :ready ->
-        CapabilitiesBrowser.view(state.caps, dims, theme_styles(state))
+        CapabilitiesBrowser.view(state.caps, dims, Map.put(styles, :title, title))
 
       {:loading, missing} ->
-        placeholder("loading #{Enum.join(missing, ", ")} — the daemon is collecting state", dims)
+        placeholder(state, :capabilities, "loading #{Enum.join(missing, ", ")} — the daemon is collecting state", dims)
 
       {:error, message} ->
-        error_frame(state, "capabilities: #{message_text(message)}", dims)
+        error_frame(state, :capabilities, "capabilities: #{message_text(message)}", dims)
+
+    end
+  end
+  # Tab digits mirror the strip order (1-based over @tabs) so the box
+  # titles advertise the strip shortcut.
+  defp tab_digit(tab) do
+    index = Enum.find_index(@tabs, fn {id, _label} -> id == tab end) || 0
+    "#{index + 1}"
+  end
+
+  # Top-border badge per read tab: status carries the journal generation
+  # plus the sync verdict; plan and diff reuse the home would-change and
+  # pending badges.
+  defp read_badge(state, :status, styles) do
+    case status_journal(state) do
+      nil ->
+        []
+
+      journal ->
+        gen = [{"gen #{journal["generation"]}", styles.chrome}]
+
+        verdict =
+          case Map.get(state.cache, :diff) do
+            {:ok, diff} ->
+              pending = length(diff["backend_diff"] || [])
+
+              if pending > 0 do
+                [{" · #{pending} pending", styles.warn}]
+              else
+                [{" · in-sync", styles.ok}]
+              end
+
+            _other ->
+              []
+          end
+
+        gen ++ verdict
     end
   end
 
-  defp placeholder(line, {width, height}) do
-    Helpers.frame([line, "", "retry with r"], {width, height})
+  defp read_badge(state, :plan, styles), do: pending_badge(state, :plan, styles)
+  defp read_badge(state, :diff, styles), do: pending_badge(state, :diff, styles)
+
+  defp status_journal(%{cache: %{status: {:ok, status}}}), do: status["journal"]
+  defp status_journal(_state), do: nil
+
+  # Loading and failure states keep the box anatomy: the tab island
+  # titles the box, the body carries the honest state verbatim.
+  defp placeholder(state, tab, line, {width, height}) do
+    styles = theme_styles(state)
+
+    Box.frame(
+      [
+        [{" " <> line, styles.inactive}],
+        [],
+        [{" retry with r", styles.inactive}]
+      ],
+      {width, height},
+      border_style: styles.chrome,
+      title: [{tab_digit(tab), styles.shortcut}, {" #{tab}", styles.accent}]
+    )
   end
 
   # Read failures split into the transport shape (daemon unreachable —
   # the recovery hint names the start command) and every other failure
-  # (the verbatim message; r retries either way). Errors read err.
-  defp error_frame(state, message, {width, height}) do
-    text = message_text(message)
-    err = theme_styles(state).err
+  # (the verbatim message; r retries either way). Errors read err; the
+  # retry action rides the border as a button.
+  defp error_frame(state, tab, message, {width, height}) do
+    styles = theme_styles(state)
 
-    if disconnected?(text) do
-      Helpers.frame(
-        [
-          [{"daemon unreachable", err}],
-          [{text, err}],
-          "",
-          "start it with `workstation daemon` — retry with r"
-        ],
-        {width, height}
-      )
+    Box.frame(error_rows(message, styles), {width, height},
+      border_style: styles.chrome,
+      title: [{tab_digit(tab), styles.shortcut}, {" #{tab}", styles.err}],
+      buttons: [[{"r", styles.shortcut}, {" retry", styles.chrome}]]
+    )
+  end
+
+  defp error_rows(message, styles) do
+    if disconnected?(message) do
+      [
+        [{" daemon unreachable", styles.err}],
+        [{" " <> message, styles.err}],
+        [],
+        [{" start it with `workstation daemon` — retry with r", styles.err}]
+      ]
     else
-      Helpers.frame(
-        [
-          [{"read failed", err}],
-          [{text, err}],
-          "",
-          "retry with r"
-        ],
-        {width, height}
-      )
+      [
+        [{" read failed", styles.err}],
+        [{" " <> message, styles.err}],
+        [],
+        [{" retry with r", styles.err}]
+      ]
     end
   end
 
@@ -666,61 +787,164 @@ defmodule Workstation.CLI.TUI.Shell do
     end
   end
 
-  defp home_frame(state, {width, height}) do
-    Helpers.frame(home_rows(state), {width, height})
+  defp home_frame(state, dims) do
+    {width, height} = dims
+    styles = theme_styles(state)
+
+    [row1, row2, row3] =
+      Layout.column(Layout.new({width, height}), [
+        Layout.fill(),
+        Layout.fill(),
+        # The capabilities band carries rollup + meters + the update hint
+        # row — three body rows minimum, or the hint clips.
+        Layout.fixed(5)
+      ])
+
+    [left1, right1] = Layout.row(row1, [Layout.percentage(50), Layout.fill()])
+    [left2, right2] = Layout.row(row2, [Layout.percentage(50), Layout.fill()])
+
+    Helpers.frame([], {width, height})
+    |> Helpers.compose(left1, &engine_box(state, styles, &1))
+    |> Helpers.compose(right1, &journal_box(state, styles, &1))
+    |> Helpers.compose(left2, &plan_box(state, styles, &1))
+    |> Helpers.compose(right2, &diff_box(state, styles, &1))
+    |> Helpers.compose(row3, &caps_box(state, styles, &1))
   end
 
-  # Per-domain accents (btop: one semantic color per panel): status/daemon
-  # and capabilities read accent, pending plan/diff rows warn, an
-  # unreachable daemon reads err. The journal line rides the magnitude
-  # ramp by applied-at age: fresh ok, aging warn, stale err.
-  defp home_rows(state) do
-    hint_line =
-      if state.update_hint do
-        [UpdateHint.text(state.update_hint)]
-      else
-        []
-      end
+  ## home mosaic (btop dashboard: adjacent rounded boxes, island titles,
+  ## border buttons/counters, block meters — Shell.Box anatomy)
 
-    keys = "keys: 1-7 tabs · ←→ switch · r refresh · ? help · a apply" <> u_hint(state) <> " · q quit"
-
-    [
-      ["engine: ", {engine_line(state), domain_style(state, :accent)}],
-      ["journal: ", journal_value(state)],
-      ["plan: ", {plan_line(state), pending_style(state, :plan)}],
-      ["diff: ", {diff_line(state), pending_style(state, :diff)}],
-      ["capabilities: ", {caps_line(state), domain_style(state, :accent)}],
-      ["daemon: ", {daemon_line(state), daemon_value_style(state)}]
-    ] ++
-      hint_line ++
-      [
-        "",
-        keys,
-        "verbs: standalone entry points keep working (workstation apply --headless, …)"
-      ]
+  defp engine_box(state, styles, dims) do
+    Box.frame(engine_rows(state, styles), dims,
+      border_style: styles.chrome,
+      title: [{"1", styles.shortcut}, {" engine ", styles.accent}],
+      right: daemon_badge(state, styles)
+    )
   end
 
-  defp domain_style(state, role), do: theme_styles(state)[role]
+  defp journal_box(state, styles, dims) do
+    Box.frame(journal_rows(state, styles), dims,
+      border_style: styles.chrome,
+      title: [{" journal ", styles.accent}]
+    )
+  end
 
-  # Journal value span: ramp slot by applied-at age; a journal without an
-  # applied-at stamp stays unlabeled and untinted.
-  defp journal_value(%{cache: %{status: {:ok, status}}} = state) do
-    case status["journal"] do
-      journal when is_map(journal) ->
-        text = "generation #{journal["generation"]} (applied#{applied_at(journal)})"
-        {text, ramp_style(state, journal["applied_at"])}
+  defp plan_box(state, styles, dims) do
+    Box.frame(plan_rows(state, styles), dims,
+      border_style: styles.chrome,
+      title: [{"4", styles.shortcut}, {" plan ", styles.accent}],
+      right: pending_badge(state, :plan, styles)
+    )
+  end
 
-      _other ->
-        {"none — nothing applied yet", Style.new()}
+  defp diff_box(state, styles, dims) do
+    Box.frame(diff_rows(state, styles), dims,
+      border_style: styles.chrome,
+      title: [{"5", styles.shortcut}, {" diff ", styles.accent}],
+      right: pending_badge(state, :diff, styles)
+    )
+  end
+
+  # The actions box: per-domain block meters over the collected desired
+  # state; the bottom border doubles as the home buttonbar (apply/update
+  # appear exactly when their key works)."""
+  defp caps_box(state, styles, dims) do
+    Box.frame(caps_rows(state, styles), dims,
+      border_style: styles.chrome,
+      title: [{"2", styles.shortcut}, {" capabilities ", styles.accent}],
+      buttons: [[{"a", styles.shortcut}, {" apply", styles.chrome}]] ++
+                 u_button(state, styles) ++
+                 [[{"r", styles.shortcut}, {" refresh", styles.chrome}]]
+    )
+  end
+
+  # `u update` rides the buttonbar only while the update is available —
+  # the same honesty rule as the old keys line (a key that does nothing
+  # must not be advertised).
+  defp u_button(%{update_hint: hint}, styles) when hint != nil do
+    [[{"u", styles.shortcut}, {" update", styles.chrome}]]
+  end
+
+  defp u_button(_state, _styles), do: []
+
+  # `label      value` body row: the label reads inactive (dimmed
+  # chrome), the value carries its own role span (or plain text). The
+  # pad guarantees a separator space after the longest label.
+  defp label_row(label, value, styles) do
+    pad = max(12, String.length(label) + 3)
+
+    [{" " <> String.pad_trailing(label <> ":", pad), styles.inactive}, as_value(value)]
+  end
+
+  defp as_value(value) when is_binary(value), do: {value, Style.new()}
+  defp as_value({text, _style} = span) when is_binary(text), do: span
+
+  # Liveness badge on the engine box's top border: one state glyph, one
+  # role color (accent reachable, err unreachable, inactive probing).
+  defp daemon_badge(state, styles) do
+    case Map.get(state.cache, :status) do
+      {:ok, _wire} -> [{"● reachable", styles.accent}]
+      {:error, _message} -> [{"● unreachable", styles.err}]
+      _loading -> [{"● probing", styles.inactive}]
     end
   end
 
-  defp journal_value(_state), do: {"…", Style.new()}
+  defp engine_rows(%{cache: %{status: {:ok, wire}}}, styles) do
+    engine = wire["engine"] || %{}
 
-  # fresh <24h ok · aging <7d warn · stale ≥7d err; an absent or
-  # unparseable stamp renders plain.
+    [
+      label_row(
+        "engine",
+        "#{Map.get(engine, "name", "?")} #{Map.get(engine, "version", "?")} (#{Map.get(engine, "mode", "?")})",
+        styles
+      ),
+      label_row("platform", Map.get(wire, "platform", "?"), styles),
+      label_row("packages", "#{length(wire["packages"] || [])} in the collected desired state", styles)
+    ]
+  end
+
+  defp engine_rows(%{cache: %{status: {:error, message}}}, styles) do
+    [label_row("engine", {message_text(message), styles.err}, styles)]
+  end
+
+  defp engine_rows(_state, styles), do: [label_row("engine", "loading…", styles)]
+
+  # Journal box: generation, applied stamp and the age meter. The meter
+  # rides the ramp trio by applied-at age: fresh ok, aging warn, stale err.
+  defp journal_rows(%{cache: %{status: {:ok, status}}} = state, styles) do
+    case status["journal"] do
+      journal when is_map(journal) ->
+        style = ramp_style(state, journal["applied_at"])
+
+        [
+          label_row("generation", to_string(journal["generation"]), styles),
+          label_row("applied", {applied_at(journal), style}, styles),
+          [{" " <> age_bar(state, journal["applied_at"]), style}]
+        ]
+
+      _other ->
+        [label_row("journal", "none — nothing applied yet", styles)]
+    end
+  end
+
+  defp journal_rows(_state, styles), do: [label_row("journal", "loading…", styles)]
+
+  # Applied-at age as a block meter: 0 cells (fresh) to full (stale).
+  # Ramp thresholds: fresh <24h ok · aging <7d warn · stale ≥7d err; an
+  # absent or unparseable stamp renders plain.
+  @age_bar_cells 10
   @fresh_after_seconds 86_400
   @aging_after_seconds 604_800
+
+  defp age_bar(state, applied_at) do
+    filled =
+      case stamp_age_seconds(state, applied_at) do
+        nil -> 0
+        age -> age |> Kernel.*(@age_bar_cells) |> div(@aging_after_seconds) |> max(0) |> min(@age_bar_cells)
+      end
+
+    String.duplicate("▇", filled) <> String.duplicate("▁", @age_bar_cells - filled)
+  end
 
   defp ramp_style(state, applied_at) do
     styles = theme_styles(state)
@@ -742,163 +966,211 @@ defmodule Workstation.CLI.TUI.Shell do
 
   defp stamp_age_seconds(_state, _applied_at), do: nil
 
-  defp u_hint(%{update_hint: hint}) when hint != nil, do: " · u update"
-  defp u_hint(_state), do: ""
-
-  # Per-wire lines fold each cached load state into one honest phrase —
+  # Per-wire rows fold each cached load state into one honest phrase —
   # loading, the data, or the failure verbatim.
-  defp engine_line(%{cache: %{status: {:ok, status}}}) do
-    engine = status["engine"] || %{}
-
-    "#{Map.get(engine, "name", "?")} #{Map.get(engine, "version", "?")} " <>
-      "(#{Map.get(engine, "mode", "?")}) · platform #{Map.get(status, "platform", "?")} · " <>
-      "#{length(status["packages"] || [])} packages"
-  end
-
-  defp engine_line(%{cache: %{status: {:error, message}}}),
-    do: "unavailable — #{message_text(message)}"
-  defp engine_line(_state), do: "loading…"
-
   defp applied_at(%{"applied_at" => at}) when is_binary(at), do: " #{at}"
   defp applied_at(_journal), do: ""
 
-  defp plan_line(%{cache: %{plan: {:ok, plan}}}) do
+  defp plan_rows(%{cache: %{plan: {:ok, plan}}}, styles) do
     body = plan["plan"] || %{}
+    entries = length(body["entries"] || [])
+    removals = length(body["removals"] || [])
+    warn = if entries > 0 or removals > 0, do: styles.warn, else: Style.new()
 
-    "generation #{Map.get(plan, "generation", "?")} · " <>
-      "#{length(body["entries"] || [])} entries · #{length(body["removals"] || [])} removals"
+    [
+      label_row("generation", Map.get(plan, "generation", "?"), styles),
+      label_row("entries", {"#{entries}", warn}, styles),
+      label_row("removals", {"#{removals}", warn}, styles)
+    ]
   end
 
-  defp plan_line(%{cache: %{plan: {:error, message}}}),
-    do: "unavailable — #{message_text(message)}"
-  defp plan_line(_state), do: "loading…"
+  defp plan_rows(%{cache: %{plan: {:error, message}}}, styles) do
+    [label_row("plan", {message_text(message), styles.err}, styles)]
+  end
 
-  defp diff_line(%{cache: %{diff: {:ok, diff}}}) do
+  defp plan_rows(_state, styles), do: [label_row("plan", "loading…", styles)]
+
+  defp diff_rows(%{cache: %{diff: {:ok, diff}}}, styles) do
     records = diff["backend_diff"] || []
+    count = length(records)
+    style = if count > 0, do: styles.warn, else: styles.ok
 
-    if records == [] do
-      "no differences — the destination matches the desired state"
-    else
-      "#{length(records)} pending change(s) — 5 diff"
-    end
+    note =
+      if records == [] do
+        [{" no differences — the destination matches the desired state", styles.ok}]
+      else
+        []
+      end
+
+    [
+      label_row("pending", {"#{count} pending change(s)", style}, styles),
+      note
+    ]
   end
 
-  defp diff_line(%{cache: %{diff: {:error, message}}}),
-    do: "unavailable — #{message_text(message)}"
-  defp diff_line(_state), do: "loading…"
-
-  defp caps_line(%{caps_env: %{} = envelope}) do
-    "#{length(envelope["domains"] || [])} domains · " <>
-      "#{Capabilities.total_files(envelope)} files · " <>
-      "#{Capabilities.total_planned(envelope)} would change · " <>
-      "applied #{envelope["applied_generation"] || "none"} — 2 capabilities"
+  defp diff_rows(%{cache: %{diff: {:error, message}}}, styles) do
+    [label_row("diff", {message_text(message), styles.err}, styles)]
   end
 
-  defp caps_line(%{cache: %{status: {:error, message}}}),
-    do: "unavailable — #{message_text(message)}"
-  defp caps_line(_state), do: "loading…"
+  defp diff_rows(_state, styles), do: [label_row("diff", "loading…", styles)]
 
-  defp daemon_line(%{cache: %{status: {:ok, _wire}}}) do
-    "reachable (status answered — reads and ops go through it)"
+  defp caps_rows(%{caps_env: %{} = envelope} = state, styles) do
+    domains = envelope["domains"] || []
+    max_files = domains |> Enum.map(&(&1["files"] || 0)) |> Enum.max(fn -> 0 end)
+
+    [
+      label_row(
+        "rollup",
+        "#{length(domains)} domains · #{Capabilities.total_files(envelope)} files · " <>
+          "#{Capabilities.total_planned(envelope)} would change · " <>
+          "applied #{envelope["applied_generation"] || "none"}",
+        styles
+      )
+    ] ++
+      Enum.map(domains, &domain_meter_row(&1, max_files, styles)) ++
+      hint_rows(state, styles)
   end
 
-  defp daemon_line(%{cache: %{status: {:error, message}}}) do
-    text = message_text(message)
-
-    if disconnected?(text) do
-      "unreachable — start it with `workstation daemon` · retry r"
-    else
-      "error — #{text} · retry r"
-    end
+  defp caps_rows(%{cache: %{status: {:error, message}}}, styles) do
+    [label_row("capabilities", {message_text(message), styles.err}, styles)]
   end
 
-  defp daemon_line(_state), do: "probing…"
+  defp caps_rows(_state, styles), do: [label_row("capabilities", "loading…", styles)]
 
-  defp pending_style(state, wire) do
-    if pending?(state, wire), do: theme_styles(state).warn, else: Style.new()
+  # One block meter per domain: fill ∝ files relative to the largest
+  # domain; a domain with pending would-change rows reads warn.
+  @meter_cells 10
+
+  defp domain_meter_row(domain, max_files, styles) do
+    files = domain["files"] || 0
+    planned = domain["planned"] || 0
+    fill = if max_files > 0, do: div(files * @meter_cells, max_files), else: 0
+    fill_style = if planned > 0, do: styles.warn, else: styles.accent
+
+    [
+      {" " <> String.pad_trailing("#{domain["name"]}", 12), styles.inactive},
+      {String.duplicate("▇", fill) <> String.duplicate("▁", @meter_cells - fill), fill_style},
+      {" #{files} files · ", Style.new()},
+      {"#{planned} would change", if(planned > 0, do: styles.warn, else: styles.inactive)}
+    ]
   end
 
-  # Would-change surfaces read warn when something is pending; a clean
-  # surface stays quiet (saturated color is reserved for data).
-  defp pending?(state, :plan) do
+  # The update hint rides the capabilities box body (and its border
+  # button); no hint means no row.
+  defp hint_rows(%{update_hint: hint}, styles) when hint != nil do
+    [{" " <> UpdateHint.text(hint), styles.warn}]
+  end
+
+  defp hint_rows(_state, _styles), do: []
+
+  # Right-island would-change badges: saturated (warn) only when the
+  # surface actually has pending work, quiet otherwise.
+  defp pending_badge(state, :plan, styles) do
     case Map.get(state.cache, :plan) do
       {:ok, plan} ->
         body = plan["plan"] || %{}
-        length(body["entries"] || []) > 0 or length(body["removals"] || []) > 0
+        would = length(body["entries"] || []) + length(body["removals"] || [])
+        if would > 0, do: [{"#{would} would change", styles.warn}], else: [{"clean", styles.ok}]
 
       _other ->
-        false
+        []
     end
   end
 
-  defp pending?(state, :diff) do
+  defp pending_badge(state, :diff, styles) do
     case Map.get(state.cache, :diff) do
-      {:ok, diff} -> length(diff["backend_diff"] || []) > 0
-      _other -> false
+      {:ok, diff} ->
+        pending = length(diff["backend_diff"] || [])
+        if pending > 0, do: [{"#{pending} pending", styles.warn}], else: [{"in-sync", styles.ok}]
+
+      _other ->
+        []
     end
   end
 
-  defp daemon_value_style(state) do
-    case Map.get(state.cache, :status) do
-      {:ok, _wire} -> theme_styles(state).accent
-      {:error, _message} -> theme_styles(state).err
-      _loading -> Style.new()
-    end
-  end
+  ## daemon tab (two boxes: liveness + host)
 
-  defp daemon_frame(state, {width, height}) do
+  defp daemon_frame(state, dims) do
+    {width, height} = dims
     styles = theme_styles(state)
-    status = Map.get(state.cache, :status)
 
-    lines =
-      case status do
-        {:ok, wire} ->
-          engine = wire["engine"] || %{}
-          journal = wire["journal"]
+    [left, right] = Layout.row(Layout.new({width, height}), [Layout.percentage(40), Layout.fill()])
 
-          journal_span =
-            if is_map(journal) do
-              ["journal     : ", {"generation #{journal["generation"]}", ramp_style(state, journal["applied_at"])}]
-            else
-              "journal     : none"
-            end
+    Helpers.frame([], {width, height})
+    |> Helpers.compose(left, &liveness_box(state, styles, &1))
+    |> Helpers.compose(right, &host_box(state, styles, &1))
+  end
 
-          [
-            "daemon health (live probe: status.run)",
-            "",
-            ["state       : ", {"reachable", styles.accent}],
-            "engine      : #{Map.get(engine, "name", "?")} #{Map.get(engine, "version", "?")} (#{Map.get(engine, "mode", "?")})",
-            "destination : #{Map.get(wire, "destination", "?")}",
-            "platform    : #{Map.get(wire, "platform", "?")}",
-            "packages    : #{length(wire["packages"] || [])} in the collected desired state",
-            "graph order : #{length(wire["graph_order"] || [])} resolved",
-            journal_span,
-            "",
-            "the daemon is the only mutation engine; the shell's reads and ops",
-            "are protocol calls, never in-process fallbacks.",
-            "",
-            "r re-probe"
-          ]
+  # Liveness: one state row, one probe verb, the border button re-probes.
+  defp liveness_box(state, styles, {width, height}) do
+    Box.frame(liveness_rows(state, styles), {width, height},
+      border_style: styles.chrome,
+      title: [{"6", styles.shortcut}, {" daemon", styles.accent}],
+      right: daemon_badge(state, styles),
+      buttons: [[{"r", styles.shortcut}, {" re-probe", styles.chrome}]]
+    )
+  end
 
-        {:error, message} ->
-          text = message_text(message)
+  # Host facts and protocol notes; daemon failures land here verbatim
+  # with the recovery hint.
+  defp host_box(state, styles, {width, height}) do
+    Box.frame(host_rows(state, styles), {width, height},
+      border_style: styles.chrome,
+      title: [{"host", styles.accent}]
+    )
+  end
 
-          [
-            "daemon health (live probe: status.run)",
-            "",
-            ["state : ", {"unreachable", styles.err}],
-            [{text, styles.err}],
-            "",
-            "start it with `workstation daemon` — the client spawns it detached",
-            "from the same release when absent; retry with r"
-          ]
+  defp liveness_rows(%{cache: %{status: {:ok, wire}}} = state, styles) do
+    engine = wire["engine"] || %{}
+    journal = wire["journal"]
 
-        _loading ->
-          ["daemon health (live probe: status.run)", "", "probing…", "", "r re-probe"]
+    journal_row =
+      case journal do
+        j when is_map(j) ->
+          label_row("journal", {"generation #{j["generation"]}", ramp_style(state, j["applied_at"])}, styles)
+
+        _other ->
+          label_row("journal", "none", styles)
       end
 
-    Helpers.frame(lines, {width, height})
+    [
+      label_row("state", {"reachable", styles.accent}, styles),
+      label_row(
+        "engine",
+        "#{Map.get(engine, "name", "?")} #{Map.get(engine, "version", "?")} (#{Map.get(engine, "mode", "?")})",
+        styles
+      ),
+      journal_row,
+      [{" the daemon is the only mutation engine", styles.inactive}],
+      [{" reads and ops are protocol calls, never in-process fallbacks", styles.inactive}]
+    ]
   end
+
+  defp liveness_rows(%{cache: %{status: {:error, _message}}}, styles) do
+    [label_row("state", {"unreachable", styles.err}, styles)]
+  end
+
+  defp liveness_rows(_state, styles), do: [label_row("state", "probing…", styles)]
+
+  defp host_rows(%{cache: %{status: {:ok, wire}}}, styles) do
+    [
+      label_row("destination", Map.get(wire, "destination", "?"), styles),
+      label_row("platform", Map.get(wire, "platform", "?"), styles),
+      label_row("graph order", "#{length(wire["graph_order"] || [])} resolved", styles)
+    ]
+  end
+
+  defp host_rows(%{cache: %{status: {:error, message}}} = _state, styles) do
+    text = message_text(message)
+
+    [
+      [{" " <> text, styles.err}],
+      [{" start it with `workstation daemon` — the client spawns it detached", styles.inactive}],
+      [{" from the same release when absent; retry with r", styles.inactive}]
+    ]
+  end
+
+  defp host_rows(_state, styles), do: [[{" probing…", styles.inactive}]]
 
   defp footer_frame(state, {width, height}) do
     # Global footer keeps the frame keys only (btop grammar: chrome bar,
@@ -906,22 +1178,15 @@ defmodule Workstation.CLI.TUI.Shell do
     # borders; home's a/u stay documented in the home body.
     styles = theme_styles(state)
 
-    line = [
-      {"1-7", styles.shortcut},
-      " tabs",
-      {" · ", styles.chrome},
-      {"←→", styles.shortcut},
-      " switch",
-      {" · ", styles.chrome},
-      {"r", styles.shortcut},
-      " refresh",
-      {" · ", styles.chrome},
-      {"?", styles.shortcut},
-      " help",
-      {" · ", styles.chrome},
-      {"q", styles.shortcut},
-      " quit"
-    ]
+    line =
+      [
+        [{"1-7", styles.shortcut}, {" tabs", Style.new()}],
+        [{"←→", styles.shortcut}, {" switch", Style.new()}],
+        [{"r", styles.shortcut}, {" refresh", Style.new()}],
+        [{"?", styles.shortcut}, {" help", Style.new()}],
+        [{"q", styles.shortcut}, {" quit", Style.new()}]
+      ]
+      |> Enum.flat_map(fn button -> [{"┘", styles.chrome}] ++ button ++ [{"└", styles.chrome}] end)
 
     Helpers.frame([line], {width, height})
   end
@@ -972,27 +1237,6 @@ defmodule Workstation.CLI.TUI.Shell do
 
       _missing ->
         Style.new(attrs: [:reverse])
-    end
-  end
-
-  defp border_style(state) do
-    case Theme.to_term_ui_color(state.theme[:chrome]) do
-      {:rgb, r, g, b} -> Style.new(fg: {:rgb, r, g, b})
-      nil -> Style.new(fg: :bright_black)
-    end
-  end
-
-  defp accent_style(state) do
-    case accent_rgb(state) do
-      {r, g, b} -> Style.new(fg: {:rgb, r, g, b}, attrs: [:bold])
-      nil -> Style.new(attrs: [:bold])
-    end
-  end
-
-  defp accent_rgb(state) do
-    case Theme.to_term_ui_color(state.theme[:accent]) do
-      {:rgb, r, g, b} -> {r, g, b}
-      nil -> nil
     end
   end
 end
