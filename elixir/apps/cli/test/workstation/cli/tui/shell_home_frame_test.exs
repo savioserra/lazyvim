@@ -18,7 +18,10 @@ defmodule Workstation.CLI.TUI.ShellHomeFrameTest do
       yields.
   """
 
-  use ExUnit.Case, async: true
+  # async: false — the width sweep pins every scheduler for ~a minute
+  # (4 parallel render legs); as a sync module it runs exclusively, so
+  # timing-sensitive runtime suites never fight it for cores.
+  use ExUnit.Case, async: false
 
   alias TermUI.Frame
   alias TermUI.Style
@@ -182,6 +185,66 @@ defmodule Workstation.CLI.TUI.ShellHomeFrameTest do
     end
   end
 
+  describe "box side borders (Shell.Box)" do
+    test "body rows carry both side borders on the corner columns at every width" do
+      # Regression pin: content rows once rendered one column short — the
+      # right border rode `width - 1` (and the left border was missing
+      # entirely), so body rows disagreed with their own border rows.
+      for width <- [2, 3, 7, 12, 80, 101, 102, 103, 175, 204, 241] do
+        frame = Box.frame([[{"hello", Style.new()}]], {width, 4}, [])
+        assert_closed_borders(frame)
+
+        for row <- 2..3 do
+          assert Frame.cell(frame, row, 1).char == "│",
+                 "width #{width} row #{row}: missing left border"
+
+          assert Frame.cell(frame, row, width).char == "│",
+                 "width #{width} row #{row}: right border not on column #{width}"
+        end
+      end
+    end
+  end
+
+  ## geometry: a width sweep pinning the cell-level frame contract at
+  ## EVERY width class — the pinned 3-size matrix (80/110/175) missed
+  ## whole width classes (a 204-column terminal rendered every content
+  ## row one column short of its border rows)
+
+  @sweep_heights [24, 40, 55, 83]
+  # Chrome glyphs allowed on a box's side-border columns across body rows
+  # (the right border swaps to scrollbar glyphs while content overflows).
+  @side_glyphs ["│", "╥", "║", "╙", "╟", "╢"]
+  @border_glyphs ["│", "─", "╭", "╮", "╰", "╯", "┬", "┴", "├", "┤", "┘", "└", "═"]
+
+  describe "width sweep 80..240 (corner parity + column consistency)" do
+    @tag timeout: 300_000
+    test "border rows and content rows share identical columns at every width" do
+      # One leg per height class, run concurrently inside the test: a
+      # 644-frame render sweep is minutes of pure function calls, and
+      # ExUnit only parallelizes across modules.
+      legs =
+        @sweep_heights
+        |> Task.async_stream(
+          fn height ->
+            Enum.each(80..240, fn width ->
+              frame = home_frame(width, height)
+              assert frame.width == width
+              assert frame.height == height
+
+              census = border_census(frame)
+              assert_corner_parity(census, width, height)
+              assert_box_columns(frame, census, width, height)
+              assert_full_width_bars(frame)
+            end)
+          end,
+          timeout: :infinity
+        )
+        |> Enum.to_list()
+
+      assert length(legs) == length(@sweep_heights)
+    end
+  end
+
   ## helpers
 
   # Every border a box draws closes its far corner, and no row paints
@@ -247,6 +310,126 @@ defmodule Workstation.CLI.TUI.ShellHomeFrameTest do
 
   defp full_text(frame) do
     Enum.map_join(1..frame.height, "\\n", &Frame.row_text(frame, &1))
+  end
+
+  # Cell-level chrome census: %{row => %{col => glyph}}, built by walking
+  # `frame.cells` directly — Frame.row_text/2 regex-sanitizes per cell and
+  # is far too slow inside a 644-frame sweep.
+  defp border_census(frame) do
+    glyphs = MapSet.new(@border_glyphs)
+
+    Enum.reduce(frame.cells, %{}, fn {{row, col}, cell}, acc ->
+      if MapSet.member?(glyphs, cell.char) do
+        Map.update(acc, row, %{col => cell.char}, &Map.put(&1, col, cell.char))
+      else
+        acc
+      end
+    end)
+  end
+
+  defp census_glyph(census, row, col), do: Map.get(census[row] || %{}, col)
+
+  # Corner parity: on every row the ╭ columns pair in order with the ╮
+  # columns to their right (a corner never opens without closing).
+  defp assert_corner_parity(census, width, height) do
+    Enum.each(census, fn {row, cols} ->
+      tops = Enum.sort(for {col, "╭"} <- cols, do: col)
+      caps = Enum.sort(for {col, "╮"} <- cols, do: col)
+
+      assert length(tops) == length(caps),
+             "#{width}x#{height} row #{row}: #{length(tops)} ╭ vs #{length(caps)} ╮"
+
+      tops
+      |> Enum.zip(caps)
+      |> Enum.each(fn {open, close} ->
+        assert open < close,
+               "#{width}x#{height} row #{row}: ╮ at #{close} does not close ╭ at #{open}"
+      end)
+    end)
+  end
+
+  # Column consistency: every box (a ╭ at row/col c1 paired with a ╮ at
+  # c2 on the same row) closes with ╰/╯ on the SAME columns, and every
+  # body row between rides a side-border glyph on exactly those columns —
+  # content rows may never drop or shift a border column.
+  defp assert_box_columns(frame, census, width, height) do
+    Enum.each(census, fn {row, cols} ->
+      tops = Enum.sort(for {col, "╭"} <- cols, do: col)
+      caps = Enum.sort(for {col, "╮"} <- cols, do: col)
+
+      tops
+      |> Enum.zip(caps)
+      |> Enum.each(fn {c1, c2} ->
+        bottom = Enum.find((row + 1)..frame.height, &(census_glyph(census, &1, c1) == "╰"))
+
+        assert bottom,
+               "#{width}x#{height}: box opened at row #{row} cols #{c1}-#{c2} never closes"
+
+        assert census_glyph(census, bottom, c2) == "╯",
+               "#{width}x#{height} row #{bottom}: ╯ not on column #{c2}"
+
+        for r <- (row + 1)..(bottom - 1) do
+          assert census_glyph(census, r, c1) in @side_glyphs,
+                 "#{width}x#{height} row #{r}: column #{c1} lost the box side border"
+
+          assert census_glyph(census, r, c2) in @side_glyphs,
+                 "#{width}x#{height} row #{r}: column #{c2} lost the box side border"
+        end
+      end)
+    end)
+  end
+
+  # The chrome bars span the terminal: the header's double rule covers
+  # every column; the tab strip (the row below the rule) and the footer
+  # (the last row) open with a keycap island on column 1 and their chrome
+  # `─` filler carries the bar to the right edge — the run from the last
+  # island to the edge is pure filler (a bar that stops early leaves
+  # background blanks and fails the tail check).
+  defp assert_full_width_bars(frame) do
+    rule_row = Enum.find(1..frame.height, &(Frame.cell(frame, &1, 1).char == "═"))
+    assert rule_row, "header double rule not found"
+
+    for c <- 1..frame.width do
+      assert Frame.cell(frame, rule_row, c).char == "═",
+             "header rule hole at column #{c}"
+    end
+
+    strip_row = rule_row + 1
+
+    assert Frame.cell(frame, strip_row, 1).char == "┘",
+           "strip does not open on column 1"
+
+    for c <- 1..frame.width do
+      assert Frame.cell(frame, strip_row, c).char != " ",
+             "strip hole at column #{c}"
+    end
+
+    footer_row = frame.height
+
+    assert Frame.cell(frame, footer_row, 1).char == "┘",
+           "footer does not open on column 1"
+
+    assert_chrome_filler_to_edge(frame, strip_row, "strip")
+    assert_chrome_filler_to_edge(frame, footer_row, "footer")
+  end
+
+  # Scanning right to left from the terminal edge, the bar must ride the
+  # chrome filler (`─`) without a single blank until the last island's
+  # closing connector.
+  defp assert_chrome_filler_to_edge(frame, row, what) do
+    tail =
+      frame.width
+      |> Stream.iterate(&(&1 - 1))
+      |> Stream.take_while(fn c -> c >= 1 and Frame.cell(frame, row, c).char == "─" end)
+      |> Enum.to_list()
+
+    assert tail != [], "#{what} does not ride the chrome filler to column #{frame.width}"
+    assert length(tail) < frame.width, "#{what} has no keycap islands"
+
+    last_island_col = frame.width - length(tail)
+
+    assert Frame.cell(frame, row, last_island_col).char == "└",
+           "#{what} filler does not meet the last island at column #{last_island_col}"
   end
 
   defp caps_browser, do: CapabilitiesBrowser.init(caps_envelope())

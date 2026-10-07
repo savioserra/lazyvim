@@ -240,9 +240,11 @@ defmodule Workstation.CLI.TUI.Shell.Box do
   defp counter_islands(nil), do: []
   defp counter_islands(counter), do: [as_spans(counter)]
 
-  # Body rows clipped to the inner width, padded to the inner height; the
-  # trailing span of every row is the right border (or the scrollbar glyph
-  # while the content overflows).
+  # Body rows clipped to the inner width, padded to the inner height;
+  # BOTH side borders ride every row (the right border swaps to the
+  # scrollbar glyphs while the content overflows) so the box's border
+  # columns are identical on border and content rows at every width —
+  # `│ content │` between the `╭`/`╮` and `╰`/`╯` columns.
   defp body_rows(rows, inner_w, inner_h, border, opts) do
     scrollbar = Keyword.get(opts, :scrollbar)
     thumb_style = Keyword.get(opts, :thumb_style, border)
@@ -253,7 +255,7 @@ defmodule Workstation.CLI.TUI.Shell.Box do
     |> Enum.with_index()
     |> Enum.map(fn {row, index} ->
       right = right_border(index, inner_h, scrollbar, border, thumb_style)
-      Helpers.fit_row(row, inner_w) ++ right
+      [{"│", border}] ++ Helpers.fit_row(row, inner_w) ++ right
     end)
   end
 

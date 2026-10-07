@@ -576,7 +576,10 @@ defmodule Workstation.CLI.TUI.Shell do
 
     # btop buttonbar islands on the strip row: `┘1 home└┘2 capabilities└…`.
     # The digit always rides the shortcut slot; the active tab label is
-    # accent (bold), the rest read inactive.
+    # accent (bold), the rest read inactive. A chrome `─` filler carries
+    # the bar to the terminal edge — islands left, border filler right;
+    # the brief defines no right-side region content, so the filler IS
+    # the right side and the strip reads as one bar at every width.
     islands =
       entries
       |> Enum.with_index()
@@ -591,13 +594,21 @@ defmodule Workstation.CLI.TUI.Shell do
         ]
       end)
 
-    Helpers.frame([islands], {width, height})
+    Helpers.frame([chrome_bar(islands, width, styles)], {width, height})
   end
 
   defp op_tab_id({:apply, _sub}), do: :apply_op
   defp op_tab_id({:update, _sub}), do: :update_op
   defp op_tab_label({:apply, _sub}), do: "apply"
   defp op_tab_label({:update, _sub}), do: "update"
+
+  # One full-width chrome bar: keycap islands, then `─` to the terminal
+  # edge (the shared bar grammar of the tab strip and the global footer).
+  defp chrome_bar(islands, width, styles) do
+    used = Enum.sum(Enum.map(islands, fn {text, _style} -> Helpers.text_width(text) end))
+
+    islands ++ [{String.duplicate("─", max(width - used, 0)), styles.chrome}]
+  end
 
   defp body_frame(%{op: {kind, sub}}, _dims), do: op_module(kind).view(sub)
 
@@ -1230,7 +1241,7 @@ defmodule Workstation.CLI.TUI.Shell do
       ]
       |> Enum.flat_map(fn button -> [{"┘", styles.chrome}] ++ button ++ [{"└", styles.chrome}] end)
 
-    Helpers.frame([line], {width, height})
+    Helpers.frame([chrome_bar(line, width, styles)], {width, height})
   end
 
   # The resolved btop-grammar role styles for one render: every visual

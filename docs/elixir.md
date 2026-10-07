@@ -176,6 +176,16 @@ pinned to the home it booted for; a client asking for a different
 destination is told to stop it and let ensure-daemon spawn one for that
 home.
 
+Stop polarity (two disjoint registries, by design): the stop for a
+daemon ensure-daemon spawned is `workstation daemon stop` — the socket
+frame above. The bare `workstation stop` verb is the release control
+surface (`bin/workstation_ctl stop`): a dist-erl RPC to the node named
+`workstation@<host>`, which only a `workstation start`-launched release
+answers. A daemon booted through the Router (`workstation daemon`, the
+spawn path ensure-daemon uses) registers no dist node name, so the bare
+verb answers `noconnection` against a perfectly live socket daemon —
+that is the naming split reporting itself, not a dead daemon.
+
 Live streaming: long ops (`apply.run`, `update.run`) publish structured
 progress on the EventBus `:op` topic (`Workstation.Daemon.Events`:
 `run.started`/`step.started`/`step.done`/`run.log`/`run.finished`, each
@@ -694,9 +704,11 @@ Safety guards (fail closed, never touch the operator's state):
 
 The home dashboard is responsive, and every boxed pane is built by one
 builder (`Workstation.CLI.TUI.Shell.Box`). The contracts below are pinned
-cell-by-cell by `shell_home_frame_test.exs`, which renders the pure
-`Shell.view/1` with loaded fixture wires — no daemon — at the three
-canonical sizes 175x83, 110x40 (the inclusive mosaic boundary) and 80x24:
+ cell-by-cell by `shell_home_frame_test.exs`, which renders the pure
+`Shell.view/1` with loaded fixture wires — no daemon — across a full
+width sweep (every width 80..240 at heights 24/40/55/83; a pinned
+3-size matrix once missed whole width classes, e.g. the even mosaic
+split at 204 columns, where content rows dropped a border column):
 
 - **Width switch**: at >= 110 columns the home is the full 2x2 mosaic
   (engine+journal, plan+diff quadrants) plus the full-width capabilities
@@ -707,8 +719,16 @@ canonical sizes 175x83, 110x40 (the inclusive mosaic boundary) and 80x24:
   proportionally when the body runs short — a box is never clipped away,
   its content elides inside the still-closed borders.
 - **Closed borders at every row**: every `╭` meets a `╮`, every `╰` meets
-  a `╯`, and every rendered row is exactly the terminal width, at all
-  three sizes.
+  a `╯`, and every rendered row is exactly the terminal width — and the
+  border columns are IDENTICAL on border and content rows: a box's body
+  rows carry both side borders on exactly the corner columns (`│ content
+  │`; the right border swaps to the scrollbar glyphs while overflowing)
+  at every swept size.
+- **Full-width chrome bars**: the header double rule, the tab strip and
+  the global footer each span every column — keycap islands ride the
+  left edge and a chrome `─` filler carries the bar to the right edge
+  (the strip never trails off into background blanks), with no blank
+  cell anywhere on the rule, strip or footer rows.
 - **Island elision**: when a box narrows, the title and right-border
   islands ellipsis-trim (a cut reserves a cell for `…`) and then drop
   whole islands right-to-left; bottom buttonbars drop the position
@@ -723,9 +743,10 @@ canonical sizes 175x83, 110x40 (the inclusive mosaic boundary) and 80x24:
 
 Box anatomy (`Shell.Box`): the title is an island inside the top border
 run (`╭─┐1 engine┌──…`), an optional right island carries counters and
-badges (`──┐2/41┌─╮`), the bottom border doubles as the box's buttonbar
-(`╰┘↑↓ scroll└┘r refresh└──┘1/41└╯`), and overflow renders a block
-scrollbar hugging the right border (`▲█▏▼`). Tab digits in titles are
+badges (`──┐2/41┌─╮`), both side borders ride every body row on the
+corner columns (`│ content │` — the right border swaps to the block
+scrollbar `▲█▏▼` while the content overflows), and the bottom border
+doubles as the box's buttonbar (`╰┘↑↓ scroll└┘r refresh└──┘1/41└╯`). Tab digits in titles are
 plain live keycaps matching the strip order — the real 1..7 switch keys
 (1-based over the tab strip; the strip IS the keymap). Superscript digits
 stay reserved for toggle keys, so a title only ever advertises keys that
