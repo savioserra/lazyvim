@@ -350,3 +350,27 @@ required.
   journal/status green, capabilities yellow, diff red) across tokens.lua,
   Tokens.ex, daemon settable roles, CLI @roles; Tokens.border_roles/0 is
   the membership list. Regenerate goldens with `mix workstation.goldens`.
+
+## IA redesign lane (2026-10-05)
+
+- TermUI Box.frame content rows are LISTS OF SPANS ([[ {text, style} ]]);
+  a bare {text, style} row renders via String.Chars and kills the Elm
+  GenServer mid-frame (Protocol.UndefinedError) — silent until rendered.
+- Overlay-over-dashboard pattern that works: Shell passes
+  dashboard_frame(state, body_dims) as the op view's underlay; op
+  run/done Frame.overlay(base, panel, x+1, y+1). Float threshold h<16
+  or w<60 keeps the compact full rect — op-module tests pin rows at
+  {80,12} (steps 3-7, toasts 10-12, buttons row 12).
+- chrome_bar truncates WHOLE islands (never half-drawn); an exact-fit
+  bar ends flush on └ with NO filler — width sweeps must accept both
+  flush-fit and ─-to-edge tails.
+- Dashboard.clear_tracking dissolves ONLY preset tracking; the deep
+  view (expanded) is sticky across resizes (btop show_detailed), and
+  the op overlay must ride resizes too.
+- A zoomed box owns the WHOLE dashboard rect: every body click is
+  "inside" it (click = enter-again). No-steal click semantics are only
+  observable with the caps drill (it grows by @drill_rows=14 and
+  shifts every band row below it — recompute click rows per layout).
+- Op run events during Elm render: keep panel rows to span-lists and
+  never interpolate unstyled tuples; toasts are the OK box (bottom-
+  right, Timer-managed).
