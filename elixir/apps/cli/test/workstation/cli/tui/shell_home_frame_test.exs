@@ -41,16 +41,16 @@ defmodule Workstation.CLI.TUI.ShellHomeFrameTest do
       assert [engine_row, plan_row, caps_row] = box_top_rows(frame)
 
       # Quadrant pair one on a single border row: engine left, journal right.
-      assert Frame.row_text(frame, engine_row) =~ "╭─┐1 engine"
-      assert right_half(frame, engine_row) =~ "┐ journal ┌"
+      assert Frame.row_text(frame, engine_row) =~ "╭─┐¹engine"
+      assert right_half(frame, engine_row) =~ "┐journal┌"
 
       # Quadrant pair two: plan left (with its would-change badge), diff right.
-      assert Frame.row_text(frame, plan_row) =~ "╭─┐4 plan"
-      assert right_half(frame, plan_row) =~ "┐5 diff ┌"
+      assert Frame.row_text(frame, plan_row) =~ "╭─┐⁴plan"
+      assert right_half(frame, plan_row) =~ "┐⁵diff┌"
 
       # The capabilities band spans the whole frame: corners on the edges.
       caps_text = Frame.row_text(frame, caps_row)
-      assert caps_text =~ "╭─┐2 capabilities"
+      assert caps_text =~ "╭─┐²capabilities"
       assert String.starts_with?(caps_text, "╭")
       assert String.ends_with?(String.trim_trailing(caps_text), "╮")
     end
@@ -60,10 +60,10 @@ defmodule Workstation.CLI.TUI.ShellHomeFrameTest do
       assert_closed_borders(frame)
 
       assert [engine_row, plan_row, _caps_row] = box_top_rows(frame)
-      assert Frame.row_text(frame, engine_row) =~ "╭─┐1 engine"
-      assert right_half(frame, engine_row) =~ "┐ journal ┌"
-      assert Frame.row_text(frame, plan_row) =~ "╭─┐4 plan"
-      assert right_half(frame, plan_row) =~ "┐5 diff ┌"
+      assert Frame.row_text(frame, engine_row) =~ "╭─┐¹engine"
+      assert right_half(frame, engine_row) =~ "┐journal┌"
+      assert Frame.row_text(frame, plan_row) =~ "╭─┐⁴plan"
+      assert right_half(frame, plan_row) =~ "┐⁵diff┌"
     end
 
     test "the update hint rides the capabilities band when the band has room" do
@@ -91,11 +91,11 @@ defmodule Workstation.CLI.TUI.ShellHomeFrameTest do
 
       # Brief priority: engine > journal > domains > plan/diff.
       assert titles == [
-               "1 engine",
+               "¹engine",
                "journal",
-               "2 capabilities",
-               "4 plan",
-               "5 diff"
+               "²capabilities",
+               "⁴plan",
+               "⁵diff"
              ]
 
       # Every stacked box owns the full width: its border opens on the
@@ -105,6 +105,38 @@ defmodule Workstation.CLI.TUI.ShellHomeFrameTest do
         assert String.starts_with?(text, "╭")
         assert String.ends_with?(String.trim_trailing(text), "╮")
       end)
+    end
+
+    test "stacked boxes carry their per-domain border role (F1-full)" do
+      frame = home_frame(80, 24)
+      [engine_r, journal_r, caps_r, plan_r, diff_r] = box_top_rows(frame)
+
+      # Dark-base token hues from the docs/theme.md border role table:
+      # engine/plan blue, journal/status green, capabilities yellow,
+      # diff red — all resolved through the theme, never hardcoded in
+      # the box painter.
+      assert Frame.cell(frame, engine_r, 1).fg == {122, 162, 247}
+      assert Frame.cell(frame, journal_r, 1).fg == {158, 206, 106}
+      assert Frame.cell(frame, caps_r, 1).fg == {224, 175, 104}
+      assert Frame.cell(frame, plan_r, 1).fg == {122, 162, 247}
+      assert Frame.cell(frame, diff_r, 1).fg == {247, 118, 142}
+
+      # Enabled buttonbar labels read text (dark base #c0caf5); the
+      # keycap stays shortcut. Find the caps band's buttonbar row — the
+      # browser body may spend any number of rows above it.
+      buttonbar_row =
+        Enum.find(caps_r..frame.height, fn row ->
+          Frame.row_text(frame, row) =~ "a apply"
+        end)
+
+      assert buttonbar_row != nil
+      caps_bottom = Frame.row_text(frame, buttonbar_row)
+
+      # Column of the label's first glyph (codepoint count of the prefix).
+      label_col =
+        caps_bottom |> String.split("apply", parts: 2) |> List.first() |> String.length() |> Kernel.+(1)
+
+      assert Frame.cell(frame, buttonbar_row, label_col).fg == {192, 202, 245}
     end
 
     test "one column below the boundary falls back to the stack" do
@@ -272,7 +304,11 @@ defmodule Workstation.CLI.TUI.ShellHomeFrameTest do
   # The title island text of a box's top border row (between ┐ and ┌).
   defp box_title(frame, row) do
     text = Frame.row_text(frame, row)
-    [_, title] = Regex.run(~r/┐\s*([^┌]*?)\s*┌/, text)
+
+    # /u: the keycap superscripts (U+2070-2079 share their leading byte
+    # with the island glyphs) must read as single codepoints, not bytes —
+    # byte-wise, [^┌] rejects the keycap and the match skips islands.
+    [_, title] = Regex.run(~r/┐\s*([^┌]*?)\s*┌/u, text)
     title
   end
 

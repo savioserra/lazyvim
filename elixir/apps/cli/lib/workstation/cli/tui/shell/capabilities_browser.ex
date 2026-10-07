@@ -281,6 +281,8 @@ defmodule Workstation.CLI.TUI.Shell.CapabilitiesBrowser do
           required(:shortcut) => Style.t(),
           required(:chrome) => Style.t(),
           required(:warn) => Style.t(),
+          required(:text) => Style.t(),
+          required(:border_capabilities) => Style.t(),
           required(:selected) => Style.t(),
           required(:plain) => Style.t(),
           optional(atom()) => term()
@@ -293,7 +295,7 @@ defmodule Workstation.CLI.TUI.Shell.CapabilitiesBrowser do
         [{" run `workstation bootstrap` to provision this home", styles.plain}]
       ],
       {width, height},
-      border_style: styles.chrome,
+      border_style: styles.border_capabilities,
       title: styles.title
     )
   end
@@ -333,7 +335,7 @@ defmodule Workstation.CLI.TUI.Shell.CapabilitiesBrowser do
       end)
 
     Box.frame(rows, {width, height},
-      border_style: styles.chrome,
+      border_style: styles.border_capabilities,
       title: styles.title,
       counter: [{"#{domain_index + 1}/#{length(domains)}", styles.chrome}]
     )
@@ -378,7 +380,7 @@ defmodule Workstation.CLI.TUI.Shell.CapabilitiesBrowser do
       end
 
     Box.frame(rows, {width, height},
-      border_style: styles.chrome,
+      border_style: styles.border_capabilities,
       title: title,
       counter: counter
     )
@@ -402,12 +404,12 @@ defmodule Workstation.CLI.TUI.Shell.CapabilitiesBrowser do
       end
 
     Box.frame(rows, {width, height},
-      border_style: styles.chrome,
-      title: [{" inspect ", styles.accent}],
+      border_style: styles.border_capabilities,
+      title: [{"inspect", styles.text}],
       buttons: [
-        [{"enter", styles.shortcut}, {" expand/collapse", styles.chrome}],
-        [{"backspace", styles.shortcut}, {" collapse", styles.chrome}],
-        [{"r", styles.shortcut}, {" refresh", styles.chrome}]
+        [{"enter", styles.shortcut}, {" expand/collapse", styles.text}],
+        [{"backspace", styles.shortcut}, {" collapse", styles.text}],
+        [{"r", styles.shortcut}, {" refresh", styles.text}]
       ]
     )
   end

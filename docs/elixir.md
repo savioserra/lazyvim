@@ -755,16 +755,19 @@ split at 204 columns, where content rows dropped a border column):
   reachable).
 
 Box anatomy (`Shell.Box`): the title is an island inside the top border
-run (`╭─┐1 engine┌──…`), an optional right island carries counters and
+run (`╭─┐¹engine┌──…`), an optional right island carries counters and
 badges (`──┐2/41┌─╮`), both side borders ride every body row on the
 corner columns (`│ content │` — the right border swaps to the block
 scrollbar `▲█▏▼` while the content overflows), and the bottom border
-doubles as the box's buttonbar (`╰┘↑↓ scroll└┘r refresh└──┘1/41└╯`). Tab digits in titles are
-plain live keycaps matching the strip order — the real 1..7 switch keys
-(1-based over the tab strip; the strip IS the keymap). Superscript digits
-stay reserved for toggle keys, so a title only ever advertises keys that
-exist. Every color arrives as a theme-role style from the caller; the
-builder hardcodes none (role inventory in docs/theme.md).
+doubles as the box's buttonbar (`╰┘↑↓ scroll└┘r refresh└──┘1/41└╯`).
+Title keycaps are btop's superscript digits (`Shell.keycap/1`, the
+btop_draw.cpp:87 table) in the exact no-space btop construction
+(`┐¹engine┌`), matching the strip order — the real 1..7 switch keys
+(1-based over the tab strip; the strip IS the keymap; a strip click
+sends the same digit key). Plain digits exist only as a narrow-TTY
+opt-in, never the default. Every color arrives as a theme-role style
+from the caller; the builder hardcodes none (role inventory in
+docs/theme.md, including the per-domain `border_*` panel roles).
 
 ## CLI output wires (lane b5 hard-cut schemas)
 

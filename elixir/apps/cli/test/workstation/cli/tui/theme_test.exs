@@ -34,6 +34,12 @@ defmodule Workstation.CLI.TUI.ThemeTest do
              [
                :accent,
                :bg,
+               :border_capabilities,
+               :border_diff,
+               :border_engine,
+               :border_journal,
+               :border_plan,
+               :border_status,
                :chrome,
                :err,
                :inactive,

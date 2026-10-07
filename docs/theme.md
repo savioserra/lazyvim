@@ -24,6 +24,23 @@ and the `ramp_start`/`ramp_mid`/`ramp_end` trio (magnitude ramp: freshness,
 drift age, load). Slot values are validated against the 16 ANSI names plus
 `default`; palette values must be `#rrggbb`.
 
+The per-domain panel border roles close the set — one per dashboard domain,
+all reusing existing palette hues:
+
+| Role | Domain | Hue (why) |
+| --- | --- | --- |
+| `border_engine` | engine panel | blue — engine-core forward view (`accent` family) |
+| `border_plan` | plan panel (home + tab) | blue — the planned mutation surface |
+| `border_journal` | journal panel | green — health-log semantics (`ok` family) |
+| `border_status` | status panel (home + tab) | green — health verdicts |
+| `border_capabilities` | capabilities panel + browser | yellow — pending-apply caution (`warn` family) |
+| `border_diff` | diff panel (home + tab) | red — the mutation surface (`err` family) |
+
+They live in both layers (slots + per-appearance palette) and are
+overlay-settable like every other palette role; `Tokens.border_roles/0` is
+the closed membership list a consumer validates against. Panels outside the
+domain set (daemon liveness, host, help, verb overlays) keep `chrome`.
+
 ## Distribution
 
 The package contributes one `provision.chezmoi_data` recipe: a single
@@ -50,13 +67,20 @@ plan.
 
 The TUI's btop-style box anatomy (`Workstation.CLI.TUI.Shell.Box`, hard
 contracts in docs/elixir.md "TUI application shell") is role-keyed end to
-end: borders and island connectors = `chrome`, keycaps in title islands
-and border buttonbars = `shortcut`, active tab and label highlights =
-`accent`, selection = the `selected_bg`/`selected_fg` pair (never
-color-alone), de-emphasis = `inactive`, and value severity/age = the
+end. Title islands follow btop's exact construction: the superscript keycap
+digit (`Shell.keycap/1`, the btop_draw.cpp:87 superscript table — ⁰ ¹ ² ³
+⁴-⁹, clamped 0-9) rides `shortcut`, bold, with no space before the title
+word (`┐¹engine┌`, never `┐1 engine ┌`); the title word itself rides
+`text` (near-white), bold — btop's global title treatment. Panel borders
+are per-domain (`border_*` roles above); box connectors and frames outside
+the domain set = `chrome`; buttonbar keycaps = `shortcut`, bold, with their
+enabled labels = `text` (disabled = `inactive`); active tab and label
+highlights = `accent`; selection = the `selected_bg`/`selected_fg` pair
+(never color-alone); de-emphasis = `inactive`; value severity/age = the
 `ramp_start`/`ramp_mid`/`ramp_end` trio (journal freshness, drift age).
-No box painter hardcodes a color, so re-branding stays a one-file edit in
-`tokens.lua`.
+The plain-digit keycap form exists only as an explicit narrow-TTY opt-in,
+never the default. No box painter hardcodes a color, so re-branding stays
+a one-file edit in `tokens.lua`.
 
 ## Tests
 

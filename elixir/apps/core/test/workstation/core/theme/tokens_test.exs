@@ -28,7 +28,7 @@ defmodule Workstation.Core.Theme.TokensTest do
 
   test "the mirror carries the same contract values as tokens.lua" do
     # Parity anchor: packages/theme/tokens.lua must carry identical values.
-    assert Tokens.version() == 2
+    assert Tokens.version() == 3
     assert Tokens.herdr_consumer() == %{name: "terminal", auto_switch: true}
 
     assert Map.new(Tokens.slots()) == %{
@@ -44,11 +44,17 @@ defmodule Workstation.Core.Theme.TokensTest do
              inactive: "brightblack",
              ramp_start: "green",
              ramp_mid: "yellow",
-             ramp_end: "red"
+             ramp_end: "red",
+             border_engine: "blue",
+             border_journal: "green",
+             border_capabilities: "yellow",
+             border_plan: "blue",
+             border_diff: "red",
+             border_status: "green"
            }
   end
 
-  test "palette carries all fifteen roles for both appearances" do
+  test "palette carries all twenty-one roles for both appearances" do
     # The role set is the envelope schema; a dropped role silently
     # vanishes from every rendered envelope.
     roles = [
@@ -65,6 +71,12 @@ defmodule Workstation.Core.Theme.TokensTest do
       :ramp_start,
       :ramp_mid,
       :ramp_end,
+      :border_engine,
+      :border_journal,
+      :border_capabilities,
+      :border_plan,
+      :border_diff,
+      :border_status,
       :bg,
       :muted
     ]

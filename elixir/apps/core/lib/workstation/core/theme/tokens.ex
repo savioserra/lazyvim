@@ -21,6 +21,13 @@ defmodule Workstation.Core.Theme.Tokens do
                 palette through OSC 4 retints);
   * `palette` — role -> concrete `#rrggbb` color per appearance, for
                 consumers that cannot follow the terminal;
+  * `border_roles` — the closed set of dashboard border roles, one per
+                panel domain: `border_engine`/`border_plan` (blue, the
+                engine-core forward views), `border_journal`/
+                `border_status` (green, health-log semantics),
+                `border_capabilities` (yellow, pending-apply caution),
+                `border_diff` (red, the mutation surface). Values reuse
+                existing palette hues — no new colors.
   * `consumers` — canonical choices for surfaces the engine documents but
                 deliberately does not reconfigure (`herdr` owns its live
                 config.toml).
@@ -29,16 +36,22 @@ defmodule Workstation.Core.Theme.Tokens do
   color for a role carried here.
   """
 
-  @version 2
+  @version 3
 
   # Ordered lists drive every emission; maps are only storage. The rendered
   # bytes must equal the Lua renderer's output, so traversal order is never
   # delegated to map iteration. New roles append after the base six:
-  # keyboard/selection affordances (shortcut, selected pair, inactive), then
-  # the magnitude ramp trio start->mid->end.
-  @slot_roles [:accent, :ok, :warn, :err, :chrome, :text, :shortcut, :selected_bg, :selected_fg, :inactive, :ramp_start, :ramp_mid, :ramp_end]
-  @palette_roles [:accent, :ok, :warn, :err, :chrome, :text, :shortcut, :selected_bg, :selected_fg, :inactive, :ramp_start, :ramp_mid, :ramp_end, :bg, :muted]
+  # keyboard/selection affordances (shortcut, selected pair, inactive), the
+  # magnitude ramp trio start->mid->end, then the per-domain border roles.
+  @slot_roles [:accent, :ok, :warn, :err, :chrome, :text, :shortcut, :selected_bg, :selected_fg, :inactive, :ramp_start, :ramp_mid, :ramp_end, :border_engine, :border_journal, :border_capabilities, :border_plan, :border_diff, :border_status]
+  @palette_roles [:accent, :ok, :warn, :err, :chrome, :text, :shortcut, :selected_bg, :selected_fg, :inactive, :ramp_start, :ramp_mid, :ramp_end, :border_engine, :border_journal, :border_capabilities, :border_plan, :border_diff, :border_status, :bg, :muted]
   @appearances [:dark, :light]
+
+  # The closed set of border roles a consumer may request for a panel
+  # border. Mirrors the Lua module; consumers validate against this list
+  # (`role in border_roles()`), never against a wider set — a typo fails
+  # closed instead of silently falling back to the accent default.
+  @border_roles [:border_engine, :border_journal, :border_capabilities, :border_plan, :border_diff, :border_status]
 
   @slots %{
     accent: "blue",
@@ -53,7 +66,13 @@ defmodule Workstation.Core.Theme.Tokens do
     inactive: "brightblack",
     ramp_start: "green",
     ramp_mid: "yellow",
-    ramp_end: "red"
+    ramp_end: "red",
+    border_engine: "blue",
+    border_journal: "green",
+    border_capabilities: "yellow",
+    border_plan: "blue",
+    border_diff: "red",
+    border_status: "green"
   }
 
   @palette %{
@@ -71,6 +90,12 @@ defmodule Workstation.Core.Theme.Tokens do
       ramp_start: "#9ece6a",
       ramp_mid: "#e0af68",
       ramp_end: "#f7768e",
+      border_engine: "#7aa2f7",
+      border_journal: "#9ece6a",
+      border_capabilities: "#e0af68",
+      border_plan: "#7aa2f7",
+      border_diff: "#f7768e",
+      border_status: "#9ece6a",
       bg: "#1a1b26",
       muted: "#565f89"
     },
@@ -88,6 +113,12 @@ defmodule Workstation.Core.Theme.Tokens do
       ramp_start: "#587539",
       ramp_mid: "#8c6c3e",
       ramp_end: "#f52a65",
+      border_engine: "#2e7de9",
+      border_journal: "#587539",
+      border_capabilities: "#8c6c3e",
+      border_plan: "#2e7de9",
+      border_diff: "#f52a65",
+      border_status: "#587539",
       bg: "#e1e2e7",
       muted: "#6172b0"
     }
@@ -120,6 +151,13 @@ defmodule Workstation.Core.Theme.Tokens do
   @doc "The herdr consumer choice: which layer it consumes and whether it auto-switches."
   @spec herdr_consumer() :: %{name: String.t(), auto_switch: boolean()}
   def herdr_consumer, do: @consumers.herdr
+
+  @doc """
+  Closed set of border roles (atoms) a consumer may request for a panel
+  border; consumers validate membership explicitly.
+  """
+  @spec border_roles() :: [atom()]
+  def border_roles, do: @border_roles
 
   @doc """
   Deterministic TOML rendering of the whole token set as the source-root

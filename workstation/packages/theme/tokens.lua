@@ -13,11 +13,17 @@ local M = {}
 -- consumers carries canonical choices for surfaces the engine documents but
 -- deliberately does not reconfigure (herdr owns its live config.toml).
 --
+-- border_roles is the closed set of dashboard border roles, one per panel
+-- domain: border_engine/border_plan (blue, the engine-core forward views),
+-- border_journal/border_status (green, health-log semantics),
+-- border_capabilities (yellow, pending-apply caution), border_diff (red,
+-- the mutation surface). All values reuse existing palette hues.
+--
 -- Roles are the API, values are data: no consumer template may hardcode a
 -- literal color or slot name for a role carried here. Re-branding edits only
 -- this file.
 
-M.version = 2
+M.version = 3
 
 M.slots = {
 	accent = "blue",
@@ -33,6 +39,12 @@ M.slots = {
 	ramp_start = "green",
 	ramp_mid = "yellow",
 	ramp_end = "red",
+	border_engine = "blue",
+	border_journal = "green",
+	border_capabilities = "yellow",
+	border_plan = "blue",
+	border_diff = "red",
+	border_status = "green",
 }
 
 M.palette = {
@@ -50,6 +62,12 @@ M.palette = {
 		ramp_start = "#9ece6a",
 		ramp_mid = "#e0af68",
 		ramp_end = "#f7768e",
+		border_engine = "#7aa2f7",
+		border_journal = "#9ece6a",
+		border_capabilities = "#e0af68",
+		border_plan = "#7aa2f7",
+		border_diff = "#f7768e",
+		border_status = "#9ece6a",
 		bg = "#1a1b26",
 		muted = "#565f89",
 	},
@@ -67,6 +85,12 @@ M.palette = {
 		ramp_start = "#587539",
 		ramp_mid = "#8c6c3e",
 		ramp_end = "#f52a65",
+		border_engine = "#2e7de9",
+		border_journal = "#587539",
+		border_capabilities = "#8c6c3e",
+		border_plan = "#2e7de9",
+		border_diff = "#f52a65",
+		border_status = "#587539",
 		bg = "#e1e2e7",
 		muted = "#6172b0",
 	},
@@ -78,9 +102,10 @@ M.consumers = {
 
 -- Role order is the emission order for every derived artifact; new roles
 -- append after the base six: keyboard/selection affordances (shortcut,
--- selected pair, inactive), then the magnitude ramp trio start->mid->end.
-local slot_roles = { "accent", "ok", "warn", "err", "chrome", "text", "shortcut", "selected_bg", "selected_fg", "inactive", "ramp_start", "ramp_mid", "ramp_end" }
-local palette_roles = { "accent", "ok", "warn", "err", "chrome", "text", "shortcut", "selected_bg", "selected_fg", "inactive", "ramp_start", "ramp_mid", "ramp_end", "bg", "muted" }
+-- selected pair, inactive), the magnitude ramp trio start->mid->end, then
+-- the per-domain border roles.
+local slot_roles = { "accent", "ok", "warn", "err", "chrome", "text", "shortcut", "selected_bg", "selected_fg", "inactive", "ramp_start", "ramp_mid", "ramp_end", "border_engine", "border_journal", "border_capabilities", "border_plan", "border_diff", "border_status" }
+local palette_roles = { "accent", "ok", "warn", "err", "chrome", "text", "shortcut", "selected_bg", "selected_fg", "inactive", "ramp_start", "ramp_mid", "ramp_end", "border_engine", "border_journal", "border_capabilities", "border_plan", "border_diff", "border_status", "bg", "muted" }
 local appearances = { "dark", "light" }
 
 -- Terminal NAMED colors tmux2k resolves through the live palette; the same

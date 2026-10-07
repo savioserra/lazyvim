@@ -18,7 +18,8 @@ defmodule Workstation.Core.Theme do
 
   # Roles overlays may patch: the full palette surface. Slot-only roles
   # (terminal named slots) are not overridable with concrete hex values.
-  # String-keyed: JSON object keys arrive as binaries.
+  # String-keyed: JSON object keys arrive as binaries. The border_* roles
+  # are the per-domain panel borders (Tokens.border_roles/0).
   @settable_roles [
     "accent",
     "ok",
@@ -33,6 +34,12 @@ defmodule Workstation.Core.Theme do
     "ramp_start",
     "ramp_mid",
     "ramp_end",
+    "border_engine",
+    "border_journal",
+    "border_capabilities",
+    "border_plan",
+    "border_diff",
+    "border_status",
     "bg",
     "muted"
   ]

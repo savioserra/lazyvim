@@ -61,14 +61,16 @@ defmodule Workstation.CLI.TUI.PureDrillTest do
   # plain unstyled roles are enough.
   defp styles do
     %{
-      title: [{" capabilities ", Style.new(attrs: [:bold])}],
+      title: [{"²", Style.new(attrs: [:bold])}, {"capabilities", Style.new(attrs: [:bold])}],
       accent: Style.new(attrs: [:bold]),
       ok: Style.new(),
       warn: Style.new(),
       err: Style.new(),
+      text: Style.new(attrs: [:bold]),
       shortcut: Style.new(attrs: [:bold]),
       inactive: Style.new(),
       chrome: Style.new(),
+      border_capabilities: Style.new(),
       selected: Style.new(),
       plain: Style.new()
     }

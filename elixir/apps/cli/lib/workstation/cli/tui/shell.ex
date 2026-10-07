@@ -545,9 +545,10 @@ defmodule Workstation.CLI.TUI.Shell do
   defp strip_frame(state, {width, height}) do
     styles = theme_styles(state)
 
-    # btop buttonbar islands on the strip row: `┘1 home└┘2 capabilities└…`.
-    # The digit always rides the shortcut slot; the active tab label is
-    # accent (bold), the rest read inactive. A chrome `─` filler carries
+    # btop buttonbar islands on the strip row: `┘¹home└┘²capabilities└…`.
+    # The keycap rides the shortcut role, bold (btop's glowing cap); the
+    # active tab label is accent (bold), the rest read inactive. A chrome
+    # `─` filler carries
     # the bar to the terminal edge — islands left, border filler right;
     # the brief defines no right-side region content, so the filler IS
     # the right side and the strip reads as one bar at every width.
@@ -559,7 +560,7 @@ defmodule Workstation.CLI.TUI.Shell do
 
         [
           {"┘", styles.chrome},
-          {"#{index + 1}", styles.shortcut},
+          {keycap(index + 1), styles.keycap},
           {label, label_style},
           {"└", styles.chrome}
         ]
@@ -626,7 +627,7 @@ defmodule Workstation.CLI.TUI.Shell do
     view = Map.get(state.text_views, :help) || TextView.init(Enum.join(Help.lines(), "\n"))
 
     TextView.bordered_view(view, dims, %{
-      title: [{"7", styles.shortcut}, {" help", styles.accent}],
+      title: [{keycap(7), styles.keycap}, {"help", styles.text}],
       border: styles.chrome,
       shortcut: styles.shortcut,
       chrome: styles.chrome,
@@ -645,9 +646,9 @@ defmodule Workstation.CLI.TUI.Shell do
         styles = theme_styles(state)
 
         TextView.bordered_view(Map.get(views, tab) || TextView.init(""), dims, %{
-          title: [{tab_digit(tab), styles.shortcut}, {" #{tab}", styles.accent}],
+          title: [{tab_keycap(tab), styles.keycap}, {"#{tab}", styles.text}],
           right: read_badge(state, tab, styles),
-          border: styles.chrome,
+          border: domain_border(tab, styles),
           shortcut: styles.shortcut,
           chrome: styles.chrome,
           thumb: styles.shortcut
@@ -664,7 +665,7 @@ defmodule Workstation.CLI.TUI.Shell do
 
   defp body_frame(%{op: nil, tab: :capabilities} = state, dims) do
     styles = theme_styles(state)
-    title = [{"2", styles.shortcut}, {" capabilities ", styles.accent}]
+    title = [{keycap(2), styles.keycap}, {"capabilities", styles.text}]
 
     case caps_readiness(state) do
       :ready ->
@@ -678,12 +679,36 @@ defmodule Workstation.CLI.TUI.Shell do
 
     end
   end
-  # Tab digits mirror the strip order (1-based over @tabs) so the box
+  # Tab keycaps mirror the strip order (1-based over @tabs) so the box
   # titles advertise the strip shortcut.
-  defp tab_digit(tab) do
+  defp tab_keycap(tab) do
     index = Enum.find_index(@tabs, fn {id, _label} -> id == tab end) || 0
-    "#{index + 1}"
+    keycap(index + 1)
   end
+
+  @doc """
+  btop's superscript keycap digit (btop_draw.cpp:87 Symbols::superscript):
+  0-9 render as ⁰ ¹ ² ³ ⁴-⁹, values outside clamp into 0-9. Titles use the
+  exact btop no-space construction `┐<keycap><title>┌` (btop CursesRenderer
+  title handling); the plain-digit form is a narrow-TTY concern, never the
+  default.
+  """
+  @spec keycap(integer()) :: String.t()
+  def keycap(n) when is_integer(n) do
+    # btop_draw.cpp:87 superscript table (Symbols::superscript.at).
+    digits = ["⁰", "¹", "²", "³", "⁴", "⁵", "⁶", "⁷", "⁸", "⁹"]
+    Enum.fetch!(digits, n |> max(0) |> min(9))
+  end
+
+  # Per-domain border roles (docs/theme.md): every dashboard domain panel
+  # carries its token border role in every state (loading, error, loaded);
+  # tabs outside the domain set keep the chrome frame (home composes its
+  # own boxes, help/daemon are frame chrome).
+  defp domain_border(:capabilities, styles), do: styles.border_capabilities
+  defp domain_border(:status, styles), do: styles.border_status
+  defp domain_border(:plan, styles), do: styles.border_plan
+  defp domain_border(:diff, styles), do: styles.border_diff
+  defp domain_border(_tab, styles), do: styles.chrome
 
   # Top-border badge per read tab: status carries the journal generation
   # plus the sync verdict; plan and diff reuse the home would-change and
@@ -733,8 +758,8 @@ defmodule Workstation.CLI.TUI.Shell do
         [{" retry with r", styles.inactive}]
       ],
       {width, height},
-      border_style: styles.chrome,
-      title: [{tab_digit(tab), styles.shortcut}, {" #{tab}", styles.accent}]
+      border_style: domain_border(tab, styles),
+      title: [{tab_keycap(tab), styles.keycap}, {"#{tab}", styles.text}]
     )
   end
 
@@ -746,9 +771,9 @@ defmodule Workstation.CLI.TUI.Shell do
     styles = theme_styles(state)
 
     Box.frame(error_rows(message, styles), {width, height},
-      border_style: styles.chrome,
-      title: [{tab_digit(tab), styles.shortcut}, {" #{tab}", styles.err}],
-      buttons: [[{"r", styles.shortcut}, {" retry", styles.chrome}]]
+      border_style: domain_border(tab, styles),
+      title: [{tab_keycap(tab), styles.keycap}, {"#{tab}", styles.text}],
+      buttons: [[{"r", styles.shortcut}, {" retry", styles.text}]]
     )
   end
 
@@ -872,31 +897,31 @@ defmodule Workstation.CLI.TUI.Shell do
 
   defp engine_box(state, styles, dims) do
     Box.frame(engine_rows(state, styles), dims,
-      border_style: styles.chrome,
-      title: [{"1", styles.shortcut}, {" engine ", styles.accent}],
+      border_style: styles.border_engine,
+      title: [{keycap(1), styles.keycap}, {"engine", styles.text}],
       right: daemon_badge(state, styles)
     )
   end
 
   defp journal_box(state, styles, dims) do
     Box.frame(journal_rows(state, styles), dims,
-      border_style: styles.chrome,
-      title: [{" journal ", styles.accent}]
+      border_style: styles.border_journal,
+      title: [{"journal", styles.text}]
     )
   end
 
   defp plan_box(state, styles, dims) do
     Box.frame(plan_rows(state, styles), dims,
-      border_style: styles.chrome,
-      title: [{"4", styles.shortcut}, {" plan ", styles.accent}],
+      border_style: styles.border_plan,
+      title: [{keycap(4), styles.keycap}, {"plan", styles.text}],
       right: pending_badge(state, :plan, styles)
     )
   end
 
   defp diff_box(state, styles, dims) do
     Box.frame(diff_rows(state, styles), dims,
-      border_style: styles.chrome,
-      title: [{"5", styles.shortcut}, {" diff ", styles.accent}],
+      border_style: styles.border_diff,
+      title: [{keycap(5), styles.keycap}, {"diff", styles.text}],
       right: pending_badge(state, :diff, styles)
     )
   end
@@ -906,11 +931,11 @@ defmodule Workstation.CLI.TUI.Shell do
   # appear exactly when their key works)."""
   defp caps_box(state, styles, dims) do
     Box.frame(caps_rows(state, styles), dims,
-      border_style: styles.chrome,
-      title: [{"2", styles.shortcut}, {" capabilities ", styles.accent}],
-      buttons: [[{"a", styles.shortcut}, {" apply", styles.chrome}]] ++
+      border_style: styles.border_capabilities,
+      title: [{keycap(2), styles.keycap}, {"capabilities", styles.text}],
+      buttons: [[{"a", styles.shortcut}, {" apply", styles.text}]] ++
                  u_button(state, styles) ++
-                 [[{"r", styles.shortcut}, {" refresh", styles.chrome}]]
+                 [[{"r", styles.shortcut}, {" refresh", styles.text}]]
     )
   end
 
@@ -918,7 +943,7 @@ defmodule Workstation.CLI.TUI.Shell do
   # the same honesty rule as the old keys line (a key that does nothing
   # must not be advertised).
   defp u_button(%{update_hint: hint}, styles) when hint != nil do
-    [[{"u", styles.shortcut}, {" update", styles.chrome}]]
+    [[{"u", styles.shortcut}, {" update", styles.text}]]
   end
 
   defp u_button(_state, _styles), do: []
@@ -1169,9 +1194,9 @@ defmodule Workstation.CLI.TUI.Shell do
   defp liveness_box(state, styles, {width, height}) do
     Box.frame(liveness_rows(state, styles), {width, height},
       border_style: styles.chrome,
-      title: [{"6", styles.shortcut}, {" daemon", styles.accent}],
+      title: [{keycap(6), styles.keycap}, {"daemon", styles.text}],
       right: daemon_badge(state, styles),
-      buttons: [[{"r", styles.shortcut}, {" re-probe", styles.chrome}]]
+      buttons: [[{"r", styles.shortcut}, {" re-probe", styles.text}]]
     )
   end
 
@@ -1180,7 +1205,7 @@ defmodule Workstation.CLI.TUI.Shell do
   defp host_box(state, styles, {width, height}) do
     Box.frame(host_rows(state, styles), {width, height},
       border_style: styles.chrome,
-      title: [{"host", styles.accent}]
+      title: [{"host", styles.text}]
     )
   end
 
@@ -1257,18 +1282,30 @@ defmodule Workstation.CLI.TUI.Shell do
 
   # The resolved btop-grammar role styles for one render: every visual
   # claim routes through the theme envelope roles (never literals).
+  # Titles read the near-white text role, bold (btop's title treatment);
+  # keycaps ride the shortcut role, bold. Border roles are per-domain
+  # (docs/theme.md): engine/plan blue, journal/status green,
+  # capabilities yellow, diff red.
   defp theme_styles(state) do
     %{
       accent: role_style(state, :accent, fallback: Style.new(attrs: [:bold]), attrs: [:bold]),
       ok: role_style(state, :ok, fallback: :green),
       warn: role_style(state, :warn, fallback: :yellow),
       err: role_style(state, :err, fallback: :red),
+      text: role_style(state, :text, fallback: :white, attrs: [:bold]),
+      keycap: role_style(state, :shortcut, fallback: Style.new(attrs: [:bold]), attrs: [:bold]),
       shortcut: role_style(state, :shortcut, fallback: Style.new(attrs: [:bold])),
       inactive: role_style(state, :inactive, fallback: :bright_black),
       chrome: role_style(state, :chrome, fallback: :bright_black),
       ramp_start: role_style(state, :ramp_start, fallback: :green),
       ramp_mid: role_style(state, :ramp_mid, fallback: :yellow),
       ramp_end: role_style(state, :ramp_end, fallback: :red),
+      border_engine: role_style(state, :border_engine, fallback: :blue),
+      border_journal: role_style(state, :border_journal, fallback: :green),
+      border_capabilities: role_style(state, :border_capabilities, fallback: :yellow),
+      border_plan: role_style(state, :border_plan, fallback: :blue),
+      border_diff: role_style(state, :border_diff, fallback: :red),
+      border_status: role_style(state, :border_status, fallback: :green),
       selected: selected_style(state),
       plain: Style.new()
     }

@@ -173,13 +173,13 @@ defmodule Workstation.CLI.TUI.ShellTest do
     # gen/rev live in the journal box, version/platform in the engine
     # box, the destination in the daemon tab's host box.
     strip = Frame.row_text(frame, 1)
-    assert strip =~ "1home"
-    assert strip =~ "2capabilities"
-    assert strip =~ "3status"
-    assert strip =~ "4plan"
-    assert strip =~ "5diff"
-    assert strip =~ "6daemon"
-    assert strip =~ "7help"
+    assert strip =~ "¹home"
+    assert strip =~ "²capabilities"
+    assert strip =~ "³status"
+    assert strip =~ "⁴plan"
+    assert strip =~ "⁵diff"
+    assert strip =~ "⁶daemon"
+    assert strip =~ "⁷help"
     refute strip =~ @destination
     refute full_text(frame) =~ "══"
 
@@ -199,20 +199,46 @@ defmodule Workstation.CLI.TUI.ShellTest do
     runtime = start_shell()
     frame = settled_frame(runtime)
 
-    # Buttonbar islands: `┘1home└┘2capabilities└…`. The connector reads
-    # chrome, the digit rides the shortcut slot (dark base #bb9af7), the
+    # Buttonbar islands: `┘¹home└┘²capabilities└…`. The connector reads
+    # chrome, the keycap rides the shortcut slot (dark base #bb9af7), the
     # active tab label rides the accent role (dark base #7aa2f7).
     assert Frame.cell(frame, 1, 1).char == "┘"
-    assert Frame.cell(frame, 1, 2).char == "1"
+    assert Frame.cell(frame, 1, 2).char == "¹"
     assert Frame.cell(frame, 1, 2).fg == {187, 154, 247}
     assert Frame.cell(frame, 1, 3).char == "h"
     assert Frame.cell(frame, 1, 3).fg == {122, 162, 247}
 
     # Inactive tabs ride the inactive role (dark base #565f89).
-    assert Frame.cell(frame, 1, 9).char == "2"
+    assert Frame.cell(frame, 1, 9).char == "²"
     assert Frame.cell(frame, 1, 9).fg == {187, 154, 247}
     assert Frame.cell(frame, 1, 10).char == "c"
     assert Frame.cell(frame, 1, 10).fg == {86, 95, 137}
+  end
+
+  test "keycap/1 renders btop's superscript table with clamping" do
+    # btop_draw.cpp:87 Symbols::superscript — the title-grammar table.
+    assert Shell.keycap(0) == "⁰"
+    assert Shell.keycap(1) == "¹"
+    assert Shell.keycap(3) == "³"
+    assert Shell.keycap(7) == "⁷"
+    assert Shell.keycap(9) == "⁹"
+
+    # Outside 0-9 clamps into the table (btop superscript.at(clamp(num, 0, 9)))
+    assert Shell.keycap(10) == "⁹"
+    assert Shell.keycap(-1) == "⁰"
+  end
+
+  test "strip islands use the exact btop no-space keycap construction" do
+    runtime = start_shell()
+    frame = loaded_frame(runtime)
+
+    # `┘¹home└`, never the spaced `┘1 home└` form — the plain-digit
+    # variant stays a narrow-TTY opt-in, never the default.
+    strip = Frame.row_text(frame, 1)
+    assert strip =~ "┘¹home└"
+    assert strip =~ "┘²capabilities└"
+    refute strip =~ "¹ home"
+    refute strip =~ "1home"
   end
 
   test "footer keeps frame keys only, key caps in the shortcut slot" do
@@ -402,7 +428,7 @@ defmodule Workstation.CLI.TUI.ShellTest do
     # (not another tab's) loses the file rows.
     send_key(runtime, :left)
     frame = settled_frame(runtime)
-    assert Frame.row_text(frame, 1) =~ "2capabilities"
+    assert Frame.row_text(frame, 1) =~ "²capabilities"
     assert body_text(frame) =~ "▾ editor"
     refute body_text(frame) =~ ".config/nvim/init.lua"
 
@@ -433,7 +459,12 @@ defmodule Workstation.CLI.TUI.ShellTest do
 
     send_text(runtime, "2")
     send_event(runtime, Event.resize(100, 30))
-    assert latest_frame() |> body_text() =~ "loading plan"
+
+    # The intermediate state is transient (status lands, plan still
+    # sleeps) — ride the draws for it instead of trusting one drain to
+    # land inside the window (the recorded-deviation anti-pattern).
+    assert await_frame(fn f -> body_text(f) =~ "loading plan" end) |> body_text() =~
+             "loading plan"
 
     # The seam lands asynchronously; ride the draws until the browser
     # replaces the loading state (bounded — no magic sleep).
@@ -450,7 +481,7 @@ defmodule Workstation.CLI.TUI.ShellTest do
     send_text(runtime, "a")
     frame = await_frame(fn f -> body_text(f) =~ "apply · #{@destination}" end)
 
-    assert Frame.row_text(frame, 1) =~ "8apply"
+    assert Frame.row_text(frame, 1) =~ "⁸apply"
     text = body_text(frame)
     assert text =~ "apply · #{@destination}"
     assert text =~ "gen gen-3"
@@ -487,7 +518,7 @@ defmodule Workstation.CLI.TUI.ShellTest do
     # The screen's own [u] handoff — now it swaps screens, not processes.
     send_text(runtime, "u")
     frame = settled_frame(runtime)
-    assert Frame.row_text(frame, 1) =~ "8update"
+    assert Frame.row_text(frame, 1) =~ "⁸update"
     assert body_text(frame) =~ "update · #{@destination}"
   end
 
@@ -499,10 +530,10 @@ defmodule Workstation.CLI.TUI.ShellTest do
              "apply · #{@destination}"
 
     send_text(runtime, "q")
-    frame = await_frame(fn f -> Frame.row_text(f, 1) =~ "1home" end)
-    assert Frame.row_text(frame, 1) =~ "1home"
+    frame = await_frame(fn f -> Frame.row_text(f, 1) =~ "¹home" end)
+    assert Frame.row_text(frame, 1) =~ "¹home"
     assert body_text(frame) =~ "9.9.9-test"
-    refute Frame.row_text(frame, 1) =~ "8apply"
+    refute Frame.row_text(frame, 1) =~ "⁸apply"
   end
 
   test "u on home opens the update screen when the probe found updates" do
@@ -513,7 +544,7 @@ defmodule Workstation.CLI.TUI.ShellTest do
     send_text(runtime, "u")
     frame = settled_frame(runtime)
 
-    assert Frame.row_text(frame, 1) =~ "8update"
+    assert Frame.row_text(frame, 1) =~ "⁸update"
     assert body_text(frame) =~ "update · #{@destination}"
   end
 
@@ -536,7 +567,7 @@ defmodule Workstation.CLI.TUI.ShellTest do
 
     send_text(runtime, "u")
     frame = settled_frame(runtime)
-    assert Frame.row_text(frame, 1) =~ "1home"
+    assert Frame.row_text(frame, 1) =~ "¹home"
     refute body_text(frame) =~ "update available"
   end
 
@@ -729,9 +760,9 @@ defmodule Workstation.CLI.TUI.ShellTest do
     runtime = start_shell()
     loaded_frame(runtime)
 
-    # Islands are back-to-back: 3 columns (`┘`, digit, `└`) plus the
-    # label — `┘1 home└` spans 0-based columns 0..6, so column 10 is
-    # inside `┘2 capabilities└` at any width.
+    # Islands are back-to-back: 3 columns (`┘`, keycap, `└`) plus the
+    # label — `┘¹home└` spans 0-based columns 0..5, so column 10 is
+    # inside `┘²capabilities└` at any width.
     send_event(runtime, %Event.Mouse{action: :press, button: :left, x: 10, y: 0})
 
     assert await_frame(fn f -> body_text(f) =~ "▸ editor" end) |> body_text() =~
@@ -760,7 +791,7 @@ defmodule Workstation.CLI.TUI.ShellTest do
     runtime = start_shell()
 
     send_text(runtime, "7")
-    frame = await_frame(fn f -> Frame.row_text(f, 2) =~ "7 help" end)
+    frame = await_frame(fn f -> Frame.row_text(f, 2) =~ "⁷help" end)
     # The pane's bottom action bar carries the first-visible/total counter.
     assert Frame.row_text(frame, 29) =~ ~r/1\/\d+/
 
@@ -769,7 +800,7 @@ defmodule Workstation.CLI.TUI.ShellTest do
     send_event(runtime, %Event.Mouse{action: :scroll_down, button: nil, x: 40, y: 15})
 
     scrolled = await_frame(fn f -> Frame.row_text(f, 29) =~ ~r/2\/\d+/ end)
-    assert Frame.row_text(scrolled, 2) =~ "7 help"
+    assert Frame.row_text(scrolled, 2) =~ "⁷help"
   end
 
   test "island clicks resolve through the same walk the renderer draws" do
@@ -853,7 +884,7 @@ defmodule Workstation.CLI.TUI.ShellTest do
     loaded_frame(runtime)
     send_text(runtime, "a")
     frame = settled_frame(runtime)
-    assert Frame.row_text(frame, 1) =~ "8apply"
+    assert Frame.row_text(frame, 1) =~ "⁸apply"
     assert Frame.row_text(frame, 2) =~ "apply · #{@destination}"
 
     send_event(runtime, Event.resize(120, 40))
