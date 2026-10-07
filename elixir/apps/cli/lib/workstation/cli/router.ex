@@ -509,6 +509,26 @@ defmodule Workstation.CLI.Router do
             # timed out — engine-exit operator error, message verbatim.
             fail(4, "error: #{tag}: #{message}")
 
+          # The daemon-side read failure classes over the wire: Read's
+          # {:core, _}/{:engine, _} arrive as STRING codes (JSON), so a
+          # bare-host engine-checkout refusal used to fall through every
+          # arm and crash the CLI with a CaseClauseError instead of the
+          # intended fail-closed operator error (2026-10-07 shim-anchor
+          # gate). Same exit semantics as the offline replay arm: core
+          # evaluation failures are precondition (3), engine failures are
+          # engine (4).
+          {:error, {"core", message}} when is_binary(message) ->
+            fail(3, "error: core evaluation failed: #{message}")
+
+          {:error, {"engine", message}} when is_binary(message) ->
+            fail(4, "error: #{format_engine_error(message)}")
+
+          {:error, {code, message}} when is_binary(code) and is_binary(message) ->
+            # Any other wire refusal keeps the client exit table (locked
+            # is precondition, everything else engine) — protocol drift
+            # degrades to an operator error, never a crash.
+            fail(client_exit(code), "error: #{code}: #{message}")
+
           {:error, code, message} ->
             fail(client_exit(code), "error: #{code}: #{message}")
         end
