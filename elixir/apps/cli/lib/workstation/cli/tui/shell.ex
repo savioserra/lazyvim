@@ -787,7 +787,25 @@ defmodule Workstation.CLI.TUI.Shell do
     end
   end
 
+  # Below this width the 2x2 mosaic halves squeeze below readability and
+  # the home falls back to the vertical stack (brief priority: engine >
+  # journal > domains > plan/diff).
+  @home_mosaic_min_width 110
+
+  # Stack boxes in priority order; each bounded fill claims its minimum
+  # height, shares the surplus as fill, and — when the body cannot honor
+  # every minimum — the layout solver scales the minimums proportionally
+  # instead of clipping a box away. Content beyond a shrunken box elides
+  # inside its (still closed) borders.
+  @stack_box_heights [3, 3, 4, 3, 3]
+
   defp home_frame(state, dims) do
+    if home_mosaic?(dims), do: mosaic_frame(state, dims), else: stack_frame(state, dims)
+  end
+
+  defp home_mosaic?({width, _height}), do: width >= @home_mosaic_min_width
+
+  defp mosaic_frame(state, dims) do
     {width, height} = dims
     styles = theme_styles(state)
 
@@ -809,6 +827,28 @@ defmodule Workstation.CLI.TUI.Shell do
     |> Helpers.compose(left2, &plan_box(state, styles, &1))
     |> Helpers.compose(right2, &diff_box(state, styles, &1))
     |> Helpers.compose(row3, &caps_box(state, styles, &1))
+  end
+
+  # Narrow home: the five dashboard boxes stack full width in the brief's
+  # priority order (engine, journal, domains, then the plan/diff pair).
+  defp stack_frame(state, {width, height}) do
+    styles = theme_styles(state)
+
+    boxes = [
+      &engine_box/3,
+      &journal_box/3,
+      &caps_box/3,
+      &plan_box/3,
+      &diff_box/3
+    ]
+
+    tracks = Enum.map(@stack_box_heights, &Layout.bounded(Layout.fill(), min: &1))
+
+    boxes
+    |> Enum.zip(Layout.column(Layout.new({width, height}), tracks))
+    |> Enum.reduce(Helpers.frame([], {width, height}), fn {box, rect}, frame ->
+      Helpers.compose(frame, rect, &box.(state, styles, &1))
+    end)
   end
 
   ## home mosaic (btop dashboard: adjacent rounded boxes, island titles,
@@ -1057,8 +1097,10 @@ defmodule Workstation.CLI.TUI.Shell do
 
   # The update hint rides the capabilities box body (and its border
   # button); no hint means no row.
+  # A single body row (a list of spans) — the caller appends rows, so the
+  # row itself carries one nesting level.
   defp hint_rows(%{update_hint: hint}, styles) when hint != nil do
-    [{" " <> UpdateHint.text(hint), styles.warn}]
+    [[{" " <> UpdateHint.text(hint), styles.warn}]]
   end
 
   defp hint_rows(_state, _styles), do: []

@@ -623,7 +623,11 @@ defmodule Workstation.CLI.TUI.ShellTest do
   test "plan pane titles its border with the scroll/refresh action bar and a position counter" do
     runtime = start_shell()
     send_text(runtime, "4")
-    frame = settled_frame(runtime)
+
+    # Await the plan pane itself: a settled drain can predate the tab
+    # switch render under parallel suite load (the mosaic's home row 5
+    # is the engine box, so the plan title discriminates the tabs).
+    frame = await_frame(fn frame -> Frame.row_text(frame, 5) =~ "plan" end)
 
     assert Frame.row_text(frame, 5) =~ "plan"
     bottom = Frame.row_text(frame, 29)
@@ -637,13 +641,14 @@ defmodule Workstation.CLI.TUI.ShellTest do
   end
 
   test "journal line rides the magnitude ramp by applied-at age (fresh/aging/stale)" do
-    # Journal box body rows: generation (6), applied stamp (7), the age
-    # block meter (8). The stamp value column is located relative to its
-    # label so the assert survives box geometry.
+    # The journal box's applied row sits wherever the responsive home puts
+    # the box (2x2 mosaic at >=110 cols, the priority stack below), so the
+    # row is located by its label instead of a pinned row number.
     ramp_cell = fn now ->
       _runtime = start_shell(now: now)
       frame = await_frame(fn frame -> body_text(frame) =~ "generation:" end)
-      Frame.cell(frame, 7, value_col(frame, 7, "applied")).fg
+      row = applied_row(frame)
+      Frame.cell(frame, row, value_col(frame, row, "applied")).fg
     end
 
     # fresh (<24h) → ramp_start (ok slot family)
@@ -771,5 +776,14 @@ defmodule Workstation.CLI.TUI.ShellTest do
       " " -> first_nonspace(text, pos + 1)
       _char -> pos + 1
     end
+  end
+
+  # The journal box's applied-at stamp row, found by its label (the only
+  # "applied:" on the home body — the rollup line reads "applied gen-2"
+  # without a colon).
+  defp applied_row(frame) do
+    row = Enum.find(5..(frame.height - 1), &String.contains?(Frame.row_text(frame, &1), "applied:"))
+    assert row, "journal applied row not found on the home frame"
+    row
   end
 end

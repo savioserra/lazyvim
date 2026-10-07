@@ -22,6 +22,7 @@ defmodule Workstation.CLI.TUI.Shell.Box do
   hardcodes one.
   """
 
+  alias TermUI.Cell
   alias TermUI.Frame
   alias TermUI.Style
   alias TermUI.Widget.Helpers
@@ -44,6 +45,12 @@ defmodule Workstation.CLI.TUI.Shell.Box do
     * `:scrollbar` — `{offset, visible, total}`; swaps the right border to
       the block scrollbar while the content overflows
     * `:thumb_style` — scrollbar thumb style (default: the border style)
+
+  Border islands elide gracefully on narrow boxes: right islands yield
+  right-to-left (trimmed with an ellipsis while any cell survives, then
+  dropped), the title truncates before its island connectors are
+  surrendered, and the closing corners always land inside the box width —
+  a border row is never left without its far corner at any size.
   """
   @spec frame([row()], TermUI.Widget.dimensions(), keyword()) :: Frame.t()
   def frame(rows, {width, height}, opts) do
@@ -82,27 +89,116 @@ defmodule Workstation.CLI.TUI.Shell.Box do
   # `╭─┐TITLE┌──────┐RIGHT┌┐RIGHT┌─╮` — islands break the dash run; with
   # neither island the top border is a plain rounded run. Right content
   # is one island or a list of islands (span-list elements), so counters
-  # can ride the border as separate islands.
+  # can ride the border as separate islands. Everything between the
+  # corners elides to the corner budget (width - 2) so the row always
+  # closes.
   defp top_row(width, title, right, border) do
-    left =
-      case as_spans(title) do
-        nil -> []
-        spans -> [{"─┐", border}] ++ spans ++ [{"┌", border}]
-      end
+    budget = width - 2
+    left = title_island(as_spans(title), border, budget)
+    {left, islands} = fit_border(left, right_islands(right), budget)
 
-    islands = right_islands(right)
+    middle = String.duplicate("─", max(budget - content_width(left) - islands_width(islands), 0))
 
-    right_islands_render =
-      islands
-      |> Enum.flat_map(fn spans -> [{"┐", border}] ++ spans ++ [{"┌", border}] end)
-      |> Kernel.++(if islands == [], do: [], else: [{"─", border}])
-
-    used = 1 + content_width(left) + content_width(right_islands_render) + 1
-
-    middle = String.duplicate("─", max(width - used, 0))
-
-    [{"╭", border}] ++ left ++ [{middle, border}] ++ right_islands_render ++ [{"╮", border}]
+    [{"╭", border}] ++
+      left ++ [{middle, border}] ++ render_right_islands(islands, border) ++ [{"╮", border}]
   end
+
+  # The title island keeps its `─┐` / `┌` connectors at any width: the
+  # island TEXT truncates first, and only a box narrower than the bare
+  # connectors gives the island up entirely.
+  defp title_island(nil, _border, _budget), do: []
+
+  defp title_island(spans, border, budget) do
+    left = [{"─┐", border}] ++ spans ++ [{"┌", border}]
+
+    if content_width(left) <= budget do
+      left
+    else
+      if budget >= 4 do
+        [{"─┐", border}] ++ truncate_spans(spans, budget - 3) ++ [{"┌", border}]
+      else
+        []
+      end
+    end
+  end
+
+  defp render_right_islands([], _border), do: []
+
+  defp render_right_islands(islands, border) do
+    islands
+    |> Enum.flat_map(fn spans -> [{"┐", border}] ++ spans ++ [{"┌", border}] end)
+    |> Kernel.++([{"─", border}])
+  end
+
+  # Width a non-empty island list occupies between the corners, including
+  # the separator dash rendered after the last island.
+  defp islands_width([]), do: 0
+
+  defp islands_width(islands),
+    do: Enum.reduce(islands, 1, &(2 + content_width(&1) + &2))
+
+  # Elides the right islands into the corner budget: the rightmost island
+  # trims against the leftover room (an ellipsis closes a cut run), a
+  # whole island drops once nothing survives, and the pre-sized title on
+  # the left never needs to yield.
+  defp fit_border(left, islands, budget) do
+    cond do
+      content_width(left) + islands_width(islands) <= budget ->
+        {left, islands}
+
+      islands == [] ->
+        {left, []}
+
+      true ->
+        init = Enum.drop(islands, -1)
+        room = budget - content_width(left) - islands_width(init)
+        trimmed = trim_island(List.last(islands), room)
+
+        if content_width(trimmed) > 0 do
+          fit_border(left, init ++ [trimmed], budget)
+        else
+          fit_border(left, init, budget)
+        end
+    end
+  end
+
+  # Island connective tissue costs 2 cells; the text gets what remains.
+  # Below 6 cells of room a trimmed island would render as a lone glyph
+  # (no space for a closing ellipsis) — drop it instead.
+  defp trim_island(spans, room) when room >= 6, do: truncate_spans(spans, room - 2)
+  defp trim_island(_spans, _room), do: []
+
+  # Display-width-aware span truncation; a cut run closes with an
+  # ellipsis when one still fits.
+  defp truncate_spans(spans, budget) do
+    {kept, _used} =
+      Enum.reduce(spans, {[], 0}, fn span, {acc, used} ->
+        if used >= budget do
+          {acc, used}
+        else
+          {text, style} = split_span(span)
+          {visible, visible_width} = Cell.truncate(text, budget - used)
+
+          # A cut run reserves its last cell for the closing ellipsis —
+          # elision is always advertised as elision.
+          visible =
+            if visible_width < Cell.text_width(text) and budget - used >= 1 do
+              {shorter, _shorter_width} = Cell.truncate(text, budget - used - 1)
+              shorter <> "…"
+            else
+              visible
+            end
+
+          rendered = if style, do: {visible, style}, else: visible
+          {[rendered | acc], used + Cell.text_width(visible)}
+        end
+      end)
+
+    Enum.reverse(kept)
+  end
+
+  defp split_span({text, style}) when is_binary(text), do: {text, style}
+  defp split_span(text) when is_binary(text), do: {text, nil}
 
   # One island (spans: elements are binaries or {text, style} tuples) or
   # a list of islands (elements are span lists).
@@ -120,23 +216,29 @@ defmodule Workstation.CLI.TUI.Shell.Box do
 
   # `╰┘button└┘button└────┘1/41└╯` — the bottom border doubles as the
   # buttonbar; the position counter is the last island before the corner.
+  # The bar elides right-to-left into the corner budget — the counter
+  # (rightmost) yields first, then trailing buttons — so the leftmost
+  # action keys and both corners survive any width.
   defp bottom_row(width, buttons, counter, border) do
-    button_islands =
-      Enum.flat_map(buttons, fn button ->
-        [{"┘", border}] ++ as_spans!(button) ++ [{"└", border}]
-      end)
+    budget = width - 2
+    bar = Enum.map(buttons, &as_spans!/1) ++ counter_islands(counter)
+    {[], kept} = fit_border([], bar, budget)
+    {kept_buttons, kept_counter} = Enum.split(kept, length(buttons))
 
-    counter_island =
-      case as_spans(counter) do
-        nil -> []
-        spans -> [{"┘", border}] ++ spans ++ [{"└", border}]
-      end
+    button_render =
+      Enum.flat_map(kept_buttons, fn spans -> [{"┘", border}] ++ spans ++ [{"└", border}] end)
 
-    used = 1 + content_width(button_islands) + content_width(counter_island) + 1
+    counter_render =
+      Enum.flat_map(kept_counter, fn spans -> [{"┘", border}] ++ spans ++ [{"└", border}] end)
+
+    used = 1 + content_width(button_render) + content_width(counter_render) + 1
     middle = String.duplicate("─", max(width - used, 0))
 
-    [{"╰", border}] ++ button_islands ++ [{middle, border}] ++ counter_island ++ [{"╯", border}]
+    [{"╰", border}] ++ button_render ++ [{middle, border}] ++ counter_render ++ [{"╯", border}]
   end
+
+  defp counter_islands(nil), do: []
+  defp counter_islands(counter), do: [as_spans(counter)]
 
   # Body rows clipped to the inner width, padded to the inner height; the
   # trailing span of every row is the right border (or the scrollbar glyph
