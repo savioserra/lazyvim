@@ -690,6 +690,48 @@ Safety guards (fail closed, never touch the operator's state):
 - before the fail-closed journal read, `EngineState` performs the 0700
   state-root repair: a symlinked or foreign-owned component fails closed.
 
+#### Home mosaic and box anatomy (hard contracts)
+
+The home dashboard is responsive, and every boxed pane is built by one
+builder (`Workstation.CLI.TUI.Shell.Box`). The contracts below are pinned
+cell-by-cell by `shell_home_frame_test.exs`, which renders the pure
+`Shell.view/1` with loaded fixture wires — no daemon — at the three
+canonical sizes 175x83, 110x40 (the inclusive mosaic boundary) and 80x24:
+
+- **Width switch**: at >= 110 columns the home is the full 2x2 mosaic
+  (engine+journal, plan+diff quadrants) plus the full-width capabilities
+  band; below, the five dashboard boxes stack full width in the priority
+  order engine > journal > capabilities > plan > diff, each on a
+  bounded-fill track that honors its minimum height (3/3/4/3/3 rows; the
+  capabilities track is taller to carry its hint-row headroom) and scales
+  proportionally when the body runs short — a box is never clipped away,
+  its content elides inside the still-closed borders.
+- **Closed borders at every row**: every `╭` meets a `╮`, every `╰` meets
+  a `╯`, and every rendered row is exactly the terminal width, at all
+  three sizes.
+- **Island elision**: when a box narrows, the title and right-border
+  islands ellipsis-trim (a cut reserves a cell for `…`) and then drop
+  whole islands right-to-left; bottom buttonbars drop the position
+  counter first, then trailing buttons, keeping the title island last.
+  Corners never yield: degenerate widths fall back to plain closed
+  corners.
+- **Update-hint placement**: a surfaced update hint rides the
+  capabilities band body when the band has room; on the stacked home the
+  persistent `u update` buttonbar button advertises it (at 80x24 the
+  stacked band may clip the hint body — the button and the header context
+  line keep the update reachable).
+
+Box anatomy (`Shell.Box`): the title is an island inside the top border
+run (`╭─┐1 engine┌──…`), an optional right island carries counters and
+badges (`──┐2/41┌─╮`), the bottom border doubles as the box's buttonbar
+(`╰┘↑↓ scroll└┘r refresh└──┘1/41└╯`), and overflow renders a block
+scrollbar hugging the right border (`▲█▏▼`). Tab digits in titles are
+plain live keycaps matching the strip order — the real 1..7 switch keys
+(1-based over the tab strip; the strip IS the keymap). Superscript digits
+stay reserved for toggle keys, so a title only ever advertises keys that
+exist. Every color arrives as a theme-role style from the caller; the
+builder hardcodes none (role inventory in docs/theme.md).
+
 ## CLI output wires (lane b5 hard-cut schemas)
 
 `Workstation.CLI.Output` defines exactly one schema per command; the Lua

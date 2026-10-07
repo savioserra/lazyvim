@@ -46,6 +46,18 @@ plan.
 | nvim | — | unchanged: follows the Omarchy desktop theme |
 | term_ui (Elixir TUI + daemon) | `palette` | shipped mirror `Workstation.Core.Theme.Tokens` with tests: the daemon `theme.resolve` overlay applies role sets over it (docs/elixir.md, daemon wire), and the CLI TUI theme resolver mirrors the same palette (pinned by `theme_test.exs` "base path mirrors the core tokens palette exactly") |
 
+## TUI box anatomy note
+
+The TUI's btop-style box anatomy (`Workstation.CLI.TUI.Shell.Box`, hard
+contracts in docs/elixir.md "TUI application shell") is role-keyed end to
+end: borders and island connectors = `chrome`, keycaps in title islands
+and border buttonbars = `shortcut`, active tab and label highlights =
+`accent`, selection = the `selected_bg`/`selected_fg` pair (never
+color-alone), de-emphasis = `inactive`, and value severity/age = the
+`ramp_start`/`ramp_mid`/`ramp_end` trio (journal freshness, drift age).
+No box painter hardcodes a color, so re-branding stays a one-file edit in
+`tokens.lua`.
+
 ## Tests
 
 - `elixir/apps/core/test/workstation/core/theme/tokens_test.exs`: parity
