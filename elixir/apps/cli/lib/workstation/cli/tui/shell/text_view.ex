@@ -1,11 +1,11 @@
 defmodule Workstation.CLI.TUI.Shell.TextView do
   @moduledoc """
-  Scrollable plain-text pane behind the shell's read tabs (status, plan,
-  diff) and help: the canonical CLI render text (`Workstation.CLI.Render`),
-  split to rows and scrolled with one shared key set. The pane is a pure
-  view — the shell owns the keyboard and forwards the keys — so the TUI
-  read views can never disagree with the verb output: both render the same
-  function's text.
+  Scrollable plain-text pane behind the shell's in-box deep views (the
+  plan/diff read zooms) and help: the canonical CLI render text
+  (`Workstation.CLI.Render`), split to rows and scrolled with one shared
+  key set. The pane is a pure view — the shell owns the keyboard and
+  forwards the keys — so the TUI read views can never disagree with the
+  verb output: both render the same function's text.
 
   The pane renders as one btop box (`Shell.Box`): the tab name titles the
   border as an island, the bottom border doubles as the action bar (scroll
@@ -53,7 +53,7 @@ defmodule Workstation.CLI.TUI.Shell.TextView do
   end
 
   @doc """
-  Boxed read pane (btop anatomy): the box title island carries the tab
+  Boxed read pane (btop anatomy): the box title island carries the box
   digit + name, `:right` renders the counter/badge island on the top
   border, the bottom border is the action bar (`↑↓ scroll` and
   `r refresh` buttons with the n/total position counter) and overflow

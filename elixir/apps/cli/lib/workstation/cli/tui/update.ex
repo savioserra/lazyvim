@@ -30,7 +30,11 @@ defmodule Workstation.CLI.TUI.Update do
   Anatomy: ONE full-screen rounded box — `update` island + destination in
   the top border, step + failure counters in the top-right islands, the
   phase's buttonbar on the bottom border, and the step table inset inside
-  the box.
+  the box. The chain is armed by the typed-confirm gate (spec §2.3, the
+  same contract as the apply screen): the screen opens idle (`a confirm`
+  buttonbar), `a` opens the dialog, the operator types the verb
+  (`update`) and Enter starts the chain — a mutating op never fires from
+  a bare keystroke.
 
   The passive availability indicator (supervisor-directed engine scope)
   fires `update.check` asynchronously on open and after every completed
@@ -42,7 +46,7 @@ defmodule Workstation.CLI.TUI.Update do
   use TermUI.Elm
 
   alias TermUI.{Command, Event, Frame, Layout, Runtime, Style}
-  alias TermUI.Widget.{Helpers, Table}
+  alias TermUI.Widget.{Dialog, Helpers, Table}
   alias TermUI.Widget.Table.Column
   alias TermUI.Widget.Toast.Manager
 
@@ -52,6 +56,7 @@ defmodule Workstation.CLI.TUI.Update do
     :destination,
     :steps,
     :table,
+    :dialog,
     :toasts,
     :phase,
     :run,
@@ -65,6 +70,7 @@ defmodule Workstation.CLI.TUI.Update do
     :destination,
     :steps,
     :table,
+    :dialog,
     :toasts,
     :phase,
     :run,
@@ -74,10 +80,12 @@ defmodule Workstation.CLI.TUI.Update do
     :check,
     :update_hint,
     :tui_caller,
-    :toast_ms
+    :toast_ms,
+    # The typed-confirm gate's input buffer (dialog phase only; spec §2.3).
+    typed: ""
   ]
 
-  @type phase :: :running | :done
+  @type phase :: :ready | :dialog | :running | :done
   @type step :: String.t()
   @type run_token :: reference()
   @type op_ref :: String.t() | nil
@@ -90,6 +98,7 @@ defmodule Workstation.CLI.TUI.Update do
           destination: String.t(),
           steps: steps(),
           table: Table.t(),
+          dialog: Dialog.t() | nil,
           toasts: Manager.t(),
           phase: phase(),
           run: %{ref: run_token(), op_ref: op_ref()} | nil,
@@ -99,10 +108,18 @@ defmodule Workstation.CLI.TUI.Update do
           check: (() -> {:ok, map()} | {:error, term()}),
           update_hint: UpdateHint.hint() | nil,
           tui_caller: pid() | nil,
-          toast_ms: pos_integer()
+          toast_ms: pos_integer(),
+          typed: String.t()
         }
 
   # Footer grammar renders as buttonbar islands (see footer_buttons/1).
+
+  # The typed-confirm verb (spec §2.3): what the operator must type to arm
+  # the chain; compared case- and whitespace-insensitively.
+  @confirm_verb "update"
+  # The buffer cap — comfortably longer than the verb, short enough that a
+  # stuck key cannot run the echo out of the dialog.
+  @typed_max 16
 
   @doc "Lifecycle steps in execution order (docs/capabilities.md)."
   @spec steps() :: [step()]
@@ -137,8 +154,12 @@ defmodule Workstation.CLI.TUI.Update do
       steps: steps,
       table: Table.init(rows: steps, columns: columns(), row_id: "id", selection_mode: :none),
       toasts: Manager.new(id: :update_toasts),
-      phase: :running,
+      # The chain arms behind the typed-confirm gate (spec §2.3) — the
+      # screen boots idle; `a` opens the gate dialog, typing the verb and
+      # Enter starts the chain.
+      phase: :ready,
       run: nil,
+      dialog: confirm_dialog(destination),
       theme: Keyword.fetch!(opts, :theme),
       dimensions: Keyword.fetch!(opts, :dimensions),
       executor: Keyword.get(opts, :executor, &Executor.update_executor/1),
@@ -148,11 +169,10 @@ defmodule Workstation.CLI.TUI.Update do
       toast_ms: Keyword.get(opts, :toast_ms, 5_000)
     }
 
-    # The chain and the availability check are init effects: the step list
-    # starts moving and the indicator consults the daemon without any user
-    # input, mirroring `workstation update` semantics.
-    {state, chain_commands} = start_chain(state)
-    {state, chain_commands ++ check_commands(state)}
+    # The availability check is the init effect (the chain itself waits
+    # behind the gate): the indicator consults the daemon without any
+    # user input, mirroring `workstation update` semantics.
+    {state, check_commands(state)}
   end
 
   @doc "Same event normalization contract as the apply screen."
@@ -168,6 +188,55 @@ defmodule Workstation.CLI.TUI.Update do
     do: {:msg, {:resize, width, height}}
 
   def event_to_msg(_event, _state), do: :ignore
+
+  @impl TermUI.Elm
+  def update({:text, "a"}, %{phase: :ready} = state),
+    do: %{state | phase: :dialog, typed: ""} |> put_dialog()
+
+  # The dialog's single cancel button is navigable; the screen keeps its
+  # own typed-confirm/Escape contract and ignores button activation.
+  def update({:key, key}, %{phase: :dialog} = state)
+      when key in [:up, :down, :left, :right, :tab] do
+    {dialog, _messages} = Dialog.update(Event.key(key), state.dialog)
+    %{state | dialog: dialog}
+  end
+
+  # Enter is the typed gate: the buffer must BE the verb (case- and
+  # whitespace-insensitive) to arm the chain; anything else stays put so a
+  # mistyped verb can be corrected in place (backspace) or cancelled.
+  def update({:key, :enter}, %{phase: :dialog, typed: typed} = state) do
+    if String.downcase(String.trim(typed)) == @confirm_verb do
+      start_chain(state)
+    else
+      state
+    end
+  end
+
+  def update({:key, :backspace}, %{phase: :dialog} = state) do
+    dropped = String.slice(state.typed, 0, max(String.length(state.typed) - 1, 0))
+    %{state | typed: dropped} |> put_dialog()
+  end
+
+  # Cancel: `n` is reserved even mid-buffer (the footer advertises it),
+  # so it must precede the printable-buffer clause.
+  def update({:text, "n"}, %{phase: :dialog} = state), do: %{state | phase: :ready, typed: ""}
+
+  # Every printable character feeds the confirm buffer (the verb echo in
+  # the dialog); multi-char text events are not keystrokes — ignored.
+  def update({:text, ch}, %{phase: :dialog, typed: typed} = state)
+      when is_binary(ch) and byte_size(ch) == 1 and ch != "\n" and ch != "\r" and ch != "\t" and
+             ch != " " do
+    if String.length(typed) < @typed_max do
+      %{state | typed: typed <> ch} |> put_dialog()
+    else
+      state
+    end
+  end
+
+  def update({:key, :escape}, %{phase: :dialog} = state),
+    do: %{state | phase: :ready, typed: ""}
+
+  def update({:dialog_cancel, :cancel}, state), do: %{state | phase: :ready, typed: ""}
 
   @impl TermUI.Elm
   def update({:update_event, ref, %{"type" => "run.started", "op_ref" => op_ref}},
@@ -201,21 +270,14 @@ defmodule Workstation.CLI.TUI.Update do
     %{state | update_hint: UpdateHint.fold(verdict)}
   end
 
-  # Re-run the update flow from the finished screen: only offered while
-  # the indicator is showing (the `[u]` affordance), never while running.
+  # Re-run the update flow from the finished screen: the [u] affordance
+  # resets the step list and opens the typed-confirm gate — the re-run is
+  # as armed as the first run (only offered while the indicator shows).
   def update({:text, "u"}, %{phase: :done, update_hint: hint} = state) when hint != nil do
     steps = Enum.map(state.steps, &%{&1 | "status" => "pending"})
 
-    state = %__MODULE__{
-      state
-      | steps: steps,
-        table: Table.set_rows(state.table, steps),
-        phase: :running,
-        run: nil
-    }
-
-    {state, commands} = start_chain(state)
-    {state, commands}
+    %{state | steps: steps, table: Table.set_rows(state.table, steps), phase: :dialog, typed: ""}
+    |> put_dialog()
   end
 
   # Abort: forwards op.abort with the stream token; the daemon settles the
@@ -257,9 +319,29 @@ defmodule Workstation.CLI.TUI.Update do
       _ ->
         Helpers.frame([], {width, height})
         |> Helpers.compose(Layout.new({width, height}), fn dims -> screen_frame(state, dims) end)
+        |> overlay_dialog(state)
         |> overlay_toasts(state)
     end
   end
+
+  # The gate dialog floats centered above the composed screen; 1-based
+  # overlay coordinates are Layout rects (0-based) + 1.
+  defp overlay_dialog(frame, %{phase: :dialog} = state) do
+    {width, height} = state.dimensions
+    dialog_width = width |> min(64) |> max(24)
+    dialog_height = 5
+    x = div(max(width - dialog_width, 0), 2)
+    y = div(max(height - dialog_height, 0), 2)
+
+    Frame.overlay(
+      frame,
+      Dialog.view(state.dialog, {dialog_width, dialog_height}),
+      x + 1,
+      y + 1
+    )
+  end
+
+  defp overlay_dialog(frame, _state), do: frame
 
   # §1.6: at shell scale the run floats as a boxed step panel over the
   # living dashboard (the shell hands its mirror in as the underlay) —
@@ -303,6 +385,15 @@ defmodule Workstation.CLI.TUI.Update do
     [[{"updating", bold_role(state, :accent)}]] ++ key_islands(state, x: "abort", q: "detach")
   end
 
+  defp footer_buttons(%{phase: :dialog} = state),
+    do: key_islands(state, enter: "confirm update", n: "cancel", q: "quit")
+
+  defp footer_buttons(%{phase: :ready, update_hint: hint} = state) when hint != nil do
+    key_islands(state, a: "confirm", q: "quit") ++ [[{UpdateHint.text(hint), bold_role(state, :accent)}]]
+  end
+
+  defp footer_buttons(%{phase: :ready} = state), do: key_islands(state, a: "confirm", q: "quit")
+
   defp footer_buttons(%{phase: :done, update_hint: hint} = state) when hint != nil do
     key_islands(state, q: "quit") ++ [[{UpdateHint.text(hint), bold_role(state, :accent)}]]
   end
@@ -310,10 +401,11 @@ defmodule Workstation.CLI.TUI.Update do
   defp footer_buttons(%{phase: :done} = state), do: key_islands(state, q: "quit")
 
   # One island per key: the cap rides the bold accent slot, the label
-  # follows plain — btop's border-button grammar.
+  # follows the theme's text role — btop's border-button grammar (labels
+  # are text-role, never unstyled literals).
   defp key_islands(state, pairs) do
     Enum.map(pairs, fn {cap, label} ->
-      [{Atom.to_string(cap), bold_role(state, :accent)}, {" #{label}", Style.new()}]
+      [{Atom.to_string(cap), bold_role(state, :accent)}, {" #{label}", role_style(state, :text)}]
     end)
   end
 
@@ -339,8 +431,28 @@ defmodule Workstation.CLI.TUI.Update do
         {:error, reason} -> {:chain_done, ref, {:error, inspect(reason, pretty: false)}}
       end)
 
-    {%{state | phase: :running, run: %{ref: ref, op_ref: nil}}, [command]}
+    {%{state | phase: :running, run: %{ref: ref, op_ref: nil}, typed: ""}, [command]}
   end
+
+  ## typed-confirm dialog (spec §2.3)
+
+  # The gate dialog: the echo line (`_` is the caret) and one inert
+  # cancel button — YES is armed by the typed verb + Enter, not by button
+  # navigation. Rebuilt on every buffer change so the echo is live.
+  defp confirm_dialog(_destination, typed \\ "") do
+    Dialog.init(
+      title: "Confirm update",
+      content: [
+        "Run the update chain (pull, bootstrap, apply, sync, verify)?",
+        "Type #{@confirm_verb} to confirm: #{typed}_"
+      ],
+      buttons: [%{id: :cancel, label: "cancel (Esc)", message: :dialog_cancel}],
+      dismiss_message: :dialog_cancel
+    )
+  end
+
+  defp put_dialog(%{destination: destination, typed: typed} = state),
+    do: %{state | dialog: confirm_dialog(destination, typed)}
 
   defp finish_run(state, :ok) do
     {toasts, commands} =

@@ -99,6 +99,8 @@ defmodule Workstation.CLI.Router do
       description: "workstation engine front end: read verbs report, lifecycle verbs mutate.",
       allow_unknown_args: false,
       parse_double_dash: true,
+      # Bare-verb (TUI shell) options: the boot dashboard layout pin.
+      options: shell_options(),
       subcommands: [
         status: [
           name: "status",
@@ -203,6 +205,20 @@ defmodule Workstation.CLI.Router do
     )
   end
 
+  # Boot options of the bare verb's TUI shell: `--preset N` pins the
+  # dashboard's opening layout (0 full mosaic, 1 audit, 2 minimal; the
+  # dispatch validates the number and fails with the shared stderr
+  # contract). The TUI-only surface never touches the headless verbs.
+  defp shell_options do
+    [
+      preset: [
+        value_name: "N",
+        long: "--preset",
+        help: "boot dashboard layout: 0 full mosaic (default), 1 audit, 2 minimal"
+      ]
+    ]
+  end
+
   defp read_options do
     [
       home: [
@@ -274,9 +290,28 @@ defmodule Workstation.CLI.Router do
   defp dispatch_from_result(result) do
     if usable_terminal?() do
       home = resolve_home(result)
-      TUI.Shell.DaemonEntry.run(destination: home)
+      preset = parse_preset(result)
+      TUI.Shell.DaemonEntry.run(destination: home, preset: preset)
     else
       {:ok, IO.puts(Optimus.help(parser()))}
+    end
+  end
+
+  # The boot preset: default 0; a malformed value is a usage error (the
+  # parser accepted any string — the 0..2 domain is the dispatch's job).
+  defp parse_preset(result) do
+    case result.options[:preset] do
+      nil ->
+        0
+
+      value ->
+        case Integer.parse(value) do
+          {n, ""} when n in 0..2 ->
+            n
+
+          _other ->
+            fail(2, "error: --preset must be 0, 1, or 2")
+        end
     end
   end
 

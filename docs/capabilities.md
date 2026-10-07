@@ -256,7 +256,13 @@ owner. Long ops stream structured events (`run.started`/`step.started`/
 the headless lines and the TUI rows render; `op.abort` cancels the running
 op at its NEXT STEP BOUNDARY (never mid-step — a boundary is the only
 honest cancellation point for a lock-holding chain) and reports `aborted`;
-detaching (`q`) lets the daemon finish without a viewer. The daemon also
+detaching (`q`) lets the daemon finish without a viewer. Recorded TUI
+deferrals: the abort key forwards `op.abort` with the stream's `op_ref`,
+which the screens learn from the `run.started` frame — an abort pressed
+before that first frame is a recorded no-op (the key is inert, the run
+continues) — and the TUI renders run/step boundaries only, so
+`apply.run`'s entry-level progress and `run.log` tails stay deferred
+until core applier hooks exist (core/ is frozen by contract). The daemon also
 serves the read-only `update.check` — `git ls-remote origin` vs local HEAD
 on the install repo the update verb pulls, 5 s bound, 10-minute TTL cache —
 answering `up_to_date`, `behind{local,remote,remote_ref}` or

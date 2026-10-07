@@ -57,6 +57,14 @@ defmodule Workstation.CLI.TUI.ApplyTest do
 
   defp start_apply(extra \\ []), do: start_screen!(Apply, screen_opts(extra))
 
+  # Arms the run through the typed-confirm gate (spec §2.3): `a` opens
+  # the gate, the typed verb arms it, Enter fires.
+  defp arm(runtime) do
+    send_text(runtime, "a")
+    type_text(runtime, "apply")
+    send_key(runtime, :enter)
+  end
+
   # Layout with rows: 12: box borders 1/12 (title + counters on 1, phase
   # buttonbar on 12), table header row 2, entries 3-5; the confirm dialog
   # box overlays rows 4-8; the newest toast box overlays rows 10-12. The
@@ -157,11 +165,27 @@ defmodule Workstation.CLI.TUI.ApplyTest do
 
       assert frame |> Frame.row_text(4) =~ "Confirm apply"
       assert frame |> Frame.row_text(5) =~ "Apply 3 change(s) to #{@destination}?"
-      assert frame |> Frame.row_text(7) =~ "[ Yes ]"
-      assert frame |> Frame.row_text(7) =~ "[ No ]"
-      assert frame |> Frame.row_text(12) =~ "y confirm apply"
+      assert frame |> Frame.row_text(6) =~ "Type apply to confirm: _"
+      assert frame |> Frame.row_text(12) =~ "enter confirm apply"
       assert frame |> Frame.row_text(12) =~ "n cancel"
       assert frame |> Frame.row_text(12) =~ "q quit"
+    end
+
+    test "the buffer echoes keystrokes and a wrong verb never arms" do
+      runtime = start_apply()
+      send_text(runtime, "a")
+      type_text(runtime, "upda")
+
+      frame = latest_frame()
+      assert frame |> Frame.row_text(6) =~ "Type apply to confirm: upda_"
+
+      type_text(runtime, "te")
+      send_key(runtime, :enter)
+      frame = latest_frame()
+
+      # "update" is the wrong verb on the apply screen: the gate stays up.
+      assert frame |> Frame.row_text(4) =~ "Confirm apply"
+      refute frame |> Frame.row_text(11) =~ "Applied"
     end
 
     test "n cancels back to ready" do
@@ -198,8 +222,7 @@ defmodule Workstation.CLI.TUI.ApplyTest do
           end
         )
 
-      send_text(runtime, "a")
-      send_text(runtime, "y")
+      arm(runtime)
 
       assert_receive {:executor_called, entries, generation}, 2_000
       # The request-map contract (b8): the executor sees what the daemon op
@@ -217,8 +240,7 @@ defmodule Workstation.CLI.TUI.ApplyTest do
     test "executor failure reports an error toast and keeps the tree green" do
       runtime = start_apply(executor: fn _entries -> {:error, "engine refused"} end)
 
-      send_text(runtime, "a")
-      send_text(runtime, "y")
+      arm(runtime)
 
       frame = latest_frame()
       assert frame |> Frame.row_text(11) =~ "× Apply failed: engine refused"
@@ -227,8 +249,7 @@ defmodule Workstation.CLI.TUI.ApplyTest do
     test "toast expires through its own timer command" do
       runtime = start_apply(toast_ms: 30)
 
-      send_text(runtime, "a")
-      send_text(runtime, "y")
+      arm(runtime)
       # toast_ms 30 expires inside the drain's quiet window, so the first
       # frame is already post-expiry; force a redraw and assert on that.
       _visible = latest_frame()
@@ -299,10 +320,31 @@ defmodule Workstation.CLI.TUI.ApplyTest do
       state
     end
 
+    # Non-command clauses return a bare state, command clauses a
+    # {state, commands} tuple — the screen's update/2 contract.
+    defp send_msg(state, msg) do
+      case Apply.update(msg, state) do
+        {state, _commands} -> state
+        %Apply{} = state -> state
+      end
+    end
+
+    # Arms a run through the gate exactly as an operator would: a, the
+    # verb, Enter.
+    defp armed_state do
+      state = send_msg(state(), {:text, "a"})
+
+      state =
+        Enum.reduce(String.graphemes("apply"), state, fn ch, acc ->
+          send_msg(acc, {:text, ch})
+        end)
+
+      {state, [%Command{kind: :async}]} = Apply.update({:key, :enter}, state)
+      state
+    end
+
     test "the run is one async op; run.started captures the stream token" do
-      state = state()
-      state = Apply.update({:text, "a"}, state)
-      {state, [%Command{kind: :async}]} = Apply.update({:text, "y"}, state)
+      state = armed_state()
       %{run: %{ref: ref, op_ref: nil}} = state
       assert state.phase == :running
 
@@ -316,9 +358,7 @@ defmodule Workstation.CLI.TUI.ApplyTest do
     end
 
     test "apply_done settles the run with the token-guarded toast" do
-      state = state()
-      state = Apply.update({:text, "a"}, state)
-      {state, [%Command{kind: :async}]} = Apply.update({:text, "y"}, state)
+      state = armed_state()
       %{run: %{ref: ref}} = state
 
       {state, commands} = Apply.update({:apply_done, ref, :ok}, state)
@@ -330,12 +370,7 @@ defmodule Workstation.CLI.TUI.ApplyTest do
     end
 
     test "executor failure reports an error toast" do
-      state = %{state() | executor: fn _request -> {:error, "engine refused"} end}
-
-      state = Apply.update({:text, "a"}, state)
-
-      {state, [%Command{kind: :async}]} = Apply.update({:text, "y"}, state)
-
+      state = armed_state()
       %{run: %{ref: ref}} = state
       {state, _commands} = Apply.update({:apply_done, ref, {:error, "engine refused"}}, state)
 
@@ -344,9 +379,7 @@ defmodule Workstation.CLI.TUI.ApplyTest do
     end
 
     test "stale events and results from a superseded run are dropped" do
-      state = state()
-      state = Apply.update({:text, "a"}, state)
-      {state, [%Command{kind: :async}]} = Apply.update({:text, "y"}, state)
+      state = armed_state()
 
       stale_event = %{"type" => "run.started", "op" => "apply.run", "op_ref" => "op-x"}
 

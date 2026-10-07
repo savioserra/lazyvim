@@ -637,20 +637,23 @@ as unusable — pass `--headless` there.
 
 A bare `workstation` on a usable terminal opens the **TUI application
 shell** (`Workstation.CLI.TUI.Shell`) — one full-screen app instead of a
-prompt. The shell is a second Elm component (`TermUI.Elm`) that owns a tab
-strip (`1..7` tabs, `←/→` switch — on the capabilities tab they drill
-instead, `?` help-and-back, `q` quit) and renders every
-read view in-app: `status` and `plan` (the verb text, scrollable), `diff`,
-the **capabilities browser** (domain-grouped rollups, `↑/↓` move, `enter`
-or `→` expands a rollup down to packages then file rows, `←` or
-`backspace` collapses), the
-**daemon health pane** (a live `status.run` probe: reachability, engine,
-destination, platform, package/graph/journal counts — the status wire
-exposes no pid/uptime, and the update verdict lives on the home tab), and
-`help`. Read tabs load over the client/daemon protocol with the same
+prompt. The shell is a second Elm component (`TermUI.Elm`) whose mosaic IS
+the app (no tabs): a keycap toggle strip on the top row (`1`–`6` toggle
+the boxes — a hidden box renders a dimmed `[n] label` island, a visible
+one glows; a strip click is that digit keypress), `p`/`P` cycling the
+layout presets (full mosaic / audit / minimal, wrap-around; `--preset N`
+pins the boot layout), `?` help-and-back, `q` quit — and the six-box
+dashboard as the entire app: `1 engine` (identity + `●` liveness badge),
+`2 capabilities` (the domain-grouped browser: `↑/↓` move, `enter` or `→`
+expands a rollup down to packages then file rows, `←` or `backspace`
+collapses — in-pane, never a tab switch), `3 journal` (generation,
+applied-at, age meter), `4 plan` and `5 diff` (the what-changed summaries
+with would-change/pending badges), `6 status` (the probe's deep rows).
+Enter toggles a box's in-box deep view (the read zoom), `r` refreshes the
+reads over the client/daemon protocol with the same
 daemon ops as the verbs (`Workstation.CLI.DaemonClient` — the daemon stays
 the only source of live state; `Workstation.CLI.Core` is the `--input`
-offline evaluator and is not on the shell path) and every pane has
+offline evaluator and is not on the shell path) and every box has
 explicit loading, empty, error and daemon-disconnected states.
 
 Mouse: `TUI.run` writes the SGR tracking bracket itself (`?1000` +
@@ -658,19 +661,24 @@ Mouse: `TUI.run` writes the SGR tracking bracket itself (`?1000` +
 must never leave the terminal emitting mouse bytes); the pinned `term_ui`
 runtime has no mouse support of its own. The shell routes `Event.Mouse`
 in `Shell.event_to_msg/2`: a left press on a strip island is that
-island's digit keypress (one spelling with the keyboard; the op
-pseudo-tab is not digit-addressable by key either, so clicks on it stay
-inert), the wheel maps to the focused pane's `↑/↓` wherever the pointer
+island's digit keypress (one spelling with the keyboard — toggle,
+preset cycle and help all route through the same update path), the wheel
+maps to the focused pane's `↑/↓` wherever the pointer
 sits — over chrome included — and every other mouse event is ignored.
 The bracket is pane-local, so under tmux mouse capture applies only
 while the shell runs: after exit (clean or crashed) the terminal stops
 emitting mouse bytes and tmux/terminal selection behaves as before.
 
-`apply` and `update` open as **screens inside the app** (the shell embeds
-`Workstation.CLI.TUI.Apply`/`Update` in a body rect and forwards keys and
-resizes), keeping their daemon-event-driven behavior — the screens never
-drive steps, `x` aborts at the next boundary, `q` detaches and a running op
-keeps running daemon-side. The standalone entry points (`workstation
+`apply` and `update` open as **overlays inside the app** (the shell embeds
+`Workstation.CLI.TUI.Apply`/`Update` over the dashboard and forwards keys
+and resizes — §1.6 the run/done panel floats over the living dashboard,
+whose wires keep landing in the cache underneath), keeping their
+daemon-event-driven behavior — the screens never drive steps, `x` aborts
+at the next boundary, `q` detaches and a running op keeps running
+daemon-side. Both mutating screens arm behind the typed-confirm gate
+(spec §2.3): the op fires only after the operator types the verb
+(`apply`/`update`) and Enter — never from a bare keystroke. The
+standalone entry points (`workstation
 apply`, `workstation update` from a shell) are unchanged and keep their
 text-first flows for scripts; the shell only adds the in-app route to the
 same components. The TTY contract above governs the bare verb too: a
@@ -679,8 +687,9 @@ hang. Tests drive the shell through `TermUI.Runtime` with fake wires and
 recorded event streams, so every state is replayable.
 
 The screens themselves are event-driven clients: the apply screen sends
-ONE `apply.run` op on confirm and the update screen ONE `update.run`
-sub-chain op on open; rows transition (`pending → running → ok/failed/
+ONE `apply.run` op on the typed confirm and the update screen ONE
+`update.run` sub-chain op likewise (the update screen boots idle — the
+chain never fires on open); rows transition (`pending → running → ok/failed/
 skipped`) on the daemon's event frames — the screens never drive steps —
 and the op task runs outside the Elm loop (`TermUI.Command.async/2`) with
 event frames queued back via `TermUI.Runtime.send_message/2`, so every
@@ -704,9 +713,10 @@ Safety guards (fail closed, never touch the operator's state):
   launcher shim rebases both env vars to the same destination, so verbs
   address the intended home either way); there is no marker/refusal
   machinery on the CLI — the fused front door serves real homes, and the
-  mutation gates ARE the contract: the TUI confirm screen (which echoes the
-  collected plan and applies only the requested generation) or an explicit
-  `--headless`;
+  mutation gates ARE the contract: the TUI typed-confirm gate (the dialog
+  echoes the collected plan and the run arms only when the operator types
+  the verb — `apply`/`update` — and Enter; it applies only the requested
+  generation) or an explicit `--headless`;
 - read-side evaluation brackets `WORKSTATION_HOME` around the core and
   restores the previous value, so the core reads exactly the selected home
   and never the operator's state;
@@ -723,21 +733,21 @@ width sweep (every width 80..240 at heights 24/40/55/83; a pinned
 3-size matrix once missed whole width classes, e.g. the even mosaic
 split at 204 columns, where content rows dropped a border column):
 
-- **Width switch**: at >= 110 columns the home is the full 2x2 mosaic
-  (engine+journal, plan+diff quadrants) plus the full-width capabilities
-  band; below, the five dashboard boxes stack full width in the priority
-  order engine > journal > capabilities > plan > diff, each on a
-  bounded-fill track that honors its minimum height (3/3/4/3/3 rows; the
-  capabilities track is taller to carry its hint-row headroom) and scales
-  proportionally when the body runs short — a box is never clipped away,
-  its content elides inside the still-closed borders.
+- **Width switch**: at >= 110 columns the six-box home is the slot
+  mosaic — the 2x2 quadrants (engine|journal, plan|diff) plus the two
+  full-width bottom bands (capabilities, status); below, the visible
+  boxes stack full width in the priority order engine > journal >
+  capabilities > plan > diff > status, each on a bounded-fill track that
+  honors its minimum height (3/3/4/3/3/4 rows) and scales proportionally
+  when the body runs short — a box is never clipped away, its content
+  elides inside the still-closed borders.
 - **Closed borders at every row**: every `╭` meets a `╮`, every `╰` meets
   a `╯`, and every rendered row is exactly the terminal width — and the
   border columns are IDENTICAL on border and content rows: a box's body
   rows carry both side borders on exactly the corner columns (`│ content
   │`; the right border swaps to the scrollbar glyphs while overflowing)
   at every swept size.
-- **Full-width chrome bars**: the tab strip (the top row) and the
+- **Full-width chrome bars**: the toggle strip (the top row) and the
   global footer each span every column — keycap islands ride the left
   edge and a chrome `─` filler carries the bar to the right edge (the
   strip never trails off into background blanks), with no blank cell
@@ -762,10 +772,10 @@ scrollbar `▲█▏▼` while the content overflows), and the bottom border
 doubles as the box's buttonbar (`╰┘↑↓ scroll└┘r refresh└──┘1/41└╯`).
 Title keycaps are btop's superscript digits (`Shell.keycap/1`, the
 btop_draw.cpp:87 table) in the exact no-space btop construction
-(`┐¹engine┌`), matching the strip order — the real 1..7 switch keys
-(1-based over the tab strip; the strip IS the keymap; a strip click
-sends the same digit key). Plain digits exist only as a narrow-TTY
-opt-in, never the default. Every color arrives as a theme-role style
+(`┐¹engine┌`), matching the strip order — the real 1..6 toggle keys (the
+strip IS the keymap; a strip click
+sends the same digit key that toggles the box). Every color arrives as a
+text-role or theme-role style
 from the caller; the builder hardcodes none (role inventory in
 docs/theme.md, including the per-domain `border_*` panel roles).
 

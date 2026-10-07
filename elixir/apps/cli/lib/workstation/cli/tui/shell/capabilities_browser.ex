@@ -10,9 +10,10 @@ defmodule Workstation.CLI.TUI.Shell.CapabilitiesBrowser do
 
   Pure data + view: the shell owns the keyboard and forwards messages —
   ↑↓ move, enter/→ expand, ←/backspace collapse (the shell routes the
-  arrows and backspace here only while the capabilities tab is active);
-  expansion state is keyed by outline path so a data refresh (`r`) keeps
-  the drilled-open subtree open.
+  arrows and backspace here whenever box 2 is on the dashboard, and
+  enter toggles its in-box deep view); expansion state is keyed by
+  outline path so a data refresh (`r`) keeps the drilled-open subtree
+  open.
   """
 
   alias TermUI.{Layout, Style}
@@ -268,10 +269,11 @@ defmodule Workstation.CLI.TUI.Shell.CapabilitiesBrowser do
   defp also_note(_other), do: ""
 
   @doc """
-  Render the browser as the btop split mosaic: a domains box (the tab's
-  rollup rows) and a drill box (the active domain's expanded subtree)
-  side by side, with an inspector box underneath showing the selected
-  row's detail; the drill grammar rides the inspector's border as
+  Render the browser as the btop split mosaic: a domains box (the
+  capabilities box's rollup rows) and a drill box (the active domain's
+  expanded subtree) side by side, with an inspector box underneath showing
+  the selected row's detail; the drill grammar rides the inspector's
+  border as
   buttons, position counters live in the pane borders, the cursor
   renders as the selected bg+fg pair (never color-alone) and file rows
   that would change read warn.

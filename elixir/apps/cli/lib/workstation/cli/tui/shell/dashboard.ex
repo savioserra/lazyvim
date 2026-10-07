@@ -4,8 +4,8 @@ defmodule Workstation.CLI.TUI.Shell.Dashboard do
   engine-owned boxes re-tiled by toggles and presets exactly like btop's
   `shown_boxes`:
 
-    * `1 engine` — engine identity + liveness (the daemon tab's rows and
-      `●` badge live here now);
+    * `1 engine` — engine identity + liveness (the engine box's rows and
+      `●` badge live here);
     * `2 capabilities` — domain rollup + block meters + the a/u/r
       buttonbar;
     * `3 journal` — generation/revision/applied-at (the journal read);
@@ -79,7 +79,16 @@ defmodule Workstation.CLI.TUI.Shell.Dashboard do
 
   @doc "Engine-seeded start state: preset 0, the full mosaic, nothing expanded."
   @spec new() :: t()
-  def new, do: %__MODULE__{visible: MapSet.new(@presets[0]), preset: 0, expanded: nil}
+  def new, do: new(0)
+
+  @doc """
+  Boot state pinned to a preset (the bare verb's `--preset N` flag): the
+  preset's membership is the visible set and the preset bond is live, so
+  the first p/P continues the cycle from the pinned preset.
+  """
+  @spec new(preset_id()) :: t()
+  def new(preset) when preset in 0..2,
+    do: %__MODULE__{visible: MapSet.new(Map.fetch!(@presets, preset)), preset: preset, expanded: nil}
 
   @doc "The box set in strip order."
   @spec boxes() :: [box()]

@@ -516,17 +516,19 @@ defmodule Workstation.CLI.TUI.ShellTest do
     send_text(runtime, "a")
     assert settled_frame(runtime) |> body_text() =~ "apply · #{@destination}"
 
-    # a opens the confirm dialog; y runs. The dialog documents its keys
-    # on the screen's own border buttonbar. The key event rides the
-    # screen's async loop — wait for the dialog instead of trusting one
-    # drain.
+    # a opens the typed-confirm gate; the typed verb arms, Enter fires
+    # (spec §2.3). The gate documents its keys on the screen's own border
+    # buttonbar. The key events ride the screen's async loop — wait for
+    # the dialog instead of trusting one drain.
     send_text(runtime, "a")
     frame =
       await_frame(fn frame ->
         body_text(frame) =~ "Confirm apply"
       end)
-    assert Frame.row_text(frame, 30) =~ "y confirm apply"
-    send_text(runtime, "y")
+    assert Frame.row_text(frame, 30) =~ "enter confirm apply"
+    assert Frame.row_text(frame, 30) =~ "n cancel"
+    "apply" |> String.graphemes() |> Enum.each(&send_text(runtime, &1))
+    send_key(runtime, :enter)
 
     # The run is an async executor round-trip: a single quiet window can
     # close before its answer lands (the one shell_test flake read the
@@ -886,12 +888,13 @@ defmodule Workstation.CLI.TUI.ShellTest do
         frame.width == 80 and body_text(frame) =~ "apply · #{@destination}"
       end)
 
-    # a -> dialog -> y: at 80x20 the body is 80x18 — past the float
-    # threshold, so the done panel (56x7, centered) floats and the
+    # a -> gate -> typed verb: at 80x20 the body is 80x18 — past the
+    # float threshold, so the done panel (56x7, centered) floats and the
     # dashboard mirror shows above it.
     send_text(runtime, "a")
     await_frame(fn f -> body_text(f) =~ "Confirm apply" end)
-    send_text(runtime, "y")
+    "apply" |> String.graphemes() |> Enum.each(&send_text(runtime, &1))
+    send_key(runtime, :enter)
 
     frame =
       await_frame(fn f ->

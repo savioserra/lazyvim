@@ -11,7 +11,10 @@ defmodule Workstation.CLI.TUI.Apply do
   destination, the top-right islands carry the generation + change
   counters, the bottom border is the phase's buttonbar (confirm/move keys,
   abort/detach while running, quit), and the daemon-driven plan table sits
-  inset inside the box. The apply itself is the
+  inset inside the box. The confirm gate is TYPED (spec §2.3): `a` opens
+  the dialog, the operator types the verb (`apply`) to arm it and Enter
+  starts — a plain y/n can be fat-fingered, a typed verb cannot. The apply
+  itself is the
   `:executor` callback invoked once on confirm — ONE daemon op
   (`apply.run`, generation + entries) whose task runs OUTSIDE the Elm loop
   (`Command.async/2`); the op's event frames come back through
@@ -40,7 +43,7 @@ defmodule Workstation.CLI.TUI.Apply do
   use TermUI.Elm
 
   alias TermUI.{Command, Event, Frame, Layout, Runtime, Style}
-  alias TermUI.Widget.{AlertDialog, Helpers, Table}
+  alias TermUI.Widget.{Dialog, Helpers, Table}
   alias TermUI.Widget.Table.Column
   alias TermUI.Widget.Toast.Manager
 
@@ -76,7 +79,9 @@ defmodule Workstation.CLI.TUI.Apply do
     :check,
     :update_hint,
     :tui_caller,
-    :toast_ms
+    :toast_ms,
+    # The typed-confirm gate's input buffer (dialog phase only; spec §2.3).
+    typed: ""
   ]
 
   @type phase :: :ready | :dialog | :running | :done
@@ -97,10 +102,18 @@ defmodule Workstation.CLI.TUI.Apply do
           check: (() -> {:ok, map()} | {:error, term()}),
           update_hint: UpdateHint.hint() | nil,
           tui_caller: pid() | nil,
-          toast_ms: pos_integer()
+          toast_ms: pos_integer(),
+          typed: String.t()
         }
 
   # Footer grammar is rendered as buttonbar islands (see footer_buttons/1).
+
+  # The typed-confirm verb (spec §2.3): what the operator must type to arm
+  # the run; compared case- and whitespace-insensitively.
+  @confirm_verb "apply"
+  # The buffer cap — comfortably longer than the verb, short enough that a
+  # stuck key cannot run the echo out of the dialog.
+  @typed_max 16
 
   @doc """
   Default executor: the pure pre-graduation stand-in. Production runs use
@@ -168,13 +181,7 @@ defmodule Workstation.CLI.TUI.Apply do
       generation: Map.fetch!(plan, "generation"),
       entries: entries,
       table: Table.init(rows: entries, columns: columns(), row_id: "id", selection_mode: :single),
-      dialog:
-        AlertDialog.init(
-          type: :confirm,
-          title: "Confirm apply",
-          message: "Apply #{length(entries)} change(s) to #{destination}?",
-          dismiss_message: :dialog_cancel
-        ),
+      dialog: confirm_dialog(destination, entries),
       toasts: Manager.new(id: :apply_toasts),
       phase: :ready,
       run: nil,
@@ -219,19 +226,50 @@ defmodule Workstation.CLI.TUI.Apply do
   end
 
   def update({:key, key}, %{phase: :dialog} = state)
-      when key in [:up, :down, :left, :right, :tab, :enter] do
-    # Dialog buttons are navigated with the same keys; the screen keeps its
-    # own y/n/Escape contract and ignores dialog button activation messages.
-    {dialog, _messages} = AlertDialog.update(Event.key(key), state.dialog)
+      when key in [:up, :down, :left, :right, :tab] do
+    # The dialog's single cancel button is navigable; the screen keeps its
+    # own typed-confirm/Escape contract and ignores button activation.
+    {dialog, _messages} = Dialog.update(Event.key(key), state.dialog)
     %{state | dialog: dialog}
   end
 
-  def update({:text, "a"}, %{phase: :ready} = state), do: %{state | phase: :dialog}
+  # Enter is the typed gate: the buffer must BE the verb (case- and
+  # whitespace-insensitive) to arm the run; anything else stays put so a
+  # mistyped verb can be corrected in place (backspace) or cancelled.
+  def update({:key, :enter}, %{phase: :dialog, typed: typed} = state) do
+    if String.downcase(String.trim(typed)) == @confirm_verb do
+      start_run(state)
+    else
+      state
+    end
+  end
 
-  def update({:text, "y"}, %{phase: :dialog} = state), do: start_run(state)
+  def update({:key, :backspace}, %{phase: :dialog} = state) do
+    dropped = String.slice(state.typed, 0, max(String.length(state.typed) - 1, 0))
+    %{state | typed: dropped} |> put_dialog()
+  end
 
-  def update({:text, "n"}, %{phase: :dialog} = state), do: %{state | phase: :ready}
-  def update({:key, :escape}, %{phase: :dialog} = state), do: %{state | phase: :ready}
+  def update({:text, "a"}, %{phase: :ready} = state),
+    do: %{state | phase: :dialog, typed: ""} |> put_dialog()
+
+  # Cancel: `n` is reserved even mid-buffer (the footer advertises it),
+  # so it must precede the printable-buffer clause.
+  def update({:text, "n"}, %{phase: :dialog} = state), do: %{state | phase: :ready, typed: ""}
+
+  # Every printable character feeds the confirm buffer (the verb echo in
+  # the dialog); multi-char text events are not keystrokes — ignored.
+  def update({:text, ch}, %{phase: :dialog, typed: typed} = state)
+      when is_binary(ch) and byte_size(ch) == 1 and ch != "\n" and ch != "\r" and ch != "\t" and
+             ch != " " do
+    if String.length(typed) < @typed_max do
+      %{state | typed: typed <> ch} |> put_dialog()
+    else
+      state
+    end
+  end
+
+  def update({:key, :escape}, %{phase: :dialog} = state),
+    do: %{state | phase: :ready, typed: ""}
 
   # Abort: forwards op.abort with the stream token; the daemon settles the
   # op at its next boundary and the completion path paints the verdict (a
@@ -277,7 +315,7 @@ defmodule Workstation.CLI.TUI.Apply do
   def update({:term_ui_toast_expire, _manager_id, _toast_id, _token} = expire, state),
     do: %{state | toasts: Manager.expire(state.toasts, expire)}
 
-  def update({:dialog_cancel, :cancel}, state), do: %{state | phase: :ready}
+  def update({:dialog_cancel, :cancel}, state), do: %{state | phase: :ready, typed: ""}
 
   def update({:resize, width, height}, state), do: %{state | dimensions: {width, height}}
 
@@ -391,7 +429,8 @@ defmodule Workstation.CLI.TUI.Apply do
     [[{"applying", bold_role(state, :accent)}]] ++ key_islands(state, x: "abort", q: "detach")
   end
 
-  defp footer_buttons(%{phase: :dialog} = state), do: key_islands(state, y: "confirm apply", n: "cancel", q: "quit")
+  defp footer_buttons(%{phase: :dialog} = state),
+    do: key_islands(state, enter: "confirm apply", n: "cancel", q: "quit")
 
   defp footer_buttons(%{phase: :done, update_hint: hint} = state) when hint != nil do
     key_islands(state, q: "quit") ++ [[{UpdateHint.text(hint), bold_role(state, :accent)}]]
@@ -408,10 +447,11 @@ defmodule Workstation.CLI.TUI.Apply do
   end
 
   # One island per key: the cap rides the bold accent slot, the label
-  # follows plain — btop's border-button grammar.
+  # follows the theme's text role — btop's border-button grammar (labels
+  # are text-role, never unstyled literals).
   defp key_islands(state, pairs) do
     Enum.map(pairs, fn {cap, label} ->
-      [{Atom.to_string(cap), bold_role(state, :accent)}, {" #{label}", Style.new()}]
+      [{Atom.to_string(cap), bold_role(state, :accent)}, {" #{label}", role_style(state, :text)}]
     end)
   end
 
@@ -436,8 +476,29 @@ defmodule Workstation.CLI.TUI.Apply do
         {:error, reason} -> {:apply_done, ref, {:error, inspect(reason, pretty: false)}}
       end)
 
-    {%{state | phase: :running, run: %{ref: ref, op_ref: nil, outcome: nil}}, [command]}
+    {%{state | phase: :running, run: %{ref: ref, op_ref: nil, outcome: nil}, typed: ""}, [command]}
   end
+
+  ## typed-confirm dialog (spec §2.3)
+
+  # The gate dialog: the question, the buffer echo (`_` is the caret), and
+  # one inert cancel button — YES is armed by the typed verb + Enter, not
+  # by button navigation. Rebuilt on every buffer change so the echo is
+  # always the live buffer.
+  defp confirm_dialog(destination, entries, typed \\ "") do
+    Dialog.init(
+      title: "Confirm apply",
+      content: [
+        "Apply #{length(entries)} change(s) to #{destination}?",
+        "Type #{@confirm_verb} to confirm: #{typed}_"
+      ],
+      buttons: [%{id: :cancel, label: "cancel (Esc)", message: :dialog_cancel}],
+      dismiss_message: :dialog_cancel
+    )
+  end
+
+  defp put_dialog(%{destination: destination, entries: entries, typed: typed} = state),
+    do: %{state | dialog: confirm_dialog(destination, entries, typed)}
 
   defp finish_run(state) do
     {message, type} =
@@ -497,7 +558,7 @@ defmodule Workstation.CLI.TUI.Apply do
 
     Frame.overlay(
       frame,
-      AlertDialog.view(state.dialog, {dialog_width, dialog_height}),
+      Dialog.view(state.dialog, {dialog_width, dialog_height}),
       x + 1,
       y + 1
     )

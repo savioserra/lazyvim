@@ -32,7 +32,17 @@ defmodule Workstation.CLI.TUI.UpdateTest do
     ]
   end
 
-  defp start_update(extra \\ []), do: start_screen!(Update, screen_opts(extra))
+  defp start_update(extra \\ []) do
+    start_screen!(Update, screen_opts(extra))
+  end
+
+  # Arms the chain through the typed-confirm gate (spec §2.3): `a` opens
+  # the gate, the typed verb arms it, Enter fires the chain.
+  defp arm(runtime) do
+    send_text(runtime, "a")
+    type_text(runtime, "update")
+    send_key(runtime, :enter)
+  end
 
   # A chain executor that REPLAYS a recorded event list into the screen's
   # events sink, then settles with `outcome` — the deterministic-replay
@@ -56,11 +66,84 @@ defmodule Workstation.CLI.TUI.UpdateTest do
   defp chain_finished(outcome), do: %{"type" => "run.finished", "outcome" => outcome}
 
   # Layout with rows: 12: box borders 1/12 (title + counters on 1, phase
-  # buttonbar on 12), table header row 2, steps rows 3-7; the newest toast
-  # box overlays rows 10-12.
+  # buttonbar on 12), table header row 2, steps rows 3-7; the gate dialog
+  # overlays rows 4-8; the newest toast box overlays rows 10-12.
+  describe "typed-confirm gate (spec §2.3)" do
+    test "the screen boots idle: steps pending, no chain, a confirm footer" do
+      start_update()
+      frame = latest_frame()
+
+      for {step, row} <- Enum.zip(Update.steps(), 3..7) do
+        assert frame |> Frame.row_text(row) =~ step
+        assert frame |> Frame.row_text(row) =~ "pending"
+      end
+
+      assert frame |> Frame.row_text(12) =~ "a confirm"
+    end
+
+    test "a opens the gate dialog and the buffer echoes keystrokes" do
+      runtime = start_update()
+      send_text(runtime, "a")
+      type_text(runtime, "upda")
+
+      frame = latest_frame()
+
+      assert frame |> Frame.row_text(4) =~ "Confirm update"
+      assert frame |> Frame.row_text(5) =~ "Run the update chain"
+      assert frame |> Frame.row_text(6) =~ "Type update to confirm: upda_"
+      assert frame |> Frame.row_text(12) =~ "enter confirm update"
+      assert frame |> Frame.row_text(12) =~ "n cancel"
+    end
+
+    test "a wrong verb stays armed-off: enter is inert until the buffer is the verb" do
+      runtime = start_update()
+
+      send_text(runtime, "a")
+      type_text(runtime, "apply")
+      send_key(runtime, :enter)
+      _frame = latest_frame()
+
+      # Correct the buffer in place (backspace past the wrong verb) and arm.
+      Enum.each(1..5, fn _ -> send_key(runtime, :backspace) end)
+      type_text(runtime, "update")
+      send_key(runtime, :enter)
+
+      # The dry run settles fast — the transient running frame can be
+      # coalesced away, so await the settled all-ok step row: it proves
+      # the corrected verb fired (and the wrong verb never did, or the
+      # steps would have run twice over).
+      frame = await_frame(fn frame -> Frame.row_text(frame, 3) =~ "ok" end)
+      assert frame |> Frame.row_text(3) =~ "pull"
+    end
+
+    test "n and escape cancel the gate; case-insensitive verb arms" do
+      runtime = start_update()
+
+      send_text(runtime, "a")
+      send_text(runtime, "n")
+      frame = latest_frame()
+      refute frame |> Frame.row_text(4) =~ "Confirm update"
+
+      send_text(runtime, "a")
+      send_key(runtime, :escape)
+      frame = latest_frame()
+      refute frame |> Frame.row_text(4) =~ "Confirm update"
+
+      send_text(runtime, "a")
+      type_text(runtime, "UPDATE")
+      send_key(runtime, :enter)
+
+      frame = await_frame(fn frame -> Frame.row_text(frame, 3) =~ "ok" end)
+      assert frame |> Frame.row_text(3) =~ "pull"
+    end
+  end
+
   describe "step list run" do
     test "all steps pass and the success toast is token-guarded" do
-      start_update()
+      runtime = start_update()
+      _ready = latest_frame()
+      arm(runtime)
+
       frame = latest_frame()
 
       assert frame |> Frame.row_text(1) =~ "update · #{@destination}"
@@ -79,22 +162,26 @@ defmodule Workstation.CLI.TUI.UpdateTest do
     test "abort on first failure: failing step marked, remaining skipped" do
       [pull, bootstrap, apply, sync, verify] = Update.steps()
 
-      start_update(
-        executor:
-          replay_executor(
-            [
-              run_started("op-1"),
-              step_started(pull),
-              step_ok(pull),
-              step_started(bootstrap),
-              step_ok(bootstrap),
-              step_started(apply),
-              step_failed(apply),
-              chain_finished("failed")
-            ],
-            {:error, "apply_refused: engine refused"}
-          )
-      )
+      runtime =
+        start_update(
+          executor:
+            replay_executor(
+              [
+                run_started("op-1"),
+                step_started(pull),
+                step_ok(pull),
+                step_started(bootstrap),
+                step_ok(bootstrap),
+                step_started(apply),
+                step_failed(apply),
+                chain_finished("failed")
+              ],
+              {:error, "apply_refused: engine refused"}
+            )
+        )
+
+      _ready = latest_frame()
+      arm(runtime)
 
       # Same async sink contract: chain_finished (row 7 skipped) is the
       # last event to render.
@@ -120,18 +207,22 @@ defmodule Workstation.CLI.TUI.UpdateTest do
     test "an aborted chain renders the un-settled steps skipped" do
       [pull, _bootstrap, _apply, sync, verify] = Update.steps()
 
-      start_update(
-        executor:
-          replay_executor(
-            [
-              run_started("op-2"),
-              step_started(pull),
-              step_ok(pull),
-              chain_finished("aborted")
-            ],
-            {:error, "aborted: update aborted at a step boundary"}
-          )
-      )
+      runtime =
+        start_update(
+          executor:
+            replay_executor(
+              [
+                run_started("op-2"),
+                step_started(pull),
+                step_ok(pull),
+                chain_finished("aborted")
+              ],
+              {:error, "aborted: update aborted at a step boundary"}
+            )
+        )
+
+      _ready = latest_frame()
+      arm(runtime)
 
       # The chain events land through the screen's async events sink —
       # wait for the LAST event (chain_finished flipping sync/verify to
@@ -190,22 +281,37 @@ defmodule Workstation.CLI.TUI.UpdateTest do
 
   describe "pure update/2 contract" do
     defp state do
-      {state, _chain_start} =
-        Update.init(
-          destination: @destination,
-          theme: Theme.base_colors(:dark),
-          dimensions: {64, 12},
-          toast_ms: 1_000,
-          # The pure contract tests need a succeeding executor: the default
-          # is the daemon-orchestrated path, which refuses without a daemon.
-          executor: &Update.dry_run_executor/1,
-          check: fn -> {:ok, %{"status" => "up_to_date"}} end
-        )
+      Update.init(
+        destination: @destination,
+        theme: Theme.base_colors(:dark),
+        dimensions: {64, 12},
+        toast_ms: 1_000,
+        # The pure contract tests need a succeeding executor: the default
+        # is the daemon-orchestrated path, which refuses without a daemon.
+        executor: &Update.dry_run_executor/1,
+        check: fn -> {:ok, %{"status" => "up_to_date"}} end
+      )
+      |> elem(0)
+    end
 
+    # Arms a chain through the gate exactly as an operator would: a,
+    # the verb, Enter. Non-command clauses return a bare state, command
+    # clauses a {state, commands} tuple — the screen's update/2 contract.
+    defp send_msg(state, msg) do
+      case Update.update(msg, state) do
+        {state, _commands} -> state
+        %Update{} = state -> state
+      end
+    end
+
+    defp armed_state do
+      state = send_msg(state(), {:text, "a"})
+      state = Enum.reduce(String.graphemes("update"), state, fn ch, acc -> send_msg(acc, {:text, ch}) end)
+      {state, [%Command{kind: :async}]} = Update.update({:key, :enter}, state)
       state
     end
 
-    test "init starts the chain and the check as async effects" do
+    test "init boots idle: no chain, only the availability check as an effect" do
       {init_state, commands} =
         Update.init(
           destination: @destination,
@@ -215,12 +321,59 @@ defmodule Workstation.CLI.TUI.UpdateTest do
           check: fn -> {:ok, %{"status" => "up_to_date"}} end
         )
 
-      assert %{run: %{ref: _ref, op_ref: nil}} = init_state
-      assert [%Command{kind: :async}, %Command{kind: :async}] = commands
+      assert %Update{phase: :ready, run: nil, typed: ""} = init_state
+      assert Enum.all?(init_state.steps, &(&1["status"] == "pending"))
+      assert [%Command{kind: :async}] = commands
+    end
+
+    test "the gate fires a chain only when the buffer is the verb" do
+      base =
+        Update.init(
+          destination: @destination,
+          theme: Theme.base_colors(:dark),
+          dimensions: {64, 12},
+          toast_ms: 1_000,
+          check: fn -> {:ok, %{"status" => "up_to_date"}} end
+        )
+        |> elem(0)
+
+      assert %Update{phase: :dialog, typed: ""} = state = Update.update({:text, "a"}, base)
+
+      # A wrong verb never fires: enter on a non-verb buffer is inert.
+      wrong =
+        Enum.reduce(String.graphemes("apply"), state, fn ch, acc -> send_msg(acc, {:text, ch}) end)
+
+      assert %Update{phase: :dialog} = wrong
+      assert %Update{phase: :dialog} = Update.update({:key, :enter}, wrong)
+
+      # The verb arms; case-insensitively.
+      right =
+        Enum.reduce(String.graphemes("Update"), state, fn ch, acc -> send_msg(acc, {:text, ch}) end)
+
+      assert {%Update{phase: :running, run: %{ref: _ref}}, [%Command{kind: :async}]} =
+               Update.update({:key, :enter}, right)
+    end
+
+    test "n and escape cancel the gate without side effects" do
+      base =
+        Update.init(
+          destination: @destination,
+          theme: Theme.base_colors(:dark),
+          dimensions: {64, 12},
+          toast_ms: 1_000,
+          check: fn -> {:ok, %{"status" => "up_to_date"}} end
+        )
+        |> elem(0)
+
+      assert %Update{phase: :dialog, typed: ""} = state = Update.update({:text, "a"}, base)
+      assert %Update{phase: :ready, typed: ""} = cancelled = Update.update({:text, "n"}, state)
+
+      assert %Update{phase: :dialog, typed: ""} = state2 = Update.update({:text, "a"}, cancelled)
+      assert %Update{phase: :ready, typed: ""} = Update.update({:key, :escape}, state2)
     end
 
     test "step transitions resolve through update/2 from event frames" do
-      state = state()
+      state = armed_state()
       %{ref: ref} = state.run
 
       # run.started captures the daemon's stream token (what abort rides).
@@ -239,7 +392,7 @@ defmodule Workstation.CLI.TUI.UpdateTest do
     end
 
     test "chain_done settles the run with the token-guarded toast" do
-      state = state()
+      state = armed_state()
       %{ref: ref} = state.run
 
       state = Update.update({:update_event, ref, run_started("op-9")}, state)
@@ -260,7 +413,7 @@ defmodule Workstation.CLI.TUI.UpdateTest do
     end
 
     test "failure marks the step failed, the rest skipped, and stops the chain" do
-      state = state()
+      state = armed_state()
       %{ref: ref} = state.run
 
       state = Update.update({:update_event, ref, run_started("op-9")}, state)
@@ -299,7 +452,7 @@ defmodule Workstation.CLI.TUI.UpdateTest do
     end
 
     test "u re-runs the flow only from a finished screen with a hint" do
-      state = state()
+      state = armed_state()
       # While running, u is ignored.
       assert %Update{} = state = Update.update({:text, "u"}, state)
       assert state.phase == :running
@@ -323,16 +476,22 @@ defmodule Workstation.CLI.TUI.UpdateTest do
           state
         )
 
-      # With the indicator showing, u resets the rows and launches a fresh
-      # chain (a new run token — the old chain's events can never leak in).
-      {state, [%Command{kind: :async}]} = Update.update({:text, "u"}, state)
-      assert state.phase == :running
+      # With the indicator showing, u opens the confirm gate over reset
+      # rows; the typed verb then launches a fresh chain (a new run token
+      # — the old chain's events can never leak in).
+      assert %Update{phase: :dialog} = state = Update.update({:text, "u"}, state)
       assert Enum.all?(state.steps, &(&1["status"] == "pending"))
+
+      state =
+        Enum.reduce(String.graphemes("update"), state, fn ch, acc -> send_msg(acc, {:text, ch}) end)
+
+      {state, [%Command{kind: :async}]} = Update.update({:key, :enter}, state)
+      assert state.phase == :running
       assert state.run.ref != ref
     end
 
     test "x forwards op.abort only once the stream token is known" do
-      state = state()
+      state = armed_state()
 
       # No op_ref yet: x is inert.
       assert %Update{} = state = Update.update({:text, "x"}, state)
@@ -346,7 +505,7 @@ defmodule Workstation.CLI.TUI.UpdateTest do
     end
 
     test "stale chain messages are dropped" do
-      state = state()
+      state = armed_state()
 
       stale_event = %{"type" => "step.started", "step" => "pull"}
 

@@ -59,7 +59,8 @@ defmodule Workstation.CLI.TUI.Shell do
 
     Workstation.CLI.TUI.run(__MODULE__,
       destination: home,
-      appearance: Keyword.get(opts, :appearance, :dark)
+      appearance: Keyword.get(opts, :appearance, :dark),
+      preset: Keyword.get(opts, :preset, 0)
     )
   end
 
@@ -160,7 +161,10 @@ defmodule Workstation.CLI.TUI.Shell do
       toast_ms: Keyword.get(opts, :toast_ms, 5_000),
       # Render clock: injected so ramp (staleness) renders are deterministic
       # under replay; production takes the boot time exactly once.
-      now: Keyword.get(opts, :now, DateTime.utc_now())
+      now: Keyword.get(opts, :now, DateTime.utc_now()),
+      # Boot layout pin (the bare verb's `--preset N`, default the full
+      # mosaic): the preset membership is the visible set, the bond live.
+      dashboard: Dashboard.new(Keyword.get(opts, :preset, 0))
     }
 
     # Boot effects: the dashboard's three reads and the passive
@@ -257,6 +261,20 @@ defmodule Workstation.CLI.TUI.Shell do
         dashboard: Dashboard.clear_tracking(state.dashboard),
         flash: nil
     }
+  end
+
+  # Wire results land in the cache and refresh the derived views — ALSO
+  # while an op is open (§1.6: the dashboard under the floating panel
+  # keeps living). The clause sits above the op-forwarding catch-all
+  # because the op screens have no {:wire_loaded, _, _} contract: below
+  # it, these messages would be swallowed and the mirror would freeze on
+  # stale reads (badges never flipping) for the whole op.
+  def update({:wire_loaded, command, result}, state) do
+    state =
+      %{state | cache: Map.put(state.cache, command, result)}
+      |> refresh_derived(command, result)
+
+    {state, []}
   end
 
   def update(message, %{op: {kind, sub}} = state) do
@@ -384,13 +402,15 @@ defmodule Workstation.CLI.TUI.Shell do
     end
   end
 
-  # Wire results land in the cache and refresh the derived views.
-  def update({:wire_loaded, command, result}, state) do
-    state =
-      %{state | cache: Map.put(state.cache, command, result)}
-      |> refresh_derived(command, result)
-
-    {state, []}
+  # Scroll keys ride the help reference while it is open; every other
+  # message is ignored (the boxes are static summaries until the overlay
+  # lane adds their scrollable deep views).
+  # Scroll keys ride the help reference while it is open; every other
+  # message is ignored (the boxes are static summaries until the overlay
+  # lane adds their scrollable deep views).
+  def update(message, %{op: nil, help: true, text_views: views} = state) do
+    view = Map.get(views, :help) || TextView.init(Enum.join(Help.lines(), "\n"))
+    %{state | text_views: Map.put(views, :help, TextView.update(message, view))}
   end
 
   # The shell's OWN availability probe (the embedded screens run theirs
@@ -404,14 +424,6 @@ defmodule Workstation.CLI.TUI.Shell do
   # it. Re-dispatch on the cleared state; every real clause sits above.
   def update(message, %{op: nil, flash: flash} = state) when flash != nil,
     do: update(message, %{state | flash: nil})
-
-  # Scroll keys ride the help reference while it is open; every other
-  # message is ignored (the boxes are static summaries until the overlay
-  # lane adds their scrollable deep views).
-  def update(message, %{op: nil, help: true, text_views: views} = state) do
-    view = Map.get(views, :help) || TextView.init(Enum.join(Help.lines(), "\n"))
-    %{state | text_views: Map.put(views, :help, TextView.update(message, view))}
-  end
 
   def update(_message, state), do: state
 
@@ -432,8 +444,8 @@ defmodule Workstation.CLI.TUI.Shell do
     heights =
       if state.op do
         # In op mode the embedded screen renders its own footer; the shell
-        # keeps only the tab strip (which shows where you are: the op
-        # screen's pseudo-tab is highlighted).
+        # keeps only the toggle strip (which shows where you are: the
+        # visible boxes stay advertised while the op owns the body).
         [1, :fill]
       else
         [1, :fill, 1]

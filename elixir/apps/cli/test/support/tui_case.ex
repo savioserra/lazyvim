@@ -56,6 +56,15 @@ defmodule Workstation.CLITest.TUI do
   def send_key(runtime, key), do: send_event(runtime, Event.key(key))
 
   @doc """
+  Types a string one grapheme per event (the typed-confirm gate's buffer
+  contract: one printable keystroke per Event.Text — a multi-char text
+  event is not keystrokes and the gate ignores it).
+  """
+  def type_text(runtime, text) do
+    text |> String.graphemes() |> Enum.each(&send_text(runtime, &1))
+  end
+
+  @doc """
   Drains draw messages until the mailbox is quiet for `@quiet_ms` and
   returns the LAST frame. A drain swallows every redraw in its quiet
   window — including toast-expiry redraws shorter than `@quiet_ms`. To
