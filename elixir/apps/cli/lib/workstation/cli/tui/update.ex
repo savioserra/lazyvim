@@ -238,13 +238,38 @@ defmodule Workstation.CLI.TUI.Update do
   def update(_message, state), do: state
 
   @impl TermUI.Elm
-  def view(state) do
+  def view(state, underlay \\ :none) do
     {width, height} = state.dimensions
 
-    Helpers.frame([], {width, height})
-    |> Helpers.compose(Layout.new({width, height}), fn dims -> screen_frame(state, dims) end)
-    |> overlay_toasts(state)
+    case state.phase do
+      phase when phase in [:running, :done] ->
+        base = if is_map(underlay), do: underlay, else: Helpers.frame([], {width, height})
+        {panel_dims, x, y} = run_rect(width, height)
+
+        panel =
+          Helpers.frame([], panel_dims)
+          |> Helpers.compose(Layout.new(panel_dims), fn dims -> screen_frame(state, dims) end)
+
+        base
+        |> Frame.overlay(panel, x + 1, y + 1)
+        |> overlay_toasts(state)
+
+      _ ->
+        Helpers.frame([], {width, height})
+        |> Helpers.compose(Layout.new({width, height}), fn dims -> screen_frame(state, dims) end)
+        |> overlay_toasts(state)
+    end
   end
+
+  # §1.6: at shell scale the run floats as a boxed step panel over the
+  # living dashboard (the shell hands its mirror in as the underlay) —
+  # the step stream keeps its box, the dashboard shows around it. Below
+  # the float threshold the box keeps the full rect (a compact screen's
+  # step list has no ring to spare).
+  defp run_rect(width, height) when height < 16 or width < 60,
+    do: {{width, height}, 0, 0}
+
+  defp run_rect(width, height), do: {{max(width - 8, 20), max(height - 4, 6)}, 4, 2}
 
   # The boxed op screen: the step table inset inside one rounded box whose
   # border carries the title, counters, and the phase's buttonbar.

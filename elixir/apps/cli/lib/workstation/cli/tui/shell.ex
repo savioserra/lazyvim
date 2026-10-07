@@ -10,8 +10,8 @@ defmodule Workstation.CLI.TUI.Shell do
       flip membership, min-size gate, re-tile; a hidden box's strip
       island renders dimmed as `[n] label`);
     * p/P cycle the presets (full mosaic / audit / minimal, wrap-around);
-    * `?` toggles the help reference (the paged overlay lands with the
-      overlay lane);
+    * `?` toggles the help reference (a boxed scrollable pane — the
+      floating-paged variant is a recorded deviation);
     * `a` / `u` open the apply/update screens INSIDE the app: the shell
       embeds `Workstation.CLI.TUI.Apply` / `.Update` over the body,
       reserving only `q` (leave the screen — a running op keeps running
@@ -92,8 +92,8 @@ defmodule Workstation.CLI.TUI.Shell do
     # The toggle gate's inline footer error (btop's SizeError toast);
     # lives exactly one unhandled keypress.
     flash: nil,
-    # The help reference pane (? toggles; the paged overlay lands with
-    # the overlay lane).
+    # The help reference pane (? toggles; a boxed scrollable view — the
+    # floating-paged variant is a recorded deviation).
     help: false
   ]
 
@@ -289,8 +289,9 @@ defmodule Workstation.CLI.TUI.Shell do
   def update({:text, "P"}, %{op: nil} = state),
     do: %{state | dashboard: Dashboard.cycle(state.dashboard, :prev), flash: nil}
 
-  # ? toggles the help reference (the paged overlay lands with the
-  # overlay lane; §2.4 keeps the symmetric open/close key).
+  # ? toggles the help reference (a boxed scrollable view — the
+  # floating-paged variant is a recorded deviation; §2.4 keeps the
+  # symmetric open/close key).
   def update({:text, "?"}, %{op: nil} = state), do: %{state | help: not state.help, flash: nil}
 
   # r refreshes the dashboard's reads — force reload even when cached.
@@ -686,7 +687,11 @@ defmodule Workstation.CLI.TUI.Shell do
     visible ++ flash_span ++ [{String.duplicate("─", max(width - used - flash_width, 0)), styles.chrome}]
   end
 
-  defp body_frame(%{op: {kind, sub}}, _dims), do: op_module(kind).view(sub)
+  # Ops render as overlay workflows (§1.6): preview phases keep the full
+  # review surface, run/done float their panel over the mirror of the
+  # living dashboard — events keep streaming underneath.
+  defp body_frame(%{op: {kind, sub}} = state, dims),
+     do: op_module(kind).view(sub, dashboard_frame(state, dims))
 
   # The help reference renders as a boxed scrollable text view (↑↓ /
   # pgup/pgdn + the border block scrollbar) so nothing clips; the paged

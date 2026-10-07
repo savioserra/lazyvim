@@ -531,8 +531,16 @@ defmodule Workstation.CLI.TUI.ShellTest do
     # The run is an async executor round-trip: a single quiet window can
     # close before its answer lands (the one shell_test flake read the
     # in-flight frame as settled), so ride the draws until the applied
-    # frame arrives — bounded, never a hang.
-    await_frame(fn frame -> body_text(frame) =~ "Applied generation gen-3" end)
+    # frame arrives — bounded, never a hang. The done phase floats its
+    # panel over the mirror of the living dashboard (§1.6): the strip
+    # shows through above the panel and the toast lands bottom-right.
+    frame =
+      await_frame(fn frame ->
+        body_text(frame) =~ "Applied generation gen-3"
+      end)
+
+    assert Frame.row_text(frame, 2) =~ "¹engine"
+    assert body_text(frame) =~ "applied — the dashboard below is live again"
 
     # The screen's own [u] handoff — now it swaps screens, not processes.
     send_text(runtime, "u")
@@ -864,6 +872,34 @@ defmodule Workstation.CLI.TUI.ShellTest do
     # to the body rect of the new size (its box re-renders under the
     # shell chrome).
     assert Frame.row_text(frame, 2) =~ "apply · #{@destination}"
+  end
+
+  test "the run panel floats over the mirror at the second canonical size (80x20)" do
+    runtime = start_shell()
+    loaded_frame(runtime)
+    send_text(runtime, "a")
+    assert settled_frame(runtime) |> body_text() =~ "apply · #{@destination}"
+
+    send_event(runtime, Event.resize(80, 20))
+    frame =
+      await_frame(fn frame ->
+        frame.width == 80 and body_text(frame) =~ "apply · #{@destination}"
+      end)
+
+    # a -> dialog -> y: at 80x20 the body is 80x18 — past the float
+    # threshold, so the done panel (56x7, centered) floats and the
+    # dashboard mirror shows above it.
+    send_text(runtime, "a")
+    await_frame(fn f -> body_text(f) =~ "Confirm apply" end)
+    send_text(runtime, "y")
+
+    frame =
+      await_frame(fn f ->
+        body_text(f) =~ "Applied generation gen-3"
+      end)
+
+    assert Frame.row_text(frame, 2) =~ "¹engine"
+    assert body_text(frame) =~ "applied — the dashboard below is live again"
   end
 
   # -- helpers -----------------------------------------------------------------

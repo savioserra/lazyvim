@@ -284,13 +284,79 @@ defmodule Workstation.CLI.TUI.Apply do
   def update(_message, state), do: state
 
   @impl TermUI.Elm
-  def view(state) do
+  def view(state, underlay \\ :none) do
     {width, height} = state.dimensions
 
-    Helpers.frame([], {width, height})
-    |> Helpers.compose(Layout.new({width, height}), fn dims -> screen_frame(state, dims) end)
-    |> overlay_dialog(state)
-    |> overlay_toasts(state)
+    case state.phase do
+      phase when phase in [:running, :done] ->
+        base = if is_map(underlay), do: underlay, else: Helpers.frame([], {width, height})
+
+        case run_rect(width, height) do
+          :full ->
+            # A compact screen keeps the full review surface; the toast
+            # still lands as the OK box.
+            Helpers.frame([], {width, height})
+            |> Helpers.compose(Layout.new({width, height}), fn dims ->
+              screen_frame(state, dims)
+            end)
+            |> overlay_toasts(state)
+
+          rect ->
+            base
+            |> overlay_run_panel(state, rect)
+            |> overlay_toasts(state)
+        end
+
+      _ ->
+        Helpers.frame([], {width, height})
+        |> Helpers.compose(Layout.new({width, height}), fn dims -> screen_frame(state, dims) end)
+        |> overlay_dialog(state)
+        |> overlay_toasts(state)
+    end
+  end
+
+  # §1.6: at shell scale the run renders as a small box floating over
+  # the living dashboard (the shell hands its mirror in as the underlay)
+  # — journal and plan keep streaming underneath while the panel carries
+  # the phase line and the abort/return islands; the result toast lands
+  # bottom-right as the OK box. Below the float threshold the surface
+  # keeps the full rect.
+  defp run_rect(width, height) when height < 16 or width < 60, do: :full
+
+  defp run_rect(width, height) do
+    panel_width = min(56, width - 12)
+    panel_height = min(7, height - 8)
+    x = div(width - panel_width, 2)
+    y = div(height - panel_height, 2)
+    {panel_width, panel_height, x, y}
+  end
+
+  defp overlay_run_panel(frame, state, {panel_width, panel_height, x, y}) do
+
+    panel =
+      Box.frame(run_rows(state), {panel_width, panel_height},
+        border_style: role_style(state, :accent),
+        title: [
+          {" apply ", bold_role(state, :accent)},
+          {"· ", role_style(state, :chrome)},
+          {state.destination <> " ", Style.new()}
+        ],
+        right: [
+          [{"gen ", role_style(state, :chrome)}, {state.generation, bold_role(state, :accent)}],
+          [{"#{length(state.entries)} changes", role_style(state, :chrome)}]
+        ],
+        buttons: footer_buttons(state)
+      )
+
+    Frame.overlay(frame, panel, x + 1, y + 1)
+  end
+
+  defp run_rows(%{phase: :running} = state) do
+    [[{"applying — x aborts; the dashboard underneath keeps streaming", role_style(state, :text)}]]
+  end
+
+  defp run_rows(%{phase: :done} = state) do
+    [[{"applied — the dashboard below is live again", role_style(state, :text)}]]
   end
 
   # The boxed op screen: the plan table inset inside one rounded box whose
