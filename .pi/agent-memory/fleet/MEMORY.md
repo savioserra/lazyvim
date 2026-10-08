@@ -374,3 +374,22 @@ required.
 - Op run events during Elm render: keep panel rows to span-lists and
   never interpolate unstyled tuples; toasts are the OK box (bottom-
   right, Timer-managed).
+
+## TUI IA final gate lane (2026-10-08)
+
+- Gate G3 pty harness rules: pty.fork + TIOCSWINSZ + WARM daemon before each
+  run (cold ensure-daemon spawn mid-capture renders "loading…" boxes — false
+  negative); env-pinning in the child is fine; capture delays must be
+  absolute-time offsets, not cumulative.
+- REAL TUI bugs found at this gate (verdict FAIL, report
+  /tmp/fleet/reports/tui-ia-gate.md): (1) rows > cols → dashboard data render
+  never arrives (SIGWINCH unfreezes; strace shows paint writev completes, no
+  blocked IO — runtime stops scheduling); (2) apply/update overlay wedge at
+  <=60 rows even landscape; (3) update boxed step list never rendered at
+  175x83 either. Landscape 175x83 fully green incl. typed-confirm overlay.
+- CLI grammar: --headless exists ONLY on apply/update verbs; status/plan/diff
+  are bare read reports taking --home; daemon stop is a flattened positional
+  (home from env; --home on stop is an arg error, rc=2).
+- Update chain pull derives engine_root by walking UP FROM THE DAEMON CWD:
+  respawn the daemon with cwd outside the repo to exercise the honest
+  pull-failure render; repo-cwd daemons will git-fetch the real checkout.
