@@ -433,3 +433,13 @@ required.
   apps/core/test/workstation/core/catalog. mix workstation.goldens
   re-records tests/goldens; commit-body the byte-diff (usually 1-2 asset
   shas + generation/plan derivatives).
+
+## Host apply lane (starlight live, 2026-10-08)
+
+- `workstation stop` noconnections on an OLD daemon that predates the
+  release-refresh distribution — fallback is the protocol verb
+  `workstation daemon stop`, then respawn via `workstation status`.
+- Live proof recipe that worked on the real host: respawn TUI in the
+  user's tmux window (plain `workstation`, NOT exec — pane must survive),
+  `tmux capture-pane -e -p -t '0:ws'` (raw) + `-p` (stripped); reuse
+  /tmp/fleet/gate/assert_frames.py cell-parser for hue/keycap asserts.
