@@ -73,6 +73,8 @@
   "ripgrep_darwin_arm64_url": "https://github.com/BurntSushi/ripgrep/releases/download/{V}/ripgrep-{V}-aarch64-apple-darwin.tar.gz",
   "ripgrep_linux_x86_64_sha256": "33e15bcf1624b25cdd2a55813a47a2f95dbe126268203e76aa6a585d1e7b149c",
   "ripgrep_linux_x86_64_url": "https://github.com/BurntSushi/ripgrep/releases/download/{V}/ripgrep-{V}-x86_64-unknown-linux-musl.tar.gz",
+  "tmux_oasis": "9903964ee8abdddaf08834871f12ccc093a4cbcf",
+  "tmux_oasis_url": "https://github.com/uhs-robert/tmux-oasis",
   "tree_sitter": "0.26.11",
   "tree_sitter_darwin_arm64_sha256": "050f41d60a054b608ea392ba14722bba9457bdc0ab11a5706c77f034dafc68ac",
   "tree_sitter_darwin_arm64_url": "https://github.com/tree-sitter/tree-sitter/releases/download/v{V}/tree-sitter-cli-macos-arm64.zip",

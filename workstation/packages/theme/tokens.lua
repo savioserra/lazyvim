@@ -5,8 +5,8 @@ local M = {}
 --
 --   slots   - role -> terminal NAMED palette slot. Appearance-agnostic by
 --             design: the terminal remaps its palette live (OSC 4 retints),
---             so consumers that resolve named slots (tmux2k) follow every
---             terminal theme without any regeneration.
+--             so consumers that resolve named slots (the nunchux launcher
+--             config) follow every terminal theme without any regeneration.
 --   palette - role -> concrete color per appearance, for consumers that
 --             cannot follow the terminal (rendered UI themes, exports).
 --
@@ -112,7 +112,7 @@ local slot_roles = { "accent", "ok", "warn", "err", "chrome", "text", "shortcut"
 local palette_roles = { "accent", "ok", "warn", "err", "chrome", "text", "shortcut", "selected_bg", "selected_fg", "inactive", "ramp_start", "ramp_mid", "ramp_end", "border_engine", "border_journal", "border_capabilities", "border_plan", "border_diff", "border_status", "bg", "muted" }
 local appearances = { "dark", "light" }
 
--- Terminal NAMED colors tmux2k resolves through the live palette; the same
+-- Terminal NAMED colors slot consumers resolve through the live palette; the same
 -- closed set the slot layer is allowed to reference.
 local named_slots = {
 	black = true,

@@ -8,7 +8,7 @@ resources on Linux x86_64 (including WSL-as-Linux) and macOS arm64.
 
 The user or CI image supplies these; workstation never runs an OS package manager:
 
-- Git; tmux >=3.2; Bash >=5.2 for tmux2k.
+- Git; tmux >=3.2.
 - POSIX shell, HTTPS curl, tar/gzip, unzip, SHA-256 tools (`sha256sum` on Linux,
   `shasum` on macOS), and ordinary Unix filesystem tools.
 - C compiler/build tools for parser and application-package builds (macOS Command

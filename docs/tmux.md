@@ -4,7 +4,7 @@
 | --- | --- |
 | Hosts | Linux, macOS |
 | Main target | `~/.tmux.conf` and `~/.config/tmux/tmux.conf` symlink |
-| Theme target | `~/.config/tmux/themes/tmux2k.conf` |
+| Status bar | tmux-oasis, upstream `starlight_dark` flavor |
 | Package implementation | `packages/tmux/init.lua` |
 | Plugin root | `~/.tmux/plugins/` |
 
@@ -23,7 +23,7 @@
 Load order:
 
 1. Base tmux settings and plugin declarations.
-2. `~/.config/tmux/themes/tmux2k.conf`.
+2. Plugin options, including `@oasis_flavor "starlight_dark"`.
 3. `~/.tmux/plugins/tpm/tpm`.
 
 `~/.config/tmux/tmux.conf` is a managed symlink to `~/.tmux.conf` so tmux
@@ -41,7 +41,7 @@ on an isolated server.
 | Plugin | Commit |
 | --- | --- |
 | `tmux-plugins/tpm` | `e261deb1b47614eed3400089ce7197dc68acc4eb` |
-| `2KAbhishek/tmux2k` | `07b3228b56c1a7b6109f00009df80b53f7eae892` |
+| `uhs-robert/tmux-oasis` | `9903964ee8abdddaf08834871f12ccc093a4cbcf` |
 | `tmux-plugins/tmux-yank` | `acfd36e4fcba99f8310a7dfb432111c242fe7392` |
 | `christoomey/vim-tmux-navigator` | `e41c431a0c7b7388ae7ba341f01a0d217eb3a432` |
 | `tmux-plugins/tmux-resurrect` | `cff343cf9e81983d3da0c8562b01616f12e8d548` |
@@ -54,6 +54,9 @@ Pinning rules:
   the engine has no download recipe yet (see the prepared section below),
   so a checkout is (re)created by TPM's `prefix + I` and repairable via
   `workstation apply`'s recorded pins.
+- tmux-oasis's commit + URL are additionally pinned in
+  `workstation/versions.json` (`tmux_oasis*` keys) and asserted by the
+  package tests.
 - Keep the `TMUX_PLUGIN_MANAGER_PATH` pin ahead of the TPM `run-shell`; TPM's
   default path logic alone would select the unmanaged XDG plugin root.
 - Update this table with implementation pins.
@@ -104,40 +107,36 @@ exactly what ships.
 
 Setup removes stale `~/.tmux/plugins/tmux-fingers` checkouts.
 
-## Theme
+## Status bar (tmux-oasis)
 
-| Setting | Value |
+The status bar is the pinned `tmux-oasis` plugin's own six-module layout at
+the upstream `starlight_dark` flavor — the look advertised by upstream's
+starlight_dark screenshots. `.tmux.conf` sets only the `@plugin` pin and
+`set -g @oasis_flavor "starlight_dark"` ahead of TPM init (upstream's README
+install pattern); it deliberately sets NO `@thm_*` options — upstream's
+`themes/dark/oasis_starlight_dark.conf` is canonical, the same
+upstream-truthed relationship as nvim's `oasis.nvim` pin ([theme](theme.md):
+our tokens mirror upstream hexes for our own consumers, they do not feed the
+bar).
+
+| Surface | Value (upstream defaults) |
 | --- | --- |
-| Layout | `catppuccin` preset (unused-slot defaults only) |
-| Palette | tmux named colors following the live terminal palette |
-| Powerline | Vertical bar separators (`|`) |
-| Left | `session cwd` |
-| Right | `time` |
-| Refresh | `status-interval 5` |
-| Window list | Centered, `#I:#W`, activity flags |
+| Layout | six modules — mode + session on `status-left`, sync + folder + clock on `status-right`, `status-justify left` |
+| Status style | `bg=@thm_mantle, fg=@thm_secondary` |
+| Dividers | upstream defaults (no custom separators) |
+| Panes | `pane-border-status off`, single border lines; `@oasis_dim_inactive on` paints inactive panes `bg=@thm_crust` |
+| Modes / menus / popups | upstream message, mode, menu and popup styles (menu/popup behind tmux >= 3.4 guards) |
 
-Colors resolve through terminal palette slots instead of hardcoded hex, so
-the bar follows the active terminal theme everywhere: Omarchy retints panes
-via OSC 4 on theme switch and the bar restyles without a tmux reload, and
-plain terminals follow their own palette. The slot values render from the
-shared theme capability envelope at apply time
-([theme](theme.md)); this file is a `template = true` recipe and the tmux
-package requires `theme`.
-
-| Color role | Value |
-| --- | --- |
-| Status background | `default` (terminal background) |
-| Segment text | `black` |
-| Inactive window text / gray | `brightblack` |
-| Pane border | `brightblack`, active `blue` |
-| Session accent | `green` |
-| Cwd accent | `blue` |
-| Time accent | `yellow` |
-| Window flags | `red`, current `brightgreen` |
-
-Window-list colors are slot names (`bg_main blue`), not literal colors: the
-active window renders as a blue segment with vertical separators on the
-transparent bar and inactive windows render as plain muted text.
+Recorded tradeoff (ADDENDUM 2, operator permission — drop tmux2k and adopt
+the oasis statusline wholesale): tmux2k's slot layer followed the live
+terminal palette via tmux named colors (OSC 4 retints restyled the bar
+without a reload); the oasis bar uses literal starlight hexes, so terminal
+retints no longer reach it and a dark/light switch flips `@oasis_flavor`.
+The swap traded live palette-following for the upstream-literal starlight
+look. The tokens slot layer stays in [theme](theme.md) for future
+consumers; the retired `~/.config/tmux/themes/tmux2k.conf` target carries a
+recorded-ownership removal tombstone in the package recipe (already-absent
+no-op on homes that never had it).
 
 ## Omarchy interactions
 
@@ -155,6 +154,8 @@ file, restore with `workstation apply` and remove any `tmux.conf.bak.*` it left 
 - assert the XDG symlink target;
 - start an isolated tmux socket and server;
 - assert session name;
-- assert `@tmux2k-theme=catppuccin`;
+- assert the `uhs-robert/tmux-oasis` `@plugin` pin in `.tmux.conf`;
+- assert `@oasis_flavor=starlight_dark` ahead of TPM init;
+- assert the `workstation/versions.json` tmux-oasis pin (commit + URL);
 - assert the pinned `TMUX_PLUGIN_MANAGER_PATH`;
 - kill the isolated server on success or failure.

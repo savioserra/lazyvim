@@ -17,7 +17,7 @@ hardcode a color or slot name for a role carried here. Two layers per role:
 
 | Layer | Maps | Consumed by |
 | --- | --- | --- |
-| `slots` | role → terminal **named** palette slot | surfaces that follow the live terminal palette (tmux2k); appearance-agnostic, zero regeneration on theme switch |
+| `slots` | role → terminal **named** palette slot | surfaces that follow the live terminal palette (the nunchux launcher config; the slot layer stays for future consumers after the tmux2k retirement); appearance-agnostic, zero regeneration on theme switch |
 | `palette` | role → concrete color, per appearance (`dark`, `light`) | surfaces that cannot follow the terminal (rendered UI themes, exports) |
 
 Roles: `accent`, `ok`, `warn`, `err`, `chrome` (muted chrome/borders),
@@ -63,7 +63,7 @@ plan.
 
 | Surface | Layer | Mechanism |
 | --- | --- | --- |
-| tmux (`tmux2k.conf`) | `slots` | `template = true` recipe; tmux requires `theme` |
+| tmux (status bar) | — (upstream-truthed) | pinned `tmux-oasis` at the upstream `starlight_dark` flavor; `.tmux.conf` sets no theme options — upstream's oasis_starlight_dark.conf is canonical and the tokens palette mirrors its hexes for our own consumers. The tmux2k slot template is gone (ADDENDUM 2 swap; its target carries a removal tombstone) ([tmux](tmux.md)) |
 | tmux (nunchux launcher config, prepared) | `slots` | same `template = true` path; plugin stays dormant until engine download provisioning ([tmux](tmux.md)) |
 | pi (`~/.pi/agent/themes/workstation-{dark,light}.json`) | `palette` | template recipes; agent requires `theme`; `settings.json` stays pi-owned — select `"workstation-light/workstation-dark"` once via `/settings` |
 | herdr | philosophy (terminal-following) | documented canonical choice only: `[theme] name = "terminal"`, `auto_switch = true` (see [herdr](herdr.md)); herdr tracks the host terminal's live ANSI palette, so under the Starlight rebrand it renders starlight via the terminal theme — the engine never writes herdr's live `config.toml` and ships no herdr colors |
