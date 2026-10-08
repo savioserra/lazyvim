@@ -286,35 +286,28 @@ defmodule Workstation.CLI.TUI.Shell.DashboardTest do
       assert Dashboard.layout(expanded, {80, 24}) == [{:diff, {0, 0, 80, 24}}]
     end
 
-    test "an expanded capabilities box grows its slot band by exactly 8 rows (Proc::y+8)" do
+    test "an expanded capabilities box grows its own cell in place (neighbors untouched)" do
+      # 140x45: the caps slot is 6 rows, the drill wants 14, and the
+      # dashboard bottom allows 11 — so the growth is visible (6 -> 11).
       {:ok, expanded} = Dashboard.expand(Dashboard.new(), :capabilities)
-      layout = Dashboard.layout(expanded, {175, 83})
-      plain = Dashboard.layout(Dashboard.new(), {175, 83})
+      layout = Dashboard.layout(expanded, {140, 45})
+      plain = Dashboard.layout(Dashboard.new(), {140, 45})
 
+      # The drill is the box's own mosaic cell growing over its
+      # neighbors: same slot (x/y/width), height grows toward the 14-row
+      # drill cap, bounded by the dashboard edge — position never
+      # changes, no global re-tile (btop proc-expand semantics).
       caps = Enum.find(layout, fn {box, _} -> box == :capabilities end)
       plain_caps = Enum.find(plain, fn {box, _} -> box == :capabilities end)
-      {_, {cx, cy, cw, ch}} = caps
-      {_, {_px, _py, pw, ph}} = plain_caps
+      {_, {_x, _y, _w, _h} = plain_rect} = plain_caps
+      assert caps == {:capabilities, put_elem(plain_rect, 3, min(14, 45 - elem(plain_rect, 1)))}
 
-      # The drill is the box's band plus exactly 8 rows, same slot, same width.
-      assert {cx, cw, ch} == {elem(plain_caps, 1) |> elem(0), pw, ph + 8}
-      assert ch == 14
+      # Every other box keeps its exact position and size.
+      assert Enum.reject(layout, &match?({:capabilities, _}, &1)) ==
+               Enum.reject(plain, &match?({:capabilities, _}, &1))
 
-      # The two fill bands absorb the delta evenly (4 each); everything
-      # else is untouched.
-      status = Enum.find(layout, fn {box, _} -> box == :status end)
-      assert status == Enum.find(plain, fn {box, _} -> box == :status end)
-
-      fills = Enum.filter(layout, fn {box, _} -> box in ~w(engine journal plan diff)a end)
-      plain_fills = Enum.filter(plain, fn {box, _} -> box in ~w(engine journal plan diff)a end)
-
-      for {{box, {x, y, w, h}}, {pbox, {px, py, pw2, ph2}}} <- Enum.zip(fills, plain_fills) do
-        assert {box, x, w} == {pbox, px, pw2}
-        assert h == ph2 - 4
-
-        # The second fill band moves up by the 4 rows the first one lost.
-        assert y == (if box in ~w(plan diff)a, do: py - 4, else: py)
-      end
+      # The expanded cell is drawn last — z-order puts it on top.
+      assert layout |> List.last() |> elem(0) == :capabilities
     end
 
     test "a narrow dashboard grows the drill stack the same way" do

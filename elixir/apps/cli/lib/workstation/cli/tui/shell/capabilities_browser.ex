@@ -271,10 +271,10 @@ defmodule Workstation.CLI.TUI.Shell.CapabilitiesBrowser do
   @doc """
   Render the browser as the btop split mosaic: a domains box (the
   capabilities box's rollup rows) and a drill box (the active domain's
-  expanded subtree) side by side, with an inspector box underneath showing
-  the selected row's detail; the drill grammar rides the inspector's
-  border as
-  buttons, position counters live in the pane borders, the cursor
+  expanded subtree) side by side over the full pane. There is no
+  inspector panel — the row detail IS the row. A pane's position counter
+  rides its TITLE border's right island, and only while the list
+  overflows one page (a single-page list carries no counter); the cursor
   renders as the selected bg+fg pair (never color-alone) and file rows
   that would change read warn.
   """
@@ -303,20 +303,18 @@ defmodule Workstation.CLI.TUI.Shell.CapabilitiesBrowser do
   end
 
   def view(%__MODULE__{} = browser, {width, height}, styles) do
-    [top_rect, inspect_rect] = Layout.column(Layout.new({width, height}), [Layout.percentage(75), Layout.fill()])
-    [left_rect, right_rect] = Layout.row(top_rect, [Layout.percentage(40), Layout.fill()])
+    [left_rect, right_rect] = Layout.row({0, 0, width, height}, [Layout.percentage(40), Layout.fill()])
 
     Helpers.frame([], {width, height})
     |> Helpers.compose(left_rect, &domains_box(browser, styles, &1))
     |> Helpers.compose(right_rect, &drill_box(browser, styles, &1))
-    |> Helpers.compose(inspect_rect, &inspector_box(browser, styles, &1))
   end
 
   ## split panes
 
   # The domains pane: every rollup row, cursor highlight following the
-  # flat cursor when it sits on a domain; the border counter is the
-  # highlighted domain's position.
+  # flat cursor when it sits on a domain; the title's right island is
+  # the highlighted domain's position (overflowing pages only).
   defp domains_box(browser, styles, {width, height}) do
     domains = Enum.filter(browser.rows, &(&1.kind == :domain))
     visible = max(height - 2, 0)
@@ -339,7 +337,7 @@ defmodule Workstation.CLI.TUI.Shell.CapabilitiesBrowser do
     Box.frame(rows, {width, height},
       border_style: styles.border_capabilities,
       title: styles.title,
-      counter: [{"#{domain_index + 1}/#{length(domains)}", styles.chrome}]
+      right: position_counter(domain_index + 1, length(domains), visible, styles)
     )
   end
 
@@ -368,12 +366,7 @@ defmodule Workstation.CLI.TUI.Shell.CapabilitiesBrowser do
         end)
       end
 
-    counter =
-      if subtree == [] do
-        []
-      else
-        [{"#{(cursor_index || 0) + 1}/#{length(subtree)}", styles.chrome}]
-      end
+    counter = position_counter((cursor_index || 0) + 1, length(subtree), visible, styles)
 
     title =
       case active do
@@ -384,41 +377,19 @@ defmodule Workstation.CLI.TUI.Shell.CapabilitiesBrowser do
     Box.frame(rows, {width, height},
       border_style: styles.border_capabilities,
       title: title,
-      counter: counter
+      right: counter
     )
   end
 
-  # The inspector: the selected row's kind and full text, with the drill
-  # grammar on the bottom border as buttons.
-  defp inspector_box(browser, styles, {width, height}) do
-    selected_row = Enum.at(browser.rows, browser.selected)
+  # A pane's position counter rides the TITLE border's right island —
+  # never a mid-border island — and only while the list overflows one
+  # page: a single-page list carries no counter (a "1/1" island is
+  # noise).
+  defp position_counter(_position, total, visible, _styles) when total <= visible, do: nil
 
-    rows =
-      case selected_row do
-        nil ->
-          [[{" nothing selected", styles.inactive}]]
-
-        row ->
-          [
-            [{" " <> kind_label(row.kind), styles.accent}],
-            [{" " <> row_text(row), row_style(row, styles)}]
-          ]
-      end
-
-    Box.frame(rows, {width, height},
-      border_style: styles.border_capabilities,
-      title: [{"inspect", styles.text}],
-      buttons: [
-        [{"right", styles.shortcut}, {" drill in", styles.text}],
-        [{"left", styles.shortcut}, {" drill out", styles.text}],
-        [{"r", styles.shortcut}, {" refresh", styles.text}]
-      ]
-    )
+  defp position_counter(position, total, _visible, styles) do
+    [{"#{position}/#{total}", styles.chrome}]
   end
-
-  defp kind_label(:domain), do: "domain"
-  defp kind_label(:package), do: "package"
-  defp kind_label(:file), do: "file"
 
   # The active domain: the last domain row at or before the flat cursor.
   defp active_path(browser) do

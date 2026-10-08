@@ -9,10 +9,10 @@ defmodule Workstation.CLI.TUI.Shell.Box do
       closed by `┌`: `╭─┐3 status┌──────────`; the keycap digit rides the
       shortcut slot inside the island (the caller styles the spans);
     * an optional right island on the top border carries counters/badges:
-      `──────┐2/41┌─╮`;
+      `──────┐2/41┌─╮` — position counters live HERE (title-side), never
+      welded into a mid-border run;
     * the bottom border doubles as the box's buttonbar — buttons are
-      `┘label└` islands, the position counter is the last island:
-      `╰┘↑↓ scroll└┘r refresh└────┘1/41└╯`;
+      `┘label└` islands: `╰┘↑↓ scroll└┘r refresh└─────╯`;
     * on overflow the right border becomes a block scrollbar
       (`▲` above, `█` thumb, `▏` track, `▼` below) hugging the border.
 
@@ -41,7 +41,6 @@ defmodule Workstation.CLI.TUI.Shell.Box do
       right as `┐…┌┐…┌` before the corner
     * `:buttons` — list of buttonbar button contents (spans or binary),
       rendered as `┘…└` islands on the bottom border left-to-right
-    * `:counter` — final bottom-border island content (position counter)
     * `:scrollbar` — `{offset, visible, total}`; swaps the right border to
       the block scrollbar while the content overflows
     * `:thumb_style` — scrollbar thumb style (default: the border style)
@@ -59,7 +58,7 @@ defmodule Workstation.CLI.TUI.Shell.Box do
     inner_h = max(height - 2, 0)
 
     top = top_row(width, Keyword.get(opts, :title), Keyword.get(opts, :right), border)
-    bottom = bottom_row(width, Keyword.get(opts, :buttons, []), Keyword.get(opts, :counter), border)
+    bottom = bottom_row(width, Keyword.get(opts, :buttons, []), border)
     body = body_rows(rows, inner_w, inner_h, border, opts)
 
     Frame.from_rows([top] ++ body ++ [bottom], width, height)
@@ -219,31 +218,24 @@ defmodule Workstation.CLI.TUI.Shell.Box do
 
   defp right_islands(content), do: [as_spans(content)]
 
-  # `╰┘button└┘button└────┘1/41└╯` — the bottom border doubles as the
-  # buttonbar; the position counter is the last island before the corner.
-  # The bar elides right-to-left into the corner budget — the counter
-  # (rightmost) yields first, then trailing buttons — so the leftmost
-  # action keys and both corners survive any width.
-  defp bottom_row(width, buttons, counter, border) do
+  # `╰┘button└┘button└─────╯` — the bottom border doubles as the
+  # buttonbar (position counters ride the TOP border's right island).
+  # The bar elides right-to-left into the corner budget — trailing
+  # buttons yield first — so the leftmost action keys and both corners
+  # survive any width.
+  defp bottom_row(width, buttons, border) do
     budget = width - 2
-    bar = Enum.map(buttons, &as_spans!/1) ++ counter_islands(counter)
+    bar = Enum.map(buttons, &as_spans!/1)
     {[], kept} = fit_border([], bar, budget)
-    {kept_buttons, kept_counter} = Enum.split(kept, length(buttons))
 
     button_render =
-      Enum.flat_map(kept_buttons, fn spans -> [{"┘", border}] ++ spans ++ [{"└", border}] end)
+      Enum.flat_map(kept, fn spans -> [{"┘", border}] ++ spans ++ [{"└", border}] end)
 
-    counter_render =
-      Enum.flat_map(kept_counter, fn spans -> [{"┘", border}] ++ spans ++ [{"└", border}] end)
-
-    used = 1 + content_width(button_render) + content_width(counter_render) + 1
+    used = 1 + content_width(button_render) + 1
     middle = String.duplicate("─", max(width - used, 0))
 
-    [{"╰", border}] ++ button_render ++ [{middle, border}] ++ counter_render ++ [{"╯", border}]
+    [{"╰", border}] ++ button_render ++ [{middle, border}] ++ [{"╯", border}]
   end
-
-  defp counter_islands(nil), do: []
-  defp counter_islands(counter), do: [as_spans(counter)]
 
   # Body rows clipped to the inner width, padded to the inner height;
   # BOTH side borders ride every row (the right border swaps to the

@@ -2,13 +2,13 @@ defmodule Workstation.CLI.TUI.Shell do
   @moduledoc """
   The workstation TUI application shell — the one dashboard. One Elm root
   (the same `TermUI.Elm` contract as the apply/update screens) owning the
-  global chrome: a keycap toggle strip on the top row, the six-box
-  dashboard as the entire app, and a footer with the global keys
-  (btop-ia-spec §2). The mosaic IS the app — there are no tabs:
+  global chrome: the six-box dashboard as the entire app — the boxes'
+  own superscript titles advertise their toggle digits — and a footer
+  with the global keys (btop-ia-spec §2). The mosaic IS the app — there
+  are no tabs:
 
     * digits 1-6 toggle the boxes (`Shell.Dashboard.toggle_box`:
-      flip membership, min-size gate, re-tile; a hidden box's strip
-      island renders dimmed as `[n] label`);
+      flip membership, min-size gate, re-tile);
     * p/P cycle the presets (full mosaic / audit / minimal, wrap-around);
     * `?` toggles the help reference (a boxed scrollable pane — the
       floating-paged variant is a recorded deviation);
@@ -63,11 +63,6 @@ defmodule Workstation.CLI.TUI.Shell do
       preset: Keyword.get(opts, :preset, 0)
     )
   end
-
-  # Mouse coordinates are 0-based cells; the strip is the first row in
-  # both layouts (do_view heights [1, ...]), so clicks are addressed at
-  # 0-based y 0.
-  @strip_row_y 0
 
   @type load_state :: nil | :loading | {:ok, map()} | {:error, String.t()}
   @type op_screen :: {:apply, Apply.t()} | {:update, Update.t()}
@@ -186,28 +181,20 @@ defmodule Workstation.CLI.TUI.Shell do
   def event_to_msg(%Event.Resize{width: width, height: height}, _state),
     do: {:msg, {:resize, width, height}}
 
-  # Mouse: a left click on a strip island is that island's keypress —
-  # a box digit toggle or the p/P preset cycle (the same update path —
-  # one spelling for strip addressing); the wheel reuses the pane scroll
-  # keys; everything else is inert. Coordinates are 0-based cells
-  # (term_ui contract); the strip is 0-based row 0 — the first row of
-  # both layouts.
-  def event_to_msg(%Event.Mouse{action: :press, button: :left, y: @strip_row_y, x: x}, state) do
-    case strip_key_at(state, x) do
-      nil -> :ignore
-      key -> {:msg, {:text, key}}
-    end
-  end
-
+  # Mouse: the wheel reuses the pane scroll keys; everything else is
+  # inert. Coordinates are 0-based cells (term_ui contract). There is no
+  # top strip — the boxes' own superscript titles advertise their toggle
+  # digits and the footer carries p/P · help · quit.
   def event_to_msg(%Event.Mouse{action: :scroll_up}, _state), do: {:msg, {:key, :up}}
   def event_to_msg(%Event.Mouse{action: :scroll_down}, _state), do: {:msg, {:key, :down}}
 
   # A left click inside a zoomable box toggles its deep view (§2.5:
   # click inside a zoomable box = zoom); the point is addressed in body
-  # coordinates (the strip is row 0, the footer rides the last row).
+  # coordinates (the dashboard starts at row 0; the footer rides the
+  # last row).
   def event_to_msg(%Event.Mouse{action: :press, button: :left, x: x, y: y} = event, %{op: nil} = state)
-      when y >= 1 do
-    case box_at(state, x, y - 1) do
+      when y >= 0 do
+    case box_at(state, x, y) do
       box when box in [:capabilities, :plan, :diff] -> {:msg, {:box_click, box}}
       _other -> {:msg, event}
     end
@@ -444,20 +431,19 @@ defmodule Workstation.CLI.TUI.Shell do
     heights =
       if state.op do
         # In op mode the embedded screen renders its own footer; the shell
-        # keeps only the toggle strip (which shows where you are: the
-        # visible boxes stay advertised while the op owns the body).
-        [1, :fill]
+        # owns only the body (the boxes' own superscript titles advertise
+        # their toggle digits — there is no separate top strip).
+        [:fill]
       else
-        [1, :fill, 1]
+        [:fill, 1]
       end
 
-    [strip, body | rest] = Layout.column(Layout.new({width, height}), heights)
+    [body | rest] = Layout.column(Layout.new({width, height}), heights)
     footer = List.first(rest)
 
     frame = Helpers.frame([], {width, height})
 
     frame
-    |> Helpers.compose(strip, &strip_frame(state, &1))
     |> Helpers.compose(body, &body_frame(state, &1))
     |> compose_footer(footer, state)
   end
@@ -603,69 +589,13 @@ defmodule Workstation.CLI.TUI.Shell do
     {state, commands}
   end
 
-  defp body_dims(%{dimensions: {_width, height}} = state) do
-    # Body rect of the op-mode layout ([1, :fill] — the strip only, no
-    # shell footer). Layout.column answers a LIST of rects.
-    [_strip, body] =
-      Layout.column(Layout.new(state.dimensions), [1, max(height - 1, 1)])
-
-    {elem(body, 2), elem(body, 3)}
-  end
+  # The op screens own the whole terminal (do_view heights [:fill] in op
+  # mode): their layout rect is the full dimensions.
+  defp body_dims(%{dimensions: dims}), do: dims
 
   ## rendering
 
-  defp strip_frame(state, {width, height}) do
-    styles = theme_styles(state)
-
-    # btop buttonbar islands on the strip row. Visible boxes glow: the
-    # superscript keycap rides the shortcut role (bold — btop's glowing
-    # cap), the label the accent role (bold). Hidden boxes render dimmed
-    # bracket islands `[4] plan` in the inactive role — the shortcut they
-    # advertise is still live (digits toggle), the glow is what signals
-    # membership. The p/P preset islands close the bar (§2.4); a chrome
-    # `─` filler carries it to the terminal edge.
-    islands =
-      strip_islands(state, styles)
-      |> Enum.map(fn {spans, _key} ->
-        [{"┘", styles.chrome}] ++ spans ++ [{"└", styles.chrome}]
-      end)
-
-    Helpers.frame([chrome_bar(islands, nil, width, styles)], {width, height})
-  end
-
-  # Toggle-strip islands (§2.4): one per dashboard box — glowing when
-  # visible, dimmed bracket-form when hidden — plus the p/P preset
-  # islands. Shared by the strip renderer and the mouse router so click
-  # = keypress has exactly one spelling.
-  defp strip_islands(state, styles) do
-    for island <- Dashboard.islands(state.dashboard) do
-      spans = Enum.map(island.segs, fn {role, text} -> {text, Map.fetch!(styles, role)} end)
-      {spans, island.key}
-    end
-  end
-
-  # Walks the island cells left to right — each island costs its content
-  # plus the two `┘`/`└` connectors, back to back with no separator — and
-  # returns the key the island covering 0-based column x stands for, or
-  # nil when x lands on the chrome filler. Widths come from the islands
-  # themselves (no styling needed), so the pure test drives it with a
-  # bare dashboard state.
-  defp strip_key_at(state, x) when is_integer(x) and x >= 0 do
-    Dashboard.islands(state.dashboard)
-    |> Enum.reduce_while({nil, 0}, fn island, {_hit, cursor} ->
-      width =
-        2 + Enum.sum(Enum.map(island.segs, fn {_role, text} -> Helpers.text_width(text) end))
-
-      if x in cursor..(cursor + width - 1) do
-        {:halt, {island.key, cursor}}
-      else
-        {:cont, {nil, cursor + width}}
-      end
-    end)
-    |> elem(0)
-  end
-
-  defp strip_key_at(_state, _x), do: nil
+  ## rendering
 
   # One full-width chrome bar: keycap ISLANDS (each a span group — the
   # unit of truncation), then `─` to the terminal edge. An island that
@@ -794,11 +724,17 @@ defmodule Workstation.CLI.TUI.Shell do
     end
   end
 
-  # The zoomable box under a body point, if any (dashboard coordinates).
+  # The zoomable box under a body point, if any. The dashboard spans
+  # body rows 0..height-2 (the footer rides the last terminal row) and
+  # the walk is TOPMOST-first — the layout list is draw order (bottom to
+  # top), so a click inside an expanded box's overlay region hits the
+  # box that owns the pixels, not the neighbor it covers.
   defp box_at(%{dashboard: dash, dimensions: {width, height}}, x, y) do
-    layout = Dashboard.layout(dash, {width, height - 2})
+    layout = Dashboard.layout(dash, {width, height - 1})
 
-    Enum.find_value(layout, fn {box, {bx, by, bw, bh}} ->
+    layout
+    |> Enum.reverse()
+    |> Enum.find_value(fn {box, {bx, by, bw, bh}} ->
       if x >= bx and x < bx + bw and y >= by and y < by + bh, do: box
     end)
   end
@@ -850,8 +786,8 @@ defmodule Workstation.CLI.TUI.Shell do
     )
   end
 
-  # The journal box's border counter: the journal revision — the same
-  # fact the old status read pane showed (§2.1 box 3).
+  # The journal box's title-side right island: the journal revision —
+  # the same fact the old status read pane showed (§2.1 box 3).
   defp journal_counter(%{cache: %{status: {:ok, status}}}, styles) do
     case status["journal"] do
       journal when is_map(journal) ->
@@ -1054,8 +990,8 @@ defmodule Workstation.CLI.TUI.Shell do
             "#{journal["generation"]} · rev #{Map.get(journal, "revision", "?")}",
             styles
           ),
-          label_row("applied", {applied_at(journal), style}, styles),
-          [{" " <> age_bar(state, journal["applied_at"]), style}]
+          label_row("applied", {applied_at(journal), style}, styles)
+          | journal_age_row(state, journal["applied_at"], style, styles)
         ]
 
       _other ->
@@ -1064,6 +1000,19 @@ defmodule Workstation.CLI.TUI.Shell do
   end
 
   defp journal_rows(_state, styles), do: [label_row("journal", "loading…", styles)]
+
+  # The journal's third row: the applied-at age meter. An EMPTY journal
+  # (no applied-at stamp at all — nothing has ever been applied) must
+  # not draw a flat all-down meter pretending to be data: it renders the
+  # honest phrase in the chrome role instead. A present stamp keeps the
+  # meter (fresh ok / aging warn / stale err ramp unchanged).
+  defp journal_age_row(state, stamp, style, styles) do
+    if stamp_age_seconds(state, stamp) == nil do
+      [label_row("age", {"no applied entries yet", styles.chrome}, styles)]
+    else
+      [[{" " <> age_bar(state, stamp), style}]]
+    end
+  end
 
   # Applied-at age as a block meter: 0 cells (fresh) to full (stale).
   # Ramp thresholds: fresh <24h ok · aging <7d warn · stale ≥7d err; an

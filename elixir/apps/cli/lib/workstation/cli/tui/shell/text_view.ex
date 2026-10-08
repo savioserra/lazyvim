@@ -54,10 +54,12 @@ defmodule Workstation.CLI.TUI.Shell.TextView do
 
   @doc """
   Boxed read pane (btop anatomy): the box title island carries the box
-  digit + name, `:right` renders the counter/badge island on the top
-  border, the bottom border is the action bar (`↑↓ scroll` and
-  `r refresh` buttons with the n/total position counter) and overflow
-  rides the right-border block scrollbar.
+  digit + name, `:right` renders extra islands on the top border, the
+  position counter rides the TITLE border's right island — after any
+  `:right` badge, and only while the pane overflows one page (a
+  single-page list carries no counter, never a mid-border island) — the
+  bottom border is the action bar (`↑↓ scroll` and `r refresh` buttons)
+  and overflow rides the right-border block scrollbar.
   """
   @spec bordered_view(t(), TermUI.Widget.dimensions(), %{
           required(:title) => term(),
@@ -79,15 +81,25 @@ defmodule Workstation.CLI.TUI.Shell.TextView do
     Box.frame(rows, {width, height},
       border_style: bar.border,
       title: bar.title,
-      right: Map.get(bar, :right),
+      right: title_counter(offset, length(lines), visible, bar),
       buttons: [
         [{"↑↓", bar.shortcut}, {" scroll", bar.chrome}],
         [{"r", bar.shortcut}, {" refresh", bar.chrome}]
       ],
-      counter: [{"#{offset + 1}/#{length(lines)}", bar.chrome}],
       scrollbar: {offset, visible, length(lines)},
       thumb_style: Map.get(bar, :thumb, bar.shortcut)
     )
+  end
+
+  # The position counter rides the TITLE border's right island — never a
+  # mid-border island — and only while the pane overflows one page: a
+  # single-page list carries no counter (a "1/1" island is noise). The
+  # caller's `:right` badge (e.g. the journal revision) comes first.
+  defp title_counter(_offset, total, visible, bar) when total <= visible,
+    do: Map.get(bar, :right)
+
+  defp title_counter(offset, total, _visible, bar) do
+    (Map.get(bar, :right) || []) ++ [{"#{offset + 1}/#{total}", bar.chrome}]
   end
 
   defp inner_height(height) when height > 2, do: height - 2

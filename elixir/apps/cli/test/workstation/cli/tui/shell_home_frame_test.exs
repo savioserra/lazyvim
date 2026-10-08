@@ -121,10 +121,10 @@ defmodule Workstation.CLI.TUI.ShellHomeFrameTest do
         refute full_text(frame) =~ "²capabilities"
         refute full_text(frame) =~ "⁶status"
 
-        # The strip dims the hidden boxes as bracket islands.
-        strip = Frame.row_text(frame, 1)
-        assert strip =~ "[2] capabilities"
-        assert strip =~ "[6] status"
+        # Hidden boxes render NOWHERE — there is no dimmed strip island
+        # anymore; the boxes' superscript titles are the only toggle
+        # advertising.
+        refute Frame.row_text(frame, 1) =~ "[2] capabilities"
       end
     end
 
@@ -164,10 +164,10 @@ defmodule Workstation.CLI.TUI.ShellHomeFrameTest do
       # lone diff box full width, then the capabilities band.
       assert titles == ["¹engine", "⁵diff", "²capabilities"]
 
-      # The strip dims both hidden boxes.
-      strip = Frame.row_text(frame, 1)
-      assert strip =~ "[4] plan"
-      assert strip =~ "[6] status"
+      # Hidden boxes render nowhere (no dimmed strip islands — the
+      # superscript titles are the only toggle advertising).
+      refute full_text(frame) =~ "⁴plan"
+      refute full_text(frame) =~ "⁶status"
     end
   end
 
@@ -556,26 +556,22 @@ defmodule Workstation.CLI.TUI.ShellHomeFrameTest do
     end)
   end
 
-  # The chrome bars span the terminal: the toggle strip (the first row —
-  # the only chrome above the body since the header went away) and the
-  # footer (the last row) each open with a keycap island on column 1 and
-  # their chrome `─` filler carries the bar to the right edge — the run
-  # from the last island to the edge is pure filler (a bar that stops
-  # early leaves background blanks and fails the tail check).
+  # The chrome bars span the terminal: the footer (the last row) opens
+  # with a keycap island on column 1 and its chrome `─` filler carries
+  # the bar to the right edge — the run from the last island to the edge
+  # is pure filler (a bar that stops early leaves background blanks and
+  # fails the tail check). There is no top strip anymore: the FIRST row
+  # is the dashboard's first box row — its border opens on column 1.
   defp assert_full_width_bars(frame) do
-    strip_row = 1
-
-    assert Frame.cell(frame, strip_row, 1).char == "┘",
-           "strip does not open on column 1"
+    assert Frame.cell(frame, 1, 1).char == "╭",
+           "the dashboard's first box row does not own the top terminal row"
 
     footer_row = frame.height
 
     assert Frame.cell(frame, footer_row, 1).char == "┘",
            "footer does not open on column 1"
 
-    assert_island_discipline(frame, strip_row, "strip")
     assert_island_discipline(frame, footer_row, "footer")
-    assert_chrome_filler_to_edge(frame, strip_row, "strip")
     assert_chrome_filler_to_edge(frame, footer_row, "footer")
   end
 

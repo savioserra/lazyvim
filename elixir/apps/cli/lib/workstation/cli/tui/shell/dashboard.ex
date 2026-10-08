@@ -29,10 +29,11 @@ defmodule Workstation.CLI.TUI.Shell.Dashboard do
   spelling for click = keypress.
 
   Deep views never leave the dashboard (§1.6): at most one box is
-  `expanded` at a time. The capabilities box's in-box drill re-proportions
-  the tiler (+8 rows, the `Proc::y + 8` model) and a zoomed plan/diff box
-  takes over the whole dashboard rect — the dashboard gains views no more
-  than btop's does, only proportions.
+  `expanded` at a time. The capabilities box's in-box drill grows its
+  OWN mosaic cell over its neighbors (btop's proc-expanded z-order:
+  every other box keeps position and size under the overlay) and a
+  zoomed plan/diff box takes over the whole dashboard rect — the
+  dashboard gains views no more than btop's does, only proportions.
   """
 
   alias TermUI.Layout
@@ -266,15 +267,20 @@ defmodule Workstation.CLI.TUI.Shell.Dashboard do
     status: 4
   }
 
+  # The drill rows: the expanded cell's grown height — the `Proc::y + 8`
+  # in-box expansion (§1.6), the box's 6-row band plus 8, enough for the
+  # browser's tree cursor and its descendants.
+  @drill_rows 14
+
   @doc """
   Tile the dashboard: `[{box, rect}]` for the visible set at `{width,
   height}`. Presets 1/2 use their bespoke row structure at every width;
   everything else uses the slot mosaic at `>= #{@mosaic_min_width}`
   columns and the stacked priority renderer below it — preset 0 and a
   dissolved (custom) set alike. An expanded plan/diff box takes over the
-  whole dashboard rect; an expanded capabilities box re-proportions the
-  tiler around its drill rows (`Proc::y + 8` — the box grows by exactly
-  the drill's 8 rows).
+  whole dashboard rect; an expanded capabilities box keeps the mosaic
+  frozen and grows its own cell to `#{@drill_rows}` rows over the boxes
+  beneath it (a z-order overlay — it draws last).
   """
   @spec layout(t(), {pos_integer(), pos_integer()}) :: [{box(), rect()}]
   def layout(%__MODULE__{preset: preset, visible: visible, expanded: expanded}, dims) do
@@ -291,26 +297,30 @@ defmodule Workstation.CLI.TUI.Shell.Dashboard do
         tile(@minimal_rows, visible, dims)
 
       width >= @mosaic_min_width ->
-        tile(slot_rows(expanded), visible, dims)
+        expand_in_place(tile(@slot_rows, visible, dims), expanded, height)
 
       true ->
         stack(visible, dims, expanded)
     end
   end
 
-  # The drill rows: the box's 6-row band plus 8 — the exact `y =
-  # Proc::y + 8` in-box expansion (§1.6), enough for the browser's tree
-  # cursor and its descendants.
-  @drill_rows 14
+  # The drill expands the box's OWN mosaic cell in place (btop's
+  # proc-expanded z-order): the cell keeps its x/y/width, grows to
+  # @drill_rows downward over the boxes beneath it, and moves to the END
+  # of the layout list — the draw order — so it renders on top of the
+  # neighbors it covers. Every other box keeps its exact position and
+  # size (no re-tile, no stack reshuffle); one Esc pops the overlay back.
+  defp expand_in_place(layout, :capabilities, height) do
+    case Enum.split_with(layout, fn {box, _rect} -> box == :capabilities end) do
+      {[{box, {x, y, width, _band}}], rest} ->
+        rest ++ [{box, {x, y, width, max(min(@drill_rows, height - y), 1)}}]
 
-  defp slot_rows(:capabilities) do
-    Enum.map(@slot_rows, fn
-      {[:capabilities], _band} -> {[:capabilities], @drill_rows}
-      row -> row
-    end)
+      _not_tiled ->
+        layout
+    end
   end
 
-  defp slot_rows(_expanded), do: @slot_rows
+  defp expand_in_place(layout, _expanded, _height), do: layout
 
   # One tile row per track; the row's visible boxes split it evenly.
   defp tile(rows, visible, {width, height}) do
