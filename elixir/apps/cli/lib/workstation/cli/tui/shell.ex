@@ -833,12 +833,13 @@ defmodule Workstation.CLI.TUI.Shell do
 
   # The status box's border badge: journal generation plus the sync
   # verdict from the diff wire (the old status read pane's badge).
+  # A journal-less home carries the daemon's canonical `:null` token
+  # (CanonicalJSON round-trips JSON null as the atom `:null`), so the
+  # badge clause must map-match like the sibling journal readers —
+  # anything but a journal map means no badge.
   defp status_badge(state, styles) do
     case status_journal(state) do
-      nil ->
-        []
-
-      journal ->
+      journal when is_map(journal) ->
         gen = [{"gen #{journal["generation"]}", styles.chrome}]
 
         verdict =
@@ -857,6 +858,9 @@ defmodule Workstation.CLI.TUI.Shell do
           end
 
         gen ++ verdict
+
+      _journalless ->
+        []
     end
   end
 

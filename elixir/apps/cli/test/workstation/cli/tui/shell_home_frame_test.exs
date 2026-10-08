@@ -102,6 +102,21 @@ defmodule Workstation.CLI.TUI.ShellHomeFrameTest do
       assert_closed_borders(frame)
       assert full_text(frame) =~ "┘u update└"
     end
+
+    test "a journal-less home (the daemon's :null token) renders every box, badge absent" do
+      # The daemon's CanonicalJSON round-trips a fresh home's JSON null
+      # journal as the ATOM :null (read.ex folds `(journal && wire) ||
+      # :null`), so the shell must badge-map-match like the sibling
+      # journal readers — a full frame render, no crash, and the same
+      # journal-less wording the nil shape shows.
+      frame = home_frame(188, 53, journal: :null)
+      assert_closed_borders(frame)
+
+      text = full_text(frame)
+      assert text =~ "none — nothing applied yet"
+      refute text =~ "· in-sync"
+      refute text =~ "· pending"
+    end
   end
 
   describe "presets" do
@@ -467,7 +482,7 @@ defmodule Workstation.CLI.TUI.ShellHomeFrameTest do
       destination: "/tmp/workstation-home-frame-test-home",
       theme: Theme.base_colors(:dark),
       dashboard: Keyword.get(opts, :dashboard, Dashboard.new()),
-      cache: %{status: {:ok, status_wire()}, plan: {:ok, plan_wire()}, diff: {:ok, diff_wire()}},
+      cache: %{status: {:ok, status_wire(Keyword.get(opts, :journal))}, plan: {:ok, plan_wire()}, diff: {:ok, diff_wire()}},
       caps: caps_browser(),
       caps_env: caps_envelope(),
       text_views: %{},
@@ -619,9 +634,13 @@ defmodule Workstation.CLI.TUI.ShellHomeFrameTest do
 
   defp caps_browser, do: CapabilitiesBrowser.init(caps_envelope())
 
-  defp caps_envelope, do: Capabilities.group(%{"status" => status_wire(), "plan" => plan_wire()})
+  defp caps_envelope, do: Capabilities.group(%{"status" => status_wire(nil), "plan" => plan_wire()})
 
-  defp status_wire do
+  defp status_wire(nil), do: status_wire(%{"generation" => 2, "revision" => 7, "applied_at" => "2026-02-13T10:00:00Z"})
+
+  # A non-nil override replaces the journal field verbatim — the :null
+  # atom is the daemon's canonical encoding of a JSON null journal.
+  defp status_wire(journal) when is_map(journal) or journal == :null do
     %{
       "destination" => "/tmp/workstation-home-frame-test-home",
       "platform" => "linux-test",
@@ -637,7 +656,7 @@ defmodule Workstation.CLI.TUI.ShellHomeFrameTest do
         %{"id" => "tmux", "name" => "tmux", "targets" => [".config/tmux"]}
       ],
       "graph_order" => ["tmux", "helix", "nvim"],
-      "journal" => %{"generation" => 2, "revision" => 7, "applied_at" => "2026-02-13T10:00:00Z"}
+      "journal" => journal
     }
   end
 
