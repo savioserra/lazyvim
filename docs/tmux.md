@@ -49,13 +49,52 @@ on an isolated server.
 Pinning rules:
 
 - Keep `@plugin` values as bare `user/repo` for TPM.
-- Store exact commits in `packages/tmux/init.lua`.
-- Run setup on every apply; setup fetches and checks out each commit.
+- Store exact commits in this table; the engine records the contract only —
+  the retired Lua `setup`/`verify` handlers owned the actual checkouts, and
+  the engine has no download recipe yet (see the prepared section below),
+  so a checkout is (re)created by TPM's `prefix + I` and repairable via
+  `workstation apply`'s recorded pins.
 - Keep the `TMUX_PLUGIN_MANAGER_PATH` pin ahead of the TPM `run-shell`; TPM's
   default path logic alone would select the unmanaged XDG plugin root.
 - Update this table with implementation pins.
 
 TPM `user/repo#ref` supports branches/tags, not exact raw commits.
+
+## Prepared plugin (pending provisioning)
+
+| Plugin | Commit | Release pins |
+| --- | --- | --- |
+| `datamadsen/nunchux` | `1546eaa980d834c331496ea9d51942be07ea9fdd` (Release 3.1.3) | `versions.json` `nunchux_*`: release-asset SHA-256 per platform (`nunchux-linux-amd64` `d66afe3d…`, `nunchux-darwin-arm64` `c8444fd8…`) |
+
+Nunchux (fzf popup launcher for apps, files and task runners) is prepared
+but NOT active: the `@plugin` line in `.tmux.conf` stays commented out until
+the engine grows download provisioning (`Source.Download` — the residual
+tool/plugin provisioning gap left by the Lua setup handlers; see
+[elixir](elixir.md)). Everything short of activation is in place: the root
+`C-Space` chord (`@nunchux-key`, declared ahead of TPM init) and the
+slot-templated `~/.config/nunchux/config` target (byte-equal to upstream's
+default config, consuming theme slots — [theme](theme.md)).
+
+Activation is deliberately gated on that machinery because upstream's
+`nunchux.tmux` fetches `releases/latest` at plugin load with no checksum
+and no version pin — the same exclusion-class defect as `tmux-fingers` —
+and the spec-correct fix is a checksummed, pinned pre-seed of
+`~/.tmux/plugins/nunchux/bin/nunchux` + `bin/.platform`, which needs the
+missing recipe kind. Pre-seeding the directory before TPM's clone would
+instead make TPM skip the plugin entirely (non-empty checkout).
+
+The launch chord is **C-Space, root** (no prefix): `@nunchux-key` is set to
+`C-Space` — upstream's own default — and the activation block carries the
+matching commented `bind -n C-Space display-popup …` line (exact
+nunchux.tmux popup command) so the chord goes live together with the
+plugin. Tradeoff: root `C-Space` shadows the chord for applications inside
+tmux (e.g. insert-mode completion). Revert is one line: comment the bind
+line in `.tmux.conf` and re-apply.
+
+Compliance flag: upstream ships NO LICENSE file, so the code is
+all-rights-reserved by default — running it is a user-owned choice, and
+the deferral keeps it out of managed hosts until provisioning can pin
+exactly what ships.
 
 ## Excluded plugin
 

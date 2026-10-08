@@ -1,0 +1,7 @@
+# Managed by the workstation tmux capability — theme slot template. The
+# fzf color binding is byte-equal to nunchux's upstream default config, so
+# activation introduces zero visual drift; only the two slot references
+# (text = fg+ marker, ok = marker) carry the theme rebrand forward. Slot
+# names resolve through the theme capability's .chezmoidata.toml envelope.
+[settings]
+fzf_colors = fg+:{{ .theme.slots.text }}:bold,bg+:-1,hl:cyan,hl+:cyan:bold,pointer:cyan,marker:{{ .theme.slots.ok }},header:gray,border:gray

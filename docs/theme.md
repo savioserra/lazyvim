@@ -64,6 +64,7 @@ plan.
 | Surface | Layer | Mechanism |
 | --- | --- | --- |
 | tmux (`tmux2k.conf`) | `slots` | `template = true` recipe; tmux requires `theme` |
+| tmux (nunchux launcher config, prepared) | `slots` | same `template = true` path; plugin stays dormant until engine download provisioning ([tmux](tmux.md)) |
 | pi (`~/.pi/agent/themes/workstation-{dark,light}.json`) | `palette` | template recipes; agent requires `theme`; `settings.json` stays pi-owned — select `"workstation-light/workstation-dark"` once via `/settings` |
 | herdr | philosophy + `palette` | documented canonical choice only: `[theme] name = "terminal"`, `auto_switch = true` (see [herdr](herdr.md)); the engine never writes herdr's live `config.toml` |
 | nvim | — | unchanged: follows the Omarchy desktop theme |

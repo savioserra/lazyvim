@@ -10,6 +10,13 @@ defmodule Workstation.Core.Catalog.Packages.Tmux do
   plugin root. Plugin checkouts (tpm/tmux2k/yank/navigator/resurrect at
   pinned commits) are the factory's Lua `setup`/`verify` handlers, never
   managed source state.
+
+  The nunchux launcher config rides the same theme envelope (slot names,
+  rendered bytes equal upstream's default config), but the plugin itself
+  stays dormant: the `@plugin` line in .tmux.conf is commented out until
+  the engine grows download provisioning — upstream's nunchux.tmux fetches
+  `releases/latest` at plugin load with no checksum, so activation is
+  gated on checksummed pre-seeding (docs/tmux.md, "prepared" section).
   """
 
   @behaviour Workstation.Core.Catalog.Spec
@@ -30,6 +37,12 @@ defmodule Workstation.Core.Catalog.Packages.Tmux do
           kind: :file,
           template: true,
           asset: "files/.config/tmux/themes/tmux2k.conf"
+        ),
+        Packages.chezmoi(
+          target: ".config/nunchux/config",
+          kind: :file,
+          template: true,
+          asset: "files/.config/nunchux/config"
         ),
         Packages.chezmoi(target: ".config/tmux/tmux.conf", kind: :symlink, to: "../../.tmux.conf")
       ]
