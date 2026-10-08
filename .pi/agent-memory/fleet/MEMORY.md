@@ -393,3 +393,22 @@ required.
 - Update chain pull derives engine_root by walking UP FROM THE DAEMON CWD:
   respawn the daemon with cwd outside the repo to exercise the honest
   pull-failure render; repo-cwd daemons will git-fetch the real checkout.
+
+## TUI wedge fixes lane (fix lane, 2026-10-08)
+
+- The portrait freeze (rows>=cols), short-screen overlay wedge (rows<=60)
+  and missing update step list were ONE bug: Box.fit_border/3 ellipsis
+  trim didn't reserve the row's closing dash (islands_width/1 base 1) —
+  a trim landing at exactly room-2 left the row 1 cell over, base case
+  never satisfied, recursion spun forever mid-frame (render GenServer
+  alive but wedged; SIGWINCH only "fixed" it when width changed).
+  Fixed in ea842aff: reserve the dash in the trim room.
+- Lesson: any bounded-recursion over visual budgets must reserve the
+  shared suffix (border dashes) BEFORE computing room, or near-exact
+  fits hang the render loop at specific terminal sizes only.
+- ApplyTest toast-drain + dashboard width-sweep + daemon protocol-cap
+  failures are the RECORDED seed-dependent flaky family under parallel
+  load (proven pre-existing by same-seed A/B on parent commit; green
+  solo/--seed 1). Harness phase-B update capture blocked while origin
+  is in sync (update.check no longer "behind") — pin update UI via the
+  screen's injected executor/check seams.
