@@ -1069,4 +1069,31 @@ defmodule Workstation.CLI.TUI.ShellTest do
       assert Frame.row_text(scrolled, 2) =~ "⁴plan"
     end
   end
+
+  # -- gate regressions (wedge fixes) ---------------------------------------
+
+  # The gate's portrait defect: at rows >= cols the dashboard booted but
+  # the async wire data never landed (a stalled render inside the
+  # border/island fitting). This pins the loaded home at the gate's
+  # 60x50 shape: every stack box's read renders.
+  describe "gate geometries" do
+    test "the dashboard loads its wires at rows >= cols (60x50)" do
+      start_screen!(Shell, rows: 60, cols: 50, screen_opts: shell_opts())
+
+      frame =
+        await_frame(fn frame ->
+          text = body_text(frame)
+          text =~ "9.9.9-test" and text =~ "rollup:"
+        end)
+
+      text = body_text(frame)
+
+      # Engine identity + capabilities rollup (the loaded gate above)
+      # plus deep rows from the plan and status reads (the 50-col stack
+      # boxes carry summary rows, not zoomed targets).
+      assert text =~ "linux-test"
+      assert text =~ "gen-3"
+      assert text =~ "entries:    3"
+    end
+  end
 end

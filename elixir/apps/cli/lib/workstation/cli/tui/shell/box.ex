@@ -151,7 +151,12 @@ defmodule Workstation.CLI.TUI.Shell.Box do
 
       true ->
         init = Enum.drop(islands, -1)
-        room = budget - content_width(left) - islands_width(init)
+        # The closing dash (`islands_width/1` base 1) rides in the room
+        # too: without reserving it, an ellipsis-trimmed island lands at
+        # exactly room - 2 wide and the row still overruns by one cell,
+        # so the trim recursion spins on an unchanged island forever (the
+        # portrait / short-screen render stall).
+        room = budget - content_width(left) - islands_width(init) - 1
         trimmed = trim_island(List.last(islands), room)
 
         if content_width(trimmed) > 0 do

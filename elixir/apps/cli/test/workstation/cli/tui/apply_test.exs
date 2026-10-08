@@ -496,4 +496,62 @@ defmodule Workstation.CLI.TUI.ApplyTest do
       assert Enum.uniq(ids) == ids
     end
   end
+
+  # -- gate regressions (wedge fixes) ---------------------------------------
+
+  # The gate wedged the apply overlay at every short landscape size
+  # (boot frame only, keys ignored). This pins the full flow at the
+  # gate's 100x40 shape: the dialog paints, the typed gate still arms,
+  # the executor fires, and the completion paints.
+  describe "gate geometries" do
+    test "the dialog renders and armed keys fire the run at 100x40" do
+      test_pid = self()
+
+      runtime =
+        start_screen!(
+          Apply,
+          screen_opts(
+            executor: fn %{"generation" => generation} ->
+              send(test_pid, {:executor_called, generation})
+              :ok
+            end
+          )
+          |> Keyword.merge(rows: 40, cols: 100)
+        )
+
+      _boot = latest_frame()
+      send_text(runtime, "a")
+
+      # The dialog floats centered: 5 rows at div(40 - 5, 2) + 1 = 18.
+      frame =
+        await_frame(fn frame ->
+          Frame.row_text(frame, 18) =~ "Confirm apply"
+        end)
+
+      assert frame |> Frame.row_text(19) =~ "Apply 3 change(s) to #{@destination}?"
+      assert frame |> Frame.row_text(20) =~ "Type apply to confirm: _"
+
+      # The dialog is already open (the leading 'a' above): type the
+      # verb straight into the buffer — arm/0 would prepend another 'a'.
+      type_text(runtime, "apply")
+      send_key(runtime, :enter)
+
+      assert_receive {:executor_called, "gen-1"}, 2_000
+
+      frame =
+        await_frame(fn frame ->
+          frame_text(frame) =~ "✓ Applied generation gen-1"
+        end)
+
+      # The success toast box overlays the phase footer at this height;
+      # the ✓ line is the completion evidence.
+      assert frame_text(frame) =~ "✓ Applied generation gen-1"
+    end
+  end
+
+  defp frame_text(frame) do
+    1..frame.height
+    |> Enum.map(&Frame.row_text(frame, &1))
+    |> Enum.join("\n")
+  end
 end

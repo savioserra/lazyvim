@@ -543,4 +543,56 @@ defmodule Workstation.CLI.TUI.UpdateTest do
       Enum.find_value(state.steps, fn step -> step["id"] == id && step["status"] end)
     end
   end
+
+  # -- gate regressions (wedge fixes) ---------------------------------------
+
+  # The gate found the run panel's boxed step list missing at every size
+  # (render stalled inside the border/island fitting before the table
+  # painted). These pin the step rows at the gate's exact geometries,
+  # including the two defect shapes: short landscape (100x40) and
+  # portrait (60x50, rows >= cols).
+  describe "gate geometries" do
+    test "armed run panel lists the step rows at 175x83" do
+      assert_step_rows_render(83, 175)
+    end
+
+    test "armed run panel lists the step rows at 100x40" do
+      assert_step_rows_render(40, 100)
+    end
+
+    test "armed run panel lists the step rows at 60x50 portrait" do
+      assert_step_rows_render(50, 60)
+    end
+  end
+
+  defp assert_step_rows_render(rows, cols) do
+    geo = [rows: rows, cols: cols]
+    runtime = start_screen!(Update, Keyword.merge(screen_opts([]), geo))
+    _boot = latest_frame()
+    arm(runtime)
+
+    # The completion toast is the chain_done render — awaiting it
+    # settles every row assert below (same gate as the 80x12 case).
+    frame =
+      await_frame(fn frame ->
+        frame_text(frame) =~ "Update completed"
+      end)
+
+    # Above the float threshold (height >= 16 and width >= 60) the run
+    # panel floats at overlay (5, 3): the box top sits on row 3, the
+    # table header on 4, the step rows on 5..9. Below it the box is the
+    # full rect: header 2, steps 3..7 (the pinned 80x12 layout).
+    top = if rows < 16 or cols < 60, do: 1, else: 3
+
+    for {step, row} <- Enum.zip(Update.steps(), (top + 2)..(top + 6)) do
+      assert frame |> Frame.row_text(row) =~ step
+      assert frame |> Frame.row_text(row) =~ "ok"
+    end
+  end
+
+  defp frame_text(frame) do
+    1..frame.height
+    |> Enum.map(&Frame.row_text(frame, &1))
+    |> Enum.join("\n")
+  end
 end
