@@ -443,3 +443,23 @@ required.
   user's tmux window (plain `workstation`, NOT exec — pane must survive),
   `tmux capture-pane -e -p -t '0:ws'` (raw) + `-p` (stripped); reuse
   /tmp/fleet/gate/assert_frames.py cell-parser for hue/keycap asserts.
+
+## ADDENDUM 2 tmux-oasis lane (2026-10-08)
+
+- check.sh GREEN = exit 0 + "check.sh: OK" — the old "1=green" alphabet
+  note does NOT describe this script's exit code; a printed FAILED with
+  exit 1 is red. Trust the printed verdict.
+- After ANY catalog/asset change: rebuild prod release
+  (`cd elixir && mise exec -- env MIX_ENV=prod mix release workstation
+  --overwrite`) AND repack the tarball per docs/elixir.md:228-229
+  (`tar -czf ../../../workstation-0.1.0-linux-x64.tar.gz workstation` +
+  sha256 file, both gitignored) — shim-anchor + boot-smoke gates exec the
+  TARBALL and fail closed on stale embedded beams ("native catalog asset
+  is missing or empty: <pkg>:<path>").
+- `kind: :remove` recipes (chezmoi.ex:288) project as `.chezmoiremove`
+  entries; they are already-absent no-ops on never-owned homes, so golden
+  `removals: []` stays empty — assert the tombstone via the recipe spec,
+  not the plan projection.
+- Refute-guards on config bytes (`refute conf =~ "@thm_"`) also match
+  explanatory comments — never mention the banned literal in surrounding
+  prose.
