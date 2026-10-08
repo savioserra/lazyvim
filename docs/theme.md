@@ -4,6 +4,12 @@ One canonical color source for every workstation surface that renders color.
 Owned by `workstation/packages/theme` (`tokens.lua` holds the data,
 `init.lua` is the package factory). Re-branding edits exactly one file.
 
+Current brand: **Starlight** — the oasis.nvim starlight `@thm_*` palette
+(dark) and its `light_3` sibling (light, upstream's default intensity).
+Palette values cite those theme tokens; the slot layer rides the matching
+starlight ANSI-16 terminal assignment. Judgment calls (chrome/muted split,
+`selected_bg`, light `muted`) are pinned in the rebrand spec S-R3.
+
 ## Layers
 
 Roles are the API, values are data. Consumers reference role names and never
@@ -29,12 +35,12 @@ all reusing existing palette hues:
 
 | Role | Domain | Hue (why) |
 | --- | --- | --- |
-| `border_engine` | engine panel | blue — engine-core forward view (`accent` family) |
+| `border_engine` | engine panel | blue — engine-core forward view (`accent` = `@thm_primary #5badff` family) |
 | `border_plan` | plan panel (home + tab) | blue — the planned mutation surface |
-| `border_journal` | journal panel | green — health-log semantics (`ok` family) |
+| `border_journal` | journal panel | green — health-log semantics (`ok` = `@thm_green #7fcf78` family) |
 | `border_status` | status panel (home + tab) | green — health verdicts |
-| `border_capabilities` | capabilities panel + browser | yellow — pending-apply caution (`warn` family) |
-| `border_diff` | diff panel (home + tab) | red — the mutation surface (`err` family) |
+| `border_capabilities` | capabilities panel + browser | yellow — pending-apply caution (`warn` = `@thm_yellow #f0e68c`, doubles as the theme's active-pane border hue) |
+| `border_diff` | diff panel (home + tab) | red — the mutation surface (`err` = `@thm_red #ff7979` family) |
 
 They live in both layers (slots + per-appearance palette) and are
 overlay-settable like every other palette role; `Tokens.border_roles/0` is

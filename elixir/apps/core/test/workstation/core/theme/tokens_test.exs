@@ -28,7 +28,7 @@ defmodule Workstation.Core.Theme.TokensTest do
 
   test "the mirror carries the same contract values as tokens.lua" do
     # Parity anchor: packages/theme/tokens.lua must carry identical values.
-    assert Tokens.version() == 3
+    assert Tokens.version() == 4
     assert Tokens.herdr_consumer() == %{name: "terminal", auto_switch: true}
 
     assert Map.new(Tokens.slots()) == %{
@@ -37,10 +37,10 @@ defmodule Workstation.Core.Theme.TokensTest do
              warn: "yellow",
              err: "red",
              chrome: "brightblack",
-             text: "black",
+             text: "white",
              shortcut: "magenta",
-             selected_bg: "blue",
-             selected_fg: "black",
+             selected_bg: "brightblack",
+             selected_fg: "white",
              inactive: "brightblack",
              ramp_start: "green",
              ramp_mid: "yellow",

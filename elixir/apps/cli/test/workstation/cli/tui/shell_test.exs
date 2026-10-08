@@ -227,14 +227,14 @@ defmodule Workstation.CLI.TUI.ShellTest do
     frame = settled_frame(runtime)
 
     # Title construction `╭─┐¹engine┌…`: the digit rides the keycap slot
-    # (shortcut role #bb9af7, bold), the label rides the text role
-    # (#c0caf5) — the old strip's accent labels are gone with the strip.
+    # (shortcut role #c695ff, bold), the label rides the text role
+    # (#f5f5dc) — the old strip's accent labels are gone with the strip.
     engine_r = find_row(frame, "¹engine")
     assert Frame.cell(frame, engine_r, 3).char == "┐"
     assert Frame.cell(frame, engine_r, 4).char == "¹"
-    assert Frame.cell(frame, engine_r, 4).fg == {187, 154, 247}
+    assert Frame.cell(frame, engine_r, 4).fg == {198, 149, 255}
     assert Frame.cell(frame, engine_r, 5).char == "e"
-    assert Frame.cell(frame, engine_r, 5).fg == {192, 202, 245}
+    assert Frame.cell(frame, engine_r, 5).fg == {245, 245, 220}
   end
 
   test "keycap/1 renders btop's superscript table with clamping" do
@@ -281,7 +281,7 @@ defmodule Workstation.CLI.TUI.ShellTest do
 
     # Key caps glow in the shortcut slot (after the ┘ connector).
     assert Frame.cell(frame, 30, 1).char == "┘"
-    assert Frame.cell(frame, 30, 2).fg == {187, 154, 247}
+    assert Frame.cell(frame, 30, 2).fg == {198, 149, 255}
   end
 
   test "home lists every verb's surface once the reads land" do
@@ -630,13 +630,13 @@ defmodule Workstation.CLI.TUI.ShellTest do
     end
 
     # fresh (<24h) → ramp_start (ok slot family)
-    assert ramp_cell.(~U[2026-02-13T12:00:00Z]) == {158, 206, 106}
+    assert ramp_cell.(~U[2026-02-13T12:00:00Z]) == {127, 207, 120}
 
     # aging (<7d) → ramp_mid (warn family)
-    assert ramp_cell.(~U[2026-02-16T10:00:00Z]) == {224, 175, 104}
+    assert ramp_cell.(~U[2026-02-16T10:00:00Z]) == {240, 230, 140}
 
     # stale (≥7d) → ramp_end (err family)
-    assert ramp_cell.(~U[2026-05-01T10:00:00Z]) == {247, 118, 142}
+    assert ramp_cell.(~U[2026-05-01T10:00:00Z]) == {255, 121, 121}
   end
 
   test "the engine badge tints reachable state accent and unreachable err" do
@@ -649,7 +649,7 @@ defmodule Workstation.CLI.TUI.ShellTest do
     row = find_row(frame, "● reachable")
     # The badge rides the engine box title - row 1 in the stack layout.
     assert row
-    assert fg_in_row?(frame, row, {122, 162, 247})
+    assert fg_in_row?(frame, row, {91, 173, 255})
 
     _runtime = start_shell(load: loader(%{status: {:error, {"daemon_unavailable", "ENOENT"}}}))
 
@@ -663,7 +663,7 @@ defmodule Workstation.CLI.TUI.ShellTest do
     row = find_row(frame, "● unreachable")
     # The badge rides the engine box title — row 1 in the stack layout.
     assert row
-    assert fg_in_row?(frame, row, {247, 118, 142})
+    assert fg_in_row?(frame, row, {255, 121, 121})
   end
 
   test "read failures render in the err slot" do
@@ -675,12 +675,12 @@ defmodule Workstation.CLI.TUI.ShellTest do
     frame =
       await_frame(fn frame ->
         row = find_row(frame, "read failed")
-        row > 1 and fg_in_row?(frame, row, {247, 118, 142})
+        row > 1 and fg_in_row?(frame, row, {255, 121, 121})
       end)
 
     row = find_row(frame, "read failed")
     assert row > 1
-    assert fg_in_row?(frame, row, {247, 118, 142})
+    assert fg_in_row?(frame, row, {255, 121, 121})
   end
 
   # -- mouse -----------------------------------------------------------------

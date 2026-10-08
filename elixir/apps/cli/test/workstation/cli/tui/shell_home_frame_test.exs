@@ -206,15 +206,15 @@ defmodule Workstation.CLI.TUI.ShellHomeFrameTest do
       # Dark-base token hues from the docs/theme.md border role table:
       # engine/plan blue, journal/status green, capabilities yellow,
       # diff red — all resolved through the theme, never hardcoded in
-      # the box painter.
-      assert Frame.cell(frame, engine_r, 1).fg == {122, 162, 247}
-      assert Frame.cell(frame, journal_r, 1).fg == {158, 206, 106}
-      assert Frame.cell(frame, caps_r, 1).fg == {224, 175, 104}
-      assert Frame.cell(frame, plan_r, 1).fg == {122, 162, 247}
-      assert Frame.cell(frame, diff_r, 1).fg == {247, 118, 142}
-      assert Frame.cell(frame, status_r, 1).fg == {158, 206, 106}
+      # the box painter. Starlight brand values (v4).
+      assert Frame.cell(frame, engine_r, 1).fg == {91, 173, 255}
+      assert Frame.cell(frame, journal_r, 1).fg == {127, 207, 120}
+      assert Frame.cell(frame, caps_r, 1).fg == {240, 230, 140}
+      assert Frame.cell(frame, plan_r, 1).fg == {91, 173, 255}
+      assert Frame.cell(frame, diff_r, 1).fg == {255, 121, 121}
+      assert Frame.cell(frame, status_r, 1).fg == {127, 207, 120}
 
-      # Enabled buttonbar labels read text (dark base #c0caf5); the
+      # Enabled buttonbar labels read text (dark base #f5f5dc); the
       # keycap stays shortcut. Find the caps band's buttonbar row — the
       # box body may spend any number of rows above it.
       buttonbar_row =
@@ -233,7 +233,7 @@ defmodule Workstation.CLI.TUI.ShellHomeFrameTest do
         |> String.length()
         |> Kernel.+(1)
 
-      assert Frame.cell(frame, buttonbar_row, label_col).fg == {192, 202, 245}
+      assert Frame.cell(frame, buttonbar_row, label_col).fg == {245, 245, 220}
     end
 
     test "one column below the boundary falls back to the stack" do
