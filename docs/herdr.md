@@ -43,7 +43,9 @@ cleanup on it.
   live `config.toml` (the binary owns it: onboarding, Settings edits,
   `herdr config reset-keys`). Set once in herdr's Settings:
   `[theme] name = "terminal"`, `auto_switch = true` — herdr then follows the
-  host terminal's ANSI palette exactly like tmux and nvim here, with optional
+  host terminal's ANSI palette exactly like the tmux bar here (nvim is the
+  one brand-pinned exception: it loads the upstream oasis starlight palette),
+  with optional
   `[theme.custom]` accents derived from the shared tokens
   ([theme](theme.md)). Enforcement (a `modify_` fragment patching only the
   `[theme.custom]` block) is a deliberate non-goal until branding is wanted.
