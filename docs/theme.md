@@ -67,7 +67,7 @@ plan.
 | tmux (nunchux launcher config, prepared) | `slots` | same `template = true` path; plugin stays dormant until engine download provisioning ([tmux](tmux.md)) |
 | pi (`~/.pi/agent/themes/workstation-{dark,light}.json`) | `palette` | template recipes; agent requires `theme`; `settings.json` stays pi-owned — select `"workstation-light/workstation-dark"` once via `/settings` |
 | herdr | philosophy + `palette` | documented canonical choice only: `[theme] name = "terminal"`, `auto_switch = true` (see [herdr](herdr.md)); the engine never writes herdr's live `config.toml` |
-| nvim | — | unchanged: follows the Omarchy desktop theme |
+| nvim | upstream pin (`oasis-starlight`) | `lazy-lock.json` pins `uhs-robert/oasis.nvim`; the editor rides the upstream starlight palette tokens.lua cites — not a generated colorscheme (rebrand spec S-R4); starlight wins all hosts, Omarchy import dropped (S-R2) |
 | term_ui (Elixir TUI + daemon) | `palette` | shipped mirror `Workstation.Core.Theme.Tokens` with tests: the daemon `theme.resolve` overlay applies role sets over it (docs/elixir.md, daemon wire), and the CLI TUI theme resolver mirrors the same palette (pinned by `theme_test.exs` "base path mirrors the core tokens palette exactly") |
 
 ## TUI box anatomy note

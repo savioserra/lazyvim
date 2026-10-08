@@ -87,7 +87,7 @@ exists yet.
 | `lsp.lua` | Base nvim-lspconfig servers |
 | `mason.lua` | Headless sync integration |
 | `mason-lock.lua` | Blocking exact Mason restore |
-| `theme.lua` | tender.vim, contrast overrides, and guarded Omarchy desktop-theme import |
+| `theme.lua` | oasis.nvim (upstream starlight pin) + LazyVim colorscheme opt |
 | `treesitter.lua` | Parser set |
 | `ui.lua` | snacks, lualine, noice, dropbar, inline diagnostics |
 | `editor.lua` | Movement, tags, tmux navigation, diff view |
@@ -125,23 +125,26 @@ Mason restore requirements:
 - terminate timed-out operations;
 - verify final installed versions.
 
-## Desktop theme integration
+## Theme
 
 | Item | Value |
 | --- | --- |
-| Followed spec | `~/.local/state/omarchy/current/theme/neovim.lua` (legacy `~/.config/omarchy/current/theme/…`) |
-| Mechanism | `lua/plugins/theme.lua` loads the spec at startup and appends it after the tender specs |
-| Fallback | tender on non-Omarchy hosts, missing files, empty specs, or load errors |
+| Colorscheme | `oasis-starlight` — `uhs-robert/oasis.nvim` pinned at `main` `a3ef178fe47c69691e676a8da98ce5735c3013db` in `lazy-lock.json` |
+| Mechanism | `lua/plugins/theme.lua` runs `require("oasis").setup({ style = "starlight" })` then `vim.cmd.colorscheme("oasis-starlight")` at startup; LazyVim's `colorscheme` opt carries the same value |
+| Dark/light | oasis switches on `vim.o.background` — both appearances map to its dual-mode palette natively (`light_intensity` 3 is the upstream default) |
+| Omarchy import | Dropped with the Starlight rebrand: starlight wins on all hosts (rebrand spec S-R2), so the editor no longer follows the desktop theme |
 
 Rules:
 
-- Apply the imported colorscheme on the next Neovim start; running instances
-  only get the terminal-palette retint, so a colorscheme reload needs a
-  restart (stock Omarchy behaves the same way).
-- Keep tender.vim in the specs unconditionally so the spec set and headless
-  sync stay host-independent. The deployed lockfile may still legitimately
-  gain host extras (the followed theme's plugin); the merge program
-  reconciles them at the next apply instead of failing closed.
+- oasis.nvim is the upstream port, deliberately NOT a colorscheme generated
+  from the workstation tokens: tokens.lua drives engine surfaces; editor
+  syntax rides the complete upstream palette (rebrand spec S-R4).
+- Deployed lockfiles that still carry `tender.vim` (or Omarchy theme plugin
+  extras) reconcile on the next apply: the pin left the engine seed, so it
+  becomes a host extra that prunes once its installed plugin directory goes
+  (documented lockfile merge semantics above).
+- Apply the colorscheme on the next Neovim start; running instances only get
+  the terminal-palette retint, so a colorscheme reload needs a restart.
 
 ## Headless sync
 
