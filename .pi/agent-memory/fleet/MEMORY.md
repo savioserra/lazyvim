@@ -412,3 +412,24 @@ required.
   solo/--seed 1). Harness phase-B update capture blocked while origin
   is in sync (update.check no longer "behind") — pin update UI via the
   screen's injected executor/check seams.
+
+## Starlight rebrand lane (2026-10-08, commits 7eac3dd3..88643682)
+
+- Tokens v4 = oasis starlight @thm_* (dark) + light_3 sibling (light);
+  binding values live in /tmp/fleet/reports/starlight-spec.md C0-C6 +
+  S-R1..S-R5 — re-read the spec, never trust prose summaries.
+- theme.ex needs NO edit on token changes (base_colors mirrors
+  Tokens.palette); TUI = token swap itself. pi themes are palette
+  templates — only accentBg/bgAlt are literal (accentBg = token
+  selected_bg; bgAlt = upstream bg.surface ladder step).
+- tmux2k.conf is already a slot-var template: bar rebrands via token
+  swap, zero diff. Nunchux stays DORMANT (commented @plugin + marker;
+  upstream fetches releases/latest unchecksummed; Source.Download is the
+  engine residual) — release-asset sha pins live in versions.json.
+- oasis.nvim setup contract key is `style` (README config block), NOT
+  `colorscheme` — the spec sketch's `colorscheme =` key doesn't exist in
+  Config.defaults; select the port via vim.cmd.colorscheme("oasis-…").
+- Catalog package tests: @repo_root = Path.expand six "../" from
+  apps/core/test/workstation/core/catalog. mix workstation.goldens
+  re-records tests/goldens; commit-body the byte-diff (usually 1-2 asset
+  shas + generation/plan derivatives).
