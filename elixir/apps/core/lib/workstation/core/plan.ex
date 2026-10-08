@@ -19,11 +19,13 @@ defmodule Workstation.Core.Plan do
 
   @doc """
   Compose the desired plan for `home`: the live native catalog (or a
-  sandbox `collect` — a zero-arity callable returning `{:ok, %Catalog{}}`;
-  production never passes one), the ordered graph, and `Source.with_baseline/2`
-  against the home's journal. The stamped baseline makes a journal that
-  advanced past this plan a precondition refusal, and an identical desired
-  generation an idempotent no-op.
+  sandbox `collect` — a zero-arity callable returning `{:ok, %Catalog{}}`),
+  the ordered graph, `Source.with_baseline/2` against the home's journal and
+  `Source.activate_removals/3` at this boundary. The stamped baseline makes
+  a journal that advanced past this plan a precondition refusal, and an
+  identical desired generation an idempotent no-op. Declared removals only
+  ever activate here, where the journal and the destination home are both
+  readable — the pure `Source.plan/1` composes them inert.
 
   Errors keep their cause explicit so each surface can apply its own wire
   coding: `{:error, {:collect_failed, reason}}` for catalog collection
@@ -41,12 +43,16 @@ defmodule Workstation.Core.Plan do
       # The plan records the journal state it was composed against: the
       # engine's preconditions compare this stamp against the in-lock
       # journal. Source.plan is pure (a replay probes no filesystem), so the
-      # real baseline lands only here, at the composition boundary.
+      # real baseline lands only here, at the composition boundary — and
+      # declared removals only activate here, where the journal record and
+      # the destination home are both readable.
+      journal = Journal.applied(state_root(home))
+
       {:ok,
-       Source.with_baseline(
-         Source.plan(%{graph: graph}),
-         Journal.applied(state_root(home))
-       )}
+       %{graph: graph}
+       |> Source.plan()
+       |> Source.with_baseline(journal)
+       |> Source.activate_removals(journal, home)}
     else
       {:error, reason} -> {:error, {:collect_failed, reason}}
     end

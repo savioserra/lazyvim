@@ -28,6 +28,7 @@ defmodule Workstation.Core.Source do
 
   defstruct entries: [],
             removals: [],
+            declared_removals: [],
             unsupported_reversals: [],
             profile: nil,
             fragments_journal: %{},
@@ -61,6 +62,7 @@ defmodule Workstation.Core.Source do
   @type t :: %__MODULE__{
           entries: [entry()],
           removals: [removal()],
+          declared_removals: [removal()],
           unsupported_reversals: [removal()],
           profile: [map()] | nil,
           fragments_journal: %{optional(String.t()) => [map()]},
@@ -102,7 +104,12 @@ defmodule Workstation.Core.Source do
     # Active filtering with a fresh journal: a removal is active only when the
     # journal recorded it or the target is present in the destination home;
     # the pure core replay performs no filesystem probing, and a fresh journal
-    # records nothing, so no declared removal can be active.
+    # records nothing, so no declared removal can be active. The declared set
+    # travels verbatim in `declared_removals` so the one production
+    # composition boundary (`Workstation.Core.Plan.composed_plan/2` through
+    # `activate_removals/3`) can activate it where journal and home are both
+    # readable.
+    declared_removals = removals
     removals = []
 
     remove_additions = Enum.map(removals, & &1.target)
@@ -119,6 +126,7 @@ defmodule Workstation.Core.Source do
     plan = %__MODULE__{
       entries: entries,
       removals: removals,
+      declared_removals: declared_removals,
       unsupported_reversals: [],
       profile: profile,
       fragments_journal: fragments_journal,
@@ -151,6 +159,53 @@ defmodule Workstation.Core.Source do
       journal_revision: (journal && journal["revision"]) || 0,
       baseline_generation: journal && journal["generation"]
     }
+  end
+
+  @doc """
+  Activate a pure plan's declared removals at a REAL composition boundary.
+
+  `plan/1` probes no filesystem, so every declared removal it composes stays
+  inactive and the declared set travels verbatim in `declared_removals`. The
+  one production composition — `Workstation.Core.Plan.composed_plan/2` —
+  calls this with the journal record read at build time and the destination
+  home: a declared removal is active exactly when the journal recorded the
+  target or the target is present in the home. The active set rebuilds the
+  `.chezmoiremove` body, the manifest and the generation id (a change the
+  pure plan cannot see), so the tombstone is a real engine mutation and not
+  validated-but-inert dead text.
+  """
+  @spec activate_removals(t(), map() | nil, String.t()) :: t()
+  def activate_removals(%__MODULE__{declared_removals: declared} = plan, journal, home)
+      when is_binary(home) and home != "" do
+    recorded = (is_map(journal) && Map.get(journal, "targets")) || %{}
+
+    active =
+      Enum.filter(declared, fn removal ->
+        Map.has_key?(recorded, removal.target) or home_target_present?(home, removal.target)
+      end)
+
+    # The same static rule `plan/1` enforces against the declared set — an
+    # active removal must not overlap a target the same composition still
+    # owns — re-checked here so this boundary helper stays safe on its own.
+    Enum.each(plan.entries, fn entry ->
+      Enum.each(active, fn removal ->
+        encompasses(removal.target, entry.target) &&
+          fail("final removal #{removal.target} overlaps owned target #{entry.target}")
+      end)
+    end)
+
+    plan = %{plan | removals: active, remove_file: Workstation.Core.Policy.remove_file(Enum.map(active, & &1.target))}
+    manifest = Manifest.build(plan.entries, pinned_files(plan))
+
+    %{plan | manifest: manifest, generation: Digest.sha256(Workstation.Core.CanonicalJSON.encode(manifest))}
+  end
+
+  # Presence probing is lstat-shaped on purpose: a stale symlink still marks
+  # a target as present even when it points nowhere. lstat does not follow
+  # the link, so one guarded call answers for files, directories and
+  # symlinks alike; failures mean absent, never skipped.
+  defp home_target_present?(home, target) do
+    match?({:ok, _stat}, File.lstat(Path.join(home, target)))
   end
 
   defp pinned_files(plan) do
