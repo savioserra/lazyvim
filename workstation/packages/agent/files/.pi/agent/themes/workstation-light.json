@@ -12,8 +12,8 @@
 		"bg": "{{ .theme.palette.light.bg }}",
 		"muted": "{{ .theme.palette.light.muted }}",
 		"selectedBg": "{{ .theme.palette.light.selected_bg }}",
-		"accentBg": "#cfdaf5",
-		"bgAlt": "#d6d8e0"
+		"accentBg": "#e1d8c1",
+		"bgAlt": "#eee8da"
 	},
 	"colors": {
 		"accent": "accent",
