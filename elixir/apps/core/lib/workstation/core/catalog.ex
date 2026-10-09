@@ -167,6 +167,7 @@ defmodule Workstation.Core.Catalog do
         }
 
         package = if after_edges == [], do: package, else: Map.put(package, :after, after_edges)
+        package = put_context_surface(package, raw, id)
 
         package
       end)
@@ -471,6 +472,66 @@ defmodule Workstation.Core.Catalog do
       _ -> raise_arg("golden input references a missing asset: #{asset}")
     end
   end
+
+  # The package-context surface (exports / context_requires): denormalized
+  # through the same rules the native spec validation enforces — one export
+  # per own-capability key, pure string-keyed values, requirements keyed to
+  # DECLARED dependencies, well-formed version ranges. Nil-dropped when
+  # absent so profiles without the surface keep their recorded byte-shape.
+  defp put_context_surface(package, raw, id) do
+    package =
+      case Map.get(raw, "exports") do
+        nil -> package
+        [] -> package
+        exports -> Map.put(package, :exports, denormalize_exports(exports, id))
+      end
+
+    case Map.get(raw, "context_requires") do
+      nil -> package
+      [] -> package
+      context_requires ->
+        Map.put(package, :context_requires, denormalize_context_requires(context_requires, id, package.requires))
+    end
+  end
+
+  defp denormalize_exports(exports, id) when is_list(exports) do
+    validated =
+      Enum.map(exports, fn export ->
+        unless is_map(export), do: raise_arg("#{id}.exports entries must be objects")
+
+        %{
+          key: string_field(export, "key", id),
+          schema: integer_field(export, "schema", id),
+          value: Map.get(export, "value")
+        }
+      end)
+
+    :ok = Workstation.Core.Catalog.Spec.validate_exports(validated, id)
+    validated
+  end
+
+  defp denormalize_exports(other, id),
+    do: raise_arg("#{id}.exports must be a list, got: #{inspect(other)}")
+
+  defp denormalize_context_requires(requires, id, declared) when is_list(requires) do
+    validated =
+      Enum.map(requires, fn req ->
+        unless is_map(req), do: raise_arg("#{id}.context_requires entries must be objects")
+        key = string_field(req, "key", id)
+
+        %{
+          key: key,
+          schema: Map.get(req, "schema"),
+          in_requires: Enum.member?(declared, key)
+        }
+      end)
+
+    :ok = Workstation.Core.Catalog.Spec.validate_context_requires(validated, id)
+    Enum.map(validated, &Map.delete(&1, :in_requires))
+  end
+
+  defp denormalize_context_requires(other, id, _declared) when not is_list(other),
+    do: raise_arg("#{id}.context_requires must be a list, got: #{inspect(other)}")
 
   defp require_string(map, field) do
     value = Map.get(map, field)

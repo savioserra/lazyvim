@@ -352,12 +352,34 @@ defmodule Workstation.Daemon.Read do
       "data" =>
         core_plan.data && %{"owner" => core_plan.data.owner, "bytes" => core_plan.data.bytes},
       "remove_file" => core_plan.remove_file,
-      # The typed mutation program the apply fold runs, in fold order: the
-      # live wire declares its effects exactly like the recorded plan does.
+      # The resolved package context (compose-stage, static layer) and the
+      # typed mutation program the apply fold runs, in fold order: the live
+      # wire declares both exactly like the recorded plan does.
+      "context" => context_view(core_plan.context),
       "effects" => effects_view(core_plan)
     }
     |> Enum.reject(fn {_key, value} -> is_nil(value) end)
     |> Map.new()
+  end
+
+  # The resolved package context: per-package, dependency-scoped views —
+  # the live wire declares them exactly like the recorded plan does. An
+  # empty context is an ABSENT key (the recorded empty-object encodes as a
+  # JSON array — the same empty-table quirk every other section dodges by
+  # nil-dropping).
+  defp context_view(context) do
+    case context do
+      m when m == %{} ->
+        nil
+
+      context ->
+        Map.new(context, fn {package, keys} ->
+          {package,
+           Map.new(keys, fn {key, entry} ->
+             {key, %{"schema" => entry.schema, "value" => entry.value}}
+           end)}
+        end)
+    end
   end
 
   # One wire record per typed effect (contract, kind, ordering fields);

@@ -46,7 +46,17 @@ defmodule Workstation.Core.Golden do
 
   # Recording order (also the on-disk directory names) — mirrors
   # golden.lua M.profiles.
-  @profiles ["minimal", "full-home", "theme", "conflicts", "shell-order", "nvim-profile", "download", "git"]
+  @profiles [
+    "minimal",
+    "full-home",
+    "theme",
+    "conflicts",
+    "shell-order",
+    "nvim-profile",
+    "download",
+    "git",
+    "context"
+  ]
 
   # Catalog profile seeds: minimal records the foundation package alone,
   # theme the theme/tmux/agent closure (their dependency closure adds
@@ -146,9 +156,28 @@ defmodule Workstation.Core.Golden do
       "composed_profile" => plan.profile && Enum.map(plan.profile, &%{"id" => &1[:id]}),
       "data" => plan.data && %{"owner" => plan.data.owner, "bytes" => plan.data.bytes},
       "remove_file" => plan.remove_file,
+      "context" => plan_context_view(plan.context),
       "effects" => plan_effects_view(plan)
     }
     |> drop_nil_fields()
+  end
+
+  # The resolved package context: per-package, dependency-scoped views —
+  # recorded only when non-empty (the nil-drop convention; profiles whose
+  # packages declare no context_requires keep their recorded bytes).
+  defp plan_context_view(context) do
+    case context do
+      m when m == %{} ->
+        nil
+
+      context ->
+        Map.new(context, fn {package, keys} ->
+          {package,
+           Map.new(keys, fn {key, entry} ->
+             {key, %{"schema" => entry.schema, "value" => entry.value}}
+           end)}
+        end)
+    end
   end
 
   # The typed mutation program the apply fold runs, in fold order: the
@@ -256,10 +285,32 @@ defmodule Workstation.Core.Golden do
         }
         |> put_after(Map.get(package, :after))
         |> put_supported_hosts(package.supported_hosts)
+        |> put_exports(Map.get(package, :exports))
+        |> put_context_requires(Map.get(package, :context_requires))
 
       {record, assets}
     end)
   end
+
+  # The package-context surface records only when declared (the nil-drop
+  # convention); export values are already pure string-keyed data — the
+  # same bytes the recorded envelope and the wire carry.
+  defp put_exports(record, nil), do: record
+  defp put_exports(record, []), do: record
+
+  defp put_exports(record, exports) when is_list(exports),
+    do: Map.put(record, "exports", Enum.map(exports, &stringify/1))
+
+  defp put_context_requires(record, nil), do: record
+  defp put_context_requires(record, []), do: record
+
+  defp put_context_requires(record, requires) when is_list(requires),
+    do:
+      Map.put(
+        record,
+        "context_requires",
+        Enum.map(requires, fn req -> %{"key" => req.key, "schema" => req.schema} end)
+      )
 
   # Ordering-only edges are recorded only when declared (nil-dropped like
   # every absent field); the graph applies them only between present,
@@ -661,6 +712,55 @@ defmodule Workstation.Core.Golden do
             }
           }
         ]
+      }
+    ]
+  end
+
+  # The context profile exercises the package-context API without any
+  # package wiring: two exporters (a theme-shaped capability and an editor
+  # capability) and a consumer that requires both, declaring its
+  # context_requires against DECLARED dependencies only. The recorded plan
+  # carries the consumer's resolved, dependency-scoped view — the fold is a
+  # pure function of (manifests, resolver order), so the same envelopes
+  # replay byte-identically forever. Replay composes; nothing applies.
+  defp synthetic_records("context") do
+    [
+      %{
+        "id" => "goldens-theme",
+        "requires" => [],
+        "exports" => [
+          %{
+            "key" => "goldens-theme",
+            "schema" => 1,
+            "value" => %{
+              "appearance" => "dark",
+              "roles" => ["base", "accent", "muted"],
+              "slots" => %{"statusline" => "statusline", "tabline" => "tabline"}
+            }
+          }
+        ],
+        "contributes" => []
+      },
+      %{
+        "id" => "goldens-editor",
+        "requires" => [],
+        "exports" => [
+          %{
+            "key" => "goldens-editor",
+            "schema" => 1,
+            "value" => %{"config_root" => ".config/nvim", "kind" => "editor", "name" => "goldens-nvim"}
+          }
+        ],
+        "contributes" => []
+      },
+      %{
+        "id" => "goldens-consumer",
+        "requires" => ["goldens-theme", "goldens-editor"],
+        "context_requires" => [
+          %{"key" => "goldens-editor", "schema" => 1},
+          %{"key" => "goldens-theme", "schema" => ">=1"}
+        ],
+        "contributes" => []
       }
     ]
   end

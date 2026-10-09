@@ -42,6 +42,7 @@ defmodule Workstation.Core.Source do
             declared_removals: [],
             unsupported_reversals: [],
             profile: nil,
+            context: %{},
             fragments_journal: %{},
             remove_file: nil,
             journal_revision: 0,
@@ -71,12 +72,21 @@ defmodule Workstation.Core.Source do
 
   @type removal :: %{required(:target) => String.t(), required(:owner) => String.t()}
 
+  @type context_view :: %{
+          optional(String.t()) => %{
+            required(:key) => String.t(),
+            required(:schema) => pos_integer(),
+            required(:value) => term()
+          }
+        }
+
   @type t :: %__MODULE__{
           entries: [entry()],
           removals: [removal()],
           declared_removals: [removal()],
           unsupported_reversals: [removal()],
           profile: [map()] | nil,
+          context: %{optional(String.t()) => context_view()},
           fragments_journal: %{optional(String.t()) => [map()]},
           remove_file: String.t() | nil,
           journal_revision: non_neg_integer(),
@@ -97,6 +107,7 @@ defmodule Workstation.Core.Source do
   @spec plan(%{required(:graph) => Workstation.Core.Graph.t()}) :: t()
   def plan(%{graph: graph}) do
     collected = collect(graph.ordered)
+    context = resolve_context(graph.ordered)
     data = extract_data_envelope(collected)
     capability = compose_capability_profiles(collected)
     collected = collected ++ Enum.map(capability, &elem(&1, 0))
@@ -149,6 +160,7 @@ defmodule Workstation.Core.Source do
       declared_removals: declared_removals,
       unsupported_reversals: [],
       profile: profile,
+      context: context,
       fragments_journal: fragments_journal,
       remove_file: Workstation.Core.Policy.remove_file(remove_additions),
       journal_revision: 0,
@@ -160,6 +172,59 @@ defmodule Workstation.Core.Source do
     manifest = Manifest.build(plan.entries, pinned_files(plan))
     generation = Digest.sha256(Workstation.Core.CanonicalJSON.encode(manifest))
     %__MODULE__{plan | manifest: manifest, generation: generation}
+  end
+
+  # --- the package-context fold (compose-stage, static layer) ---
+
+  # ONE topological pass over the resolver's order — dependencies fold
+  # before dependents (cycles are already rejected upstream), ties resolve
+  # by the graph's deterministic id sort. Each package's view contains ONLY
+  # the keys it declared (least knowledge — the world context never leaks);
+  # each consumed key's schema range must cover the exported schema.
+  # Exports are declared pure data (Catalog.Spec validates the purity at the
+  # declaration), so the fold is a pure function of (manifests, order):
+  # same manifests + same graph => byte-identical context. Effect results
+  # (the dynamic layer) flow only through the interpret fold's run_effect
+  # returns and can never reach this fold — different stage, different
+  # channel, no shared state.
+  defp resolve_context(ordered) do
+    {views, _world} =
+      Enum.map_reduce(ordered, %{}, fn spec, world ->
+        view =
+          (Map.get(spec, :context_requires) || [])
+          |> Enum.map(fn req ->
+            case Map.fetch(world, req.key) do
+              {:ok, export} ->
+                Workstation.Core.Catalog.Spec.schema_covered?(export.schema, req.schema) ||
+                  fail(
+                    "#{spec.id} context_requires #{req.key} schema #{inspect(req.schema)} does not cover " <>
+                      "the exported schema #{export.schema}"
+                  )
+
+                {req.key, %{key: req.key, schema: export.schema, value: export.value}}
+
+              :error ->
+                fail(
+                  "#{spec.id} context_requires #{req.key}, but no dependency exports that key — " <>
+                    "the dependency must declare an export under its own capability"
+                )
+            end
+          end)
+          |> Map.new()
+
+        world =
+          Enum.reduce(Map.get(spec, :exports) || [], world, fn export, world ->
+            Map.put(world, export.key, export)
+          end)
+
+        {view, world}
+      end)
+
+    ordered
+    |> Enum.zip(views)
+    |> Map.new(fn {spec, view} -> {spec.id, view} end)
+    |> Enum.reject(fn {_id, view} -> map_size(view) == 0 end)
+    |> Map.new()
   end
 
   @doc """

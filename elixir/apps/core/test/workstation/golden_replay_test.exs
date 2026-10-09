@@ -73,6 +73,7 @@ defmodule Workstation.Core.GoldenReplayTest do
       # deleted or newly added golden directory must fail this assertion.
       assert recorded == [
                "conflicts",
+               "context",
                "download",
                "full-home",
                "git",
