@@ -193,7 +193,7 @@ defmodule Workstation.Core.Provisioner do
   # byte-for-byte with the generation like any other staged file.
   defp download_pins(plan) do
     Map.new(plan.downloads, fn download ->
-      {download.source_name, Workstation.Core.Source.Download.pin_bytes(download)}
+      {download.source_name, Workstation.Core.Contracts.Download.pin_bytes(download)}
     end)
   end
 

@@ -283,14 +283,14 @@ defmodule Workstation.Core.Golden do
       provider == Chezmoi.data_provider_id() ->
         {%{"provider" => provider, "spec" => %{"content" => spec.content}}, assets}
 
-      provider == Workstation.Core.Source.Shell.provider_id() ->
+      provider == Workstation.Core.Contracts.Shell.provider_id() ->
         {%{"provider" => provider, "spec" => normalize_shell_spec(spec)}, assets}
 
-      provider == Workstation.Core.Source.Download.provider_id() ->
+      provider == Workstation.Core.Contracts.Download.provider_id() ->
         {%{"provider" => provider, "spec" => normalize_download_spec(spec)}, assets}
 
       true ->
-        case Workstation.Core.Source.Provider.Discover.lookup(provider) do
+        case Workstation.Core.Contracts.Provider.Discover.lookup(provider) do
           {:ok, _module} ->
             {%{"provider" => provider, "spec" => stringify(spec)}, assets}
 

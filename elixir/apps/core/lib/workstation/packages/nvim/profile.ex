@@ -3,7 +3,7 @@ defmodule Workstation.Packages.Nvim.Profile do
   The nvim capability's own profile compositor, owned by its package module:
   collects nvim-profile intents, fixes their order, and serializes the
   shared deployed profile file. Implements the generic
-  `Workstation.Core.Source.Provider` contract, so the assembler discovers
+  `Workstation.Core.Contracts.Provider` contract, so the assembler discovers
   and dispatches it without naming this capability — dependency direction:
   consumer package -> provider contract, never the engine -> the consumer.
 
@@ -18,11 +18,11 @@ defmodule Workstation.Packages.Nvim.Profile do
   fold); the exact byte shape is pinned by the golden replay tests.
   """
 
-  @behaviour Workstation.Core.Source.Provider
+  @behaviour Workstation.Core.Contracts.Provider
 
   @target ".config/nvim/lua/languages/profile.lua"
 
-  @impl Workstation.Core.Source.Provider
+  @impl Workstation.Core.Contracts.Provider
   def id, do: "nvim-profile"
 
   @doc """
@@ -41,7 +41,7 @@ defmodule Workstation.Packages.Nvim.Profile do
     %{provider: id(), spec: spec}
   end
 
-  @impl Workstation.Core.Source.Provider
+  @impl Workstation.Core.Contracts.Provider
   @doc """
   Denormalize one recorded-envelope spec (string-keyed golden bytes) back to
   the declared atom shape: known entry fields to atom keys, project_files
@@ -98,7 +98,7 @@ defmodule Workstation.Packages.Nvim.Profile do
   end
 
   @spec validate_spec(map()) :: :ok
-  @impl Workstation.Core.Source.Provider
+  @impl Workstation.Core.Contracts.Provider
   def validate_spec(spec) do
     order = spec[:order]
     unless is_integer(order) and order > 0, do: raise_arg("Neovim profile recipe requires a positive integer order")
@@ -114,7 +114,7 @@ defmodule Workstation.Packages.Nvim.Profile do
   profile entries; owners keep collection order — attribution is a fact
   about contribution, not sorted output.
   """
-  @impl Workstation.Core.Source.Provider
+  @impl Workstation.Core.Contracts.Provider
   @spec compose([%{required(:owner) => String.t(), required(:spec) => map()}]) ::
           {map(), [map()]}
   def compose(intents) when is_list(intents) do

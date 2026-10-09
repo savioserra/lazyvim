@@ -10,7 +10,7 @@ defmodule Workstation.Packages.Nvim do
   `packages/nvim/compose.lua` + `profile.lua`) validates the intents, fixes
   their explicit domain order, and serializes the composed profile as
   deployed runtime Lua. It plugs into the assembler through the generic
-  `Workstation.Core.Source.Provider` contract — the engine never names it. The intents' verification semantics are declared
+  `Workstation.Core.Contracts.Provider` contract — the engine never names it. The intents' verification semantics are declared
   data: `language_cases`/`formatter_cases` are the LSP and formatter
   behavior checks, `mason_packages` names what the applied Mason lock must
   provide, `lazyvim_extras` selects LazyVim distribution modules, and the

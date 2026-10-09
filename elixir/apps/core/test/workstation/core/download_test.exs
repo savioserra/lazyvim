@@ -11,7 +11,7 @@ defmodule Workstation.Core.DownloadTest do
 
   alias Workstation.Core.{ApplyEngine, Digest, EngineState, Graph, Journal, Source}
   alias Workstation.Backends.Chezmoi
-  alias Workstation.Core.Source.Download
+  alias Workstation.Core.Contracts.Download
 
   setup do
     home = Path.join(System.tmp_dir!(), "workstation-download-#{:os.getpid()}-#{System.unique_integer([:positive])}")

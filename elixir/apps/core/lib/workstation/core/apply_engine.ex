@@ -31,7 +31,7 @@ defmodule Workstation.Core.ApplyEngine do
 
   alias Workstation.Core.{EngineState, Journal, Preconditions, Provisioner, Source}
   alias Workstation.Backends.Chezmoi
-  alias Workstation.Core.Source.Download
+  alias Workstation.Core.Contracts.Download
 
   @doc """
   Execute one plan against the target home and return its generation

@@ -1,4 +1,4 @@
-defmodule Workstation.Core.Source.Download do
+defmodule Workstation.Core.Contracts.Download do
   @moduledoc """
   The pinned-artifact source contract: a thing that fetches a pinned
   artifact (url + version + sha256 + target) into the home.

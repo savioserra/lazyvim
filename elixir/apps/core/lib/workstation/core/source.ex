@@ -17,14 +17,14 @@ defmodule Workstation.Core.Source do
 
   alias Workstation.Core.Digest
   alias Workstation.Backends.Chezmoi
-  alias Workstation.Core.Source.Download
+  alias Workstation.Core.Contracts.Download
   alias Workstation.Core.Source.Manifest
-  alias Workstation.Core.Source.Shell
+  alias Workstation.Core.Contracts.Shell
 
   # Domain-generic providers are wired directly into the assembler; their
   # wire ids live in the backend modules (`Chezmoi.provider_id/0`,
   # `Shell.provider_id/0`). Capability-specific providers are NOT listed
-  # here — they are discovered through the `Workstation.Core.Source.Provider`
+  # here — they are discovered through the `Workstation.Core.Contracts.Provider`
   # contract, so the assembler never names a capability.
   defp generic_providers do
     %{
@@ -270,7 +270,7 @@ defmodule Workstation.Core.Source do
 
   defp known_provider?(provider) do
     Map.has_key?(generic_providers(), provider) or
-      match?({:ok, _module}, Workstation.Core.Source.Provider.Discover.lookup(provider))
+      match?({:ok, _module}, Workstation.Core.Contracts.Provider.Discover.lookup(provider))
   end
 
   # At most one package may declare the .chezmoidata.toml envelope: the
@@ -299,7 +299,7 @@ defmodule Workstation.Core.Source do
   # here; a package gains capability composition by implementing the
   # behaviour, never by editing this module.
   defp compose_capability_profiles(collected) do
-    Workstation.Core.Source.Provider.Discover.by_id()
+    Workstation.Core.Contracts.Provider.Discover.by_id()
     |> Enum.sort_by(fn {id, _module} -> id end)
     |> Enum.flat_map(fn {id, module} ->
       intents =

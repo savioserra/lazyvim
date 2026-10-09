@@ -1,4 +1,4 @@
-defmodule Workstation.Core.Source.Provider do
+defmodule Workstation.Core.Contracts.Provider do
   @moduledoc """
   The capability-provider contract of the source assembler.
 
@@ -7,7 +7,7 @@ defmodule Workstation.Core.Source.Provider do
   that composes its own contribution shape) implements this behaviour from
   its own package module namespace instead. The engine source never names a
   capability provider: provider ids are discovered from the implementing
-  modules (`Workstation.Core.Source.Provider.Discover`), and composition
+  modules (`Workstation.Core.Contracts.Provider.Discover`), and composition
   dispatches through this contract, so a new capability provider plugs in
   with zero edits to the assembler.
 
@@ -43,11 +43,11 @@ defmodule Workstation.Core.Source.Provider do
   @callback denormalize_spec(map()) :: map()
 end
 
-defmodule Workstation.Core.Source.Provider.Discover do
+defmodule Workstation.Core.Contracts.Provider.Discover do
   @moduledoc """
   Runtime capability-provider discovery, mirroring
   `Workstation.Core.Catalog.Discover`: the assembler's capability surface is
-  whatever conforming `Workstation.Core.Source.Provider` modules the code
+  whatever conforming `Workstation.Core.Contracts.Provider` modules the code
   path carries under the package namespace — never a hand-written registry.
 
   Candidates come from `:code.all_available/0` narrowed to the
@@ -140,7 +140,7 @@ defmodule Workstation.Core.Source.Provider.Discover do
       {:module, loaded} ->
         behaviours = loaded.module_info(:attributes) |> Keyword.get(:behaviour, [])
 
-        if Workstation.Core.Source.Provider in behaviours do
+        if Workstation.Core.Contracts.Provider in behaviours do
           Enum.each([id: 0, validate_spec: 1, compose: 1, denormalize_spec: 1], fn {callback, arity} ->
             function_exported?(loaded, callback, arity) ||
               raise ArgumentError,

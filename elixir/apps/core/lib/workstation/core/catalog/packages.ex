@@ -27,7 +27,7 @@ defmodule Workstation.Core.Catalog.Packages do
   import directly from their owning packages in Lua. Capability-owned
   compositors (e.g. the nvim profile) are NOT wired here: they live in
   their owning package module and are discovered through the
-  `Workstation.Core.Source.Provider` contract — the catalog helpers only
+  `Workstation.Core.Contracts.Provider` contract — the catalog helpers only
   cover domain-generic machinery. Asset references stay package-relative
   exactly like the Lua factories; `Workstation.Core.Catalog.package_asset!/2`
   and the golden generator are the places that resolve them to bytes, so
@@ -36,7 +36,7 @@ defmodule Workstation.Core.Catalog.Packages do
 
   alias Workstation.Core.Catalog.Discover
   alias Workstation.Backends.Chezmoi
-  alias Workstation.Core.Source.Shell
+  alias Workstation.Core.Contracts.Shell
 
   @doc """
   Discovered package-spec provider modules, sorted by module name (the

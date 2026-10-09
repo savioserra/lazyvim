@@ -53,7 +53,9 @@ defmodule Workstation.Core.LayerLawTest do
                   ])
 
   @contract_files [
-    "apps/core/lib/workstation/core/source/provider.ex"
+    "apps/core/lib/workstation/core/contracts/provider.ex",
+    "apps/core/lib/workstation/core/contracts/download.ex",
+    "apps/core/lib/workstation/core/contracts/shell.ex"
   ]
 
   describe "kernel namespace law" do
@@ -173,7 +175,7 @@ defmodule Workstation.Core.LayerLawTest do
       planted_catalog = "alias Workstation.Core.Catalog.Packages.Nvim"
       assert kernel_package_import_violations(planted_catalog) != []
 
-      assert kernel_package_import_violations("alias Workstation.Core.Source.Provider") == []
+      assert kernel_package_import_violations("alias Workstation.Core.Contracts.Provider") == []
 
       # The registry's generic composition call is not a concrete reference.
       assert concrete_package_violations("packages = Catalog.Packages.packages()") == []

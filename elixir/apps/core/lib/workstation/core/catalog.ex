@@ -12,7 +12,7 @@ defmodule Workstation.Core.Catalog do
   `load/1` takes the decoded `input.json` of a recorded golden profile
   (tests/goldens/<profile>) and rebuilds real engine recipes: chezmoi
   options through `Source.Chezmoi.recipe/1`, shell fragments through
-  `Source.Shell.recipe/1`, the chezmoi-data envelope and capability-provider
+  `Workstation.Core.Contracts.Shell.recipe/1`, the chezmoi-data envelope and capability-provider
   specs dispatched to their owner modules' compositors. Package-relative
   asset bodies recorded in the
   top-level `assets` map are inlined back into the options as `:content`,
@@ -33,7 +33,7 @@ defmodule Workstation.Core.Catalog do
           required(:provider) => String.t(),
           required(:spec) =>
             Workstation.Backends.Chezmoi.t()
-            | Workstation.Core.Source.Shell.t()
+            | Workstation.Core.Contracts.Shell.t()
             | %{required(:content) => String.t()}
             | %{required(:order) => pos_integer(), required(:entry) => map()}
         }
@@ -357,13 +357,13 @@ defmodule Workstation.Core.Catalog do
       provider == Workstation.Backends.Chezmoi.provider_id() ->
         denormalize_file(package_id, spec, assets, live_home, canonical_home)
 
-      provider == Workstation.Core.Source.Shell.provider_id() ->
+      provider == Workstation.Core.Contracts.Shell.provider_id() ->
         denormalize_shell(package_id, spec)
 
       provider == Workstation.Backends.Chezmoi.data_provider_id() ->
         denormalize_data(package_id, spec)
 
-      provider == Workstation.Core.Source.Download.provider_id() ->
+      provider == Workstation.Core.Contracts.Download.provider_id() ->
         denormalize_download(package_id, spec)
 
       true ->
@@ -403,7 +403,7 @@ defmodule Workstation.Core.Catalog do
     fragment = Map.get(spec, "fragment")
     unless is_map(fragment), do: raise_arg("#{package_id} shell recipe requires a fragment table")
 
-    Workstation.Core.Source.Shell.recipe(%{
+    Workstation.Core.Contracts.Shell.recipe(%{
       target: string_field(spec, "target", package_id),
       fragment: %{
         id: string_field(fragment, "id", package_id),
@@ -425,19 +425,19 @@ defmodule Workstation.Core.Catalog do
   end
 
   # Capability-provider shapes are NOT known here: denormalization dispatches
-  # through the `Workstation.Core.Source.Provider` contract to the owner
+  # through the `Workstation.Core.Contracts.Provider` contract to the owner
   # package module (discovered, never named), so a new capability provider
   # plugs into golden replay with zero edits to this module.
   defp denormalize_download(package_id, spec) do
     unless is_map(spec), do: raise_arg("golden input declares unknown provider shape: download spec must be a table")
 
-    Workstation.Core.Source.Download.from_recorded(spec)
+    Workstation.Core.Contracts.Download.from_recorded(spec)
   rescue
     e in [ArgumentError] -> raise_arg("golden input has an invalid download recipe for " <> package_id <> ": " <> Exception.message(e))
   end
 
   defp denormalize_capability(package_id, provider, spec) do
-    case Workstation.Core.Source.Provider.Discover.lookup(provider) do
+    case Workstation.Core.Contracts.Provider.Discover.lookup(provider) do
       {:ok, module} ->
         module.denormalize_spec(spec)
 

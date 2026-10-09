@@ -1,4 +1,4 @@
-defmodule Workstation.Core.Source.Shell do
+defmodule Workstation.Core.Contracts.Shell do
   @moduledoc """
   The shared-shell compositor: one deterministic native chezmoi modify
   program per shared shell startup file.

@@ -13,7 +13,7 @@ defmodule Workstation.Core.ArchitectureDepsTest do
        and daemon theme resolvers) must never name a concrete consumer
        package. Consumers derive from the theme contract in their own
        catalog package modules (`catalog/packages/**`), which the engine
-       discovers through the `Workstation.Core.Source.Provider` contract.
+       discovers through the `Workstation.Core.Contracts.Provider` contract.
 
     2. **Generic core names no consumer and no backend encoding.** Domain
        modules must not reference concrete consumer packages nor the
