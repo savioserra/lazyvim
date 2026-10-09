@@ -13,6 +13,9 @@ step() { printf '\n== %s\n' "$1"; }
 step 'engine suite (mix test)'
 (cd elixir && mise exec -- mix test) || fail=1
 
+step 'moduledoc convention (doclint)'
+sh .github/scripts/doclint.sh || fail=1
+
 step 'golden contract (byte-identical replay)'
 if (cd elixir && mise exec -- mix workstation.goldens /tmp/workstation-goldens-check) \
 	&& diff -r /tmp/workstation-goldens-check tests/goldens; then
