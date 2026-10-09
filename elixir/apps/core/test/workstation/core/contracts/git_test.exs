@@ -1,4 +1,4 @@
-defmodule Workstation.Packages.GitTest do
+defmodule Workstation.Core.Contracts.GitTest do
   @moduledoc """
   The pinned-clone recipe kind: recipe validation and the provider/effect
   contract split, real end-to-end clone cycles against local fixture
@@ -14,7 +14,7 @@ defmodule Workstation.Packages.GitTest do
   alias Workstation.Core.{Digest, EngineState, Journal, Policy, Source}
   alias Workstation.Pipeline
   alias Workstation.Core.Source.Manifest
-  alias Workstation.Packages.Git
+  alias Workstation.Core.Contracts.Git
 
   @commit "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
 

@@ -14,7 +14,7 @@ defmodule Workstation.Core.Update.VerifyGitTest do
   alias Workstation.Core.{Digest, EngineState, Policy, Source}
   alias Workstation.Pipeline
   alias Workstation.Core.Source.Manifest
-  alias Workstation.Packages.Git
+  alias Workstation.Core.Contracts.Git
 
   @commit "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
 

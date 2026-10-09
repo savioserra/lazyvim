@@ -33,8 +33,7 @@ defmodule Workstation.Packages.Nunchux do
   @behaviour Workstation.Core.Catalog.Spec
 
   alias Workstation.Core.Catalog.Packages
-  alias Workstation.Packages.Git
-  @compile {:no_warn_undefined, Workstation.Packages.Git}
+  alias Workstation.Core.Contracts.Git
 
   # workstation/versions.json is the pin inventory; these literals mirror
   # its nunchux_git_* records (the v3.1.3 checkout) and are asserted

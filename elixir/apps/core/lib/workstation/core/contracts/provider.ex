@@ -72,6 +72,10 @@ defmodule Workstation.Core.Contracts.Provider.Discover do
   @spec providers() :: [module()]
   def providers do
     Workstation.Core.Contracts.Discovery.modules(%{
+      # Engine-owned capability contracts (Contracts.Git — the pinned-clone
+      # kind) publish through the code-path namespace arm; package-owned
+      # providers arrive via the tree walk.
+      namespace: "Elixir.Workstation.Core.Contracts.",
       behaviour: Workstation.Core.Contracts.Provider,
       callbacks: @callbacks,
       label: "source-provider"

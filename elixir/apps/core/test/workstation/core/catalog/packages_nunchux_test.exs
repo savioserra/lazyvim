@@ -17,7 +17,7 @@ defmodule Workstation.Core.Catalog.PackagesNunchuxTest do
   use ExUnit.Case, async: true
 
   alias Workstation.Packages.Nunchux
-  alias Workstation.Packages.Git
+  alias Workstation.Core.Contracts.Git
   alias Workstation.Backends.Chezmoi
 
   @repo_root Path.expand("../../../../../../..", __DIR__)

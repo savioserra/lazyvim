@@ -1,17 +1,17 @@
-defmodule Workstation.Packages.Git do
+defmodule Workstation.Core.Contracts.Git do
   @moduledoc """
   The pinned-clone recipe kind: a git checkout pinned to an exact commit
   (url + commit + target), provisioned by declared recipe — never placed by
   hand.
 
-  A package-owned recipe kind that carries its own effects. The plan-time
+  An engine-owned recipe kind — mechanism vocabulary, like file/symlink — that carries its own effects. The plan-time
   handshake lives here (`Workstation.Core.Contracts.Provider`): the catalog
   discovers `provider: "git"` contributions through it, golden replay
   denormalizes recorded pins through it, and composition returns the pin
   inventory as the provider's composed domain view — the plan's capability
   profile entries the apply-time fold derives clone effects from. The
   apply-time handshake (`Workstation.Core.Contracts.Contract`) lives in the
-  sibling `Workstation.Packages.Git.Effects`: one module per behaviour, so
+  sibling `Workstation.Core.Contracts.Git.Effects`: one module per behaviour, so
   the two handshakes never fight over callbacks and both discoveries stay
   behaviour-conformance checks.
 
@@ -166,7 +166,7 @@ defmodule Workstation.Packages.Git do
   defp encompasses(ancestor, target), do: is_within(target, ancestor)
 end
 
-defmodule Workstation.Packages.Git.Effects do
+defmodule Workstation.Core.Contracts.Git.Effects do
   @moduledoc """
   The pinned-clone effect contract: the apply-time handshake of the git
   recipe kind (`Workstation.Core.Contracts.Contract`, discovered by
@@ -199,7 +199,7 @@ defmodule Workstation.Packages.Git.Effects do
   @doc "Validate one declared pin spec (the behaviour's spec entry point)."
   @impl Workstation.Core.Contracts.Contract
   @spec validate_spec(map()) :: :ok
-  def validate_spec(spec), do: Workstation.Packages.Git.validate_spec(spec)
+  def validate_spec(spec), do: Workstation.Core.Contracts.Git.validate_spec(spec)
 
   @doc """
   The plan's clone effects: one typed effect per composed pin, derived from
