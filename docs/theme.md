@@ -90,6 +90,30 @@ never the default. No box painter hardcodes a color, so re-branding stays
 a two-carrier edit: `tokens.lua` and `Workstation.Core.Theme.Tokens`.
 
 ## Tests
+## Derivation contract
+
+Consumers derive from the token set through the theme derivation contract
+(`Workstation.Core.Theme.Derivation`): a package declares its needs — which
+roles, which appearances — and the platform validates the declaration
+fail-closed against the token set, resolves the palette, and hands it to a
+consumer-owned rendering adapter. The consumer owns rendering; the platform
+owns resolution and the law. Three canon patterns cover every consumer in
+this document:
+
+- **Envelope-rendered** (pi/agent canon): the package requires `theme` and
+  its payloads are templates rendered against the data envelope
+  (`.chezmoidata.toml`) — no per-build adapter runs; the backend renders.
+- **Terminal-following** (herdr canon): no generated artifact; the
+  consumer's own live config follows the host terminal, and the declaration
+  records that choice so the theme contract carries no consumer record.
+- **Upstream-truthed** (tmux canon): the consumer rides an upstream palette
+  and the token values mirror it for engine-side surfaces; no runtime
+  derivation runs.
+
+In-process surfaces that overlay roles at runtime are not derivations —
+they resolve through `Workstation.Core.Theme.resolve/1` against the same
+token set, so there is exactly one color truth per layer.
+
 
 - `elixir/apps/core/test/workstation/core/theme/tokens_test.exs`: parity
   anchor — the mirror's rendered `.chezmoidata.toml` envelope is
