@@ -1,5 +1,8 @@
 defmodule Workstation.Core.Preconditions do
   @moduledoc """
+  Layer: kernel. The kernel law: this module names no package, no backend and no
+  consumer -- it speaks only contracts and shapes (docs/architecture.md,
+  "Module hierarchy & moduledoc conventions").
   Read-only actual-target precondition checks for every planned mutation.
   Parity anchor: `check_preconditions` in
   `workstation/lua/workstation/provisioner.lua`.

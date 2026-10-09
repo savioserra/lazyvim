@@ -1,5 +1,8 @@
 defmodule Workstation.Core.Graph do
   @moduledoc """
+  Layer: kernel. The kernel law: this module names no package, no backend and no
+  consumer -- it speaks only contracts and shapes (docs/architecture.md,
+  "Module hierarchy & moduledoc conventions").
   Capability graph resolution: resolves package specs into a deterministic,
   host-aware execution order.
 

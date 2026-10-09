@@ -1,5 +1,8 @@
 defmodule Workstation.Core.Plan do
   @moduledoc """
+  Layer: kernel. The kernel law: this module names no package, no backend and no
+  consumer -- it speaks only contracts and shapes (docs/architecture.md,
+  "Module hierarchy & moduledoc conventions").
   The desired-state composition every mutation surface shares: collect the
   catalog, order the graph, render the plan, stamp it with the journal
   baseline. The daemon applier (`Workstation.Daemon.Apply`) and the one-shot

@@ -1,5 +1,8 @@
 defmodule Workstation.Core.Journal do
   @moduledoc """
+  Layer: kernel. The kernel law: this module names no package, no backend and no
+  consumer -- it speaks only contracts and shapes (docs/architecture.md,
+  "Module hierarchy & moduledoc conventions").
 The private per-target journal under the engine state root: guarded reads and
 the guarded write path. Parity anchor:
 `workstation/lua/workstation/state.lua`

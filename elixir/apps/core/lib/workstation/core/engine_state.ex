@@ -1,5 +1,8 @@
 defmodule Workstation.Core.EngineState do
   @moduledoc """
+  Layer: kernel. The kernel law: this module names no package, no backend and no
+  consumer -- it speaks only contracts and shapes (docs/architecture.md,
+  "Module hierarchy & moduledoc conventions").
   Guarded read access to the target-private engine state tree
   (`<home>/.local/state/workstation`) and to owned home targets.
 

@@ -1,5 +1,8 @@
 defmodule Workstation.Core.ApplyLock do
   @moduledoc """
+  Layer: kernel. The kernel law: this module names no package, no backend and no
+  consumer -- it speaks only contracts and shapes (docs/architecture.md,
+  "Module hierarchy & moduledoc conventions").
   The engine's one apply lock: `<state_root>/apply.lock`, the same file the
   one-shot CLI apply and the daemon orchestrator take, so no two apply-shaped
   mutations can ever run concurrently against one target home — mutual

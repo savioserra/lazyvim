@@ -1,5 +1,8 @@
 defmodule Workstation.Core.ApplyEngine do
   @moduledoc """
+  Layer: kernel. The kernel law: this module names no package, no backend and no
+  consumer -- it speaks only contracts and shapes (docs/architecture.md,
+  "Module hierarchy & moduledoc conventions").
   The one-shot generation pipeline: preconditions, staged publish, guarded
   journal records, backend apply and post-apply verification. Parity anchor:
   `M.apply` plus `check_preconditions` in

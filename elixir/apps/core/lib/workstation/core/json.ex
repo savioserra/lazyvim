@@ -1,5 +1,8 @@
 defmodule Workstation.Core.JSON do
   @moduledoc """
+  Layer: kernel. The kernel law: this module names no package, no backend and no
+  consumer -- it speaks only contracts and shapes (docs/architecture.md,
+  "Module hierarchy & moduledoc conventions").
   Strict RFC 8259 JSON text decoder, the read-side counterpart of
   `Workstation.Core.CanonicalJSON` emission. Decoding is fail-closed: any
   malformed byte sequence yields `{:error, :malformed}` instead of a partial

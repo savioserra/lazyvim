@@ -1,5 +1,8 @@
 defmodule Workstation.Core.CanonicalJSON do
   @moduledoc """
+  Layer: kernel. The kernel law: this module names no package, no backend and no
+  consumer -- it speaks only contracts and shapes (docs/architecture.md,
+  "Module hierarchy & moduledoc conventions").
   JSON encoding for the plain-data shapes the plan pipeline produces,
   byte-identical to Neovim's `vim.json.encode(value, { sort_keys = true })`.
 

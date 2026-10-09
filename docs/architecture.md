@@ -71,6 +71,36 @@ reappears (kernel naming a package, platform naming a consumer, contract
 naming an implementation) and when import direction inverts. The rules are
 enforced in code, not prose.
 
+## Module hierarchy & moduledoc conventions
+
+The module tree mirrors the layers, and every module's moduledoc is the
+architecture's documentation surface:
+
+1. **Kernel — `Workstation.Core`** (graph, plan, journal, apply,
+   preconditions, digest, engine_state, json/canonical_json): pure
+   machinery. Each kernel moduledoc states the kernel law: it names no
+   package, backend, or consumer — it speaks only contracts and shapes.
+2. **Contracts — `Workstation.Core.Contracts`** (the capability
+   provider contract, download, shell): handshakes, never
+   implementations. A contract moduledoc names its purpose and states
+   its implementor policy — where implementations live (package modules
+   under `Workstation.Packages.*`) and that the engine discovers them,
+   never lists them.
+3. **Backends — `Workstation.Backends.*`** (chezmoi): one dialect per
+   contract. A backend moduledoc names the dialect it owns — encoding,
+   recipe contract, provider ids, argv — and that generic core may touch
+   it only through this module API.
+4. **Platform engines** (theme) stay kernel-side; their moduledocs are
+   consumer-free by law: consumers derive, never named.
+5. **Packages — `Workstation.Packages.*`**: everything concrete
+   (specs, payloads, profiles). A package moduledoc names what it
+   contributes and which contracts it consumes.
+
+The layer-law guard suite (`ArchitectureDepsTest`,
+`LayerLawTest`) enforces the namespaces, the forbidden vocabulary and
+the import direction in code; a moduledoc that contradicts this section
+fails the suite the same way a violated import does.
+
 ## Current state and debt
 
 The discovery seed exists (runtime manifest discovery, conformance-
