@@ -386,12 +386,18 @@ defmodule Workstation.Core.Golden do
   end
 
   defp normalize_download_spec(spec) do
-    %{
-      "url" => spec.url,
+    base = %{
       "version" => spec.version,
-      "sha256" => spec.sha256,
       "target" => spec.target
     }
+
+    case spec.assets do
+      nil ->
+        Map.merge(base, %{"url" => spec.url, "sha256" => spec.sha256})
+
+      assets ->
+        Map.put(base, "assets", Map.new(assets, fn {tag, asset} -> {tag, %{"url" => asset.url, "sha256" => asset.sha256}} end))
+    end
   end
 
   defp normalize_shell_spec(spec) do

@@ -25,15 +25,18 @@ defmodule Workstation.Core.Source.Downloads do
       spec = record.spec
       :ok = Download.validate(spec)
 
-      %{
-        owner: record.owner,
-        target: spec.target,
-        url: spec.url,
-        version: spec.version,
-        sha256: spec.sha256,
-        fingerprint: Download.fingerprint(spec),
-        source_name: Download.pin_source_name(spec)
-      }
+      # The declared shape travels verbatim: a dispatched pin carries its
+      # assets unresolved (the apply boundary resolves through the contract).
+      base = %{owner: record.owner, target: spec.target, version: spec.version}
+
+      pin =
+        case spec.assets do
+          nil -> Map.merge(base, %{url: spec.url, sha256: spec.sha256, assets: nil})
+          assets -> Map.put(base, :assets, assets)
+        end
+
+      pin
+      |> Map.merge(%{fingerprint: Download.fingerprint(spec), source_name: Download.pin_source_name(spec)})
     end)
     |> Enum.reduce({[], MapSet.new()}, fn download, {downloads, seen} ->
       if MapSet.member?(seen, download.target) do

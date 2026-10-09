@@ -218,6 +218,143 @@ defmodule Workstation.Core.DownloadTest do
     end
   end
 
+  describe "per-platform dispatch" do
+    test "a dispatched pin declares per-platform assets and validates them" do
+      spec = dispatched_recipe()
+
+      assert spec.assets == %{
+               "linux_x86_64" => %{url: "https://example.invalid/tool-linux", sha256: sha_a()},
+               "darwin_arm64" => %{url: "https://example.invalid/tool-darwin", sha256: sha_b()}
+             }
+
+      assert spec.url == nil and spec.sha256 == nil
+      :ok = Download.validate(spec)
+    end
+
+    test "unknown platform tags and malformed assets fail closed" do
+      assert_raise ArgumentError, ~r/unknown platform tag "linux-amd64"/, fn ->
+        Download.recipe(%{
+          version: "1.0.0",
+          target: ".local/bin/tool",
+          assets: %{"linux-amd64" => %{url: "https://example.invalid/x", sha256: sha_a()}}
+        })
+      end
+
+      assert_raise ArgumentError, ~r/download recipe requires sha256/, fn ->
+        Download.recipe(%{
+          version: "1.0.0",
+          target: ".local/bin/tool",
+          assets: %{"linux_x86_64" => %{url: "https://example.invalid/x"}}
+        })
+      end
+
+      assert_raise ArgumentError, ~r/must be a table with url and sha256/, fn ->
+        Download.recipe(%{
+          version: "1.0.0",
+          target: ".local/bin/tool",
+          assets: %{"linux_x86_64" => "not-a-table"}
+        })
+      end
+
+      assert_raise ArgumentError, ~r/download assets must be a non-empty table/, fn ->
+        Download.recipe(%{version: "1.0.0", target: ".local/bin/tool", assets: %{}})
+      end
+    end
+
+    test "resolve picks the executing host's asset through the contract" do
+      spec = dispatched_recipe()
+      resolved = Download.resolve(spec, "linux_x86_64")
+
+      assert resolved.url == "https://example.invalid/tool-linux"
+      assert resolved.sha256 == sha_a()
+
+      assert_raise ArgumentError, ~r/declares no asset for darwin_x86_64/, fn ->
+        Download.resolve(spec, "darwin_x86_64")
+      end
+    end
+
+    test "a direct pin resolves to itself" do
+      resolved = Download.resolve(recipe())
+      assert resolved.url == "https://example.invalid/artifacts/tool/1.0.0/tool"
+      assert resolved.sha256 == sha_a()
+    end
+
+    test "install resolves the executing host's asset (dispatch through the contract, not the caller)" do
+      spec =
+        dispatched_recipe(%{
+          "linux_x86_64" => %{url: "https://example.invalid/tool-linux", sha256: sha_a()}
+        })
+
+      home = Path.join(System.tmp_dir!(), "workstation-dispatch-#{System.unique_integer([:positive])}")
+      File.mkdir_p!(home)
+      on_exit(fn -> File.rm_rf!(home) end)
+
+      assert {:ok, :installed} = Download.install(spec, home, fetch: fn url ->
+               assert url == "https://example.invalid/tool-linux"
+               payload_bytes()
+             end)
+
+      assert File.read!(Path.join(home, ".local/bin/tool")) == payload_bytes()
+      assert {:ok, :already_installed} = Download.install(spec, home, fetch: fn _ -> flunk("refetched") end)
+    end
+
+    test "the pin descriptor carries every platform's provenance, machine-independently" do
+      spec = dispatched_recipe()
+      descriptor = Download.pin_bytes(spec)
+
+      assert descriptor =~ "tool-linux"
+      assert descriptor =~ "tool-darwin"
+      refute descriptor =~ "linux_x86_64\"}"
+
+      # The fingerprint (and so the generation id) changes when ANY
+      # platform's pin changes.
+      other =
+        Download.recipe(%{
+          version: "1.0.0",
+          target: ".local/bin/tool",
+          assets: %{
+            "linux_x86_64" => %{url: "https://example.invalid/tool-linux", sha256: sha_a()},
+            "darwin_arm64" => %{url: "https://example.invalid/tool-darwin", sha256: sha_a()}
+          }
+        })
+
+      refute Download.fingerprint(spec) == Download.fingerprint(other)
+    end
+
+    test "the dispatched spec survives the recorded-envelope round trip" do
+      spec = dispatched_recipe()
+
+      recorded = %{
+        "version" => "1.0.0",
+        "target" => ".local/bin/tool",
+        "assets" => %{
+          "linux_x86_64" => %{"url" => "https://example.invalid/tool-linux", "sha256" => sha_a()},
+          "darwin_arm64" => %{"url" => "https://example.invalid/tool-darwin", "sha256" => sha_b()}
+        }
+      }
+
+      assert Download.from_recorded(recorded) == spec
+    end
+
+    test "plan effects carry the declared assets unresolved" do
+      spec = dispatched_recipe()
+
+      package = %{
+        id: "tooling",
+        requires: [],
+        contributes: [%{provider: Download.provider_id(), spec: spec}]
+      }
+
+      plan = plan_for([package])
+      [effect] = Download.plan_effect(plan, %{})
+
+      assert effect.target == ".local/bin/tool"
+      assert effect.assets["linux_x86_64"].url == "https://example.invalid/tool-linux"
+      refute Map.has_key?(effect, :url)
+      refute Map.has_key?(effect, :sha256)
+    end
+  end
+
   describe "golden envelope round-trip" do
     test "a recorded download spec denormalizes to the native recipe" do
       spec =
@@ -233,6 +370,22 @@ defmodule Workstation.Core.DownloadTest do
   end
 
   # --- helpers ---
+
+  defp dispatched_recipe(overrides \\ %{}), do: Download.recipe(dispatched_attrs(overrides))
+
+  defp dispatched_attrs(overrides) do
+    Map.merge(
+      %{
+        version: "1.0.0",
+        target: ".local/bin/tool",
+        assets: %{
+          "linux_x86_64" => %{url: "https://example.invalid/tool-linux", sha256: sha_a()},
+          "darwin_arm64" => %{url: "https://example.invalid/tool-darwin", sha256: sha_b()}
+        }
+      },
+      overrides
+    )
+  end
 
   defp recipe(overrides \\ []) do
     Download.recipe(%{

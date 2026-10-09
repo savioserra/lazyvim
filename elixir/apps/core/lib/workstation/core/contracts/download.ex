@@ -16,21 +16,37 @@ defmodule Workstation.Core.Contracts.Download do
   the default performs a real HTTPS GET. Recipe constructors raise
   `ArgumentError` with anchored messages, exactly like the other source
   contracts.
+
+  Per-platform dispatch is resolved THROUGH the contract, never by ad-hoc
+  conditionals in consumers: a spec either pins ONE artifact directly
+  (`url` + `sha256`) or declares `assets` keyed by platform tag —
+  `%{"linux_x86_64" => %{url: ..., sha256: ...}, "darwin_arm64" => %{...}}` —
+  and the contract resolves the executing host's tag at the apply boundary
+  (`resolve/2`, `platform/0`; the tag vocabulary is the bootstrap pins
+  manifest's). The declared assets travel verbatim through the plan, the
+  fingerprint and the recorded envelope — a pin change on ANY platform
+  changes the generation, and a recorded plan stays machine-independent.
   """
 
   alias Workstation.Core.{CanonicalJSON, Digest}
 
   @engine_state_target ".local/state/workstation"
 
-  @enforce_keys [:url, :version, :sha256, :target]
-  defstruct [:url, :version, :sha256, :target]
+  @enforce_keys [:version, :target]
+  defstruct [:url, :version, :sha256, :target, :assets]
+
+  @typedoc "One platform's pinned asset: an https url and its checksum."
+  @type asset :: %{required(:url) => String.t(), required(:sha256) => String.t()}
 
   @type t :: %__MODULE__{
-          url: String.t(),
+          url: String.t() | nil,
           version: String.t(),
-          sha256: String.t(),
-          target: String.t()
+          sha256: String.t() | nil,
+          target: String.t(),
+          assets: %{optional(String.t()) => asset()} | nil
         }
+
+  @platform_tags ~w(linux_x86_64 darwin_arm64)
 
   @doc "The wire provider id for pinned-artifact contributions."
   @spec provider_id() :: String.t()
@@ -45,17 +61,91 @@ defmodule Workstation.Core.Contracts.Download do
   """
   @spec recipe(map()) :: t()
   def recipe(attrs) when is_map(attrs) do
-    url = fetch_field(attrs, :url)
     version = fetch_field(attrs, :version)
-    sha256 = fetch_field(attrs, :sha256)
     target = fetch_field(attrs, :target)
-
-    validate_url(url)
     validate_version(version)
-    validate_sha256(sha256)
     validate_target(target)
 
-    %__MODULE__{url: url, version: version, sha256: sha256, target: target}
+    if attrs[:assets] != nil or attrs["assets"] != nil do
+      %__MODULE__{version: version, target: target, assets: recipe_assets(attrs)}
+    else
+      url = fetch_field(attrs, :url)
+      sha256 = fetch_field(attrs, :sha256)
+      validate_url(url)
+      validate_sha256(sha256)
+      %__MODULE__{url: url, version: version, sha256: sha256, target: target}
+    end
+  end
+
+  @doc "The platform tags the dispatch vocabulary knows."
+  @spec platform_tags() :: [String.t()]
+  def platform_tags, do: @platform_tags
+
+  @doc """
+  The executing host's platform tag — the same vocabulary the bootstrap
+  pins manifest keys its records by, resolved from the running OS/arch and
+  fail-closed on anything the launcher could not run anyway.
+  """
+  @spec platform() :: String.t()
+  def platform do
+    case :os.type() do
+      {:unix, :linux} -> if arch?(~r/x86_64|amd64/), do: "linux_x86_64", else: fail_platform("linux")
+      {:unix, :darwin} -> if arch?(~r/arm64|aarch64/), do: "darwin_arm64", else: fail_platform("darwin")
+      other -> raise ArgumentError, "download: unsupported platform #{inspect(other)}"
+    end
+  end
+
+  defp fail_platform(os), do: raise(ArgumentError, "download: unsupported platform #{os}/#{arch()}")
+
+  defp arch, do: :erlang.system_info(:system_architecture) |> to_string()
+  defp arch?(regex), do: arch() =~ regex
+
+  @doc """
+  Resolve one spec's effective pin for `platform` (default: the executing
+  host). A direct pin resolves to itself; a dispatched spec fails closed
+  with the declared tags named when the platform has no asset.
+  """
+  @spec resolve(t() | map(), String.t()) :: %{url: String.t(), sha256: String.t()}
+  def resolve(spec, platform \\ platform()) do
+    case field(spec, :assets) do
+      nil ->
+        %{url: field(spec, :url), sha256: field(spec, :sha256)}
+
+      assets ->
+        case Map.fetch(assets, platform) do
+          {:ok, asset} -> %{url: asset.url, sha256: asset.sha256}
+          :error ->
+            raise ArgumentError,
+                  "download target #{field(spec, :target)} declares no asset for #{platform} " <>
+                    "(declared: #{Enum.join(Map.keys(assets), ", ")})"
+        end
+    end
+  end
+
+  # The dispatched form: `%{assets: %{tag => %{url, sha256}}}`. Every key
+  # must be a KNOWN platform tag — a typo'd tag would silently never install
+  # — and every asset a full https pin.
+  defp recipe_assets(attrs) do
+    raw = attrs[:assets] || attrs["assets"]
+
+    unless is_map(raw) and raw != %{},
+      do: raise(ArgumentError, "download assets must be a non-empty table keyed by platform tag")
+
+    Map.new(raw, fn {tag, asset} ->
+      tag = to_string(tag)
+
+      tag in @platform_tags ||
+        raise(ArgumentError, "download assets declare unknown platform tag #{inspect(tag)} (known: #{Enum.join(@platform_tags, ", ")})")
+
+      unless is_map(asset),
+        do: raise(ArgumentError, "download asset for #{tag} must be a table with url and sha256")
+
+      url = fetch_field(asset, :url)
+      sha256 = fetch_field(asset, :sha256)
+      validate_url(url)
+      validate_sha256(sha256)
+      {tag, %{url: url, sha256: sha256}}
+    end)
   end
 
   @doc """
@@ -65,12 +155,16 @@ defmodule Workstation.Core.Contracts.Download do
   """
   @spec from_recorded(map()) :: t()
   def from_recorded(spec) when is_map(spec) do
-    recipe(%{
-      url: Map.get(spec, "url"),
-      version: Map.get(spec, "version"),
-      sha256: Map.get(spec, "sha256"),
-      target: Map.get(spec, "target")
-    })
+    if Map.get(spec, "assets") != nil do
+      recipe(%{version: Map.get(spec, "version"), target: Map.get(spec, "target"), assets: Map.get(spec, "assets")})
+    else
+      recipe(%{
+        url: Map.get(spec, "url"),
+        version: Map.get(spec, "version"),
+        sha256: Map.get(spec, "sha256"),
+        target: Map.get(spec, "target")
+      })
+    end
   end
 
   def from_recorded(other),
@@ -98,10 +192,24 @@ defmodule Workstation.Core.Contracts.Download do
   """
   @spec validate(map()) :: :ok
   def validate(%__MODULE__{} = spec) do
-    validate_url(field(spec, :url))
     validate_version(field(spec, :version))
-    validate_sha256(field(spec, :sha256))
     validate_target(field(spec, :target))
+
+    case field(spec, :assets) do
+      nil ->
+        validate_url(field(spec, :url))
+        validate_sha256(field(spec, :sha256))
+
+      assets ->
+        Enum.each(assets, fn {tag, asset} ->
+          tag in @platform_tags ||
+            raise(ArgumentError, "download assets declare unknown platform tag #{inspect(tag)}")
+
+          validate_url(asset.url)
+          validate_sha256(asset.sha256)
+        end)
+    end
+
     :ok
   end
 
@@ -127,17 +235,23 @@ defmodule Workstation.Core.Contracts.Download do
   @doc "The plan's install effects: one typed effect per pinned artifact."
   def plan_effect(plan, _ctx) do
     Enum.map(plan.downloads, fn download ->
-      %{
+      base = %{
         contract: id(),
         kind: :install,
         phase: :target,
         owner: download.owner,
         target: download.target,
-        url: download.url,
         version: download.version,
-        sha256: download.sha256,
         fingerprint: download.fingerprint
       }
+
+      # The declared shape travels verbatim (assets stay unresolved): the
+      # executing host resolves at the apply boundary, so a recorded plan
+      # stays machine-independent.
+      case Map.get(download, :assets) do
+        nil -> Map.merge(base, %{url: Map.get(download, :url), sha256: Map.get(download, :sha256)})
+        assets -> Map.put(base, :assets, assets)
+      end
     end)
   end
 
@@ -155,14 +269,15 @@ defmodule Workstation.Core.Contracts.Download do
   # is the pin's content address; this is the applied-target claim.)
   def fingerprint(effect, ctx) do
     fingerprint = Workstation.Core.EngineState.target_fingerprint(ctx.home, effect.target)
+    resolved = resolve(effect)
 
     unless fingerprint,
       do: raise(ArgumentError, "apply did not produce download target " <> effect.target)
 
-    unless fingerprint["sha256"] == effect.sha256 do
+    unless fingerprint["sha256"] == resolved.sha256 do
       raise ArgumentError,
             "applied download " <> effect.target <> " does not carry the pinned checksum " <>
-              "(" <> fingerprint["sha256"] <> " != " <> effect.sha256 <> ")"
+              "(" <> fingerprint["sha256"] <> " != " <> resolved.sha256 <> ")"
     end
 
     %{effect.target =>
@@ -191,10 +306,17 @@ defmodule Workstation.Core.Contracts.Download do
 
   @doc """
   The generation-directory name of the pin descriptor: content-keyed by the
-  pinned sha256, so two pins of one artifact share one descriptor path.
+  pinned sha256 (direct pins) or by the pin fingerprint (dispatched pins —
+  the descriptor carries every platform's provenance), so two pins of one
+  artifact share one descriptor path.
   """
   @spec pin_source_name(map()) :: String.t()
-  def pin_source_name(spec), do: "download/" <> String.slice(field(spec, :sha256), 0, 16) <> ".pin.json"
+  def pin_source_name(spec) do
+    case field(spec, :assets) do
+      nil -> "download/" <> String.slice(field(spec, :sha256), 0, 16) <> ".pin.json"
+      _assets -> "download/" <> String.slice(fingerprint(spec), 0, 16) <> ".pin.json"
+    end
+  end
 
   @doc """
   Install the pinned artifact into `home` at the recipe target.
@@ -208,36 +330,39 @@ defmodule Workstation.Core.Contracts.Download do
   """
   @spec install(t() | map(), String.t(), keyword()) :: {:ok, :installed} | {:ok, :already_installed}
   def install(spec, home, opts \\ []) when is_binary(home) and home != "" do
+    # Per-platform dispatch resolves HERE — the apply boundary — through the
+    # contract, never in the caller.
+    resolved = resolve(spec)
     fetch = Keyword.get(opts, :fetch) || (&http_fetch/1)
     path = Path.join(home, field(spec, :target))
 
     case File.read(path) do
       {:ok, content} ->
-        if Digest.sha256(content) == field(spec, :sha256) do
+        if Digest.sha256(content) == resolved.sha256 do
           {:ok, :already_installed}
         else
           raise ArgumentError,
                 "download target #{field(spec, :target)} exists with different content " <>
-                  "(sha256 #{Digest.sha256(content)}, expected #{field(spec, :sha256)}); " <>
+                  "(sha256 #{Digest.sha256(content)}, expected #{resolved.sha256}); " <>
                   "refusing to overwrite a mismatched artifact"
         end
 
       {:error, :enoent} ->
-        bytes = fetch.(field(spec, :url))
-        install_verified(spec, path, bytes)
+        bytes = fetch.(resolved.url)
+        install_verified(field(spec, :target), resolved, path, bytes)
 
       {:error, reason} ->
         raise ArgumentError, "download target #{field(spec, :target)} is unreadable: #{inspect(reason)}"
     end
   end
 
-  defp install_verified(spec, path, bytes) when is_binary(bytes) do
+  defp install_verified(target, resolved, path, bytes) when is_binary(bytes) do
     actual = Digest.sha256(bytes)
 
-    unless actual == field(spec, :sha256) do
+    unless actual == resolved.sha256 do
       raise ArgumentError,
-            "downloaded artifact #{field(spec, :url)} failed the pinned checksum: " <>
-              "expected #{field(spec, :sha256)}, got #{actual}; nothing was installed"
+            "downloaded artifact #{resolved.url} failed the pinned checksum: " <>
+              "expected #{resolved.sha256}, got #{actual}; nothing was installed"
     end
 
     directory = Path.dirname(path)
@@ -248,12 +373,12 @@ defmodule Workstation.Core.Contracts.Download do
 
     case File.rename(staged, path) do
       :ok -> {:ok, :installed}
-      {:error, reason} -> raise ArgumentError, "download install failed for #{field(spec, :target)}: #{inspect(reason)}"
+      {:error, reason} -> raise ArgumentError, "download install failed for #{target}: #{inspect(reason)}"
     end
   end
 
-  defp install_verified(spec, _path, other) do
-    raise ArgumentError, "download fetch for #{field(spec, :url)} returned non-binary: #{inspect(other)}"
+  defp install_verified(target, _resolved, _path, other) do
+    raise ArgumentError, "download fetch for #{target} returned non-binary: #{inspect(other)}"
   end
 
   @doc "The default fetch: one HTTPS GET returning the response body."
@@ -279,13 +404,20 @@ defmodule Workstation.Core.Contracts.Download do
 
   # --- validation ---
 
-  defp pin_fields(spec),
-    do: %{
-      "sha256" => field(spec, :sha256),
-      "target" => field(spec, :target),
-      "url" => field(spec, :url),
-      "version" => field(spec, :version)
-    }
+  defp pin_fields(spec) do
+    base = %{"target" => field(spec, :target), "version" => field(spec, :version)}
+
+    case field(spec, :assets) do
+      nil ->
+        Map.merge(base, %{"sha256" => field(spec, :sha256), "url" => field(spec, :url)})
+
+      assets ->
+        # The declared assets travel verbatim: the pin descriptor is
+        # machine-independent (a recorded generation pins EVERY platform's
+        # provenance), and the resolution happens only at the apply boundary.
+        Map.put(base, "assets", Map.new(assets, fn {tag, asset} -> {tag, %{"sha256" => asset.sha256, "url" => asset.url}} end))
+    end
+  end
 
   defp field(spec, key) when is_map(spec), do: Map.get(spec, key)
 
