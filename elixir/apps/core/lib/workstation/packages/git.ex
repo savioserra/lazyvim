@@ -29,6 +29,7 @@ defmodule Workstation.Packages.Git do
   @engine_state_target ".local/state/workstation"
 
   @doc "The wire provider id for pinned-clone contributions."
+  @impl Workstation.Core.Contracts.Provider
   @spec id() :: String.t()
   def id, do: "git"
 
@@ -62,6 +63,7 @@ defmodule Workstation.Packages.Git do
   recipe may additionally carry its derived id/fingerprint). Raises
   `ArgumentError` on the first invalid field.
   """
+  @impl Workstation.Core.Contracts.Provider
   @spec validate_spec(map()) :: :ok
   def validate_spec(spec) when is_map(spec) do
     url = field(spec, :url)
@@ -85,6 +87,7 @@ defmodule Workstation.Packages.Git do
   the validated atom-keyed recipe, so replay compares equal to native
   declarations.
   """
+  @impl Workstation.Core.Contracts.Provider
   @spec denormalize_spec(map()) :: map()
   def denormalize_spec(spec) when is_map(spec) do
     recipe(%{
@@ -105,6 +108,7 @@ defmodule Workstation.Packages.Git do
   target may have only one owner; duplicate targets conflict instead of
   racing.
   """
+  @impl Workstation.Core.Contracts.Provider
   @spec compose([%{required(:owner) => String.t(), required(:spec) => map()}]) :: {map(), [map()]}
   def compose(intents) when is_list(intents) do
     intents != [] || raise(ArgumentError, "git composition requires at least one intent")
@@ -188,10 +192,12 @@ defmodule Workstation.Packages.Git.Effects do
   @behaviour Workstation.Core.Contracts.Contract
 
   @doc "The wire contract id of pinned-clone effects (matches the provider id)."
+  @impl Workstation.Core.Contracts.Contract
   @spec id() :: String.t()
   def id, do: "git"
 
   @doc "Validate one declared pin spec (the behaviour's spec entry point)."
+  @impl Workstation.Core.Contracts.Contract
   @spec validate_spec(map()) :: :ok
   def validate_spec(spec), do: Workstation.Packages.Git.validate_spec(spec)
 
@@ -201,6 +207,7 @@ defmodule Workstation.Packages.Git.Effects do
   entries marked `git_pin`). Per-target phase — every clone runs before the
   staged-generation apply effect.
   """
+  @impl Workstation.Core.Contracts.Contract
   @spec plan_effect(term(), map()) :: [map()]
   def plan_effect(plan, _ctx) do
     plan.profile
@@ -225,6 +232,7 @@ defmodule Workstation.Packages.Git.Effects do
   resolved from PATH (fail-closed when absent — install git or run
   bootstrap).
   """
+  @impl Workstation.Core.Contracts.Contract
   @spec run_effect(map(), map()) :: :ok
   def run_effect(effect, ctx) do
     git = git_executable!()
@@ -266,6 +274,7 @@ defmodule Workstation.Packages.Git.Effects do
   the ACTUAL checkout — HEAD must carry the pinned commit or the claim
   raises instead of recording.
   """
+  @impl Workstation.Core.Contracts.Contract
   @spec fingerprint(map(), map()) :: map()
   def fingerprint(effect, ctx) do
     directory = Path.join(ctx.home, effect.target)
