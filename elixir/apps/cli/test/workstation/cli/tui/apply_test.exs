@@ -253,9 +253,11 @@ defmodule Workstation.CLI.TUI.ApplyTest do
       assert length(entries) == 3
       assert %{"id" => "modify_executable_dot_bashrc"} = hd(entries)
 
-      frame = latest_frame()
+      # The toast renders through the screen's event loop after the
+      # executor returns — wait for it instead of trusting one drain.
+      frame =
+        await_frame(fn frame -> Frame.row_text(frame, 11) =~ "✓ Applied generation gen-1" end)
 
-      assert frame |> Frame.row_text(11) =~ "✓ Applied generation gen-1"
       assert frame |> Frame.row_text(12) =~ "q quit"
     end
 
@@ -264,7 +266,9 @@ defmodule Workstation.CLI.TUI.ApplyTest do
 
       arm(runtime)
 
-      frame = latest_frame()
+      frame =
+        await_frame(fn frame -> Frame.row_text(frame, 11) =~ "× Apply failed: engine refused" end)
+
       assert frame |> Frame.row_text(11) =~ "× Apply failed: engine refused"
     end
 
