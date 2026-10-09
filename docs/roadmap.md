@@ -48,6 +48,14 @@ Exit: a new editor/terminal/agent package is a manifest and payloads.
 
 ## R4 — The package store (research-first)
 
+Design direction approved by the user (2026-10-09 session) and codified in
+[store-design.md](store-design.md): namespace-as-layout (package id ==
+registry key == tree path == domain axis), artifacts by-reference pinned by
+hash, components + profiles per language package, artifacts in an
+engine-owned toolchain root with HOME seeing only contract outputs, and the
+existing contracts as the entire install machinery — the store adds
+discovery, resolution and pinning, not a new install system.
+
 | task | owner | depends on | scope / exit |
 |---|---|---|---|
 | r4.research | main | R3 gate | registry-design research (npm/cargo/hex index shapes, signing, sparse index, mirrors) → store design proposal to the user BEFORE implementation |
