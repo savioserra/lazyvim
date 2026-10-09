@@ -5,13 +5,10 @@ local M = {}
 --
 --   slots   - role -> terminal NAMED palette slot. Appearance-agnostic by
 --             design: the terminal remaps its palette live (OSC 4 retints),
---             so consumers that resolve named slots (the nunchux launcher
---             config) follow every terminal theme without any regeneration.
+--             so consumers that resolve named slots follow every terminal
+--             theme without any regeneration.
 --   palette - role -> concrete color per appearance, for consumers that
 --             cannot follow the terminal (rendered UI themes, exports).
---
--- consumers carries canonical choices for surfaces the engine documents but
--- deliberately does not reconfigure (herdr owns its live config.toml).
 --
 -- border_roles is the closed set of dashboard border roles, one per panel
 -- domain: border_engine/border_plan (blue, the engine-core forward views),
@@ -100,10 +97,6 @@ M.palette = {
 	},
 }
 
-M.consumers = {
-	herdr = { name = "terminal", auto_switch = true },
-}
-
 -- Role order is the emission order for every derived artifact; new roles
 -- append after the base six: keyboard/selection affordances (shortcut,
 -- selected pair, inactive), the magnitude ramp trio start->mid->end, then
@@ -182,15 +175,6 @@ local function validate()
 	for key in pairs(M.palette) do
 		assert(vim.list_contains(appearances, key), "unknown theme appearance: " .. tostring(key))
 	end
-	local herdr = M.consumers.herdr
-	assert(herdr ~= nil and type(herdr.name) == "string" and herdr.name ~= "", "missing herdr consumer choice")
-	assert(type(herdr.auto_switch) == "boolean", "herdr consumer auto_switch must be boolean")
-	for key in pairs(M.consumers) do
-		assert(key == "herdr", "unknown theme consumer: " .. tostring(key))
-	end
-	for key in pairs(herdr) do
-		assert(key == "name" or key == "auto_switch", "unknown herdr consumer field: " .. tostring(key))
-	end
 end
 
 ---Deterministic TOML rendering of the whole token set as the source-root
@@ -219,10 +203,6 @@ function M.chezmoidata()
 			table.insert(lines, pair[1] .. " = " .. toml_string(pair[2]))
 		end
 	end
-	table.insert(lines, "")
-	table.insert(lines, "[theme.consumers.herdr]")
-	table.insert(lines, "name = " .. toml_string(M.consumers.herdr.name))
-	table.insert(lines, "auto_switch = " .. tostring(M.consumers.herdr.auto_switch))
 	table.insert(lines, "")
 	return table.concat(lines, "\n")
 end

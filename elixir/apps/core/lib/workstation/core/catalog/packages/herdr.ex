@@ -7,6 +7,11 @@ defmodule Workstation.Core.Catalog.Packages.Herdr do
   commands never start, stop, attach or inspect a Herdr server, pane or
   session, and verification stays static (`--version` prefix) for the same
   reason.
+
+  Consumer-owned theme derivation: herdr reads the terminal layer directly
+  (`name = "terminal"`, `auto_switch = true`) in its own live config — the
+  theme contract carries no consumer records, so this choice lives here,
+  with the only package that owns it.
   """
 
   @behaviour Workstation.Core.Catalog.Spec

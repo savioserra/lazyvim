@@ -22,14 +22,15 @@ defmodule Workstation.Core.Theme.TokensTest do
     contribution["spec"]["content"]
   end
 
-  test "chezmoidata/0 is byte-identical to the engine's rendered theme envelope" do
-    assert Tokens.chezmoidata() == fixture_theme_bytes()
+  test "data_envelope/0 is byte-identical to the engine's rendered theme envelope" do
+    assert Tokens.data_envelope() == fixture_theme_bytes()
   end
 
   test "the mirror carries the same contract values as tokens.lua" do
     # Parity anchor: packages/theme/tokens.lua must carry identical values.
+    # The token set names no consumer package; consumer choices live in the
+    # consumers' own package modules (see the herdr catalog module).
     assert Tokens.version() == 4
-    assert Tokens.herdr_consumer() == %{name: "terminal", auto_switch: true}
 
     assert Map.new(Tokens.slots()) == %{
              accent: "blue",
