@@ -172,8 +172,8 @@ source-scan suite) and must never regrow:
    `Workstation.Backends.Chezmoi`. Generic core references the backend
    exclusively through that module's API and constants (`provider_id/0`,
    `data_provider_id/0`, `remove_filename/0`, `data_filename/0`); the exempt
-   backend family is `backends/chezmoi.ex`, `provisioner.ex`,
-   `shell_program.ex`, `update/bootstrap.ex`, `policy.ex`, `golden.ex`.
+   backend family is `backends/chezmoi.ex`, `shell_program.ex`,
+   `update/bootstrap.ex`, `policy.ex`, `golden.ex`.
 
 ## Architecture: the client/daemon split (THE design)
 

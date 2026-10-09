@@ -134,8 +134,7 @@ fails the suite the same way a violated import does.
 ## Current state and debt
 
 The discovery seed exists (runtime manifest discovery, conformance-
-validated). Known debt being burned down: concrete dialects still resident
-in the kernel (chezmoi name encoding, nvim profile composition), platform
-consumer records in the theme engine, a flat package tree without the
-declared domain axis, and the missing download contract. Each is tracked as
-an increment against this document.
+validated). Known debt being burned down: platform consumer records in the
+theme engine. The retired increments — the download contract, the discovery
+triplication, the resident nvim dialect — are the engine now, not debt.
+Each remaining item is tracked as an increment against this document.
