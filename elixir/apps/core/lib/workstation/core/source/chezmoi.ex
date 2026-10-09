@@ -275,6 +275,18 @@ defmodule Workstation.Core.Source.Chezmoi do
     component
   end
 
+  @doc "Provider id for the chezmoi file backend on the plan wire."
+  def provider_id, do: "chezmoi"
+
+  @doc "Provider id for the backend's data-envelope contribution."
+  def data_provider_id, do: "chezmoi-data"
+
+  @doc "Engine source-root tombstone filename; part of the backend contract."
+  def remove_filename, do: ".chezmoiremove"
+
+  @doc "Engine source-root data-envelope filename; part of the backend contract."
+  def data_filename, do: ".chezmoidata.toml"
+
   @doc """
   Native chezmoi source path for a validated spec, e.g. `.profile` + modify +
   executable -> `modify_executable_dot_profile`. `ancestors` maps an

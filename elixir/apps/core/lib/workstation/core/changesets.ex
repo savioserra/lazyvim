@@ -1,4 +1,6 @@
 defmodule Workstation.Core.Changesets do
+
+  alias Workstation.Core.Source.Chezmoi
   @moduledoc """
   Attributable change sets for every provisioning recipe. Byte-for-byte
   parity anchor: `workstation/lua/workstation/changesets.lua`.
@@ -101,7 +103,7 @@ defmodule Workstation.Core.Changesets do
           name = manifest_entry["name"]
 
           manifest_entry["type"] == "file" and not MapSet.member?(present, name) and
-            name != ".chezmoiremove" and name != ".chezmoidata.toml"
+            name != Chezmoi.remove_filename() and name != Chezmoi.data_filename()
         end)
         |> Enum.map(fn manifest_entry ->
           name = manifest_entry["name"]
@@ -110,7 +112,7 @@ defmodule Workstation.Core.Changesets do
           %{
             "owner" => indexed["owner"] || "unknown",
             "attribution" => indexed["attribution"],
-            "provider" => "chezmoi",
+            "provider" => Chezmoi.provider_id(),
             "operation" => "retire",
             "target" => indexed["target"] || name,
             "source" => name,
@@ -249,7 +251,7 @@ defmodule Workstation.Core.Changesets do
           |> Enum.flat_map(fn manifest_entry ->
             name = manifest_entry["name"]
 
-            if name == ".chezmoiremove" or name == ".chezmoidata.toml" do
+            if name == Chezmoi.remove_filename() or name == Chezmoi.data_filename() do
               # Generated engine metadata: .chezmoiremove changes are
               # previewed as one attributed aggregate change below, and the
               # data envelope is never a retired recipe; neither is ever
@@ -287,7 +289,7 @@ defmodule Workstation.Core.Changesets do
   # Aggregate tombstone changes name their contributors as the engine policy
   # plus every removal's owner, not a fabricated single owner.
   defp aggregate_remove_patch(plan, baseline) do
-    previous_remove = safe_read(Path.join(baseline["directory"], ".chezmoiremove"))
+    previous_remove = safe_read(Path.join(baseline["directory"], Chezmoi.remove_filename()))
 
     if previous_remove == plan["remove_file"] do
       nil
@@ -300,7 +302,7 @@ defmodule Workstation.Core.Changesets do
 
       staged = Path.join(System.tmp_dir() || "/tmp", "workstation-remove-#{:os.getpid()}")
       File.write!(staged, staged_content)
-      diff = patch(".chezmoiremove", Path.join(baseline["directory"], ".chezmoiremove"), staged)
+      diff = patch(Chezmoi.remove_filename(), Path.join(baseline["directory"], Chezmoi.remove_filename()), staged)
       File.rm(staged)
 
       owners =
@@ -308,10 +310,10 @@ defmodule Workstation.Core.Changesets do
 
       %{
         "kind" => "change",
-        "source" => ".chezmoiremove",
+        "source" => Chezmoi.remove_filename(),
         "owner" => "engine",
         "attribution" => owners,
-        "target" => ".chezmoiremove (aggregate tombstones)",
+        "target" => Chezmoi.remove_filename() <> " (aggregate tombstones)",
         "type" => "file",
         "diff" => if(diff != "", do: diff)
       }

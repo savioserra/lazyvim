@@ -11,6 +11,9 @@ defmodule Workstation.Core.Source.Shell do
   blocks conflict instead of being overwritten or silently kept.
   """
 
+  @doc "Provider id for the shared-shell fragment backend on the plan wire."
+  def provider_id, do: "shell"
+
   defstruct [:target, :components, :fragment]
 
   @type t :: %__MODULE__{

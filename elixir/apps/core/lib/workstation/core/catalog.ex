@@ -1,4 +1,9 @@
 defmodule Workstation.Core.Catalog do
+
+  # Backend wire ids as compile-time constants: guards cannot call remote
+  # functions, and generic core must reference the backend only through its
+  # module API (ArchitectureDepsTest enforces the isolation).
+  @chezmoi Workstation.Core.Source.Chezmoi.provider_id()
   alias Workstation.Core.EngineState
 
   @moduledoc """
@@ -237,8 +242,8 @@ defmodule Workstation.Core.Catalog do
   defp reroot(package, live_home) do
     contributes =
       Enum.map(package.contributes, fn
-        %{provider: "chezmoi", spec: %Workstation.Core.Source.Chezmoi{to: to} = spec} = recipe
-        when is_binary(to) ->
+        %{provider: provider, spec: %Workstation.Core.Source.Chezmoi{to: to} = spec} = recipe
+        when provider == @chezmoi and is_binary(to) ->
           %{recipe | spec: %{spec | to: live_to(to, live_home, @canonical_home)}}
 
         recipe ->
@@ -302,10 +307,10 @@ defmodule Workstation.Core.Catalog do
     Enum.map_reduce(packages, assets, fn package, acc ->
       {contributes, acc} =
         Enum.map_reduce(package.contributes, acc, fn
-          %{provider: "chezmoi", spec: %Workstation.Core.Source.Chezmoi{asset: relative} = spec} =
+          %{provider: provider, spec: %Workstation.Core.Source.Chezmoi{asset: relative} = spec} =
               recipe,
           acc
-          when is_binary(relative) and relative != "" ->
+          when provider == @chezmoi and is_binary(relative) and relative != "" ->
             key = package.id <> ":" <> relative
             content = package_asset!(package.id, relative)
             {%{recipe | spec: %{spec | content: content, asset: nil}}, Map.put(acc, key, content)}

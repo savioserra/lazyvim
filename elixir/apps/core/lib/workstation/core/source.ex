@@ -308,7 +308,7 @@ defmodule Workstation.Core.Source do
   # One marker on one target can only ever have one owning fragment id.
   defp desired_fragments(collected) do
     collected
-    |> Enum.filter(&(&1.provider == "shell"))
+    |> Enum.filter(&(&1.provider == Shell.provider_id()))
     |> Enum.with_index(1)
     |> Enum.reduce({%{}, 0}, fn {record, sequence}, {grouped, _} ->
       :ok = Shell.validate_spec(record.spec)
@@ -392,7 +392,7 @@ defmodule Workstation.Core.Source do
 
       entry = %{
         owner: "shell",
-        provider: "chezmoi",
+        provider: Chezmoi.provider_id(),
         operation: "modify",
         target: target,
         source_name: Chezmoi.source_name(recipe, ancestors),
@@ -435,7 +435,7 @@ defmodule Workstation.Core.Source do
 
   defp build_entries(collected, ancestors) do
     collected
-    |> Enum.filter(&(&1.provider == "chezmoi"))
+    |> Enum.filter(&(&1.provider == Chezmoi.provider_id()))
     |> Enum.map_reduce([], fn record, removals ->
       :ok = Chezmoi.validate_spec(record.spec)
       assert_not_engine_state(record.spec.target)
@@ -469,7 +469,7 @@ defmodule Workstation.Core.Source do
         end
 
       unless spec.kind == :symlink or spec.kind == :directory or bytes != nil do
-        fail("chezmoi recipe produced no source bytes for #{spec.target}")
+        fail("backend file recipe produced no source bytes for #{spec.target}")
       end
 
       type =
@@ -481,7 +481,7 @@ defmodule Workstation.Core.Source do
 
       entry = %{
         owner: record.owner,
-        provider: "chezmoi",
+        provider: Chezmoi.provider_id(),
         operation: Atom.to_string(spec.kind),
         target: spec.target,
         source_name: Chezmoi.source_name(spec, ancestors),
@@ -570,7 +570,7 @@ defmodule Workstation.Core.Source do
       end)
 
       if Map.get(entry, :exact) == true do
-        # exact_ containers require a single explicit owner, may never
+        # Exact containers require a single explicit owner, may never
         # encompass engine-private state, and may only contain children of
         # that same owner: the backend prunes anything else inside them.
         unless length(entry.attribution) == 1 do
@@ -665,7 +665,7 @@ defmodule Workstation.Core.Source do
       fail("removal entry must not contain control characters or newlines: #{target}")
 
     not String.match?(target, ~r/[*?\[\]]/) ||
-      fail("removal entry contains glob metacharacters chezmoi would expand: #{target}")
+      fail("removal entry contains glob metacharacters the backend would expand: #{target}")
 
     not String.starts_with?(target, "/") && not Regex.match?(~r/\.\.($|\/)/, target) ||
       fail("removal entry must be a literal relative path")
