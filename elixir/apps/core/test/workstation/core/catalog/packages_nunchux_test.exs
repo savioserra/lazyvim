@@ -21,7 +21,7 @@ defmodule Workstation.Core.Catalog.PackagesNunchuxTest do
   alias Workstation.Backends.Chezmoi
 
   @repo_root Path.expand("../../../../../../..", __DIR__)
-  @payload_root Path.join(@repo_root, "workstation/packages/nunchux")
+  @payload_root Path.join(@repo_root, "workstation/packages/terminal/nunchux")
 
   test "the spec is a linux-only terminal-domain package requiring the theme envelope" do
     spec = Nunchux.spec()

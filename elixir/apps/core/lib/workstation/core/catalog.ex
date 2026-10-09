@@ -337,13 +337,48 @@ defmodule Workstation.Core.Catalog do
   def package_asset!(package_id, relative) do
     path = Path.join([Workstation.Core.Update.engine_root([]), "packages", package_id, relative])
 
-    case File.read(path) do
-      {:ok, bytes} when bytes != "" ->
-        bytes
+    dirs = [package_source_dir(package_id), Path.dirname(path)]
 
-      _other ->
+    dirs
+    |> Enum.map(&Path.join(&1, relative))
+    |> Enum.map(&File.read/1)
+    |> Enum.find(:error, fn
+      {:ok, bytes} when bytes != "" -> true
+      _other -> false
+    end)
+    |> case do
+      {:ok, bytes} -> bytes
+
+      :error ->
         raise ArgumentError,
               "native catalog asset is missing or empty: #{package_id}:#{relative} (#{path})"
+    end
+  end
+
+  # Package dirs resolve by the tree law: a package directory is named
+  # for its id. The tree is domain-shaped (packages/<domain>/<id>) with
+  # top-level domain roots (fonts, foundation, secrets, theme) beside it,
+  # so a flat packages/<id> join alone is wrong by construction. This is
+  # a pure filesystem lookup — NOT live discovery, because specs may read
+  # assets while they build, and discovery itself calls every spec.
+  defp package_source_dir(package_id) do
+    root = Path.join([Workstation.Core.Update.engine_root([]), "packages"])
+
+    [Path.join(root, package_id), Path.join([root, "*", package_id])]
+    |> Enum.flat_map(&Path.wildcard/1)
+    |> Enum.find(&File.dir?/1)
+    |> case do
+      nil -> Path.join(root, package_id)
+      dir -> dir
+    end
+  end
+
+  defp read_at(dir, package_id, relative) do
+    path = Path.join(dir, relative)
+
+    case File.read(path) do
+      {:ok, bytes} when bytes != "" -> {:ok, bytes}
+      _other -> :error
     end
   end
 

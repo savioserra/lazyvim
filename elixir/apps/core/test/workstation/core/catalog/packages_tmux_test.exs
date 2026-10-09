@@ -20,7 +20,7 @@ defmodule Workstation.Core.Catalog.PackagesTmuxTest do
   alias Workstation.Backends.Chezmoi
 
   @repo_root Path.expand("../../../../../../..", __DIR__)
-  @payload_root Path.join(@repo_root, "workstation/packages/tmux")
+  @payload_root Path.join(@repo_root, "workstation/packages/terminal/tmux")
 
   test "the nunchux config target moved to the nunchux package" do
     # Ownership moved with the payload (Workstation.Packages.Nunchux owns the

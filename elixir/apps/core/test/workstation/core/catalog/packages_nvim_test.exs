@@ -14,7 +14,7 @@ defmodule Workstation.Core.Catalog.PackagesNvimTest do
   alias Workstation.Packages.Nvim
 
   @repo_root Path.expand("../../../../../../..", __DIR__)
-  @payload_root Path.join(@repo_root, "workstation/packages/nvim")
+  @payload_root Path.join(@repo_root, "workstation/packages/editor/nvim")
 
   # Upstream `main` HEAD at pin time; the spec's recorded pin target.
   @oasis_commit "a3ef178fe47c69691e676a8da98ce5735c3013db"
