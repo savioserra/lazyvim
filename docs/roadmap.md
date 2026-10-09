@@ -92,6 +92,12 @@ the lockfile, and the engine release — the strangler gap closed for good.
 
 ## Conventions across runs
 
+- Registry literals: finished tasks use status exactly `completed` (narrative
+  goes in the result field). The unblocker cascades on dep-status events only —
+  a task seeded after its dependencies are already terminal must be touched
+  (one resolver pass: re-put as `ready`) or it freezes. Workers claim `ready`,
+  never prose statuses.
+
 - Swarm sizing scales at seed time to the DAG's fork width, within the
   file-ownership partition — never two writers on one partition. Planned
   scale-ups: R3 seeds `core2` (profile vs shell vs theme-derivation run as
