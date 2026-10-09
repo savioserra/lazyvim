@@ -77,47 +77,6 @@ defmodule Workstation.Core.Contracts.Discovery do
   def modules(_other),
     do: raise(ArgumentError, "discovery requires behaviour, callbacks and label")
 
-  # Test-tree exclusion: the beam's compile_info records the source path a
-  # module was compiled from. The exclusion keys on the `test` path SEGMENT
-  # being an ancestor of the recorded source file (remainder of the path
-  # ends with the file's basename) — not a "/test/" substring hunt, which
-  # silently misses relative recorded paths such as
-  # "test/support/probe.ex". Deterministic in every environment, and a
-  # no-op in releases where no test beams exist.
-  defp test_source?(module) do
-    case :code.which(module) do
-      path when is_list(path) ->
-        # One requested chunk comes back as {ok, {File, {Chunk, Data}}};
-        # accept the list form too so the exclusion survives beam_lib
-        # shape variations.
-        info =
-          case :beam_lib.chunks(path, [:compile_info]) do
-            {:ok, {_file, {compile_info, info}}} when compile_info == :compile_info -> info
-            {:ok, {_file, [{compile_info, info}]}} when compile_info == :compile_info -> info
-            _ -> []
-          end
-
-        info |> Keyword.get(:source, []) |> List.to_string() |> test_tree_path?()
-
-      _ ->
-        false
-    end
-  end
-
-  defp test_tree_path?(source) do
-    segments = Path.split(source)
-
-    case Enum.find_index(segments, &(&1 == "test")) do
-      nil ->
-        false
-
-      index ->
-        remainder = Enum.drop(segments, index + 1)
-        # A path ENDING in a `test` file (no remainder) is not a test tree.
-        remainder != [] and List.last(remainder) == Path.basename(source)
-    end
-  end
-
   # :code.all_available/0 returns {name, filename, loaded_path}; the name is
   # a charlist on OTP 28, a string on older OTP lines and an atom on some
   # intermediates — normalize to the module atom without loading the beam.

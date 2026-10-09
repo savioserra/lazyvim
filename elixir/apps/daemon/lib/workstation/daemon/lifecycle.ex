@@ -114,10 +114,10 @@ defmodule Workstation.Daemon.Lifecycle do
     Events.emit(op_ref, "run.started", %{"op" => "update.run", "steps" => steps})
 
     outcome =
-      chain_fold(steps, op_ref, opts, {:run, nil, false, []})
+      chain_fold(steps, op_ref, opts, {:run, nil, false})
 
     case outcome do
-      {:run, record, refreshed?, _done} ->
+      {:run, record, refreshed?} ->
         Events.emit(op_ref, "run.finished", %{"outcome" => "ok"})
         {:ok, record, refreshed?}
 
@@ -135,15 +135,14 @@ defmodule Workstation.Daemon.Lifecycle do
     end
   end
 
-  # The per-step fold. State: {:run, last_record, refreshed?, done_steps} |
-  # terminal. A successful bootstrap that REFRESHED the release halts the
+  # The per-step fold. State: {:run, last_record, refreshed?} | terminal. A successful bootstrap that REFRESHED the release halts the
   # chain in the `:handoff` state BEFORE the next step — the daemon stops
   # itself right after this op's reply flushes, and running further steps
   # into a stopping VM would kill a mutation mid-flight.
-  defp chain_fold([], _op_ref, _opts, {:run, record, refreshed?, _done}),
-    do: {:run, record, refreshed?, []}
+  defp chain_fold([], _op_ref, _opts, {:run, record, refreshed?}),
+    do: {:run, record, refreshed?}
 
-  defp chain_fold([step | rest], op_ref, opts, {:run, _last, refreshed?, done}) do
+  defp chain_fold([step | rest], op_ref, opts, {:run, _last, refreshed?}) do
     if Events.aborted?(op_ref) do
       {:aborted, step}
     else
@@ -157,7 +156,9 @@ defmodule Workstation.Daemon.Lifecycle do
           if record["release_refreshed"] == true do
             {:handoff, record, rest}
           else
-            chain_fold(rest, op_ref, opts, {:run, record, refreshed? or record["release_refreshed"] == true, done ++ [step]})
+            # The branch above already proved this step did not refresh, so
+            # the carried flag is exactly the accumulated one.
+            chain_fold(rest, op_ref, opts, {:run, record, refreshed?})
           end
 
         {:error, code, message, _duration} ->
