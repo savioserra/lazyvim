@@ -35,6 +35,13 @@ don't hand-place" proven end-to-end.
 
 ## R3 — Platform hardening
 
+Backlog input: the sage's independent review (`/root/fleet/design/elixir-review.md`,
+HEAD a6eb9e4b) found zero P0s; its 9 P1 idiom debts are R3 work items — top:
+the triplicated discovery machinery (Catalog.Discover / Source.Provider.Discover /
+Contract discovery consolidate to one helper), `source.ex`'s residual hardcoded
+provider set + god-module split along pipeline stages, `catalog.ex` provider-string
+cond dispatch, dead fold accumulators. P2 polish burns opportunistically.
+
 | task | owner | depends on | scope / exit |
 |---|---|---|---|
 | r3.profile-contract | core | R1 gate | profile platform contract extracted (nvim's compositor becomes its package-owned implementation; the seam helix/zed would implement) |
