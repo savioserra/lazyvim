@@ -7,16 +7,18 @@ defmodule Workstation.Packages.Nvim.Profile do
   and dispatches it without naming this capability — dependency direction:
   consumer package -> provider contract, never the engine -> the consumer.
 
-  The generic machinery — the recipe envelope, shape-driven entry
-  validation, the declared/recorded normalization twins, composition
-  ordering and duplicate-id rejection — is the profile platform
-  (`Workstation.Core.Platform.Profile`); this module declares the nvim field
-  vocabulary as its shape and owns the nvim-specific surface: the serialized
-  deployed file's format. It collects validated nvim-profile intents
-  contributed through the generic envelope, fixes their explicit domain
-  order, and emits ONE attributed chezmoi recipe for the shared deployed
-  profile. Contributors keep fragment attribution; the compositor never
-  fabricates per-fragment file ownership.
+  The generic machinery — the canonical profile-intent envelope (the
+  shape language intents declare), shape-driven entry validation, the
+  declared/recorded normalization twins, composition ordering and
+  duplicate-id rejection — is the profile platform
+  (`Workstation.Core.Platform.Profile`); this module owns the nvim
+  semantics: the serialized deployed file's format, and the composition of
+  validated nvim-profile intents into ONE attributed chezmoi recipe for
+  the shared deployed profile. Sibling language manifests declare their
+  intents against the platform envelope directly and name this capability's
+  provider id as data — they import nothing from nvim. Contributors keep
+  fragment attribution; the compositor never fabricates per-fragment file
+  ownership.
 
   `serialize/1` emits the deployed file as plain editor configuration Lua,
   quoted with Lua `%q` semantics (decimal escapes for control bytes, raw
@@ -31,14 +33,11 @@ defmodule Workstation.Packages.Nvim.Profile do
 
   @target ".config/nvim/lua/languages/profile.lua"
 
-  # The nvim field vocabulary as a platform shape: the identity field is a
-  # required non-empty string, the remaining string fields optional, the
-  # list fields non-empty string lists, the case fields case-record lists.
-  @shape %{
-    string_fields: [:id, :plugin_module],
-    list_fields: [:requires, :lazyvim_extras, :mason_packages],
-    case_fields: %{language_cases: [:language, :filename, :contents, :client], formatter_cases: [:language, :filename, :contents, :expected]}
-  }
+  # The nvim field vocabulary IS the platform's canonical profile-intent
+  # envelope (see Platform.Profile.intent_shape/0) — declared once, in the
+  # manifest contract, so sibling language intents never import nvim to
+  # reach it.
+  @shape Profile.intent_shape()
 
   @impl Workstation.Core.Contracts.Provider
   def id, do: "nvim-profile"
@@ -53,11 +52,7 @@ defmodule Workstation.Packages.Nvim.Profile do
   and validate through the compositor's own entry validator.
   """
   @spec contribute(pos_integer(), map()) :: %{provider: String.t(), spec: map()}
-  def contribute(order, raw) do
-    spec = %{order: order, entry: Profile.declared_entry(raw, @shape)}
-    :ok = validate_spec(spec)
-    %{provider: id(), spec: spec}
-  end
+  def contribute(order, raw), do: Profile.contribution(id(), order, raw)
 
   @impl Workstation.Core.Contracts.Provider
   @doc """

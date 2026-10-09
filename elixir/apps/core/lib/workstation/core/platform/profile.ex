@@ -34,6 +34,54 @@ defmodule Workstation.Core.Platform.Profile do
         }
   @type intent :: %{required(:owner) => String.t(), required(:spec) => map()}
 
+  # The canonical profile-intent envelope: the field vocabulary every
+  # language intent declares, wherever the intent is contributed from. The
+  # vocabulary is mechanism (shape, normalization, validation); what the
+  # fields MEAN for a given editor is the owning capability's semantics.
+  @intent_shape %{
+    string_fields: [:id, :plugin_module],
+    list_fields: [:requires, :lazyvim_extras, :mason_packages],
+    case_fields: %{language_cases: [:language, :filename, :contents, :client], formatter_cases: [:language, :filename, :contents, :expected]}
+  }
+
+  @doc """
+  The canonical profile-intent envelope — the shape language intents
+  declare, wherever they are contributed from. Editors own what the fields
+  mean for them; the envelope, its normalization and its validation are
+  the platform's.
+  """
+  @spec intent_shape() :: shape()
+  def intent_shape, do: @intent_shape
+
+  @doc """
+  One profile-intent contribution: normalize the declared raw intent to
+  the canonical envelope, validate it, and wrap it as
+  `%{provider: provider_id, spec: %{order:, entry:}}`. The caller names
+  the profile capability's provider id as data (the same way recipe
+  constructors name "chezmoi"), so the platform never names one.
+  """
+  @spec contribution(String.t(), pos_integer(), map()) :: %{provider: String.t(), spec: map()}
+  def contribution(provider_id, order, raw) when is_binary(provider_id) do
+    spec = %{order: order, entry: declared_entry(raw, @intent_shape)}
+    :ok = validate_intent_spec(spec, @intent_shape, "profile intent")
+    %{provider: provider_id, spec: spec}
+  end
+
+  @doc """
+  Envelope validation for one profile-intent recipe: a positive integer
+  order, an entry table, and the entry valid under the canonical shape.
+  Label prefixes every rejection.
+  """
+  @spec validate_intent_spec(map(), shape(), String.t()) :: :ok
+  def validate_intent_spec(spec, shape, label) do
+    order = spec[:order]
+    unless is_integer(order) and order > 0,
+      do: raise_arg(label <> " recipe requires a positive integer order")
+    unless is_map(spec[:entry]), do: raise_arg(label <> " recipe requires an entry table")
+    validate_entry(spec[:entry], shape, label <> " entry " <> (spec[:entry][:id] |> to_string()))
+    :ok
+  end
+
   @doc """
   The composition ordering law: entries sorted by the recipe's explicit
   order key with collection order as tie-break. Owners are NOT threaded

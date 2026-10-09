@@ -16,8 +16,10 @@ defmodule Workstation.Packages.ElixirLang do
   @behaviour Workstation.Core.Catalog.Spec
 
   alias Workstation.Core.Catalog.Packages
-  alias Workstation.Packages.Nvim.Profile
-  @compile {:no_warn_undefined, Workstation.Packages.Nvim.Profile}
+  # The profile-intent envelope is the platform's canonical shape; the
+  # provider id is data this manifest names (the profile capability owns
+  # the compositor).
+  alias Workstation.Core.Platform.Profile
 
   @intent %{
     id: "elixir",
@@ -65,7 +67,7 @@ defmodule Workstation.Packages.ElixirLang do
       requires: ["nvim"],
       supported_hosts: nil,
       contributes: [
-        Profile.contribute(25, @intent),
+        Profile.contribution("nvim-profile", 25, @intent),
         Packages.chezmoi(
           target: ".config/nvim/lua/languages/plugins/elixir.lua",
           kind: :file,
