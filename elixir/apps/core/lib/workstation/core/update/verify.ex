@@ -8,13 +8,17 @@ defmodule Workstation.Core.Update.Verify do
   Parity anchor: the Lua verify verb (`workstation/apps/cli/run.lua`:
   `launcher.verify(root)` then the per-package runner). The Elixir engine's
   "packages" are the journal's owning packages, and the observable behavior
-  it can honestly assert is file-level: the recorded fingerprint
-  (type + mode + content digest / link value) must still match the live
-  target, because that fingerprint is the ownership claim every later
-  precondition trusts. A drifted target means the home diverged from the
-  engine's own provenance — a failed verify, never silently accepted.
+  is per owning contract: file-shaped records verify against the recorded
+  fingerprint (type + mode + content digest / link value), and records an
+  effect contract claims (the optional `verify_record/2` seam,
+  contract-discovered — a pinned checkout re-checks HEAD against its pin)
+  verify through their own contract. The journal is the ownership anchor,
+  and verify must cover every effect kind the pipeline can produce. A
+  failed verification means the home diverged from the engine's own
+  provenance — a failed verify, never silently accepted.
   """
 
+  alias Workstation.Core.Contracts.Contract
   alias Workstation.Core.{EngineState, Journal}
 
   # The fingerprint fields the journal compares (the provenance record adds
@@ -78,11 +82,41 @@ defmodule Workstation.Core.Update.Verify do
         )
   end
 
+  # The verify seam: a record an effect contract claims (first discovered
+  # :ok wins; :unclaimed passes to the next) verifies through that
+  # contract's own re-check — its recorded fingerprint fields are the live
+  # truth it just verified. Records no contract claims fall through to the
+  # default file-fingerprint verification. A claimed-but-failed record
+  # raises from the contract (a failed verify, never silently accepted).
+  defp live_fingerprint(record, home, target) do
+    if contract_claimed?(record, %{"home" => home, "target" => target}) do
+      Map.take(record, @fingerprint_fields)
+    else
+      EngineState.target_fingerprint(home, target)
+    end
+  end
+
+  defp contract_claimed?(record, ctx) do
+    Contract.Discover.contracts()
+    |> Enum.find_value(fn contract ->
+      if function_exported?(contract, :verify_record, 2) do
+        case contract.verify_record(record, ctx) do
+          :ok -> true
+          :unclaimed -> nil
+        end
+      end
+    end)
+    |> case do
+      true -> true
+      _other -> false
+    end
+  end
+
   defp verify_targets!(applied, home) do
     applied["targets"]
     |> Enum.map(fn {target, record} ->
       {Map.get(record, "owner", "unknown"), target, Map.take(record, @fingerprint_fields),
-       EngineState.target_fingerprint(home, target)}
+       live_fingerprint(record, home, target)}
     end)
     |> Enum.group_by(fn {owner, _target, _recorded, _live} -> owner end, fn {_owner, target, recorded, live} ->
       {target, recorded, live}

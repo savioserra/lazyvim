@@ -270,6 +270,32 @@ defmodule Workstation.Packages.Git.Effects do
   end
 
   @doc """
+  The verify seam: a git-shaped journal record re-checks HEAD against the
+  pinned commit on the ACTUAL checkout; anything else is :unclaimed (the
+  default file-fingerprint verification takes it).
+  """
+  @impl Workstation.Core.Contracts.Contract
+  @spec verify_record(map(), map()) :: :ok | :unclaimed
+  def verify_record(%{"type" => "git", "commit" => commit}, ctx) do
+    directory = Path.join(ctx["home"], ctx["target"])
+
+    unless Workstation.Core.EngineState.lstat(directory) do
+      raise ArgumentError, "verify: git target #{ctx["target"]} is gone"
+    end
+
+    git = git_executable!()
+
+    unless rev_parse(git, ctx["home"], directory) == commit do
+      raise ArgumentError,
+            "git pin verify failed for #{ctx["target"]}: HEAD does not carry the pinned commit #{commit}"
+    end
+
+    :ok
+  end
+
+  def verify_record(_record, _ctx), do: :unclaimed
+
+  @doc """
   The applied-target ownership claim for one clone: the pin verify against
   the ACTUAL checkout — HEAD must carry the pinned commit or the claim
   raises instead of recording.

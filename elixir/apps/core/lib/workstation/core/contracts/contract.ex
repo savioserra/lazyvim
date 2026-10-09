@@ -49,6 +49,18 @@ defmodule Workstation.Core.Contracts.Contract do
   produce exactly its declared outcome raises instead of recording.
   """
   @callback fingerprint(map(), map()) :: map()
+
+  @doc """
+  The verify seam (OPTIONAL — effect kinds whose ownership claim is not a
+  file fingerprint report their own verification). Given one applied-target
+  journal record, verify it against the ACTUAL home: `:ok` when the record
+  still holds, `:unclaimed` when the record is not this contract's shape
+  (the next discovered contract — or the default file-fingerprint
+  verification — takes it), raising when the record FAILED verification.
+  `ctx` carries `"home"` and `"target"`.
+  """
+  @callback verify_record(record :: map(), ctx :: map()) :: :ok | :unclaimed
+  @optional_callbacks [verify_record: 2]
 end
 
 
