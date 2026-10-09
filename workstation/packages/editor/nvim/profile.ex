@@ -28,16 +28,16 @@ defmodule Workstation.Packages.Nvim.Profile do
 
   @behaviour Workstation.Core.Contracts.Provider
 
-  alias Workstation.Core.Platform.Profile
+  alias Workstation.Core.Contracts.Profile
   alias Workstation.Backends.Chezmoi
 
   @target ".config/nvim/lua/languages/profile.lua"
 
-  # The nvim field vocabulary IS the platform's canonical profile-intent
-  # envelope (see Platform.Profile.intent_shape/0) — declared once, in the
-  # manifest contract, so sibling language intents never import nvim to
-  # reach it.
-  @shape Profile.intent_shape()
+  # The nvim field vocabulary is the editor capability's canonical
+  # profile-intent envelope (see Contracts.Profile.shape/0) — declared once,
+  # in the capability contract, so sibling language intents never import
+  # nvim to reach it.
+  @shape Profile.shape()
 
   @impl Workstation.Core.Contracts.Provider
   def id, do: "nvim-profile"

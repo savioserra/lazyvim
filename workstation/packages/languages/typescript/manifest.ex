@@ -17,7 +17,7 @@ defmodule Workstation.Packages.Typescript do
   # The profile-intent envelope is the platform's canonical shape; the
   # provider id is data this manifest names (the profile capability owns
   # the compositor).
-  alias Workstation.Core.Platform.Profile
+  alias Workstation.Core.Contracts.Profile
 
   @intent %{
     id: "typescript",
