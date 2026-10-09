@@ -77,6 +77,14 @@ the lockfile, and the engine release — the strangler gap closed for good.
 
 ## Conventions across runs
 
+- Swarm sizing scales at seed time to the DAG's fork width, within the
+  file-ownership partition — never two writers on one partition. Planned
+  scale-ups: R3 seeds `core2` (profile vs shell vs theme-derivation run as
+  namespace-disjoint parallel lanes) and R4 may add a second core actor for
+  mirror/publish; R1/R2 stay two-lane. Trigger, not vanity: an actor is added
+  only when mutually independent, partition-disjoint tasks would otherwise
+  serialize behind one owner.
+
 - Lessons land as `chore(memory)` commits per run (gate task owns it).
 - Every task reports to `/tmp/fleet/reports/swarm-<run>-<task>.md`.
 - Behavior-conservation rule holds everywhere except the increment's declared
