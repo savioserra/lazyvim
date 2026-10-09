@@ -81,5 +81,8 @@ the lockfile, and the engine release — the strangler gap closed for good.
 - Every task reports to `/tmp/fleet/reports/swarm-<run>-<task>.md`.
 - Behavior-conservation rule holds everywhere except the increment's declared
   surface: goldens byte-identical unless the task says otherwise.
-- The user approves each run's seed before it launches; the roadmap may be
-  amended between runs, never silently inside one.
+- [Autonomy grant, 2026-10-09 session] The user pre-approved the full
+  chain: runs seed automatically as their predecessor's gate passes — no
+  per-run approval. R4's research step produces a documented design decision
+  (stored in the repo) and proceeds; it does not wait on approval. The
+  roadmap may be amended between runs, never silently inside one.
