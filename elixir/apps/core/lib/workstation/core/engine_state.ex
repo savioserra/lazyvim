@@ -369,8 +369,8 @@ defmodule Workstation.Core.EngineState do
 
   # --- Minimal strict JSON decoding -----------------------------------------
   #
-  # The journal is written by `vim.json.encode`; the reader accepts that
-  # dialect (RFC 8259). Decoding is fail-closed: any malformed byte sequence
+  # The journal is written through CanonicalJSON.encode_record/1; the
+  # reader accepts that dialect (RFC 8259). Decoding is fail-closed: any malformed byte sequence
   # yields `{:error, :malformed}` instead of a partial value, because a
   # half-decoded journal record would be a falsified ownership claim.
   # The parser itself lives in `Workstation.Core.JSON`.

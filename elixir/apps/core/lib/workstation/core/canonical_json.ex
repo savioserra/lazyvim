@@ -111,12 +111,12 @@ defmodule Workstation.Core.CanonicalJSON do
     end
   end
 
-  # Mirrors the vim.json escape set exactly: named shortcuts for the five
+  # The recorded envelope escape set: named shortcuts for the five
   # classic control bytes, lowercase \\u00xx for every other byte below 0x20
   # and for DEL (0x7f), backslash and quote escaped, everything else raw.
   # (b5 bugfix: the old ~c charlist accidentally listed the apostrophe itself
   # as escapable — an @named lookup with no entry, so any apostrophe crashed
-  # the encoder. vim.json.encode and the recorded goldens leave apostrophes
+  # the encoder. The recorded goldens leave apostrophes
   # raw, and the b5 core wire's patch texts contain them, so the escapable
   # set is spelled out as exactly the @named keys.)
   @escape [?", ?\\, ?\b, ?\t, ?\n, ?\f, ?\r]

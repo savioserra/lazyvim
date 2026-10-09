@@ -82,7 +82,7 @@ defmodule Workstation.Core.PipelineRunTest do
                "targets" => targets,
                # Journal records are object-faithful (CanonicalJSON
                # encode_record/1): an empty fragments journal is {} — the
-               # golden-pinned vim.json empty-table quirk poisoned the real
+               # envelope's empty-object-as-[] rule poisoned the real
                # journal once and every reader demands map shapes.
                "fragments" => %{},
                "manifest" => manifest,
