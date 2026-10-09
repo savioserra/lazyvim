@@ -1,6 +1,6 @@
 # Neovim configuration instructions
 
-Scope: `workstation/packages/nvim/**`.
+Scope: `workstation/packages/editor/nvim/**`.
 
 Managed deployed payload lives in `files/` and is declared as
 `provision.chezmoi` recipes in `init.lua`; the composed

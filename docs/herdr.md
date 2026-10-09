@@ -8,8 +8,8 @@ official Pi integration hook; it never manages the runtime.
 
 | Item | Owner |
 | --- | --- |
-| Binary `0.9.0` (linux x86_64, macOS arm64; WSL uses the Linux asset) | `workstation/packages/herdr` setup via `provision.file`, link at `.local/bin/herdr` |
-| Official Pi hook (integration revision 8, exact bundled bytes) | `workstation/packages/herdr-pi` file recipe at `.pi/agent/extensions/herdr-agent-state.ts` |
+| Binary `0.9.0` (linux x86_64, macOS arm64; WSL uses the Linux asset) | `workstation/packages/agent/herdr` setup via `provision.file`, link at `.local/bin/herdr` |
+| Official Pi hook (integration revision 8, exact bundled bytes) | `workstation/packages/agent/herdr-pi` file recipe at `.pi/agent/extensions/herdr-agent-state.ts` |
 | Server, panes, sockets, `~/.config/herdr`, sessions, saved machines | Human/host; lifecycle commands never start, stop, attach or inspect them |
 | Pi sessions, subagent children, artifacts, project-pane bindings | Existing `agent` capability ownership (pi-subagents inside it), unchanged |
 

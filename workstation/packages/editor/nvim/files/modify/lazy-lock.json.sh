@@ -11,7 +11,7 @@
 # fails closed; the deployed file is never silently replaced.
 #
 # The engine pins below are the committed files/.config/nvim/lazy-lock.json
-# asset embedded verbatim by packages/nvim at contribution time. Bootstrap
+# asset embedded verbatim by packages/editor/nvim at contribution time. Bootstrap
 # guarantees the managed Neovim exists before any apply runs this program.
 set -eu
 nvim_bin=${HOME:?}/.local/opt/nvim/bin/nvim

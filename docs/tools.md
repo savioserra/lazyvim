@@ -6,7 +6,7 @@ Supported deployment policy is Linux, WSL-as-Linux, and macOS (arm64).
 | --- | --- |
 | Download operations | Owning `workstation/packages/<name>/` setup; Neovim bootstrap and engine-owned chezmoi backend |
 | Shared versions, URL templates and SHA-256 | `workstation/versions.json` |
-| Node version | `workstation/packages/node/files/.node-version` |
+| Node version | `workstation/packages/languages/node/files/.node-version` |
 | Update unit | Version, URL, SHA-256 checksum, verification, this table |
 
 | Tool | Version | Source | Target | Platforms |
@@ -16,7 +16,7 @@ Supported deployment policy is Linux, WSL-as-Linux, and macOS (arm64).
 | Go | 1.27.1 | go.dev | `.local/opt/go` (exact tree, `go` setup) | linux-x86_64, darwin-arm64 |
 | Herdr | 0.9.0 | github.com/herdrdev/herdr | `.local/opt/herdr/bin/herdr` (`herdr` setup) + `.local/bin/herdr` link | linux-x86_64, darwin-arm64 (WSL uses the Linux asset) |
 | nvm-sh | 0.40.4 | github.com/nvm-sh/nvm | `.local/opt/nvm` (non-exact tree, `node` setup) | linux-x86_64, darwin-arm64 |
-| Node.js | `workstation/packages/node/files/.node-version` (currently 24.19.0) | nodejs.org | `.local/opt/nvm/versions/node/v<version>` (non-exact, `node` setup) | linux-x86_64, darwin-arm64 |
+| Node.js | `workstation/packages/languages/node/files/.node-version` (currently 24.19.0) | nodejs.org | `.local/opt/nvm/versions/node/v<version>` (non-exact, `node` setup) | linux-x86_64, darwin-arm64 |
 | ripgrep | 15.2.0 | github.com/BurntSushi/ripgrep | `.local/bin/rg` | linux-x86_64, darwin-arm64 |
 | fd | 10.4.2 | github.com/sharkdp/fd | `.local/bin/fd` | linux-x86_64, darwin-arm64 |
 | fzf | 0.74.2 | github.com/junegunn/fzf | `.local/bin/fzf` | linux-x86_64, darwin-arm64 |
@@ -66,9 +66,9 @@ retrying. Do not remove a lock while its installer is still running.
 
 | Tool | Why | Where it's handled |
 | --- | --- | --- |
-| Git, tmux >=3.2, Bash >=5.2 | User/CI unmanaged prerequisites; no lifecycle OS installs | tmux plugin commits/setup are managed separately by `workstation/packages/tmux/init.lua` |
+| Git, tmux >=3.2, Bash >=5.2 | User/CI unmanaged prerequisites; no lifecycle OS installs | tmux plugin commits/setup are managed separately by `workstation/packages/terminal/tmux/init.lua` |
 | C compiler/build tools, Linux fontconfig, macOS Command Line Tools | Parser/application builds and font verification prerequisites | User or CI image; see README |
 | ShellCheck | Validation tool supplied by Linux CI image; used wherever available | `.github/scripts/check.sh`; no unpinned lint downloads |
 | 1Password desktop app and account session | User application and interactive authentication are outside source state | Install the official app, enable CLI integration, and sign in interactively |
-| Mason-installed LSP servers/formatters/linters | Neovim-internal package manager, not a host binary | `zapling/mason-lock.nvim`, `workstation/packages/nvim/files/.config/nvim/mason-lock.json` — see [Neovim](nvim.md) |
-| lazy.nvim-installed Neovim plugins | Neovim-internal package manager | `workstation/packages/nvim/files/.config/nvim/lazy-lock.json` is the engine-pinned baseline; the deployed copy is runtime-extended mutable state — see [Neovim](nvim.md) |
+| Mason-installed LSP servers/formatters/linters | Neovim-internal package manager, not a host binary | `zapling/mason-lock.nvim`, `workstation/packages/editor/nvim/files/.config/nvim/mason-lock.json` — see [Neovim](nvim.md) |
+| lazy.nvim-installed Neovim plugins | Neovim-internal package manager | `workstation/packages/editor/nvim/files/.config/nvim/lazy-lock.json` is the engine-pinned baseline; the deployed copy is runtime-extended mutable state — see [Neovim](nvim.md) |

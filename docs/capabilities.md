@@ -327,13 +327,13 @@ detection.
 
 ## Neovim package and profile
 
-`packages/nvim` declares the base/standard/Go language intents as
+`packages/editor/nvim` declares the base/standard/Go language intents as
 `nvim-profile` recipes; language capabilities such as `typescript`
 declare their own intents the same way. The engine composes them
 (`Workstation.Core.Source.NvimProfile.compose/1`): intents are ordered by an
 explicit `order` key (Go, TypeScript, standard) with graph collection order as
 the tie-breaker, the assembled list is validated (mirroring the deployed
-`packages/nvim/profile.lua` contract) and ONE attributed chezmoi recipe is
+`packages/editor/nvim/profile.lua` contract) and ONE attributed chezmoi recipe is
 emitted that serializes the deployed
 `.config/nvim/lua/languages/profile.lua`. The deployed profile is plain
 runtime Lua owned by the editor capability; a tampered deployed copy can
@@ -344,11 +344,11 @@ from deployed profile state.
 
 | Consumer | Use |
 | --- | --- |
-| `packages/nvim/files/.config/nvim/**` | Editor runtime payload (lazy.nvim bootstrap, own behavior verification) |
+| `packages/editor/nvim/files/.config/nvim/**` | Editor runtime payload (lazy.nvim bootstrap, own behavior verification) |
 | `.config/nvim/lua/languages/profile.lua` (deployed) | Generated profile consumed by the editor runtime; serialized by `Workstation.Core.Source.NvimProfile.compose/1` |
 
 The former package-side compositor and child-verification helpers
-(`packages/nvim/{compose,profile,init,leaf,child}.lua`) were engine-side Lua
+(`packages/editor/nvim/{compose,profile,init,leaf,child}.lua`) were engine-side Lua
 and died with the engine; the profile contract they enforced now lives in
 `Workstation.Core.Source.NvimProfile`.
 
@@ -382,7 +382,7 @@ resource loader.
 
 `pi-skills` verifies managed skill files and discovery through Pi's resource loader.
 `pi-ntfy-notifier` deploys from
-`workstation/packages/pi-ntfy-notifier/files/.pi/agent/extensions/ntfy-notifier/`
+`workstation/packages/agent/pi-ntfy-notifier/files/.pi/agent/extensions/ntfy-notifier/`
 through `workstation apply`, followed by Pi `/reload` or a new process.
 
 Notifier package verification checks manifest/version/files and Node unit tests
@@ -401,7 +401,7 @@ hooks and never executes package modules:
 
 ```text
 packages/fonts/files/
-packages/node/files/
+packages/languages/node/files/
 packages/agent/verify/
 ```
 

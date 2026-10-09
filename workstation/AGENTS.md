@@ -14,8 +14,9 @@ semantics and verification requirements.
    register it in `catalog/packages.ex` (declaration order is load-bearing:
    graph tie-break and golden construction order). No filesystem discovery,
    deep merging or handler overrides.
-2. Keep payload assets under `packages/<name>/files/` (and canonical
-   dot-targets as `packages/<name>/dot-*`); recipes reference them
+2. Keep payload assets under `packages/<domain>/<name>/files/` (and canonical
+   dot-targets as `packages/<domain>/<name>/dot-*`); domains follow the
+   package manifest's declared `foundation/<domain>` axis; recipes reference them
    package-relative and deploy only through declared recipes.
 3. `.lua` files under `packages/` are DATA payloads (theme tokens, recorded
    pin tables), read or shipped as bytes — never executed by the engine.
