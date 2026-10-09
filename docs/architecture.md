@@ -29,6 +29,8 @@ capability-keyed — never direct references.
    colorscheme derivations, binary pins, version pins. A package declares a
    manifest (identity, domain, version, capabilities provided, capabilities
    consumed, compatibility) and owns its derivation logic contract-calling.
+   A package is a self-contained tree outside the kernel — one home per
+   package; the engine discovers it, never embeds or mirrors it.
 
 Dependency direction: packages → contracts → kernel, with backends plugging
 into contracts. Never sideways by name, never downward.
@@ -84,15 +86,17 @@ typed-effects plan change, rationale in its commit).
 The journal anchors ownership and baseline; goldens pin byte-identity of
 plan outputs across refactors; the apply lock serializes mutators.
 
-## The package store (trajectory)
+## Package self-containment (the law)
 
-The same registry pattern extends off-host: a metadata plane (name +
-version → manifest, dependencies, compatibility, checksums, artifact URL;
-append-only, immutable once published) over an immutable artifact plane
-(content-addressed, integrity-verified on install). Local discovery grows a
-store source; the host pins exact versions + hashes (lockfile semantics) for
-deterministic, reproducible installs; mirrors and vendoring fall out of the
-same shape.
+A package is self-contained: its manifest, payloads, profiles and
+derivation logic live in exactly one place — the package's own tree,
+outside the kernel. The kernel holds no package content and no package
+mirror; discovery is the only path from the engine to a package. When a
+package changes, exactly one tree changes — maintaining any package fact
+in two places is a defect by definition, not a style issue. The store
+mechanism (metadata plane, lockfile pinning, mirrors) is retired as a
+direction: self-containment plus discovery is the whole distribution
+story, and fresh-box parity consumes the package tree directly.
 
 ## Enforcement
 

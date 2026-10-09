@@ -53,42 +53,38 @@ cond dispatch, dead fold accumulators. P2 polish burns opportunistically.
 
 Exit: a new editor/terminal/agent package is a manifest and payloads.
 
-## R4 — The package store (research-first)
+## R4 — Package self-containment, then the release
 
-Design direction approved by the user (2026-10-09 session) and codified in
-[store-design.md](store-design.md): namespace-as-layout (package id ==
-registry key == tree path == domain axis), artifacts by-reference pinned by
-hash, components + profiles per language package, artifacts in an
-engine-owned toolchain root with HOME seeing only contract outputs, and the
-existing contracts as the entire install machinery — the store adds
-discovery, resolution and pinning, not a new install system.
+User ruling (2026-10-09 session, verbatim intent): packages must be
+self-contained and live OUTSIDE the kernel; maintaining a package in two
+places is unacceptable; the store mechanism is NOT needed; this refactor
+lands BEFORE the v2.0.0 release. It supersedes the store design
+(store-design.md retained as retired history). Discovery stays the only
+engine-to-package path: the engine finds packages, it never embeds or
+mirrors them — the law lives in docs/architecture.md ("Package
+self-containment").
 
 | task | owner | depends on | scope / exit |
 |---|---|---|---|
-| r4.research | main | R3 gate | registry-design research (npm/cargo/hex index shapes, signing, sparse index, mirrors) → store design proposal to the user BEFORE implementation |
-| r4.lockfile | core | r4.research approved | host lockfile: resolve to exact versions + hashes, verify on apply, drift fails closed |
-| r4.store-schema | core | r4.research approved | store manifest schema + validation (name, version, deps, compat, checksums, artifact URLs) |
-| r4.store-index | core | r4.store-schema | local-first sparse index format + deterministic resolution over it |
-| r4.store-artifacts | core | r4.store-schema | content-addressed artifact fetch + integrity verify + local cache |
-| r4.install | core | r4.lockfile, r4.store-index, r4.store-artifacts | end-to-end: install a package from a local store fixture into a sandbox home, hash-verified |
-| r4.mirror | core | r4.install | mirror config + offline vendoring path |
-| r4.publish | core | r4.install | author-side pack/ship: package dir → store entry + artifact + checksums |
-| r4.gate | gate | r4.mirror, r4.publish | battery + push; SWARM R4: DONE |
+| r4.selfcontain-move | core | R3 gate | every package leaves the kernel namespace for its own self-contained tree — manifest, payloads, profiles, derivation logic in exactly one place; kernel-side copies and templates deleted, discovery is the sole path; guard tables move with the code |
+| r4.dual-home-ban | core | r4.selfcontain-move | a guard fails the build when any package fact has two homes (an engine-side copy of package content); ArchitectureDepsTest/LayerLawTest tables updated |
+| r4.release-v2 | gate | r4.selfcontain-move | v2.0.0 cut from the self-contained tree — version bump, changelog, battery green on the new layout |
+| r4.gate | gate | r4.dual-home-ban, r4.release-v2 | battery + push; SWARM R4: DONE |
 
-Exit: install from the store into a sandbox home, verified, reproducible from
-the lockfile.
+Exit: a package is one tree the engine discovers — never a kernel copy —
+and v2.0.0 ships from it.
 
 ## R5 — Fresh-box parity
 
 | task | owner | depends on | scope / exit |
 |---|---|---|---|
-| r5.bootstrap-store | core | R4 gate | bootstrap consumes store + lockfile (engine release, runtime payloads, packages) |
-| r5.parity-proof | gate | r5.bootstrap-store | clean sandbox home → full apply from store → byte-identical to this host's managed state |
-| r5.runbook | tree | r5.bootstrap-store | fresh-box runbook in docs |
+| r5.bootstrap-tree | core | R4 gate | bootstrap consumes the package tree (engine release + self-contained packages) — no store, no lockfile |
+| r5.parity-proof | gate | r5.bootstrap-tree | clean sandbox home → full apply from the package tree → byte-identical to this host's managed state |
+| r5.runbook | tree | r5.bootstrap-tree | fresh-box runbook in docs |
 | r5.gate | gate | r5.parity-proof, r5.runbook | SWARM R5: DONE |
 
-Exit: a new machine reaches this host's state from nothing but the store,
-the lockfile, and the engine release — the strangler gap closed for good.
+Exit: a new machine reaches this host's state from nothing but the engine
+release and the package tree — the strangler gap closed for good.
 
 ## Conventions across runs
 
@@ -102,7 +98,7 @@ the lockfile, and the engine release — the strangler gap closed for good.
   file-ownership partition — never two writers on one partition. Planned
   scale-ups: R3 seeds `core2` (profile vs shell vs theme-derivation run as
   namespace-disjoint parallel lanes) and R4 may add a second core actor for
-  mirror/publish; R1/R2 stay two-lane. Trigger, not vanity: an actor is added
+  the package-tree move; R1/R2 stay two-lane. Trigger, not vanity: an actor is added
   only when mutually independent, partition-disjoint tasks would otherwise
   serialize behind one owner.
 

@@ -1,5 +1,11 @@
 # Store design (R4 direction — approved)
 
+> **RETIRED** (user ruling, 2026-10-09 session): the store mechanism is not
+> needed — package self-containment is the law (docs/architecture.md,
+> "Package self-containment"); R4 lands self-containment and the v2.0.0
+> release, and fresh-box parity consumes the package tree directly. This
+> document is retained as retired history only.
+
 Approved by the user 2026-10-09 following the language-package research
 (`/tmp/fleet/reports/r4-store-language-packages-research.md`; precedents:
 npm packuments + scopes, cargo sparse index, rustup components/profiles,
