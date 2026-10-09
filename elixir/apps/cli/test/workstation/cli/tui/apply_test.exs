@@ -108,7 +108,11 @@ defmodule Workstation.CLI.TUI.ApplyTest do
       runtime = start_apply()
       send_text(runtime, "↓")
 
-      frame = latest_frame()
+      # Input processes through the screen's event loop — wait for the
+      # moved cursor instead of trusting one drain.
+      frame =
+        await_frame(fn frame -> :reverse in Frame.cell(frame, 4, 2).attrs end)
+
       assert :reverse in Frame.cell(frame, 4, 2).attrs
       refute :reverse in Frame.cell(frame, 3, 2).attrs
     end
@@ -136,7 +140,9 @@ defmodule Workstation.CLI.TUI.ApplyTest do
       # cursor off the selection to observe the selected style.
       send_key(runtime, :up)
 
-      frame = latest_frame()
+      frame =
+        await_frame(fn frame -> :bold in Frame.cell(frame, 4, 2).attrs end)
+
       cell = Frame.cell(frame, 4, 2)
 
       assert :bold in cell.attrs
@@ -147,11 +153,16 @@ defmodule Workstation.CLI.TUI.ApplyTest do
       runtime = start_apply()
       send_key(runtime, :end)
 
-      frame = latest_frame()
+      frame =
+        await_frame(fn frame -> :reverse in Frame.cell(frame, 5, 2).attrs end)
+
       assert :reverse in Frame.cell(frame, 5, 2).attrs
 
       send_key(runtime, :home)
-      frame = latest_frame()
+
+      frame =
+        await_frame(fn frame -> :reverse in Frame.cell(frame, 3, 2).attrs end)
+
       assert :reverse in Frame.cell(frame, 3, 2).attrs
     end
   end
@@ -161,7 +172,10 @@ defmodule Workstation.CLI.TUI.ApplyTest do
       runtime = start_apply()
       send_text(runtime, "a")
 
-      frame = latest_frame()
+      frame =
+        await_frame(fn frame ->
+          Frame.row_text(frame, 4) =~ "Confirm apply"
+        end)
 
       assert frame |> Frame.row_text(4) =~ "Confirm apply"
       assert frame |> Frame.row_text(5) =~ "Apply 3 change(s) to #{@destination}?"
@@ -176,7 +190,11 @@ defmodule Workstation.CLI.TUI.ApplyTest do
       send_text(runtime, "a")
       type_text(runtime, "upda")
 
-      frame = latest_frame()
+      frame =
+        await_frame(fn frame ->
+          Frame.row_text(frame, 6) =~ "Type apply to confirm: upda_"
+        end)
+
       assert frame |> Frame.row_text(6) =~ "Type apply to confirm: upda_"
 
       type_text(runtime, "te")
@@ -194,7 +212,9 @@ defmodule Workstation.CLI.TUI.ApplyTest do
       _frame = latest_frame()
       send_text(runtime, "n")
 
-      frame = latest_frame()
+      frame =
+        await_frame(fn frame -> Frame.row_text(frame, 12) =~ "a confirm" end)
+
       refute frame |> Frame.row_text(4) =~ "Confirm apply"
       assert frame |> Frame.row_text(12) =~ "a confirm"
     end
@@ -205,7 +225,9 @@ defmodule Workstation.CLI.TUI.ApplyTest do
       _frame = latest_frame()
       send_key(runtime, :escape)
 
-      frame = latest_frame()
+      frame =
+        await_frame(fn frame -> Frame.row_text(frame, 12) =~ "a confirm" end)
+
       refute frame |> Frame.row_text(4) =~ "Confirm apply"
     end
   end
