@@ -1,3 +1,3 @@
-versions-sha256|324c26032b0c56056ce552f2162720553927116b07b2801f47e292e970c45c2d
+versions-sha256|2e0e2016e819e7627405fb6431e112bf93a9970cfe27dd0f797797edcd82f1d8
 linux_x86_64|0.12.4|https://github.com/neovim/neovim/releases/download/v0.12.4/nvim-linux-x86_64.tar.gz|012bf3fcac5ade43914df3f174668bf64d05e049a4f032a388c027b1ebd78628
 darwin_arm64|0.12.4|https://github.com/neovim/neovim/releases/download/v0.12.4/nvim-macos-arm64.tar.gz|51ab83afa66d663627c2ab1be43209b0f4e81360d4598b53efaa4d8195f24c89

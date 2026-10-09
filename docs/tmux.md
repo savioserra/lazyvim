@@ -45,15 +45,16 @@ on an isolated server.
 | `tmux-plugins/tmux-yank` | `acfd36e4fcba99f8310a7dfb432111c242fe7392` |
 | `christoomey/vim-tmux-navigator` | `e41c431a0c7b7388ae7ba341f01a0d217eb3a432` |
 | `tmux-plugins/tmux-resurrect` | `cff343cf9e81983d3da0c8562b01616f12e8d548` |
+| `datamadsen/nunchux` | `1546eaa980d834c331496ea9d51942be07ea9fdd` (engine-provisioned; see below) |
 
 Pinning rules:
 
 - Keep `@plugin` values as bare `user/repo` for TPM.
-- Store exact commits in this table; the engine records the contract only —
-  the retired Lua `setup`/`verify` handlers owned the actual checkouts, and
-  the engine has no download recipe yet (see the prepared section below),
-  so a checkout is (re)created by TPM's `prefix + I` and repairable via
-  `workstation apply`'s recorded pins.
+- Store exact commits in this table. The four TPM-installed checkouts are
+  (re)created by TPM's `prefix + I` and repairable via `workstation apply`'s
+  recorded pins; nunchux is the exception — its checkout is
+  engine-provisioned by the package's pinned-clone recipe (below), never by
+  TPM.
 - tmux-oasis's commit + URL are additionally pinned in
   `workstation/versions.json` (`tmux_oasis*` keys) and asserted by the
   package tests.
@@ -63,47 +64,58 @@ Pinning rules:
 
 TPM `user/repo#ref` supports branches/tags, not exact raw commits.
 
-## Prepared plugin (pending provisioning)
+## Nunchux (engine-provisioned launcher)
 
-| Plugin | Commit | Release pins |
+| Plugin | Commit | Pin inventory |
 | --- | --- | --- |
-| `datamadsen/nunchux` | `1546eaa980d834c331496ea9d51942be07ea9fdd` (Release 3.1.3) | `versions.json` `nunchux_*`: release-asset SHA-256 per platform (`nunchux-linux-amd64` `d66afe3d…`, `nunchux-darwin-arm64` `c8444fd8…`) |
+| `datamadsen/nunchux` | `1546eaa980d834c331496ea9d51942be07ea9fdd` (Release 3.1.3) | `versions.json`: `nunchux_git_*` (clone pin), `nunchux_repo_linux_amd64_sha256` (the repo-tracked `bin/nunchux` build), `nunchux_*` release-asset SHA-256s (distribution inventory) |
 
-Nunchux (fzf popup launcher for apps, files and task runners) is prepared
-but NOT active: the `@plugin` line in `.tmux.conf` stays commented out
-until the plugin checkout itself is engine-provisioned (the git contract's
-pinned-clone recipe; see [elixir](elixir.md)). The launcher payload now
-lives in its own `nunchux` package (Workstation.Packages.Nunchux), not
-here: the slot-templated `~/.config/nunchux/config` target (byte-equal to
-upstream's default config, consuming theme slots — [theme](theme.md)), and
-the pinned 3.1.3 linux-x86_64 binary pre-seed — the download contract
-installs `~/.tmux/plugins/nunchux/bin/nunchux` beside a
-`bin/.platform` marker, exactly the two files upstream's `ensure_binary`
-checks, so plugin load never fetches `releases/latest` unchecksummed.
-Host-side pin assertion: `packages/nunchux/verify/nunchux.sh` (read-only,
-never executes the binary). The root `C-Space` chord (`@nunchux-key`,
-declared ahead of TPM init) stays here in `.tmux.conf`, dormant.
+Nunchux (fzf popup launcher for apps, files and task runners) is ACTIVE:
+the `@plugin` pin and the root `C-Space` chord in `.tmux.conf` are live,
+and the checkout itself is the first package-wired pinned-clone recipe
+(`Workstation.Packages.Nunchux`): `workstation apply` clones
+`datamadsen/nunchux` to `~/.tmux/plugins/nunchux` at the exact v3.1.3
+commit — detached HEAD verified against the pin, idempotent re-apply
+neither fetches nor moves a checkout already at the pin. The recipe made
+the interim download-contract pre-seed obsolete: upstream tracks
+`bin/nunchux` in the repo (a linux-amd64 build of the same 3.1.3 release,
+`nunchux-go 3.1.3`, content-pinned by `nunchux_repo_linux_amd64_sha256`),
+and the download contract refuses to overwrite mismatched bytes, so the
+release artifact and the checkout could not compose at one path. The
+launcher payload lives in the `nunchux` package: the checkout pin, the
+slot-templated `~/.config/nunchux/config` target (byte-equal to upstream's
+default config, consuming theme slots — [theme](theme.md)), and the
+`bin/.platform` marker.
 
-The checksummed pre-seed above is what closed the original activation
-gate — upstream's `nunchux.tmux` fetches `releases/latest` at plugin
-load with no checksum and no version pin (the same exclusion-class defect
-as `tmux-fingers`). What remains gated is the checkout itself: TPM's own
-clone is unchecksummed, so activation waits for the git contract's
-pinned-clone recipe; pre-seeding the directory before that clone would
-make TPM skip the plugin entirely (non-empty checkout).
+The load-bearing pre-seed is that marker: upstream's `nunchux.tmux`
+`ensure_binary` fetches `releases/latest` — unchecksummed, the same
+exclusion-class defect as `tmux-fingers` — whenever `bin/.platform` is
+missing or names another platform. With the marker present, plugin load
+runs the commit-pinned repo binary and never fetches. Host-side pin
+assertion: `packages/nunchux/verify/nunchux.sh` (checkout HEAD, binary
+content pin, marker; read-only, never executes the binary).
 
 The launch chord is **C-Space, root** (no prefix): `@nunchux-key` is set to
-`C-Space` — upstream's own default — and the activation block carries the
-matching commented `bind -n C-Space display-popup …` line (exact
-nunchux.tmux popup command) so the chord goes live together with the
-plugin. Tradeoff: root `C-Space` shadows the chord for applications inside
-tmux (e.g. insert-mode completion). Revert is one line: comment the bind
-line in `.tmux.conf` and re-apply.
+`C-Space` — upstream's own default — and the activation block binds
+`bind -n C-Space display-popup …` (exact nunchux.tmux popup command). TPM
+sources the plugin through the active `@plugin` pin, so the chord goes
+live together with the checkout. Tradeoff: root `C-Space` shadows the
+chord for applications inside tmux (e.g. insert-mode completion). Revert
+is one line: comment the bind line in `.tmux.conf` and re-apply (fully
+retiring the plugin means commenting the `@plugin` pin and removing the
+recipe with it).
+
+Never run TPM's `prefix + I` for nunchux: the engine owns the checkout,
+and a TPM clone/pull would fight the pin — `workstation apply` re-asserts
+it. Migration note for homes carrying the old pre-seed (a `bin/nunchux`
++ `bin/.platform` directory with no checkout): apply fails closed on the
+non-checkout directory — remove `~/.tmux/plugins/nunchux` once and
+re-apply; fresh homes clone directly.
 
 Compliance flag: upstream ships NO LICENSE file, so the code is
 all-rights-reserved by default — running it is a user-owned choice; the
-binary deploys as pinned release-artifact bytes and is never executed by
-the engine or the verify lane.
+binary bytes ride the commit pin and are never executed by the engine or
+the verify lane.
 
 ## Excluded plugin
 

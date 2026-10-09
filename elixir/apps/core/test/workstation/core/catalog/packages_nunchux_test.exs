@@ -1,23 +1,24 @@
 defmodule Workstation.Core.Catalog.PackagesNunchuxTest do
   @moduledoc """
-  The nunchux package's pin contracts. The binary is the first package-wired
-  download-contribution: the spec's pin must mirror
+  The nunchux package's pin contracts. The checkout is the first
+  package-wired git contribution: the spec's pin must mirror
   `workstation/versions.json` exactly (the tmux-oasis pin-mirror pattern),
-  target the TPM plugin checkout's `bin/` directory, and ride beside the
-  `.platform` marker upstream's `nunchux.tmux` `ensure_binary` checks —
-  the pre-seed that keeps plugin load from ever fetching
-  `releases/latest` unchecksummed. The theme-slot launcher config renders
-  byte-equal to upstream's default config; only the two slot references
-  carry the theme rebrand forward. The activation surface (plugin pin +
-  root C-Space chord) stays dormant in tmux's `.tmux.conf` until the git
-  contract's pinned-clone recipe lands. See docs/tmux.md ("prepared").
+  target the TPM plugin checkout root, and own every checkout byte —
+  including the repo-tracked `bin/nunchux` the plugin runs. The `.platform`
+  marker is the pre-seed upstream's `nunchux.tmux` `ensure_binary` checks:
+  with it present, plugin load never fetches `releases/latest`
+  unchecksummed. The release-asset pins stay recorded as distribution
+  inventory. The theme-slot launcher config renders byte-equal to
+  upstream's default config; the tmux-side activation surface (plugin pin
+  + root C-Space chord) went live with the checkout (r2.nunchux-wiring).
+  See docs/tmux.md.
   """
 
   use ExUnit.Case, async: true
 
   alias Workstation.Packages.Nunchux
+  alias Workstation.Packages.Git
   alias Workstation.Backends.Chezmoi
-  alias Workstation.Core.Contracts.Download
 
   @repo_root Path.expand("../../../../../../..", __DIR__)
   @payload_root Path.join(@repo_root, "workstation/packages/nunchux")
@@ -28,39 +29,52 @@ defmodule Workstation.Core.Catalog.PackagesNunchuxTest do
     assert spec.id == "nunchux"
     assert spec.foundation == "foundation/terminal"
     assert spec.requires == ["foundation", "theme"]
-    # The download contract pins one artifact per declaration; the
-    # darwin-arm64 release pin stays recorded in versions.json until
-    # per-platform dispatch exists.
+    # The checkout carries the linux-amd64 repo build; the darwin-arm64
+    # release pin stays recorded in versions.json until per-platform
+    # dispatch exists.
     assert spec.supported_hosts == %{"darwin" => false, "linux" => true}
   end
 
-  test "the binary is a pinned download contribution into the plugin checkout" do
-    entry = download_entry()
+  test "the checkout is a pinned-clone contribution into the plugin root" do
+    entry = git_entry()
 
-    assert entry.provider == "download"
+    assert entry.provider == "git"
+    assert entry.spec.id == "git"
+    assert entry.spec.url == "https://github.com/datamadsen/nunchux"
+    assert entry.spec.commit == "1546eaa980d834c331496ea9d51942be07ea9fdd"
+    assert entry.spec.target == ".tmux/plugins/nunchux"
 
-    assert entry.spec == %Download{
-             url:
-               "https://github.com/datamadsen/nunchux/releases/download/v3.1.3/nunchux-linux-amd64",
-             version: "3.1.3",
-             sha256: "d66afe3d47272a41272fe8c22bf86c8b8570fa2e5dbf0a1c462348d0cdf04c29",
-             target: ".tmux/plugins/nunchux/bin/nunchux"
-           }
+    assert entry.spec.fingerprint ==
+             Git.pin_fingerprint(entry.spec.url, entry.spec.commit, entry.spec.target)
+
+    # Exactly one owner of the checkout root; the sibling targets live
+    # inside the cloned tree.
+    assert Nunchux.spec().contributes |> Enum.count(&(&1.provider == "git")) == 1
   end
 
-  test "the download pin mirrors the versions manifest" do
+  test "the git pin mirrors the versions manifest" do
     manifest = versions_manifest()
-    entry = download_entry().spec
+    pin = git_entry().spec
 
-    assert manifest["nunchux"] == entry.version
+    assert manifest["nunchux_git_commit"] == pin.commit
+    assert manifest["nunchux_git_url"] == pin.url
 
-    assert String.replace(manifest["nunchux_linux_x86_64_url"], "{V}", entry.version) ==
-             entry.url
+    # The checkout carries the upstream repo build of the same release; its
+    # content pin rides versions.json and is asserted by the verify lane
+    # (never executed there).
+    assert manifest["nunchux_repo_linux_amd64_sha256"] ==
+             "8a6e46d937ee76ac6a483865c800de9208aabbe1dbc620473eb5e6b7d86b7b14"
 
-    assert manifest["nunchux_linux_x86_64_sha256"] == entry.sha256
+    # The release-asset pins stay recorded as distribution inventory, even
+    # though the checkout (not the artifact) supplies the binary now.
+    assert manifest["nunchux"] == "3.1.3"
 
-    # The darwin pin stays recorded (inventory completeness) even though the
-    # linux-only package cannot declare it yet.
+    assert String.replace(manifest["nunchux_linux_x86_64_url"], "{V}", "3.1.3") ==
+             "https://github.com/datamadsen/nunchux/releases/download/v3.1.3/nunchux-linux-amd64"
+
+    assert manifest["nunchux_linux_x86_64_sha256"] ==
+             "d66afe3d47272a41272fe8c22bf86c8b8570fa2e5dbf0a1c462348d0cdf04c29"
+
     assert manifest["nunchux_darwin_arm64_sha256"] ==
              "c8444fd8cb543cd2c7e954e59283d893ff8e6345864ef570b296b22e28c8b529"
 
@@ -83,13 +97,16 @@ defmodule Workstation.Core.Catalog.PackagesNunchuxTest do
     assert body == "linux-amd64\n"
   end
 
-  test "the pre-seed pair is exactly what ensure_binary checks" do
-    targets = Enum.map(Nunchux.spec().contributes, & &1.spec.target)
+  test "the checkout supplies the binary; the marker is the declared pre-seed" do
+    targets = Enum.map(Nunchux.spec().contributes, &(&1.spec.target))
 
-    # nunchux.tmux ensure_binary: -x bin/nunchux, -f bin/.platform, and the
-    # marker content — with both present, plugin load never fetches.
-    assert ".tmux/plugins/nunchux/bin/nunchux" in targets
+    # The pinned clone owns the checkout and its tracked bin/nunchux;
+    # the marker is what ensure_binary checks — it re-downloads
+    # unchecksummed whenever bin/.platform is missing or names another
+    # platform.
+    assert ".tmux/plugins/nunchux" in targets
     assert ".tmux/plugins/nunchux/bin/.platform" in targets
+    refute ".tmux/plugins/nunchux/bin/nunchux" in targets
   end
 
   test "the launcher config is a theme-slot template" do
@@ -133,7 +150,7 @@ defmodule Workstation.Core.Catalog.PackagesNunchuxTest do
     end
   end
 
-  test "the host verify script asserts the pinned pre-seed" do
+  test "the host verify script asserts the pinned checkout" do
     script = Path.join(@payload_root, "verify/nunchux.sh")
 
     assert File.regular?(script)
@@ -142,8 +159,8 @@ defmodule Workstation.Core.Catalog.PackagesNunchuxTest do
     assert {_, 0} = System.cmd("sh", ["-n", script])
   end
 
-  defp download_entry do
-    Enum.find(Nunchux.spec().contributes, &(&1.provider == Download.provider_id()))
+  defp git_entry do
+    Enum.find(Nunchux.spec().contributes, &(&1.provider == "git"))
   end
 
   defp versions_manifest do

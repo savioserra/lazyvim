@@ -133,8 +133,11 @@ defmodule Workstation.Daemon.ApplyTest do
       # Over the socket there is no sandbox collector injection: the step
       # EXECUTES and fails honestly on the sandbox home. The wire proof is
       # the code — the apply step's own failure code, never the graduation
-      # gate and never the chain code.
-      reply = request("update.run", %{"step" => "apply"})
+      # gate and never the chain code. The frame budget is 30s, not 2s: the
+      # real checkout catalog now carries the nunchux pinned-clone pin
+      # (r2.nunchux-wiring), so the honest-failure path runs a real network
+      # clone first — the assertion is unchanged, only the wait.
+      reply = request("update.run", %{"step" => "apply"}, 30_000)
       assert %{"ok" => false, "error" => %{"code" => "apply_failed"}} = reply
     end
 
@@ -227,18 +230,18 @@ defmodule Workstation.Daemon.ApplyTest do
     if File.exists?(path), do: :ok, else: (Process.sleep(20) && wait_for_file(path, tries - 1))
   end
 
-  defp request(op, params) do
+  defp request(op, params, timeout \\ 2_000) do
     {:ok, sock} = :socket.open(:local, :stream, :default)
 
     try do
       :ok = :socket.connect(sock, %{family: :local, path: String.to_charlist(Listener.socket_path())}, 2_000)
       :ok = :socket.send(sock, Protocol.encode_frame(hello_body()))
-      {:ok, _hello_frame} = recv_frame(sock)
+      {:ok, _hello_frame} = recv_frame(sock, timeout)
 
       :ok = :socket.send(sock, Protocol.encode_frame(Jason.encode!(%{"v" => 1, "id" => "l1", "op" => op, "params" => params})))
       # Ops stream progress events ahead of the reply now (the daemon owns
       # the chain); drain the event frames until the id-matched result.
-      recv_result(sock, "l1")
+      recv_result(sock, "l1", timeout)
     after
       :socket.close(sock)
     end
@@ -247,24 +250,24 @@ defmodule Workstation.Daemon.ApplyTest do
   defp hello_body,
     do: Jason.encode!(%{"v" => 1, "id" => "h1", "op" => "hello", "params" => %{"protocol" => Protocol.protocol_name()}})
 
-  defp recv_result(sock, id) do
-    case recv_frame(sock) do
+  defp recv_result(sock, id, timeout) do
+    case recv_frame(sock, timeout) do
       {:ok, %{"id" => ^id} = reply} -> reply
-      {:ok, %{"event" => _event}} -> recv_result(sock, id)
+      {:ok, %{"event" => _event}} -> recv_result(sock, id, timeout)
       {:ok, other} -> flunk("unexpected frame: " <> inspect(other))
     end
   end
 
-  defp recv_frame(sock) do
-    {:ok, <<length::unsigned-big-integer-size(32)>>} = :socket.recv(sock, 4, 2_000)
-    {:ok, body} = recv_exact(sock, length, [])
+  defp recv_frame(sock, timeout) do
+    {:ok, <<length::unsigned-big-integer-size(32)>>} = :socket.recv(sock, 4, timeout)
+    {:ok, body} = recv_exact(sock, length, timeout, [])
     {:ok, Jason.decode!(body)}
   end
 
-  defp recv_exact(_sock, 0, chunks), do: {:ok, IO.iodata_to_binary(Enum.reverse(chunks))}
+  defp recv_exact(_sock, 0, _timeout, chunks), do: {:ok, IO.iodata_to_binary(Enum.reverse(chunks))}
 
-  defp recv_exact(sock, remaining, chunks) do
-    {:ok, data} = :socket.recv(sock, remaining, 2_000)
-    recv_exact(sock, remaining - byte_size(data), [data | chunks])
+  defp recv_exact(sock, remaining, timeout, chunks) do
+    {:ok, data} = :socket.recv(sock, remaining, timeout)
+    recv_exact(sock, remaining - byte_size(data), timeout, [data | chunks])
   end
 end

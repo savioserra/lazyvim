@@ -1,41 +1,45 @@
 defmodule Workstation.Packages.Nunchux do
   @moduledoc """
-  The `nunchux` workstation package's native contribution:
-  the pinned launcher binary pre-seed, the platform marker, and the
-  theme-slot launcher config.
+  The `nunchux` workstation package's native contribution: the pinned
+  plugin checkout, the platform marker, and the theme-slot launcher
+  config.
 
-  The binary is the first package-wired use of the download contract
-  (`Workstation.Core.Contracts.Download`): the pinned 3.1.3 linux-x86_64
-  release artifact installs at `.tmux/plugins/nunchux/bin/nunchux`, next to
-  a chezmoi-owned `.platform` marker ("linux-amd64") — exactly the two files
-  upstream's `nunchux.tmux` `ensure_binary` checks, so plugin load never
-  fetches `releases/latest` unchecksummed. The download contract pins one
-  artifact per declaration, so the package is linux-only today; the
-  darwin-arm64 release pin stays recorded in `workstation/versions.json`
-  (asserted by the package tests) until per-platform dispatch exists.
+  The checkout is the first package-wired use of the pinned-clone recipe
+  (`Workstation.Packages.Git`): upstream `datamadsen/nunchux` is cloned to
+  `.tmux/plugins/nunchux` at the exact v3.1.3 commit — the pin that owns
+  every checkout byte, including the `bin/nunchux` launcher binary the
+  repo itself tracks (a linux-amd64 build of the same 3.1.3 release,
+  content-pinned by `nunchux_repo_linux_amd64_sha256` in
+  `workstation/versions.json` and asserted by the verify lane). The clone
+  replaced the interim download-contract pre-seed: upstream tracks
+  `bin/nunchux`, and the download contract refuses to overwrite mismatched
+  bytes, so the release artifact and the checkout could not compose at one
+  path. The release-asset pins stay recorded in `versions.json` as the
+  upstream distribution inventory.
+
+  The chezmoi `.platform` marker ("linux-amd64") is the load-bearing
+  pre-seed: upstream's `nunchux.tmux` `ensure_binary` re-downloads from
+  `releases/latest` unchecksummed whenever `bin/.platform` is missing or
+  names another platform — with the marker present, plugin load runs the
+  commit-pinned repo binary and never fetches.
 
   The launcher config rides the same theme envelope the tmux package used
   while the payload was parked there (slot names, rendered bytes equal
-  upstream's default config). The tmux-side activation surface — the
-  commented `@plugin` pin and the root `C-Space` chord block in
-  `.tmux.conf` (tmux-owned target) — stays dormant: the plugin checkout
-  itself awaits the git contract's pinned-clone recipe (docs/tmux.md,
-  "prepared"), and a live chord today would error on the not-yet-cloned
-  plugin. The pre-seeded `bin/` files are what TPM's own clone would fetch:
-  once the git recipe lands, the checkout and the pre-seed compose instead
-  of racing TPM's installer.
+  upstream's default config). The tmux-side activation surface is live:
+  the `@plugin` pin and the root `C-Space` chord block in `.tmux.conf`
+  (tmux-owned target) went live with the checkout (docs/tmux.md).
   """
 
   @behaviour Workstation.Core.Catalog.Spec
 
   alias Workstation.Core.Catalog.Packages
-  alias Workstation.Core.Contracts.Download
+  alias Workstation.Packages.Git
 
-  @version "3.1.3"
-  # workstation/versions.json is the pin inventory; these literals mirror its
-  # nunchux_linux_x86_64_* records and are asserted byte-equal by the package
-  # tests (the tmux-oasis pin-mirror pattern).
-  @sha256 "d66afe3d47272a41272fe8c22bf86c8b8570fa2e5dbf0a1c462348d0cdf04c29"
+  # workstation/versions.json is the pin inventory; these literals mirror
+  # its nunchux_git_* records (the v3.1.3 checkout) and are asserted
+  # byte-equal by the package tests (the tmux-oasis pin-mirror pattern).
+  @repo_url "https://github.com/datamadsen/nunchux"
+  @commit "1546eaa980d834c331496ea9d51942be07ea9fdd"
 
   @spec spec() :: map()
   def spec do
@@ -45,7 +49,7 @@ defmodule Workstation.Packages.Nunchux do
       requires: ["foundation", "theme"],
       supported_hosts: %{"darwin" => false, "linux" => true},
       contributes: [
-        download_binary(),
+        pinned_checkout(),
         Packages.chezmoi(
           target: ".tmux/plugins/nunchux/bin/.platform",
           kind: :file,
@@ -61,19 +65,18 @@ defmodule Workstation.Packages.Nunchux do
     }
   end
 
-  # The pinned release artifact, downloaded straight into the TPM plugin
-  # checkout's bin/ directory (0755 by the download contract), with the
-  # platform marker beside it: the pre-seed that keeps upstream's
-  # ensure_binary from ever fetching.
-  defp download_binary do
+  # The pinned plugin checkout: the whole TPM plugin dir as a detached-HEAD
+  # clone verified against the commit. The clone lands first (per-target
+  # phase, before the staged-generation apply effect); the chezmoi marker
+  # and config ride into the cloned tree with the apply.
+  defp pinned_checkout do
     %{
-      provider: Download.provider_id(),
+      provider: Git.id(),
       spec:
-        Download.recipe(%{
-          url: "https://github.com/datamadsen/nunchux/releases/download/v#{@version}/nunchux-linux-amd64",
-          version: @version,
-          sha256: @sha256,
-          target: ".tmux/plugins/nunchux/bin/nunchux"
+        Git.recipe(%{
+          url: @repo_url,
+          commit: @commit,
+          target: ".tmux/plugins/nunchux"
         })
     }
   end

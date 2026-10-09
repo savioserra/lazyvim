@@ -9,9 +9,9 @@ defmodule Workstation.Core.Catalog.PackagesTmuxTest do
   oasis_starlight_dark.conf is canonical. The nunchux launcher grew into
   its own package (Workstation.Packages.Nunchux — config target, pinned
   binary pre-seed, platform marker); this suite keeps the tmux-side
-  contracts: the dormant `@plugin` pin and root `C-Space` chord in
-  `.tmux.conf` and the tmux-oasis status-bar pins. See docs/tmux.md
-  ("prepared").
+  contracts: the ACTIVE `@plugin` pin and root `C-Space` chord in
+  `.tmux.conf` (live with the engine-provisioned checkout,
+  r2.nunchux-wiring) and the tmux-oasis status-bar pins. See docs/tmux.md.
   """
 
   use ExUnit.Case, async: true
@@ -29,17 +29,18 @@ defmodule Workstation.Core.Catalog.PackagesTmuxTest do
     refute File.exists?(Path.join(@payload_root, "files/.config/nunchux/config"))
   end
 
-  test "the plugin pin stays commented out with the provisioning marker" do
+  test "the nunchux plugin pin is active against the engine-provisioned checkout" do
     conf = conf_source()
 
-    # Supply-chain gate: nunchux must never load, because the load path
-    # fetches releases/latest unchecksummed. The pin rides as a comment
-    # carrying the activation marker.
-    refute conf =~ "\nset -g @plugin 'datamadsen/nunchux'"
-    assert conf =~ "#set -g @plugin 'datamadsen/nunchux'"
+    # The checkout is engine-provisioned (the Workstation.Packages.Nunchux
+    # pinned-clone recipe), so TPM sources the plugin; the pin must never
+    # regress to a comment while the recipe — and the checkout it owns —
+    # stays live.
+    assert conf =~ "\nset -g @plugin 'datamadsen/nunchux'"
+    refute conf =~ "#set -g @plugin 'datamadsen/nunchux'"
 
-    assert conf =~
-             "# nunchux: activate when engine Source.Download provisioning lands (supply-chain S-R1; see docs/tmux.md)"
+    assert conf =~ "pinned-clone"
+    assert conf =~ "engine-provisioned"
   end
 
   test "the nunchux key is declared ahead of TPM init so activation needs no reorder" do
@@ -53,26 +54,25 @@ defmodule Workstation.Core.Catalog.PackagesTmuxTest do
     assert key_line && tpm_line && key_line < tpm_line
   end
 
-  test "the root C-Space popup binding rides the activation block, commented until activation" do
+  test "the root C-Space popup binding is live beside the plugin pin" do
     lines = String.split(conf_source(), "\n")
 
     # Exactly the popup command nunchux.tmux builds (60%/50% are upstream's
-    # menu_width/menu_height defaults; NUNCHUX_BIN resolves to the TPM
-    # checkout's bin/nunchux).
+    # menu_width/menu_height defaults; NUNCHUX_BIN resolves to the
+    # engine-provisioned checkout's bin/nunchux).
     binding =
-      ~S(#bind -n C-Space display-popup -E -B -d '#{pane_current_path}' -w '60%' -h '50%' '~/.tmux/plugins/nunchux/bin/nunchux')
+      ~S(bind -n C-Space display-popup -E -B -d '#{pane_current_path}' -w '60%' -h '50%' '~/.tmux/plugins/nunchux/bin/nunchux')
 
     binding_line = Enum.find_index(lines, &(&1 == binding))
-    plugin_line = Enum.find_index(lines, &(&1 == "#set -g @plugin 'datamadsen/nunchux'"))
+    plugin_line = Enum.find_index(lines, &(&1 == "set -g @plugin 'datamadsen/nunchux'"))
     key_line = Enum.find_index(lines, &(&1 == "set -g @nunchux-key 'C-Space'"))
 
     assert binding_line && plugin_line && key_line
-    # Same commented activation region, key declared before the chord.
+    # One activation region: pin, then key, then the chord it drives.
     assert plugin_line < binding_line and key_line < binding_line
 
-    # A live binding today would error on the missing binary — the chord
-    # must stay commented while the plugin pin is.
-    refute Enum.any?(lines, &String.starts_with?(&1, "bind -n C-Space"))
+    # No commented remnants of the dormant era may survive beside the live chord.
+    refute Enum.any?(lines, &String.starts_with?(&1, "#bind -n C-Space"))
   end
 
   test "the tmux-oasis pin is active with the upstream starlight flavor ahead of TPM init" do
