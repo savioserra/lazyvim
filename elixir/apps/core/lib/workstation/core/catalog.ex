@@ -12,8 +12,9 @@ defmodule Workstation.Core.Catalog do
   `load/1` takes the decoded `input.json` of a recorded golden profile
   (tests/goldens/<profile>) and rebuilds real engine recipes: chezmoi
   options through `Source.Chezmoi.recipe/1`, shell fragments through
-  `Source.Shell.recipe/1`, the chezmoi-data envelope and raw nvim-profile
-  intents for the compositor. Package-relative asset bodies recorded in the
+  `Source.Shell.recipe/1`, the chezmoi-data envelope and capability-provider
+  specs dispatched to their owner modules' compositors. Package-relative
+  asset bodies recorded in the
   top-level `assets` map are inlined back into the options as `:content`,
   so the plan pipeline never performs filesystem I/O and replay stays a
   pure function of the input bytes.
@@ -192,7 +193,8 @@ defmodule Workstation.Core.Catalog do
 
   @doc """
   The native catalog's declared package specifications, in discovery order
-  (module-name / id sort) — the complete capability set (nvim included):
+  (module-name / id sort) — the complete capability set (the editor
+  capability included):
   package data validated by the recipe constructors, with asset references
   kept package-relative exactly like the declarations declare them.
   Composition semantics (host selection, requires/after graph, topological
@@ -216,7 +218,8 @@ defmodule Workstation.Core.Catalog do
   # (docs/elixir.md carries the recording history). Recorded envelopes are
   # machine-independent because every home-anchored destination is rewritten
   # to this path; the one native declaration that carries a home-anchored
-  # destination (the nvim launcher symlink) anchors at the same path, so
+  # destination (the editor capability's launcher symlink) anchors at the
+  # same path, so
   # envelope replay stays byte-stable across hosts and the live re-rooting
   # branches in load/1 and live/1 remain the only home substitution points.
   @canonical_home "/home/golden"
@@ -278,7 +281,8 @@ defmodule Workstation.Core.Catalog do
   reads no package assets — so a native plan run needs the bodies up front,
   and the golden comparison can assert struct equality against `load/1`
   output. Native declarations carry no live-home destinations: the single
-  home-anchored destination (the nvim launcher symlink) anchors at
+  home-anchored destination (the editor capability's launcher symlink)
+  anchors at
   `canonical_home/0`, so `live/1` and the live branch of `load/1` remain
   the only home substitution points.
   """
@@ -348,12 +352,28 @@ defmodule Workstation.Core.Catalog do
 
   # Build a real, validated recipe from the normalized input shape. Asset
   # references resolve from the inlined assets map, never the filesystem.
-  defp denormalize(package_id, "chezmoi", spec, assets, live_home, canonical_home) do
+  defp denormalize(package_id, provider, spec, assets, live_home, canonical_home) do
+    cond do
+      provider == Workstation.Core.Source.Chezmoi.provider_id() ->
+        denormalize_file(package_id, spec, assets, live_home, canonical_home)
+
+      provider == Workstation.Core.Source.Shell.provider_id() ->
+        denormalize_shell(package_id, spec)
+
+      provider == Workstation.Core.Source.Chezmoi.data_provider_id() ->
+        denormalize_data(package_id, spec)
+
+      true ->
+        denormalize_capability(package_id, provider, spec)
+    end
+  end
+
+  defp denormalize_file(package_id, spec, assets, live_home, canonical_home) do
     options = %{
       target: string_field(spec, "target", package_id),
       kind:
         Map.get(@kinds, string_field(spec, "kind", package_id)) ||
-          raise_arg("#{package_id} chezmoi recipe has unsupported kind #{inspect(spec["kind"])}"),
+          raise_arg("#{package_id} file recipe has unsupported kind #{inspect(spec["kind"])}"),
       executable: spec["executable"],
       private: spec["private"],
       exact: spec["exact"],
@@ -376,7 +396,7 @@ defmodule Workstation.Core.Catalog do
     Workstation.Core.Source.Chezmoi.recipe(options)
   end
 
-  defp denormalize(package_id, "shell", spec, _assets, _live_home, _canonical_home) do
+  defp denormalize_shell(package_id, spec) do
     fragment = Map.get(spec, "fragment")
     unless is_map(fragment), do: raise_arg("#{package_id} shell recipe requires a fragment table")
 
@@ -391,28 +411,28 @@ defmodule Workstation.Core.Catalog do
     })
   end
 
-  defp denormalize(package_id, "chezmoi-data", spec, _assets, _live_home, _canonical_home) do
+  defp denormalize_data(package_id, spec) do
     content = string_field(spec, "content", package_id)
 
     unless Map.keys(spec) -- ["content"] == [] do
-      raise_arg("#{package_id} chezmoi data spec has unknown field")
+      raise_arg("#{package_id} data-envelope spec has unknown field")
     end
 
     %{content: content}
   end
 
-  defp denormalize(_package_id, "nvim-profile", spec, _assets, _live_home, _canonical_home) do
-    order = Map.get(spec, "order")
+  # Capability-provider shapes are NOT known here: denormalization dispatches
+  # through the `Workstation.Core.Source.Provider` contract to the owner
+  # package module (discovered, never named), so a new capability provider
+  # plugs into golden replay with zero edits to this module.
+  defp denormalize_capability(package_id, provider, spec) do
+    case Workstation.Core.Source.Provider.Discover.lookup(provider) do
+      {:ok, module} ->
+        module.denormalize_spec(spec)
 
-    unless is_integer(order) and order > 0,
-      do: raise_arg("nvim-profile order must be a positive integer")
-
-    entry = denormalize_entry(Map.get(spec, "entry"))
-    %{order: order, entry: entry}
-  end
-
-  defp denormalize(_package_id, provider, _spec, _assets, _live_home, _canonical_home) do
-    raise_arg("golden input declares unknown provider #{inspect(provider)}")
+      :error ->
+        raise_arg("#{package_id} golden input declares unknown provider #{inspect(provider)}")
+    end
   end
 
   # Re-root one symlink destination from the canonical recording home to the
@@ -430,63 +450,6 @@ defmodule Workstation.Core.Catalog do
       to
     end
   end
-
-  # Copy the known nvim-profile entry fields to atom keys; project_files keys
-  # are data (file names), never structure, and stay string-keyed. Unknown
-  # fields are tolerated exactly like the Lua validator, which checks known
-  # fields without an allowlist.
-  defp denormalize_entry(raw) do
-    unless is_map(raw), do: raise_arg("nvim-profile entry must be a table")
-
-    entry =
-      %{
-        id: raw["id"],
-        requires: copy_string_list(raw["requires"]),
-        lazyvim_extras: copy_string_list(raw["lazyvim_extras"]),
-        plugin_module: raw["plugin_module"],
-        mason_packages: copy_string_list(raw["mason_packages"]),
-        language_cases:
-          copy_cases(raw["language_cases"], [:language, :filename, :contents, :client]),
-        formatter_cases:
-          copy_cases(raw["formatter_cases"], [:language, :filename, :contents, :expected])
-      }
-
-    entry
-  end
-
-  defp copy_cases(nil, _fields), do: nil
-
-  defp copy_cases(cases, fields) when is_list(cases) do
-    Enum.map(cases, fn case ->
-      unless is_map(case), do: raise_arg("nvim-profile case must be a table")
-
-      base =
-        Map.new(fields, fn field -> {field, require_nonempty(case, Atom.to_string(field))} end)
-
-      if Map.has_key?(case, "project_files") do
-        files = case["project_files"]
-        unless is_map(files), do: raise_arg("nvim-profile project_files must be a table")
-        Map.put(base, :project_files, files)
-      else
-        base
-      end
-    end)
-  end
-
-  defp copy_cases(_cases, _fields), do: raise_arg("nvim-profile cases must be a list")
-
-  defp copy_string_list(nil), do: nil
-
-  defp copy_string_list(values) when is_list(values) do
-    Enum.each(
-      values,
-      &(nonempty_string?(&1) || raise_arg("nvim-profile list values must be non-empty strings"))
-    )
-
-    values
-  end
-
-  defp copy_string_list(_values), do: raise_arg("nvim-profile list must be a list")
 
   # Asset bodies are inlined under "<package id>:<asset path>" and
   # the contributing spec keeps that full key verbatim, so the lookup is the
@@ -516,12 +479,6 @@ defmodule Workstation.Core.Catalog do
     unless is_integer(value) and value > 0,
       do: raise_arg("#{package_id} #{field} must be a positive integer")
 
-    value
-  end
-
-  defp require_nonempty(map, field) do
-    value = Map.get(map, field)
-    nonempty_string?(value) || raise_arg("nvim-profile case #{field} must be a non-empty string")
     value
   end
 

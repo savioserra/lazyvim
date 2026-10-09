@@ -5,10 +5,12 @@ defmodule Workstation.Core.Catalog.Packages.Nvim do
   engine-seeded lazy-lock merge program, and the nvim-owned profile intents
   (Go and the standard language set).
 
-  Composition surface: `Workstation.Core.Source.NvimProfile` (parity anchors
+  Composition surface: this module owns its profile compositor directly —
+  `Workstation.Core.Catalog.Packages.Nvim.Profile` (parity anchors
   `packages/nvim/compose.lua` + `profile.lua`) validates the intents, fixes
   their explicit domain order, and serializes the composed profile as
-  deployed runtime Lua. The intents' verification semantics are declared
+  deployed runtime Lua. It plugs into the assembler through the generic
+  `Workstation.Core.Source.Provider` contract — the engine never names it. The intents' verification semantics are declared
   data: `language_cases`/`formatter_cases` are the LSP and formatter
   behavior checks, `mason_packages` names what the applied Mason lock must
   provide, `lazyvim_extras` selects LazyVim distribution modules, and the
@@ -36,6 +38,7 @@ defmodule Workstation.Core.Catalog.Packages.Nvim do
   @behaviour Workstation.Core.Catalog.Spec
 
   alias Workstation.Core.Catalog.Packages
+  alias Workstation.Core.Catalog.Packages.Nvim.Profile
 
   @marker "__WORKSTATION_ENGINE_PINS__"
 
@@ -134,7 +137,7 @@ defmodule Workstation.Core.Catalog.Packages.Nvim do
             asset: "files/.config/nvim/" <> name
           )
         end) ++
-        [Packages.profile_intent(10, @go_intent), Packages.profile_intent(30, @standard_intent)]
+        [Profile.contribute(10, @go_intent), Profile.contribute(30, @standard_intent)]
 
     %{
       foundation: "foundation/editor",

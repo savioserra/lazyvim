@@ -20,9 +20,14 @@ defmodule Workstation.Core.Source do
   alias Workstation.Core.Source.Manifest
   alias Workstation.Core.Source.Shell
 
-  # The complete registry of interpretable provider IDs. Unknown providers are
-  # rejected here, never silently ignored.
-  @registry %{"chezmoi" => true, "chezmoi-data" => true, "shell" => true, "nvim-profile" => true}
+  # Domain-generic providers are wired directly into the assembler; their
+  # wire ids live in the backend modules (`Chezmoi.provider_id/0`,
+  # `Shell.provider_id/0`). Capability-specific providers are NOT listed
+  # here — they are discovered through the `Workstation.Core.Source.Provider`
+  # contract, so the assembler never names a capability.
+  defp generic_providers do
+    %{Chezmoi.provider_id() => true, Chezmoi.data_provider_id() => true, Shell.provider_id() => true}
+  end
 
   @engine_state_target ".local/state/workstation"
 
@@ -85,8 +90,9 @@ defmodule Workstation.Core.Source do
   def plan(%{graph: graph}) do
     collected = collect(graph.ordered)
     data = extract_data_envelope(collected)
-    {profile_record, profile} = compose_profile(collected)
-    collected = if profile_record, do: collected ++ [profile_record], else: collected
+    capability = compose_capability_profiles(collected)
+    collected = collected ++ Enum.map(capability, &elem(&1, 0))
+    profile = capability_profiles(capability)
     # The golden replay always records against a fresh journal: applied_record
     # is nil, so no fragments are recorded and no retirements are reconciled.
     journal = nil
@@ -213,19 +219,19 @@ defmodule Workstation.Core.Source do
     # envelope) are manifest entries without being plan targets: they stage
     # with the generation and verify byte-for-byte, but never deploy into the
     # home.
-    base = [{".chezmoiremove", plan.remove_file}]
+    base = [{Chezmoi.remove_filename(), plan.remove_file}]
 
     case plan.data do
       nil -> base
-      data -> base ++ [{".chezmoidata.toml", data.bytes}]
+      data -> base ++ [{Chezmoi.data_filename(), data.bytes}]
     end
   end
 
   @doc """
-  The composed nvim profile (ordered language entries) for the plan, when any
-  package contributed an nvim-profile intent. Exposed separately from
-  `plan/1` because the Lua engine writes it into the caller's context rather
-  than into the plan view.
+  The composed capability profiles (ordered language entries, theme-derived
+  surfaces, ...) for the plan, when any package contributed to a capability
+  provider. Exposed separately from `plan/1` because the Lua engine writes
+  it into the caller's context rather than into the plan view.
   """
   def composed_profile(plan), do: plan.profile
 
@@ -234,7 +240,7 @@ defmodule Workstation.Core.Source do
   defp collect(ordered) do
     Enum.flat_map(ordered, fn specification ->
       Enum.map(Map.get(specification, :contributes) || [], fn recipe ->
-        @registry[recipe.provider] ||
+        known_provider?(recipe.provider) ||
           fail("#{specification.id} declares unknown provider #{recipe.provider}")
 
         %{owner: specification.id, provider: recipe.provider, spec: recipe.spec}
@@ -242,11 +248,16 @@ defmodule Workstation.Core.Source do
     end)
   end
 
+  defp known_provider?(provider) do
+    Map.has_key?(generic_providers(), provider) or
+      match?({:ok, _module}, Workstation.Core.Source.Provider.Discover.lookup(provider))
+  end
+
   # At most one package may declare the .chezmoidata.toml envelope: the
   # source-root name is shared engine state, not a composable target, so two
   # declarers could only fight over one file.
   defp extract_data_envelope(collected) do
-    records = Enum.filter(collected, &(&1.provider == "chezmoi-data"))
+    records = Enum.filter(collected, &(&1.provider == Chezmoi.data_provider_id()))
 
     case records do
       [] ->
@@ -257,35 +268,42 @@ defmodule Workstation.Core.Source do
         %{owner: record.owner, bytes: content}
 
       _ ->
-        fail("at most one package may declare the .chezmoidata.toml envelope")
+        fail("at most one package may declare the backend data envelope")
     end
   end
 
-  defp compose_profile(collected) do
-    intents =
-      collected
-      |> Enum.filter(&(&1.provider == "nvim-profile"))
-      |> Enum.map(&%{owner: &1.owner, spec: &1.spec})
+  # Capability-provider composition is fully contract-driven: for each
+  # discovered provider id (deterministic module order — provider ids are
+  # unique), hand it the collected intents in graph order and splice its
+  # returned source record back into the collection. No capability is named
+  # here; a package gains capability composition by implementing the
+  # behaviour, never by editing this module.
+  defp compose_capability_profiles(collected) do
+    Workstation.Core.Source.Provider.Discover.by_id()
+    |> Enum.sort_by(fn {id, _module} -> id end)
+    |> Enum.flat_map(fn {id, module} ->
+      intents =
+        collected
+        |> Enum.filter(&(&1.provider == id))
+        |> Enum.map(&%{owner: &1.owner, spec: &1.spec})
 
-    if intents == [] do
-      {nil, nil}
-    else
-      {recipe, profile, owners} = Workstation.Core.Source.NvimProfile.compose(intents)
+      case intents do
+        [] -> []
+        _intents -> [module.compose(intents)]
+      end
+    end)
+  end
 
-      record = %{
-        owner: "nvim",
-        provider: "chezmoi",
-        spec: recipe,
-        attribution: owners
-      }
-
-      {record, profile}
+  defp capability_profiles(capability) do
+    case Enum.flat_map(capability, &elem(&1, 1)) do
+      [] -> nil
+      profiles -> profiles
     end
   end
 
   defp build_ancestors(collected) do
     Enum.reduce(collected, %{}, fn record, ancestors ->
-      if record.provider == "chezmoi" and record.spec.kind == :directory do
+      if record.provider == Chezmoi.provider_id() and record.spec.kind == :directory do
         :ok = Chezmoi.validate_spec(record.spec)
 
         existing = Map.get(ancestors, record.spec.target)

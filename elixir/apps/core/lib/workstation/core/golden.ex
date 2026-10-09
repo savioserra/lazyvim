@@ -42,6 +42,7 @@ defmodule Workstation.Core.Golden do
   """
 
   alias Workstation.Core.{CanonicalJSON, Catalog, Graph, Source}
+  alias Workstation.Core.Source.Chezmoi
 
   # Recording order (also the on-disk directory names) — mirrors
   # golden.lua M.profiles.
@@ -244,7 +245,35 @@ defmodule Workstation.Core.Golden do
   defp put_supported_hosts(record, hosts) when is_list(hosts),
     do: Map.put(record, "supported_hosts", Map.new(hosts, fn host -> {host, true} end))
 
-  defp normalize_recipe(package_id, %{provider: "chezmoi", spec: spec}, assets) do
+  # Generic-backend shapes route through the family constants; capability
+  # specs stay raw validated maps (their owner module's own entry shape).
+  # Generic-backend shapes route through the family constants; capability
+  # specs stay raw validated maps (their owner module's own entry shape),
+  # discovered through the provider contract — no capability is named here.
+  defp normalize_recipe(package_id, %{provider: provider, spec: spec}, assets) do
+    cond do
+      provider == Chezmoi.provider_id() ->
+        normalize_chezmoi(package_id, spec, assets)
+
+      provider == Chezmoi.data_provider_id() ->
+        {%{"provider" => provider, "spec" => %{"content" => spec.content}}, assets}
+
+      provider == Workstation.Core.Source.Shell.provider_id() ->
+        {%{"provider" => provider, "spec" => normalize_shell_spec(spec)}, assets}
+
+      true ->
+        case Workstation.Core.Source.Provider.Discover.lookup(provider) do
+          {:ok, _module} ->
+            {%{"provider" => provider, "spec" => stringify(spec)}, assets}
+
+          :error ->
+            raise ArgumentError,
+                  "cannot normalize #{package_id} contribution: unknown provider #{inspect(provider)}"
+        end
+    end
+  end
+
+  defp normalize_chezmoi(package_id, spec, assets) do
     {asset_key, assets} =
       case spec.asset do
         nil ->
@@ -269,11 +298,11 @@ defmodule Workstation.Core.Golden do
       }
       |> drop_nil_fields()
 
-    {%{"provider" => "chezmoi", "spec" => spec}, assets}
+    {%{"provider" => Chezmoi.provider_id(), "spec" => spec}, assets}
   end
 
-  defp normalize_recipe(_package_id, %{provider: "shell", spec: spec}, assets) do
-    spec = %{
+  defp normalize_shell_spec(spec) do
+    %{
       "target" => spec.target,
       "fragment" =>
         %{
@@ -284,19 +313,6 @@ defmodule Workstation.Core.Golden do
         }
         |> drop_nil_fields()
     }
-
-    {%{"provider" => "shell", "spec" => spec}, assets}
-  end
-
-  defp normalize_recipe(_package_id, %{provider: "chezmoi-data", spec: spec}, assets) do
-    {%{"provider" => "chezmoi-data", "spec" => %{"content" => spec.content}}, assets}
-  end
-
-  # nvim-profile specs stay raw validated maps (the compositor's own entry
-  # shape); emission is a mechanical atom->string pass that drops nil fields
-  # (absent Lua keys) and keeps declared-empty lists.
-  defp normalize_recipe(_package_id, %{provider: "nvim-profile", spec: spec}, assets) do
-    {%{"provider" => "nvim-profile", "spec" => stringify(spec)}, assets}
   end
 
   defp stringify(value) when is_list(value), do: Enum.map(value, &stringify/1)
@@ -323,11 +339,11 @@ defmodule Workstation.Core.Golden do
         "requires" => [],
         "contributes" => [
           %{
-            "provider" => "chezmoi",
+            "provider" => Chezmoi.provider_id(),
             "spec" => %{"target" => ".config/goldens-share", "kind" => "directory"}
           },
           %{
-            "provider" => "chezmoi",
+            "provider" => Chezmoi.provider_id(),
             "spec" => %{
               "target" => ".config/goldens-share/alpha.txt",
               "kind" => "file",
@@ -335,7 +351,7 @@ defmodule Workstation.Core.Golden do
             }
           },
           %{
-            "provider" => "chezmoi",
+            "provider" => Chezmoi.provider_id(),
             "spec" => %{
               "target" => ".config/goldens-share/inner",
               "kind" => "directory",
@@ -343,7 +359,7 @@ defmodule Workstation.Core.Golden do
             }
           },
           %{
-            "provider" => "chezmoi",
+            "provider" => Chezmoi.provider_id(),
             "spec" => %{
               "target" => ".config/goldens-share/inner/keep.txt",
               "kind" => "file",
@@ -351,7 +367,7 @@ defmodule Workstation.Core.Golden do
             }
           },
           %{
-            "provider" => "chezmoi",
+            "provider" => Chezmoi.provider_id(),
             "spec" => %{
               "target" => ".local/goldens-private",
               "kind" => "directory",
@@ -360,7 +376,7 @@ defmodule Workstation.Core.Golden do
             }
           },
           %{
-            "provider" => "chezmoi",
+            "provider" => Chezmoi.provider_id(),
             "spec" => %{
               "target" => ".local/goldens-private/only.txt",
               "kind" => "file",
@@ -374,11 +390,11 @@ defmodule Workstation.Core.Golden do
         "requires" => [],
         "contributes" => [
           %{
-            "provider" => "chezmoi",
+            "provider" => Chezmoi.provider_id(),
             "spec" => %{"target" => ".config/goldens-share", "kind" => "directory"}
           },
           %{
-            "provider" => "chezmoi",
+            "provider" => Chezmoi.provider_id(),
             "spec" => %{
               "target" => ".config/goldens-share/inner",
               "kind" => "directory",
@@ -386,7 +402,7 @@ defmodule Workstation.Core.Golden do
             }
           },
           %{
-            "provider" => "chezmoi",
+            "provider" => Chezmoi.provider_id(),
             "spec" => %{
               "target" => ".config/goldens-share/beta.txt",
               "kind" => "file",

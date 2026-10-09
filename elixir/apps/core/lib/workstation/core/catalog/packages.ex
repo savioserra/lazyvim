@@ -23,16 +23,19 @@ defmodule Workstation.Core.Catalog.Packages do
   the retired runtime); the editor capability (`Nvim`) completes the set.
 
   The recipe helpers mirror `workstation/lua/workstation/provision/recipes.lua`
-  (chezmoi / shell) plus the two domain compositors their contributors import
-  directly from their owning packages in Lua (nvim-profile intents, the theme
-  chezmoidata envelope). Asset references stay package-relative exactly like
-  the Lua factories; `Workstation.Core.Catalog.package_asset!/2` and the
-  golden generator are the places that resolve them to bytes, so composition
-  stays pure data.
+  (chezmoi / shell) plus the theme chezmoidata envelope its contributors
+  import directly from their owning packages in Lua. Capability-owned
+  compositors (e.g. the nvim profile) are NOT wired here: they live in
+  their owning package module and are discovered through the
+  `Workstation.Core.Source.Provider` contract — the catalog helpers only
+  cover domain-generic machinery. Asset references stay package-relative
+  exactly like the Lua factories; `Workstation.Core.Catalog.package_asset!/2`
+  and the golden generator are the places that resolve them to bytes, so
+  composition stays pure data.
   """
 
   alias Workstation.Core.Catalog.Discover
-  alias Workstation.Core.Source.{Chezmoi, NvimProfile, Shell}
+  alias Workstation.Core.Source.{Chezmoi, Shell}
 
   @doc """
   Discovered package-spec provider modules, sorted by module name (the
@@ -97,48 +100,6 @@ defmodule Workstation.Core.Catalog.Packages do
   @doc "The theme capability's chezmoidata envelope, rendered from the canonical tokens."
   @spec theme_data() :: %{provider: String.t(), spec: %{content: String.t()}}
   def theme_data do
-    %{provider: "chezmoi-data", spec: %{content: Workstation.Core.Theme.Tokens.chezmoidata()}}
-  end
-
-  @doc """
-  One nvim-profile language intent (`packages/nvim/profile.lua` recipe). The
-  raw intent map is normalized to the envelope's denormalized shape here —
-  every declared entry field present (nil when the language omits it), case
-  records carrying exactly their base fields plus optional string-keyed
-  project_files — so native intents compare equal to the recorded envelope
-  and validate through the compositor's own entry validator.
-  """
-  @spec profile_intent(pos_integer(), map()) :: %{provider: String.t(), spec: map()}
-  def profile_intent(order, raw) do
-    spec = %{order: order, entry: denormalize_entry(raw)}
-    :ok = NvimProfile.validate_spec(spec)
-    %{provider: "nvim-profile", spec: spec}
-  end
-
-  defp denormalize_entry(raw) do
-    %{
-      id: Map.get(raw, :id),
-      requires: Map.get(raw, :requires),
-      lazyvim_extras: Map.get(raw, :lazyvim_extras),
-      plugin_module: Map.get(raw, :plugin_module),
-      mason_packages: Map.get(raw, :mason_packages),
-      language_cases:
-        cases(Map.get(raw, :language_cases), [:language, :filename, :contents, :client]),
-      formatter_cases:
-        cases(Map.get(raw, :formatter_cases), [:language, :filename, :contents, :expected])
-    }
-  end
-
-  defp cases(nil, _fields), do: nil
-
-  defp cases(list, fields) when is_list(list) do
-    Enum.map(list, fn entry ->
-      base = Map.new(fields, fn field -> {field, Map.fetch!(entry, field)} end)
-
-      case Map.fetch(entry, :project_files) do
-        {:ok, files} -> Map.put(base, :project_files, files)
-        :error -> base
-      end
-    end)
+    %{provider: "chezmoi-data", spec: %{content: Workstation.Core.Theme.Tokens.data_envelope()}}
   end
 end

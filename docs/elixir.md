@@ -148,6 +148,33 @@ hard-cut; retired paths are deleted in the lane that retires them.
   anchor fix means the host shim now exports the anchor itself; no env
   override needed).
 
+## Architecture: capability/contract isolation (dep-guarded)
+
+Three dependency rules are enforced by `ArchitectureDepsTest`
+(`elixir/apps/core/test/workstation/core/architecture_deps_test.exs`, a
+source-scan suite) and must never regrow:
+
+1. **Theme engine is generic.** The theme engine (`Workstation.Core.Theme`,
+   `Workstation.Core.Theme.Tokens`, the CLI/daemon theme resolvers) exposes
+   tokens + slots + palette + themes and derivation contracts
+   (`Theme.Tokens.contract/1`, `derive/2`). It must never name a consumer
+   package. Consumers (tmux2k, pi, herdr, nunchux, editor, agent, ...)
+   implement the derivation in their OWN catalog package modules
+   (`catalog/packages/**`), which the engine discovers through the
+   `Workstation.Core.Source.Provider` contract — never by name lists in
+   domain code. Dependency direction: consumer -> theme contract.
+2. **Core names no consumer.** Generic domain modules must not reference
+   concrete consumer packages. Exempted: the consumer layer itself
+   (`catalog/**`), policy tombstones (deploy-path pins are policy data),
+   `golden.ex` fixture-oracle data.
+3. **Backend isolation.** The chezmoi target-name encoding (`dot_` mapping,
+   `_tmpl` suffixing, the reserved attribute prefix family) lives only in
+   `Workstation.Core.Source.Chezmoi`. Generic core references the backend
+   exclusively through that module's API and constants (`provider_id/0`,
+   `data_provider_id/0`, `remove_filename/0`, `data_filename/0`); the exempt
+   backend family is `source/chezmoi.ex`, `provisioner.ex`,
+   `shell_program.ex`, `apply_engine.ex`, `update/bootstrap.ex`.
+
 ## Architecture: the client/daemon split (THE design)
 
 The daemon is the ONLY mutation engine and the only source of live state.

@@ -16,6 +16,7 @@ defmodule Workstation.Core.Catalog.Packages.ElixirLang do
   @behaviour Workstation.Core.Catalog.Spec
 
   alias Workstation.Core.Catalog.Packages
+  alias Workstation.Core.Catalog.Packages.Nvim.Profile
 
   @intent %{
     id: "elixir",
@@ -63,7 +64,7 @@ defmodule Workstation.Core.Catalog.Packages.ElixirLang do
       requires: ["nvim"],
       supported_hosts: nil,
       contributes: [
-        Packages.profile_intent(25, @intent),
+        Profile.contribute(25, @intent),
         Packages.chezmoi(
           target: ".config/nvim/lua/languages/plugins/elixir.lua",
           kind: :file,

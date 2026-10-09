@@ -1,7 +1,11 @@
-defmodule Workstation.Core.Source.NvimProfile do
+defmodule Workstation.Core.Catalog.Packages.Nvim.Profile do
   @moduledoc """
-  The nvim-owned profile compositor: collects nvim-profile intents, fixes
-  their order, and serializes the shared deployed profile file.
+  The nvim capability's own profile compositor, owned by its package module:
+  collects nvim-profile intents, fixes their order, and serializes the
+  shared deployed profile file. Implements the generic
+  `Workstation.Core.Source.Provider` contract, so the assembler discovers
+  and dispatches it without naming this capability — dependency direction:
+  consumer package -> provider contract, never the engine -> the consumer.
 
   It collects validated nvim-profile intents contributed through the generic
   envelope, fixes their explicit domain order, and emits ONE attributed
@@ -14,7 +18,45 @@ defmodule Workstation.Core.Source.NvimProfile do
   fold); the exact byte shape is pinned by the golden replay tests.
   """
 
+  @behaviour Workstation.Core.Source.Provider
+
   @target ".config/nvim/lua/languages/profile.lua"
+
+  @impl Workstation.Core.Source.Provider
+  def id, do: "nvim-profile"
+
+  @doc """
+  One nvim-profile language intent (`packages/nvim/profile.lua` recipe) as
+  declared by the nvim package module. The raw intent map is normalized to
+  the envelope's denormalized shape here — every declared entry field
+  present (nil when the language omits it), case records carrying exactly
+  their base fields plus optional string-keyed project_files — so native
+  intents compare equal to the recorded envelope and validate through the
+  compositor's own entry validator.
+  """
+  @spec contribute(pos_integer(), map()) :: %{provider: String.t(), spec: map()}
+  def contribute(order, raw) do
+    spec = %{order: order, entry: denormalize_entry(raw)}
+    :ok = validate_spec(spec)
+    %{provider: id(), spec: spec}
+  end
+
+  @impl Workstation.Core.Source.Provider
+  @doc """
+  Denormalize one recorded-envelope spec (string-keyed golden bytes) back to
+  the declared atom shape: known entry fields to atom keys, project_files
+  keys staying data (file names, never structure). Unknown fields are
+  tolerated exactly like the Lua validator, which checks known fields
+  without an allowlist.
+  """
+  def denormalize_spec(spec) do
+    order = Map.get(spec, "order")
+
+    unless is_integer(order) and order > 0,
+      do: raise_arg("nvim-profile order must be a positive integer")
+
+    %{order: order, entry: denormalize_recorded_entry(Map.get(spec, "entry"))}
+  end
 
   @spec validate_entry(term(), String.t()) :: map()
   def validate_entry(entry, label) do
@@ -56,6 +98,7 @@ defmodule Workstation.Core.Source.NvimProfile do
   end
 
   @spec validate_spec(map()) :: :ok
+  @impl Workstation.Core.Source.Provider
   def validate_spec(spec) do
     order = spec[:order]
     unless is_integer(order) and order > 0, do: raise_arg("Neovim profile recipe requires a positive integer order")
@@ -66,11 +109,14 @@ defmodule Workstation.Core.Source.NvimProfile do
 
   @doc """
   Compose collected intents (graph-ordered `{owner, spec}` records). Returns
-  `{chezmoi_recipe, profile_entries, owners}` where owners keep collection
-  order — attribution is a fact about contribution, not sorted output.
+  `{source_record, profile}` — the attributed chezmoi record this capability
+  contributes (owner: nvim, the record's own package) and the composed
+  profile entries; owners keep collection order — attribution is a fact
+  about contribution, not sorted output.
   """
+  @impl Workstation.Core.Source.Provider
   @spec compose([%{required(:owner) => String.t(), required(:spec) => map()}]) ::
-          {Workstation.Core.Source.Chezmoi.t(), [map()], [String.t()]}
+          {map(), [map()]}
   def compose(intents) when is_list(intents) do
     intents != [] || raise_arg("Neovim profile composition requires at least one intent")
 
@@ -89,7 +135,9 @@ defmodule Workstation.Core.Source.NvimProfile do
     recipe =
       Workstation.Core.Source.Chezmoi.recipe(%{target: @target, kind: :file, content: serialize(profile)})
 
-    {recipe, profile, owners}
+    record = %{owner: "nvim", provider: "chezmoi", spec: recipe, attribution: owners}
+
+    {record, profile}
   end
 
   # --- serialization (byte parity with profile.lua M.serialize) ---
@@ -236,4 +284,91 @@ defmodule Workstation.Core.Source.NvimProfile do
   defp nonempty_string?(value), do: is_binary(value) and value != ""
 
   defp raise_arg(message), do: raise(ArgumentError, message)
+
+  # --- declared-intent denormalization (atom-keyed, contribute/2 input) ---
+
+  defp denormalize_entry(raw) do
+    %{
+      id: Map.get(raw, :id),
+      requires: Map.get(raw, :requires),
+      lazyvim_extras: Map.get(raw, :lazyvim_extras),
+      plugin_module: Map.get(raw, :plugin_module),
+      mason_packages: Map.get(raw, :mason_packages),
+      language_cases:
+        declared_cases(Map.get(raw, :language_cases), [:language, :filename, :contents, :client]),
+      formatter_cases:
+        declared_cases(Map.get(raw, :formatter_cases), [:language, :filename, :contents, :expected])
+    }
+  end
+
+  defp declared_cases(nil, _fields), do: nil
+
+  defp declared_cases(cases, fields) when is_list(cases) do
+    Enum.map(cases, fn case ->
+      base = Map.new(fields, fn field -> {field, Map.fetch!(case, field)} end)
+
+      case Map.fetch(case, :project_files) do
+        {:ok, files} -> Map.put(base, :project_files, files)
+        :error -> base
+      end
+    end)
+  end
+
+  # --- recorded-envelope denormalization (string-keyed, denormalize_spec/1 input) ---
+
+  defp denormalize_recorded_entry(raw) do
+    unless is_map(raw), do: raise_arg("nvim-profile entry must be a table")
+
+    %{
+      id: raw["id"],
+      requires: copy_string_list(raw["requires"]),
+      lazyvim_extras: copy_string_list(raw["lazyvim_extras"]),
+      plugin_module: raw["plugin_module"],
+      mason_packages: copy_string_list(raw["mason_packages"]),
+      language_cases:
+        copy_cases(raw["language_cases"], [:language, :filename, :contents, :client]),
+      formatter_cases:
+        copy_cases(raw["formatter_cases"], [:language, :filename, :contents, :expected])
+    }
+  end
+
+  defp copy_cases(nil, _fields), do: nil
+
+  defp copy_cases(cases, fields) when is_list(cases) do
+    Enum.map(cases, fn case ->
+      unless is_map(case), do: raise_arg("nvim-profile case must be a table")
+
+      base =
+        Map.new(fields, fn field -> {field, require_nonempty(case, Atom.to_string(field))} end)
+
+      if Map.has_key?(case, "project_files") do
+        files = case["project_files"]
+        unless is_map(files), do: raise_arg("nvim-profile project_files must be a table")
+        Map.put(base, :project_files, files)
+      else
+        base
+      end
+    end)
+  end
+
+  defp copy_cases(_cases, _fields), do: raise_arg("nvim-profile cases must be a list")
+
+  defp copy_string_list(nil), do: nil
+
+  defp copy_string_list(values) when is_list(values) do
+    Enum.each(
+      values,
+      &(nonempty_string?(&1) || raise_arg("nvim-profile list values must be non-empty strings"))
+    )
+
+    values
+  end
+
+  defp copy_string_list(_values), do: raise_arg("nvim-profile list must be a list")
+
+  defp require_nonempty(map, field) do
+    value = Map.get(map, field)
+    nonempty_string?(value) || raise_arg("nvim-profile case #{field} must be a non-empty string")
+    value
+  end
 end

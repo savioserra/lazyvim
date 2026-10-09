@@ -14,6 +14,7 @@ defmodule Workstation.Core.Catalog.Packages.Typescript do
   @behaviour Workstation.Core.Catalog.Spec
 
   alias Workstation.Core.Catalog.Packages
+  alias Workstation.Core.Catalog.Packages.Nvim.Profile
 
   @intent %{
     id: "typescript",
@@ -52,7 +53,7 @@ defmodule Workstation.Core.Catalog.Packages.Typescript do
       requires: ["node", "nvim"],
       supported_hosts: nil,
       contributes: [
-        Packages.profile_intent(20, @intent),
+        Profile.contribute(20, @intent),
         Packages.chezmoi(
           target: ".config/nvim/lua/languages/plugins/typescript.lua",
           kind: :file,
