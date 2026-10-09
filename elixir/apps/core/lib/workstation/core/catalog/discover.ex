@@ -1,22 +1,18 @@
 defmodule Workstation.Core.Catalog.Discover do
   @moduledoc """
   Runtime package-spec discovery: the catalog is composed from whatever
-  conforming provider modules the code path carries, never from a
-  hand-written registration list.
+  manifests the package tree carries, never from a hand-written
+  registration list.
 
-  Provider contract (see `Workstation.Core.Catalog.Spec`): a module under
-  the `Workstation.Packages.*` namespace that declares the
-  behaviour and defines `spec/0`. Discovery is deterministic on three
-  axes:
+  Provider contract (see `Workstation.Core.Catalog.Spec`): a manifest in
+  the package dir (`workstation/packages/<id>/manifest.ex`, self-contained
+  beside its payloads) that declares the behaviour and defines `spec/0`.
+  Discovery is the tree walk, deterministic on two axes:
 
-  * candidates come from `:code.all_available/0`, narrowed to the
-    discovery namespace — package manifests are loaded from the package
-    tree first (`Workstation.Core.Packages.Loader.ensure/0`); the
-    namespace only keeps the scan from touching dependency beams — and
-    sorted by module name — declaration order is not a thing;
-  * `test/support` fixtures (and any module compiled from a test tree) are
-    excluded deterministically by the beam's recorded source path, so test
-    fixtures can never leak into the live catalog;
+  * candidates are exactly the modules the loaded package tree declared
+    (`Workstation.Core.Packages.Loader.ensure/0` walks it once per node) —
+    a package is added by adding its directory, and a module outside the
+    tree is structurally invisible to discovery;
   * conformance is validated before use: the behaviour attribute, the
     `spec/0` export, spec shape (`Spec.validate!/2`) and duplicate package
     ids across distinct providers — each rejection names the offending
@@ -38,7 +34,6 @@ defmodule Workstation.Core.Catalog.Discover do
   @spec providers() :: [module()]
   def providers do
     Workstation.Core.Contracts.Discovery.modules(%{
-      namespace: "Elixir.Workstation.Packages.",
       behaviour: Spec,
       callbacks: [spec: 0],
       label: "package-spec"

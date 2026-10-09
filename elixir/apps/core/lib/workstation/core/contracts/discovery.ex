@@ -4,71 +4,78 @@ defmodule Workstation.Core.Contracts.Discovery do
   (`Workstation.Core.Catalog.Discover`, `Workstation.Core.Contracts.Provider.Discover`,
   `Workstation.Core.Contracts.Contract.Discover`).
 
-  Discovery is deterministic on three axes, identical for every behaviour:
+  Discovery is deterministic, identical for every behaviour:
 
-  * candidates come from `:code.all_available/0`, narrowed to the
-    discovery namespace, and the result is sorted by module name —
-    declaration order is not a thing;
-  * test-tree beams are excluded deterministically by the beam's recorded
-    source path, so test fixtures can never leak into a live set;
+  * candidates are exactly the modules the loaded package tree declared
+    (`Workstation.Core.Packages.Loader.ensure/0` walks it once per node) —
+    a package is added by adding its directory, and a module outside the
+    tree is structurally invisible to the package surfaces;
+  * engine-owned effect contracts may additionally declare a code-path
+    namespace (`:namespace`) — the domain-generic contracts live in the
+    engine, and their ids publish through the same by_id surface;
   * conformance is validated before use: the behaviour attribute plus the
     full required callback set, each rejection naming the offending module.
 
-  The parameterized shape (`%{namespace:, behaviour:, callbacks:, label:}`)
-  is the whole difference between the three callers — the machinery exists
-  once, here, and the Discover modules delegate to it. Shared logic lives
-  in a shared pure helper, never a copy.
+  The parameterized shape (`%{behaviour:, callbacks:, label:}`) is the
+  whole difference between the three callers — the machinery exists once,
+  here, and the Discover modules delegate to it. Shared logic lives in a
+  shared pure helper, never a copy.
 
-  Layer: kernel. The kernel law: discovery is one deterministic scan of the
-  code path — candidates, namespace, test-tree exclusion, conformance — and
-  it names no implementor. (implementor policy: the three Discover modules
-  delegate with their parameterization; an implementor is whatever
-  conforming behaviour module the code path carries, never a hand-written
-  registry.)
+  Layer: kernel. The kernel law: discovery is the package tree walk — the
+  loader loads what the tree declares, conformance selects implementors,
+  and the kernel names none of them. (implementor policy: the three
+  Discover modules delegate with their parameterization; an implementor is
+  whatever conforming behaviour module the package tree carries, never a
+  hand-written registry.)
   """
 
   @typedoc "The one parameterization a Discover module supplies."
   @type spec :: %{
-          required(:namespace) => String.t(),
           required(:behaviour) => module(),
           required(:callbacks) => [{atom(), non_neg_integer()}],
-          required(:label) => String.t()
+          required(:label) => String.t(),
+          optional(:namespace) => String.t()
         }
 
   @doc """
   The discovered, conformed, module-name-sorted implementor set for one
-  discovery spec: every loadable module under `namespace` that declares
-  `behaviour` and defines the full required `callbacks` set.
+  discovery spec: every module the loaded package tree declared that
+  implements `behaviour` and defines the full required `callbacks` set.
   """
   @spec modules(spec()) :: [module()]
-  def modules(%{namespace: namespace, behaviour: behaviour, callbacks: callbacks, label: label}) do
-    # Packages are self-contained in the tree: their manifests are loaded
-    # (once per node) before any namespace scan, so the scan sees whatever
-    # the tree declares without the engine naming one.
+  def modules(%{behaviour: behaviour, callbacks: callbacks, label: label} = spec) do
+    # Packages are self-contained in the tree: the loader walks the tree
+    # and loads its manifests (once per node), and the package surfaces'
+    # candidate set IS what the tree declared — no code-path enumeration,
+    # no namespace filter; a module outside the package tree is
+    # structurally invisible.
     Workstation.Core.Packages.Loader.ensure()
 
-    :code.all_available()
-    |> Enum.flat_map(&candidates/1)
+    tree =
+      Workstation.Core.Packages.Loader.module_list()
+      |> Enum.map(&elem(&1, 0))
+
+    # Engine-owned effect contracts declare a code-path namespace: their
+    # ids publish through the same by_id surface as the tree's.
+    code_path =
+      if namespace = spec[:namespace] do
+        :code.all_available()
+        |> Enum.flat_map(&candidates/1)
+        |> Enum.uniq()
+        |> Enum.filter(&namespace?(&1, namespace))
+        |> Enum.reject(&test_source?/1)
+      else
+        []
+      end
+
+    (tree ++ code_path)
     |> Enum.uniq()
-    |> Enum.filter(&namespace?(&1, namespace))
-    |> Enum.reject(&test_source?/1)
     |> Enum.filter(&conforming?(&1, behaviour, callbacks, label))
     |> Enum.sort()
   end
 
-  # :code.all_available/0 returns {name, filename, loaded_path}; the name is
-  # a charlist on OTP 28, a string on older OTP lines and an atom on some
-  # intermediates — normalize to the module atom without loading the beam.
-  defp candidates({name, _filename, _loaded_path}) when is_list(name),
-    do: [List.to_atom(name)]
-
-  defp candidates({name, _filename, _loaded_path}) when is_binary(name),
-    do: [String.to_atom(name)]
-
-  defp namespace?(module, namespace) when is_atom(module) do
-    name = Atom.to_string(module)
-    String.starts_with?(name, namespace) and name != namespace
-  end
+  def modules(_other),
+    do: raise(ArgumentError, "discovery requires behaviour, callbacks and label")
 
   # Test-tree exclusion: the beam's compile_info records the source path a
   # module was compiled from. The exclusion keys on the `test` path SEGMENT
@@ -107,6 +114,54 @@ defmodule Workstation.Core.Contracts.Discovery do
       index ->
         remainder = Enum.drop(segments, index + 1)
         # A path ENDING in a `test` file (no remainder) is not a test tree.
+        remainder != [] and List.last(remainder) == Path.basename(source)
+    end
+  end
+
+  # :code.all_available/0 returns {name, filename, loaded_path}; the name is
+  # a charlist on OTP 28, a string on older OTP lines and an atom on some
+  # intermediates — normalize to the module atom without loading the beam.
+  defp candidates({name, _filename, _loaded_path}) when is_list(name),
+    do: [List.to_atom(name)]
+
+  defp candidates({name, _filename, _loaded_path}) when is_binary(name),
+    do: [String.to_atom(name)]
+
+  defp namespace?(module, namespace) when is_atom(module) do
+    name = Atom.to_string(module)
+    String.starts_with?(name, namespace) and name != namespace
+  end
+
+  # Test-tree exclusion for the code-path arm: the beam's compile_info
+  # records the source path a module was compiled from, keyed on the
+  # `test` path SEGMENT being an ancestor of the recorded source file.
+  # The tree arm needs no exclusion — the walk never leaves `packages/`.
+  defp test_source?(module) do
+    case :code.which(module) do
+      path when is_list(path) ->
+        info =
+          case :beam_lib.chunks(path, [:compile_info]) do
+            {:ok, {_file, {compile_info, info}}} when compile_info == :compile_info -> info
+            {:ok, {_file, [{compile_info, info}]}} when compile_info == :compile_info -> info
+            _ -> []
+          end
+
+        info |> Keyword.get(:source, []) |> List.to_string() |> test_tree_path?()
+
+      _ ->
+        false
+    end
+  end
+
+  defp test_tree_path?(source) do
+    segments = Path.split(source)
+
+    case Enum.find_index(segments, &(&1 == "test")) do
+      nil ->
+        false
+
+      index ->
+        remainder = Enum.drop(segments, index + 1)
         remainder != [] and List.last(remainder) == Path.basename(source)
     end
   end

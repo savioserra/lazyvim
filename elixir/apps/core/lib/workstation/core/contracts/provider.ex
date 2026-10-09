@@ -47,14 +47,12 @@ defmodule Workstation.Core.Contracts.Provider.Discover do
   @moduledoc """
   Runtime capability-provider discovery, mirroring
   `Workstation.Core.Catalog.Discover`: the assembler's capability surface is
-  whatever conforming `Workstation.Core.Contracts.Provider` modules the code
-  path carries under the package namespace — never a hand-written registry.
+  whatever conforming `Workstation.Core.Contracts.Provider` modules the
+  package tree declares — never a hand-written registry.
 
-  Candidates come from `:code.all_available/0` narrowed to the
-  `Workstation.Packages.*` namespace (capability providers are
-  owned by their package module), test-tree beams are excluded by recorded
-  source path, and conformance requires the behaviour attribute plus the
-  full callback set. The pipeline itself is the shared
+  Candidates are exactly the modules the loaded package tree declared
+  (capability providers are owned by their package dir), and conformance
+  requires the behaviour attribute plus the full callback set. The pipeline itself is the shared
   `Workstation.Core.Contracts.Discovery` helper — this module supplies
   only the capability-provider parameterization. The namespace is shared
   with package-spec discovery and with effect-contract discovery;
@@ -74,7 +72,6 @@ defmodule Workstation.Core.Contracts.Provider.Discover do
   @spec providers() :: [module()]
   def providers do
     Workstation.Core.Contracts.Discovery.modules(%{
-      namespace: "Elixir.Workstation.Packages.",
       behaviour: Workstation.Core.Contracts.Provider,
       callbacks: @callbacks,
       label: "source-provider"

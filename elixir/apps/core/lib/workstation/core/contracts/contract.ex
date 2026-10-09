@@ -110,6 +110,8 @@ defmodule Workstation.Core.Contracts.Contract.Discover do
   @spec contracts() :: [module()]
   def contracts do
     Workstation.Core.Contracts.Discovery.modules(%{
+      # The engine-owned effect contracts publish through the code-path
+      # namespace arm; package-owned ones arrive via the tree walk.
       namespace: "Elixir.Workstation.",
       behaviour: Workstation.Core.Contracts.Contract,
       callbacks: @callbacks,
