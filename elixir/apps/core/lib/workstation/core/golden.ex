@@ -146,32 +146,41 @@ defmodule Workstation.Core.Golden do
       "composed_profile" => plan.profile && Enum.map(plan.profile, &%{"id" => &1[:id]}),
       "data" => plan.data && %{"owner" => plan.data.owner, "bytes" => plan.data.bytes},
       "remove_file" => plan.remove_file,
-      "downloads" => plan_downloads_view(plan)
+      "effects" => plan_effects_view(plan)
     }
     |> drop_nil_fields()
   end
 
-  # Download pins are projected only when present: the committed profiles
-  # without downloads must keep their recorded bytes field-for-field, so an
-  # empty pin list is an absent Lua key, not a recorded empty array.
-  defp plan_downloads_view(plan) do
-    case plan.downloads do
+  # The typed mutation program the apply fold runs, in fold order: the
+  # recorded plan DECLARES its effects (contract, kind, phase ordering) —
+  # pinned-artifact installs and composed shell programs first, the single
+  # staged-generation apply last. This is the declared typed-effects plan
+  # shape the goldens were regenerated for (one deliberate re-record; it
+  # replaces the download-only pin view the wire carried before). Projected
+  # only when present: a plan without effects (none can exist today — the
+  # staged-generation apply effect is unconditional) would keep its bytes.
+  defp plan_effects_view(plan) do
+    case Workstation.Pipeline.effects(plan) do
       [] ->
         nil
 
-      downloads ->
-        downloads
-        |> Enum.map(fn download ->
+      effects ->
+        Enum.map(effects, fn effect ->
           %{
-            "owner" => download.owner,
-            "target" => download.target,
-            "url" => download.url,
-            "version" => download.version,
-            "sha256" => download.sha256,
-            "fingerprint" => download.fingerprint
+            "contract" => effect.contract,
+            "kind" => to_string(effect.kind),
+            "target" => effect[:target],
+            "owner" => effect[:owner],
+            "url" => effect[:url],
+            "version" => effect[:version],
+            "sha256" => effect[:sha256],
+            "fingerprint" => effect[:fingerprint],
+            "attribution" => effect[:attribution],
+            "generation" => effect[:generation]
           }
+          |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+          |> Map.new()
         end)
-        |> Enum.sort_by(& &1["target"])
     end
   end
 

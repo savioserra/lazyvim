@@ -2,16 +2,16 @@ defmodule Workstation.Core.PlanTest do
   @moduledoc """
   The composition-boundary contract for declared removals: `Source.plan/1`
   composes every declared removal inert (replay purity — a golden records a
-  fresh journal and no filesystem), and `Plan.composed_plan/2` is the one
-  production surface that activates them, exactly when the journal recorded
-  the target or the target is present in the destination home. The tmux2k
-  cutover tombstone is the first real consumer: without this boundary the
-  declared removal was validated-but-inert on every surface.
+  fresh journal and no filesystem), and `Pipeline.composed_plan/2` is the
+  one production surface that activates them, exactly when the journal
+  recorded the target or the target is present in the destination home. The
+  tmux2k cutover tombstone is the first real consumer: without this
+  boundary the declared removal was validated-but-inert on every surface.
   """
 
   use ExUnit.Case, async: false
 
-  alias Workstation.Core.{ApplyEngine, Graph, Plan, Policy, Source}
+  alias Workstation.Core.{Graph, Pipeline, Policy, Source}
   alias Workstation.Core.Catalog
   alias Workstation.Core.Catalog.Packages
 
@@ -33,17 +33,17 @@ defmodule Workstation.Core.PlanTest do
   describe "composed_plan/2 declared-removal activation" do
     test "a declared removal activates when the journal recorded the target", %{home: home} do
       owner = package("retired", [file_recipe(".config/tooling/rc", "export A=1\n")])
-      {:ok, first} = Plan.composed_plan(home, collect([owner]))
+      {:ok, first} = Pipeline.composed_plan(home, collect([owner]))
 
       # First apply records the target in the journal's applied record.
       install_fake_chezmoi(home, deploy_instructions(home, first))
-      assert ApplyEngine.execute(first, %{"home" => home}) == first.generation
+      assert Pipeline.execute(first, %{"home" => home}) == first.generation
 
       # The same target, now declared as a tombstone: the boundary activates
       # it from the journal record, rebuilds .chezmoiremove and the
       # generation id — a real mutation, never an idempotent no-op.
       remover = package("retired", [removal_recipe(".config/tooling/rc")])
-      {:ok, plan} = Plan.composed_plan(home, collect([remover]))
+      {:ok, plan} = Pipeline.composed_plan(home, collect([remover]))
 
       assert plan.removals == [%{target: ".config/tooling/rc", owner: "retired"}]
       assert plan.remove_file == Policy.remove_file([".config/tooling/rc"])
@@ -72,7 +72,7 @@ defmodule Workstation.Core.PlanTest do
           removal_recipe(".config/app/legacy")
         ])
 
-      {:ok, plan} = Plan.composed_plan(home, collect([remover]))
+      {:ok, plan} = Pipeline.composed_plan(home, collect([remover]))
 
       assert plan.removals == [
                %{target: ".config/tooling/rc", owner: "retired"},
@@ -84,7 +84,7 @@ defmodule Workstation.Core.PlanTest do
 
     test "a declared removal stays inactive with no journal record and no target on disk", %{home: home} do
       remover = package("retired", [removal_recipe(".config/tooling/rc")])
-      {:ok, plan} = Plan.composed_plan(home, collect([remover]))
+      {:ok, plan} = Pipeline.composed_plan(home, collect([remover]))
 
       assert plan.removals == []
       assert plan.remove_file == Policy.remove_file([])
@@ -103,14 +103,14 @@ defmodule Workstation.Core.PlanTest do
       File.mkdir_p!(Path.join(home, ".config/tmux/themes"))
       File.write!(Path.join(home, ".config/tmux/themes/tmux2k.conf"), "# retired theme\n")
 
-      {:ok, plan} = Plan.composed_plan(home)
+      {:ok, plan} = Pipeline.composed_plan(home)
 
       assert plan.removals == [%{target: ".config/tmux/themes/tmux2k.conf", owner: "tmux"}]
       assert plan.remove_file == Policy.remove_file([".config/tmux/themes/tmux2k.conf"])
 
       # Without the target on disk the same composition stays inert.
       File.rm!(Path.join(home, ".config/tmux/themes/tmux2k.conf"))
-      {:ok, inert} = Plan.composed_plan(home)
+      {:ok, inert} = Pipeline.composed_plan(home)
       assert inert.removals == []
       assert inert.generation != plan.generation
     end

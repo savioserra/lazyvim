@@ -34,7 +34,6 @@ defmodule Workstation.Core.ArchitectureDepsTest do
   | `source/chezmoi.ex` | the backend module itself — it OWNS the dialect |
   | `provisioner.ex` | backend execution bridge (runs the pinned argv) |
   | `shell_program.ex` | composes the backend modify-program |
-  | `apply_engine.ex` | backend run bridge (pinned argv/errors) |
   | `update/bootstrap.ex` | installs and integrity-verifies the backend BINARY itself — naming the backend is the job; irreducible |
   | `policy.ex` | deploy-path tombstones are policy data about the PAST: a retired path (`.config/nvim/...`, `.pi/agent/...`) must be named verbatim or it cannot be retired; irreducible |
   | `golden.ex` | fixture oracle: the recorded envelopes pin the wire provider ids (e.g. `nvim-profile` as profile fixture id); the oracle is load-bearing on those literals; irreducible without regenerating oracle data for zero law value |
@@ -63,7 +62,6 @@ defmodule Workstation.Core.ArchitectureDepsTest do
     "apps/core/lib/workstation/backends/chezmoi.ex" => "the backend module itself",
     "apps/core/lib/workstation/core/provisioner.ex" => "backend execution bridge",
     "apps/core/lib/workstation/core/shell_program.ex" => "backend modify-program composer",
-    "apps/core/lib/workstation/core/apply_engine.ex" => "backend run bridge (pinned argv/errors)",
     "apps/core/lib/workstation/core/update/bootstrap.ex" => "installs and verifies the backend binary itself",
     "apps/core/lib/workstation/core/policy.ex" => "deploy-path tombstones are policy data about the past (paths named verbatim)",
     "apps/core/lib/workstation/core/golden.ex" => "fixture oracle pins the recorded envelopes' wire provider ids"

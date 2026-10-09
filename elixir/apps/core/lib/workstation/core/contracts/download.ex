@@ -93,6 +93,71 @@ defmodule Workstation.Core.Contracts.Download do
   def validate(other),
     do: raise(ArgumentError, "download recipe must be a validated struct, got: #{inspect(other)}")
 
+  # --- the effect contract ---
+
+  # A discovered member of the effect-contract family: the pipeline's
+  # interpret fold installs the pinned artifact BEFORE the staged generation
+  # applies (the fetch is the only network-bound step, its checksum is
+  # fail-closed, and a refused download must never leave a half-applied
+  # generation behind — the pending record, which already carries the
+  # download targets, is the recovery anchor).
+  @behaviour Workstation.Core.Contracts.Contract
+
+  @doc "The wire contract id of pinned-artifact installs."
+  def id, do: provider_id()
+
+  @doc "Validate one declared spec (the behaviour's spec entry point)."
+  def validate_spec(spec), do: validate(spec)
+
+  @doc "The plan's install effects: one typed effect per pinned artifact."
+  def plan_effect(plan, _ctx) do
+    Enum.map(plan.downloads, fn download ->
+      %{
+        contract: id(),
+        kind: :install,
+        phase: :target,
+        owner: download.owner,
+        target: download.target,
+        url: download.url,
+        version: download.version,
+        sha256: download.sha256,
+        fingerprint: download.fingerprint
+      }
+    end)
+  end
+
+  # The fetch function is injected through ctx (`:fetch`); production
+  # fetches HTTPS.
+  def run_effect(effect, ctx) do
+    install(effect, ctx.home, fetch: ctx[:fetch])
+    :ok
+  end
+
+  # Downloaded artifacts join the applied record as first-class owned
+  # targets: the fingerprint is recomputed from the ACTUAL home and must
+  # carry the pinned checksum -- an install that did not produce exactly the
+  # pinned bytes is a hard failure, never recorded. (`fingerprint/1` above
+  # is the pin's content address; this is the applied-target claim.)
+  def fingerprint(effect, ctx) do
+    fingerprint = Workstation.Core.EngineState.target_fingerprint(ctx.home, effect.target)
+
+    unless fingerprint,
+      do: raise(ArgumentError, "apply did not produce download target " <> effect.target)
+
+    unless fingerprint["sha256"] == effect.sha256 do
+      raise ArgumentError,
+            "applied download " <> effect.target <> " does not carry the pinned checksum " <>
+              "(" <> fingerprint["sha256"] <> " != " <> effect.sha256 <> ")"
+    end
+
+    {effect.target,
+     Map.merge(fingerprint, %{
+       "owner" => effect.owner,
+       "operation" => "download",
+       "source_fingerprint" => effect.fingerprint
+     })}
+  end
+
   @doc """
   The pin fingerprint: content address over the exact pin fields. Two plans
   whose pins differ in any field produce different generations.

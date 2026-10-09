@@ -14,6 +14,42 @@ defmodule Workstation.Core.Contracts.Shell do
   @doc "Provider id for the shared-shell fragment backend on the plan wire."
   def provider_id, do: "shell"
 
+  # --- the effect contract ---
+
+  # A discovered member of the effect-contract family. The shell contract
+  # has NO standalone runtime: its effects are the composed modify programs,
+  # materialized into the staged generation and executed by the backend
+  # apply effect that follows in the fold. `run_effect/2` therefore answers
+  # `:ok` — the effect's mutation is carried by the backend apply — and
+  # `fingerprint/2` claims nothing: the shared targets ride the backend's
+  # ownership claim like every other generated target.
+  @behaviour Workstation.Core.Contracts.Contract
+
+  @doc "The wire contract id of shared-shell fragment composition."
+  def id, do: provider_id()
+
+  @doc "The plan's program effects: one composed modify program per shared target."
+  def plan_effect(plan, _ctx) do
+    plan.entries
+    |> Enum.filter(&Map.get(&1, :shared))
+    |> Enum.map(fn entry ->
+      %{
+        contract: id(),
+        kind: :modify,
+        phase: :target,
+        target: entry.target,
+        sha256: entry.bytes && Workstation.Core.Digest.sha256(entry.bytes),
+        attribution: Map.get(entry, :attribution) || [entry.owner]
+      }
+    end)
+  end
+
+  @doc "Shared-shell programs execute inside the backend apply; there is no standalone shell runtime."
+  def run_effect(_effect, _ctx), do: :ok
+
+  @doc "Shared targets are claimed by the backend contract; the shell contract adds no separate claim."
+  def fingerprint(_effect, _ctx), do: %{}
+
   defstruct [:target, :components, :fragment]
 
   @type t :: %__MODULE__{

@@ -46,7 +46,6 @@ defmodule Workstation.Core.LayerLawTest do
                     "apps/core/lib/workstation/backends/chezmoi.ex",
                     "apps/core/lib/workstation/core/provisioner.ex",
                     "apps/core/lib/workstation/core/shell_program.ex",
-                    "apps/core/lib/workstation/core/apply_engine.ex",
                     "apps/core/lib/workstation/core/update/bootstrap.ex",
                     "apps/core/lib/workstation/core/policy.ex",
                     "apps/core/lib/workstation/core/golden.ex"
@@ -54,6 +53,7 @@ defmodule Workstation.Core.LayerLawTest do
 
   @contract_files [
     "apps/core/lib/workstation/core/contracts/provider.ex",
+    "apps/core/lib/workstation/core/contracts/contract.ex",
     "apps/core/lib/workstation/core/contracts/download.ex",
     "apps/core/lib/workstation/core/contracts/shell.ex"
   ]
@@ -202,8 +202,13 @@ defmodule Workstation.Core.LayerLawTest do
     end
   end
 
+  # The kernel scan set: the Workstation.Core namespace plus the pipeline
+  # (the kernel stage list lives outside it by design — the law must cover
+  # it all the same).
   defp kernel_files do
-    Path.wildcard(Path.join(@elixir_root, "apps/core/lib/workstation/core/**/*.ex"))
+    extras = ["apps/core/lib/workstation/pipeline.ex"]
+
+    (extras ++ Path.wildcard(Path.join(@elixir_root, "apps/core/lib/workstation/core/**/*.ex")))
     |> Enum.map(&Path.relative_to(&1, @elixir_root))
     |> Enum.reject(&String.contains?(&1, "catalog/packages"))
     |> Enum.reject(&MapSet.member?(@kernel_exempts, &1))

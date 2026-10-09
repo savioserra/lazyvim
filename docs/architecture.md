@@ -47,12 +47,42 @@ Adding a package — or swapping one (editor, terminal, agent runtime) — is
 adding a manifest plus payloads. Zero kernel edits. An unknown package
 self-serves every platform through contracts alone.
 
-## Applying
+## The pipeline (the engine's one stage list)
 
-One generic pipeline serves every mutation: collect manifests → resolve →
-plan desired state → check preconditions → apply → journal → verify. The
-journal anchors ownership and baseline; goldens pin byte-identity of plan
-outputs across refactors; the apply lock serializes mutators.
+The engine is ONE named stage list reduced over a `%Workstation.Pipeline.Run{}`
+accumulator (`Workstation.Pipeline`):
+
+    discover -> resolve -> compose -> check -> stage -> anchor ->
+      interpret -> claim -> verify
+
+Kernel modules implement stages — catalog discovery, dependency resolution,
+plan composition, preconditions, staged publish, journal anchoring,
+generation verification — and nothing else threads mutation state by
+parameter. The execution itself is a FOLD: the plan's typed mutation program
+(`Workstation.Pipeline.effects/1`: per-target effects first, the single
+staged-generation apply effect last) is dispatched through DISCOVERED
+`Workstation.Core.Contracts.Contract` implementations. The kernel names no
+effect contract; a new mutation kind plugs in by implementing the behaviour
+(id, validate_spec, plan_effect, run_effect, fingerprint) and is found by
+conformance, never by registration.
+
+Ordering is the invariant, not a preference, and the stage order IS the
+ordering: preconditions run before any write; the pending attempt record
+anchors before any effect runs; the applied provenance record lands only
+after every effect succeeded; the generation directory is re-verified after
+the fold. Effects declare their phase, and the fold runs per-target effects
+before the apply-phase effect — a pinned artifact installs before the staged
+generation applies.
+
+A CLI verb is a prefix of this list: `status` runs to `resolve`, `plan` and
+`diff` run to `compose`, `apply` runs to `verify` (`Pipeline.verb_depth/1`).
+Read depths stay pure (no journal, no filesystem probing), so golden replay
+is a function of its input bytes; the recorded plan body DECLARES its typed
+effects (the deliberate golden re-record that pinned this shape is the
+typed-effects plan change, rationale in its commit).
+
+The journal anchors ownership and baseline; goldens pin byte-identity of
+plan outputs across refactors; the apply lock serializes mutators.
 
 ## The package store (trajectory)
 

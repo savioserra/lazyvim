@@ -9,7 +9,7 @@ defmodule Workstation.Core.DownloadTest do
 
   use ExUnit.Case, async: false
 
-  alias Workstation.Core.{ApplyEngine, Digest, EngineState, Graph, Journal, Source}
+  alias Workstation.Core.{Digest, EngineState, Graph, Journal, Pipeline, Source}
   alias Workstation.Backends.Chezmoi
   alias Workstation.Core.Contracts.Download
 
@@ -180,7 +180,7 @@ defmodule Workstation.Core.DownloadTest do
       end
 
       plan = plan_with_downloads()
-      assert ApplyEngine.execute(plan, %{"home" => home, "fetch" => fetch}) == plan.generation
+      assert Pipeline.execute(plan, %{"home" => home, "fetch" => fetch}) == plan.generation
 
       path = Path.join(home, "tools/downloaded/tool")
       assert File.read!(path) == bytes
@@ -195,7 +195,7 @@ defmodule Workstation.Core.DownloadTest do
       assert target_record["sha256"] == sha_a()
 
       # Re-apply: every artifact already matches its pin, so no more fetches.
-      assert ApplyEngine.execute(plan, %{"home" => home, "fetch" => fetch}) == plan.generation
+      assert Pipeline.execute(plan, %{"home" => home, "fetch" => fetch}) == plan.generation
       assert Agent.get(calls, & &1) == 2
       assert Journal.applied(Path.join([home | EngineState.state_components()]))["revision"] == 2
     end
@@ -205,7 +205,7 @@ defmodule Workstation.Core.DownloadTest do
       plan = plan_with_downloads()
 
       assert_raise ArgumentError, ~r/failed the pinned checksum/, fn ->
-        ApplyEngine.execute(plan, %{"home" => home, "fetch" => fn _url -> "tampered" end})
+        Pipeline.execute(plan, %{"home" => home, "fetch" => fn _url -> "tampered" end})
       end
 
       state_root = Path.join([home | EngineState.state_components()])

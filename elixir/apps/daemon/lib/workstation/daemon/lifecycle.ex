@@ -29,7 +29,8 @@ defmodule Workstation.Daemon.Lifecycle do
   and `:release_identity`.
   """
 
-  alias Workstation.Core.{ApplyEngine, EngineState, Plan, Update}
+  alias Workstation.Core.{EngineState, Update}
+  alias Workstation.Pipeline
   alias Workstation.Daemon.{ApplyOrchestrator, Events}
 
   # The update chain's canonical order (mirror of Workstation.Core.Update.steps/0,
@@ -400,15 +401,15 @@ defmodule Workstation.Daemon.Lifecycle do
   end
 
   defp apply_execute(plan, opts) do
-    generation = ApplyEngine.execute(plan, %{"home" => home(opts)})
+    generation = Pipeline.execute(plan, %{"home" => home(opts)})
     %{"step" => "apply", "status" => "ok", "generation" => generation}
   end
 
-  # The shared Core composition (Plan.composed_plan/2), coded for this
+  # The shared composition boundary (Pipeline.composed_plan/2), coded for this
   # surface: collection failures and engine preconditions both surface as a
   # plain `{:error, message}` the caller maps to its step code.
   defp composed_plan(opts) do
-    case Plan.composed_plan(home(opts), opts[:collector]) do
+    case Pipeline.composed_plan(home(opts), opts[:collector]) do
       {:ok, plan} -> {:ok, plan}
       {:error, {:collect_failed, reason}} -> {:error, "plan collection failed: #{inspect(reason)}"}
       {:error, message} -> {:error, message}

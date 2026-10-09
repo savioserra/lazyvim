@@ -121,7 +121,7 @@ defmodule Workstation.Core.Source do
     # the pure core replay performs no filesystem probing, and a fresh journal
     # records nothing, so no declared removal can be active. The declared set
     # travels verbatim in `declared_removals` so the one production
-    # composition boundary (`Workstation.Core.Plan.composed_plan/2` through
+    # composition boundary (`Workstation.Pipeline.composed_plan/2` through
     # `activate_removals/3`) can activate it where journal and home are both
     # readable.
     declared_removals = removals
@@ -187,7 +187,7 @@ defmodule Workstation.Core.Source do
 
   `plan/1` probes no filesystem, so every declared removal it composes stays
   inactive and the declared set travels verbatim in `declared_removals`. The
-  one production composition — `Workstation.Core.Plan.composed_plan/2` —
+  one production composition — `Workstation.Pipeline.composed_plan/2` —
   calls this with the journal record read at build time and the destination
   home: a declared removal is active exactly when the journal recorded the
   target or the target is present in the home. The active set rebuilds the

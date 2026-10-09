@@ -39,7 +39,8 @@ defmodule Workstation.Daemon.Read do
   ambient environment. The bracket is process-global and brief.
   """
 
-  alias Workstation.Core.{Catalog, Changesets, Digest, EngineState, Graph, Journal, Source}
+  alias Workstation.Core.{Catalog, Changesets, Digest, EngineState, Journal}
+  alias Workstation.Pipeline
 
   @engine_name "workstation"
 
@@ -73,10 +74,19 @@ defmodule Workstation.Daemon.Read do
 
     with {:ok, input} <- load_input(opts[:input], expanded) do
       bracket(expanded, fn ->
+        # A verb is a pipeline prefix: status runs to resolve (catalog +
+        # graph), plan/diff to compose, and the mutation path continues the
+        # same list through verify under the apply lock.
+        run =
+          Pipeline.run(
+            %Pipeline.Run{input: input, mode: :read, home: expanded},
+            Pipeline.verb_depth(command)
+          )
+
         case command do
-          :status -> status(expanded, input)
-          :plan -> plan(expanded, input)
-          :diff -> diff(input)
+          :status -> status(expanded, run)
+          :plan -> plan(expanded, run)
+          :diff -> diff(run)
         end
       end)
     end
@@ -177,74 +187,54 @@ defmodule Workstation.Daemon.Read do
 
   ## pipelines
 
-  defp replay({:file, input}), do: compose(Catalog.load(input))
+  defp plan(home, run) do
+    view = entry_view(run.plan)
 
-  defp replay({:native, catalog}), do: compose(catalog)
+    # The changeset builders mirror post-decode Lua shapes and keep
+    # explicit nil map values; a nil field does not exist on the wire, so
+    # the emitted patches are pruned (the canonical encoder drops nothing
+    # and fails closed on nil).
+    patches = sweep(Changesets.plan_patches(view, nil))
+    states = target_states(home, run.plan)
 
-  defp compose(catalog) do
-    graph =
-      Graph.order(%{
-        host: catalog.host,
-        specifications: catalog.packages
-      })
-
-    {:ok, catalog, graph, Source.plan(%{graph: graph})}
+    {:ok,
+     plan(
+       run.plan.generation,
+       sweep(project_plan(run.catalog, run.plan)),
+       sweep(run.plan.manifest),
+       patches,
+       states
+     )}
   end
 
-  defp plan(home, input) do
-    with {:ok, catalog, _graph, core_plan} <- replay(input) do
-      view = entry_view(core_plan)
+  defp status(home, run) do
+    packages =
+      Enum.map(run.catalog.packages, fn package ->
+        %{"id" => package.id, "requires" => package.requires}
+        |> maybe_put("supported_hosts", Map.get(package, :supported_hosts))
+      end)
 
-      # The changeset builders mirror post-decode Lua shapes and keep
-      # explicit nil map values; a nil field does not exist on the wire, so
-      # the emitted patches are pruned (the canonical encoder drops nothing
-      # and fails closed on nil).
-      patches = sweep(Changesets.plan_patches(view, nil))
-      states = target_states(home, core_plan)
+    journal = journal_record()
 
-      {:ok,
-       plan(
-         core_plan.generation,
-         sweep(project_plan(catalog, core_plan)),
-         sweep(core_plan.manifest),
-         patches,
-         states
-       )}
-    end
+    {:ok,
+     status(
+       @engine_name,
+       "elixir",
+       home,
+       run.catalog.host,
+       packages,
+       Enum.map(run.graph.ordered, &Map.get(&1, :id)),
+       journal,
+       Catalog.Packages.taxonomy()
+     )}
   end
 
-  defp status(home, input) do
-    with {:ok, catalog, graph, _core_plan} <- replay(input) do
-      packages =
-        Enum.map(catalog.packages, fn package ->
-          %{"id" => package.id, "requires" => package.requires}
-          |> maybe_put("supported_hosts", Map.get(package, :supported_hosts))
-        end)
-
-      journal = journal_record()
-
-      {:ok,
-       status(
-         @engine_name,
-         "elixir",
-         home,
-         catalog.host,
-         packages,
-         Enum.map(graph.ordered, &Map.get(&1, :id)),
-         journal,
-         Catalog.Packages.taxonomy()
-       )}
-    end
-  end
-
-  defp diff(input) do
-    with {:ok, _catalog, _graph, core_plan} <- replay(input) do
-      # A nil baseline resolves to the verified journal baseline inside the
-      # bracket, mirroring the Lua reporter's diff payload (which also lets
-      # changesets() pick up the verified baseline).
-      records = sweep(Changesets.changesets(entry_view(core_plan), nil))
-      {:ok, diff(core_plan.generation, records)}
-    end
+  defp diff(run) do
+    # A nil baseline resolves to the verified journal baseline inside the
+    # bracket, mirroring the Lua reporter's diff payload (which also lets
+    # changesets() pick up the verified baseline).
+    records = sweep(Changesets.changesets(entry_view(run.plan), nil))
+    {:ok, diff(run.plan.generation, records)}
   end
 
   # Prune nil map values recursively: the changeset builders mirror
@@ -361,10 +351,34 @@ defmodule Workstation.Daemon.Read do
         core_plan.profile && Enum.map(core_plan.profile, fn item -> %{"id" => item[:id]} end),
       "data" =>
         core_plan.data && %{"owner" => core_plan.data.owner, "bytes" => core_plan.data.bytes},
-      "remove_file" => core_plan.remove_file
+      "remove_file" => core_plan.remove_file,
+      # The typed mutation program the apply fold runs, in fold order: the
+      # live wire declares its effects exactly like the recorded plan does.
+      "effects" => effects_view(core_plan)
     }
     |> Enum.reject(fn {_key, value} -> is_nil(value) end)
     |> Map.new()
+  end
+
+  # One wire record per typed effect (contract, kind, ordering fields);
+  # nil fields are absent keys like everywhere else on the wire.
+  defp effects_view(plan) do
+    Enum.map(Pipeline.effects(plan), fn effect ->
+      %{
+        "contract" => effect.contract,
+        "kind" => to_string(effect.kind),
+        "target" => effect[:target],
+        "owner" => effect[:owner],
+        "url" => effect[:url],
+        "version" => effect[:version],
+        "sha256" => effect[:sha256],
+        "fingerprint" => effect[:fingerprint],
+        "attribution" => effect[:attribution],
+        "generation" => effect[:generation]
+      }
+      |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+      |> Map.new()
+    end)
   end
 
   # changesets.lua describe_target_state, evaluated at this application

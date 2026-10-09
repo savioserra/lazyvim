@@ -8,7 +8,7 @@ defmodule Workstation.Core.Update do
   One module per step under this namespace; each step is a pure function of
   its options plus the engine-owned source and target home, returning
   `{:ok, record}` on success and RAISING `ArgumentError` on failure — the
-  same error contract `Workstation.Core.ApplyEngine` uses, so the daemon
+  same error contract `Workstation.Pipeline` uses, so the daemon
   orchestrator surfaces the verbatim engine message on the wire and the
   abort-on-first-failure decision stays with the caller (the TUI chain, one
   daemon op per step).

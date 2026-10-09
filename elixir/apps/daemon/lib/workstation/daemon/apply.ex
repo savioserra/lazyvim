@@ -10,13 +10,13 @@ defmodule Workstation.Daemon.Apply do
   the refusal path stays exercisable in tests — a closed gate answers the
   honest `not_graduated` refusal on every gated mutation surface. The update
   lifecycle (`Workstation.Daemon.Lifecycle`) executes its `apply` step
-  itself — a fresh server-side plan run inline through `ApplyEngine.execute`
+  itself — a fresh server-side plan run inline through `Pipeline.execute`
   inside the step's own lock acquisition — so this module stays the
   `apply.run` op surface.
 
   When the gate is open, `run/2` executes the real one-shot pipeline —
   compose the desired plan through the shared Core composition
-  (`Workstation.Core.Plan.composed_plan/2`: live native catalog, no
+  (`Workstation.Pipeline.composed_plan/2`: live native catalog, no
   external engine process), then under the apply orchestrator's exclusive lock (the
   SAME lock file the one-shot apply takes): preconditions, publish, backend
   apply, journal record, post-apply verification. The wire request carries
@@ -30,7 +30,8 @@ defmodule Workstation.Daemon.Apply do
   quoting it exactly.
   """
 
-  alias Workstation.Core.{ApplyEngine, EngineState, Plan}
+  alias Workstation.Core.EngineState
+  alias Workstation.Pipeline
   alias Workstation.Daemon.{ApplyOrchestrator, Events}
 
   @engine_apply_default true
@@ -90,14 +91,14 @@ defmodule Workstation.Daemon.Apply do
     result
   end
 
-  # Server-side plan: the shared Core composition (`Workstation.Core.Plan`),
+  # Server-side plan: the shared composition boundary (`Workstation.Pipeline`),
   # the same read-side composition the one-shot CLI evaluates in-process. The
   # plan is built OUTSIDE the lock (the one-shot composes unlocked too) —
   # staleness between collection and lock acquisition is exactly the window
   # the in-lock preconditions exist to catch. Errors are coded for this
   # surface (`apply_refused`).
   defp collect_plan(collector, home) do
-    case Plan.composed_plan(home, collector) do
+    case Pipeline.composed_plan(home, collector) do
       {:ok, plan} ->
         {:ok, plan}
 
@@ -119,7 +120,7 @@ defmodule Workstation.Daemon.Apply do
     result =
       ApplyOrchestrator.with_lock("apply.run generation=#{requested_generation}", fn ->
         guarded(fn ->
-          generation = ApplyEngine.execute(plan, %{"home" => home, "requested_generation" => requested_generation})
+          generation = Pipeline.execute(plan, %{"home" => home, "requested_generation" => requested_generation})
           {:ok, %{"generation" => generation}}
         end)
       end)

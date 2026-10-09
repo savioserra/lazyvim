@@ -1,18 +1,22 @@
-defmodule Workstation.Core.ApplyEngineTest do
+defmodule Workstation.Core.PipelineRunTest do
   @moduledoc """
-  Full apply cycles against isolated sandbox homes: staged-tree bytes, the
-  real backend argv, journal records in the anchor's schema, idempotent
-  re-apply, and every failure anchor (backend failure with its failed-record
-  + surviving pending anchor, post-apply generation damage, mismatched
-  requested generation). The backend is exercised two ways: through a fake
+  Full apply cycles through the named pipeline stages against isolated
+  sandbox homes: staged-tree bytes, the real backend argv, journal records
+  in the anchor's schema, idempotent re-apply, and every failure anchor
+  (backend failure with its failed-record + surviving pending anchor,
+  post-apply generation damage, mismatched requested generation) — plus the
+  stage-list, verb-prefix, typed-effects and effect-contract discovery
+  contracts themselves. The backend is exercised two ways: through a fake
   pinned `chezmoi` whose argv and produced targets are asserted exactly, and
   through the real `chezmoi` binary when it is on PATH.
   """
 
   use ExUnit.Case, async: false
 
-  alias Workstation.Core.{ApplyEngine, Digest, EngineState, Journal, Policy, Provisioner, Source}
+  alias Workstation.Core.{Digest, EngineState, Journal, Policy, Provisioner, Source}
   alias Workstation.Core.Source.Manifest
+  alias Workstation.Core.Contracts.Contract
+  alias Workstation.Pipeline
 
   setup context do
     home = Path.join(System.tmp_dir!(), "workstation-apply-engine-#{context.test}-#{:os.getpid()}")
@@ -34,7 +38,7 @@ defmodule Workstation.Core.ApplyEngineTest do
       plan = build_plan(extra_entries: [executable_entry()], data: "profile = \"apply-sandbox\"\n")
       log = install_fake_chezmoi(home, deploy_instructions(home, plan))
 
-      generation = ApplyEngine.execute(plan, %{"home" => home})
+      generation = Pipeline.execute(plan, %{"home" => home})
 
       assert generation == plan.generation
 
@@ -133,7 +137,7 @@ defmodule Workstation.Core.ApplyEngineTest do
       plan = build_plan(entries: [])
       install_fake_chezmoi(home, [])
 
-      assert ApplyEngine.execute(plan, %{"home" => home}) == plan.generation
+      assert Pipeline.execute(plan, %{"home" => home}) == plan.generation
 
       state_root = Path.join([home | EngineState.state_components()])
       path = Path.join([state_root, "journal", "applied.json"])
@@ -142,7 +146,7 @@ defmodule Workstation.Core.ApplyEngineTest do
       assert record["source_index"] == %{}
       assert record["revision"] == 1
 
-      assert ApplyEngine.execute(plan, %{"home" => home}) == plan.generation
+      assert Pipeline.execute(plan, %{"home" => home}) == plan.generation
       assert Jason.decode!(File.read!(path))["revision"] == 2
     end
 
@@ -165,7 +169,7 @@ defmodule Workstation.Core.ApplyEngineTest do
       plan = build_plan()
       install_fake_chezmoi(home, deploy_instructions(home, plan))
 
-      ApplyEngine.execute(plan, %{"home" => home})
+      Pipeline.execute(plan, %{"home" => home})
 
       state_root = Path.join([home | EngineState.state_components()])
       assert mode_of(state_root) == 0o700
@@ -178,8 +182,8 @@ defmodule Workstation.Core.ApplyEngineTest do
       plan = build_plan()
       install_fake_chezmoi(home, deploy_instructions(home, plan))
 
-      assert ApplyEngine.execute(plan, %{"home" => home}) == plan.generation
-      assert ApplyEngine.execute(plan, %{"home" => home}) == plan.generation
+      assert Pipeline.execute(plan, %{"home" => home}) == plan.generation
+      assert Pipeline.execute(plan, %{"home" => home}) == plan.generation
 
       record = Journal.applied(Path.join([home | EngineState.state_components()]))
       assert record["revision"] == 2
@@ -202,7 +206,7 @@ defmodule Workstation.Core.ApplyEngineTest do
       install_real_chezmoi(home)
 
       plan = build_plan(data: "profile = \"apply-sandbox\"\n")
-      generation = ApplyEngine.execute(plan, %{"home" => home})
+      generation = Pipeline.execute(plan, %{"home" => home})
       assert generation == plan.generation
 
       assert File.read!(Path.join(home, ".config/tooling/rc")) == "export A=1\n"
@@ -210,7 +214,7 @@ defmodule Workstation.Core.ApplyEngineTest do
       assert record["generation"] == plan.generation
 
       # Second cycle through the real backend is idempotent too.
-      assert ApplyEngine.execute(plan, %{"home" => home}) == plan.generation
+      assert Pipeline.execute(plan, %{"home" => home}) == plan.generation
       assert Journal.applied(Path.join([home | EngineState.state_components()]))["revision"] == 2
     end
   end
@@ -221,7 +225,7 @@ defmodule Workstation.Core.ApplyEngineTest do
       install_fake_chezmoi(home, "exit 7")
 
       assert_raise ArgumentError, ~r/chezmoi apply failed \(exit 7\)/, fn ->
-        ApplyEngine.execute(plan, %{"home" => home})
+        Pipeline.execute(plan, %{"home" => home})
       end
 
       state_root = Path.join([home | EngineState.state_components()])
@@ -259,7 +263,7 @@ defmodule Workstation.Core.ApplyEngineTest do
       )
 
       assert_raise ArgumentError, ~r/generation/, fn ->
-        ApplyEngine.execute(plan, %{"home" => home})
+        Pipeline.execute(plan, %{"home" => home})
       end
 
       state_root = Path.join([home | EngineState.state_components()])
@@ -275,7 +279,7 @@ defmodule Workstation.Core.ApplyEngineTest do
       plan = build_plan()
 
       assert_raise ArgumentError, ~r/stale plan: requested generation/, fn ->
-        ApplyEngine.execute(plan, %{"home" => home, "requested_generation" => String.duplicate("0", 64)})
+        Pipeline.execute(plan, %{"home" => home, "requested_generation" => String.duplicate("0", 64)})
       end
 
       # Nothing ran: no applied record, and the generation was never staged.
@@ -285,7 +289,119 @@ defmodule Workstation.Core.ApplyEngineTest do
     end
   end
 
+  describe "the named stage pipeline" do
+    test "the stage list is the engine's invariant ordering" do
+      assert Pipeline.stages() == [
+               :discover,
+               :resolve,
+               :compose,
+               :check,
+               :stage,
+               :anchor,
+               :interpret,
+               :claim,
+               :verify
+             ]
+    end
+
+    test "every evaluation verb is a prefix of the stage list" do
+      assert Pipeline.verbs() == %{status: :resolve, plan: :compose, diff: :compose, apply: :verify}
+
+      for {verb, depth} <- Pipeline.verbs() do
+        prefix = Pipeline.stages_upto(depth)
+        assert Enum.at(prefix, -1) == depth, "#{verb} must end at its declared depth"
+        assert prefix == Enum.take(Pipeline.stages(), length(prefix)), "#{verb} must be a prefix"
+      end
+    end
+
+    test "a verb prefix runs only its stages: status never composes a plan" do
+      run = Pipeline.run(%Workstation.Pipeline.Run{mode: :read, home: home()}, :resolve)
+
+      assert %Workstation.Core.Catalog{} = run.catalog
+      assert run.graph.ordered != []
+      refute run.plan
+    end
+
+    test "the plan verb composes through the same list one stage later" do
+      run = Pipeline.run(%Workstation.Pipeline.Run{mode: :read, home: home()}, :compose)
+
+      assert %Source{} = run.plan
+      assert is_binary(run.plan.generation)
+      # Read mode stays pure: no journal was read, no generation published.
+      assert run.plan.journal_revision == 0
+      refute run.directory
+    end
+  end
+
+  describe "typed effects" do
+    test "a plan without shared targets or downloads carries exactly the single apply effect" do
+      plan = build_plan()
+
+      assert Pipeline.effects(plan) == [
+               %{contract: "chezmoi", kind: :apply, phase: :apply, generation: plan.generation}
+             ]
+    end
+
+    test "a shared target contributes a shell program effect before the apply effect" do
+      plan = build_plan(extra_entries: [executable_entry()])
+
+      assert [
+               %{contract: "shell", kind: :modify, phase: :target, target: ".local/bin/tool"} = program,
+               %{contract: "chezmoi", kind: :apply, phase: :apply, generation: generation}
+             ] = Pipeline.effects(plan)
+
+      assert generation == plan.generation
+      assert program.sha256 == Digest.sha256("#!/bin/sh\necho tool\n")
+      assert program.attribution == ["tooling"]
+    end
+
+    test "pinned downloads contribute install effects that run before the apply effect" do
+      download = %{
+        owner: "pinning",
+        target: ".local/bin/pinned",
+        url: "https://goldens.invalid/pinned/1.0.0/pinned",
+        version: "1.0.0",
+        sha256: String.duplicate("a", 64),
+        fingerprint: "pin-fp",
+        source_name: "download/aaaaaaaaaaaaaaaa.pin.json"
+      }
+
+      plan = %{build_plan() | downloads: [download]}
+
+      assert [
+               %{contract: "download", kind: :install, phase: :target, target: ".local/bin/pinned"} = install,
+               %{contract: "chezmoi", kind: :apply, phase: :apply}
+             ] = Pipeline.effects(plan)
+
+      assert install.url == download.url
+      assert install.sha256 == download.sha256
+      assert install.fingerprint == download.fingerprint
+    end
+  end
+
+  describe "effect-contract discovery" do
+    test "the engine's contracts are discovered by behaviour, never listed" do
+      ids = Enum.map(Contract.Discover.contracts(), & &1.id())
+      assert Enum.sort(ids) == ["chezmoi", "download", "shell"]
+    end
+
+    test "lookup resolves contract ids to implementing modules" do
+      {:ok, module} = Contract.Discover.lookup("download")
+      assert module.id() == "download"
+      assert :error == Contract.Discover.lookup("ghost")
+
+      assert_raise ArgumentError, ~r/no discovered contract implements/, fn ->
+        Contract.Discover.lookup!("ghost")
+      end
+    end
+  end
+
   ## fixtures
+
+  # The sandbox home for read-prefix runs: the setup bracket pins
+  # WORKSTATION_HOME, so a native live catalog composes without I/O against
+  # the test home.
+  defp home, do: EngineState.home()
 
   defp build_plan(opts \\ []) do
     entries =
