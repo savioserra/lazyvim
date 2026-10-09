@@ -26,8 +26,13 @@ defmodule Workstation.Core.Update.Bootstrap do
     `$lock/download` staging) is serialized through a mkdir lock
     (`<home>/.local/opt/.nvim-bootstrap-lock`, bounded retries), because two
     concurrent bootstraps renaming `<home>/.local/opt/nvim` is exactly the
-    race the lock exists to prevent; the lock is never stolen, an exhausted
-    wait is an honest failure.
+    race the lock exists to prevent. The lock carries its owner (host, pid,
+    since): a lock whose owner is provably dead ON THIS HOST is debris from
+    an interrupted installer — the R2 refresh deadlock, where one stale lock
+    stalled every later update — and is stolen exactly once per acquisition
+    (atomic rename first, contents re-checked immediately before it).
+    A legacy owner-less lock and a foreign-host lock are never stolen: an
+    exhausted wait is still an honest failure naming the lock.
   * the public launcher is published only as the canonical matching symlink;
     a conflicting path is refused ("inspect and move it aside explicitly"),
     never replaced.
@@ -416,21 +421,89 @@ defmodule Workstation.Core.Update.Bootstrap do
 
   ## internals
 
-  defp acquire_lock(lock, retries, wait) do
+  defp acquire_lock(lock, retries, wait, steals \\ 1) do
     case File.mkdir(lock) do
       :ok ->
+        write_owner(lock)
         true
 
-      {:error, :eexist} when retries > 0 ->
-        Process.sleep(wait)
-        acquire_lock(lock, retries - 1, wait)
-
       {:error, :eexist} ->
-        false
+        cond do
+          # One steal per acquisition: a lock whose recorded owner is
+          # provably dead on this host is debris (the R2 refresh deadlock),
+          # not a held lock. The re-check inside steal_lock/1 closes the
+          # lost-race window on a fresh live owner.
+          steals > 0 and stale?(lock) ->
+            steal_lock(lock)
+            acquire_lock(lock, retries, wait, steals - 1)
+
+          retries > 0 ->
+            Process.sleep(wait)
+            acquire_lock(lock, retries - 1, wait, steals)
+
+          true ->
+            false
+        end
 
       {:error, reason} ->
         raise ArgumentError, "bootstrap: cannot create runtime installer lock at #{lock}: #{inspect(reason)}"
     end
+  end
+
+  # The owner line: "<hostname>|<os pid>|<epoch ms>". A legacy lock (no
+  # owner file) and a foreign-host lock are unknowable or not ours to
+  # judge — never stolen.
+  defp write_owner(lock) do
+    File.write(Path.join(lock, "owner"), "#{hostname()}|#{:os.getpid()}|#{System.system_time(:millisecond)}")
+  end
+
+  defp read_owner(lock) do
+    case File.read(Path.join(lock, "owner")) do
+      {:ok, line} ->
+        case String.split(String.trim_trailing(line), "|") do
+          [host, pid, since] -> {:ok, [host, pid, since]}
+          _other -> :error
+        end
+
+      {:error, _reason} ->
+        :error
+    end
+  end
+
+  defp stale?(lock) do
+    case read_owner(lock) do
+      {:ok, owner} -> stale_owner?(owner)
+      :error -> false
+    end
+  end
+
+  defp stale_owner?([host, pid, _since]), do: host == hostname() and not pid_alive?(pid)
+  defp stale_owner?(_other), do: false
+
+  # The atomic steal: rename first (a lost race — someone else stole it, or
+  # a fresh live owner appeared — fails the rename or leaves the check
+  # catching it), then delete the renamed debris.
+  defp steal_lock(lock) do
+    with {:ok, owner} <- read_owner(lock),
+         true <- stale_owner?(owner),
+         dead = lock <> ".stale-" <> Integer.to_string(System.unique_integer([:positive])),
+         :ok <- File.rename(lock, dead) do
+      File.rm_rf!(dead)
+    else
+      _other -> :ok
+    end
+  end
+
+  defp pid_alive?(pid) do
+    case :os.type() do
+      {:unix, :linux} -> File.exists?("/proc/" <> pid)
+      _other -> match?({_, 0}, System.cmd("kill", ["-0", pid], stderr_to_stdout: true))
+    end
+  end
+
+  defp hostname do
+    {:ok, name} = :inet.gethostname()
+    to_string(name)
   end
 
   # Staging siblings live next to their destination, on the same filesystem,

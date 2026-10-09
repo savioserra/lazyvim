@@ -195,7 +195,7 @@ defmodule Workstation.Core.Update.BootstrapTest do
     end
   end
 
-  test "the runtime installer lock is never stolen", %{base: base, home: home} do
+  test "a legacy owner-less lock is never stolen (operator recovery)", %{base: base, home: home} do
     fixture = engine_fixture(base)
     seed_runtime_cache!(home, fixture)
     lock = Path.join([home, ".local", "opt", ".nvim-bootstrap-lock"])
@@ -207,6 +207,56 @@ defmodule Workstation.Core.Update.BootstrapTest do
 
     # The held lock is intact — recovery is the operator inspecting it.
     assert File.dir?(lock)
+  end
+
+  test "a lock held by a live owner is never stolen", %{base: base, home: home} do
+    fixture = engine_fixture(base)
+    seed_runtime_cache!(home, fixture)
+    lock = Path.join([home, ".local", "opt", ".nvim-bootstrap-lock"])
+    File.mkdir_p!(lock)
+    {:ok, hostname} = :inet.gethostname()
+    File.write!(Path.join(lock, "owner"), "#{hostname}|#{:os.getpid()}|#{System.system_time(:millisecond)}")
+
+    assert_raise ArgumentError, ~r/runtime installer locked/, fn ->
+      Bootstrap.run(engine_root: fixture.root, home: home, lock_retries: 1, lock_wait_ms: 1)
+    end
+
+    assert File.dir?(lock)
+  end
+
+  test "a foreign-host lock is never stolen", %{base: base, home: home} do
+    fixture = engine_fixture(base)
+    seed_runtime_cache!(home, fixture)
+    lock = Path.join([home, ".local", "opt", ".nvim-bootstrap-lock"])
+    File.mkdir_p!(lock)
+    File.write!(Path.join(lock, "owner"), "some-other-host|1|#{System.system_time(:millisecond)}")
+
+    assert_raise ArgumentError, ~r/runtime installer locked/, fn ->
+      Bootstrap.run(engine_root: fixture.root, home: home, lock_retries: 1, lock_wait_ms: 1)
+    end
+
+    assert File.dir?(lock)
+  end
+
+  test "a stale-owned lock is debris: stolen once, the install proceeds", %{base: base, home: home} do
+    fixture = engine_fixture(base)
+    seed_runtime_cache!(home, fixture)
+    lock = Path.join([home, ".local", "opt", ".nvim-bootstrap-lock"])
+    File.mkdir_p!(lock)
+
+    # A pid that is guaranteed dead and reaped: the shell printed its own
+    # pid and exited before System.cmd returned.
+    {out, 0} = System.cmd("sh", ["-c", "echo $$"], stderr_to_stdout: true)
+    dead_pid = String.trim(out)
+    {:ok, hostname} = :inet.gethostname()
+    File.write!(Path.join(lock, "owner"), "#{hostname}|#{dead_pid}|#{System.system_time(:millisecond)}")
+
+    assert {:ok, %{"status" => "ok"}} = Bootstrap.run(engine_root: fixture.root, home: home, allow_file_urls: true)
+
+    # The steal left no debris: the renamed lock is gone, the fresh one was
+    # cleaned up by the successful install.
+    refute File.exists?(lock)
+    assert Path.wildcard(Path.join([home, ".local", "opt", ".nvim-bootstrap-lock.stale-*"])) == []
   end
 
   test "a conflicting launcher path is refused, never replaced", %{base: base, home: home} do
