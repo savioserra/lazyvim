@@ -224,6 +224,16 @@ defmodule Workstation.Core.Provisioner do
     bodies
     |> maybe_pin(".chezmoiremove", plan.remove_file)
     |> maybe_pin(".chezmoidata.toml", plan.data && plan.data.bytes)
+    |> Map.merge(download_pins(plan))
+  end
+
+  # Each download pin stages its descriptor: the generation directory carries
+  # the machine-readable provenance of every pinned artifact, verified
+  # byte-for-byte with the generation like any other staged file.
+  defp download_pins(plan) do
+    Map.new(plan.downloads, fn download ->
+      {download.source_name, Workstation.Core.Source.Download.pin_bytes(download)}
+    end)
   end
 
   defp maybe_pin(map, _name, nil), do: map

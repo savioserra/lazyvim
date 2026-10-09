@@ -17,6 +17,7 @@ defmodule Workstation.Core.Source do
 
   alias Workstation.Core.Digest
   alias Workstation.Core.Source.Chezmoi
+  alias Workstation.Core.Source.Download
   alias Workstation.Core.Source.Manifest
   alias Workstation.Core.Source.Shell
 
@@ -26,7 +27,12 @@ defmodule Workstation.Core.Source do
   # here — they are discovered through the `Workstation.Core.Source.Provider`
   # contract, so the assembler never names a capability.
   defp generic_providers do
-    %{Chezmoi.provider_id() => true, Chezmoi.data_provider_id() => true, Shell.provider_id() => true}
+    %{
+      Chezmoi.provider_id() => true,
+      Chezmoi.data_provider_id() => true,
+      Shell.provider_id() => true,
+      Download.provider_id() => true
+    }
   end
 
   @engine_state_target ".local/state/workstation"
@@ -41,6 +47,7 @@ defmodule Workstation.Core.Source do
             journal_revision: 0,
             baseline_generation: nil,
             data: nil,
+            downloads: [],
             manifest: [],
             generation: nil
 
@@ -75,6 +82,7 @@ defmodule Workstation.Core.Source do
           journal_revision: non_neg_integer(),
           baseline_generation: String.t() | nil,
           data: %{required(:owner) => String.t(), required(:bytes) => String.t()} | nil,
+          downloads: [map()],
           manifest: [map()],
           generation: String.t() | nil
         }
@@ -93,6 +101,7 @@ defmodule Workstation.Core.Source do
     capability = compose_capability_profiles(collected)
     collected = collected ++ Enum.map(capability, &elem(&1, 0))
     profile = capability_profiles(capability)
+    downloads = compose_downloads(collected)
     # The golden replay always records against a fresh journal: applied_record
     # is nil, so no fragments are recorded and no retirements are reconciled.
     journal = nil
@@ -129,6 +138,11 @@ defmodule Workstation.Core.Source do
       end)
     end)
 
+    # Downloaded artifacts own their targets exclusively: a chezmoi entry or
+    # a declared removal reaching the same path is a composition conflict,
+    # checked before the plan exists so replay fails loudly.
+    check_download_conflicts(downloads, entries, declared_removals)
+
     plan = %__MODULE__{
       entries: entries,
       removals: removals,
@@ -139,7 +153,8 @@ defmodule Workstation.Core.Source do
       remove_file: Workstation.Core.Policy.remove_file(remove_additions),
       journal_revision: 0,
       baseline_generation: nil,
-      data: data
+      data: data,
+      downloads: downloads
     }
 
     manifest = Manifest.build(plan.entries, pinned_files(plan))
@@ -218,13 +233,18 @@ defmodule Workstation.Core.Source do
     # The source-root engine files (.chezmoiremove, the optional data
     # envelope) are manifest entries without being plan targets: they stage
     # with the generation and verify byte-for-byte, but never deploy into the
-    # home.
+    # home. Download pins join them: each artifact's descriptor record is
+    # content-addressed into the manifest, so the generation id changes
+    # whenever a pin changes and the staged generation carries the provenance.
     base = [{Chezmoi.remove_filename(), plan.remove_file}]
 
-    case plan.data do
-      nil -> base
-      data -> base ++ [{Chezmoi.data_filename(), data.bytes}]
-    end
+    base =
+      case plan.data do
+        nil -> base
+        data -> base ++ [{Chezmoi.data_filename(), data.bytes}]
+      end
+
+    base ++ Enum.map(plan.downloads, fn download -> {download.source_name, Download.pin_bytes(download)} end)
   end
 
   @doc """
@@ -299,6 +319,60 @@ defmodule Workstation.Core.Source do
       [] -> nil
       profiles -> profiles
     end
+  end
+
+  # --- download composition ---
+
+  # Pinned artifacts are validated at composition: every record is a
+  # validated recipe and the plan carries the derived fingerprint and the
+  # staged descriptor name. The fetch itself never happens at plan time —
+  # the pure pipeline performs no I/O.
+  defp compose_downloads(collected) do
+    collected
+    |> Enum.filter(&(&1.provider == Download.provider_id()))
+    |> Enum.map(fn record ->
+      spec = record.spec
+      :ok = Download.validate(spec)
+
+      %{
+        owner: record.owner,
+        target: spec.target,
+        url: spec.url,
+        version: spec.version,
+        sha256: spec.sha256,
+        fingerprint: Download.fingerprint(spec),
+        source_name: Download.pin_source_name(spec)
+      }
+    end)
+    |> Enum.reduce({[], MapSet.new()}, fn download, {downloads, seen} ->
+      if MapSet.member?(seen, download.target) do
+        fail("duplicate download target #{download.target}: one artifact target may have only one owner")
+      end
+
+      {downloads ++ [download], MapSet.put(seen, download.target)}
+    end)
+    |> elem(0)
+  end
+
+  defp check_download_conflicts(downloads, entries, removals) do
+    Enum.each(downloads, fn download ->
+      Enum.each(entries, fn entry ->
+        overlapping =
+          download.target == entry.target or encompasses(download.target, entry.target) or
+            encompasses(entry.target, download.target)
+
+        overlapping &&
+          fail(
+            "download target #{download.target} overlaps owned target #{entry.target} " <>
+              "(#{Enum.join(entry.attribution, ",")})"
+          )
+      end)
+
+      Enum.each(removals, fn removal ->
+        not encompasses(removal.target, download.target) ||
+          fail("declared removal #{removal.target} overlaps download target #{download.target}")
+      end)
+    end)
   end
 
   defp build_ancestors(collected) do

@@ -363,6 +363,9 @@ defmodule Workstation.Core.Catalog do
       provider == Workstation.Core.Source.Chezmoi.data_provider_id() ->
         denormalize_data(package_id, spec)
 
+      provider == Workstation.Core.Source.Download.provider_id() ->
+        denormalize_download(package_id, spec)
+
       true ->
         denormalize_capability(package_id, provider, spec)
     end
@@ -425,6 +428,14 @@ defmodule Workstation.Core.Catalog do
   # through the `Workstation.Core.Source.Provider` contract to the owner
   # package module (discovered, never named), so a new capability provider
   # plugs into golden replay with zero edits to this module.
+  defp denormalize_download(package_id, spec) do
+    unless is_map(spec), do: raise_arg("golden input declares unknown provider shape: download spec must be a table")
+
+    Workstation.Core.Source.Download.from_recorded(spec)
+  rescue
+    e in [ArgumentError] -> raise_arg("golden input has an invalid download recipe for " <> package_id <> ": " <> Exception.message(e))
+  end
+
   defp denormalize_capability(package_id, provider, spec) do
     case Workstation.Core.Source.Provider.Discover.lookup(provider) do
       {:ok, module} ->

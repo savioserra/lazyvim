@@ -36,11 +36,21 @@ defmodule Workstation.Core.Source.Manifest do
 
     {manifest, _seen} =
       Enum.reduce(pinned, {manifest, seen_names(manifest)}, fn {name, bytes}, {manifest, seen} ->
-        include(
-          %{"name" => name, "type" => "file", "mode" => @default_file_mode, "sha256" => Workstation.Core.Digest.sha256(bytes)},
-          manifest,
-          seen
-        )
+        {manifest, seen} =
+          include(
+            %{"name" => name, "type" => "file", "mode" => @default_file_mode, "sha256" => Workstation.Core.Digest.sha256(bytes)},
+            manifest,
+            seen
+          )
+
+        # A pinned file nested below the source root (a download pin
+        # descriptor) needs its parent directories declared exactly like a
+        # generated source file's; existing flat pins have none.
+        name
+        |> walk_prefixes()
+        |> Enum.reduce({manifest, seen}, fn prefix, {manifest, seen} ->
+          include(%{"name" => prefix, "type" => "directory", "mode" => @default_directory_mode}, manifest, seen)
+        end)
       end)
 
     Enum.each(manifest, fn entry ->

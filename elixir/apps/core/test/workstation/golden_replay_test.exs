@@ -69,10 +69,11 @@ defmodule Workstation.Core.GoldenReplayTest do
 
       # Literal names, not a second tree enumeration: comparing the runtime
       # listing against the compile-time one only catches mutation between
-      # compile and test. These six names are the golden contract itself; a
+      # compile and test. These names are the golden contract itself; a
       # deleted or newly added golden directory must fail this assertion.
       assert recorded == [
                "conflicts",
+               "download",
                "full-home",
                "minimal",
                "nvim-profile",

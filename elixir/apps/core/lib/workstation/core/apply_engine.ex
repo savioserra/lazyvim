@@ -30,6 +30,7 @@ defmodule Workstation.Core.ApplyEngine do
   """
 
   alias Workstation.Core.{EngineState, Journal, Preconditions, Provisioner, Source}
+  alias Workstation.Core.Source.Download
 
   @doc """
   Execute one plan against the target home and return its generation
@@ -68,10 +69,11 @@ defmodule Workstation.Core.ApplyEngine do
       "at" => System.system_time(:second),
       "pid" => :os.getpid(),
       "entries" => length(plan.entries),
-      "targets" => Enum.map(plan.entries, & &1.target)
+      "targets" => Enum.map(plan.entries, & &1.target) ++ Enum.map(plan.downloads, & &1.target)
     })
 
     try do
+      run_downloads(plan, home, opts)
       run_backend(home, directory)
     rescue
       error ->
@@ -82,7 +84,7 @@ defmodule Workstation.Core.ApplyEngine do
     # The applied record is the ownership claim every later check trusts, so
     # the fingerprints are taken from the ACTUAL home after the backend ran:
     # an entry the backend did not produce is a hard failure, never recorded.
-    targets = applied_fingerprints(plan, home)
+    targets = Map.merge(applied_fingerprints(plan, home), download_fingerprints(plan, home))
     source_index = source_index(plan)
 
     Journal.record_applied(home, plan.generation, targets, plan.fragments_journal, plan.manifest, source_index)
@@ -122,6 +124,17 @@ defmodule Workstation.Core.ApplyEngine do
       raise ArgumentError, "chezmoi apply failed: #{Exception.message(error)}"
   end
 
+  # Pinned artifacts install before the backend runs: the fetch is the only
+  # network-bound step, its checksum is fail-closed, and a refused download
+  # must never leave a half-applied generation behind — the pending record
+  # (which already carries the download targets) is the recovery anchor.
+  # The fetch function is injectable for tests; production fetches HTTPS.
+  defp run_downloads(plan, home, opts) do
+    Enum.each(plan.downloads, fn download ->
+      {:ok, _state} = Download.install(download, home, fetch: opts["fetch"])
+    end)
+  end
+
   defp regular_executable?(path) do
     case File.lstat(path) do
       {:ok, %{type: :regular, mode: mode}} -> Bitwise.band(mode, 0o111) != 0
@@ -136,6 +149,32 @@ defmodule Workstation.Core.ApplyEngine do
   # (and the shared-target validator) read exactly those string keys — the
   # in-process fragments are atom-keyed internals, and the journal's own
   # string-keyed fragment records come from fragments_journal, not here.
+  # Downloaded artifacts join the applied record as first-class owned
+  # targets: the fingerprint is recomputed from the ACTUAL home and must
+  # carry the pinned checksum -- an install that did not produce exactly the
+  # pinned bytes is a hard failure, never recorded.
+  defp download_fingerprints(plan, home) do
+    Map.new(plan.downloads, fn download ->
+      fingerprint = EngineState.target_fingerprint(home, download.target)
+
+      unless fingerprint,
+        do: raise(ArgumentError, "apply did not produce download target " <> download.target)
+
+      unless fingerprint["sha256"] == download.sha256 do
+        raise ArgumentError,
+              "applied download " <> download.target <> " does not carry the pinned checksum " <>
+                "(" <> fingerprint["sha256"] <> " != " <> download.sha256 <> ")"
+      end
+
+      {download.target,
+       Map.merge(fingerprint, %{
+         "owner" => download.owner,
+         "operation" => "download",
+         "source_fingerprint" => download.fingerprint
+       })}
+    end)
+  end
+
   defp precondition_plan(plan) do
     %{
       "generation" => plan.generation,

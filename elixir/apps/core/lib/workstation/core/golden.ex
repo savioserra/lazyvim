@@ -46,7 +46,7 @@ defmodule Workstation.Core.Golden do
 
   # Recording order (also the on-disk directory names) — mirrors
   # golden.lua M.profiles.
-  @profiles ["minimal", "full-home", "theme", "conflicts", "shell-order", "nvim-profile"]
+  @profiles ["minimal", "full-home", "theme", "conflicts", "shell-order", "nvim-profile", "download"]
 
   # Catalog profile seeds: minimal records the foundation package alone,
   # theme the theme/tmux/agent closure (their dependency closure adds
@@ -145,9 +145,34 @@ defmodule Workstation.Core.Golden do
       "fragments_journal" => plan.fragments_journal,
       "composed_profile" => plan.profile && Enum.map(plan.profile, &%{"id" => &1[:id]}),
       "data" => plan.data && %{"owner" => plan.data.owner, "bytes" => plan.data.bytes},
-      "remove_file" => plan.remove_file
+      "remove_file" => plan.remove_file,
+      "downloads" => plan_downloads_view(plan)
     }
     |> drop_nil_fields()
+  end
+
+  # Download pins are projected only when present: the committed profiles
+  # without downloads must keep their recorded bytes field-for-field, so an
+  # empty pin list is an absent Lua key, not a recorded empty array.
+  defp plan_downloads_view(plan) do
+    case plan.downloads do
+      [] ->
+        nil
+
+      downloads ->
+        downloads
+        |> Enum.map(fn download ->
+          %{
+            "owner" => download.owner,
+            "target" => download.target,
+            "url" => download.url,
+            "version" => download.version,
+            "sha256" => download.sha256,
+            "fingerprint" => download.fingerprint
+          }
+        end)
+        |> Enum.sort_by(& &1["target"])
+    end
   end
 
   # --- envelope construction ---
@@ -261,6 +286,9 @@ defmodule Workstation.Core.Golden do
       provider == Workstation.Core.Source.Shell.provider_id() ->
         {%{"provider" => provider, "spec" => normalize_shell_spec(spec)}, assets}
 
+      provider == Workstation.Core.Source.Download.provider_id() ->
+        {%{"provider" => provider, "spec" => normalize_download_spec(spec)}, assets}
+
       true ->
         case Workstation.Core.Source.Provider.Discover.lookup(provider) do
           {:ok, _module} ->
@@ -299,6 +327,15 @@ defmodule Workstation.Core.Golden do
       |> drop_nil_fields()
 
     {%{"provider" => Chezmoi.provider_id(), "spec" => spec}, assets}
+  end
+
+  defp normalize_download_spec(spec) do
+    %{
+      "url" => spec.url,
+      "version" => spec.version,
+      "sha256" => spec.sha256,
+      "target" => spec.target
+    }
   end
 
   defp normalize_shell_spec(spec) do
@@ -551,6 +588,41 @@ defmodule Workstation.Core.Golden do
                   }
                 ]
               }
+            }
+          }
+        ]
+      }
+    ]
+  end
+
+  # The download profile exercises the pinned-artifact contract without any
+  # package wiring: two synthetic contributions (a versioned opt artifact and
+  # a bin artifact) whose descriptors are content-addressed into the manifest
+  # and projected into the recorded plan view. The urls are under the
+  # reserved .invalid TLD and the checksums are synthetic -- replay never
+  # fetches, the pure plan only pins.
+  defp synthetic_records("download") do
+    [
+      %{
+        "id" => "tooling-goldens",
+        "requires" => [],
+        "contributes" => [
+          %{
+            "provider" => "download",
+            "spec" => %{
+              "url" => "https://goldens.invalid/artifacts/nunchux/0.1.0/nunchux",
+              "version" => "0.1.0",
+              "sha256" => "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
+              "target" => ".local/opt/goldens/nunchux"
+            }
+          },
+          %{
+            "provider" => "download",
+            "spec" => %{
+              "url" => "https://goldens.invalid/artifacts/goldens-ls/1.2.3/goldens-ls",
+              "version" => "1.2.3",
+              "sha256" => "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0",
+              "target" => ".local/bin/goldens-ls"
             }
           }
         ]
