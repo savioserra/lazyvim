@@ -1,44 +1,40 @@
 defmodule Workstation.Core.Source.Shell do
   @moduledoc """
-  The shell data shape of the source assembler: contributed fragments group
-  per shared target in collection order and compose into one backend modify
-  entry per target, together with the journal fragment records the
-  retirement reconciliation reads. Pure — no I/O.
+  The shell data shape of the source assembler: contributed fragments become
+  one backend modify entry per shared target, together with the fragment
+  journal the retirement reconciliation reads. The grouping, ordering,
+  uniqueness and retirement law lives on the platform
+  (`Workstation.Core.Platform.Shell`); the engine-state target law is the
+  assembler's cross-shape rule and stays here; the program bytes are the
+  contract compositor's.
 
-  Layer: kernel. The kernel law: one deterministic modify entry per shared
-  target — fragments group in collection order, explicit order keys break
-  ties, and one marker on one target has one owning fragment.
+  Layer: kernel. The kernel law: this module turns grouped shell fragments
+  into plan entries and journal records and names no package and no concrete
+  provider id.
   """
 
   alias Workstation.Backends.Chezmoi
   alias Workstation.Core.Contracts.Shell
+  alias Workstation.Core.Platform
   alias Workstation.Core.Source.Paths
 
   @doc """
-  One backend modify entry per shared shell target (explicit journal-aware:
-  targets whose every recorded fragment disappeared still recompose once so
-  their exact known blocks are removed), and the per-target fragment journal
-  for retirement reconciliation.
+  One backend modify entry per shared shell target, plus the per-target
+  fragment journal for retirement reconciliation.
   """
   @spec compose_shell_entries([map()], map() | nil, %{String.t() => map()}) ::
           {[map()], %{String.t() => [map()]}}
   def compose_shell_entries(collected, journal, ancestors) do
-    grouped = desired_fragments(collected)
+    shell_records = Enum.filter(collected, &(&1.provider == Shell.provider_id()))
 
-    # Targets whose every recorded fragment disappeared still need one final
-    # recomposition so their exact known blocks are removed; leftover managed
-    # shell lines are not inert and stopping source management is not removal.
+    Enum.each(shell_records, fn record ->
+      :ok = Paths.assert_not_engine_state!(record.spec.target)
+    end)
+
     grouped =
-      case journal && journal.fragments do
-        nil -> grouped
-        recorded -> Enum.reduce(recorded, grouped, fn {target, applied}, acc ->
-          if Map.has_key?(acc, target) or applied == [] do
-            acc
-          else
-            Map.put(acc, target, %{target: target, fragments: [], owners: []})
-          end
-        end)
-      end
+      shell_records
+      |> Platform.Shell.group()
+      |> Platform.Shell.retire_disappeared(journal && journal.fragments)
 
     Enum.map_reduce(grouped, %{}, fn {target, group}, fragments_journal ->
       recorded = (journal && journal.fragments && Map.get(journal.fragments, target)) || %{}
@@ -61,90 +57,12 @@ defmodule Workstation.Core.Source.Shell do
         fragments: group.fragments
       }
 
-      # Journal fragment records: {id, marker, body, order, owner, sequence}
-      # with sequence the 1-based position of the shell record in collection
-      # order (string keys — the journal is recorded state, encoded
-      # canonically).
       fragments_journal =
-        if group.fragments != [] do
-          journal_records =
-            Enum.map(group.fragments, fn fragment ->
-              %{
-                "id" => fragment.id,
-                "marker" => fragment.marker,
-                "body" => fragment.body,
-                "order" => fragment.order,
-                "owner" => fragment.owner,
-                "sequence" => fragment.sequence
-              }
-            end)
-
-          Map.put(fragments_journal, target, journal_records)
-        else
-          fragments_journal
-        end
+        if group.fragments != [],
+          do: Map.put(fragments_journal, target, Platform.Shell.journal_records(group)),
+          else: fragments_journal
 
       {entry, fragments_journal}
     end)
-  end
-
-  # Group shell fragments per shared target in collection order; explicit
-  # fragment order keys plus graph-order tie-breaking keep output stable.
-  # One marker on one target can only ever have one owning fragment id.
-  defp desired_fragments(collected) do
-    collected
-    |> Enum.filter(&(&1.provider == Shell.provider_id()))
-    |> Enum.with_index(1)
-    |> Enum.reduce(%{}, fn {record, sequence}, grouped ->
-      :ok = Shell.validate_spec(record.spec)
-      :ok = Paths.assert_not_engine_state!(record.spec.target)
-      target = record.spec.target
-
-      group =
-        Map.get_lazy(grouped, target, fn -> %{target: target, fragments: [], owners: []} end)
-
-      fragment = %{
-        id: record.spec.fragment.id,
-        marker: record.spec.fragment.marker,
-        body: record.spec.fragment.body,
-        order: record.spec.fragment.order,
-        owner: record.owner,
-        sequence: sequence
-      }
-
-      group = %{
-        target: target,
-        fragments: group.fragments ++ [fragment],
-        owners: group.owners ++ [record.owner]
-      }
-
-      Map.put(grouped, target, group)
-    end)
-    |> Enum.map(fn {target, group} ->
-      fragments =
-        Enum.sort_by(group.fragments, fn fragment -> {fragment.order, fragment.sequence} end)
-
-      ids = MapSet.new(Enum.map(fragments, & &1.id))
-
-      if MapSet.size(ids) != length(fragments) do
-        Paths.invalid!("duplicate shell fragment id on #{target}")
-      end
-
-      # One marker on one target can only ever have one owning fragment:
-      # this fold exists to detect the duplicate and fails closed — no
-      # state escapes it.
-      Enum.reduce(fragments, MapSet.new(), fn fragment, seen ->
-        MapSet.member?(seen, fragment.marker) &&
-          Paths.invalid!(
-            "duplicate shell marker #{fragment.marker} on #{target} is owned by both " <>
-              "an earlier fragment and #{fragment.id}"
-          )
-
-        MapSet.put(seen, fragment.marker)
-      end)
-
-      {target, %{group | fragments: fragments}}
-    end)
-    |> Map.new()
   end
 end

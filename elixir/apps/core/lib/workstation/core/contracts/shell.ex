@@ -63,52 +63,13 @@ defmodule Workstation.Core.Contracts.Shell do
           }
         }
 
+  # The envelope laws live on the platform (`Workstation.Core.Platform.Shell`):
+  # the contract re-exports them so every consumer keeps one vocabulary.
   @spec validate_fragment(term()) :: :ok
-  def validate_fragment(fragment) do
-    unless is_map(fragment), do: raise_arg("shell fragment must be a table")
-
-    for field <- Map.keys(fragment) do
-      unless field in [:id, :marker, :body, :order] do
-        raise_arg("shell fragment has unknown field #{inspect(field)}")
-      end
-    end
-
-    nonempty_string?(fragment[:id]) || raise_arg("shell fragment requires an id")
-    nonempty_string?(fragment[:marker]) || raise_arg("shell fragment requires a marker")
-    nonempty_string?(fragment[:body]) || raise_arg("shell fragment requires a body")
-
-    order = fragment[:order]
-
-    unless is_integer(order) and order > 0 do
-      raise_arg("shell fragment requires a positive integer order")
-    end
-
-    # Ids, markers and bodies are embedded in generated shell comments and
-    # programs; control bytes and newlines could not survive literally.
-    reject_control(fragment[:id], "shell fragment id")
-    reject_control(fragment[:marker], "shell fragment marker")
-    reject_control(fragment[:body], "shell fragment body")
-    :ok
-  end
+  def validate_fragment(fragment), do: Workstation.Core.Platform.Shell.validate_fragment(fragment)
 
   @spec validate_target(term()) :: :ok
-  def validate_target(target) do
-    nonempty_string?(target) || raise_arg("shell recipe requires a target")
-    String.starts_with?(target, "/") && raise_arg("shell target must be relative to the destination home: #{target}")
-    String.contains?(target, "\\") && raise_arg("shell target must not contain backslashes: #{target}")
-
-    if String.match?(target, ~r/[\x00-\x1f\x7f]/) do
-      raise_arg("shell target must not contain control characters or newlines")
-    end
-
-    target
-    |> String.split("/", trim: true)
-    |> Enum.each(fn component ->
-      component in [".", ".."] && raise_arg("shell target must not traverse: #{target}")
-    end)
-
-    :ok
-  end
+  def validate_target(target), do: Workstation.Core.Platform.Shell.validate_target_path(target)
 
   @doc """
   Pure recipe constructor: one owned fragment for one shared shell target.
@@ -336,14 +297,6 @@ defmodule Workstation.Core.Contracts.Shell do
       ) <> "\n"
 
     "awk " <> shell_quote(program) <> ~s( "$work" || exit 70)
-  end
-
-  defp nonempty_string?(value), do: is_binary(value) and value != ""
-
-  defp reject_control(value, label) do
-    if String.match?(value, ~r/[\x00-\x1f\x7f]/) do
-      raise_arg("#{label} must not contain control characters or newlines")
-    end
   end
 
   defp raise_arg(message), do: raise(ArgumentError, message)
