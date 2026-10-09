@@ -137,6 +137,37 @@ defmodule Workstation.Core.Contracts.Shell do
     }
   end
 
+  # --- the recorded-envelope seam ---
+
+  # The shell dialect reads its own string-keyed recorded shape (a target
+  # plus the fragment table) back to the declared recipe; the context
+  # carries the package id for error attribution. Unknown fields are
+  # tolerated exactly like the native declaration path — the recipe
+  # constructor validates the rebuilt atom shape.
+  @spec from_recorded(map(), map()) :: t()
+  def from_recorded(spec, ctx) when is_map(spec) do
+    package_id = Map.get(ctx, :package_id)
+    fragment = Map.get(spec, "fragment")
+
+    unless is_map(fragment),
+      do: raise(ArgumentError, "#{package_id} shell recipe requires a fragment table")
+
+    fields = Workstation.Core.Contracts.Recorded
+
+    recipe(%{
+      target: fields.string!(spec, "target", package_id),
+      fragment: %{
+        id: fields.string!(fragment, "id", package_id),
+        marker: fields.string!(fragment, "marker", package_id),
+        body: fields.string!(fragment, "body", package_id),
+        order: fields.positive_integer!(fragment, "order", package_id)
+      }
+    })
+  end
+
+  def from_recorded(other, _ctx),
+    do: raise(ArgumentError, "shell recipe must be a table, got: #{inspect(other)}")
+
   @doc """
   Validate a materialized shell spec at collection time: the derived
   components must re-derive from the logical target.

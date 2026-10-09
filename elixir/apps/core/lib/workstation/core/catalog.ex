@@ -55,14 +55,6 @@ defmodule Workstation.Core.Catalog do
           assets: %{optional(String.t()) => String.t()}
         }
 
-  @kinds %{
-    "file" => :file,
-    "directory" => :directory,
-    "symlink" => :symlink,
-    "modify" => :modify,
-    "remove" => :remove
-  }
-
   # The live envelope's profile marker, never a committed golden profile
   # name. A live envelope pins its symlink destinations to the canonical
   # recording home so replay stays machine-independent; live envelopes
@@ -240,19 +232,17 @@ defmodule Workstation.Core.Catalog do
 
   # Re-root one home-anchored destination on an already-validated recipe:
   # native declarations anchor at the canonical recording home, and the
-  # live envelope moves exactly the destinations under that prefix (see
-  # live_to/3 — the trailing-slash guard keeps a bare canonical home
-  # unmangled).
+  # live envelope moves exactly the destinations under that prefix — the
+  # destination-move semantics live in the backend module
+  # (Chezmoi.reroot_home/2, dispatch by provider id; the trailing-slash
+  # guard keeps a bare canonical home unmangled). Dispatch is generically on provider id through the backend
+  # module API — the catalog knows ids, not structs.
   defp reroot(package, live_home) do
     contributes =
-      Enum.map(package.contributes, fn
-        %{provider: provider, spec: %Workstation.Backends.Chezmoi{to: to} = spec} = recipe
-        when provider == @chezmoi and is_binary(to) ->
-          %{recipe | spec: %{spec | to: live_to(to, live_home, @canonical_home)}}
-
-        recipe ->
-          recipe
-      end)
+      Enum.map(
+        package.contributes,
+        &Workstation.Backends.Chezmoi.reroot_home(&1, %{from: @canonical_home, to: live_home})
+      )
 
     %{package | contributes: contributes}
   end
@@ -311,17 +301,24 @@ defmodule Workstation.Core.Catalog do
   defp inline_assets(packages, assets) do
     Enum.map_reduce(packages, assets, fn package, acc ->
       {contributes, acc} =
-        Enum.map_reduce(package.contributes, acc, fn
-          %{provider: provider, spec: %Workstation.Backends.Chezmoi{asset: relative} = spec} =
-              recipe,
-          acc
-          when provider == @chezmoi and is_binary(relative) and relative != "" ->
-            key = package.id <> ":" <> relative
-            content = package_asset!(package.id, relative)
-            {%{recipe | spec: %{spec | content: content, asset: nil}}, Map.put(acc, key, content)}
+        Enum.map_reduce(package.contributes, acc, fn recipe, acc ->
+          # Dispatch is generically on provider id: the backend owns the
+          # dialect (which field carries the reference, inlining semantics);
+          # the catalog owns the one auditable asset read.
+          {recipe, inlined} =
+            Workstation.Backends.Chezmoi.inline_asset(recipe, fn relative ->
+              package_asset!(package.id, relative)
+            end)
 
-          recipe, acc ->
-            {recipe, acc}
+          acc =
+            if inlined do
+              {relative, content} = inlined
+              Map.put(acc, package.id <> ":" <> relative, content)
+            else
+              acc
+            end
+
+          {recipe, acc}
         end)
 
       {%{package | contributes: contributes}, acc}
@@ -350,96 +347,44 @@ defmodule Workstation.Core.Catalog do
     end
   end
 
-  # Build a real, validated recipe from the normalized input shape. Asset
-  # references resolve from the inlined assets map, never the filesystem.
-  defp denormalize(package_id, provider, spec, assets, live_home, canonical_home) do
-    cond do
-      provider == Workstation.Backends.Chezmoi.provider_id() ->
-        denormalize_file(package_id, spec, assets, live_home, canonical_home)
-
-      provider == Workstation.Core.Contracts.Shell.provider_id() ->
-        denormalize_shell(package_id, spec)
-
-      provider == Workstation.Backends.Chezmoi.data_provider_id() ->
-        denormalize_data(package_id, spec)
-
-      provider == Workstation.Core.Contracts.Download.provider_id() ->
-        denormalize_download(package_id, spec)
-
-      true ->
-        denormalize_capability(package_id, provider, spec)
-    end
-  end
-
-  defp denormalize_file(package_id, spec, assets, live_home, canonical_home) do
-    options = %{
-      target: string_field(spec, "target", package_id),
-      kind:
-        Map.get(@kinds, string_field(spec, "kind", package_id)) ||
-          raise_arg("#{package_id} file recipe has unsupported kind #{inspect(spec["kind"])}"),
-      executable: spec["executable"],
-      private: spec["private"],
-      exact: spec["exact"],
-      template: spec["template"],
-      to: live_to(spec["to"], live_home, canonical_home)
-    }
-
-    options =
-      cond do
-        spec["content"] != nil ->
-          Map.put(options, :content, spec["content"])
-
-        spec["asset"] != nil ->
-          Map.put(options, :content, resolve_asset(package_id, spec["asset"], assets))
-
-        true ->
-          options
-      end
-
-    Workstation.Backends.Chezmoi.recipe(options)
-  end
-
-  defp denormalize_shell(package_id, spec) do
-    fragment = Map.get(spec, "fragment")
-    unless is_map(fragment), do: raise_arg("#{package_id} shell recipe requires a fragment table")
-
-    Workstation.Core.Contracts.Shell.recipe(%{
-      target: string_field(spec, "target", package_id),
-      fragment: %{
-        id: string_field(fragment, "id", package_id),
-        marker: string_field(fragment, "marker", package_id),
-        body: string_field(fragment, "body", package_id),
-        order: integer_field(fragment, "order", package_id)
-      }
-    })
-  end
-
-  defp denormalize_data(package_id, spec) do
-    content = string_field(spec, "content", package_id)
-
-    unless Map.keys(spec) -- ["content"] == [] do
-      raise_arg("#{package_id} data-envelope spec has unknown field")
-    end
-
-    %{content: content}
-  end
-
   # Capability-provider shapes are NOT known here: denormalization dispatches
   # through the `Workstation.Core.Contracts.Provider` contract to the owner
   # package module (discovered, never named), so a new capability provider
-  # plugs into golden replay with zero edits to this module.
-  defp denormalize_download(package_id, spec) do
-    unless is_map(spec), do: raise_arg("golden input declares unknown provider shape: download spec must be a table")
-
-    Workstation.Core.Contracts.Download.from_recorded(spec)
-  rescue
-    e in [ArgumentError] -> raise_arg("golden input has an invalid download recipe for " <> package_id <> ": " <> Exception.message(e))
-  end
-
-  defp denormalize_capability(package_id, provider, spec) do
+  # plugs into golden replay with zero edits to this module. A package-owned
+  # recipe kind may carry both handshakes, so the capability surface is
+  # consulted first.
+  defp denormalize(package_id, provider, spec, assets, live_home, canonical_home) do
     case Workstation.Core.Contracts.Provider.Discover.lookup(provider) do
       {:ok, module} ->
         module.denormalize_spec(spec)
+
+      :error ->
+        denormalize_generic(package_id, provider, spec, assets, live_home, canonical_home)
+    end
+  end
+
+  # Generic recorded shapes dispatch through the discovered contract
+  # modules — the same two lines the capability branch uses (lookup + owner
+  # call): the catalog knows ids, never dialect bodies. The envelope context
+  # is plain data (error attribution, the recorded asset table, the live
+  # re-rooting bracket); a contract id without a recorded-shape reader —
+  # or an unknown id entirely — fails closed with the provider named.
+  defp denormalize_generic(package_id, provider, spec, assets, live_home, canonical_home) do
+    case Workstation.Core.Contracts.Contract.Discover.lookup(provider) do
+      {:ok, module} ->
+        unless function_exported?(module, :from_recorded, 2) do
+          raise_arg(
+            "#{package_id} golden input declares provider #{inspect(provider)} " <>
+              "whose contract reads no recorded shape"
+          )
+        end
+
+        module.from_recorded(spec, %{
+          package_id: package_id,
+          assets: assets,
+          live_home: live_home,
+          canonical_home: canonical_home
+        })
 
       :error ->
         raise_arg("#{package_id} golden input declares unknown provider #{inspect(provider)}")
@@ -450,27 +395,8 @@ defmodule Workstation.Core.Catalog do
   # live home (see @live_profile). Only destinations UNDER the canonical home
   # move — destinations outside it stay verbatim, and
   # the trailing-slash guard keeps a bare canonical home unmangled.
-  defp live_to(nil, _live_home, _canonical_home), do: nil
-  defp live_to(to, nil, _canonical_home), do: to
 
-  defp live_to(to, live_home, canonical_home) do
-    if String.starts_with?(to, canonical_home <> "/") do
-      live_home <>
-        binary_part(to, byte_size(canonical_home), byte_size(to) - byte_size(canonical_home))
-    else
-      to
-    end
-  end
 
-  # Asset bodies are inlined under "<package id>:<asset path>" and
-  # the contributing spec keeps that full key verbatim, so the lookup is the
-  # key itself — never a re-prefixed guess.
-  defp resolve_asset(_package_id, asset, assets) do
-    case Map.fetch(assets, asset) do
-      {:ok, bytes} when is_binary(bytes) and bytes != "" -> bytes
-      _ -> raise_arg("golden input references a missing asset: #{asset}")
-    end
-  end
 
   # The package-context surface (exports / context_requires): denormalized
   # through the same rules the native spec validation enforces — one export
@@ -499,8 +425,8 @@ defmodule Workstation.Core.Catalog do
         unless is_map(export), do: raise_arg("#{id}.exports entries must be objects")
 
         %{
-          key: string_field(export, "key", id),
-          schema: integer_field(export, "schema", id),
+          key: Workstation.Core.Contracts.Recorded.string!(export, "key", id),
+          schema: Workstation.Core.Contracts.Recorded.positive_integer!(export, "schema", id),
           value: Map.get(export, "value")
         }
       end)
@@ -516,7 +442,7 @@ defmodule Workstation.Core.Catalog do
     validated =
       Enum.map(requires, fn req ->
         unless is_map(req), do: raise_arg("#{id}.context_requires entries must be objects")
-        key = string_field(req, "key", id)
+        key = Workstation.Core.Contracts.Recorded.string!(req, "key", id)
 
         %{
           key: key,
@@ -535,21 +461,6 @@ defmodule Workstation.Core.Catalog do
   defp require_string(map, field) do
     value = Map.get(map, field)
     nonempty_string?(value) || raise_arg("golden input #{field} must be a non-empty string")
-    value
-  end
-
-  defp string_field(map, field, package_id) do
-    value = Map.get(map, field)
-    nonempty_string?(value) || raise_arg("#{package_id} requires a non-empty string #{field}")
-    value
-  end
-
-  defp integer_field(map, field, package_id) do
-    value = Map.get(map, field)
-
-    unless is_integer(value) and value > 0,
-      do: raise_arg("#{package_id} #{field} must be a positive integer")
-
     value
   end
 

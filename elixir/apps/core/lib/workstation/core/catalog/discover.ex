@@ -20,11 +20,14 @@ defmodule Workstation.Core.Catalog.Discover do
     `spec/0` export, spec shape (`Spec.validate!/2`) and duplicate package
     ids across distinct providers — each rejection names the offending
     module.
+
+  The candidate/test-tree/conformance pipeline is the shared
+  `Workstation.Core.Contracts.Discovery` helper — this module supplies
+  the package-spec parameterization plus the spec-shape and duplicate-id
+  validation that only the catalog envelope owns.
   """
 
   alias Workstation.Core.Catalog.Spec
-
-  @namespace "Elixir.Workstation.Packages."
 
   @doc """
   The discovered provider modules, sorted by module name — the same order
@@ -33,13 +36,12 @@ defmodule Workstation.Core.Catalog.Discover do
   """
   @spec providers() :: [module()]
   def providers do
-    :code.all_available()
-    |> Enum.flat_map(&candidates/1)
-    |> Enum.uniq()
-    |> Enum.filter(&namespace?/1)
-    |> Enum.reject(&test_source?/1)
-    |> Enum.filter(&conforming?/1)
-    |> Enum.sort()
+    Workstation.Core.Contracts.Discovery.modules(%{
+      namespace: "Elixir.Workstation.Packages.",
+      behaviour: Spec,
+      callbacks: [spec: 0],
+      label: "package-spec"
+    })
   end
 
   @doc """
@@ -75,86 +77,4 @@ defmodule Workstation.Core.Catalog.Discover do
     :ok
   end
 
-  # :code.all_available/0 returns {name, filename, loaded_path}; the name is
-  # a charlist on OTP 28, a string on older OTP lines and an atom on some
-  # intermediates — normalize to the module atom without loading the beam.
-  defp candidates({name, _filename, _loaded_path}) when is_list(name),
-    do: [List.to_atom(name)]
-
-  defp candidates({name, _filename, _loaded_path}) when is_binary(name),
-    do: [String.to_atom(name)]
-
-  defp namespace?(module) when is_atom(module) do
-    name = Atom.to_string(module)
-    String.starts_with?(name, @namespace) and name != @namespace
-  end
-
-  # Test-tree exclusion: the beam's compile_info records the source path a
-  # module was compiled from. The exclusion keys on the `test` path SEGMENT
-  # being an ancestor of the recorded source file (remainder of the path
-  # ends with the file's basename) — not a "/test/" substring hunt, which
-  # silently misses relative recorded paths such as
-  # "test/support/probe.ex". Deterministic in every environment, and a
-  # no-op in releases where no test beams exist.
-  defp test_source?(module) do
-    case :code.which(module) do
-      path when is_list(path) ->
-        # One requested chunk comes back as {ok, {File, {Chunk, Data}}};
-        # accept the list form too so the exclusion survives beam_lib
-        # shape variations.
-        info =
-          case :beam_lib.chunks(path, [:compile_info]) do
-            {:ok, {_file, {compile_info, info}}} when compile_info == :compile_info -> info
-            {:ok, {_file, [{compile_info, info}]}} when compile_info == :compile_info -> info
-            _ -> []
-          end
-
-        info |> Keyword.get(:source, []) |> List.to_string() |> test_tree_path?()
-
-      _ ->
-        false
-    end
-  end
-
-  defp test_tree_path?(source) do
-    segments = Path.split(source)
-
-    case Enum.find_index(segments, &(&1 == "test")) do
-      nil ->
-        false
-
-      index ->
-        remainder = Enum.drop(segments, index + 1)
-        # A path ENDING in a `test` file (no remainder) is not a test tree.
-        remainder != [] and List.last(remainder) == Path.basename(source)
-    end
-  end
-
-  # Conformance: the module must be loadable, declare the behaviour and
-  # define spec/0. A namespace module without the behaviour is simply not a
-  # provider; declaring the behaviour without the callback is a broken
-  # provider and fails discovery with the module named.
-  defp conforming?(module) do
-    case Code.ensure_loaded(module) do
-      {:module, loaded} ->
-        # module_info(:attributes) carries the @behaviour declarations; the
-        # typed module_info(:behaviours) key is not in Elixir's accepted set.
-        behaviours = loaded.module_info(:attributes) |> Keyword.get(:behaviour, [])
-
-        if Spec in behaviours do
-          function_exported?(loaded, :spec, 0) ||
-            raise ArgumentError,
-                  "#{inspect(loaded)} declares the package-spec behaviour but does not define spec/0"
-
-          true
-        else
-          false
-        end
-
-      {:error, _reason} ->
-        # An unloadable namespace module is not a provider; the compiler
-        # owns loadability, and discovery never guesses past it.
-        false
-    end
-  end
 end

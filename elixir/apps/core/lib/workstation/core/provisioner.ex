@@ -1,19 +1,20 @@
 defmodule Workstation.Core.Provisioner do
   @moduledoc """
-  The chezmoi provisioner — generation verification (`verify_generation`),
-  argv contract, and the staged-generation writer (`write_staged`,
-  `publish`).
+  The staged-generation provisioner: content-addressed generation
+  directories — byte-for-byte verification (`verify_generation`) and the
+  staged writer with its atomic publish (`publish`).
 
-  Chezmoi is a subordinate file provisioner invoked with an explicit
-  immutable generated `--source` generation directory and `--destination`
-  home; it is never driven by the user or by packages, and home effects are
-  never patched directly. Every generation is content-addressed by the SHA-256
-  of its manifest, staged into a private directory, verified byte-for-byte and
-  only then renamed into place — so an interrupted publish can never leave a
-  half-written generation under its content address. A generation directory
-  that already exists is re-verified, and a damaged one is quarantined under
-  an `.invalid-*` name, never deleted in place, because its bytes are the only
-  evidence of what an earlier run published.
+  A generation is materialized under an explicit immutable directory named
+  by its content address and applied into the destination home as a whole;
+  it is never driven by the user or by packages, and home effects are
+  never patched directly. Every generation is content-addressed by the
+  SHA-256 of its manifest, staged into a private directory, verified
+  byte-for-byte and only then renamed into place — so an interrupted
+  publish can never leave a half-written generation under its content
+  address. A generation directory that already exists is re-verified, and
+  a damaged one is quarantined under an `.invalid-*` name, never deleted
+  in place, because its bytes are the only evidence of what an earlier
+  run published.
   """
 
   alias Workstation.Core.EngineState
@@ -88,8 +89,9 @@ defmodule Workstation.Core.Provisioner do
   @doc """
   Materialize one plan's generation directory under
   `<state_root>/generations/<generation>`: the staged bytes are the pinned
-  engine source-root files (`.chezmoiremove`, and the optional
-  `.chezmoidata.toml` from the plan's data envelope) plus every entry's
+  engine source-root files (`Workstation.Core.Source.pinned_files/1` — the
+  tombstone, the optional data envelope, the download descriptors) plus
+  every entry's
   `source_name` body, written in manifest order with the manifest's exact type
   and mode. The tree is built under a private `.staging-*` directory and
   renamed into place only after `verify_generation/2` walks it byte-for-byte.
@@ -168,35 +170,19 @@ defmodule Workstation.Core.Provisioner do
     end
   end
 
-  # The pinned engine source-root files first (they are manifest entries
-  # without being plan targets), then one body per generated source name. A
-  # manifest file entry without staged bytes raises before anything is
-  # written: a half-mapped generation must never exist on disk.
+  # The plan's entry bodies first, then the pinned engine source-root files
+  # (`Workstation.Core.Source.pinned_files/1` — the backend file names and
+  # the download descriptors are the plan's own projection, never literals
+  # here). A manifest file entry without staged bytes raises before anything
+  # is written: a half-mapped generation must never exist on disk.
   defp staged_bytes(plan) do
-    bodies =
-      plan.entries
-      |> Enum.flat_map(fn entry ->
-        if entry.bytes, do: [{entry.source_name, entry.bytes}], else: []
-      end)
-      |> Map.new()
-
-    bodies
-    |> maybe_pin(".chezmoiremove", plan.remove_file)
-    |> maybe_pin(".chezmoidata.toml", plan.data && plan.data.bytes)
-    |> Map.merge(download_pins(plan))
-  end
-
-  # Each download pin stages its descriptor: the generation directory carries
-  # the machine-readable provenance of every pinned artifact, verified
-  # byte-for-byte with the generation like any other staged file.
-  defp download_pins(plan) do
-    Map.new(plan.downloads, fn download ->
-      {download.source_name, Workstation.Core.Contracts.Download.pin_bytes(download)}
+    plan.entries
+    |> Enum.flat_map(fn entry ->
+      if entry.bytes, do: [{entry.source_name, entry.bytes}], else: []
     end)
+    |> Map.new()
+    |> Map.merge(Map.new(Workstation.Core.Source.pinned_files(plan)))
   end
-
-  defp maybe_pin(map, _name, nil), do: map
-  defp maybe_pin(map, name, bytes), do: Map.put(map, name, bytes)
 
   defp write_staged(staging_root, entry, staged) do
     path = Path.join(staging_root, entry["name"])

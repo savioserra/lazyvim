@@ -54,13 +54,18 @@ defmodule Workstation.Core.Contracts.Provider.Discover do
   `Workstation.Packages.*` namespace (capability providers are
   owned by their package module), test-tree beams are excluded by recorded
   source path, and conformance requires the behaviour attribute plus the
-  full callback set. The namespace is shared with package-spec discovery
-  and with effect-contract discovery; conformance is per declared
-  behaviour — a package-owned recipe kind may carry both handshakes
-  (composition and effects) in one module.
+  full callback set. The pipeline itself is the shared
+  `Workstation.Core.Contracts.Discovery` helper — this module supplies
+  only the capability-provider parameterization. The namespace is shared
+  with package-spec discovery and with effect-contract discovery;
+  conformance is per declared behaviour — a package-owned recipe kind may
+  carry both handshakes (composition and effects) in one module.
+  (implementor policy: a capability provider is whatever conforming
+  `Workstation.Core.Contracts.Provider` module the package namespace
+  carries — the assembler never names one.)
   """
 
-  @namespace "Elixir.Workstation.Packages."
+  @callbacks [id: 0, validate_spec: 1, compose: 1, denormalize_spec: 1]
 
   @doc """
   The discovered capability-provider modules, sorted by module name —
@@ -68,13 +73,12 @@ defmodule Workstation.Core.Contracts.Provider.Discover do
   """
   @spec providers() :: [module()]
   def providers do
-    :code.all_available()
-    |> Enum.flat_map(&candidates/1)
-    |> Enum.uniq()
-    |> Enum.filter(&namespace?/1)
-    |> Enum.reject(&test_source?/1)
-    |> Enum.filter(&conforming?/1)
-    |> Enum.sort()
+    Workstation.Core.Contracts.Discovery.modules(%{
+      namespace: "Elixir.Workstation.Packages.",
+      behaviour: Workstation.Core.Contracts.Provider,
+      callbacks: @callbacks,
+      label: "source-provider"
+    })
   end
 
   @doc "Provider id -> implementing module, from the discovered set."
@@ -93,69 +97,4 @@ defmodule Workstation.Core.Contracts.Provider.Discover do
   end
 
   def lookup(_other), do: :error
-
-  defp candidates({name, _filename, _loaded_path}) when is_list(name),
-    do: [List.to_atom(name)]
-
-  defp candidates({name, _filename, _loaded_path}) when is_binary(name),
-    do: [String.to_atom(name)]
-
-  defp namespace?(module) when is_atom(module) do
-    name = Atom.to_string(module)
-    String.starts_with?(name, @namespace) and name != @namespace
-  end
-
-  # Same deterministic test-tree exclusion as Catalog.Discover: the beam's
-  # recorded source path must not live under a `test` tree segment.
-  defp test_source?(module) do
-    case :code.which(module) do
-      path when is_list(path) ->
-        info =
-          case :beam_lib.chunks(path, [:compile_info]) do
-            {:ok, {_file, {compile_info, info}}} when compile_info == :compile_info -> info
-            {:ok, {_file, [{compile_info, info}]}} when compile_info == :compile_info -> info
-            _ -> []
-          end
-
-        info |> Keyword.get(:source, []) |> List.to_string() |> test_tree_path?()
-
-      _ ->
-        false
-    end
-  end
-
-  defp test_tree_path?(source) do
-    segments = Path.split(source)
-
-    case Enum.find_index(segments, &(&1 == "test")) do
-      nil ->
-        false
-
-      index ->
-        remainder = Enum.drop(segments, index + 1)
-        remainder != [] and List.last(remainder) == Path.basename(source)
-    end
-  end
-
-  defp conforming?(module) do
-    case Code.ensure_loaded(module) do
-      {:module, loaded} ->
-        behaviours = loaded.module_info(:attributes) |> Keyword.get(:behaviour, [])
-
-        if Workstation.Core.Contracts.Provider in behaviours do
-          Enum.each([id: 0, validate_spec: 1, compose: 1, denormalize_spec: 1], fn {callback, arity} ->
-            function_exported?(loaded, callback, arity) ||
-              raise ArgumentError,
-                    "#{inspect(loaded)} declares the source-provider behaviour but does not define #{callback}/#{arity}"
-          end)
-
-          true
-        else
-          false
-        end
-
-      {:error, _reason} ->
-        false
-    end
-  end
 end

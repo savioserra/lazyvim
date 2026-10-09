@@ -60,7 +60,29 @@ defmodule Workstation.Core.Contracts.Contract do
   `ctx` carries `"home"` and `"target"`.
   """
   @callback verify_record(record :: map(), ctx :: map()) :: :ok | :unclaimed
-  @optional_callbacks [verify_record: 2]
+
+  @doc """
+  Every wire id this implementation owns — `[id/0]` unless the contract
+  carries a second composition shape (chezmoi's data envelope is a second
+  id of the same backend). Discovery publishes the full owned set, so the
+  assembler and the golden-envelope reader derive their dispatch without
+  naming a single id.
+  """
+  @callback ids() :: [String.t()]
+
+  @doc """
+  Denormalize one recorded (string-keyed) golden-envelope spec back to the
+  atom-keyed declared shape, so a replay compares equal to the native
+  declaration. `ctx` carries the golden-envelope context the catalog reader
+  composes with: `:package_id` (error attribution), `:assets` (the recorded
+  asset bodies), `:live_home` and `:canonical_home` (the live re-rooting
+  bracket). Raises `ArgumentError` on an invalid shape. OPTIONAL: a
+  contract without a recorded shape simply does not implement it — the
+  golden-envelope reader fails closed on the dispatch and names the
+  provider.
+  """
+  @callback from_recorded(spec :: map(), ctx :: map()) :: term()
+  @optional_callbacks [verify_record: 2, ids: 0, from_recorded: 2]
 end
 
 
@@ -77,28 +99,37 @@ defmodule Workstation.Core.Contracts.Contract.Discover do
   contract modules themselves; a package may also implement one from its own
   namespace), test-tree beams are excluded by recorded source path, and
   conformance requires the behaviour attribute plus the full callback set.
+  The pipeline itself is the shared
+  `Workstation.Core.Contracts.Discovery` helper — this module supplies
+  only the effect-contract parameterization.
   """
-
-  @namespace "Elixir.Workstation."
 
   @callbacks [id: 0, validate_spec: 1, plan_effect: 2, run_effect: 2, fingerprint: 2]
 
   @doc "The discovered effect-contract modules, sorted by module name."
   @spec contracts() :: [module()]
   def contracts do
-    :code.all_available()
-    |> Enum.flat_map(&candidates/1)
-    |> Enum.uniq()
-    |> Enum.filter(&namespace?/1)
-    |> Enum.reject(&test_source?/1)
-    |> Enum.filter(&conforming?/1)
-    |> Enum.sort()
+    Workstation.Core.Contracts.Discovery.modules(%{
+      namespace: "Elixir.Workstation.",
+      behaviour: Workstation.Core.Contracts.Contract,
+      callbacks: @callbacks,
+      label: "effect-contract"
+    })
   end
 
-  @doc "Contract id -> implementing module, from the discovered set."
+  @doc """
+  Wire id -> implementing module, from the discovered set. A contract may
+  own several wire ids (the optional `ids/0` callback) — each maps to its
+  implementor.
+  """
   @spec by_id() :: %{String.t() => module()}
   def by_id do
-    Map.new(contracts(), fn module -> {module.id(), module} end)
+    contracts()
+    |> Enum.flat_map(fn module ->
+      ids = if function_exported?(module, :ids, 0), do: module.ids(), else: [module.id()]
+      Enum.map(ids, &{&1, module})
+    end)
+    |> Map.new()
   end
 
   @doc "Look up the implementing module for one contract id."
@@ -118,72 +149,6 @@ defmodule Workstation.Core.Contracts.Contract.Discover do
     case lookup(id) do
       {:ok, module} -> module
       :error -> raise ArgumentError, "no discovered contract implements #{inspect(id)}"
-    end
-  end
-
-  defp candidates({name, _filename, _loaded_path}) when is_list(name),
-    do: [List.to_atom(name)]
-
-  defp candidates({name, _filename, _loaded_path}) when is_binary(name),
-    do: [String.to_atom(name)]
-
-  defp namespace?(module) when is_atom(module) do
-    name = Atom.to_string(module)
-    String.starts_with?(name, @namespace) and name != @namespace
-  end
-
-  # Same deterministic test-tree exclusion as Catalog.Discover and
-  # Provider.Discover: the beam's recorded source path must not live under a
-  # `test` tree segment.
-  defp test_source?(module) do
-    case :code.which(module) do
-      path when is_list(path) ->
-        info =
-          case :beam_lib.chunks(path, [:compile_info]) do
-            {:ok, {_file, {compile_info, info}}} when compile_info == :compile_info -> info
-            {:ok, {_file, [{compile_info, info}]}} when compile_info == :compile_info -> info
-            _ -> []
-          end
-
-        info |> Keyword.get(:source, []) |> List.to_string() |> test_tree_path?()
-
-      _ ->
-        false
-    end
-  end
-
-  defp test_tree_path?(source) do
-    segments = Path.split(source)
-
-    case Enum.find_index(segments, &(&1 == "test")) do
-      nil ->
-        false
-
-      index ->
-        remainder = Enum.drop(segments, index + 1)
-        remainder != [] and List.last(remainder) == Path.basename(source)
-    end
-  end
-
-  defp conforming?(module) do
-    case Code.ensure_loaded(module) do
-      {:module, loaded} ->
-        behaviours = loaded.module_info(:attributes) |> Keyword.get(:behaviour, [])
-
-        if Workstation.Core.Contracts.Contract in behaviours do
-          Enum.each(@callbacks, fn {callback, arity} ->
-            function_exported?(loaded, callback, arity) ||
-              raise ArgumentError,
-                    "#{inspect(loaded)} declares the effect-contract behaviour but does not define #{callback}/#{arity}"
-          end)
-
-          true
-        else
-          false
-        end
-
-      {:error, _reason} ->
-        false
     end
   end
 end

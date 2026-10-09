@@ -32,7 +32,6 @@ defmodule Workstation.Core.ArchitectureDepsTest do
   | file | why exempt |
   |------|------------|
   | `source/chezmoi.ex` | the backend module itself — it OWNS the dialect |
-  | `provisioner.ex` | backend execution bridge (runs the pinned argv) |
   | `shell_program.ex` | composes the backend modify-program |
   | `update/bootstrap.ex` | installs and integrity-verifies the backend BINARY itself — naming the backend is the job; irreducible |
   | `policy.ex` | deploy-path tombstones are policy data about the PAST: a retired path (`.config/nvim/...`, `.pi/agent/...`) must be named verbatim or it cannot be retired; irreducible |
@@ -60,7 +59,6 @@ defmodule Workstation.Core.ArchitectureDepsTest do
   # IN SYNC — every entry carries its irreducibility justification there.
   @core_exempts %{
     "apps/core/lib/workstation/backends/chezmoi.ex" => "the backend module itself",
-    "apps/core/lib/workstation/core/provisioner.ex" => "backend execution bridge",
     "apps/core/lib/workstation/core/shell_program.ex" => "backend modify-program composer",
     "apps/core/lib/workstation/core/update/bootstrap.ex" => "installs and verifies the backend binary itself",
     "apps/core/lib/workstation/core/policy.ex" => "deploy-path tombstones are policy data about the past (paths named verbatim)",

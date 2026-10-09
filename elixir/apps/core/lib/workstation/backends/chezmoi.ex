@@ -281,11 +281,167 @@ defmodule Workstation.Backends.Chezmoi do
   @doc "Provider id for the backend's data-envelope contribution."
   def data_provider_id, do: "chezmoi-data"
 
+  # The effect-contract discovery publishes both wire ids for this module:
+  # the file-recipe composition and the data envelope are two ids of one
+  # backend, so the assembler and the golden-envelope reader derive their
+  # dispatch from discovery instead of naming either.
+  @doc "Both wire ids the backend owns (file composition + data envelope)."
+  @spec ids() :: [String.t()]
+  def ids, do: [provider_id(), data_provider_id()]
+
+  # The recorded kind vocabulary of the backend's own dialect: recorded
+  # golden envelopes name kinds as strings; the wire carries the atoms the
+  # recipe constructor validates.
+  @recorded_kinds %{
+    "file" => :file,
+    "directory" => :directory,
+    "symlink" => :symlink,
+    "modify" => :modify,
+    "remove" => :remove
+  }
+
+  @doc """
+  Denormalize one recorded (string-keyed) golden-envelope spec back to the
+  validated atom shape, so a replay compares equal to the native
+  declaration. The backend owns its recorded dialect: file recipes rebuild
+  through `recipe/1` (recorded kind vocabulary, asset references resolved
+  from the envelope's recorded `:assets` table, destinations re-rooted
+  through `reroot_destination/2` inside the envelope's live bracket), and
+  the data envelope is the second shape (`%{"content" => bytes}`). `ctx`
+  carries `:package_id`, `:assets`, `:live_home`, `:canonical_home`.
+  Raises `ArgumentError` on an invalid shape.
+  """
+  @spec from_recorded(map(), map()) :: map() | %{content: String.t()}
+  def from_recorded(spec, ctx) when is_map(spec) do
+    # The shape law of the recorded dialect: a file recipe always names its
+    # logical target; the data envelope is exactly one `content` field.
+    if Map.has_key?(spec, "target") do
+      from_recorded_file(spec, ctx)
+    else
+      from_recorded_data(spec, ctx)
+    end
+  end
+
+  def from_recorded(other, _ctx),
+    do: raise(ArgumentError, "recorded backend recipe must be a table, got: #{inspect(other)}")
+
+  defp from_recorded_file(spec, ctx) do
+    package_id = Map.get(ctx, :package_id)
+    fields = Workstation.Core.Contracts.Recorded
+
+    options = %{
+      target: fields.string!(spec, "target", package_id),
+      kind:
+        Map.get(@recorded_kinds, fields.string!(spec, "kind", package_id)) ||
+          raise(ArgumentError, "#{package_id} file recipe has unsupported kind #{inspect(spec["kind"])}"),
+      executable: spec["executable"],
+      private: spec["private"],
+      exact: spec["exact"],
+      template: spec["template"],
+      to: reroot_destination(spec["to"], %{from: Map.get(ctx, :canonical_home), to: Map.get(ctx, :live_home)})
+    }
+
+    options =
+      cond do
+        spec["content"] != nil ->
+          Map.put(options, :content, spec["content"])
+
+        spec["asset"] != nil ->
+          Map.put(options, :content, recorded_asset(spec["asset"], ctx))
+
+        true ->
+          options
+      end
+
+    recipe(options)
+  end
+
+  defp from_recorded_data(spec, ctx) do
+    package_id = Map.get(ctx, :package_id)
+    content = Workstation.Core.Contracts.Recorded.string!(spec, "content", package_id)
+
+    unless Map.keys(spec) -- ["content"] == [] do
+      raise(ArgumentError, "#{package_id} data-envelope spec has unknown field")
+    end
+
+    %{content: content}
+  end
+
+  # Asset bodies are inlined under "<package id>:<asset path>" and the
+  # contributing spec keeps that full key verbatim (the catalog's inlining
+  # convention), so the lookup is the key itself — never a re-prefixed
+  # guess. An empty body is always a recording failure.
+  defp recorded_asset(asset, ctx) do
+    case Map.get(Map.get(ctx, :assets) || %{}, asset) do
+      bytes when is_binary(bytes) and bytes != "" -> bytes
+      _ -> raise(ArgumentError, "golden input references a missing asset: #{asset}")
+    end
+  end
+
   @doc "Engine source-root tombstone filename; part of the backend contract."
   def remove_filename, do: ".chezmoiremove"
 
   @doc "Engine source-root data-envelope filename; part of the backend contract."
   def data_filename, do: ".chezmoidata.toml"
+
+  @doc """
+  Re-root one home-anchored destination on an already-validated recipe:
+  `homes` carries `%{from: recording_home, to: live_home}` and a string
+  destination moves exactly when it sits under `from` (the trailing-slash
+  guard keeps a bare recording home unmangled). Non-chezmoi recipes and
+  recipes without a destination pass through value-unchanged: the caller
+  dispatches generically on provider id and needs no struct knowledge.
+  """
+  @spec reroot_home(map(), %{from: String.t(), to: String.t() | nil}) :: map()
+  def reroot_home(%{provider: provider, spec: %__MODULE__{} = spec} = recipe, %{from: from, to: to_home}) do
+    if provider == provider_id() do
+      %{recipe | spec: %{spec | to: reroot_destination(spec.to, %{from: from, to: to_home})}}
+    else
+      recipe
+    end
+  end
+
+  def reroot_home(recipe, _homes), do: recipe
+
+  @doc """
+  Move one absolute destination between homes: only a destination under
+  `from` moves — destinations outside it stay verbatim, and the
+  trailing-slash guard keeps a bare `from` unmangled. A nil destination
+  passes through as nil, and no `to` home leaves the destination verbatim.
+  """
+  @spec reroot_destination(String.t() | nil, %{from: String.t(), to: String.t() | nil}) ::
+          String.t() | nil
+  def reroot_destination(nil, _homes), do: nil
+  def reroot_destination(to, %{to: nil}), do: to
+
+  def reroot_destination(to, %{from: from, to: to_home}) do
+    if String.starts_with?(to, from <> "/") do
+      to_home <> binary_part(to, byte_size(from), byte_size(to) - byte_size(from))
+    else
+      to
+    end
+  end
+
+  @doc """
+  Resolve one recipe's package-relative asset reference to bytes: `resolve`
+  is `(relative -> content)` and belongs to the caller (the catalog's one
+  auditable asset read); the backend owns the dialect — which field carries
+  the reference, that inlining fills `content` and clears `asset`. Returns
+  `{recipe, inlined}` where `inlined` is `{relative, content}` or nil when
+  the recipe carries no asset reference. Non-chezmoi recipes pass through
+  unchanged.
+  """
+  @spec inline_asset(map(), (String.t() -> String.t())) :: {map(), {String.t(), String.t()} | nil}
+  def inline_asset(%{provider: provider, spec: %__MODULE__{} = spec} = recipe, resolve) do
+    if provider == provider_id() and is_binary(spec.asset) and spec.asset != "" do
+      content = resolve.(spec.asset)
+      {%{recipe | spec: %{spec | content: content, asset: nil}}, {spec.asset, content}}
+    else
+      {recipe, nil}
+    end
+  end
+
+  def inline_asset(recipe, _resolve), do: {recipe, nil}
 
   # --- the effect contract ---
 

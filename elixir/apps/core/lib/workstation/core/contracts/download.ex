@@ -76,6 +76,21 @@ defmodule Workstation.Core.Contracts.Download do
   def from_recorded(other),
     do: raise(ArgumentError, "download recipe must be a table, got: #{inspect(other)}")
 
+  # The recorded-envelope dispatch seam: the download shape is
+  # self-contained (no assets, no home anchoring), so the context only
+  # contributes the package id for error attribution.
+  @spec from_recorded(map(), map()) :: t()
+  def from_recorded(spec, ctx) when is_map(spec) do
+    from_recorded(spec)
+  rescue
+    e in [ArgumentError] ->
+      raise ArgumentError,
+            "golden input has an invalid download recipe for #{ctx.package_id}: #{Exception.message(e)}"
+  end
+
+  def from_recorded(other, _ctx),
+    do: raise(ArgumentError, "download recipe must be a table, got: #{inspect(other)}")
+
   @doc """
   Validate one download recipe (the struct or any field map); raises
   `ArgumentError` on the first invalid field. Composition calls this on

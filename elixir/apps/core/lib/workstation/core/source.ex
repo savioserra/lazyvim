@@ -3,10 +3,11 @@ defmodule Workstation.Core.Source do
   The source assembler: composition root of the deterministic engine plan.
 
   The composition root that interprets validated recipes through the
-  explicitly registered providers, composes domain outputs before chezmoi
+  discovered providers, composes domain outputs before chezmoi
   source generation, detects ownership/path/attribute conflicts and produces
   the deterministic plan shared by diff, apply and plan previews. Core stays
-  domain-neutral; this module owns the registry.
+  domain-neutral; this module owns the composition surface, and every
+  provider on it is discovered, never registered.
 
   Replay purity: the golden contract records a fresh journal and no
   filesystem, so `plan/1` performs no I/O. Journal-based retirement
@@ -15,27 +16,17 @@ defmodule Workstation.Core.Source do
   and the recorded generation ids stay machine-independent.
   """
 
-  alias Workstation.Core.Digest
   alias Workstation.Backends.Chezmoi
   alias Workstation.Core.Contracts.Download
-  alias Workstation.Core.Source.Manifest
-  alias Workstation.Core.Contracts.Shell
+  alias Workstation.Core.Digest
+  alias Workstation.Core.Source.{Downloads, Entries, Manifest, Paths, Removals, Shell}
 
-  # Domain-generic providers are wired directly into the assembler; their
-  # wire ids live in the backend modules (`Chezmoi.provider_id/0`,
-  # `Shell.provider_id/0`). Capability-specific providers are NOT listed
-  # here — they are discovered through the `Workstation.Core.Contracts.Provider`
-  # contract, so the assembler never names a capability.
-  defp generic_providers do
-    %{
-      Chezmoi.provider_id() => true,
-      Chezmoi.data_provider_id() => true,
-      Shell.provider_id() => true,
-      Download.provider_id() => true
-    }
-  end
-
-  @engine_state_target ".local/state/workstation"
+  # Domain-generic providers are wired directly into the assembler, but
+  # the assembler names no provider id: the effect-contract surface
+  # (`Workstation.Core.Contracts.Contract.Discover`) publishes the
+  # domain-generic ids, and capability-specific providers are discovered
+  # through the `Workstation.Core.Contracts.Provider` contract — a new
+  # provider plugs in with zero edits to the assembler.
 
   defstruct entries: [],
             removals: [],
@@ -112,20 +103,20 @@ defmodule Workstation.Core.Source do
     capability = compose_capability_profiles(collected)
     collected = collected ++ Enum.map(capability, &elem(&1, 0))
     profile = capability_profiles(capability)
-    downloads = compose_downloads(collected)
+    downloads = Downloads.compose(collected)
     # The golden replay always records against a fresh journal: applied_record
     # is nil, so no fragments are recorded and no retirements are reconciled.
     journal = nil
-    ancestors = build_ancestors(collected)
-    {shell_entries, fragments_journal} = compose_shell_entries(collected, journal, ancestors)
-    {entries, removals} = build_entries(collected, ancestors)
+    ancestors = Entries.build_ancestors(collected)
+    {shell_entries, fragments_journal} = Shell.compose_shell_entries(collected, journal, ancestors)
+    {entries, removals} = Entries.build_entries(collected, ancestors)
     entries = Enum.sort_by(entries ++ shell_entries, & &1.source_name)
     {entries, _by_target} = detect_conflicts(entries, removals)
     # reconcile/2 with a fresh journal yields no retirements and no
     # unsupported reversals: nothing was ever applied, so nothing can retire.
     # Every declared removal literal is still validated: an ambiguous glob or
     # traversal is invalid regardless of current presence.
-    Enum.each(removals, &validate_removal_literal(&1.target))
+    Enum.each(removals, &Removals.validate_literal!(&1.target))
 
     # Active filtering with a fresh journal: a removal is active only when the
     # journal recorded it or the target is present in the destination home;
@@ -144,15 +135,15 @@ defmodule Workstation.Core.Source do
     # revalidated against active ownership: static aggregation gets no bypass.
     Enum.each(entries, fn entry ->
       Enum.each(removals, fn removal ->
-        encompasses(removal.target, entry.target) &&
-          fail("final removal #{removal.target} overlaps owned target #{entry.target}")
+        Paths.encompasses?(removal.target, entry.target) &&
+          Paths.invalid!("final removal #{removal.target} overlaps owned target #{entry.target}")
       end)
     end)
 
     # Downloaded artifacts own their targets exclusively: a chezmoi entry or
     # a declared removal reaching the same path is a composition conflict,
     # checked before the plan exists so replay fails loudly.
-    check_download_conflicts(downloads, entries, declared_removals)
+    Downloads.check_conflicts(downloads, entries, declared_removals)
 
     plan = %__MODULE__{
       entries: entries,
@@ -275,8 +266,8 @@ defmodule Workstation.Core.Source do
     # owns — re-checked here so this boundary helper stays safe on its own.
     Enum.each(plan.entries, fn entry ->
       Enum.each(active, fn removal ->
-        encompasses(removal.target, entry.target) &&
-          fail("final removal #{removal.target} overlaps owned target #{entry.target}")
+        Paths.encompasses?(removal.target, entry.target) &&
+          Paths.invalid!("final removal #{removal.target} overlaps owned target #{entry.target}")
       end)
     end)
 
@@ -294,7 +285,15 @@ defmodule Workstation.Core.Source do
     match?({:ok, _stat}, File.lstat(Path.join(home, target)))
   end
 
-  defp pinned_files(plan) do
+  @doc """
+  The pinned engine source-root bytes of one plan: the tombstone body, the
+  optional data envelope and every download descriptor — manifest entries
+  without being plan targets. The staged-generation writer reads this map;
+  the names come from the backend module API and the download contract,
+  never from a literal here.
+  """
+  @spec pinned_files(t()) :: [{String.t(), String.t()}]
+  def pinned_files(plan) do
     # The source-root engine files (.chezmoiremove, the optional data
     # envelope) are manifest entries without being plan targets: they stage
     # with the generation and verify byte-for-byte, but never deploy into the
@@ -323,9 +322,14 @@ defmodule Workstation.Core.Source do
   # --- collection ---
 
   defp collect(ordered) do
+    # ONE discovery pass per composition: the generic (effect-contract) id
+    # set is derived once and the per-recipe check stays a map lookup —
+    # discovery scans the whole code path, so it must never run per recipe.
+    generic_ids = MapSet.new(Map.keys(Workstation.Core.Contracts.Contract.Discover.by_id()))
+
     Enum.flat_map(ordered, fn specification ->
       Enum.map(Map.get(specification, :contributes) || [], fn recipe ->
-        known_provider?(recipe.provider) ||
+        known_provider?(recipe.provider, generic_ids) ||
           fail("#{specification.id} declares unknown provider #{recipe.provider}")
 
         %{owner: specification.id, provider: recipe.provider, spec: recipe.spec}
@@ -333,8 +337,11 @@ defmodule Workstation.Core.Source do
     end)
   end
 
-  defp known_provider?(provider) do
-    Map.has_key?(generic_providers(), provider) or
+  # A recipe provider is known when discovery finds an implementor: the
+  # effect-contract surface publishes the domain-generic ids, and the
+  # capability contract publishes the package-owned ones.
+  defp known_provider?(provider, generic_ids) do
+    MapSet.member?(generic_ids, provider) or
       match?({:ok, _module}, Workstation.Core.Contracts.Provider.Discover.lookup(provider))
   end
 
@@ -384,296 +391,6 @@ defmodule Workstation.Core.Source do
       [] -> nil
       profiles -> profiles
     end
-  end
-
-  # --- download composition ---
-
-  # Pinned artifacts are validated at composition: every record is a
-  # validated recipe and the plan carries the derived fingerprint and the
-  # staged descriptor name. The fetch itself never happens at plan time —
-  # the pure pipeline performs no I/O.
-  defp compose_downloads(collected) do
-    collected
-    |> Enum.filter(&(&1.provider == Download.provider_id()))
-    |> Enum.map(fn record ->
-      spec = record.spec
-      :ok = Download.validate(spec)
-
-      %{
-        owner: record.owner,
-        target: spec.target,
-        url: spec.url,
-        version: spec.version,
-        sha256: spec.sha256,
-        fingerprint: Download.fingerprint(spec),
-        source_name: Download.pin_source_name(spec)
-      }
-    end)
-    |> Enum.reduce({[], MapSet.new()}, fn download, {downloads, seen} ->
-      if MapSet.member?(seen, download.target) do
-        fail("duplicate download target #{download.target}: one artifact target may have only one owner")
-      end
-
-      {downloads ++ [download], MapSet.put(seen, download.target)}
-    end)
-    |> elem(0)
-  end
-
-  defp check_download_conflicts(downloads, entries, removals) do
-    Enum.each(downloads, fn download ->
-      Enum.each(entries, fn entry ->
-        overlapping =
-          download.target == entry.target or encompasses(download.target, entry.target) or
-            encompasses(entry.target, download.target)
-
-        overlapping &&
-          fail(
-            "download target #{download.target} overlaps owned target #{entry.target} " <>
-              "(#{Enum.join(entry.attribution, ",")})"
-          )
-      end)
-
-      Enum.each(removals, fn removal ->
-        not encompasses(removal.target, download.target) ||
-          fail("declared removal #{removal.target} overlaps download target #{download.target}")
-      end)
-    end)
-  end
-
-  defp build_ancestors(collected) do
-    Enum.reduce(collected, %{}, fn record, ancestors ->
-      if record.provider == Chezmoi.provider_id() and record.spec.kind == :directory do
-        :ok = Chezmoi.validate_spec(record.spec)
-
-        existing = Map.get(ancestors, record.spec.target)
-
-        if existing != nil and (existing.exact != record.spec.exact or existing.private != record.spec.private) do
-          fail("incompatible directory attributes for #{record.spec.target}")
-        end
-
-        Map.put(ancestors, record.spec.target, %{exact: record.spec.exact, private: record.spec.private})
-      else
-        ancestors
-      end
-    end)
-  end
-
-  # --- shell composition ---
-
-  # Group shell fragments per shared target in collection order; explicit
-  # fragment order keys plus graph-order tie-breaking keep output stable.
-  # One marker on one target can only ever have one owning fragment id.
-  defp desired_fragments(collected) do
-    collected
-    |> Enum.filter(&(&1.provider == Shell.provider_id()))
-    |> Enum.with_index(1)
-    |> Enum.reduce({%{}, 0}, fn {record, sequence}, {grouped, _} ->
-      :ok = Shell.validate_spec(record.spec)
-      assert_not_engine_state(record.spec.target)
-      target = record.spec.target
-
-      group =
-        Map.get_lazy(grouped, target, fn -> %{target: target, fragments: [], owners: []} end)
-
-      fragment = %{
-        id: record.spec.fragment.id,
-        marker: record.spec.fragment.marker,
-        body: record.spec.fragment.body,
-        order: record.spec.fragment.order,
-        owner: record.owner,
-        sequence: sequence
-      }
-
-      group = %{
-        target: target,
-        fragments: group.fragments ++ [fragment],
-        owners: group.owners ++ [record.owner]
-      }
-
-      {Map.put(grouped, target, group), sequence}
-    end)
-    |> elem(0)
-    |> Enum.map(fn {target, group} ->
-      fragments =
-        Enum.sort_by(group.fragments, fn fragment -> {fragment.order, fragment.sequence} end)
-
-      ids = MapSet.new(Enum.map(fragments, & &1.id))
-
-      if MapSet.size(ids) != length(fragments) do
-        fail("duplicate shell fragment id on #{target}")
-      end
-
-      seen =
-        Enum.reduce(fragments, MapSet.new(), fn fragment, seen ->
-          if MapSet.member?(seen, fragment.marker) do
-            fail(
-              "duplicate shell marker #{fragment.marker} on #{target} is owned by both " <>
-                "an earlier fragment and #{fragment.id}"
-            )
-          end
-
-          MapSet.put(seen, fragment.marker)
-        end)
-
-      _ = seen
-
-      {target, %{group | fragments: fragments}}
-    end)
-    |> Map.new()
-  end
-
-  defp compose_shell_entries(collected, journal, ancestors) do
-    grouped = desired_fragments(collected)
-
-    # Targets whose every recorded fragment disappeared still need one final
-    # recomposition so their exact known blocks are removed; leftover managed
-    # shell lines are not inert and stopping source management is not removal.
-    grouped =
-      case journal && journal.fragments do
-        nil -> grouped
-        recorded -> Enum.reduce(recorded, grouped, fn {target, applied}, acc ->
-          if Map.has_key?(acc, target) or applied == [] do
-            acc
-          else
-            Map.put(acc, target, %{target: target, fragments: [], owners: []})
-          end
-        end)
-      end
-
-    Enum.map_reduce(grouped, %{}, fn {target, group}, fragments_journal ->
-      recorded = (journal && journal.fragments && Map.get(journal.fragments, target)) || %{}
-      {program, _ids} = Shell.compose(target, group.fragments, recorded)
-
-      recipe =
-        Chezmoi.recipe(%{target: target, kind: :modify, executable: true, content: program})
-
-      entry = %{
-        owner: "shell",
-        provider: Chezmoi.provider_id(),
-        operation: "modify",
-        target: target,
-        source_name: Chezmoi.source_name(recipe, ancestors),
-        type: "modify",
-        mode: Chezmoi.entry_mode(recipe),
-        bytes: program,
-        shared: true,
-        attribution: group.owners,
-        fragments: group.fragments
-      }
-
-      # Journal fragment records: {id, marker, body, order, owner, sequence}
-      # with sequence the 1-based position of the shell record in collection
-      # order (string keys — the journal is recorded state, encoded
-      # canonically).
-      fragments_journal =
-        if group.fragments != [] do
-          journal_records =
-            Enum.map(group.fragments, fn fragment ->
-              %{
-                "id" => fragment.id,
-                "marker" => fragment.marker,
-                "body" => fragment.body,
-                "order" => fragment.order,
-                "owner" => fragment.owner,
-                "sequence" => fragment.sequence
-              }
-            end)
-
-          Map.put(fragments_journal, target, journal_records)
-        else
-          fragments_journal
-        end
-
-      {entry, fragments_journal}
-    end)
-  end
-
-  # --- chezmoi entries ---
-
-  defp build_entries(collected, ancestors) do
-    collected
-    |> Enum.filter(&(&1.provider == Chezmoi.provider_id()))
-    |> Enum.map_reduce([], fn record, removals ->
-      :ok = Chezmoi.validate_spec(record.spec)
-      assert_not_engine_state(record.spec.target)
-
-      case build_entry(record, ancestors) do
-        {{:removal, target, owner}, _acc} ->
-          {nil, removals ++ [%{target: target, owner: owner}]}
-
-        {entry, _acc} ->
-          {entry, removals}
-      end
-    end)
-    |> then(fn {entries, removals} -> {Enum.reject(entries, &is_nil/1), removals} end)
-  end
-
-  defp build_entry(record, ancestors) do
-    spec = record.spec
-
-    if spec.kind == :remove do
-      # Explicit removals have no source name; they become .chezmoiremove
-      # entries carried by the policy body.
-      {{:removal, spec.target, record.owner}, []}
-    else
-      # Every generated regular source file must carry real bytes: a nil body
-      # must never silently publish an empty program or payload.
-      bytes =
-        cond do
-          spec.kind == :symlink -> spec.to
-          spec.kind == :directory -> nil
-          true -> spec.content
-        end
-
-      unless spec.kind == :symlink or spec.kind == :directory or bytes != nil do
-        fail("backend file recipe produced no source bytes for #{spec.target}")
-      end
-
-      type =
-        cond do
-          spec.kind == :symlink -> "link"
-          spec.kind == :modify -> "modify"
-          true -> Atom.to_string(spec.kind)
-        end
-
-      entry = %{
-        owner: record.owner,
-        provider: Chezmoi.provider_id(),
-        operation: Atom.to_string(spec.kind),
-        target: spec.target,
-        source_name: Chezmoi.source_name(spec, ancestors),
-        type: type,
-        mode: Chezmoi.entry_mode(spec),
-        bytes: bytes,
-        link: if(spec.kind == :symlink, do: spec.to),
-        exact: spec.exact,
-        template: spec.template,
-        attribution: attribution(record),
-        fingerprint: fingerprint(spec, type, bytes)
-      }
-
-      {entry, []}
-    end
-  end
-
-  defp attribution(record), do: Map.get(record, :attribution) || [record.owner]
-
-  # Fingerprints are content addresses: the encode is canonical (bytewise key
-  # order) so two processes derive the identical id for identical content.
-  defp fingerprint(spec, type, bytes) do
-    fields =
-      [
-        {"target", spec.target},
-        {"operation", Atom.to_string(spec.kind)},
-        {"type", type},
-        {"mode", Chezmoi.entry_mode(spec)},
-        {"bytes", bytes && Digest.sha256(bytes)},
-        {"link", if(spec.kind == :symlink, do: spec.to)}
-      ]
-      |> Enum.reject(fn {_key, value} -> value == nil end)
-      |> Map.new()
-
-    Digest.sha256(Workstation.Core.CanonicalJSON.encode(fields))
   end
 
   # --- conflicts ---
@@ -734,8 +451,8 @@ defmodule Workstation.Core.Source do
           fail("exact directory #{entry.target} requires exactly one owner")
         end
 
-        not encompasses(entry.target, @engine_state_target) ||
-          fail("exact directory #{entry.target} encompasses engine-private state")
+        not Paths.encompasses?(entry.target, Paths.engine_state_target()) ||
+          Paths.invalid!("exact directory #{entry.target} encompasses engine-private state")
 
         owner = hd(entry.attribution)
 
@@ -783,9 +500,9 @@ defmodule Workstation.Core.Source do
     end)
 
     Enum.each(removals, fn removal ->
-      assert_not_engine_state(removal.target)
-      not encompasses(removal.target, @engine_state_target) ||
-        fail("removal of #{removal.target} encompasses engine-private state")
+      :ok = Paths.assert_not_engine_state!(removal.target)
+      not Paths.encompasses?(removal.target, Paths.engine_state_target()) ||
+        Paths.invalid!("removal of #{removal.target} encompasses engine-private state")
 
       Enum.each(by_target, fn {target, _entry} ->
         encompasses(removal.target, target) && fail("removal of #{removal.target} overlaps owned target #{target}")
@@ -810,40 +527,10 @@ defmodule Workstation.Core.Source do
     end
   end
 
-  # --- removal literals ---
+  # The path algebra lives in `Workstation.Core.Source.Paths` (shared by the
+  # data shapes); these thin aliases keep the conflict-law sentences on this
+  # side dense and readable.
+  defp encompasses(ancestor, target), do: Paths.encompasses?(ancestor, target)
 
-  # Validate one final removal literal: engine-private state is never touched,
-  # active ownership is never overlapped, and chezmoi interprets
-  # .chezmoiremove entries as glob patterns, so one literal owned target must
-  # not be able to expand into several removals.
-  defp validate_removal_literal(target) do
-    is_binary(target) and target != "" || fail("invalid removal entry")
-    not String.match?(target, ~r/[\x00-\x1f\x7f]/) ||
-      fail("removal entry must not contain control characters or newlines: #{target}")
-
-    not String.match?(target, ~r/[*?\[\]]/) ||
-      fail("removal entry contains glob metacharacters the backend would expand: #{target}")
-
-    not String.starts_with?(target, "/") && not Regex.match?(~r/\.\.($|\/)/, target) ||
-      fail("removal entry must be a literal relative path")
-
-    not is_within(target, @engine_state_target) && not encompasses(target, @engine_state_target) ||
-      fail("removal entry would touch engine-private state: #{target}")
-
-    :ok
-  end
-
-  # --- path helpers (target/ancestor containment) ---
-
-  defp is_within(target, ancestor) do
-    target == ancestor or String.starts_with?(target, ancestor <> "/")
-  end
-  defp encompasses(ancestor, target), do: is_within(target, ancestor)
-
-  defp assert_not_engine_state(target) do
-    not is_within(target, @engine_state_target) ||
-      fail("recipe target overlaps engine-private state: #{target}")
-  end
-
-  defp fail(message), do: raise(ArgumentError, message)
+  defp fail(message), do: Paths.invalid!(message)
 end

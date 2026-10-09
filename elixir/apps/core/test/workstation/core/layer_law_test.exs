@@ -44,7 +44,6 @@ defmodule Workstation.Core.LayerLawTest do
   # in ArchitectureDepsTest (see its synced exemption table).
   @kernel_exempts MapSet.new([
                     "apps/core/lib/workstation/backends/chezmoi.ex",
-                    "apps/core/lib/workstation/core/provisioner.ex",
                     "apps/core/lib/workstation/core/shell_program.ex",
                     "apps/core/lib/workstation/core/update/bootstrap.ex",
                     "apps/core/lib/workstation/core/policy.ex",
