@@ -10,7 +10,8 @@ defmodule Workstation.Core.DownloadTest do
   use ExUnit.Case, async: false
 
   alias Workstation.Core.{ApplyEngine, Digest, EngineState, Graph, Journal, Source}
-  alias Workstation.Core.Source.{Chezmoi, Download}
+  alias Workstation.Backends.Chezmoi
+  alias Workstation.Core.Source.Download
 
   setup do
     home = Path.join(System.tmp_dir!(), "workstation-download-#{:os.getpid()}-#{System.unique_integer([:positive])}")

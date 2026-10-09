@@ -35,7 +35,8 @@ defmodule Workstation.Core.Catalog.Packages do
   """
 
   alias Workstation.Core.Catalog.Discover
-  alias Workstation.Core.Source.{Chezmoi, Shell}
+  alias Workstation.Backends.Chezmoi
+  alias Workstation.Core.Source.Shell
 
   @doc """
   Discovered package-spec provider modules, sorted by module name (the

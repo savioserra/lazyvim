@@ -6,6 +6,7 @@ defmodule Workstation.Core.ProvisionerTest do
 
   alias Workstation.Core.EngineState
   alias Workstation.Core.Journal
+  alias Workstation.Backends.Chezmoi
   alias Workstation.Core.Provisioner
 
   setup context do
@@ -105,7 +106,7 @@ defmodule Workstation.Core.ProvisionerTest do
       destination = "/home/target"
       home = EngineState.home()
 
-      assert Provisioner.argv("apply", %{"source" => source, "destination" => destination}) == [
+      assert Chezmoi.argv("apply", %{"source" => source, "destination" => destination}) == [
                Path.join([home, ".local", "opt", "chezmoi", "bin", "chezmoi"]),
                "--source",
                source,
@@ -120,7 +121,7 @@ defmodule Workstation.Core.ProvisionerTest do
     test "defaults the destination to the guarded home and appends dry-run and excludes" do
       home = EngineState.home()
 
-      assert Provisioner.argv("diff", %{"source" => "/gen/1", "dry_run" => true, "exclude" => ["scripts", "edit"]}) == [
+      assert Chezmoi.argv("diff", %{"source" => "/gen/1", "dry_run" => true, "exclude" => ["scripts", "edit"]}) == [
                Path.join([home, ".local", "opt", "chezmoi", "bin", "chezmoi"]),
                "--source",
                "/gen/1",
@@ -137,12 +138,12 @@ defmodule Workstation.Core.ProvisionerTest do
 
     test "requires an explicit source generation" do
       assert_raise ArgumentError, "chezmoi argv requires an explicit source generation", fn ->
-        Provisioner.argv("apply", %{})
+        Chezmoi.argv("apply", %{})
       end
     end
 
     test "default exclude is scripts" do
-      argv = Provisioner.argv("apply", %{"source" => "/gen/1"})
+      argv = Chezmoi.argv("apply", %{"source" => "/gen/1"})
 
       assert Enum.slice(argv, -2, 2) == ["--exclude", "scripts"]
     end

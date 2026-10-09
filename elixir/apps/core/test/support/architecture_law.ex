@@ -47,7 +47,7 @@ defmodule Workstation.Core.ArchitectureLaw do
 
   @doc """
   Backend mentions in code after the sanctioned forms are removed:
-  fully-qualified `Workstation.Core.Source.Chezmoi` references,
+  fully-qualified `Workstation.Backends.Chezmoi` references,
   `Chezmoi.<fn>` module-API calls, and `@chezmoi`-style compile-time
   attributes bound to them. Any remaining "chezmoi" in code is a violation.
   Comment lines and @doc/@moduledoc string bodies are stripped first, so
@@ -58,7 +58,7 @@ defmodule Workstation.Core.ArchitectureLaw do
     code =
       source
       |> code_lines()
-      |> String.replace(~r/Workstation\.Core\.Source\.Chezmoi/, "")
+      |> String.replace(~r/Workstation.Backends.Chezmoi/, "")
       |> String.replace(~r/(?<!\w)Chezmoi\.\w+/, "")
       |> String.replace(~r/@\w*chezmoi\b/i, "")
 

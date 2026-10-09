@@ -1,4 +1,4 @@
-defmodule Workstation.Core.Source.Chezmoi do
+defmodule Workstation.Backends.Chezmoi do
   @moduledoc """
   The chezmoi provider: interprets capability-owned recipe options as native
   chezmoi source state.
@@ -391,6 +391,50 @@ defmodule Workstation.Core.Source.Chezmoi do
     normalized == spec.target || raise_arg("chezmoi target is not normalized: #{inspect(spec.target)}")
     components == spec.components || raise_arg("chezmoi target components changed")
     :ok
+  end
+
+  @doc """
+  The backend argv contract: build the full chezmoi argv for an action
+  against one exact immutable generation directory, never a mutable current
+  pointer. `opts` carries the string keys `"source"` (required generation
+  path), `"destination"` (defaults to the target home), `"dry_run"` and
+  `"exclude"` (defaults to `["scripts"]`, because engine-owned lifecycle
+  scripts must never run inside a preview). Lives on the backend module by
+  law: the argv is the backend's own dialect, and the engine's run bridge
+  (ApplyEngine) consumes it through this module API.
+  """
+  @spec argv(String.t(), map()) :: [String.t()]
+  def argv(action, opts) when is_binary(action) and is_map(opts) do
+    source = opts["source"]
+    unless is_binary(source) and source != "", do: raise(ArgumentError, "chezmoi argv requires an explicit source generation")
+
+    destination = opts["destination"] || Workstation.Core.EngineState.home()
+
+    prefix = [
+      executable(),
+      "--source",
+      source,
+      "--destination",
+      destination,
+      action
+    ]
+
+    prefix =
+      if opts["dry_run"] do
+        prefix ++ ["--dry-run"]
+      else
+        prefix
+      end
+
+    Enum.reduce(opts["exclude"] || ["scripts"], prefix, fn exclude, acc ->
+      acc ++ ["--exclude", exclude]
+    end)
+  end
+
+  @doc "The backend executable path pinned inside the target home."
+  @spec executable() :: String.t()
+  def executable do
+    Path.join([Workstation.Core.EngineState.home(), ".local", "opt", "chezmoi", "bin", "chezmoi"])
   end
 
   defp nonempty_string?(value), do: is_binary(value) and value != ""

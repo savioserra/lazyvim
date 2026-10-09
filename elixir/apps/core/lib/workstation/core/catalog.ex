@@ -3,7 +3,7 @@ defmodule Workstation.Core.Catalog do
   # Backend wire ids as compile-time constants: guards cannot call remote
   # functions, and generic core must reference the backend only through its
   # module API (ArchitectureDepsTest enforces the isolation).
-  @chezmoi Workstation.Core.Source.Chezmoi.provider_id()
+  @chezmoi Workstation.Backends.Chezmoi.provider_id()
   alias Workstation.Core.EngineState
 
   @moduledoc """
@@ -32,7 +32,7 @@ defmodule Workstation.Core.Catalog do
   @type recipe :: %{
           required(:provider) => String.t(),
           required(:spec) =>
-            Workstation.Core.Source.Chezmoi.t()
+            Workstation.Backends.Chezmoi.t()
             | Workstation.Core.Source.Shell.t()
             | %{required(:content) => String.t()}
             | %{required(:order) => pos_integer(), required(:entry) => map()}
@@ -245,7 +245,7 @@ defmodule Workstation.Core.Catalog do
   defp reroot(package, live_home) do
     contributes =
       Enum.map(package.contributes, fn
-        %{provider: provider, spec: %Workstation.Core.Source.Chezmoi{to: to} = spec} = recipe
+        %{provider: provider, spec: %Workstation.Backends.Chezmoi{to: to} = spec} = recipe
         when provider == @chezmoi and is_binary(to) ->
           %{recipe | spec: %{spec | to: live_to(to, live_home, @canonical_home)}}
 
@@ -311,7 +311,7 @@ defmodule Workstation.Core.Catalog do
     Enum.map_reduce(packages, assets, fn package, acc ->
       {contributes, acc} =
         Enum.map_reduce(package.contributes, acc, fn
-          %{provider: provider, spec: %Workstation.Core.Source.Chezmoi{asset: relative} = spec} =
+          %{provider: provider, spec: %Workstation.Backends.Chezmoi{asset: relative} = spec} =
               recipe,
           acc
           when provider == @chezmoi and is_binary(relative) and relative != "" ->
@@ -354,13 +354,13 @@ defmodule Workstation.Core.Catalog do
   # references resolve from the inlined assets map, never the filesystem.
   defp denormalize(package_id, provider, spec, assets, live_home, canonical_home) do
     cond do
-      provider == Workstation.Core.Source.Chezmoi.provider_id() ->
+      provider == Workstation.Backends.Chezmoi.provider_id() ->
         denormalize_file(package_id, spec, assets, live_home, canonical_home)
 
       provider == Workstation.Core.Source.Shell.provider_id() ->
         denormalize_shell(package_id, spec)
 
-      provider == Workstation.Core.Source.Chezmoi.data_provider_id() ->
+      provider == Workstation.Backends.Chezmoi.data_provider_id() ->
         denormalize_data(package_id, spec)
 
       provider == Workstation.Core.Source.Download.provider_id() ->
@@ -396,7 +396,7 @@ defmodule Workstation.Core.Catalog do
           options
       end
 
-    Workstation.Core.Source.Chezmoi.recipe(options)
+    Workstation.Backends.Chezmoi.recipe(options)
   end
 
   defp denormalize_shell(package_id, spec) do

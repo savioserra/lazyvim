@@ -60,7 +60,7 @@ defmodule Workstation.Core.ArchitectureDepsTest do
   # Files exempt from the core-wide scans. KEEP THE @moduledoc TABLE ABOVE
   # IN SYNC — every entry carries its irreducibility justification there.
   @core_exempts %{
-    "apps/core/lib/workstation/core/source/chezmoi.ex" => "the backend module itself",
+    "apps/core/lib/workstation/backends/chezmoi.ex" => "the backend module itself",
     "apps/core/lib/workstation/core/provisioner.ex" => "backend execution bridge",
     "apps/core/lib/workstation/core/shell_program.ex" => "backend modify-program composer",
     "apps/core/lib/workstation/core/apply_engine.ex" => "backend run bridge (pinned argv/errors)",
@@ -97,7 +97,7 @@ defmodule Workstation.Core.ArchitectureDepsTest do
 
         assert encoding_hits == [],
                "#{rel} contains backend encoding tokens #{inspect(encoding_hits)} — " <>
-                 "target-name encoding lives only in Workstation.Core.Source.Chezmoi"
+                 "target-name encoding lives only in Workstation.Backends.Chezmoi"
       end
     end
 
@@ -105,12 +105,12 @@ defmodule Workstation.Core.ArchitectureDepsTest do
       for rel <- core_files(),
           not Map.has_key?(@core_exempts, rel),
           not catalog_consumer?(rel),
-          not String.contains?(rel, "source/chezmoi") do
+          not String.contains?(rel, "backends/chezmoi") do
         violations = backend_literal_violations(read(rel))
 
         assert violations == [],
                "#{rel} #{inspect(violations)} — reference the backend through " <>
-                 "Workstation.Core.Source.Chezmoi (provider ids, engine file constants)"
+                 "Workstation.Backends.Chezmoi (provider ids, engine file constants)"
       end
     end
   end

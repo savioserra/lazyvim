@@ -42,7 +42,7 @@ defmodule Workstation.Core.Golden do
   """
 
   alias Workstation.Core.{CanonicalJSON, Catalog, Graph, Source}
-  alias Workstation.Core.Source.Chezmoi
+  alias Workstation.Backends.Chezmoi
 
   # Recording order (also the on-disk directory names) — mirrors
   # golden.lua M.profiles.

@@ -30,6 +30,7 @@ defmodule Workstation.Core.ApplyEngine do
   """
 
   alias Workstation.Core.{EngineState, Journal, Preconditions, Provisioner, Source}
+  alias Workstation.Backends.Chezmoi
   alias Workstation.Core.Source.Download
 
   @doc """
@@ -105,7 +106,7 @@ defmodule Workstation.Core.ApplyEngine do
   # File.Error would kill the orchestrator process instead of failing the
   # operation.
   defp run_backend(home, directory) do
-    [executable | args] = Provisioner.argv("apply", %{"source" => directory, "destination" => home})
+    [executable | args] = Chezmoi.argv("apply", %{"source" => directory, "destination" => home})
 
     unless regular_executable?(executable) do
       raise ArgumentError,

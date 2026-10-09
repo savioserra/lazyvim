@@ -173,14 +173,14 @@ defmodule Workstation.Core.CatalogNativeTest do
     launcher =
       Enum.flat_map(live.packages, & &1.contributes)
       |> Enum.find(fn
-        %{spec: %Workstation.Core.Source.Chezmoi{kind: :symlink, to: to}} when is_binary(to) ->
+        %{spec: %Workstation.Backends.Chezmoi{kind: :symlink, to: to}} when is_binary(to) ->
           String.starts_with?(to, "/")
 
         _ ->
           false
       end)
 
-    assert %{spec: %Workstation.Core.Source.Chezmoi{to: to}} = launcher
+    assert %{spec: %Workstation.Backends.Chezmoi{to: to}} = launcher
     assert to == Path.join(live_home, ".local/opt/nvim/bin/nvim")
     refute String.starts_with?(to, Catalog.canonical_home())
   end

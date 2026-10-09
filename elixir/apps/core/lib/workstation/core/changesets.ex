@@ -1,6 +1,6 @@
 defmodule Workstation.Core.Changesets do
 
-  alias Workstation.Core.Source.Chezmoi
+  alias Workstation.Backends.Chezmoi
   @moduledoc """
   Attributable change sets for every provisioning recipe. Byte-for-byte
   parity anchor: `workstation/lua/workstation/changesets.lua`.

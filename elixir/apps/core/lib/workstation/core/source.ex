@@ -16,7 +16,7 @@ defmodule Workstation.Core.Source do
   """
 
   alias Workstation.Core.Digest
-  alias Workstation.Core.Source.Chezmoi
+  alias Workstation.Backends.Chezmoi
   alias Workstation.Core.Source.Download
   alias Workstation.Core.Source.Manifest
   alias Workstation.Core.Source.Shell

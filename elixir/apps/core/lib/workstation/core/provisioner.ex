@@ -78,45 +78,6 @@ defmodule Workstation.Core.Provisioner do
     end)
   end
 
-  @doc """
-  Build the full chezmoi argv for an action against one exact immutable
-  generation directory, never a mutable current pointer. `opts` carries the
-  string keys `"source"` (required generation path), `"destination"` (defaults
-  to the target home), `"dry_run"` and `"exclude"` (defaults to `["scripts"]`,
-  because engine-owned lifecycle scripts must never run inside a preview).
-  """
-  @spec argv(String.t(), map()) :: [String.t()]
-  def argv(action, opts) when is_binary(action) and is_map(opts) do
-    source = opts["source"]
-    unless is_binary(source) and source != "", do: raise(ArgumentError, "chezmoi argv requires an explicit source generation")
-
-    destination = opts["destination"] || EngineState.home()
-
-    prefix = [
-      chezmoi_executable(),
-      "--source",
-      source,
-      "--destination",
-      destination,
-      action
-    ]
-
-    prefix =
-      if opts["dry_run"] do
-        prefix ++ ["--dry-run"]
-      else
-        prefix
-      end
-
-    Enum.reduce(opts["exclude"] || ["scripts"], prefix, fn exclude, acc ->
-      acc ++ ["--exclude", exclude]
-    end)
-  end
-
-  defp chezmoi_executable do
-    Path.join([EngineState.home(), ".local", "opt", "chezmoi", "bin", "chezmoi"])
-  end
-
   # The staged tree's permission bits are exactly the manifest's: the
   # generation id binds to those bits, so the writer never invents a fallback
   # mode. Manifest directories default to 0o755 and files to 0o644 for

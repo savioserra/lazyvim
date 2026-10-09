@@ -133,7 +133,7 @@ defmodule Workstation.Packages.Nvim.Profile do
     validate(profile)
 
     recipe =
-      Workstation.Core.Source.Chezmoi.recipe(%{target: @target, kind: :file, content: serialize(profile)})
+      Workstation.Backends.Chezmoi.recipe(%{target: @target, kind: :file, content: serialize(profile)})
 
     record = %{owner: "nvim", provider: "chezmoi", spec: recipe, attribution: owners}
 

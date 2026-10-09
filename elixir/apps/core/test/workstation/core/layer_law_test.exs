@@ -43,7 +43,7 @@ defmodule Workstation.Core.LayerLawTest do
   # backend family and the two justified data files are exempt exactly as
   # in ArchitectureDepsTest (see its synced exemption table).
   @kernel_exempts MapSet.new([
-                    "apps/core/lib/workstation/core/source/chezmoi.ex",
+                    "apps/core/lib/workstation/backends/chezmoi.ex",
                     "apps/core/lib/workstation/core/provisioner.ex",
                     "apps/core/lib/workstation/core/shell_program.ex",
                     "apps/core/lib/workstation/core/apply_engine.ex",
@@ -153,7 +153,7 @@ defmodule Workstation.Core.LayerLawTest do
 
       sanctioned =
         [
-          "@chezmoi Workstation.Core.Source.Chezmoi.provider_id()",
+          "@chezmoi Workstation.Backends.Chezmoi.provider_id()",
           "def name, do: Chezmoi.remove_filename()",
           "# history: the old chezmoi literal lived here (comment lines are law-free)",
           ~s(@moduledoc """),
