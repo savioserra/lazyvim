@@ -19,6 +19,7 @@
 | `default-terminal` | `tmux-256color` |
 | `terminal-features[100]` | `xterm-256color:RGB` |
 | `@tmux_navigator_disable_when_zoomed` | `1` |
+| Window cycling | root `S-Left` / `S-Right` — `previous-window` / `next-window`, no prefix |
 
 Load order:
 
