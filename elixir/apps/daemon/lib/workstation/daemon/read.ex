@@ -372,6 +372,7 @@ defmodule Workstation.Daemon.Read do
         "url" => effect[:url],
         "version" => effect[:version],
         "sha256" => effect[:sha256],
+        "commit" => effect[:commit],
         "fingerprint" => effect[:fingerprint],
         "attribution" => effect[:attribution],
         "generation" => effect[:generation]

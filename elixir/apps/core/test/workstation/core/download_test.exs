@@ -9,7 +9,8 @@ defmodule Workstation.Core.DownloadTest do
 
   use ExUnit.Case, async: false
 
-  alias Workstation.Core.{Digest, EngineState, Graph, Journal, Pipeline, Source}
+  alias Workstation.Core.{Digest, EngineState, Graph, Journal, Source}
+  alias Workstation.Pipeline
   alias Workstation.Backends.Chezmoi
   alias Workstation.Core.Contracts.Download
 

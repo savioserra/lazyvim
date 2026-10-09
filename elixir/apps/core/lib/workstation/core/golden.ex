@@ -46,7 +46,7 @@ defmodule Workstation.Core.Golden do
 
   # Recording order (also the on-disk directory names) — mirrors
   # golden.lua M.profiles.
-  @profiles ["minimal", "full-home", "theme", "conflicts", "shell-order", "nvim-profile", "download"]
+  @profiles ["minimal", "full-home", "theme", "conflicts", "shell-order", "nvim-profile", "download", "git"]
 
   # Catalog profile seeds: minimal records the foundation package alone,
   # theme the theme/tmux/agent closure (their dependency closure adds
@@ -174,6 +174,7 @@ defmodule Workstation.Core.Golden do
             "url" => effect[:url],
             "version" => effect[:version],
             "sha256" => effect[:sha256],
+            "commit" => effect[:commit],
             "fingerprint" => effect[:fingerprint],
             "attribution" => effect[:attribution],
             "generation" => effect[:generation]
@@ -632,6 +633,31 @@ defmodule Workstation.Core.Golden do
               "version" => "1.2.3",
               "sha256" => "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0",
               "target" => ".local/bin/goldens-ls"
+            }
+          }
+        ]
+      }
+    ]
+  end
+
+  # The git profile exercises the pinned-clone contract without any package
+  # wiring: one synthetic contribution whose pin (url + commit + target) is
+  # content-addressed into the plan's composed profile and declared as a
+  # clone effect on the recorded wire. The url is under the reserved
+  # .invalid TLD and the commit is a synthetic sha -- replay never clones,
+  # the pure plan only pins.
+  defp synthetic_records("git") do
+    [
+      %{
+        "id" => "checkouts-goldens",
+        "requires" => [],
+        "contributes" => [
+          %{
+            "provider" => "git",
+            "spec" => %{
+              "url" => "https://goldens.invalid/git/goldens-repo.git",
+              "commit" => "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
+              "target" => ".local/share/goldens/checkouts/repo"
             }
           }
         ]

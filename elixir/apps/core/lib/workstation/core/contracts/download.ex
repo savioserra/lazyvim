@@ -150,12 +150,12 @@ defmodule Workstation.Core.Contracts.Download do
               "(" <> fingerprint["sha256"] <> " != " <> effect.sha256 <> ")"
     end
 
-    {effect.target,
-     Map.merge(fingerprint, %{
-       "owner" => effect.owner,
-       "operation" => "download",
-       "source_fingerprint" => effect.fingerprint
-     })}
+    %{effect.target =>
+       Map.merge(fingerprint, %{
+         "owner" => effect.owner,
+         "operation" => "download",
+         "source_fingerprint" => effect.fingerprint
+       })}
   end
 
   @doc """

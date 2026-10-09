@@ -54,8 +54,10 @@ defmodule Workstation.Core.Contracts.Provider.Discover do
   `Workstation.Packages.*` namespace (capability providers are
   owned by their package module), test-tree beams are excluded by recorded
   source path, and conformance requires the behaviour attribute plus the
-  full callback set. The namespace is shared with package-spec discovery;
-  the two are disjoint by behaviour — a module conforms to exactly one.
+  full callback set. The namespace is shared with package-spec discovery
+  and with effect-contract discovery; conformance is per declared
+  behaviour — a package-owned recipe kind may carry both handshakes
+  (composition and effects) in one module.
   """
 
   @namespace "Elixir.Workstation.Packages."

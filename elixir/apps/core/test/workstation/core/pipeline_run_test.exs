@@ -382,7 +382,7 @@ defmodule Workstation.Core.PipelineRunTest do
   describe "effect-contract discovery" do
     test "the engine's contracts are discovered by behaviour, never listed" do
       ids = Enum.map(Contract.Discover.contracts(), & &1.id())
-      assert Enum.sort(ids) == ["chezmoi", "download", "shell"]
+      assert Enum.sort(ids) == ["chezmoi", "download", "git", "shell"]
     end
 
     test "lookup resolves contract ids to implementing modules" do

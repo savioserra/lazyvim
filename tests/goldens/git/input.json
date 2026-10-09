@@ -1,0 +1,1 @@
+{"assets":[],"home":"/home/golden","host":"linux","packages":[{"contributes":[{"provider":"git","spec":{"commit":"a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2","target":".local/share/goldens/checkouts/repo","url":"https://goldens.invalid/git/goldens-repo.git"}}],"id":"checkouts-goldens","requires":[]}],"profile":"git"}

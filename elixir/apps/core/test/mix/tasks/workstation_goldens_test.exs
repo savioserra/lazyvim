@@ -16,7 +16,7 @@ defmodule Workstation.Core.WorkstationGoldensTaskTest do
   # The recorded profiles are the golden contract itself (same stance as
   # the replay anchor): a missing or extra profile here is a deliberate
   # re-recording decision, never a side effect.
-  @profiles ["conflicts", "download", "full-home", "minimal", "nvim-profile", "shell-order", "theme"]
+  @profiles ["conflicts", "download", "full-home", "git", "minimal", "nvim-profile", "shell-order", "theme"]
 
   test "recording into an explicit root reproduces the committed goldens byte for byte" do
     tmp_root = Path.join(System.tmp_dir!(), "ws-goldens-task-#{System.unique_integer([:positive])}")
