@@ -1,4 +1,4 @@
-defmodule Workstation.Core.Catalog.Packages.Nvim.Profile do
+defmodule Workstation.Packages.Nvim.Profile do
   @moduledoc """
   The nvim capability's own profile compositor, owned by its package module:
   collects nvim-profile intents, fixes their order, and serializes the

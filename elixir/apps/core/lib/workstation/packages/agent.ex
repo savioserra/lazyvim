@@ -1,4 +1,4 @@
-defmodule Workstation.Core.Catalog.Packages.Agent do
+defmodule Workstation.Packages.Agent do
   @moduledoc """
   The `agent` workstation package's native contribution:
   the pi-subagents role definitions and the derived pi UI theme files.

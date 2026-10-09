@@ -1,4 +1,4 @@
-defmodule Workstation.Core.Catalog.Packages.PiSkills do
+defmodule Workstation.Packages.PiSkills do
   @moduledoc """
   The `pi-skills` workstation package's native contribution:
   the private `.pi/agent` root plus one managed SKILL.md per registered

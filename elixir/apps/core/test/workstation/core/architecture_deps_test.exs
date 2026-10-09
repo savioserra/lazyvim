@@ -115,8 +115,12 @@ defmodule Workstation.Core.ArchitectureDepsTest do
     end
   end
 
+  # The scan set is the Workstation.Core namespace itself: kernel machinery,
+  # platforms and the catalog registry. Package spec modules live under
+  # Workstation.Packages (the consumer layer) — consumers derive from
+  # contracts and are not part of core, so they are not scanned here.
   defp core_files do
-    Path.wildcard(Path.join(@elixir_root, "apps/core/lib/**/*.ex"))
+    Path.wildcard(Path.join(@elixir_root, "apps/core/lib/workstation/core/**/*.ex"))
     |> Enum.map(&Path.relative_to(&1, @elixir_root))
   end
 

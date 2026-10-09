@@ -1,4 +1,4 @@
-defmodule Workstation.Core.Catalog.Packages.Tmux do
+defmodule Workstation.Packages.Tmux do
   @moduledoc """
   The `tmux` workstation package's native contribution:
   the managed tmux configuration, the retired tmux2k target's removal

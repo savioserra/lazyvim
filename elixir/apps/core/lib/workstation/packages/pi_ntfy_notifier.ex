@@ -1,4 +1,4 @@
-defmodule Workstation.Core.Catalog.Packages.PiNtfyNotifier do
+defmodule Workstation.Packages.PiNtfyNotifier do
   @moduledoc """
   The `pi-ntfy-notifier` workstation package's native contribution:
   the pinned notifier extension payload plus its environment

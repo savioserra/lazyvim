@@ -1,4 +1,4 @@
-defmodule Workstation.Core.Catalog.Packages.ElixirLang do
+defmodule Workstation.Packages.ElixirLang do
   @moduledoc """
   The `elixir` workstation package's native contribution:
   the Elixir/HEEx editor integration on top of the nvim capability.
@@ -16,7 +16,7 @@ defmodule Workstation.Core.Catalog.Packages.ElixirLang do
   @behaviour Workstation.Core.Catalog.Spec
 
   alias Workstation.Core.Catalog.Packages
-  alias Workstation.Core.Catalog.Packages.Nvim.Profile
+  alias Workstation.Packages.Nvim.Profile
 
   @intent %{
     id: "elixir",

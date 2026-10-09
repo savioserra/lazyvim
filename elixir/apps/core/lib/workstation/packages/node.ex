@@ -1,4 +1,4 @@
-defmodule Workstation.Core.Catalog.Packages.Node do
+defmodule Workstation.Packages.Node do
   @moduledoc """
   The `node` workstation package's native contribution:
   the sole Node version pin asset, the managed nvm shell loader and its

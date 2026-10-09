@@ -11,7 +11,7 @@ defmodule Workstation.Core.Catalog.PackagesNvimTest do
 
   use ExUnit.Case, async: true
 
-  alias Workstation.Core.Catalog.Packages.Nvim
+  alias Workstation.Packages.Nvim
 
   @repo_root Path.expand("../../../../../../..", __DIR__)
   @payload_root Path.join(@repo_root, "workstation/packages/nvim")

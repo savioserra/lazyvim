@@ -1,4 +1,4 @@
-defmodule Workstation.Core.Catalog.Packages.HerdrPi do
+defmodule Workstation.Packages.HerdrPi do
   @moduledoc """
   The `herdr-pi` workstation package's native contribution:
   the single managed artifact is the exact official hook bytes bundled

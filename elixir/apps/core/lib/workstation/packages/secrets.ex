@@ -1,4 +1,4 @@
-defmodule Workstation.Core.Catalog.Packages.Secrets do
+defmodule Workstation.Packages.Secrets do
   @moduledoc """
   The `secrets` workstation package's native contribution:
   only the op environment loader fragment.

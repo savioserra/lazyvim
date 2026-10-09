@@ -5,7 +5,7 @@ defmodule Workstation.Core.Catalog.Discover do
   hand-written registration list.
 
   Provider contract (see `Workstation.Core.Catalog.Spec`): a module under
-  the `Workstation.Core.Catalog.Packages.*` namespace that declares the
+  the `Workstation.Packages.*` namespace that declares the
   behaviour and defines `spec/0`. Discovery is deterministic on three
   axes:
 
@@ -24,7 +24,7 @@ defmodule Workstation.Core.Catalog.Discover do
 
   alias Workstation.Core.Catalog.Spec
 
-  @namespace "Elixir.Workstation.Core.Catalog.Packages."
+  @namespace "Elixir.Workstation.Packages."
 
   @doc """
   The discovered provider modules, sorted by module name — the same order

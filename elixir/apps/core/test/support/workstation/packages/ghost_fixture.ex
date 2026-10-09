@@ -1,4 +1,4 @@
-defmodule Workstation.Core.Catalog.Packages.GhostFixture do
+defmodule Workstation.Packages.GhostFixture do
   @moduledoc """
   A CONFORMING package-spec provider that lives under `test/support` — the
   deterministic test-tree exclusion case. Discovery must never admit it

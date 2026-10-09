@@ -12,21 +12,21 @@ defmodule Workstation.Core.Catalog.DiscoverTest do
   alias Workstation.Core.Catalog.{Discover, Packages, Spec}
 
   @native_modules [
-    Workstation.Core.Catalog.Packages.Agent,
-    Workstation.Core.Catalog.Packages.ElixirLang,
-    Workstation.Core.Catalog.Packages.Fonts,
-    Workstation.Core.Catalog.Packages.Foundation,
-    Workstation.Core.Catalog.Packages.Go,
-    Workstation.Core.Catalog.Packages.Herdr,
-    Workstation.Core.Catalog.Packages.HerdrPi,
-    Workstation.Core.Catalog.Packages.Node,
-    Workstation.Core.Catalog.Packages.Nvim,
-    Workstation.Core.Catalog.Packages.PiNtfyNotifier,
-    Workstation.Core.Catalog.Packages.PiSkills,
-    Workstation.Core.Catalog.Packages.Secrets,
-    Workstation.Core.Catalog.Packages.Theme,
-    Workstation.Core.Catalog.Packages.Tmux,
-    Workstation.Core.Catalog.Packages.Typescript
+    Workstation.Packages.Agent,
+    Workstation.Packages.ElixirLang,
+    Workstation.Packages.Fonts,
+    Workstation.Packages.Foundation,
+    Workstation.Packages.Go,
+    Workstation.Packages.Herdr,
+    Workstation.Packages.HerdrPi,
+    Workstation.Packages.Node,
+    Workstation.Packages.Nvim,
+    Workstation.Packages.PiNtfyNotifier,
+    Workstation.Packages.PiSkills,
+    Workstation.Packages.Secrets,
+    Workstation.Packages.Theme,
+    Workstation.Packages.Tmux,
+    Workstation.Packages.Typescript
   ]
 
   test "discovery finds exactly the native providers, in module-name order" do
@@ -51,8 +51,8 @@ defmodule Workstation.Core.Catalog.DiscoverTest do
     # The fixture is a real provider (behaviour + valid spec) that sits in
     # the test build's code path; only the deterministic test-tree source
     # exclusion keeps it out of the live catalog.
-    {:module, _} = Code.ensure_loaded(Workstation.Core.Catalog.Packages.GhostFixture)
-    refute Workstation.Core.Catalog.Packages.GhostFixture in Discover.providers()
+    {:module, _} = Code.ensure_loaded(Workstation.Packages.GhostFixture)
+    refute Workstation.Packages.GhostFixture in Discover.providers()
     refute Enum.any?(Packages.packages(), &(&1.id == "ghost-fixture"))
   end
 

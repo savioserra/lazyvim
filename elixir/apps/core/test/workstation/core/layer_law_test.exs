@@ -167,16 +167,25 @@ defmodule Workstation.Core.LayerLawTest do
     end
 
     test "package-import scanner detects a planted kernel import, passes clean code" do
-      planted = "alias Workstation.Core.Catalog.Packages.Nvim"
+      planted = "alias Workstation.Packages.Nvim"
       assert kernel_package_import_violations(planted) != []
+
+      planted_catalog = "alias Workstation.Core.Catalog.Packages.Nvim"
+      assert kernel_package_import_violations(planted_catalog) != []
+
       assert kernel_package_import_violations("alias Workstation.Core.Source.Provider") == []
 
       # The registry's generic composition call is not a concrete reference.
       assert concrete_package_violations("packages = Catalog.Packages.packages()") == []
+      assert concrete_package_violations("spec = Workstation.Packages.packages()") == []
 
       planted_concrete = "spec = Catalog.Packages.Nvim.profile_intent(10, intent)"
       assert concrete_package_violations(planted_concrete) != []
-      assert concrete_package_violations("@namespace \"Elixir.Workstation.Core.Catalog.Packages.\"") == []
+
+      planted_moved = "spec = Workstation.Packages.Nvim.Profile.compose(intents)"
+      assert concrete_package_violations(planted_moved) != []
+
+      assert concrete_package_violations("@namespace \"Elixir.Workstation.Packages.\"") == []
     end
 
     test "the scanners are the shared primitives the tree scans use" do

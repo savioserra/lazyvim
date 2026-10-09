@@ -1,4 +1,4 @@
-defmodule Workstation.Core.Catalog.Packages.Typescript do
+defmodule Workstation.Packages.Typescript do
   @moduledoc """
   The `typescript` workstation package's native contribution:
   the TypeScript language profile intent plus its deployed plugin
@@ -14,7 +14,7 @@ defmodule Workstation.Core.Catalog.Packages.Typescript do
   @behaviour Workstation.Core.Catalog.Spec
 
   alias Workstation.Core.Catalog.Packages
-  alias Workstation.Core.Catalog.Packages.Nvim.Profile
+  alias Workstation.Packages.Nvim.Profile
 
   @intent %{
     id: "typescript",

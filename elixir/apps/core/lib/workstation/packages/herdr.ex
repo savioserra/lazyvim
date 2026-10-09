@@ -1,4 +1,4 @@
-defmodule Workstation.Core.Catalog.Packages.Herdr do
+defmodule Workstation.Packages.Herdr do
   @moduledoc """
   The `herdr` workstation package's native contribution:
   one managed launcher symlink to the pinned herdr binary.

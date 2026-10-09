@@ -1,4 +1,4 @@
-defmodule Workstation.Core.Catalog.Packages.Theme do
+defmodule Workstation.Packages.Theme do
   @moduledoc """
   The `theme` workstation package's native contribution:
   the canonical workstation color tokens published as the generation's

@@ -1,4 +1,4 @@
-defmodule Workstation.Core.Catalog.Packages.Foundation do
+defmodule Workstation.Packages.Foundation do
   @moduledoc """
   The `foundation` workstation package's native contribution:
   the catalog discipline root every HOME-writing capability depends on.

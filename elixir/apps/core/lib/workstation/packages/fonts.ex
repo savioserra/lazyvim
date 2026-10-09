@@ -1,4 +1,4 @@
-defmodule Workstation.Core.Catalog.Packages.Fonts do
+defmodule Workstation.Packages.Fonts do
   @moduledoc """
   The `fonts` workstation package's native contribution:
   catalog ordering only, with no managed home target.

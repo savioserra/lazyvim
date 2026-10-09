@@ -51,14 +51,14 @@ defmodule Workstation.Core.Source.Provider.Discover do
   path carries under the package namespace — never a hand-written registry.
 
   Candidates come from `:code.all_available/0` narrowed to the
-  `Workstation.Core.Catalog.Packages.*` namespace (capability providers are
+  `Workstation.Packages.*` namespace (capability providers are
   owned by their package module), test-tree beams are excluded by recorded
   source path, and conformance requires the behaviour attribute plus the
   full callback set. The namespace is shared with package-spec discovery;
   the two are disjoint by behaviour — a module conforms to exactly one.
   """
 
-  @namespace "Elixir.Workstation.Core.Catalog.Packages."
+  @namespace "Elixir.Workstation.Packages."
 
   @doc """
   The discovered capability-provider modules, sorted by module name —

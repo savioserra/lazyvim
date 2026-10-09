@@ -17,7 +17,7 @@ defmodule Workstation.Core.Catalog.PackagesTmuxTest do
 
   use ExUnit.Case, async: true
 
-  alias Workstation.Core.Catalog.Packages.Tmux
+  alias Workstation.Packages.Tmux
   alias Workstation.Core.Source.Chezmoi
 
   @repo_root Path.expand("../../../../../../..", __DIR__)

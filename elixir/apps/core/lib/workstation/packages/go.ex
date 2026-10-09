@@ -1,4 +1,4 @@
-defmodule Workstation.Core.Catalog.Packages.Go do
+defmodule Workstation.Packages.Go do
   @moduledoc """
   The `go` workstation package's native contribution:
   one managed launcher symlink into the self-unpacked toolchain root.

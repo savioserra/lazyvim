@@ -67,7 +67,8 @@ defmodule Workstation.Core.ArchitectureLaw do
 
   @doc """
   Static references from generic engine code to a CONCRETE package module
-  (`Catalog.Packages.<Segment>` with a capitalized segment). The registry
+  (`Catalog.Packages.<Segment>` or the package namespace
+  `Workstation.Packages.<Segment>`, with a capitalized segment). The registry
   composition point and the discovery namespace constant reference the
   package LAYER generically and do not match; a concrete segment is a
   named package and inverts the dependency direction.
@@ -75,21 +76,24 @@ defmodule Workstation.Core.ArchitectureLaw do
   def concrete_package_violations(code) do
     code
     |> code_lines()
-    |> then(fn code -> Regex.scan(~r/Catalog\.Packages\.[A-Z]\w+/, code) end)
+    |> then(fn code -> Regex.scan(~r/(?:Catalog\.Packages|Workstation\.Packages)\.[A-Z]\w+/, code) end)
     |> Enum.map(&"concrete package reference #{inspect(hd(&1))}")
   end
 
   @doc """
   Kernel-side static imports of the package layer: alias/import/require of
-  `Workstation.Core.Catalog.Packages` (any submodule). Kernel consumes
-  packages only through contracts and dynamic discovery, never by static
-  alias.
+  the catalog DSL family (`Workstation.Core.Catalog.Packages`) or the
+  package namespace (`Workstation.Packages`). Kernel consumes packages only
+  through contracts and dynamic discovery, never by static alias.
   """
   def kernel_package_import_violations(code) do
     code
     |> code_lines()
     |> then(fn code ->
-      Regex.scan(~r/(?:alias|import|require)\s+Workstation\.Core\.Catalog\.Packages[\.\s{]/, code)
+      Regex.scan(
+        ~r/(?:alias|import|require)\s+(?:(?:Workstation\.Core\.)?Catalog\.Packages[\.\s{]|Workstation\.Packages[\.\s{])/,
+        code
+      )
     end)
     |> Enum.map(&"static package-layer import #{inspect(hd(&1))}")
   end

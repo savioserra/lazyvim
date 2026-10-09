@@ -1,4 +1,4 @@
-defmodule Workstation.Core.Catalog.Packages.Nvim do
+defmodule Workstation.Packages.Nvim do
   @moduledoc """
   The `nvim` workstation package's native contribution:
   the editor capability — base configuration payload, lockfiles, the
@@ -6,7 +6,7 @@ defmodule Workstation.Core.Catalog.Packages.Nvim do
   (Go and the standard language set).
 
   Composition surface: this module owns its profile compositor directly —
-  `Workstation.Core.Catalog.Packages.Nvim.Profile` (parity anchors
+  `Workstation.Packages.Nvim.Profile` (parity anchors
   `packages/nvim/compose.lua` + `profile.lua`) validates the intents, fixes
   their explicit domain order, and serializes the composed profile as
   deployed runtime Lua. It plugs into the assembler through the generic
@@ -38,7 +38,7 @@ defmodule Workstation.Core.Catalog.Packages.Nvim do
   @behaviour Workstation.Core.Catalog.Spec
 
   alias Workstation.Core.Catalog.Packages
-  alias Workstation.Core.Catalog.Packages.Nvim.Profile
+  alias Workstation.Packages.Nvim.Profile
 
   @marker "__WORKSTATION_ENGINE_PINS__"
 
