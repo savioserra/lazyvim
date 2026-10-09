@@ -20,6 +20,7 @@ defmodule Workstation.Core.Catalog.DiscoverTest do
     Workstation.Packages.Herdr,
     Workstation.Packages.HerdrPi,
     Workstation.Packages.Node,
+    Workstation.Packages.Nunchux,
     Workstation.Packages.Nvim,
     Workstation.Packages.PiNtfyNotifier,
     Workstation.Packages.PiSkills,
@@ -31,7 +32,7 @@ defmodule Workstation.Core.Catalog.DiscoverTest do
 
   test "discovery finds exactly the native providers, in module-name order" do
     assert Discover.providers() == @native_modules
-    assert length(Packages.modules()) == 15
+    assert length(Packages.modules()) == 16
 
     # Production composition consumes the VALIDATED discovery seam — the
     # spec-shape and duplicate-id rejections apply to the real catalog,

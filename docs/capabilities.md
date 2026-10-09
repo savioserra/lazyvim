@@ -148,7 +148,8 @@ foundation
 ├── herdr [pinned terminal-workspace binary; runtime-optional, no server lifecycle]
 ├── secrets
 ├── nvim [requires foundation+node+go; owns base/standard/Go profile intents]
-└── tmux [linux,darwin]
+├── tmux [linux,darwin]
+└── nunchux [requires foundation+theme; linux — pinned launcher binary pre-seed + theme-slot config]
 
 nvim
 └── typescript [requires node+nvim; owns its plugin module, profile intent and verification]
@@ -173,6 +174,7 @@ herdr
 | `typescript` | — | — | Own Mason expectations, plugin module and behavior/formatter cases through nvim leaf helpers | All |
 | `theme` | Single source-root `.chezmoidata.toml` token envelope via `provision.chezmoi_data`; deploys no home target | — | Envelope bytes against the tokens module; requires `foundation` | All |
 | `tmux` | Plugin checkout; tmux config/theme/link recipes | — | Commits, server, theme | Linux/macOS |
+| `nunchux` | Pinned release binary via the download contract into `.tmux/plugins/nunchux/bin/` plus the `.platform` marker (upstream `ensure_binary` never fetches); theme-slot launcher config | — | `packages/nunchux/verify/nunchux.sh` (pin sha256 + platform marker; read-only, never executes the binary) | Linux (darwin deferred — the download contract pins one artifact per declaration; the darwin release pin stays recorded in `versions.json`) |
 
 ## Capability domains
 

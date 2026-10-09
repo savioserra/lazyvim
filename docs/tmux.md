@@ -70,21 +70,27 @@ TPM `user/repo#ref` supports branches/tags, not exact raw commits.
 | `datamadsen/nunchux` | `1546eaa980d834c331496ea9d51942be07ea9fdd` (Release 3.1.3) | `versions.json` `nunchux_*`: release-asset SHA-256 per platform (`nunchux-linux-amd64` `d66afe3d…`, `nunchux-darwin-arm64` `c8444fd8…`) |
 
 Nunchux (fzf popup launcher for apps, files and task runners) is prepared
-but NOT active: the `@plugin` line in `.tmux.conf` stays commented out until
-the engine grows download provisioning (`Source.Download` — the residual
-tool/plugin provisioning gap left by the Lua setup handlers; see
-[elixir](elixir.md)). Everything short of activation is in place: the root
-`C-Space` chord (`@nunchux-key`, declared ahead of TPM init) and the
-slot-templated `~/.config/nunchux/config` target (byte-equal to upstream's
-default config, consuming theme slots — [theme](theme.md)).
+but NOT active: the `@plugin` line in `.tmux.conf` stays commented out
+until the plugin checkout itself is engine-provisioned (the git contract's
+pinned-clone recipe; see [elixir](elixir.md)). The launcher payload now
+lives in its own `nunchux` package (Workstation.Packages.Nunchux), not
+here: the slot-templated `~/.config/nunchux/config` target (byte-equal to
+upstream's default config, consuming theme slots — [theme](theme.md)), and
+the pinned 3.1.3 linux-x86_64 binary pre-seed — the download contract
+installs `~/.tmux/plugins/nunchux/bin/nunchux` beside a
+`bin/.platform` marker, exactly the two files upstream's `ensure_binary`
+checks, so plugin load never fetches `releases/latest` unchecksummed.
+Host-side pin assertion: `packages/nunchux/verify/nunchux.sh` (read-only,
+never executes the binary). The root `C-Space` chord (`@nunchux-key`,
+declared ahead of TPM init) stays here in `.tmux.conf`, dormant.
 
-Activation is deliberately gated on that machinery because upstream's
-`nunchux.tmux` fetches `releases/latest` at plugin load with no checksum
-and no version pin — the same exclusion-class defect as `tmux-fingers` —
-and the spec-correct fix is a checksummed, pinned pre-seed of
-`~/.tmux/plugins/nunchux/bin/nunchux` + `bin/.platform`, which needs the
-missing recipe kind. Pre-seeding the directory before TPM's clone would
-instead make TPM skip the plugin entirely (non-empty checkout).
+The checksummed pre-seed above is what closed the original activation
+gate — upstream's `nunchux.tmux` fetches `releases/latest` at plugin
+load with no checksum and no version pin (the same exclusion-class defect
+as `tmux-fingers`). What remains gated is the checkout itself: TPM's own
+clone is unchecksummed, so activation waits for the git contract's
+pinned-clone recipe; pre-seeding the directory before that clone would
+make TPM skip the plugin entirely (non-empty checkout).
 
 The launch chord is **C-Space, root** (no prefix): `@nunchux-key` is set to
 `C-Space` — upstream's own default — and the activation block carries the
@@ -95,9 +101,9 @@ tmux (e.g. insert-mode completion). Revert is one line: comment the bind
 line in `.tmux.conf` and re-apply.
 
 Compliance flag: upstream ships NO LICENSE file, so the code is
-all-rights-reserved by default — running it is a user-owned choice, and
-the deferral keeps it out of managed hosts until provisioning can pin
-exactly what ships.
+all-rights-reserved by default — running it is a user-owned choice; the
+binary deploys as pinned release-artifact bytes and is never executed by
+the engine or the verify lane.
 
 ## Excluded plugin
 

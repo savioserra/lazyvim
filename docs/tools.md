@@ -29,7 +29,7 @@ Supported deployment policy is Linux, WSL-as-Linux, and macOS (arm64).
 | pi-ntfy-notifier | 0.3.0 | Source-managed extension in this repo | `.pi/agent/extensions/ntfy-notifier` | linux-x86_64, darwin-arm64 |
 | herdr Pi hook | Integration revision 8 (Herdr v0.9.0 bundle) | github.com/herdrdev/herdr | `.pi/agent/extensions/herdr-agent-state.ts` (`herdr-pi` file recipe) | linux-x86_64, darwin-arm64 |
 | JetBrainsMono Nerd Font | 3.5.0 | github.com/ryanoasis/nerd-fonts | Linux: `.local/share/fonts/JetBrainsMonoNerdFont`; darwin: `Library/Fonts/JetBrainsMonoNerdFont` | linux-x86_64, darwin-arm64 |
-| nunchux (prepared, inactive) | 3.1.3 | github.com/datamadsen/nunchux | `.tmux/plugins/nunchux/bin/nunchux` (planned; not deployed until engine download provisioning — [tmux](tmux.md)) | linux-x86_64, darwin-arm64 |
+| nunchux (launcher package; plugin pin dormant) | 3.1.3 | github.com/datamadsen/nunchux | `.tmux/plugins/nunchux/bin/nunchux` + `bin/.platform` — the `nunchux` package pre-seeds both via the download contract so upstream's `ensure_binary` never fetches ([tmux](tmux.md)) | linux-x86_64 (package); darwin-arm64 pin recorded, deferred until per-platform download dispatch |
 
 ## Provisioning ownership
 

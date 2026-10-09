@@ -64,7 +64,7 @@ plan.
 | Surface | Layer | Mechanism |
 | --- | --- | --- |
 | tmux (status bar) | — (upstream-truthed) | pinned `tmux-oasis` at the upstream `starlight_dark` flavor; `.tmux.conf` sets no theme options — upstream's oasis_starlight_dark.conf is canonical and the tokens palette mirrors its hexes for our own consumers. The tmux2k slot template is gone (ADDENDUM 2 swap; its target carries a removal tombstone) ([tmux](tmux.md)) |
-| tmux (nunchux launcher config, prepared) | `slots` | same `template = true` path; plugin stays dormant until engine download provisioning ([tmux](tmux.md)) |
+| nunchux (launcher config) | `slots` | `template = true` path owned by the `nunchux` package (moved from tmux with the payload); plugin stays dormant until the git contract's pinned-clone recipe lands ([tmux](tmux.md)) |
 | pi (`~/.pi/agent/themes/workstation-{dark,light}.json`) | `palette` | template recipes; agent requires `theme`; `settings.json` stays pi-owned — select `"workstation-light/workstation-dark"` once via `/settings` |
 | herdr | philosophy (terminal-following) | documented canonical choice only: `[theme] name = "terminal"`, `auto_switch = true` (see [herdr](herdr.md)); herdr tracks the host terminal's live ANSI palette, so under the Starlight rebrand it renders starlight via the terminal theme — the engine never writes herdr's live `config.toml` and ships no herdr colors |
 | nvim | upstream pin (`oasis-starlight`) | `lazy-lock.json` pins `uhs-robert/oasis.nvim`; the editor rides the upstream starlight palette tokens.lua cites — not a generated colorscheme (rebrand spec S-R4); starlight wins all hosts, Omarchy import dropped (S-R2) |

@@ -19,7 +19,7 @@ defmodule Workstation.Core.CatalogNativeTest do
   alias Workstation.Core.Catalog.Packages
   alias Workstation.Core.EngineState
 
-  @native_count 15
+  @native_count 16
 
   @goldens_root Path.expand("../../../../../../tests/goldens", __DIR__)
 
@@ -72,6 +72,7 @@ defmodule Workstation.Core.CatalogNativeTest do
              "fonts",
              "herdr",
              "herdr-pi",
+             "nunchux",
              "pi-ntfy-notifier",
              "pi-skills",
              "secrets",

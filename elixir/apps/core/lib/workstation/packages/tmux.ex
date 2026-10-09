@@ -15,12 +15,13 @@ defmodule Workstation.Packages.Tmux do
   resurrect at pinned commits) are provisioning contracts recorded in
   docs/tmux.md, never managed source state.
 
-  The nunchux launcher config rides the same theme envelope (slot names,
-  rendered bytes equal upstream's default config), but the plugin itself
-  stays dormant: the `@plugin` line in .tmux.conf is commented out until
-  the engine grows download provisioning — upstream's nunchux.tmux fetches
-  `releases/latest` at plugin load with no checksum, so activation is
-  gated on checksummed pre-seeding (docs/tmux.md, "prepared" section).
+  The nunchux launcher grew into its own terminal-domain package
+  (Workstation.Packages.Nunchux): the theme-slot config target, the pinned
+  binary pre-seed and the platform marker moved there. This package keeps
+  only the dormant activation surface in .tmux.conf — the commented
+  `@plugin` pin and the root `C-Space` chord block — which goes live with
+  the plugin checkout once the git contract's pinned-clone recipe lands
+  (docs/tmux.md, "prepared" section).
   """
 
   @behaviour Workstation.Core.Catalog.Spec
@@ -39,12 +40,6 @@ defmodule Workstation.Packages.Tmux do
         # The retired tmux2k slot template: recorded-ownership tombstone so a
         # previously applied home drops the target (already-absent no-op).
         Packages.chezmoi(target: ".config/tmux/themes/tmux2k.conf", kind: :remove),
-        Packages.chezmoi(
-          target: ".config/nunchux/config",
-          kind: :file,
-          template: true,
-          asset: "files/.config/nunchux/config"
-        ),
         Packages.chezmoi(target: ".config/tmux/tmux.conf", kind: :symlink, to: "../../.tmux.conf")
       ]
     }
