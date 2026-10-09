@@ -162,7 +162,7 @@ herdr
 | `foundation` | CLI archive members | — | CLI versions | All |
 | `fonts` | Font archives, then host registration/cache | — | Host visibility | All |
 | `node` | nvm and Node archives, then default/environment | — | NVM and Node version | All |
-| `agent` | Exact global pi npm package; internal pi packages from `pi-packages.json`, installed via the pinned pi CLI; subagent skill policy; pi-subagents role definitions with per-project memory frontmatter; acp.json delegate-off | — | npm/CLI version, per-package lock integrity, pinned settings entries, role definition files with memory frontmatter, extension discovery tools | All |
+| `agent` | Exact global pi npm package; internal pi packages from `pi-packages.json`, installed via the pinned pi CLI; agent skill policy; pi-fabric role definitions with per-project memory frontmatter; acp.json delegate-off | — | npm/CLI version, per-package lock integrity, pinned settings entries, role definition files with memory frontmatter, extension discovery tools | All |
 | `pi-skills` | — | — | Managed skill files and Pi discovery | All |
 | `pi-ntfy-notifier` | Source-managed extension | — | Manifest version, extension files, node test suite | All |
 | `go` | Exact toolchain archive; go link recipe | — | Go version | Linux/WSL/macOS |
@@ -356,7 +356,7 @@ and died with the engine; the profile contract they enforced now lives in
 
 The `agent` capability owns the pi coding agent and every internal pi package.
 The coding agent is pinned in the canonical `workstation/versions.json`; internal
-packages (pi-subagents, pi-web-access, billion-context-pi, pi-simplify, openwiki)
+packages (pi-fabric, pi-web-access, billion-context, pi-simplify, openwiki)
 are pinned with exact versions and registry integrity in the package-local
 `workstation/packages/agent/pi-packages.json` catalog. All install work is
 delegated to the pinned pi CLI (`pi install npm:<name>@<version>`); the engine
@@ -366,15 +366,15 @@ catalog by the next apply, never followed.
 
 The agent capability also owns the subagent skill policy (worker/delegate get the
 managed lazyvim skill) and `~/.pi/acp.json` with `delegate: false`, keeping
-pi-subagents as the only delegation surface while billion-context-pi compression
-tools stay enabled. It also ships the engine-owned pi-subagents role definitions
+the pi-fabric runtime as the only delegation surface while billion-context compression
+tools stay enabled. It also ships the engine-owned agent role definitions
 (`~/.pi/agent/agents/{worker,reviewer}.md`, sourced from
 `workstation/packages/agent/files/.pi/agent/agents/`). These shadow the bundled
 builtins and carry `memory: {scope: project, path: fleet}` frontmatter — per-agent
-memory is intrinsic to pi-subagents (the first 200 lines of
+memory is intrinsic to the agent runtime (pi-fabric; the first 200 lines of
 `<repo>/.pi/agent-memory/fleet/MEMORY.md` are injected into each run; worker
 appends, reviewer recalls; no Hermes dependency). The fleet memory seed for this
-repo is tracked at `.pi/agent-memory/fleet/MEMORY.md`. After a pi-subagents
+repo is tracked at `.pi/agent-memory/fleet/MEMORY.md`. After a pi-fabric
 upgrade, re-diff the shipped definitions against the package builtins. One
 JavaScript verifier per pinned package lives under
 `workstation/packages/agent/verify/` and checks Pi discovery through the

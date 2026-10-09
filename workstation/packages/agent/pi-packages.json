@@ -1,9 +1,9 @@
 {
   "pi_packages": [
     {
-      "name": "billion-context-pi",
-      "version": "0.1.83",
-      "integrity": "sha512-122CcPmZvC5Yqqbj75UMppOFlkdAN8kbzvJ4OugV6xBPW6wbiHbaZ9YDYWQwDy4hJ/Vc98eOREGkWLWKflbnZw=="
+      "name": "billion-context",
+      "version": "0.1.188",
+      "integrity": "sha512-8HAdUecJBQzBI59g8448p8lv5c3a4a1pcKsfweo90CG9l4VLrOSJbOrxIpPa150memto6BIvw7HvbdZYZVVQiw=="
     },
     {
       "name": "openwiki",
@@ -11,14 +11,14 @@
       "integrity": "sha512-Tw3AZE9eEmB9P8078lWCfjtrd7Xrl2rwBKfX5suie6sUH3gPLzEeGVIIugGtg1fnWfyJiVcqmw6WbXzujA1N7A=="
     },
     {
+      "name": "pi-fabric",
+      "version": "0.110.1",
+      "integrity": "sha512-vHF8HuhiSVqewAabJ7mtbIvM3gArTty8XFGzGNAilwtope64yGg3RhvEc1fatra5qi+LWLDskIUdRa9CbqIBIg=="
+    },
+    {
       "name": "pi-simplify",
       "version": "0.2.3",
       "integrity": "sha512-9dxsXiGmO7DmjguC4Bk/lu7IYlYt0x1m2VneUpIGSQspx4BtshBgt+Vb8xvoxXc/Ugif7/sdwcbf7TgULqiSHg=="
-    },
-    {
-      "name": "pi-subagents",
-      "version": "0.75.0",
-      "integrity": "sha512-RO4DiTJM6pnK8y9PnD7Y6TLeiX2c8Kh6QhmkecFo+ou5qtnz5qiM+vUKru48UmJG1nB9eJ6rALd1M04uBOR4XQ=="
     },
     {
       "name": "pi-web-access",

@@ -25,7 +25,7 @@ Supported deployment policy is Linux, WSL-as-Linux, and macOS (arm64).
 | rainfrog | 0.4.4 | github.com/achristmascarl/rainfrog | `.local/bin/rainfrog` | linux-x86_64, darwin-arm64 |
 | 1Password CLI | 2.39.0 | cache.agilebits.com | `.local/bin/op`; verified by the `secrets` capability | linux-x86_64, darwin-arm64 |
 | pi coding agent | 1.0.1 | npm: `@earendil-works/pi-coding-agent` | Managed Node global prefix | linux-x86_64, darwin-arm64 |
-| pi packages (agent capability) | pi-subagents 0.75.0, pi-web-access 0.35.0, billion-context-pi 0.1.83, pi-simplify 0.2.3, openwiki 0.7.0 | npm via pinned pi CLI; pinned in `workstation/packages/agent/pi-packages.json` | Pi agent directory | linux-x86_64, darwin-arm64 |
+| pi packages (agent capability) | pi-fabric 0.110.1, pi-web-access 0.35.0, billion-context 0.1.188, pi-simplify 0.2.3, openwiki 0.7.0 | npm via pinned pi CLI; pinned in `workstation/packages/agent/pi-packages.json` | Pi agent directory | linux-x86_64, darwin-arm64 |
 | pi-ntfy-notifier | 0.3.0 | Source-managed extension in this repo | `.pi/agent/extensions/ntfy-notifier` | linux-x86_64, darwin-arm64 |
 | herdr Pi hook | Integration revision 8 (Herdr v0.9.0 bundle) | github.com/herdrdev/herdr | `.pi/agent/extensions/herdr-agent-state.ts` (`herdr-pi` file recipe) | linux-x86_64, darwin-arm64 |
 | JetBrainsMono Nerd Font | 3.5.0 | github.com/ryanoasis/nerd-fonts | Linux: `.local/share/fonts/JetBrainsMonoNerdFont`; darwin: `Library/Fonts/JetBrainsMonoNerdFont` | linux-x86_64, darwin-arm64 |

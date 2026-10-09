@@ -11,7 +11,7 @@ any session working in this repo regardless of host. It is tracked in Git on
 purpose — memory travels with the repo. The agent definitions that consume it
 are engine-owned (`workstation/packages/agent/files/.pi/agent/agents/`) and are
 provisioned to `~/.pi/agent/agents/` by `workstation apply`. Per-agent memory
-is intrinsic to pi-subagents; Hermes/Pi parent memory is unrelated and not
+is intrinsic to the agent runtime (pi-fabric since the 2026-10-09 swap); Hermes/Pi parent memory is unrelated and not
 required.
 
 ## Engine / repo conventions (/root/lazyvim)
@@ -45,7 +45,7 @@ required.
 - ExUnit failure output can paginate — set PAGER=cat / use
   `mix test --exclude ... 2>&1 | cat` in scripts.
 
-## Fleet / pi-subagents mechanics
+## Fleet / agent-runtime mechanics (pi-subagents retired → pi-fabric 2026-10-09)
 
 - Per-run `missionId` inside a workflow that already has a mission is fatal:
   "Use missionId or mission, not both". Mission attaches at workflow level
@@ -55,7 +55,7 @@ required.
   keys must match launched keys exactly.
 - Agent definition catalog refreshes on extension-owned config mutations only;
   settings.json edits need /reload (dead mid-session). User-scope agent files
-  (~/.pi/agent/agents/*.md) SHADOW builtins wholesale — after pi-subagents
+  (~/.pi/agent/agents/*.md) SHADOW builtins wholesale — after pi-fabric
   upgrades, re-diff the engine-owned copies in
   `workstation/packages/agent/files/.pi/agent/agents/` against the package
   builtins or prompts drift silently.
