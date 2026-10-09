@@ -1,16 +1,18 @@
 defmodule Workstation.Core.Catalog.Packages do
   @moduledoc """
-  The native package catalog: one pure-data contribution module per
-  workstation package, DISCOVERED at runtime — there is no registration
-  list to edit.
+  The native package catalog: one self-contained package dir per
+  workstation package (`workstation/packages/<id>/` — manifest beside
+  payloads), DISCOVERED at runtime — there is no registration list to
+  edit.
 
   Why data modules: the plan pipeline (`Catalog.native -> Graph.order ->
   Source.plan`) must compose the workstation's desired state from pure
   data, so every package declares its contribution (recipes, requirements,
-  options, assets) as pure data. Adding a package means
-  dropping a conforming `Workstation.Core.Catalog.Spec` provider under
-  this namespace — discovery (`Workstation.Core.Catalog.Discover`) finds
-  it via `:code.all_available/0` + behaviour conformance, validates its
+  options, assets) as pure data. Adding a package means dropping a
+  self-contained package dir under `workstation/packages/<id>/` — manifest
+  beside payloads — whose conforming `Workstation.Core.Catalog.Spec`
+  provider discovery (`Workstation.Core.Catalog.Discover`) loads from the
+  tree via `:code.all_available/0` + behaviour conformance, validates its
   shape, and rejects duplicate ids. `CatalogNativeTest` is the drift
   anchor that fails the moment a declared contribution drifts from the
   committed golden recording (fragment bytes, asset targets, option

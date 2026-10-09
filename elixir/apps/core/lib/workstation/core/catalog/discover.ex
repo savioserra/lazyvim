@@ -10,9 +10,10 @@ defmodule Workstation.Core.Catalog.Discover do
   axes:
 
   * candidates come from `:code.all_available/0`, narrowed to the
-    discovery namespace (package modules are compiled into the app either
-    way; the namespace only keeps the loader from touching dependency
-    beams) and sorted by module name — declaration order is not a thing;
+    discovery namespace — package manifests are loaded from the package
+    tree first (`Workstation.Core.Packages.Loader.ensure/0`); the
+    namespace only keeps the scan from touching dependency beams — and
+    sorted by module name — declaration order is not a thing;
   * `test/support` fixtures (and any module compiled from a test tree) are
     excluded deterministically by the beam's recorded source path, so test
     fixtures can never leak into the live catalog;

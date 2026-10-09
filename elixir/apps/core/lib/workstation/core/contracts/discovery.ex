@@ -42,6 +42,11 @@ defmodule Workstation.Core.Contracts.Discovery do
   """
   @spec modules(spec()) :: [module()]
   def modules(%{namespace: namespace, behaviour: behaviour, callbacks: callbacks, label: label}) do
+    # Packages are self-contained in the tree: their manifests are loaded
+    # (once per node) before any namespace scan, so the scan sees whatever
+    # the tree declares without the engine naming one.
+    Workstation.Core.Packages.Loader.ensure()
+
     :code.all_available()
     |> Enum.flat_map(&candidates/1)
     |> Enum.uniq()

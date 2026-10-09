@@ -15,6 +15,7 @@ defmodule Workstation.Packages.Typescript do
 
   alias Workstation.Core.Catalog.Packages
   alias Workstation.Packages.Nvim.Profile
+  @compile {:no_warn_undefined, Workstation.Packages.Nvim.Profile}
 
   @intent %{
     id: "typescript",

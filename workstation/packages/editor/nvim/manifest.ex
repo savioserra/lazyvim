@@ -39,6 +39,9 @@ defmodule Workstation.Packages.Nvim do
 
   alias Workstation.Core.Catalog.Packages
   alias Workstation.Packages.Nvim.Profile
+  # Manifests load tree-wide before spec/0 ever runs; the compiler cannot
+  # see that order, so the late-loaded sibling is declared.
+  @compile {:no_warn_undefined, Workstation.Packages.Nvim.Profile}
 
   @marker "__WORKSTATION_ENGINE_PINS__"
 

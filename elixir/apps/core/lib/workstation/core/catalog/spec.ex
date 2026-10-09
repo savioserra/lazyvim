@@ -7,9 +7,10 @@ defmodule Workstation.Core.Catalog.Spec do
   its own identity and edges and never needs to know that other packages
   exist:
 
-  * the module lives under `Workstation.Core.Catalog.Packages.*` (the
-    discovery namespace) and declares `@behaviour
-    #{inspect(__MODULE__)}`;
+  * the module lives in its package dir
+    (`workstation/packages/<id>/manifest.ex`, self-contained beside its
+    payloads) under the `Workstation.Packages.*` discovery namespace and
+    declares `@behaviour #{inspect(__MODULE__)}`;
   * `spec/0` returns the package's specification map: `:id` (unique
     string), `:requires` (necessity + ordering edges), the optional
     `:after` (ordering-only edges), `:supported_hosts`, `:foundation` and
