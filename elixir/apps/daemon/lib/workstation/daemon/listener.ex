@@ -6,7 +6,7 @@ defmodule Workstation.Daemon.Listener do
   channel) that prepares and owns `<home>/.local/state/workstation/daemon/
   <uid>.sock`.
 
-  File guarding mirrors `state.lua` `guarded_directory`:
+  File guarding is fail-closed at every component:
 
   * the daemon state directory is created 0700 and verified with lstat
     semantics (type `directory`, owner uid) — a symlinked directory or one

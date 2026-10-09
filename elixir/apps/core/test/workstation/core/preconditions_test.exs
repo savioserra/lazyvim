@@ -1,8 +1,7 @@
 defmodule Workstation.Core.PreconditionsTest do
   @moduledoc """
-  Pre-backend conflict cases against `check_preconditions` in
-  `workstation/lua/workstation/provisioner.lua`, exercised against real
-  temporary homes. All contexts are pinned explicitly (`"home"`, `"journal"`,
+  Pre-backend conflict cases against `check_preconditions`, exercised
+  against real temporary homes. All contexts are pinned explicitly (`"home"`, `"journal"`,
   `"pending"`) so no test ever depends on — or mutates — a real environment.
   """
 

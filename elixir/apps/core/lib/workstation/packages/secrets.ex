@@ -4,8 +4,9 @@ defmodule Workstation.Packages.Secrets do
   only the op environment loader fragment.
 
   Secret values never enter the engine (vault work requires explicit user
-  invocation); the 1Password CLI archive is the factory's Lua `setup`
-  handler, so the managed surface is exactly the `.profile` fragment that
+  invocation); the 1Password CLI archive is provisioned outside managed
+  source state (the toolchain bootstrap contract), so the managed surface is
+  exactly the `.profile` fragment that
   sources `/etc/pi/op.env` when present. Order 30 slots it between the nvm
   (20) and ntfy (40) fragments on the shared startup file.
   """

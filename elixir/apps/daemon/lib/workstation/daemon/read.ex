@@ -138,8 +138,7 @@ defmodule Workstation.Daemon.Read do
 
   @doc """
   Build the diff wire: `backend_diff` is the structured change-set record
-  list verbatim (the same records the retired Lua reporter's diff payload
-  carried and the parity goldens still pin).
+  list verbatim (the records the goldens pin).
   `generation` is the desired generation the records were computed against.
   """
   @spec diff(String.t(), [map()]) :: map()
@@ -190,8 +189,8 @@ defmodule Workstation.Daemon.Read do
   defp plan(home, run) do
     view = entry_view(run.plan)
 
-    # The changeset builders mirror post-decode Lua shapes and keep
-    # explicit nil map values; a nil field does not exist on the wire, so
+    # The changeset builders keep explicit nil map values for their baseline
+    # logic; a nil field does not exist on the wire, so
     # the emitted patches are pruned (the canonical encoder drops nothing
     # and fails closed on nil).
     patches = sweep(Changesets.plan_patches(view, nil))
@@ -231,15 +230,13 @@ defmodule Workstation.Daemon.Read do
 
   defp diff(run) do
     # A nil baseline resolves to the verified journal baseline inside the
-    # bracket, mirroring the Lua reporter's diff payload (which also lets
-    # changesets() pick up the verified baseline).
+    # bracket (which also lets changesets() pick up the verified baseline).
     records = sweep(Changesets.changesets(entry_view(run.plan), nil))
     {:ok, diff(run.plan.generation, records)}
   end
 
-  # Prune nil map values recursively: the changeset builders mirror
-  # post-decode Lua shapes (nil == absent field), and the canonical encoder
-  # fails closed on nil instead of dropping the key.
+  # Prune nil map values recursively: on the wire nil == absent field, and
+  # the canonical encoder fails closed on nil instead of dropping the key.
   defp sweep(value) when is_map(value) do
     value
     |> Enum.reject(fn {_key, inner} -> is_nil(inner) end)
@@ -251,10 +248,10 @@ defmodule Workstation.Daemon.Read do
 
   ## parity views
 
-  # String-keyed superset view of one plan entry: everything the Lua-shaped
-  # Changesets functions read (bytes/source_name included — the golden view
+  # String-keyed superset view of one plan entry: everything the Changesets
+  # functions read (bytes/source_name included — the golden view
   # deliberately drops them, so patches and diff records get their own view
-  # instead of reshaping the parity-locked plan body).
+  # instead of reshaping the recorded plan body).
   defp entry_view(core_plan) do
     entries =
       Enum.map(core_plan.entries, fn entry ->
@@ -291,8 +288,9 @@ defmodule Workstation.Daemon.Read do
   # plan struct (the core plan does not carry the envelope identity).
   #
   # One recorded exception to the nil-drops rule: `mode` is ALWAYS present
-  # in the entry view — golden.lua kept an explicit vim.NIL when the entry
-  # has no mode, so the port must emit :null, not drop the key. Dropping it
+  # in the entry view — the recorded envelope keeps an explicit null when
+  # the entry has no mode, so the projection must emit :null, not drop the
+  # key. Dropping it
   # silently diverges from the recorded bytes on profiles whose entries can
   # be mode-less (caught by the b8 old-vs-new harness on full-home/theme
   # after the per-profile golden test missed it: the test carried its own
@@ -342,8 +340,8 @@ defmodule Workstation.Daemon.Read do
         Enum.map(core_plan.unsupported_reversals, fn reversal ->
           %{"owner" => reversal.owner, "target" => reversal.target}
         end),
-      # The recorded view is Lua-shaped: an empty journal object is a JSON
-      # array in the goldens (a Lua table cannot distinguish the two), so the
+      # The recorded envelope format has no distinct empty object: an empty
+      # journal object is a JSON array in the goldens, so the
       # wire carries [] exactly like the engine's projection.
       "fragments_journal" =>
         if(core_plan.fragments_journal == %{}, do: [], else: core_plan.fragments_journal),
@@ -404,7 +402,7 @@ defmodule Workstation.Daemon.Read do
     end)
   end
 
-  # changesets.lua describe_target_state, evaluated at this application
+  # Target-state report, evaluated at this application
   # boundary: the plan itself never probes the filesystem (replay purity),
   # so the daemon owns the lstat and reports the actual pre-plan target
   # state.
@@ -432,8 +430,8 @@ defmodule Workstation.Daemon.Read do
   defp octal(mode), do: mode |> Integer.to_string(8) |> String.pad_leading(4, "0")
 
   # The engine repairs the state root to 0700 on every journal access
-  # (state.lua guarded_directory chmods the existing final component — the
-  # runtime-root creation in paths.lua deliberately leaves it at 0755 until
+  # (the write path chmods the existing final component —
+  # runtime-root creation deliberately leaves it at 0755 until
   # the first apply). The daemon mirrors that repair at its application
   # boundary before the fail-closed read; a symlinked or foreign-owned
   # component is never chmod'ed here and still fails closed through
@@ -453,8 +451,8 @@ defmodule Workstation.Daemon.Read do
     Journal.applied(state_root)
   end
 
-  # Canonical JSON drops nil map values (a Lua nil field does not exist), so
-  # optional wire fields are omitted rather than emitted as nulls.
+  # On the wire a nil field does not exist: optional wire fields are omitted
+  # rather than emitted as nulls.
   defp maybe_put(map, _key, nil), do: map
   defp maybe_put(map, key, value), do: Map.put(map, key, value)
 

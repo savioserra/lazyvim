@@ -3,9 +3,7 @@ defmodule Mix.Tasks.Workstation.Goldens do
 
   @moduledoc """
   The canonical golden re-record path: regenerates every recorded profile
-  under `tests/goldens/` from the native engine (`Workstation.Core.Golden`;
-  the Lua `golden.lua` this replaced in the c5 retirement lane survives only
-  as the parity anchor for the recorded bytes).
+  under `tests/goldens/` from the native engine (`Workstation.Core.Golden`).
 
       mix workstation.goldens            # rewrite the repository goldens
       mix workstation.goldens <out-root> # record into an explicit root

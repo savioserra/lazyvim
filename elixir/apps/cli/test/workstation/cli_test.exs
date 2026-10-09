@@ -147,8 +147,8 @@ defmodule Workstation.CLITest do
       # Envelope-level golden equality (the supervisor-approved contract):
       # the plan body and manifest are the recorded content-addressed
       # artifacts verbatim, so the comparison is over canonical bytes of the
-      # sub-documents, never over decoded shapes where a Lua empty table
-      # ([]) and an Elixir empty map could diverge.
+      # sub-documents, never over decoded shapes, where an empty map and an
+      # empty list are the same recorded bytes.
       assert canonical_json(wire["plan"]) == File.read!(Path.join([golden, "expected", "plan.json"]))
 
       assert canonical_json(wire["manifest"]) ==

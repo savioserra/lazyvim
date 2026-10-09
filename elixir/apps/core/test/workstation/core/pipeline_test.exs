@@ -86,7 +86,7 @@ defmodule Workstation.Core.PipelineTest do
     test "encodes object keys sorted, arrays in order and empty maps as arrays" do
       assert Workstation.Core.CanonicalJSON.encode(%{"b" => 1, "a" => 2}) == ~s({"a":2,"b":1})
       assert Workstation.Core.CanonicalJSON.encode([2, 1]) == "[2,1]"
-      # A Lua table with no entries is an array to vim.json.encode, so an
+      # The recorded envelope format has no distinct empty object, so an
       # empty map must encode as [] for byte parity with the recorded goldens.
       assert Workstation.Core.CanonicalJSON.encode(%{}) == "[]"
     end

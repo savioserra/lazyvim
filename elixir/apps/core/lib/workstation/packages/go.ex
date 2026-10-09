@@ -3,9 +3,9 @@ defmodule Workstation.Packages.Go do
   The `go` workstation package's native contribution:
   one managed launcher symlink into the self-unpacked toolchain root.
 
-  The archive payload under `~/.local/opt/go` is provisioned by the factory's
-  Lua `setup` handler (exact tar unpack), never as engine-rendered source
-  state, so the link target stays a relative path inside the destination
+  The archive payload under `~/.local/opt/go` is provisioned outside
+  engine-rendered source state (the toolchain bootstrap contract: exact tar
+  unpack), so the link target stays a relative path inside the destination
   home.
   """
 

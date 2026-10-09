@@ -5,16 +5,15 @@ defmodule Workstation.Core.GoldenReplayTest do
   must reproduce the recorded bytes exactly — `expected/plan.json`,
   `expected/manifest.json` and `expected/generation.txt`.
 
-  The goldens are recorded by the generator (`Workstation.Core.Golden`, the
-  only generator since the c5 lane retired the Lua `golden.lua`) and are
-  immutable fixtures: if the replayed output drifts, the engine
+  The goldens are recorded by the generator (`Workstation.Core.Golden`) and
+  are immutable fixtures: if the replayed output drifts, the engine
   is wrong and must be fixed here — never the goldens. The projection lives
-  in `Workstation.Core.Golden.project_plan/2` (a byte-parity port of
-  `golden.lua M.project_plan`), shared by generator and replay so the
-  recorded and replayed views can never diverge: plan.json is the recorded
-  normalized view of the plan, not the plan struct itself, so nil entry
-  fields are dropped (a missing Lua key), an explicit JSON null is `:null`,
-  and empty maps encode as `[]` exactly like an empty Lua table.
+  in `Workstation.Core.Golden.project_plan/2`, shared by generator and
+  replay so the recorded and replayed views can never diverge: plan.json is
+  the recorded normalized view of the plan, not the plan struct itself, so
+  nil entry fields are dropped (absent key, not null), an explicit JSON
+  null is `:null`, and empty maps encode as `[]` per the recorded envelope
+  format.
   """
 
   use ExUnit.Case, async: true
@@ -46,8 +45,8 @@ defmodule Workstation.Core.GoldenReplayTest do
         plan = Workstation.Core.Source.plan(%{graph: graph})
 
         # Byte-identical equality: the recorded JSON is the contract, so the
-        # comparison is over encoded bytes, never over decoded shapes where a
-        # Lua empty table ([]) and an Elixir empty map could diverge.
+        # comparison is over encoded bytes, never over decoded shapes, where
+        # an empty map and an empty list are the same recorded bytes.
         assert Workstation.Core.Golden.project_plan(catalog, plan)
                |> Workstation.Core.CanonicalJSON.encode() ==
                  File.read!(Path.join([dir, "expected", "plan.json"]))

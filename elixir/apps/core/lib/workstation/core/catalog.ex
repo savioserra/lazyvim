@@ -258,9 +258,9 @@ defmodule Workstation.Core.Catalog do
   end
 
   @doc """
-  Compose a catalog for one host without evaluating any Lua: host selection,
-  requires graph, topological order, cycle and unknown-dependency rejection
-  — the same `Graph.order` semantics the golden replay grades. `:host` is
+  Compose a catalog for one host from pure data: host selection, requires
+  graph, topological order, cycle and unknown-dependency rejection — the
+  same `Graph.order` semantics the golden replay grades. `:host` is
   required; `:specifications` overrides the package set (the golden
   generator's catalog-profile closures and the equivalence tests compose
   variant sets through this seam, and a missing capability still fails
@@ -330,12 +330,11 @@ defmodule Workstation.Core.Catalog do
 
   @doc """
   Resolve one package's declared asset bytes from the engine checkout —
-  package-relative exactly like the Lua factories' references, so native
-  declarations stay pure data and filesystem reads happen in one auditable
-  place.
+  package-relative, so native declarations stay pure data and filesystem
+  reads happen in one auditable place.
 
-  An empty body is a recording failure on the Lua side too (resolve_asset
-  rejects it), so the same fail-closed rule applies to filesystem reads.
+  An empty body is always a recording failure, so asset reads fail closed
+  on it.
   """
   @spec package_asset!(String.t(), String.t()) :: String.t()
   def package_asset!(package_id, relative) do

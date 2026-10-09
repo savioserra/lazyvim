@@ -55,7 +55,7 @@ defmodule Workstation.Core.PipelineRunTest do
       assert File.read!(Path.join(directory, "dot_config/tooling/rc")) == "export A=1\n"
       assert File.read!(Path.join(directory, "dot_local/bin/tool")) == "#!/bin/sh\necho tool\n"
 
-      # Source files stage at the manifest's pinned 0644 (source.lua: the
+      # Source files stage at the manifest's pinned 0644 (the
       # source path is chezmoi's INPUT; target modes belong to the backend's
       # entry semantics), and the executable target still carries its entry
       # mode in the plan, not in the generation.

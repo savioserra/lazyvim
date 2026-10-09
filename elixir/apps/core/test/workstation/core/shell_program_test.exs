@@ -1,7 +1,6 @@
 defmodule Workstation.Core.ShellProgramTest do
   @moduledoc """
-  Byte-parity cases for the shared-shell compositor against
-  `workstation/lua/workstation/provision/shell.lua`. The expected program
+  Byte-exactness cases for the shared-shell compositor. The expected program
   bytes are literals: they are generated source state, so any drift here is a
   parity bug even when the program would still work. The functional cases run
   the generated fragments through /bin/sh and awk to prove the exit-70

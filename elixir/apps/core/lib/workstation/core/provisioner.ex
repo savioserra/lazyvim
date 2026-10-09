@@ -1,9 +1,8 @@
 defmodule Workstation.Core.Provisioner do
   @moduledoc """
-  The chezmoi provisioner — generation verification, argv contract and the
-  staged-generation writer. Parity anchors:
-  `workstation/lua/workstation/provisioner.lua` (`verify_generation`, `argv`,
-  `write_staged`, `publish`).
+  The chezmoi provisioner — generation verification (`verify_generation`),
+  argv contract, and the staged-generation writer (`write_staged`,
+  `publish`).
 
   Chezmoi is a subordinate file provisioner invoked with an explicit
   immutable generated `--source` generation directory and `--destination`
@@ -24,7 +23,7 @@ defmodule Workstation.Core.Provisioner do
   entry present with the exact type, permission bits and content digest, and
   nothing else. A hash-shaped pathname alone is never trusted. Manifest
   structure errors (missing names/digests, duplicates) raise before any
-  filesystem read, mirroring the Lua assertions.
+  filesystem read — structure is validated before any byte is touched.
   """
   @spec verify_generation(String.t(), [map()]) :: true
   def verify_generation(root, manifest) when is_binary(root) and is_list(manifest) do
@@ -121,9 +120,8 @@ defmodule Workstation.Core.Provisioner do
 
       %{type: "directory"} ->
         # An intact generation is never restaged: its content address already
-        # names exactly these bytes, and the anchor returns early (provisioner
-        #.lua publish: verify, then return). Only a quarantined tree stages
-        # afresh.
+        # names exactly these bytes — publish verifies, then returns. Only a
+        # quarantined tree stages afresh.
         case verify_existing(directory, plan) do
           :ok -> :ok
           :quarantined -> stage(generations_root, directory, plan)

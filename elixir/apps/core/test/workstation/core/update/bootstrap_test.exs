@@ -2,8 +2,8 @@ defmodule Workstation.Core.Update.BootstrapTest do
   @moduledoc """
   The bootstrap step against offline fixtures: a pre-seeded runtime cache
   (the shell's cache-hit path) and `file://` backend downloads behind the
-  fixture-only `allow_file_urls` opt — every integrity check the Lua
-  bootstrap path enforces, exercised without any external network.
+  fixture-only `allow_file_urls` opt — every integrity check the bootstrap
+  contract enforces, exercised without any external network.
 
   Not covered offline (documented residual): the https runtime download
   itself, whose URL validation pins it to the real GitHub release path; the

@@ -2,8 +2,10 @@ defmodule Workstation.Core.Changesets do
 
   alias Workstation.Backends.Chezmoi
   @moduledoc """
-  Attributable change sets for every provisioning recipe. Byte-for-byte
-  parity anchor: `workstation/lua/workstation/changesets.lua`.
+  Attributable change sets for every provisioning recipe. The patch bytes
+  are load-bearing: the change sets are both the review surface and the
+  recorded baseline format, so the goldens and journal records pin them
+  byte-for-byte.
 
   The Git-style patches describe GENERATED CHEZMOI SOURCE, never arbitrary
   HOME content: they are an inspectable review surface for apply/removal, not
@@ -97,7 +99,7 @@ defmodule Workstation.Core.Changesets do
           # Generated engine metadata is never a retired recipe: the
           # .chezmoiremove drift is previewed as the attributed aggregate
           # change below, and the data envelope simply stages with the
-          # generation (parity anchor: changesets.lua:194). Without this
+          # generation (a stage, never a removal). Without this
           # guard every journaled home reports both files as deletes —
           # invisible to fresh-journal sandboxes, caught on a real host.
           name = manifest_entry["name"]
@@ -222,8 +224,8 @@ defmodule Workstation.Core.Changesets do
         cond do
           entry["bytes"] == nil ->
             # is_nil/1 (not `not baseline`): Elixir's `not` is strict-boolean
-            # and would raise on a map, where the anchor relies on Lua
-            # truthiness (nil is falsy, a table is truthy).
+            # and would raise on a map; the baseline is nil (no baseline) or
+            # a map, and nothing else.
             if is_nil(baseline) or baseline["source_index"][entry["source_name"]] == nil do
               [metadata_record("add", entry)]
             else

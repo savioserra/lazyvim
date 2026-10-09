@@ -10,7 +10,8 @@ defmodule Workstation.CLI.TUI.Theme do
        home's daemon socket) — the authority while a daemon serves that
        home, because operator overlay state lives there;
     2. the base token palette (`Workstation.Core.Theme.Tokens.palette/1`,
-       the mirror of `workstation/packages/theme/tokens.lua`) — the same
+       the engine carrier of the token set alongside the deployed
+       `packages/theme/tokens.lua` payload) — the same
        bytes the daemon resolves from, so both paths agree while no overlay
        is configured.
 

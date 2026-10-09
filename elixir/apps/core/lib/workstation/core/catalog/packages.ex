@@ -5,9 +5,9 @@ defmodule Workstation.Core.Catalog.Packages do
   list to edit.
 
   Why data modules: the plan pipeline (`Catalog.native -> Graph.order ->
-  Source.plan`) must compose the workstation's desired state without
-  evaluating any Lua, so every package declares its contribution (recipes,
-  requirements, options, assets) as pure data. Adding a package means
+  Source.plan`) must compose the workstation's desired state from pure
+  data, so every package declares its contribution (recipes, requirements,
+  options, assets) as pure data. Adding a package means
   dropping a conforming `Workstation.Core.Catalog.Spec` provider under
   this namespace — discovery (`Workstation.Core.Catalog.Discover`) finds
   it via `:code.all_available/0` + behaviour conformance, validates its
@@ -18,18 +18,18 @@ defmodule Workstation.Core.Catalog.Packages do
 
   Package ordering comes exclusively from `requires`/`after` edges:
   graph ties among dependency-equal packages resolve by id sort, so no
-  module's position in any list is load-bearing. Parity anchor for the
-  recorded order: `workstation/lua/workstation/catalog.lua` (deleted with
-  the retired runtime); the editor capability (`Nvim`) completes the set.
+  module's position in any list is load-bearing. The discovery order is
+  the recorded order the goldens pin; the editor capability (`Nvim`)
+  completes the set.
 
-  The recipe helpers mirror `workstation/lua/workstation/provision/recipes.lua`
+  The recipe helpers are the shared constructors for the two recipe kinds
   (chezmoi / shell) plus the theme chezmoidata envelope its contributors
-  import directly from their owning packages in Lua. Capability-owned
+  declare. Capability-owned
   compositors (e.g. the nvim profile) are NOT wired here: they live in
   their owning package module and are discovered through the
   `Workstation.Core.Contracts.Provider` contract — the catalog helpers only
-  cover domain-generic machinery. Asset references stay package-relative
-  exactly like the Lua factories; `Workstation.Core.Catalog.package_asset!/2`
+  cover domain-generic machinery. Asset references stay package-relative;
+  `Workstation.Core.Catalog.package_asset!/2`
   and the golden generator are the places that resolve them to bytes, so
   composition stays pure data.
   """
@@ -74,7 +74,7 @@ defmodule Workstation.Core.Catalog.Packages do
 
   @doc """
   The native catalog's package specifications in discovery order (module
-  name / id sort): the materialize.specifications surface of the Lua engine
+  name / id sort): the catalog's specification surface
   (id, requires, after, supported_hosts, contributes), with contributes
   validated by their owning recipe constructors. Delegates to
   `Discover.specs/0`, so the contributor contract (spec shape, duplicate
@@ -84,7 +84,7 @@ defmodule Workstation.Core.Catalog.Packages do
   @spec packages() :: [map()]
   def packages, do: Discover.specs()
 
-  # --- recipe helpers (parity anchors of provision/recipes.lua + domain compositors) ---
+  # --- recipe helpers (chezmoi / shell constructors + the theme envelope) ---
 
   @doc "One shared-shell fragment contribution (`provision.shell`)."
   @spec shell(String.t(), map()) :: %{provider: String.t(), spec: Shell.t()}

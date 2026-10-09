@@ -3,7 +3,8 @@ defmodule Workstation.Packages.Herdr do
   The `herdr` workstation package's native contribution:
   one managed launcher symlink to the pinned herdr binary.
 
-  The single-file download is the factory's Lua `setup` handler; lifecycle
+  The single pinned binary is provisioned outside managed source state
+  (the download contract fetches and hash-verifies it); lifecycle
   commands never start, stop, attach or inspect a Herdr server, pane or
   session, and verification stays static (`--version` prefix) for the same
   reason.

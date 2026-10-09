@@ -126,7 +126,7 @@ defmodule Workstation.Daemon.LifecycleTest do
 
     assert %{"ok" => false, "error" => %{"code" => "locked", "message" => message}} = reply
     # The owner report is the recorded metadata (uid + node), not the
-    # purpose — that is the fail-closed report the Lua parity pins.
+    # purpose — that is the fail-closed report the wire pins.
     assert message =~ "apply lock held by uid="
 
     :ok = ApplyOrchestrator.release(token)

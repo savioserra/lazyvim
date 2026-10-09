@@ -48,7 +48,7 @@ defmodule Workstation.DaemonTest do
     assert File.exists?(Listener.socket_path(home))
   end
 
-  test "apply orchestrator serializes on the state.lua-style fail-closed lock", %{home: home} do
+  test "apply orchestrator serializes on the fail-closed apply lock", %{home: home} do
     # The orchestrator resolves its state root from EngineState at boot, so
     # the per-test WORKSTATION_HOME override pins the lock file under `home`.
     start_supervised!(Workstation.Daemon.ApplyOrchestrator)

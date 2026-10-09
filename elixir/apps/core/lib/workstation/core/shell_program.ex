@@ -1,7 +1,6 @@
 defmodule Workstation.Core.ShellProgram do
   @moduledoc """
-  The shared-shell compositor. Byte-for-byte parity anchor:
-  `workstation/lua/workstation/provision/shell.lua` — the emitted modify
+  The shared-shell compositor. The emitted modify
   program bytes are load-bearing: they are part of generated source state, so
   generation digests, change sets and baseline comparisons only agree when
   this provider reproduces them exactly, including fragment order and the

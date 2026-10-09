@@ -1,10 +1,9 @@
 defmodule Workstation.Core.GoldenGenerateTest do
   @moduledoc """
-  The Elixir golden generator is the canonical re-record path; this anchor
+  The golden generator is the canonical re-record path; this anchor
   proves the native engine still regenerates the committed tests/goldens
-  tree byte for byte — the same drift assertion the retired Lua-side suite
-  (`tests/goldens.test.lua`, deleted with the Lua generator) once ran
-  against the Lua generator. No cross-process check is needed here:
+  tree byte for byte — the drift assertion. No cross-process check is needed
+  here:
   `CanonicalJSON` is deterministic and carries no encoder seeding. A drift
   is an engine or envelope change: re-record deliberately via
   `mix workstation.goldens` after review — never by editing goldens.

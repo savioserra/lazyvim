@@ -1,19 +1,17 @@
 defmodule Workstation.Core.Golden do
   @moduledoc """
-  The Elixir golden generator — the canonical re-record path for the
-  `tests/goldens/<profile>/` trees (parity anchors:
-  `workstation/lua/workstation/golden.lua` M.generate + M.normalize_input +
-  M.project_plan, and `tests/goldens.test.lua`'s drift suite).
+  The golden generator — the canonical re-record path for the
+  `tests/goldens/<profile>/` trees.
 
   Each profile records four files: `input.json` (the only replay input),
   `expected/plan.json`, `expected/manifest.json` and
   `expected/generation.txt` (the sha256 of the exact manifest bytes plus one
   newline). The recorded bytes must stay identical across generator runs and
-  against the committed tree; `GoldenGenerateTest` re-runs the Lua suite's
-  drift assertion against this engine (no cross-process check is needed
-  here: `CanonicalJSON` is deterministic, there is no encoder seeding).
+  against the committed tree; `GoldenGenerateTest` runs the drift assertion
+  (no cross-process check is needed here: `CanonicalJSON` is deterministic,
+  there is no encoder seeding).
 
-  Envelope rules (mirroring the Lua generator's header contract):
+  Envelope rules (the recorded header contract):
 
   * catalog profiles record the dependency closure of their seeds in
     discovery order (module-name / id sort — there is no registration
@@ -27,25 +25,22 @@ defmodule Workstation.Core.Golden do
     `"<package id>:<asset path>"`;
   * home-anchored symlink destinations are pinned at declaration time in the
     native catalog (`Catalog.canonical_home/0`, the recorder's own
-    destination pinning), so normalization copies them verbatim — the same
-    recorded bytes the Lua generator produces by rewriting live-home
-    destinations;
-  * nil struct fields are absent Lua keys and disappear from `input.json`,
+    destination pinning), so normalization copies them verbatim — that
+    pinning IS the recorded bytes;
+  * nil struct fields disappear from `input.json` (absent key, not null),
     while empty lists stay present (`lazyvim_extras: []`) and an empty
     assets map encodes as `[]`.
 
   A golden drift is an engine or envelope change: it must be re-recorded
   deliberately (`mix workstation.goldens`) after review — never by editing
-  the committed bytes. This module is the only generator since the c5
-  retirement lane deleted the Lua generator (`golden.lua`); its recorded
-  bytes remain the parity evidence this module must reproduce.
+  the committed bytes. This module is the only generator; the committed
+  bytes are the evidence every replay must reproduce.
   """
 
   alias Workstation.Core.{CanonicalJSON, Catalog, Graph, Source}
   alias Workstation.Backends.Chezmoi
 
-  # Recording order (also the on-disk directory names) — mirrors
-  # golden.lua M.profiles.
+  # Recording order (also the on-disk directory names).
   @profiles [
     "minimal",
     "full-home",
@@ -61,7 +56,7 @@ defmodule Workstation.Core.Golden do
   # Catalog profile seeds: minimal records the foundation package alone,
   # theme the theme/tmux/agent closure (their dependency closure adds
   # foundation and node); any profile without seeds records the complete
-  # catalog. Mirrors golden.lua catalog_seeds.
+  # catalog.
   @catalog_seeds %{
     "minimal" => ["foundation"],
     "theme" => ["theme", "tmux", "agent"]
@@ -239,8 +234,8 @@ defmodule Workstation.Core.Golden do
   end
 
   # The catalog closure of the profile's seeds, in discovery order (module
-  # name / id sort — the recorded construction order). Mirrors golden.lua
-  # catalog_closure. Only `requires` edges pull packages into the closure:
+  # name / id sort — the recorded construction order). Only `requires` edges
+  # pull packages into the closure:
   # `after` edges are sequencing-only and never widen the recording.
   defp catalog_packages(profile) do
     packages = Catalog.Packages.packages()
@@ -320,8 +315,8 @@ defmodule Workstation.Core.Golden do
 
   defp put_after(record, _), do: record
 
-  # The recorded hosts shape is a host->true table (verbatim Lua semantics);
-  # native declarations already carry that map form (the graph gates on it),
+  # The recorded hosts shape is a host->true map;
+  # native declarations already carry that form (the graph gates on it),
   # and the list form normalizes into it. CanonicalJSON sorts the keys.
   defp put_supported_hosts(record, nil), do: record
 
@@ -428,7 +423,7 @@ defmodule Workstation.Core.Golden do
   # directory merge (with an exact single-owner directory for contrast),
   # explicit shell fragment order keys with the collection-order tie-break,
   # and nvim profile intents with the same tie-break, without importing any
-  # package module. Mirrors golden.lua synthetic_profiles verbatim.
+  # package module.
 
   defp synthetic_records("conflicts") do
     [
@@ -781,7 +776,7 @@ defmodule Workstation.Core.Golden do
     {catalog, Source.plan(%{graph: graph})}
   end
 
-  # A nil Lua field is an absent key, not a null: the projection must drop it
+  # A nil field is an absent key, not a null: the projection must drop it
   # so the canonical encoding reproduces the recorded bytes field-for-field.
   defp drop_nil_fields(map) do
     map |> Enum.reject(fn {_key, value} -> is_nil(value) end) |> Map.new()

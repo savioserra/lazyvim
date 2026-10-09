@@ -4,8 +4,7 @@ defmodule Workstation.Core.Preconditions do
   consumer -- it speaks only contracts and shapes (docs/architecture.md,
   "Module hierarchy & moduledoc conventions").
   Read-only actual-target precondition checks for every planned mutation.
-  Parity anchor: `check_preconditions` in
-  `workstation/lua/workstation/provisioner.lua`.
+  Read-only by law: a refused plan leaves the home untouched.
 
   Intervening home edits (full type/mode/content/link state), first adoption
   of unrecorded whole files, exact-directory ownership of existing contents,

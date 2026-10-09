@@ -393,7 +393,7 @@ defmodule Workstation.Pipeline do
   # Preconditions bind to the string-keyed plan shape; this projection is the
   # executor's view of the in-process plan (the same fields the read side
   # projects to the wire, restricted to what the checks read). Shell
-  # fragments are projected id/marker/body because the Lua-shaped checks
+  # fragments are projected id/marker/body because the precondition checks
   # (and the shared-target validator) read exactly those string keys.
   defp precondition_plan(plan) do
     %{

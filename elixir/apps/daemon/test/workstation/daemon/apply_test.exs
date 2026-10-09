@@ -110,7 +110,7 @@ defmodule Workstation.Daemon.ApplyTest do
     test "with the gate open, a contended apply lock maps to the locked protocol error", %{home: home} do
       Application.put_env(:daemon, :engine_apply, true)
 
-      # Contention is a CROSS-PROCESS fact (a Lua one-shot apply, or another
+      # Contention is a CROSS-PROCESS fact (a one-shot apply, or another
       # daemon instance, holding the same apply.lock): the orchestrator's
       # GenServer mailbox already serializes in-daemon requests, so an
       # externally created lock file is the honest fixture. The orchestrator

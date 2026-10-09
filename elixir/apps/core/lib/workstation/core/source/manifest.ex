@@ -72,14 +72,14 @@ defmodule Workstation.Core.Source.Manifest do
     end
   end
 
-  # Manifest entries mirror the Lua engine's string-keyed records: canonical
-  # encoding then orders every object mode, name, sha256, type.
+  # Manifest entries are string-keyed records; canonical encoding orders
+  # every object by key (mode, name, sha256, type).
   defp entry_to_manifest(entry) do
     if entry.type == "directory" do
       %{"name" => entry.source_name, "type" => "directory", "mode" => entry.mode || @default_directory_mode}
     else
       # Symlink source files record the digest of their declared destination
-      # string, mirroring the Lua engine: the source path is a plain file
+      # string: the source path is a plain file
       # whose body is the link target, mode 0o644.
       %{
         "name" => entry.source_name,

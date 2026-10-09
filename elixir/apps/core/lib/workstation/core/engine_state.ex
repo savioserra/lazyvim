@@ -6,10 +6,8 @@ defmodule Workstation.Core.EngineState do
   Guarded read access to the target-private engine state tree
   (`<home>/.local/state/workstation`) and to owned home targets.
 
-  Parity anchors: `workstation/lua/workstation/paths.lua` and
-  `workstation/lua/workstation/state.lua`. Every path the Elixir providers
-  touch MUST go through these primitives, because the engine guarantees the
-  invariants here and nowhere else:
+  Every path the providers touch MUST go through these primitives, because
+  the engine guarantees the invariants here and nowhere else:
 
   * engine-state paths are resolved without following symlinks (`lstat`,
     never `stat`) — a redirected `.local/state` chain must fail closed
@@ -41,7 +39,7 @@ defmodule Workstation.Core.EngineState do
   @intermediate_mode 0o755
 
   @doc """
-  Target home, mirroring `paths.lua`: `WORKSTATION_HOME` wins over `HOME`
+  Target home: `WORKSTATION_HOME` wins over `HOME`
   (the CLI passes `--home` through `WORKSTATION_HOME`), must be absolute.
   """
   @spec home() :: String.t()
@@ -66,7 +64,7 @@ defmodule Workstation.Core.EngineState do
   @doc """
   Guard all engine roots below `home` before any engine write or record:
   the state root, `generations/` and `journal/`, each final at 0700. This is
-  the write-side anchor of `state.lua ensure_roots`: every mutation and every
+  the write-side root contract: every mutation and every
   journal record assumes the private guarded tree exists, and letting each
   writer improvise its own creation order is how a journal lands at 0755.
   """
@@ -136,8 +134,8 @@ defmodule Workstation.Core.EngineState do
   final component holding exactly `final_mode`. Returns `:absent` when the
   walk stops at the first missing component (the read path treats that as an
   absent journal), `:ok` when everything checks out, and raises on any
-  existing component that violates the invariants. The Lua engine
-  additionally creates and chmods here; this side never mutates.
+  existing component that violates the invariants. Creation and repair live
+  on the write path; this read path never mutates.
   """
   @spec verify_tree!(String.t(), [String.t()], String.t(), non_neg_integer()) :: :ok | :absent
   def verify_tree!(home, components, label, final_mode \\ @state_mode)
@@ -219,8 +217,8 @@ defmodule Workstation.Core.EngineState do
             unless owner == uid(),
               do: raise(ArgumentError, "#{label} component is not owned by the current account: #{next}")
 
-            # The repair is deliberate (state.lua chmods the existing final
-            # component on every write-path access) and applies to the final
+            # The repair is deliberate (the existing final component is
+            # chmod'ed on every write-path access) and applies to the final
             # component only: an existing intermediate keeps its mode, so a
             # 0700 journal root passed through by a deeper chain is never
             # widened to 0755.
@@ -263,8 +261,8 @@ defmodule Workstation.Core.EngineState do
 
   @doc """
   No-follow stat of one path: `%{type: "file" | "directory" | "link" | "other",
-  mode, uid, size}` with `mode` masked to the permission bits (Lua
-  `bit.band(stat.mode, 4095)`), or `nil` when absent. Symlinks report
+  mode, uid, size}` with `mode` masked to the permission bits (the low
+  12 bits), or `nil` when absent. Symlinks report
   `"link"` and are never dereferenced.
   """
   @spec lstat(String.t()) ::
@@ -321,7 +319,7 @@ defmodule Workstation.Core.EngineState do
   @doc """
   Read a private journal JSON file without following symlinks. Absent entries
   decode as `:absent`; malformed content is `{:error, :malformed}` — never a
-  raw body and never a crash, mirroring the Lua `read_json` contract.
+  raw body and never a crash.
   """
   @spec read_json(String.t()) :: {:ok, term()} | :absent | {:error, :malformed}
   def read_json(path) do

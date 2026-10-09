@@ -1,9 +1,8 @@
 defmodule Workstation.Core.Update.Pull do
   @moduledoc """
   The `pull` step: fetch the upstream of the engine-owned checkout and move
-  it forward — the checked fast-forward of `workstation/apps/cli/run.lua:139`
-  (`git -C repo_root pull --ff-only`) and `docs/capabilities.md` ("Checked
-  pull --ff-only").
+  it forward — the checked fast-forward (`git -C repo_root pull --ff-only`)
+  of `docs/capabilities.md` ("Checked pull --ff-only").
 
   It is spelled fetch + `merge --ff-only`, never `reset --hard`: a pull that
   rewrote the checkout would destroy uncommitted owner work in the engine

@@ -5,8 +5,7 @@ defmodule Workstation.Core.Update.Verify do
   target still matches the fingerprint the journal recorded when it claimed
   ownership, reported per owning package.
 
-  Parity anchor: the Lua verify verb (`workstation/apps/cli/run.lua`:
-  `launcher.verify(root)` then the per-package runner). The Elixir engine's
+  Order: `launcher.verify(root)` first, then the per-package runner. The
   "packages" are the journal's owning packages, and the observable behavior
   is per owning contract: file-shaped records verify against the recorded
   fingerprint (type + mode + content digest / link value), and records an
@@ -63,7 +62,7 @@ defmodule Workstation.Core.Update.Verify do
      }}
   end
 
-  # launcher.lua verify: the launcher must be THE canonical matching symlink.
+  # The launcher must be THE canonical matching symlink.
   defp verify_launcher!(root, home) do
     target = Workstation.Core.Update.realpath(Path.join(root, "bin/workstation"))
     launcher = Path.join([home, ".local", "bin", "workstation"])

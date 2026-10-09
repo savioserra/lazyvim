@@ -4,9 +4,9 @@ defmodule Workstation.Packages.Node do
   the sole Node version pin asset, the managed nvm shell loader and its
   startup-file fragments.
 
-  The archive bootstrap and runtime configuration stay with the factory's
-  Lua `setup` handler (`packages/node/unix`); versions.lua stays target-only
-  and nil-tolerant, and `workstation apply` refreshes the `.node-version` pin
+  The archive bootstrap and runtime configuration live outside managed
+  source state (the toolchain bootstrap contract provisions the runtime
+  root); `workstation apply` refreshes the `.node-version` pin
   in place before setup, so the native surface is exactly the two assets plus
   the three loader fragments.
   """

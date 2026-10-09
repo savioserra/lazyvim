@@ -2,7 +2,7 @@ defmodule Workstation.Core.CatalogNativeTest do
   @moduledoc """
   Equivalence anchor for the native catalog. The committed golden envelope
   tests/goldens/full-home/input.json is the frozen recording of the complete
-  catalog (the complete Lua-era factory output, re-recordable via
+  catalog (re-recordable via
   `mix workstation.goldens`), so the native registry must load to exactly
   the same denormalized catalog: ids, requires, host gates, recipe bytes and
   inlined asset bodies, position for position. Composition runs the real

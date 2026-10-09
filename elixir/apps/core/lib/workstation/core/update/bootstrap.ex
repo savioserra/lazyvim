@@ -14,9 +14,9 @@ defmodule Workstation.Core.Update.Bootstrap do
     fails any check refuses the bootstrap instead of downloading from it.
   * artifacts are hash-checked on EVERY use and cached under their digest
     (`<home>/.cache/workstation/bootstrap/<digest>` for the runtime,
-    `<home>/.cache/workstation/downloads/<sha256>` for the backend — the
-    same cache layout the Lua provisioner uses); a cached file whose bytes
-    no longer hash to its own name is discarded, never trusted.
+    `<home>/.cache/workstation/downloads/<sha256>` for the backend); a
+    cached file whose bytes no longer hash to its own name is discarded,
+    never trusted.
   * archives are member-checked before extraction (no empty, absolute or
     `..`-traversing names), extracted into a private staging directory, and
     activated by sibling rename with the previous tree kept as backup until
@@ -32,14 +32,13 @@ defmodule Workstation.Core.Update.Bootstrap do
     a conflicting path is refused ("inspect and move it aside explicitly"),
     never replaced.
 
-  The backend artifact covers the one call shape the Lua bootstrap verb
-  makes (`tar` archive, single `chezmoi` inner file, mode 0755); the general
-  provision archive machinery (zip, overlay trees, exact manifests) stays
-  Lua-side until a lane needs it.
+  The backend artifact covers the one call shape the bootstrap verb
+  needs (`tar` archive, single `chezmoi` inner file, mode 0755); the general
+  provision archive machinery (zip, overlay trees, exact manifests) lands
+  when a lane needs it.
 
   Downloads use the pinned https-only curl contract; `allow_file_urls: true`
-  re-opens `file://` for LOCAL FIXTURE tests only (the Lua provisioner's own
-  test affordance), never in production runs.
+  re-opens `file://` for LOCAL FIXTURE tests only, never in production runs.
   """
 
   @lock_retries 60
@@ -276,7 +275,7 @@ defmodule Workstation.Core.Update.Bootstrap do
     end
   end
 
-  ## Backend artifact (the Lua bootstrap verb's `ensure_backend` call shape)
+  ## Backend artifact (the `ensure_backend` call shape)
 
   defp install_backend(root, home, opts) do
     versions = versions!(root)
@@ -385,7 +384,7 @@ defmodule Workstation.Core.Update.Bootstrap do
     end
   end
 
-  ## Public launcher (launcher.lua install)
+  ## Public launcher (install into `~/.local/bin`)
 
   defp install_launcher(root, home) do
     target = Workstation.Core.Update.realpath(Path.join(root, "bin/workstation"))
@@ -435,7 +434,7 @@ defmodule Workstation.Core.Update.Bootstrap do
   end
 
   # Staging siblings live next to their destination, on the same filesystem,
-  # so the final rename is atomic (provision.lua's `sibling`).
+  # so the final rename is atomic.
   defp sibling(dest), do: "#{dest}.bootstrap-#{System.unique_integer([:positive])}"
 
   defp regular_executable?(path) do

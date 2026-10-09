@@ -6,8 +6,8 @@ defmodule Workstation.Packages.Agent do
   Why these four files and nothing else: the role definitions carry memory
   frontmatter intrinsic to pi-subagents (they shadow the bundled builtins
   wholesale), while pi's own settings.json — where the user picks
-  "workstation-light/workstation-dark" — stays pi-owned, so the settings
-  mutation remains factory `setup` Lua and never becomes managed state. The
+  "workstation-light/workstation-dark" — stays pi-owned: the settings
+  mutation is deliberately never managed state. The
   theme JSONs are templates rendered against the theme capability's
   chezmoidata envelope, hence the `theme` requirement alongside `node`.
   """

@@ -5,8 +5,8 @@ defmodule Workstation.Daemon.ApplyOrchestrator do
 
   Lock semantics:
 
-  * the lock file is `<state_root>/apply.lock` — the SAME file the Lua
-    one-shot apply takes, so a daemon orchestration and a one-shot apply can
+  * the lock file is `<state_root>/apply.lock` — the SAME file the one-shot
+    apply takes, so a daemon orchestration and a one-shot apply can
     never run concurrently against one target; mutual exclusion is a
     filesystem fact, not a convention between two Elixir processes;
   * the lock is created exclusively (`wx`, mode 0600); when it already
@@ -17,9 +17,8 @@ defmodule Workstation.Daemon.ApplyOrchestrator do
     "unreadable or malformed lock" instead of being treated as absent, so a
     corrupted lock cannot silently re-enable concurrency;
   * a holder releases only its OWN invocation: the release re-reads the file
-    and removes it only when the recorded token still matches, which is the
-    portable equivalent of the Lua fd-handle release when another operation
-    replaced the lock in between.
+    and removes it only when the recorded token still matches — a holder
+    never deletes a lock another operation replaced in between.
 
   The orchestrator itself serializes in-daemon requests through its
   GenServer mailbox (one orchestrated generation at a time for the whole

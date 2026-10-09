@@ -228,8 +228,8 @@ defmodule Workstation.Core.Source do
   end
 
   @doc """
-  Stamp the plan with the journal baseline it was composed against (the Lua
-  anchor's changeset baseline: applied revision + generation read at plan
+  Stamp the plan with the journal baseline it was composed against (the
+  changeset baseline: applied revision + generation read at plan
   build time). `plan/1` stays pure — a pure core replay probes no
   filesystem, and a fresh journal records nothing — so real appliers call
   this at the composition boundary with the journal record read at build
@@ -315,8 +315,8 @@ defmodule Workstation.Core.Source do
   @doc """
   The composed capability profiles (ordered language entries, theme-derived
   surfaces, ...) for the plan, when any package contributed to a capability
-  provider. Exposed separately from `plan/1` because the Lua engine writes
-  it into the caller's context rather than into the plan view.
+  provider. Exposed separately from `plan/1` because it is a read-side
+  projection, not part of the recorded plan body.
   """
   def composed_profile(plan), do: plan.profile
 
@@ -561,10 +561,10 @@ defmodule Workstation.Core.Source do
         fragments: group.fragments
       }
 
-      # Journal records mirror source.lua's internal fragment records exactly:
-      # {id, marker, body, order, owner, sequence} with sequence the 1-based
-      # position of the shell record in collection order (string keys — the
-      # journal is a recorded-state parity anchor, encoded canonically).
+      # Journal fragment records: {id, marker, body, order, owner, sequence}
+      # with sequence the 1-based position of the shell record in collection
+      # order (string keys — the journal is recorded state, encoded
+      # canonically).
       fragments_journal =
         if group.fragments != [] do
           journal_records =
@@ -833,7 +833,7 @@ defmodule Workstation.Core.Source do
     :ok
   end
 
-  # --- path helpers (parity with source.lua is_within/encompasses) ---
+  # --- path helpers (target/ancestor containment) ---
 
   defp is_within(target, ancestor) do
     target == ancestor or String.starts_with?(target, ancestor <> "/")

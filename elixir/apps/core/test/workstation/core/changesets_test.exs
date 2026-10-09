@@ -1,7 +1,6 @@
 defmodule Workstation.Core.ChangesetsTest do
   @moduledoc """
-  Change-set and patch-parity cases against
-  `workstation/lua/workstation/changesets.lua`, using explicit verified
+  Change-set and patch byte-exactness cases, using explicit verified
   baseline fixtures so the diff bytes can be asserted as literals. The
   patches describe generated source only: nothing here ever reads or mutates
   a real home.

@@ -26,8 +26,8 @@ defmodule Workstation.Packages.Nvim.Profile do
   def id, do: "nvim-profile"
 
   @doc """
-  One nvim-profile language intent (`packages/nvim/profile.lua` recipe) as
-  declared by the nvim package module. The raw intent map is normalized to
+  One nvim-profile language intent
+  as declared by the nvim package module. The raw intent map is normalized to
   the envelope's denormalized shape here — every declared entry field
   present (nil when the language omits it), case records carrying exactly
   their base fields plus optional string-keyed project_files — so native
@@ -46,7 +46,7 @@ defmodule Workstation.Packages.Nvim.Profile do
   Denormalize one recorded-envelope spec (string-keyed golden bytes) back to
   the declared atom shape: known entry fields to atom keys, project_files
   keys staying data (file names, never structure). Unknown fields are
-  tolerated exactly like the Lua validator, which checks known fields
+  tolerated: the validator checks known fields
   without an allowlist.
   """
   def denormalize_spec(spec) do
@@ -140,7 +140,7 @@ defmodule Workstation.Packages.Nvim.Profile do
     {record, profile}
   end
 
-  # --- serialization (byte parity with profile.lua M.serialize) ---
+  # --- serialization (the deployed file's exact byte shape) ---
 
   @doc """
   Serialize the composed profile as deployed runtime Lua. The deployed file is

@@ -3,9 +3,9 @@ defmodule Workstation.Core.Theme.TokensTest do
 
   alias Workstation.Core.Theme.Tokens
 
-  # The parity anchor lives in the repo's goldens tree (shared with the Lua
-  # engine's b2 goldens): from __DIR__ (apps/core/test/workstation/core/theme)
-  # it is seven levels up to the repo root.
+  # The anchor fixture lives in the repo's goldens tree: from __DIR__
+  # (apps/core/test/workstation/core/theme) it is seven levels up to the
+  # repo root.
   @goldens Path.expand("../../../../../../../tests/goldens/theme/input.json", __DIR__)
 
   defp fixture_theme_bytes do
@@ -26,10 +26,11 @@ defmodule Workstation.Core.Theme.TokensTest do
     assert Tokens.data_envelope() == fixture_theme_bytes()
   end
 
-  test "the mirror carries the same contract values as tokens.lua" do
-    # Parity anchor: packages/theme/tokens.lua must carry identical values.
-    # The token set names no consumer package; consumer choices live in the
-    # consumers' own package modules (see the herdr catalog module).
+  test "the engine token set carries the same contract values as the theme payload" do
+    # Cross-carrier consistency: packages/theme/tokens.lua (the managed-tree
+    # payload) must carry identical values. The token set names no consumer
+    # package; consumer choices live in the consumers' own package modules
+    # (see the herdr catalog module).
     assert Tokens.version() == 4
 
     assert Map.new(Tokens.slots()) == %{

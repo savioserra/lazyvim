@@ -4,17 +4,13 @@ defmodule Workstation.Core.Journal do
   consumer -- it speaks only contracts and shapes (docs/architecture.md,
   "Module hierarchy & moduledoc conventions").
 The private per-target journal under the engine state root: guarded reads and
-the guarded write path. Parity anchor:
-`workstation/lua/workstation/state.lua`
-(`applied_record`, `pending_records`, `target_fingerprint`, `sha256`,
-`write_pending`, `write_failed`, `record_applied`, `clear_pending`,
-`write_json`).
+the guarded write path.
 
 The journal is the sole provenance record for owned targets; every
 precondition and baseline decision binds to it. Reading is side-effect free
 and fail-closed on invariants (no-follow, owner checks in
 `Workstation.Core.EngineState`), while malformed entries resolve to absent
-results exactly like the anchor — a half-decoded record must never be
+results — a half-decoded record must never be
 mistaken for a proven ownership claim.
 
 Writes are exclusive and atomic: every record lands through a same-directory
@@ -54,8 +50,8 @@ conflict-aware through the journal, never a blind replay.
   """
   @spec pending(String.t()) :: [map()]
   def pending(state_root) do
-    # A missing journal root answers "no pending attempts" (the Lua engine
-    # would create it on first write); a violated guard must still raise.
+    # A missing journal root answers "no pending attempts" (the write path
+    # creates it on first write); a violated guard must still raise.
     case verify_journal_tree() do
       :absent ->
         []
@@ -79,8 +75,8 @@ conflict-aware through the journal, never a blind replay.
         |> Enum.flat_map(fn name ->
           case EngineState.read_json(Path.join(directory, name)) do
             # Map.put (not the structural-update syntax): pending files written
-            # by an older engine revision may lack the file slot, and the Lua
-            # anchor's `record.file = name` freely adds it.
+            # by an older engine revision may lack the file slot; this
+            # projection freely adds it.
             {:ok, record} when is_map(record) -> [Map.put(record, "file", name)]
             _other -> []
           end
@@ -91,10 +87,9 @@ conflict-aware through the journal, never a blind replay.
     end
   end
 
-  # The walked chain must include the `journal` component itself, mirroring
-  # the anchor's `journal_root` guard (`state.lua` guarded_directory over
-  # {".local", "state", "workstation", "journal"} at the exact 0700 the Lua
-  # engine keeps): Erlang `:file.read_link_info` lstats only the final
+  # The walked chain must include the `journal` component itself, guarded
+  # like every state component (0700, no-follow, current uid): Erlang
+  # `:file.read_link_info` lstats only the final
   # component, so without this walk a symlinked `journal` directory would be
   # read through into unrelated state — and applied/pending records are the
   # ownership provenance feeding preconditions and changeset baselines.
@@ -114,11 +109,11 @@ conflict-aware through the journal, never a blind replay.
   defdelegate sha256(contents), to: EngineState
 
   # --- guarded write path ---------------------------------------------------
-  # Parity anchor: `state.lua write_pending/write_failed/record_applied/`
-  # `clear_pending`. Every function takes the target `home` because the
-  # guarded chain is anchored there; records are plain string-keyed maps and
-  # encode through `Workstation.Core.CanonicalJSON`, the byte-exact
-  # `vim.json.encode` shape the journal's readers (and the Lua engine's) expect.
+  # The pending/failed/applied record writers. Every function takes the
+  # target `home` because the guarded chain is anchored there; records are
+  # plain string-keyed maps and encode through
+  # `Workstation.Core.CanonicalJSON`, whose exact bytes the journal's
+  # readers decode.
 
   @doc """
   Record one in-flight apply attempt before the backend runs, as
@@ -231,9 +226,9 @@ conflict-aware through the journal, never a blind replay.
   end
 
   # The whole chain is created-or-repaired guarded: intermediates 0755,
-  # every journal component 0700, no-follow, owned — the anchor's
-  # guarded_directory. The `journal` root is always ensured first as its own
-  # 0700 final (state.lua guards `journal_root` before any leaf), so a fresh
+  # every journal component 0700, no-follow, owned. The `journal` root is
+  # always ensured first as its own
+  # 0700 final (before any leaf), so a fresh
   # walk never creates it at an intermediate's 0755 and the leaf chain then
   # passes through it untouched.
   defp ensure_journal_directory!(home, leaf) do
@@ -261,7 +256,8 @@ conflict-aware through the journal, never a blind replay.
     try do
       # Object-faithful encoding: journal readers require map shapes for
       # targets/source_index/fragments, so an empty map records as {} — the
-      # golden-pinned Lua quirk (empty object -> []) must not poison state.
+      # envelope's empty-object-as-[] rule (pinned by the goldens) must not
+      # poison state.
       IO.binwrite(file, Workstation.Core.CanonicalJSON.encode_record(value))
       File.chmod!(temp, 0o600)
     after

@@ -4,8 +4,8 @@ defmodule Workstation.Packages.Foundation do
   the catalog discipline root every HOME-writing capability depends on.
 
   The runtime payload archives (rg/fd/fzf/lazygit/tree-sitter/rainfrog) are
-  not managed home targets and are no longer provisioned by the retired Lua
-  `setup` handler; capability acquisition is bootstrap's contract. The
+  not managed home targets; capability acquisition is bootstrap's contract.
+  The
   native contribution surface is the shared-shell PATH fragment on the
   three startup files. Fragment bytes are load-bearing: they are
   generation-digested engine output (see `Workstation.Core.ShellProgram`).

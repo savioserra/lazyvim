@@ -1,20 +1,20 @@
 defmodule Workstation.Core.Theme.Tokens do
   @moduledoc """
-  Elixir data mirror of the canonical theme token module
-  `workstation/packages/theme/tokens.lua` — the single place where
-  workstation colors are defined.
+  The engine-side carrier of the workstation theme token set — the palette
+  the daemon serves to live clients.
 
-  Why this mirror exists: the daemon answers `theme.resolve` requests from
-  live clients, so the resolution base (the palette) must be available to
-  the Elixir side without shelling out to Neovim. It is a deliberate,
-  reviewed duplication with an ExUnit parity anchor
+  The token set has exactly two carriers that must agree value-for-value:
+  this module (in-process resolution for the daemon) and
+  `workstation/packages/theme/tokens.lua` (the managed-tree payload, read as
+  bytes, never executed). The duplication is deliberate and reviewed, with
+  an ExUnit consistency anchor
   (`apps/core/test/workstation/core/theme/tokens_test.exs`) that compares the
   rendered `.chezmoidata.toml` envelope byte-for-byte against the committed
-  theme goldens fixture (`tests/goldens/theme/input.json`). Re-branding still
-  edits ONLY `tokens.lua`; a mirror that has not been updated fails the
-  parity test instead of silently serving stale colors.
+  theme goldens fixture (`tests/goldens/theme/input.json`). Re-branding edits
+  BOTH carriers and re-records the goldens; a stale carrier fails the
+  consistency test instead of silently serving stale colors.
 
-  Layers (same contract as the Lua module):
+  Layers (identical in both carriers):
 
   * `slots`   — role -> terminal NAMED palette slot, appearance-agnostic
                 (consumers that resolve named slots follow the live terminal
@@ -43,17 +43,17 @@ defmodule Workstation.Core.Theme.Tokens do
   @version 4
 
   # Ordered lists drive every emission; maps are only storage. The rendered
-  # bytes must equal the Lua renderer's output, so traversal order is never
-  # delegated to map iteration. New roles append after the base six:
+  # bytes are pinned (goldens + the consistency test), so traversal order is
+  # never delegated to map iteration. New roles append after the base six:
   # keyboard/selection affordances (shortcut, selected pair, inactive), the
   # magnitude ramp trio start->mid->end, then the per-domain border roles.
   @slot_roles [:accent, :ok, :warn, :err, :chrome, :text, :shortcut, :selected_bg, :selected_fg, :inactive, :ramp_start, :ramp_mid, :ramp_end, :border_engine, :border_journal, :border_capabilities, :border_plan, :border_diff, :border_status]
   @palette_roles [:accent, :ok, :warn, :err, :chrome, :text, :shortcut, :selected_bg, :selected_fg, :inactive, :ramp_start, :ramp_mid, :ramp_end, :border_engine, :border_journal, :border_capabilities, :border_plan, :border_diff, :border_status, :bg, :muted]
   @appearances [:dark, :light]
   # The closed set of border roles a consumer may request for a panel
-  # border. Mirrors the Lua module; consumers validate against this list
-  # (`role in border_roles()`), never against a wider set — a typo fails
-  # closed instead of silently falling back to the accent default.
+  # border. Consumers validate against this list (`role in border_roles()`),
+  # never against a wider set — a typo fails closed instead of silently
+  # falling back to the accent default.
   @border_roles [:border_engine, :border_journal, :border_capabilities, :border_plan, :border_diff, :border_status]
 
   @slots %{
@@ -127,7 +127,7 @@ defmodule Workstation.Core.Theme.Tokens do
     }
   }
 
-  @doc "Token set version; bumped by the Lua module when the shape changes."
+  @doc "Token set version; bumped in both carriers when the shape changes."
   @spec version() :: pos_integer()
   def version, do: @version
 
@@ -187,10 +187,10 @@ defmodule Workstation.Core.Theme.Tokens do
       |> IO.iodata_to_binary()
   end
 
-  # Mirrors the Lua toml_string: plain, non-empty, no control bytes, quotes
-  # and backslashes escaped is unnecessary for the closed token set, but the
-  # guard stays so a bad mirror edit fails loudly instead of emitting broken
-  # TOML.
+  # Token values are plain, non-empty and control-byte-free; quoting and
+  # backslash escaping is unnecessary for the closed token set, but the
+  # guard stays so a bad carrier edit fails loudly instead of emitting
+  # broken TOML.
   defp toml_string(value) when is_binary(value) do
     unless value != "" and not String.contains?(value, ["\\", "\""]) and
              not String.match?(value, ~r/[\x00-\x1f\x7f]/) do

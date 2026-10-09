@@ -3,21 +3,23 @@ defmodule Workstation.Core.CanonicalJSON do
   Layer: kernel. The kernel law: this module names no package, no backend and no
   consumer -- it speaks only contracts and shapes (docs/architecture.md,
   "Module hierarchy & moduledoc conventions").
-  JSON encoding for the plain-data shapes the plan pipeline produces,
-  byte-identical to Neovim's `vim.json.encode(value, { sort_keys = true })`.
+  JSON encoding for the plain-data shapes the plan pipeline produces — the
+  single byte format of every recorded artifact: plan envelopes, golden
+  trees, journal records.
 
   The generation id and every entry fingerprint are content addresses over
-  these bytes, so any drift here breaks golden parity silently. The recorded
-  quirks (probe-verified against Neovim 0.11 `vim.json.encode`) that a generic
-  JSON encoder gets wrong:
+  these bytes, and the committed goldens pin them, so any drift here breaks
+  golden replay. The recorded format rules that a generic JSON encoder gets
+  wrong:
 
   * object keys are sorted bytewise, recursively; array order is preserved;
-  * an EMPTY object encodes as `[]`, because a Lua table cannot distinguish
-    an empty map from an empty list — the goldens rely on this (`assets: []`,
+  * an EMPTY object encodes as `[]` — the recorded envelope format has no
+    distinct empty object (an empty map and an empty list are the same
+    bytes), and the goldens rely on this (`assets: []`,
     `fragments_journal: []`);
-  * callers building maps drop `nil` values entirely (a Lua `nil` field does
-    not exist), while the distinct `:null` token (the `vim.NIL` anchor) emits
-    `null` — that is how `baseline_generation` stays an explicit null on a
+  * callers building maps drop `nil` values entirely — an absent optional
+    field leaves no key — while the distinct `:null` token emits a literal
+    `null`: that is how `baseline_generation` stays an explicit null on a
     fresh journal while absent `link`/`exact`/`template` keys disappear;
     a raw `nil` that does reach the encoder also emits `null` (never a
     dropped key), so nil-able envelope fields such as `applied_generation`
@@ -39,21 +41,23 @@ defmodule Workstation.Core.CanonicalJSON do
           | %{optional(String.t()) => json_value()}
 
   @doc """
-  Encode a plain-data value to the exact `vim.json.encode(sort_keys)` bytes.
+  Encode a plain-data value to the exact recorded envelope bytes (the module
+  doc's format rules).
   Raises `ArgumentError` on values outside the supported shape (floats,
   atoms other than `:null`/booleans, non-binary keys) — those cannot occur in
   a validated plan, so failing closed beats guessing an encoding. `nil` is
   inside the shape and encodes as the JSON literal `null`.
   """
   @spec encode(json_value()) :: binary()
-  def encode(value), do: value |> enc(:lua) |> IO.iodata_to_binary()
+  def encode(value), do: value |> enc(:envelope) |> IO.iodata_to_binary()
 
   @doc """
   Encode engine-record JSON (the journal's applied/failed/pending records):
   identical to `encode/1` except an empty object encodes as `{}` — the journal
   readers require object shapes for `targets`, `source_index` and `fragments`,
-  and an empty-catalog apply must record a parseable journal, so the Lua
-  empty-table quirk must never leak into recorded state (the 2026-10-05
+  and an empty-catalog apply must record a parseable journal, so the
+  envelope's empty-object-as-`[]` rule must never leak into recorded state
+  (the 2026-10-05
   real-host incident: an empty plan wrote `[]` and every later apply refused
   to parse its own journal).
   """
@@ -61,7 +65,7 @@ defmodule Workstation.Core.CanonicalJSON do
   def encode_record(value), do: value |> enc(:record) |> IO.iodata_to_binary()
 
   # A raw nil encodes as the JSON literal null, never a dropped key. Callers
-  # drop nil map values when building Lua-parity plan shapes, but nil-able
+  # drop nil map values when building plan shapes, but nil-able
   # envelope fields (applied_generation with no journal, a file row's mode)
   # pass straight through, and dropping keys there would destabilize the
   # output shape. No input that previously encoded successfully contained a
@@ -87,12 +91,13 @@ defmodule Workstation.Core.CanonicalJSON do
   end
 
   defp enc(value, mode) when is_map(value) do
-    # A Lua table with no entries is an array to vim.json.encode, so plan
-    # bytes (:lua) must encode every empty map as [] for byte parity. Engine
-    # records (:record) demand the object shape — see encode_record/1.
+    # The recorded envelope format has no distinct empty object, so envelope
+    # bytes (:envelope) encode every empty map as [] — byte-identical to the
+    # recorded goldens. Engine records (:record) demand the object shape —
+    # see encode_record/1.
     case :maps.to_list(value) do
       [] ->
-        if mode == :lua, do: "[]", else: "{}"
+        if mode == :envelope, do: "[]", else: "{}"
 
       pairs ->
         members =
@@ -140,9 +145,8 @@ defmodule Workstation.Core.CanonicalJSON do
   end
 
   @doc """
-  Lowercase-hex SHA-256 of binary contents — the byte-for-byte anchor of
-  `state.sha256` (`vim.fn.sha256`), used for fingerprints, manifest digests
-  and generation ids.
+  Lowercase-hex SHA-256 of binary contents — the content address used for
+  fingerprints, manifest digests and generation ids.
   """
   @spec sha256(binary()) :: String.t()
   def sha256(contents) when is_binary(contents) do

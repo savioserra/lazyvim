@@ -7,8 +7,9 @@ defmodule Workstation.Packages.PiNtfyNotifier do
   The notifier still executes in future shells: stopping source management of
   its environment fragment is not removal — the fragment order (40) places it
   after the runtime loaders it may shadow. Extension behavior verification
-  (manifest shape, node --test) stays with the factory's Lua `verify`
-  handler.
+  (manifest shape, node --test) is not an engine surface: the journal-backed
+  verify covers the deployed payloads' recorded fingerprints, and extension
+  behavior rides the extension's own tooling.
   """
 
   @behaviour Workstation.Core.Catalog.Spec

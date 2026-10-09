@@ -6,17 +6,17 @@ defmodule Workstation.Packages.Nvim do
   (Go and the standard language set).
 
   Composition surface: this module owns its profile compositor directly —
-  `Workstation.Packages.Nvim.Profile` (parity anchors
-  `packages/nvim/compose.lua` + `profile.lua`) validates the intents, fixes
+  `Workstation.Packages.Nvim.Profile` validates the intents, fixes
   their explicit domain order, and serializes the composed profile as
   deployed runtime Lua. It plugs into the assembler through the generic
   `Workstation.Core.Contracts.Provider` contract — the engine never names it. The intents' verification semantics are declared
   data: `language_cases`/`formatter_cases` are the LSP and formatter
   behavior checks, `mason_packages` names what the applied Mason lock must
   provide, `lazyvim_extras` selects LazyVim distribution modules, and the
-  factory's sync handler runs the LazyVim lifecycle targets (lazy-restore,
+  deployed editor runtime (the managed `lua/config/sync.lua`) runs the
+  LazyVim lifecycle targets (lazy-restore,
   lazy-clean, Mason, Tree-sitter) against the deployed profile. Headless
-  verification and sync execution remain the Lua factory's runtime until the
+  verification and sync execution stay in the editor's runtime until the
   lifecycle lane ports package verify/sync handlers; this declaration keeps
   their inputs byte-stable and golden-graded.
 
@@ -150,10 +150,10 @@ defmodule Workstation.Packages.Nvim do
 
   # The modify program seeds the engine pin baseline verbatim: the committed
   # template carries the marker exactly once and the committed pins asset is
-  # embedded at that position (parity anchor: init.lua replace_plain, which
-  # replaces the first occurrence only). Both reads fail closed on missing or
-  # empty assets, and the pins must decode as a JSON object exactly like the
-  # factory's contribution-time assertion.
+  # embedded at that position; the replace hits the first occurrence only —
+  # the single-marker semantics the deployed init.lua template carries.
+  # Both reads fail closed on missing or
+  # empty assets, and the pins must decode as a JSON object.
   defp build_lazy_lock_program do
     pins = Workstation.Core.Catalog.package_asset!("nvim", "files/.config/nvim/lazy-lock.json")
     template = Workstation.Core.Catalog.package_asset!("nvim", "files/modify/lazy-lock.json.sh")

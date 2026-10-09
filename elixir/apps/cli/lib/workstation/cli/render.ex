@@ -7,22 +7,21 @@ defmodule Workstation.CLI.Render do
   terminal-free so output is stable under redirection and in tests. Input
   wires are produced by `Workstation.CLI.Core` (the only front end since the
   b8 graduation flip). Field order is fixed or positional, so identical
-  evaluation state renders identical text; the plan view mirrors the
-  `changesets.lua M.print_report` anchor layout, and the Lua-side parity of
-  that layout is pinned by tests/goldens plus the b8 old-vs-new harness.
+  evaluation state renders identical text; the plan view layout is pinned
+  by the committed goldens.
   """
 
   ## core wire views (workstation.{status,plan,diff}.v1, lane b5)
 
   # The hard-cut v1 wires carry the fields below, so they render through
-  # their own views. The plan view mirrors
-  # `changesets.lua M.print_report` (sections and layout); the two documented
+  # their own views. The plan view keeps the canonical sections and layout
+  # (pinned by the committed goldens); the two documented
   # deviations keep the wire the single source of truth: the header names the
   # front end instead of the destination (the plan.v1 envelope deliberately
   # does not carry the home path — destination is a status-wire field), and
   # modes print as the wire's canonical octal strings rather than being
   # re-derived. Patches without a text diff print their typed header without
-  # the anchor's duplicated `link` suffix (a Lua format-string quirk).
+  # a duplicated `link` suffix.
   @doc "Render the hard-cut core status wire (`workstation.status.v1`)."
   def core_status(wire) do
     packages =
@@ -88,7 +87,7 @@ defmodule Workstation.CLI.Render do
 
   @doc """
   Render the hard-cut core plan wire (`workstation.plan.v1`) as the human
-  plan preview, mirroring `changesets.lua M.print_report`.
+  plan preview.
   """
   def core_plan(wire) do
     plan = Map.get(wire, "plan", %{})

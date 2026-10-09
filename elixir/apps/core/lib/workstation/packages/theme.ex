@@ -10,8 +10,9 @@ defmodule Workstation.Packages.Theme do
   are selected. Foundation is the catalog discipline for every HOME-writing
   capability: it keeps theme ordered with the other dependents, after runtime
   setup. The envelope bytes come from `Workstation.Core.Theme.Tokens`, whose
-  ExUnit parity anchor pins them to the Lua renderer — a tokens drift fails
-  there instead of silently rebranding the home.
+  ExUnit consistency anchor pins them to the committed goldens (and through
+  them to the deployed `packages/theme/tokens.lua` payload) — a tokens drift
+  fails there instead of silently rebranding the home.
   """
 
   @behaviour Workstation.Core.Catalog.Spec

@@ -7,7 +7,8 @@ defmodule Workstation.Packages.HerdrPi do
   The file recipe deploys through the engine backend; an unmanaged existing
   file fails closed at apply and takeover is always an explicit operator
   decision, matching upstream's single-file contract. Drift/discovery
-  verification stays with the factory's Lua `verify` handler.
+  verification of the live integration state is not an engine surface — the
+  journal-backed verify covers the deployed hook's recorded fingerprint.
   """
 
   @behaviour Workstation.Core.Catalog.Spec

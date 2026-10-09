@@ -4,9 +4,9 @@ defmodule Workstation.Packages.PiSkills do
   the private `.pi/agent` root plus one managed SKILL.md per registered
   skill (lazyvim, secrets).
 
-  Skill discovery/verification against the installed pi package stays with
-  the factory's Lua `verify` handler (it shells out to the managed node
-  against the global npm root), so the native surface is only the deployed
+  Skill discovery/verification against the installed pi package (shelling
+  out to the managed node against the global npm root) is not an engine
+  surface, so the native surface is only the deployed
   skill payloads.
   """
 

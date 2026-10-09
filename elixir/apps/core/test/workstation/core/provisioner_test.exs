@@ -191,8 +191,8 @@ defmodule Workstation.Core.ProvisionerTest do
     end
 
     test "fails closed when the journal component itself is symlinked" do
-      # Parity anchor: state.lua journal_root guards the `journal` component
-      # exactly like the state root; reading through a planted link would
+      # The `journal` component is guarded exactly like the state root;
+      # reading through a planted link would
       # hand unrelated state to the provenance decisions.
       state_root = guarded_state_root()
       File.rm_rf!(Path.join([state_root, "journal"]))

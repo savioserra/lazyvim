@@ -6,8 +6,8 @@ defmodule Workstation.Packages.Typescript do
 
   An explicitly registered language package that requires the Node runtime
   and the nvim editor; it owns its deployed plugin module and its profile
-  intent. Behavior verification through the nvim-owned leaf helpers stays
-  with the factory's Lua `verify` handler (c4b/c5 record which parts must
+  intent. Behavior verification through the nvim-owned leaf helpers is not
+  an engine surface (c4b/c5 record which parts must
   gain Elixir equivalents).
   """
 
