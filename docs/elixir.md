@@ -169,11 +169,11 @@ source-scan suite) and must never regrow:
    `golden.ex` fixture-oracle data.
 3. **Backend isolation.** The chezmoi target-name encoding (`dot_` mapping,
    `_tmpl` suffixing, the reserved attribute prefix family) lives only in
-   `Workstation.Core.Source.Chezmoi`. Generic core references the backend
+   `Workstation.Backends.Chezmoi`. Generic core references the backend
    exclusively through that module's API and constants (`provider_id/0`,
    `data_provider_id/0`, `remove_filename/0`, `data_filename/0`); the exempt
-   backend family is `source/chezmoi.ex`, `provisioner.ex`,
-   `shell_program.ex`, `apply_engine.ex`, `update/bootstrap.ex`.
+   backend family is `backends/chezmoi.ex`, `provisioner.ex`,
+   `shell_program.ex`, `update/bootstrap.ex`, `policy.ex`, `golden.ex`.
 
 ## Architecture: the client/daemon split (THE design)
 
@@ -427,8 +427,8 @@ runtime dependency flows strictly forward and any crash rebuilds the whole
 serving generation in dependency order (capability children start after the
 registry and never outlive it). The listener binds
 `<home>/.local/state/workstation/daemon/<uid>.sock` (dir `0700`, socket
-`0600`, no-follow owner/type guards mirroring the Lua engine's `state.lua`
-`guarded_directory`) and never touches `:gen_tcp`; the `:socket` API is used
+`0600`, no-follow owner/type guards over every state component — 0700,
+current uid, no symlinks) and never touches `:gen_tcp`; the `:socket` API is used
 with `family: :local` only. On `EADDRINUSE` it probes the endpoint with a
 real hello handshake: a completed handshake means a live generation and boot
 fails with `{:already_running, path}`; connect-refused or mute endpoints are
@@ -452,8 +452,8 @@ its resolve matrix lives in `Workstation.Core.Theme` (pure core) and the
 capability publishes resolved themes on the `"theme"` domain it claims;
 hello advertises the union of registered domains. `theme.resolve` applies
 overlay sets in explicit array order, later wins per role, over the palette
-mirror in `Workstation.Core.Theme.Tokens` (byte-parity-anchored to the theme
-goldens fixture; re-branding still edits only `tokens.lua`). Secrets never
+carrier in `Workstation.Core.Theme.Tokens` (anchored to the theme
+goldens fixture; re-branding edits both carriers — `tokens.lua` and the module). Secrets never
 transit a schema and logs scrub params.
 
 Lifecycle ops: the mutating surface is `apply.run` (generation + entries)
@@ -461,8 +461,8 @@ and `update.run` (a `steps` SUB-CHAIN — `pull`, `bootstrap`, `apply`,
 `sync`, `verify` — or the whole lifecycle in one op), plus the bootstrap-
 and reconciliation-only verbs `bootstrap.run`, `sync.run`, `verify.run`
 that the CLI's like-named verbs route to. Both mutating ops serialize
-through the orchestrator's apply lock — the same lock file the Lua one-shot
-apply took — at different scopes: `apply.run` runs its whole pipeline
+through the orchestrator's apply lock — the same lock file the one-shot
+apply takes — at different scopes: `apply.run` runs its whole pipeline
 inside one acquisition, `update.run` acquires PER STEP (`bootstrap`,
 `apply`, `sync`; `pull` and `verify` are lockless). The `not_graduated`
 graduation gate (`Workstation.Daemon.Apply.enabled?/0`, flipped open at
@@ -505,9 +505,7 @@ serving unauthenticated.
 ## Update lifecycle (apps/core `Workstation.Core.Update.*`, apps/daemon `Workstation.Daemon.Lifecycle`)
 
 The UPDATE lifecycle is ported one step per module, semantics anchored to
-the retired Lua update verb (`workstation/apps/cli/run.lua`, deleted with
-the engine in lane fusion-final-r2) and the lifecycle
-phases of `docs/capabilities.md`:
+the lifecycle phases of `docs/capabilities.md`:
 
 * `pull` — checked fast-forward of the engine-owned checkout (fetch +
   `merge --ff-only`, never a destructive reset; git config pinned to
@@ -519,8 +517,8 @@ phases of `docs/capabilities.md`:
   canonical public launcher symlink (conflicting paths are refused, never
   replaced);
 * `apply` — a fresh server-side plan executed inline
-  (`Workstation.Core.ApplyEngine.execute`) under the step's own apply-lock
-  acquisition;
+  (the `Workstation.Pipeline` fold, apply phase) under the step's own
+  apply-lock acquisition;
 * `sync` — re-collect + plan reconciliation: the freshly built generation
   must still match the journal's applied generation;
 * `verify` — launcher canonicity plus per-package fingerprint verification
@@ -576,8 +574,8 @@ earlier). Two contract fixes, both regression-pinned:
 
 * Engine-record JSON (the journal's applied/failed/pending records) is
   written with `Workstation.Core.CanonicalJSON.encode_record/1`: object-
-  faithful — an empty map encodes `{}`, never the Lua empty-table quirk
-  (`{}` → `[]`) that plan bytes must keep for golden byte parity.
+  faithful — an empty map encodes `{}`, never the envelope's empty-object-as-`[]`
+  rule that plan bytes must keep for golden byte parity.
   `encode/1` stays plan-faithful; `encode_record/1` is the journal seam.
 * `Workstation.Core.Preconditions.check` fails closed before any ownership
   lookup when the journal's `targets` index is not a JSON object
@@ -808,9 +806,8 @@ docs/theme.md, including the per-domain `border_*` panel roles).
 
 ## CLI output wires (lane b5 hard-cut schemas)
 
-`Workstation.CLI.Output` defines exactly one schema per command; the Lua
-reporter's `workstation.report/1` envelope stays an internal wire of the
-Engine bridge and is never emitted as a CLI contract:
+`Workstation.CLI.Output` defines exactly one schema per command; no second
+wire exists and none is emitted as a CLI contract:
 
 - `workstation.status.v1` — `{schema, engine{name, version, mode "elixir"},
   destination, platform, packages[{id, requires, supported_hosts}],
@@ -847,8 +844,8 @@ yields byte-identical stdout.
 | 3 | conflict-or-precondition (core evaluation failed: bad envelope, graph or plan conflict, invariant; apply-lock contention) |
 | 4 | engine failure (native collection error, lifecycle step failure, TUI failure) |
 
-Human TTY text for the core plan mirrors `changesets.lua print_report`
-layout; the documented deviations keep the wire the single source of truth:
+Human TTY text for the core plan keeps the canonical sections-and-layout;
+the documented deviations keep the wire the single source of truth:
 the plan header names the front end (the `plan.v1` envelope does not carry
 the home path — destination is a status-wire field), modes print from the
 wire's canonical octal strings, and patch headers never repeat the anchor's

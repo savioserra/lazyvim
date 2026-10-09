@@ -5,7 +5,7 @@
 | Target | `~/.config/nvim` |
 | Distribution | LazyVim |
 | Plugin manager | lazy.nvim |
-| Managed source | `workstation/packages/editor/nvim/files/.config/nvim/` (recipes in `packages/editor/nvim/init.lua`) |
+| Managed source | `workstation/packages/editor/nvim/files/.config/nvim/` |
 
 ## Startup and composition
 
@@ -31,13 +31,11 @@
 
 ## Profile fields
 
-The deployed
-[`languages/profile.lua`](../workstation/packages/editor/nvim/init.lua) is **generated**
-by the nvim-owned compositor from declared `nvim-profile` recipes
-(base/standard/Go from `packages/editor/nvim`, language entries from their own
-capabilities such as `packages/languages/typescript`), ordered Go, TypeScript, standard.
-The engine
-[validator](../workstation/packages/editor/nvim/profile.lua) checks these fields:
+The deployed `languages/profile.lua` is **generated**
+by the nvim-owned compositor (`Workstation.Packages.Nvim.Profile`) from declared
+`nvim-profile` recipes (base/standard/Go from the nvim package module, language
+entries from their own package modules such as `Workstation.Packages.Typescript`),
+ordered Go, TypeScript, standard. The engine compositor checks these fields:
 
 | Field | Shape / use |
 | --- | --- |
@@ -50,9 +48,9 @@ The engine
 | `formatter_cases` | Optional list of tables with non-empty strings `language`, `filename`, `contents`, `expected`; on-disk output checks |
 
 Formatter cases also support `project_files`, a filename-to-contents map written
-by the [verification consumer](../workstation/packages/editor/nvim/init.lua) before the
-source file. The profile validator does not validate that map or reject unknown
-fields; its list checks use `ipairs`, not a strict dense-array schema.
+by the verification consumer (the deployed editor runtime's leaf helpers) before
+the source file. The profile validator does not validate that map or reject unknown
+fields; list checks tolerate gaps rather than enforcing a strict dense-array schema.
 
 Put language-specific LazyVim imports here, include parser/LSP cases for supported
 languages and formatter cases wherever formatting is promised. See
@@ -60,17 +58,17 @@ languages and formatter cases wherever formatting is promised. See
 
 ### Editor specs versus lifecycle packages
 
-`packages/languages/typescript/files/languages/plugins/typescript.lua` returns lazy.nvim
+`workstation/packages/languages/typescript/files/languages/plugins/typescript.lua` returns lazy.nvim
 plugin specs — TypeScript/JavaScript LSP ownership, completion and editor
-commands — deployed as a plain runtime module. The `packages/languages/typescript`
-capability owns it, declares the profile intent (`plugin_module =
+commands — deployed as a plain runtime module. The `workstation/packages/languages/typescript`
+package owns it, declares the profile intent (`plugin_module =
 "languages.plugins.typescript"`) and verifies its own behavior through the
 nvim leaf helpers; `workstation/packages/editor/nvim/` owns editor sync, locks and
 base/standard/Go verification; `node` owns the host runtime. Deployed Neovim
 imports runtime configuration only, never package factories or engine modules.
 
-`packages/languages/elixir/files/languages/plugins/elixir.lua` follows the same split
-for Elixir/HEEx: the `packages/languages/elixir` capability declares the profile intent
+`workstation/packages/languages/elixir/files/languages/plugins/elixir.lua` follows the same split
+for Elixir/HEEx: the `workstation/packages/languages/elixir` package declares the profile intent
 (the `lazyvim.plugins.extras.lang.elixir` extra, Mason's `elixir-ls`, attaching
 as the `elixirls` client) and verifies real LSP attach plus `mix format`
 formatting through the leaf helpers, while the deployed module constrains
@@ -151,7 +149,7 @@ Rules:
 | Item | Value |
 | --- | --- |
 | Mode flag | `LAZYVIM_HEADLESS_SYNC=1` |
-| Dispatcher | `workstation/packages/editor/nvim/child.lua` |
+| Dispatcher | the deployed `lua/config/sync.lua` (headless nvim) |
 | Operations | `lazy-restore`, `lazy-clean`, `mason`, `treesitter` |
 
 Keep mode-specific behavior at `plugins/mason.lua` and the child integration

@@ -10,9 +10,9 @@ workstation/bin/workstation (POSIX sh: sandbox + runtime/release acquisition)
       -> Workstation.Core.Plan (shared composition)
           -> Workstation.Core.Catalog.Packages (native catalog data modules)
           -> Workstation.Core.Graph (host selection, requires, topological order)
-          -> Workstation.Core.Source.* (provider registry: chezmoi, chezmoi_data,
-             shell, nvim-profile) -> deterministic source plan
-      -> Workstation.Core.ApplyEngine (under Core.ApplyLock) / Update.* steps
+          -> discovered recipe providers (chezmoi, shared shell,
+             nvim-profile) -> deterministic source plan
+      -> Workstation.Pipeline (under Core.ApplyLock) / Update.* steps
           -> Workstation.Core.Provisioner (chezmoi backend, exact generation)
           -> Workstation.Core.Journal + EngineState (generations, lock, journal)
 
@@ -39,8 +39,8 @@ bootstrap, never an engine dependency.
 | `Workstation.Core.Catalog.Spec` | The package-spec provider behaviour + spec shape validation (including the banned integer-ordering fields) |
 | `Workstation.Core.Catalog.Discover` | Runtime provider discovery (`:code.all_available/0` + behaviour conformance, test-tree exclusion, duplicate-id rejection) |
 | `Workstation.Core.Graph` | Host selection, `requires` (necessity + ordering) and `after` (ordering-only) edges, topological ordering with id-sort ties |
-| `Workstation.Core.Source.*` | Recipe providers (`Source.Chezmoi`, `Source.ChezmoiData`, `Source.Shell`, `Source.NvimProfile`) |
-| `Workstation.Core.ApplyEngine` | Preconditions, publish, backend apply, journal record, post-apply verify |
+| `Workstation.Core.Source` | Source plan and manifest over the recipe provider contracts (chezmoi dialect via `Workstation.Backends.Chezmoi`, shared shell via `Workstation.Core.Contracts.Shell`) |
+| `Workstation.Pipeline` | The one stage-list fold: preconditions, publish, backend apply, journal record, post-apply verify |
 | `Workstation.Core.Provisioner` | Chezmoi backend with an exact generation |
 | `Workstation.Core.Policy` | Engine-owned legacy tombstones |
 | `Workstation.Core.{Journal,EngineState,ApplyLock}` | Immutable generations, fail-closed private state tree, exclusive apply lock |
@@ -82,7 +82,7 @@ copy options and perform no I/O, target writes or registration. Core
 validates only the generic envelope shape; each registered provider
 validates its own specs and rejects unknown options. Kinds: `file`,
 `directory`, `symlink`, `modify` (one whole inline body or package-relative
-asset - structured fragments are the `Source.Shell` compositor's input
+asset - structured fragments are the `Workstation.Core.Contracts.Shell` compositor's input
 alone and are rejected here) and `remove`. Packages may declare whole-body
 `modify` programs for engine-seeded, runtime-extended mutable targets: the
 recipe embeds its baseline, apply never byte-compares the target, and a
@@ -332,10 +332,10 @@ detection.
 `packages/editor/nvim` declares the base/standard/Go language intents as
 `nvim-profile` recipes; language capabilities such as `typescript`
 declare their own intents the same way. The engine composes them
-(`Workstation.Core.Source.NvimProfile.compose/1`): intents are ordered by an
+(`Workstation.Packages.Nvim.Profile`): intents are ordered by an
 explicit `order` key (Go, TypeScript, standard) with graph collection order as
-the tie-breaker, the assembled list is validated (mirroring the deployed
-`packages/editor/nvim/profile.lua` contract) and ONE attributed chezmoi recipe is
+the tie-breaker, the assembled list is validated by the nvim-owned compositor
+(`Workstation.Packages.Nvim.Profile`) and ONE attributed chezmoi recipe is
 emitted that serializes the deployed
 `.config/nvim/lua/languages/profile.lua`. The deployed profile is plain
 runtime Lua owned by the editor capability; a tampered deployed copy can
@@ -347,12 +347,12 @@ from deployed profile state.
 | Consumer | Use |
 | --- | --- |
 | `packages/editor/nvim/files/.config/nvim/**` | Editor runtime payload (lazy.nvim bootstrap, own behavior verification) |
-| `.config/nvim/lua/languages/profile.lua` (deployed) | Generated profile consumed by the editor runtime; serialized by `Workstation.Core.Source.NvimProfile.compose/1` |
+| `.config/nvim/lua/languages/profile.lua` (deployed) | Generated profile consumed by the editor runtime; serialized by `Workstation.Packages.Nvim.Profile` |
 
 The former package-side compositor and child-verification helpers
 (`packages/editor/nvim/{compose,profile,init,leaf,child}.lua`) were engine-side Lua
 and died with the engine; the profile contract they enforced now lives in
-`Workstation.Core.Source.NvimProfile`.
+`Workstation.Packages.Nvim.Profile`.
 
 ## Pi resources
 

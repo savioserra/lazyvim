@@ -5,7 +5,7 @@
 | Hosts | Linux, macOS |
 | Main target | `~/.tmux.conf` and `~/.config/tmux/tmux.conf` symlink |
 | Status bar | tmux-oasis, upstream `starlight_dark` flavor |
-| Package implementation | `packages/terminal/tmux/init.lua` |
+| Package implementation | `Workstation.Packages.Tmux` (payload `workstation/packages/terminal/tmux/`) |
 | Plugin root | `~/.tmux/plugins/` |
 
 ## Core settings

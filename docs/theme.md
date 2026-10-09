@@ -1,8 +1,8 @@
 # Theme capability
 
 One canonical color source for every workstation surface that renders color.
-Owned by `workstation/packages/theme` (`tokens.lua` holds the data,
-`init.lua` is the package factory). Re-branding edits exactly one file.
+Owned by `workstation/packages/theme` (`tokens.lua` holds the data payload;
+the engine carrier is `Workstation.Core.Theme.Tokens`). Re-branding edits both carriers.
 
 Current brand: **Starlight** — the oasis.nvim starlight `@thm_*` palette
 (dark) and its `light_3` sibling (light, upstream's default intensity).
@@ -87,7 +87,7 @@ highlights = `accent`; selection = the `selected_bg`/`selected_fg` pair
 `ramp_start`/`ramp_mid`/`ramp_end` trio (journal freshness, drift age).
 The plain-digit keycap form exists only as an explicit narrow-TTY opt-in,
 never the default. No box painter hardcodes a color, so re-branding stays
-a one-file edit in `tokens.lua`.
+a two-carrier edit: `tokens.lua` and `Workstation.Core.Theme.Tokens`.
 
 ## Tests
 

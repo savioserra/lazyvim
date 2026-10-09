@@ -54,9 +54,10 @@ checksum still pins their content. See [lifecycle contracts](capabilities.md#lif
 
 The backend SHA256 values come from the official v2.72.1
 `chezmoi_2.72.1_checksums.txt` release asset. `workstation/bootstrap/bootstrap.pins`
-is a generated, SHA256-bound projection of `workstation/versions.json`, not a
-second hand-maintained source. Regenerate/check with pinned
-`nvim -l workstation/bootstrap/generate.lua [--check]`.
+is generated, SHA256-bound data over `workstation/versions.json`, never code.
+Regenerating means updating `versions.json` and recomputing the
+`versions-sha256|` header plus the pinned release rows; the bootstrap contract
+validates the shape fail-closed and re-verifies every digest on every use.
 
 Concurrent runtime installers serialize on `.local/opt/.nvim-bootstrap.lock`;
 after interrupted SIGKILL, inspect/recover that lock and any `previous` tree before
@@ -66,7 +67,7 @@ retrying. Do not remove a lock while its installer is still running.
 
 | Tool | Why | Where it's handled |
 | --- | --- | --- |
-| Git, tmux >=3.2, Bash >=5.2 | User/CI unmanaged prerequisites; no lifecycle OS installs | tmux plugin commits/setup are managed separately by `workstation/packages/terminal/tmux/init.lua` |
+| Git, tmux >=3.2, Bash >=5.2 | User/CI unmanaged prerequisites; no lifecycle OS installs | tmux plugin commits/setup are managed separately by the tmux package (`Workstation.Packages.Tmux`, payload `workstation/packages/terminal/tmux/`) |
 | C compiler/build tools, Linux fontconfig, macOS Command Line Tools | Parser/application builds and font verification prerequisites | User or CI image; see README |
 | ShellCheck | Validation tool supplied by Linux CI image; used wherever available | `.github/scripts/check.sh`; no unpinned lint downloads |
 | 1Password desktop app and account session | User application and interactive authentication are outside source state | Install the official app, enable CLI integration, and sign in interactively |

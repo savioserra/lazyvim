@@ -42,5 +42,5 @@ This relaxes nothing else:
 parity evidence (goldens, generation hashes, wire JSON) is never weakened, and distribution
 stays checksummed `mix release` tarballs only. The Elixir engine is described
 by its own contract — code, comments, and docs never frame it as a "port" or "rewrite"; Lua
-sources are cited only as parity anchors in tests and goldens, and migration narrative stays
-in `docs/elixir.md`.
+appears only as live payload data (deployed editor config, theme tokens read as bytes), and
+migration narrative stays in `docs/elixir.md`.

@@ -10,8 +10,8 @@ records the boundary decisions that survive the deletion:
   at bootstrap.
 - `packages/theme/tokens.lua` and other package payload Lua files are DATA
   consumed as bytes (chezmoi token envelopes), never executed.
-- `packages/editor/nvim/**` is editor runtime payload; the profile composition
-  contract it mirrors lives in `Workstation.Core.Source.NvimProfile`.
+- `workstation/packages/editor/nvim/**` is editor runtime payload; the profile
+  composition contract lives in `Workstation.Packages.Nvim.Profile`.
 - Parity-anchor retention of the Lua read path was explicitly OVERRULED by
   the owner; the golden envelopes under `tests/goldens/` remain the
   canonical cross-engine contract and are graded by `mix workstation.goldens`.
