@@ -11,33 +11,22 @@ defmodule Workstation.Core.Catalog.DiscoverTest do
 
   alias Workstation.Core.Catalog.{Discover, Packages, Spec}
 
+  # The compiled arm's last stand: nvim's editor capability (slice 3 retires
+  # it with the lazy-lock program and the profile serializer move). Every
+  # other package declares manifest.json data.
   @native_modules [
-    Workstation.Packages.Agent,
-    Workstation.Packages.ElixirLang,
-    Workstation.Packages.Fonts,
-    Workstation.Packages.Foundation,
-    Workstation.Packages.Go,
-    Workstation.Packages.Herdr,
-    Workstation.Packages.HerdrPi,
-    Workstation.Packages.Node,
-    Workstation.Packages.Nvim,
-    Workstation.Packages.PiNtfyNotifier,
-    Workstation.Packages.PiSkills,
-    Workstation.Packages.Secrets,
-    Workstation.Packages.Theme,
-    Workstation.Packages.Tmux,
-    Workstation.Packages.Typescript
+    Workstation.Packages.Nvim
   ]
 
   test "discovery finds exactly the native providers, in module-name order" do
     assert Discover.providers() == @native_modules
-    assert length(Packages.modules()) == 15
+    assert length(Packages.modules()) == 1
 
     # Production composition consumes the VALIDATED discovery seam — the
     # spec-shape and duplicate-id rejections apply to the real catalog,
     # not only to direct validate_specs calls. The data-manifest arm serves
-    # nunchux, so the catalog stays the complete set while the module count
-    # reflects only the compiled arm.
+    # every package but nvim, so the catalog stays the complete set while
+    # the module count reflects only the compiled arm.
     assert Packages.packages() == Discover.specs()
     assert length(Packages.packages()) == 16
   end

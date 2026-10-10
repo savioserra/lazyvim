@@ -25,8 +25,9 @@ defmodule Workstation.Core.Catalog.Packages do
   completes the set.
 
   The recipe helpers are the shared constructors for the two recipe kinds
-  (chezmoi / shell) plus the theme chezmoidata envelope its contributors
-  declare. Capability-owned
+  (chezmoi / shell) — the declaration constructors the compiled arm and the
+  test-support fixtures call; data manifests declare the same shapes
+  string-keyed and denormalize through the discovered owners. Capability-owned
   compositors (e.g. the nvim profile) are NOT wired here: they live in
   their owning package module and are discovered through the
   `Workstation.Core.Contracts.Provider` contract — the catalog helpers only
@@ -100,9 +101,4 @@ defmodule Workstation.Core.Catalog.Packages do
     %{provider: "chezmoi", spec: Chezmoi.recipe(Map.new(options))}
   end
 
-  @doc "The theme capability's chezmoidata envelope, rendered from the canonical tokens."
-  @spec theme_data() :: %{provider: String.t(), spec: %{content: String.t()}}
-  def theme_data do
-    %{provider: "chezmoi-data", spec: %{content: Workstation.Core.Theme.Tokens.data_envelope()}}
-  end
 end

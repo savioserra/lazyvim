@@ -1,0 +1,9 @@
+{
+  "contributes": [],
+  "foundation": "foundation/fonts",
+  "id": "fonts",
+  "requires": [
+    "foundation"
+  ],
+  "schema": 1
+}

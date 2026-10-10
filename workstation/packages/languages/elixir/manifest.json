@@ -1,0 +1,53 @@
+{
+  "contributes": [
+    {
+      "provider": "nvim-profile",
+      "spec": {
+        "entry": {
+          "formatter_cases": [
+            {
+              "contents": "defmodule T do\ndef answer do\n42\nend\nend\n",
+              "expected": "defmodule T do\n  def answer do\n    42\n  end\nend\n",
+              "filename": "format-test.ex",
+              "language": "elixir",
+              "project_files": {
+                "mix.exs": "defmodule FormatTest.MixProject do\n  use Mix.Project\n\n  def project do\n    [app: :format_test, version: \"0.1.0\"]\n  end\nend\n"
+              }
+            }
+          ],
+          "id": "elixir",
+          "language_cases": [
+            {
+              "client": "elixirls",
+              "contents": "defmodule Behavior do\n  def answer, do: 42\nend\n",
+              "filename": "behavior-test.ex",
+              "language": "elixir"
+            }
+          ],
+          "lazyvim_extras": [
+            "lazyvim.plugins.extras.lang.elixir"
+          ],
+          "mason_packages": [
+            "elixir-ls"
+          ],
+          "plugin_module": "languages.plugins.elixir"
+        },
+        "order": 25
+      }
+    },
+    {
+      "provider": "chezmoi",
+      "spec": {
+        "asset": "files/languages/plugins/elixir.lua",
+        "kind": "file",
+        "target": ".config/nvim/lua/languages/plugins/elixir.lua"
+      }
+    }
+  ],
+  "foundation": "foundation/runtime",
+  "id": "elixir",
+  "requires": [
+    "nvim"
+  ],
+  "schema": 1
+}

@@ -1,0 +1,18 @@
+{
+  "contributes": [
+    {
+      "provider": "chezmoi",
+      "spec": {
+        "kind": "symlink",
+        "target": ".local/bin/go",
+        "to": "../opt/go/bin/go"
+      }
+    }
+  ],
+  "foundation": "foundation/runtime",
+  "id": "go",
+  "requires": [
+    "foundation"
+  ],
+  "schema": 1
+}

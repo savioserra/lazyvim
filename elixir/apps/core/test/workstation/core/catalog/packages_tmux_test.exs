@@ -16,7 +16,7 @@ defmodule Workstation.Core.Catalog.PackagesTmuxTest do
 
   use ExUnit.Case, async: true
 
-  alias Workstation.Packages.Tmux
+  alias Workstation.Core.Catalog.Discover
   alias Workstation.Backends.Chezmoi
 
   @repo_root Path.expand("../../../../../../..", __DIR__)
@@ -25,7 +25,7 @@ defmodule Workstation.Core.Catalog.PackagesTmuxTest do
   test "the nunchux config target moved to the nunchux package" do
     # Ownership moved with the payload (the nunchux manifest owns the
     # theme-slot template now); tmux must not contribute the target anymore.
-    refute Enum.any?(Tmux.spec().contributes, &(&1.spec.target == ".config/nunchux/config"))
+    refute Enum.any?(tmux_spec().contributes, &(&1.spec.target == ".config/nunchux/config"))
     refute File.exists?(Path.join(@payload_root, "files/.config/nunchux/config"))
   end
 
@@ -115,27 +115,34 @@ defmodule Workstation.Core.Catalog.PackagesTmuxTest do
     refute File.exists?(Path.join(@payload_root, "files/.config/tmux/themes/tmux2k.conf"))
 
     removal =
-      Enum.find(Tmux.spec().contributes, &(&1.spec.target == ".config/tmux/themes/tmux2k.conf"))
+      Enum.find(tmux_spec().contributes, &(&1.spec.target == ".config/tmux/themes/tmux2k.conf"))
 
     assert removal && removal.spec.kind == :remove
     assert is_nil(removal.spec.content) and is_nil(removal.spec.asset)
   end
 
   test "every tmux template target names an existing payload asset" do
-    for %{spec: %Chezmoi{template: true}} = entry <- Tmux.spec().contributes do
+    for %{spec: %Chezmoi{template: true}} = entry <- tmux_spec().contributes do
       assert File.regular?(Path.join(@payload_root, entry.spec.asset)),
              "missing payload asset #{entry.spec.asset} for #{entry.spec.target}"
     end
   end
 
   test "tmux contributes ride the chezmoi provider seam" do
-    assert Enum.all?(Tmux.spec().contributes, &(&1.provider == "chezmoi"))
+    assert Enum.all?(tmux_spec().contributes, &(&1.provider == "chezmoi"))
   end
 
   test "the tmux2k template is no longer a contributed target" do
-    refute Enum.any?(Tmux.spec().contributes, fn entry ->
+    refute Enum.any?(tmux_spec().contributes, fn entry ->
              entry.spec.kind == :file and entry.spec.target == ".config/tmux/themes/tmux2k.conf"
            end)
+  end
+
+  # The package's discovered spec: the data manifest read through the
+  # production seam (the kernel reader's denormalized output).
+  defp tmux_spec do
+    Discover.specs() |> Enum.find(&(&1.id == "tmux")) ||
+      raise("tmux is not discovered — the data manifest must serve the package")
   end
 
   defp conf_source, do: File.read!(Path.join(@payload_root, "files/.tmux.conf"))

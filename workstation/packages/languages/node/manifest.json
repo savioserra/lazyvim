@@ -1,0 +1,62 @@
+{
+  "contributes": [
+    {
+      "provider": "chezmoi",
+      "spec": {
+        "asset": "files/.node-version",
+        "kind": "file",
+        "target": ".node-version"
+      }
+    },
+    {
+      "provider": "chezmoi",
+      "spec": {
+        "asset": "files/nvm.sh",
+        "kind": "file",
+        "target": ".config/shell/nvm.sh"
+      }
+    },
+    {
+      "provider": "shell",
+      "spec": {
+        "fragment": {
+          "body": "[ -r \"$HOME/.config/shell/nvm.sh\" ] && . \"$HOME/.config/shell/nvm.sh\"",
+          "id": "managed-nvm",
+          "marker": "# chezmoi: load managed nvm",
+          "order": 20
+        },
+        "target": ".profile"
+      }
+    },
+    {
+      "provider": "shell",
+      "spec": {
+        "fragment": {
+          "body": "[ -r \"$HOME/.config/shell/nvm.sh\" ] && . \"$HOME/.config/shell/nvm.sh\"",
+          "id": "managed-nvm",
+          "marker": "# chezmoi: load managed nvm",
+          "order": 20
+        },
+        "target": ".bashrc"
+      }
+    },
+    {
+      "provider": "shell",
+      "spec": {
+        "fragment": {
+          "body": "[ -r \"$HOME/.config/shell/nvm.sh\" ] && . \"$HOME/.config/shell/nvm.sh\"",
+          "id": "managed-nvm",
+          "marker": "# chezmoi: load managed nvm",
+          "order": 20
+        },
+        "target": ".zshrc"
+      }
+    }
+  ],
+  "foundation": "foundation/runtime",
+  "id": "node",
+  "requires": [
+    "foundation"
+  ],
+  "schema": 1
+}

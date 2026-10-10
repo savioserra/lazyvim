@@ -180,6 +180,7 @@ defmodule Workstation.Core.Packages.Reader do
     provider = manifest_string!(package_id, entry, "provider")
     spec = Map.get(entry, "spec")
     is_map(spec) || raise(ArgumentError, "#{package_id} contribution spec must be an object")
+    spec = expand_rendered_values(spec)
 
     ctx = %{
       package_id: package_id,
@@ -189,20 +190,54 @@ defmodule Workstation.Core.Packages.Reader do
       declared: true
     }
 
-    case Provider.Discover.lookup(provider) do
+    dispatch = dispatch()
+
+    case Map.fetch(dispatch.providers, provider) do
       {:ok, module} ->
         %{provider: provider, spec: module.denormalize_spec(spec)}
 
       :error ->
-        case Contract.Discover.lookup(provider) do
+        case Map.fetch(dispatch.contracts, provider) do
           {:ok, module} -> %{provider: provider, spec: module.from_recorded(spec, ctx)}
           :error -> raise(ArgumentError, "#{package_id} contribution names unknown provider #{inspect(provider)}")
         end
     end
   end
 
+  @dispatch_key {__MODULE__, :dispatch}
+
+  # The discovered dispatch maps, resolved ONCE PER NODE (the loader's law):
+  # every declared contribution dispatches through them, so the discovery
+  # scans run one per node — not one per contribution. Discovery output is
+  # deterministic on a loaded tree, which is exactly what makes the cache
+  # honest.
+  defp dispatch do
+    case :persistent_term.get(@dispatch_key, :missing) do
+      :missing ->
+        maps = %{providers: Provider.Discover.by_id(), contracts: Contract.Discover.by_id()}
+        :persistent_term.put(@dispatch_key, maps)
+        maps
+
+      maps ->
+        maps
+    end
+  end
+
   defp contribution!(_path, package_id, other),
     do: raise(ArgumentError, "#{package_id} contribution must be an object, got: #{inspect(other)}")
+
+  # The engine-rendered sentinel vocabulary — the one thing a data manifest
+  # cannot carry as bytes: a declared value of exactly %{"$theme_data" => true}
+  # expands to the theme platform engine's canonical chezmoidata envelope,
+  # rendered from the committed token set (the same engine call the retired
+  # compiled declaration made). The set is closed: a rendered value joins
+  # here or it does not exist.
+  defp expand_rendered_values(spec) do
+    Map.new(spec, fn
+      {key, %{"$theme_data" => true}} -> {key, Workstation.Core.Theme.Tokens.data_envelope()}
+      {key, value} -> {key, value}
+    end)
+  end
 
   defp manifest_string!(source, map, field) do
     value = Map.get(map, field)

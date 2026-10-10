@@ -1,0 +1,18 @@
+{
+  "contributes": [
+    {
+      "provider": "chezmoi",
+      "spec": {
+        "kind": "symlink",
+        "target": ".local/bin/herdr",
+        "to": "../opt/herdr/bin/herdr"
+      }
+    }
+  ],
+  "foundation": "foundation/agent",
+  "id": "herdr",
+  "requires": [
+    "foundation"
+  ],
+  "schema": 1
+}

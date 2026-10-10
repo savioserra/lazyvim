@@ -1,0 +1,38 @@
+{
+  "contributes": [
+    {
+      "provider": "chezmoi",
+      "spec": {
+        "asset": "files/.tmux.conf",
+        "kind": "file",
+        "target": ".tmux.conf"
+      }
+    },
+    {
+      "provider": "chezmoi",
+      "spec": {
+        "kind": "remove",
+        "target": ".config/tmux/themes/tmux2k.conf"
+      }
+    },
+    {
+      "provider": "chezmoi",
+      "spec": {
+        "kind": "symlink",
+        "target": ".config/tmux/tmux.conf",
+        "to": "../../.tmux.conf"
+      }
+    }
+  ],
+  "foundation": "foundation/terminal",
+  "id": "tmux",
+  "requires": [
+    "foundation",
+    "theme"
+  ],
+  "schema": 1,
+  "supported_hosts": {
+    "darwin": true,
+    "linux": true
+  }
+}

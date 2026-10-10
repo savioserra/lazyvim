@@ -64,13 +64,12 @@ defmodule Workstation.Core.SelfServeProofTest do
   end
 
   defp compose do
+    native = Discover.specs()
+
     Catalog.compose(
       host: "linux",
-      specifications: [
-        Workstation.Packages.Foundation.spec(),
-        Workstation.Packages.Theme.spec(),
-        @manifest
-      ]
+      specifications:
+        Enum.filter(native, &(&1.id in ["foundation", "theme"])) ++ [@manifest]
     )
   end
 end

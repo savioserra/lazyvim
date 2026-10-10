@@ -1,0 +1,45 @@
+{
+  "contributes": [
+    {
+      "provider": "chezmoi",
+      "spec": {
+        "asset": "files/.pi/agent/agents/worker.md",
+        "kind": "file",
+        "target": ".pi/agent/agents/worker.md"
+      }
+    },
+    {
+      "provider": "chezmoi",
+      "spec": {
+        "asset": "files/.pi/agent/agents/reviewer.md",
+        "kind": "file",
+        "target": ".pi/agent/agents/reviewer.md"
+      }
+    },
+    {
+      "provider": "chezmoi",
+      "spec": {
+        "asset": "files/.pi/agent/themes/workstation-dark.json",
+        "kind": "file",
+        "target": ".pi/agent/themes/workstation-dark.json",
+        "template": true
+      }
+    },
+    {
+      "provider": "chezmoi",
+      "spec": {
+        "asset": "files/.pi/agent/themes/workstation-light.json",
+        "kind": "file",
+        "target": ".pi/agent/themes/workstation-light.json",
+        "template": true
+      }
+    }
+  ],
+  "foundation": "foundation/agent",
+  "id": "agent",
+  "requires": [
+    "node",
+    "theme"
+  ],
+  "schema": 1
+}
