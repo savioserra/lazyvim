@@ -73,10 +73,12 @@ defmodule Workstation.Core.Contracts.Contract do
   @doc """
   Denormalize one recorded (string-keyed) golden-envelope spec back to the
   atom-keyed declared shape, so a replay compares equal to the native
-  declaration. `ctx` carries the golden-envelope context the catalog reader
-  composes with: `:package_id` (error attribution), `:assets` (the recorded
-  asset bodies), `:live_home` and `:canonical_home` (the live re-rooting
-  bracket). Raises `ArgumentError` on an invalid shape. OPTIONAL: a
+  declaration. `ctx` carries the reader context: `:package_id` (error
+  attribution), `:assets` (the recorded asset bodies), `:live_home` and
+  `:canonical_home` (the live re-rooting bracket), and `:declared` — true
+  only when the spec is read from a package's data manifest (asset
+  references stay package-relative references; a recorded envelope never
+  sets it). Raises `ArgumentError` on an invalid shape. OPTIONAL: a
   contract without a recorded shape simply does not implement it — the
   golden-envelope reader fails closed on the dispatch and names the
   provider.

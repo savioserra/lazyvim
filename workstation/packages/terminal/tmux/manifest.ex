@@ -16,7 +16,8 @@ defmodule Workstation.Packages.Tmux do
   docs/tmux.md, never managed source state.
 
   The nunchux launcher grew into its own terminal-domain package
-  (Workstation.Packages.Nunchux): the theme-slot config target, the pinned
+  (its data manifest, workstation/packages/terminal/nunchux/manifest.json):
+  the theme-slot config target, the pinned
   binary pre-seed and the platform marker moved there. This package keeps
   only the dormant activation surface in .tmux.conf — the commented
   `@plugin` pin and the root `C-Space` chord block — which goes live with

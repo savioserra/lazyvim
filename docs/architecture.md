@@ -37,10 +37,11 @@ into contracts. Never sideways by name, never downward.
 
 ## Discovery and resolution
 
-The registry composes the catalog from whatever conforming manifest modules
-ride the code path — never a hand-written registration list. Discovery is
-deterministic (sorted, test-excluded, conformance-validated, duplicate-id-
-rejecting). Resolution builds an acyclic graph over declared
+The registry composes the catalog from whatever manifests the package tree
+carries — data (`manifest.json`) or, while the data conversion runs,
+compiled manifest modules — never a hand-written registration list.
+Discovery is deterministic (sorted, test-excluded, conformance-validated,
+duplicate-id-rejecting). Resolution builds an acyclic graph over declared
 provides/requires: orders dependents after dependencies, fails loudly on
 missing requirements, incompatible versions, cycles, or contested
 capabilities. Optional requires degrade gracefully instead of failing.

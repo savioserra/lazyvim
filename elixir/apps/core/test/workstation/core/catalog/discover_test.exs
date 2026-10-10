@@ -1,10 +1,10 @@
 defmodule Workstation.Core.Catalog.DiscoverTest do
   @moduledoc """
-  The discovery contract: providers come from `:code.all_available/0` +
-  behaviour conformance in the `Workstation.Core.Catalog.Packages.*`
-  namespace — never a hand-written registration list — with deterministic
-  test-tree exclusion, actionable spec-shape rejections, the banned
-  integer-ordering rule and duplicate-id rejection.
+  The discovery contract: the catalog comes from the package tree —
+  compiled provider modules plus data manifests (`manifest.json`) — never
+  a hand-written registration list — with deterministic walking, actionable
+  spec-shape rejections, the banned integer-ordering rule and duplicate-id
+  rejection across both arms.
   """
 
   use ExUnit.Case, async: true
@@ -20,7 +20,6 @@ defmodule Workstation.Core.Catalog.DiscoverTest do
     Workstation.Packages.Herdr,
     Workstation.Packages.HerdrPi,
     Workstation.Packages.Node,
-    Workstation.Packages.Nunchux,
     Workstation.Packages.Nvim,
     Workstation.Packages.PiNtfyNotifier,
     Workstation.Packages.PiSkills,
@@ -32,13 +31,27 @@ defmodule Workstation.Core.Catalog.DiscoverTest do
 
   test "discovery finds exactly the native providers, in module-name order" do
     assert Discover.providers() == @native_modules
-    assert length(Packages.modules()) == 16
+    assert length(Packages.modules()) == 15
 
     # Production composition consumes the VALIDATED discovery seam — the
     # spec-shape and duplicate-id rejections apply to the real catalog,
-    # not only to direct validate_specs calls.
+    # not only to direct validate_specs calls. The data-manifest arm serves
+    # nunchux, so the catalog stays the complete set while the module count
+    # reflects only the compiled arm.
     assert Packages.packages() == Discover.specs()
-    assert length(Packages.packages()) == length(Packages.modules())
+    assert length(Packages.packages()) == 16
+  end
+
+  test "the data-manifest arm serves nunchux without a compiled module" do
+    # The manifest is JSON data beside the payloads; no
+    # Workstation.Packages.Nunchux module exists, discovery still serves
+    # the package, and the denormalized spec shape is exactly a compiled
+    # provider's.
+    assert {:error, _reason} = Code.ensure_loaded(Workstation.Packages.Nunchux)
+
+    spec = Enum.find(Discover.specs(), &(&1.id == "nunchux"))
+    assert spec.foundation == "foundation/terminal"
+    assert Enum.map(spec.contributes, & &1.provider) == ["git", "chezmoi", "chezmoi"]
   end
 
   test "discovered specs are the native catalog, id-sorted with no duplicates" do

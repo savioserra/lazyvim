@@ -2,21 +2,21 @@ defmodule Workstation.Core.Catalog.Discover do
   @moduledoc """
   Runtime package-spec discovery: the catalog is composed from whatever
   manifests the package tree carries, never from a hand-written
-  registration list.
+  registration list. Two arms, one catalog:
 
-  Provider contract (see `Workstation.Core.Catalog.Spec`): a manifest in
-  the package dir (`workstation/packages/<id>/manifest.ex`, self-contained
-  beside its payloads) that declares the behaviour and defines `spec/0`.
-  Discovery is the tree walk, deterministic on two axes:
-
-  * candidates are exactly the modules the loaded package tree declared
-    (`Workstation.Core.Packages.Loader.ensure/0` walks it once per node) —
+  * the compiled arm — a `manifest.ex` in the package dir defining a
+    `Workstation.Core.Catalog.Spec` provider (`spec/0`); candidates are
+    exactly the modules the loaded package tree declared
+    (`Workstation.Core.Packages.Loader.ensure/0` walks it once per node),
     a package is added by adding its directory, and a module outside the
     tree is structurally invisible to discovery;
-  * conformance is validated before use: the behaviour attribute, the
-    `spec/0` export, spec shape (`Spec.validate!/2`) and duplicate package
-    ids across distinct providers — each rejection names the offending
-    module.
+  * the data arm — a `manifest.json` in the package dir, read and
+    denormalized by `Workstation.Core.Packages.Reader`.
+
+  Both arms share the spec-shape validation (`Spec.validate!/2`) and the
+  duplicate-id rejection — each failure names the offending module or
+  manifest path — and the merged catalog is id-ordered: the graph's
+  tie-break, not a registration order.
 
   The candidate/test-tree/conformance pipeline is the shared
   `Workstation.Core.Contracts.Discovery` helper — this module supplies
@@ -25,6 +25,7 @@ defmodule Workstation.Core.Catalog.Discover do
   """
 
   alias Workstation.Core.Catalog.Spec
+  alias Workstation.Core.Packages.Reader
 
   @doc """
   The discovered provider modules, sorted by module name — the same order
@@ -41,33 +42,36 @@ defmodule Workstation.Core.Catalog.Discover do
   end
 
   @doc """
-  The discovered packages: every provider's validated spec, in the same
-  deterministic (module-name) order. Duplicate ids across distinct
-  providers are rejected with both module names.
+  The discovered packages: the compiled providers' validated specs merged
+  with the data manifests (`Workstation.Core.Packages.Reader`), in id
+  order — the graph's tie-break, not a registration order. Duplicate ids
+  across distinct declarers (modules or manifest paths) are rejected
+  naming both.
   """
   @spec specs() :: [map()]
   def specs do
-    providers()
-    |> Enum.map(fn module -> {module, module.spec()} end)
+    (Enum.map(providers(), fn module -> {module, module.spec()} end) ++ Reader.specs())
     |> tap(&validate_specs/1)
-    |> Enum.map(fn {_module, spec} -> spec end)
+    |> Enum.sort_by(fn {_declarer, spec} -> Map.fetch!(spec, :id) end)
+    |> Enum.map(&elem(&1, 1))
   end
 
-  # Shape + duplicate-id validation for a module->spec list; shared by
-  # discovery and by direct tests of the rejection contract.
+  # Shape + duplicate-id validation for a declarer->spec list (compiled
+  # provider modules and data-manifest paths alike); shared by discovery
+  # and by direct tests of the rejection contract.
   @doc false
-  @spec validate_specs([{module(), map()}]) :: :ok
+  @spec validate_specs([{module() | String.t(), map()}]) :: :ok
   def validate_specs(pairs) do
-    Enum.each(pairs, fn {module, spec} -> Spec.validate!(spec, module) end)
+    Enum.each(pairs, fn {declarer, spec} -> Spec.validate!(spec, declarer) end)
 
     declarers =
-      Enum.reduce(pairs, %{}, fn {module, spec}, seen ->
-        Map.update(seen, Map.fetch!(spec, :id), [module], &[module | &1])
+      Enum.reduce(pairs, %{}, fn {declarer, spec}, seen ->
+        Map.update(seen, Map.fetch!(spec, :id), [declarer], &[declarer | &1])
       end)
 
     Enum.each(declarers, fn
       {_id, [_single]} -> :ok
-      {id, modules} -> raise ArgumentError, "duplicate package id #{id} declared by #{inspect(Enum.reverse(modules))}"
+      {id, declarers} -> raise ArgumentError, "duplicate package id #{id} declared by #{inspect(Enum.reverse(declarers))}"
     end)
 
     :ok

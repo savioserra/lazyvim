@@ -308,8 +308,11 @@ defmodule Workstation.Backends.Chezmoi do
   from the envelope's recorded `:assets` table, destinations re-rooted
   through `reroot_destination/2` inside the envelope's live bracket), and
   the data envelope is the second shape (`%{"content" => bytes}`). `ctx`
-  carries `:package_id`, `:assets`, `:live_home`, `:canonical_home`.
-  Raises `ArgumentError` on an invalid shape.
+  carries `:package_id`, `:assets`, `:live_home`, `:canonical_home` and
+  `:declared` (a data manifest: the package-relative asset reference stays
+  a reference — the catalog inlines it in its one auditable read — and the
+  absent live home leaves destinations verbatim). Raises `ArgumentError`
+  on an invalid shape.
   """
   @spec from_recorded(map(), map()) :: map() | %{content: String.t()}
   def from_recorded(spec, ctx) when is_map(spec) do
@@ -345,6 +348,12 @@ defmodule Workstation.Backends.Chezmoi do
       cond do
         spec["content"] != nil ->
           Map.put(options, :content, spec["content"])
+
+        spec["asset"] != nil && Map.get(ctx, :declared) ->
+          # The declared (data-manifest) bracket keeps the package-relative
+          # reference: asset bytes are inlined later, in the catalog's one
+          # auditable read, never at manifest read time.
+          Map.put(options, :asset, fields.string!(spec, "asset", package_id))
 
         spec["asset"] != nil ->
           Map.put(options, :content, recorded_asset(spec["asset"], ctx))

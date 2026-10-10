@@ -1,0 +1,34 @@
+{
+  "schema": 1,
+  "id": "nunchux",
+  "foundation": "foundation/terminal",
+  "requires": ["foundation", "theme"],
+  "supported_hosts": {"darwin": false, "linux": true},
+  "contributes": [
+    {
+      "provider": "git",
+      "spec": {
+        "url": "https://github.com/datamadsen/nunchux",
+        "commit": "1546eaa980d834c331496ea9d51942be07ea9fdd",
+        "target": ".tmux/plugins/nunchux"
+      }
+    },
+    {
+      "provider": "chezmoi",
+      "spec": {
+        "target": ".tmux/plugins/nunchux/bin/.platform",
+        "kind": "file",
+        "asset": "files/.tmux/plugins/nunchux/bin/.platform"
+      }
+    },
+    {
+      "provider": "chezmoi",
+      "spec": {
+        "target": ".config/nunchux/config",
+        "kind": "file",
+        "template": true,
+        "asset": "files/.config/nunchux/config"
+      }
+    }
+  ]
+}

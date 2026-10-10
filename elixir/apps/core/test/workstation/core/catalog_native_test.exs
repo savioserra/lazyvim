@@ -193,7 +193,7 @@ defmodule Workstation.Core.CatalogNativeTest do
     test "every package declares a known foundation layer" do
       taxonomy = Packages.taxonomy()
 
-      assert map_size(taxonomy) == length(Packages.modules())
+      assert map_size(taxonomy) == length(Packages.packages())
 
       for {id, foundation} <- taxonomy do
         assert foundation in ~w(

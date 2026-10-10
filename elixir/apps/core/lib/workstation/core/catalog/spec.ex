@@ -7,9 +7,11 @@ defmodule Workstation.Core.Catalog.Spec do
   its own identity and edges and never needs to know that other packages
   exist:
 
-  * the module is defined by the manifest in its package dir
-    (`workstation/packages/<id>/manifest.ex`, self-contained beside its
-    payloads) and declares `@behaviour #{inspect(__MODULE__)}`;
+  * a package declares its spec as pure data — a `manifest.json` in its
+    package dir, self-contained beside its payloads, read and validated by
+    the kernel reader (`Workstation.Core.Packages.Reader`) — or, while the
+    data conversion runs, as a compiled module in its package dir
+    (`manifest.ex`) declaring `@behaviour #{inspect(__MODULE__)}`;
   * `spec/0` returns the package's specification map: `:id` (unique
     string), `:requires` (necessity + ordering edges), the optional
     `:after` (ordering-only edges), `:supported_hosts`, `:foundation` and
@@ -21,10 +23,10 @@ defmodule Workstation.Core.Catalog.Spec do
     independent contributors (two packages cannot both own "position 3"),
     and graph ties resolve by id sort instead.
 
-  Adding a package is dropping in a conforming module — zero engine edits.
-  `Workstation.Core.Catalog.Discover` finds the providers via
-  `:code.all_available/0` and this behaviour, and `CatalogNativeTest`
-  remains the drift anchor for the composed bytes.
+  Adding a package is dropping in a conforming manifest — zero engine
+  edits. `Workstation.Core.Catalog.Discover` merges the compiled providers
+  with the data manifests, and `CatalogNativeTest` remains the drift anchor
+  for the composed bytes.
   """
 
   @callback spec() :: map()
@@ -49,10 +51,11 @@ defmodule Workstation.Core.Catalog.Spec do
   @doc """
   Validate one provider's spec map (shape, identity, edges, the banned
   ordering keys) with actionable errors. `context` names the declaring
-  module so discovery failures point at the file to fix.
+  module — or the declaring data manifest's path — so discovery failures
+  point at the file to fix.
   """
-  @spec validate!(map(), module()) :: :ok
-  def validate!(spec, context) when is_atom(context) do
+  @spec validate!(map(), module() | String.t()) :: :ok
+  def validate!(spec, context) when is_atom(context) or is_binary(context) do
     is_map(spec) || raise_arg(context, "spec() must return a map")
     id = string_field(spec, :id, context, "id")
     string_field(spec, :foundation, context, "foundation")

@@ -16,15 +16,20 @@ defmodule Workstation.Core.Catalog.PackagesNunchuxTest do
 
   use ExUnit.Case, async: true
 
-  alias Workstation.Packages.Nunchux
+  alias Workstation.Core.Catalog.Discover
   alias Workstation.Core.Contracts.Git
   alias Workstation.Backends.Chezmoi
 
   @repo_root Path.expand("../../../../../../..", __DIR__)
   @payload_root Path.join(@repo_root, "workstation/packages/terminal/nunchux")
 
+  test "the manifest is data in the package tree, not a compiled module" do
+    assert File.regular?(Path.join(@payload_root, "manifest.json"))
+    assert {:error, _reason} = Code.ensure_loaded(Workstation.Packages.Nunchux)
+  end
+
   test "the spec is a linux-only terminal-domain package requiring the theme envelope" do
-    spec = Nunchux.spec()
+    spec = nunchux_spec()
 
     assert spec.id == "nunchux"
     assert spec.foundation == "foundation/terminal"
@@ -49,7 +54,7 @@ defmodule Workstation.Core.Catalog.PackagesNunchuxTest do
 
     # Exactly one owner of the checkout root; the sibling targets live
     # inside the cloned tree.
-    assert Nunchux.spec().contributes |> Enum.count(&(&1.provider == "git")) == 1
+    assert nunchux_spec().contributes |> Enum.count(&(&1.provider == "git")) == 1
   end
 
   test "the git pin mirrors the versions manifest" do
@@ -84,7 +89,7 @@ defmodule Workstation.Core.Catalog.PackagesNunchuxTest do
 
   test "the platform marker pre-seeds upstream's ensure_binary" do
     entry =
-      Enum.find(Nunchux.spec().contributes, &(&1.spec.target == ".tmux/plugins/nunchux/bin/.platform"))
+      Enum.find(nunchux_spec().contributes, &(&1.spec.target == ".tmux/plugins/nunchux/bin/.platform"))
 
     assert entry.provider == "chezmoi"
     assert entry.spec.kind == :file
@@ -98,7 +103,7 @@ defmodule Workstation.Core.Catalog.PackagesNunchuxTest do
   end
 
   test "the checkout supplies the binary; the marker is the declared pre-seed" do
-    targets = Enum.map(Nunchux.spec().contributes, &(&1.spec.target))
+    targets = Enum.map(nunchux_spec().contributes, &(&1.spec.target))
 
     # The pinned clone owns the checkout and its tracked bin/nunchux;
     # the marker is what ensure_binary checks — it re-downloads
@@ -111,7 +116,7 @@ defmodule Workstation.Core.Catalog.PackagesNunchuxTest do
 
   test "the launcher config is a theme-slot template" do
     entry =
-      Enum.find(Nunchux.spec().contributes, &(&1.spec.target == ".config/nunchux/config"))
+      Enum.find(nunchux_spec().contributes, &(&1.spec.target == ".config/nunchux/config"))
 
     assert entry.spec.kind == :file
     assert entry.spec.template == true
@@ -144,7 +149,7 @@ defmodule Workstation.Core.Catalog.PackagesNunchuxTest do
   end
 
   test "every template target names an existing payload asset" do
-    for %{spec: %Chezmoi{template: true}} = entry <- Nunchux.spec().contributes do
+    for %{spec: %Chezmoi{template: true}} = entry <- nunchux_spec().contributes do
       assert File.regular?(Path.join(@payload_root, entry.spec.asset)),
              "missing payload asset #{entry.spec.asset} for #{entry.spec.target}"
     end
@@ -160,7 +165,14 @@ defmodule Workstation.Core.Catalog.PackagesNunchuxTest do
   end
 
   defp git_entry do
-    Enum.find(Nunchux.spec().contributes, &(&1.provider == "git"))
+    Enum.find(nunchux_spec().contributes, &(&1.provider == "git"))
+  end
+
+  # The package's discovered spec: the data manifest read through the
+  # production seam (the kernel reader's denormalized output).
+  defp nunchux_spec do
+    Discover.specs() |> Enum.find(&(&1.id == "nunchux")) ||
+      raise("nunchux is not discovered — the data manifest must serve the package")
   end
 
   defp versions_manifest do

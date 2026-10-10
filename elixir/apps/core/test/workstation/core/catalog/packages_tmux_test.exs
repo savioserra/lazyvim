@@ -7,7 +7,7 @@ defmodule Workstation.Core.Catalog.PackagesTmuxTest do
   init (upstream's README install pattern), `versions.json` must record the
   upstream commit + URL, and no `@thm_*` options may be set — upstream's
   oasis_starlight_dark.conf is canonical. The nunchux launcher grew into
-  its own package (Workstation.Packages.Nunchux — config target, pinned
+  its own package (the nunchux data manifest — config target, pinned
   binary pre-seed, platform marker); this suite keeps the tmux-side
   contracts: the ACTIVE `@plugin` pin and root `C-Space` chord in
   `.tmux.conf` (live with the engine-provisioned checkout,
@@ -23,7 +23,7 @@ defmodule Workstation.Core.Catalog.PackagesTmuxTest do
   @payload_root Path.join(@repo_root, "workstation/packages/terminal/tmux")
 
   test "the nunchux config target moved to the nunchux package" do
-    # Ownership moved with the payload (Workstation.Packages.Nunchux owns the
+    # Ownership moved with the payload (the nunchux manifest owns the
     # theme-slot template now); tmux must not contribute the target anymore.
     refute Enum.any?(Tmux.spec().contributes, &(&1.spec.target == ".config/nunchux/config"))
     refute File.exists?(Path.join(@payload_root, "files/.config/nunchux/config"))
@@ -32,7 +32,7 @@ defmodule Workstation.Core.Catalog.PackagesTmuxTest do
   test "the nunchux plugin pin is active against the engine-provisioned checkout" do
     conf = conf_source()
 
-    # The checkout is engine-provisioned (the Workstation.Packages.Nunchux
+    # The checkout is engine-provisioned (the nunchux manifest's
     # pinned-clone recipe), so TPM sources the plugin; the pin must never
     # regress to a comment while the recipe — and the checkout it owns —
     # stays live.
