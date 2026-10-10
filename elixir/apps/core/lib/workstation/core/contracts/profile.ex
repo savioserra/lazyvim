@@ -4,8 +4,12 @@ defmodule Workstation.Core.Contracts.Profile do
   envelope — the field vocabulary language intents declare, its validators,
   and the intent-contribution constructor — the same ownership split as
   `Workstation.Core.Contracts.Shell` (fragment envelope) and
-  `Workstation.Core.Contracts.Download` (pin). (implementor policy: the
-  profile capability's compositor is whatever conforming
+  `Workstation.Core.Contracts.Download` (pin).
+
+  Layer: contract. The contract law: the kernel never names a capability's
+  shape owner — intents address the provider id as data, and the envelope
+  vocabulary lives here, discovered like every contract (implementor
+  policy: the profile capability's compositor is whatever conforming
   `Workstation.Core.Contracts.Provider` module the package tree carries;
   this contract never names one.)
 

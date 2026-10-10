@@ -4,6 +4,12 @@ defmodule Workstation.Core.Contracts.Git do
   (url + commit + target), provisioned by declared recipe — never placed by
   hand.
 
+  Layer: contract. The contract law: the kernel names no pin source —
+  pinned clones are engine vocabulary published through discovery, and
+  packages declare pins as data against the kind, never as recipe code
+  (implementor policy: this engine module is the pinned-clone kind's only
+  implementor, on both the plan-time and apply-time handshakes).
+
   An engine-owned recipe kind — mechanism vocabulary, like file/symlink — that carries its own effects. The plan-time
   handshake lives here (`Workstation.Core.Contracts.Provider`): the catalog
   discovers `provider: "git"` contributions through it, golden replay
@@ -171,6 +177,11 @@ defmodule Workstation.Core.Contracts.Git.Effects do
   The pinned-clone effect contract: the apply-time handshake of the git
   recipe kind (`Workstation.Core.Contracts.Contract`, discovered by
   behaviour conformance — the fold never names it).
+
+  Layer: contract. The contract law: the fold never names a mutation —
+  every clone effect derives from the plan's composed pin inventory through
+  the discovered contract (implementor policy: this engine module is the
+  pinned-clone kind's only apply-time implementor).
 
   One clone effect per composed pin, derived from the plan's capability
   profile (the provider's pin inventory). Idempotent: a checkout already
