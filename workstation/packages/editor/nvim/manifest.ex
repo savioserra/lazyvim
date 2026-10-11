@@ -70,9 +70,10 @@ defmodule Workstation.Packages.Nvim do
     "lua/plugins/ui.lua"
   ]
 
-  # nvim's own profile intents, in the composed order they declare: Go before
-  # the standard language set (TypeScript is contributed by the typescript
-  # capability between them, order 20).
+  # nvim's own profile intents in contribution order: Go before the standard
+  # language set. Ordering across capabilities is collection order — the
+  # graph's stable walk (dependencies first, ties by id sort); no intent
+  # declares a number.
   @go_intent %{
     id: "go",
     requires: ["go"],
@@ -140,7 +141,7 @@ defmodule Workstation.Packages.Nvim do
             asset: "files/.config/nvim/" <> name
           )
         end) ++
-        [Profile.contribute(10, @go_intent), Profile.contribute(30, @standard_intent)]
+        [Profile.contribute(@go_intent), Profile.contribute(@standard_intent)]
 
     %{
       foundation: "foundation/editor",

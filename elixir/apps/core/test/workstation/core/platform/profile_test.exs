@@ -50,7 +50,6 @@ defmodule Workstation.Core.Platform.ProfileTest do
       recorded =
         Profile.recorded_spec(
           %{
-            "order" => 2,
             "entry" => %{
               "id" => "core",
               "modes" => ["normal"],
@@ -61,23 +60,19 @@ defmodule Workstation.Core.Platform.ProfileTest do
           "test-profile"
         )
 
-      assert recorded == %{order: 2, entry: declared}
+      assert recorded == %{entry: declared}
     end
 
-    test "order must be a positive integer and the entry a table (label threaded)" do
-      assert_raise ArgumentError, "test-profile order must be a positive integer", fn ->
-        Profile.recorded_spec(%{"order" => 0, "entry" => %{"id" => "x"}}, @shape, "test-profile")
-      end
-
+    test "the entry must be a table (label threaded)" do
       assert_raise ArgumentError, "test-profile entry must be a table", fn ->
-        Profile.recorded_spec(%{"order" => 1, "entry" => "nope"}, @shape, "test-profile")
+        Profile.recorded_spec(%{"entry" => "nope"}, @shape, "test-profile")
       end
     end
 
     test "list values fail closed, unknown entry fields are tolerated" do
       assert_raise ArgumentError, "test-profile list values must be non-empty strings", fn ->
         Profile.recorded_spec(
-          %{"order" => 1, "entry" => %{"id" => "x", "modes" => [""]}},
+          %{"entry" => %{"id" => "x", "modes" => [""]}},
           @shape,
           "test-profile"
         )
@@ -85,7 +80,7 @@ defmodule Workstation.Core.Platform.ProfileTest do
 
       recorded =
         Profile.recorded_spec(
-          %{"order" => 1, "entry" => %{"id" => "x", "unknown_thing" => %{"deep" => true}}},
+          %{"entry" => %{"id" => "x", "unknown_thing" => %{"deep" => true}}},
           @shape,
           "test-profile"
         )
@@ -95,15 +90,14 @@ defmodule Workstation.Core.Platform.ProfileTest do
   end
 
   describe "composition law" do
-    test "order_intents sorts by explicit order with collection order as tie-break" do
+    test "order_intents preserves collection order (the stable walk; integers banned)" do
       intents = [
-        %{owner: "b", spec: %{order: 20, entry: %{id: "second-b"}}},
-        %{owner: "a", spec: %{order: 10, entry: %{id: "first-a"}}},
-        %{owner: "c", spec: %{order: 10, entry: %{id: "first-c"}}}
+        %{owner: "b", spec: %{entry: %{id: "second-b"}}},
+        %{owner: "a", spec: %{entry: %{id: "first-a"}}}
       ]
 
       ids = Enum.map(Profile.order_intents(intents), & &1.id)
-      assert ids == ["first-a", "first-c", "second-b"]
+      assert ids == ["second-b", "first-a"]
     end
 
     test "validate_profile rejects duplicates, non-lists and invalid entries under the shape" do

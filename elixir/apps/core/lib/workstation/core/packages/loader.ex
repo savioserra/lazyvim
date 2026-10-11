@@ -19,36 +19,49 @@ defmodule Workstation.Core.Packages.Loader do
 
   @doc """
   Walk the package tree and load every manifest source, once per node,
-  recording the modules the tree defined. A node that has already loaded
-  the tree (or a tree with no manifest sources) is a no-op.
+  reporting the modules the tree defined as `{module, defining source}`.
+  `:error` when no engine checkout is anchored — resolution surfaces
+  (behaviour dispatch by id) degrade to their code-path arm alone, because
+  a bare host resolving a recorded envelope has no package tree to walk;
+  the dispatch site then fails closed naming the unresolvable id. The
+  native surfaces keep the hard law through `root/0`: package reads,
+  data-manifest discovery and asset resolution raise, naming the missing
+  checkout. A node that has already loaded the tree is a no-op.
   """
-  @spec ensure() :: :ok
+  @spec ensure() :: {:ok, [{module(), String.t()}]} | :error
   def ensure do
-    unless :persistent_term.get(@mark, false) do
-      modules =
-        root()
-        |> then(&Path.wildcard(&1 <> "/**/*.ex"))
-        |> Enum.uniq_by(&File.stat!(&1).inode)
-        |> Enum.sort()
-        |> Enum.flat_map(fn path ->
-          path
-          |> Code.require_file()
-          |> Kernel.||([])
-          |> Enum.map(fn {module, _binary} -> {to_module(module), path} end)
-        end)
+    if :persistent_term.get(@mark, false) do
+      {:ok, :persistent_term.get(@modules, [])}
+    else
+      case safe_root() do
+        :error ->
+          :error
 
-      :persistent_term.put(@modules, modules)
-      :persistent_term.put(@mark, true)
+        root ->
+          modules =
+            root
+            |> then(&Path.wildcard(&1 <> "/**/*.ex"))
+            |> Enum.uniq_by(&File.stat!(&1).inode)
+            |> Enum.sort()
+            |> Enum.flat_map(fn path ->
+              path
+              |> Code.require_file()
+              |> Kernel.||([])
+              |> Enum.map(fn {module, _binary} -> {to_module(module), path} end)
+            end)
+
+          :persistent_term.put(@modules, modules)
+          :persistent_term.put(@mark, true)
+          {:ok, modules}
+      end
     end
-
-    :ok
   end
 
   @doc """
   The modules the loaded package tree defined, as `{module, defining
-  source}` — discovery's only candidate set. A module outside the package
-  tree is not here, and nothing in the kernel names one: the walk is the
-  entire package system.
+  source}` — discovery's only tree-arm candidate set. A module outside the
+  package tree is not here, and nothing in the kernel names one: the walk is
+  the entire package system.
   """
   @spec module_list() :: [{module(), String.t()}]
   def module_list, do: :persistent_term.get(@modules, [])
@@ -56,6 +69,14 @@ defmodule Workstation.Core.Packages.Loader do
   @doc "The package tree root: `<engine checkout>/packages`."
   @spec root() :: String.t()
   def root, do: Path.join([Workstation.Core.Update.engine_root([]), "packages"])
+
+  # The anchored-checkout probe behind the soft arm: `engine_root/1` raises
+  # when nothing is anchored; here that absence is `:error`, not a crash.
+  defp safe_root do
+    root()
+  rescue
+    ArgumentError -> :error
+  end
 
   defp to_module(module) when is_binary(module), do: String.to_atom(module)
   defp to_module(module) when is_atom(module), do: module

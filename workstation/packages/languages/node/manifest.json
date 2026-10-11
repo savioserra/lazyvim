@@ -22,8 +22,7 @@
         "fragment": {
           "body": "[ -r \"$HOME/.config/shell/nvm.sh\" ] && . \"$HOME/.config/shell/nvm.sh\"",
           "id": "managed-nvm",
-          "marker": "# chezmoi: load managed nvm",
-          "order": 20
+          "marker": "# chezmoi: load managed nvm"
         },
         "target": ".profile"
       }
@@ -34,8 +33,7 @@
         "fragment": {
           "body": "[ -r \"$HOME/.config/shell/nvm.sh\" ] && . \"$HOME/.config/shell/nvm.sh\"",
           "id": "managed-nvm",
-          "marker": "# chezmoi: load managed nvm",
-          "order": 20
+          "marker": "# chezmoi: load managed nvm"
         },
         "target": ".bashrc"
       }
@@ -46,8 +44,7 @@
         "fragment": {
           "body": "[ -r \"$HOME/.config/shell/nvm.sh\" ] && . \"$HOME/.config/shell/nvm.sh\"",
           "id": "managed-nvm",
-          "marker": "# chezmoi: load managed nvm",
-          "order": 20
+          "marker": "# chezmoi: load managed nvm"
         },
         "target": ".zshrc"
       }

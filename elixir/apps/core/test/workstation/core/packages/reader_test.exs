@@ -119,6 +119,36 @@ defmodule Workstation.Core.Packages.ReaderTest do
     assert recipe.content == nil
   end
 
+  test "an ordering knob anywhere in a contribution is rejected, at any depth" do
+    assert_raise ArgumentError, ~r/declares "order" inside nested's contribution.*integer.*ordering fields are banned/s, fn ->
+      read_spec("nested", %{
+        "schema" => 1,
+        "id" => "nested",
+        "foundation" => "f",
+        "contributes" => [
+          %{
+            "provider" => "shell",
+            "spec" => %{
+              "target" => ".zshrc",
+              "fragment" => %{"id" => "x", "marker" => "# m", "body" => "b", "order" => 3}
+            }
+          }
+        ]
+      })
+    end
+
+    assert_raise ArgumentError, ~r/declares "position"/, fn ->
+      read_spec("nested2", %{
+        "schema" => 1,
+        "id" => "nested2",
+        "foundation" => "f",
+        "contributes" => [
+          %{"provider" => "nvim-profile", "spec" => %{"position" => 20, "entry" => %{"id" => "x"}}}
+        ]
+      })
+    end
+  end
+
   test "the engine-rendered sentinel expands to the theme envelope" do
     spec =
       read_spec("rendered", %{

@@ -37,7 +37,8 @@ defmodule Workstation.Core.Catalog.Discover do
     Workstation.Core.Contracts.Discovery.modules(%{
       behaviour: Spec,
       callbacks: [spec: 0],
-      label: "package-spec"
+      label: "package-spec",
+      tree: true
     })
   end
 

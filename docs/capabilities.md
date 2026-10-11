@@ -332,9 +332,9 @@ detection.
 `packages/editor/nvim` declares the base/standard/Go language intents as
 `nvim-profile` recipes; language capabilities such as `typescript`
 declare their own intents the same way. The engine composes them
-(`Workstation.Packages.Nvim.Profile`): intents are ordered by an
-explicit `order` key (Go, TypeScript, standard) with graph collection order as
-the tie-breaker, the assembled list is validated by the nvim-owned compositor
+(`Workstation.Packages.Nvim.Profile`): intents compose in collection order —
+the graph's stable walk (dependencies first, ties by id sort; no intent
+declares an order number) — the assembled list is validated by the nvim-owned compositor
 (`Workstation.Packages.Nvim.Profile`) and ONE attributed chezmoi recipe is
 emitted that serializes the deployed
 `.config/nvim/lua/languages/profile.lua`. The deployed profile is plain

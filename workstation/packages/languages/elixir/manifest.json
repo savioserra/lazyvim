@@ -31,8 +31,7 @@
             "elixir-ls"
           ],
           "plugin_module": "languages.plugins.elixir"
-        },
-        "order": 25
+        }
       }
     },
     {

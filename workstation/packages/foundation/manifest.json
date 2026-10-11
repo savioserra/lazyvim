@@ -6,8 +6,7 @@
         "fragment": {
           "body": "case \":$PATH:\" in *\":$HOME/.local/bin:\"*) ;; *) [ -d \"$HOME/.local/bin\" ] && PATH=\"$HOME/.local/bin:$PATH\" ;; esac",
           "id": "user-local-bin",
-          "marker": "# chezmoi: managed user-local bin",
-          "order": 10
+          "marker": "# chezmoi: managed user-local bin"
         },
         "target": ".profile"
       }
@@ -18,8 +17,7 @@
         "fragment": {
           "body": "case \":$PATH:\" in *\":$HOME/.local/bin:\"*) ;; *) [ -d \"$HOME/.local/bin\" ] && PATH=\"$HOME/.local/bin:$PATH\" ;; esac",
           "id": "user-local-bin",
-          "marker": "# chezmoi: managed user-local bin",
-          "order": 10
+          "marker": "# chezmoi: managed user-local bin"
         },
         "target": ".bashrc"
       }
@@ -30,8 +28,7 @@
         "fragment": {
           "body": "case \":$PATH:\" in *\":$HOME/.local/bin:\"*) ;; *) [ -d \"$HOME/.local/bin\" ] && PATH=\"$HOME/.local/bin:$PATH\" ;; esac",
           "id": "user-local-bin",
-          "marker": "# chezmoi: managed user-local bin",
-          "order": 10
+          "marker": "# chezmoi: managed user-local bin"
         },
         "target": ".zshrc"
       }

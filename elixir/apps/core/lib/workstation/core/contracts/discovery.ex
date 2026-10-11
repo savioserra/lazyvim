@@ -34,13 +34,23 @@ defmodule Workstation.Core.Contracts.Discovery do
           required(:behaviour) => module(),
           required(:callbacks) => [{atom(), non_neg_integer()}],
           required(:label) => String.t(),
-          optional(:namespace) => String.t()
+          optional(:namespace) => String.t(),
+          optional(:tree) => boolean()
         }
 
   @doc """
   The discovered, conformed, module-name-sorted implementor set for one
   discovery spec: every module the loaded package tree declared that
   implements `behaviour` and defines the full required `callbacks` set.
+
+  The tree walk runs only for specs that declare `tree: true` — engine-owned
+  namespace contracts (`:namespace`) are resolvable from the code path
+  alone, so a bare host resolving a recorded envelope (offline replay, the
+  boot smoke) never needs a package tree. On a tree spec the walk degrades
+  softly when no checkout is anchored: the tree arm contributes nothing and
+  resolution fails closed at the dispatch site, naming the unresolvable id.
+  Native-only surfaces (`Catalog.Discover`) keep the hard law — their reads
+  raise, naming the missing checkout.
   """
   @spec modules(spec()) :: [module()]
   def modules(%{behaviour: behaviour, callbacks: callbacks, label: label} = spec) do
@@ -49,11 +59,21 @@ defmodule Workstation.Core.Contracts.Discovery do
     # candidate set IS what the tree declared — no code-path enumeration,
     # no namespace filter; a module outside the package tree is
     # structurally invisible.
-    Workstation.Core.Packages.Loader.ensure()
+    {tree_modules, spec} =
+      if spec[:tree] do
+        case Workstation.Core.Packages.Loader.ensure() do
+          {:ok, modules} ->
+            {Enum.map(modules, &elem(&1, 0)), spec}
 
-    tree =
-      Workstation.Core.Packages.Loader.module_list()
-      |> Enum.map(&elem(&1, 0))
+          :error ->
+            # No anchored checkout: the tree arm is empty and resolution
+            # fails closed at the dispatch site (the unknown-id rejection),
+            # never here — the envelope path has no tree to name.
+            {[], Map.put(spec, :tree, false)}
+        end
+      else
+        {[], spec}
+      end
 
     # Engine-owned effect contracts declare a code-path namespace: their
     # ids publish through the same by_id surface as the tree's.
@@ -68,7 +88,7 @@ defmodule Workstation.Core.Contracts.Discovery do
         []
       end
 
-    (tree ++ code_path)
+    (tree_modules ++ code_path)
     |> Enum.uniq()
     |> Enum.filter(&conforming?(&1, behaviour, callbacks, label))
     |> Enum.sort()

@@ -12,7 +12,7 @@ defmodule Workstation.Core.ShellContractTest do
   alias Workstation.Core.Contracts.Shell
   alias Workstation.Core.Platform
 
-  @fragment_a %{id: "app-a", marker: "# workstation: app-a", body: "export A=1", order: 5}
+  @fragment_a %{id: "app-a", marker: "# workstation: app-a", body: "export A=1"}
 
   describe "compose (the one compositor)" do
     test "composes the modify program with owned-fragment header" do
@@ -26,7 +26,7 @@ defmodule Workstation.Core.ShellContractTest do
 
     test "retiring fragments add their exact-block removal before the appends" do
       recorded = %{
-        "retired" => %{id: "retired", marker: "# old", body: "export OLD=0", order: 1}
+        "retired" => %{id: "retired", marker: "# old", body: "export OLD=0"}
       }
 
       {program, _ids} = Shell.compose(".zshrc", [@fragment_a], recorded)
@@ -37,7 +37,7 @@ defmodule Workstation.Core.ShellContractTest do
 
     test "same-id declaration changes remove the recorded old block first" do
       recorded = %{
-        "app-a" => %{id: "app-a", marker: "# workstation: app-a", body: "export OLD=0", order: 2}
+        "app-a" => %{id: "app-a", marker: "# workstation: app-a", body: "export OLD=0"}
       }
 
       {program, _ids} = Shell.compose(".zshrc", [@fragment_a], recorded)
@@ -48,7 +48,7 @@ defmodule Workstation.Core.ShellContractTest do
     end
 
     test "duplicate markers owned by two fragments conflict" do
-      dup = %{id: "dup", marker: "# workstation: app-a", body: "export DUP=1", order: 9}
+      dup = %{id: "dup", marker: "# workstation: app-a", body: "export DUP=1"}
 
       assert_raise ArgumentError, ~r/duplicate shell marker owned by two fragments on .zshrc/, fn ->
         Shell.compose(".zshrc", [@fragment_a, dup], %{})
@@ -62,7 +62,7 @@ defmodule Workstation.Core.ShellContractTest do
     end
 
     test "quotes and backslashes survive shell and awk quoting" do
-      tricky = %{id: "tricky", marker: "# it's \"quoted\"", body: "export BACKSLASH='a\\b'", order: 1}
+      tricky = %{id: "tricky", marker: "# it's \"quoted\"", body: "export BACKSLASH='a\\b'"}
 
       {program, _ids} = Shell.compose(".zshrc", [tricky], %{})
 
@@ -107,24 +107,25 @@ defmodule Workstation.Core.ShellContractTest do
   end
 
   describe "group (the platform grouping law)" do
-    test "fragments group per target, explicit order key first, collection order as tie-break" do
+    test "fragments group per target in collection order (the stable walk; integers banned)" do
       records = [
-        %{owner: "b", spec: shell_spec(".zshrc", %{id: "late", marker: "# late", body: "export L=1", order: 30})},
-        %{owner: "a", spec: shell_spec(".profile", %{id: "p", marker: "# p", body: "export P=1", order: 1})},
-        %{owner: "a2", spec: shell_spec(".zshrc", %{id: "early", marker: "# early", body: "export E=1", order: 10})}
+        %{owner: "b", spec: shell_spec(".zshrc", %{id: "late", marker: "# late", body: "export L=1"})},
+        %{owner: "a", spec: shell_spec(".profile", %{id: "p", marker: "# p", body: "export P=1"})},
+        %{owner: "a2", spec: shell_spec(".zshrc", %{id: "early", marker: "# early", body: "export E=1"})}
       ]
 
       grouped = Platform.Shell.group(records)
       assert Map.keys(grouped) == [".profile", ".zshrc"]
 
-      assert Enum.map(grouped[".zshrc"].fragments, & &1.id) == ["early", "late"]
+      # Collection order is the whole order: late was collected first.
+      assert Enum.map(grouped[".zshrc"].fragments, & &1.id) == ["late", "early"]
       assert grouped[".zshrc"].owners == ["b", "a2"]
     end
 
     test "duplicate fragment ids and duplicate markers fail closed per target" do
       dup_id = [
-        %{owner: "a", spec: shell_spec(".zshrc", %{id: "x", marker: "# one", body: "export X=1", order: 1})},
-        %{owner: "b", spec: shell_spec(".zshrc", %{id: "x", marker: "# two", body: "export X=2", order: 2})}
+        %{owner: "a", spec: shell_spec(".zshrc", %{id: "x", marker: "# one", body: "export X=1"})},
+        %{owner: "b", spec: shell_spec(".zshrc", %{id: "x", marker: "# two", body: "export X=2"})}
       ]
 
       assert_raise ArgumentError, ~r/duplicate shell fragment id on .zshrc/, fn ->
@@ -132,8 +133,8 @@ defmodule Workstation.Core.ShellContractTest do
       end
 
       dup_marker = [
-        %{owner: "a", spec: shell_spec(".zshrc", %{id: "x", marker: "# one", body: "export X=1", order: 1})},
-        %{owner: "b", spec: shell_spec(".zshrc", %{id: "y", marker: "# one", body: "export Y=1", order: 2})}
+        %{owner: "a", spec: shell_spec(".zshrc", %{id: "x", marker: "# one", body: "export X=1"})},
+        %{owner: "b", spec: shell_spec(".zshrc", %{id: "y", marker: "# one", body: "export Y=1"})}
       ]
 
       assert_raise ArgumentError, ~r/duplicate shell marker # one on .zshrc/, fn ->
@@ -143,7 +144,7 @@ defmodule Workstation.Core.ShellContractTest do
 
     test "journal records project the string-keyed recorded shape" do
       records = [
-        %{owner: "a", spec: shell_spec(".zshrc", %{id: "x", marker: "# one", body: "export X=1", order: 7})}
+        %{owner: "a", spec: shell_spec(".zshrc", %{id: "x", marker: "# one", body: "export X=1"})}
       ]
 
       [record] = records |> Platform.Shell.group() |> Map.fetch!(".zshrc") |> Platform.Shell.journal_records()
@@ -152,7 +153,6 @@ defmodule Workstation.Core.ShellContractTest do
                "id" => "x",
                "marker" => "# one",
                "body" => "export X=1",
-               "order" => 7,
                "owner" => "a",
                "sequence" => 1
              }
@@ -164,7 +164,7 @@ defmodule Workstation.Core.ShellContractTest do
       recipe =
         Shell.recipe(%{
           target: ".zshrc",
-          fragment: %{id: "app", marker: "# m", body: "export X=1", order: 1}
+          fragment: %{id: "app", marker: "# m", body: "export X=1"}
         })
 
       assert recipe.target == ".zshrc"
@@ -178,19 +178,19 @@ defmodule Workstation.Core.ShellContractTest do
         Shell.recipe(%{target: ".zshrc", fragment: %{id: "a"}, extra: 1})
       end
 
-      assert_raise ArgumentError, ~r/shell fragment requires a positive integer order/, fn ->
-        Shell.recipe(%{target: ".zshrc", fragment: %{id: "a", marker: "# m", body: "b", order: 1.5}})
+      assert_raise ArgumentError, ~r/shell fragment has unknown field :order/, fn ->
+        Shell.recipe(%{target: ".zshrc", fragment: %{id: "a", marker: "# m", body: "b", order: 1}})
       end
 
       assert_raise ArgumentError, ~r/shell fragment marker must not contain control characters or newlines/, fn ->
-        Shell.recipe(%{target: ".zshrc", fragment: %{id: "a", marker: "# m\n", body: "b", order: 1}})
+        Shell.recipe(%{target: ".zshrc", fragment: %{id: "a", marker: "# m\n", body: "b"}})
       end
 
       assert_raise ArgumentError, ~r/shell target must not traverse/, fn ->
         Shell.validate_spec(%Shell{
           target: "a/../b",
           components: ["a", "..", "b"],
-          fragment: %{id: "a", marker: "# m", body: "b", order: 1}
+          fragment: %{id: "a", marker: "# m", body: "b"}
         })
       end
     end

@@ -20,11 +20,11 @@ defmodule Workstation.Core.ShellProgram do
 
   @doc """
   Compose the native modify program for one shared target.
-  `desired` is an ordered list of fragment records (`"id"`, `"marker"`,
-  `"body"`, `"order"`); `recorded` maps fragment id to the previously applied
-  record. Explicit fragment order with graph collection order as the stable
-  tie-break keeps the emitted block sequence deterministic. Returns
-  `{program, ids}`.
+  `desired` is the fragment records (`"id"`, `"marker"`, `"body"`) in
+  collection order — the stable graph walk, never a declared number;
+  `recorded` maps fragment id to the previously applied record. Collection
+  order is the whole order and keeps the emitted block sequence
+  deterministic. Returns `{program, ids}`.
   """
   @spec compose(String.t(), [map()], %{optional(String.t()) => map()} | nil) :: {String.t(), [String.t()]}
   def compose(target, desired, recorded) do
@@ -35,20 +35,13 @@ defmodule Workstation.Core.ShellProgram do
     end
 
     ordered =
-      desired
-      |> Enum.with_index(1)
-      |> Enum.map(fn {fragment, sequence} ->
+      Enum.map(desired, fn fragment ->
         %{
-          "order" => fragment["order"] || 0,
           "marker" => fragment["marker"],
           "body" => fragment["body"],
-          "id" => fragment["id"],
-          "sequence" => sequence
+          "id" => fragment["id"]
         }
       end)
-      # The sort key mirrors the anchor's comparator: order first, then the
-      # original desired position as tie-break.
-      |> Enum.sort_by(fn fragment -> [fragment["order"], fragment["sequence"]] end)
 
     removals = planned_removals(ordered, recorded)
 
@@ -313,8 +306,7 @@ defmodule Workstation.Core.ShellProgram do
         "fragment" => %{
           "id" => fragment["id"],
           "marker" => fragment["marker"],
-          "body" => fragment["body"],
-          "order" => fragment["order"]
+          "body" => fragment["body"]
         }
       }
     }
@@ -362,7 +354,7 @@ defmodule Workstation.Core.ShellProgram do
     unless is_map(fragment), do: raise(ArgumentError, "shell fragment must be a table")
 
     Enum.each(Map.keys(fragment), fn field ->
-      unless field in ["id", "marker", "body", "order"],
+      unless field in ["id", "marker", "body"],
         do: raise(ArgumentError, "shell fragment has unknown field #{inspect(field)}")
     end)
 
@@ -373,11 +365,6 @@ defmodule Workstation.Core.ShellProgram do
 
     unless is_binary(fragment["body"]) and fragment["body"] != "",
       do: raise(ArgumentError, "shell fragment requires a body")
-
-    order = fragment["order"]
-
-    unless is_number(order) and order > 0 and order == trunc(order),
-      do: raise(ArgumentError, "shell fragment requires a positive integer order")
 
     # Ids, markers and bodies are embedded in generated shell comments and
     # programs; control bytes and newlines could not survive literally.

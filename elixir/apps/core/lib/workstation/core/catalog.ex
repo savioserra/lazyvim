@@ -35,7 +35,7 @@ defmodule Workstation.Core.Catalog do
             Workstation.Backends.Chezmoi.t()
             | Workstation.Core.Contracts.Shell.t()
             | %{required(:content) => String.t()}
-            | %{required(:order) => pos_integer(), required(:entry) => map()}
+            | %{required(:entry) => map()}
         }
 
   @type package :: %{

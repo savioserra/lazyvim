@@ -205,7 +205,7 @@ defmodule Workstation.Core.PreconditionsTest do
 
     File.rm_rf!(Path.join(home, ".zshrc"))
 
-    fragment = %{"id" => "app", "marker" => "# m", "body" => "export X=1", "order" => 1}
+    fragment = %{"id" => "app", "marker" => "# m", "body" => "export X=1"}
     File.write!(Path.join(home, ".zshrc"), "# m\nexport TAMPERED=1\n")
 
     assert_raise ArgumentError, ~r/edited, duplicated or ambiguous owned block for app/, fn ->
@@ -330,7 +330,7 @@ defmodule Workstation.Core.PreconditionsTest do
   end
 
   test "fragment integrity uses the journal's recorded fragment bodies", %{home: home} do
-    fragment = %{"id" => "app", "marker" => "# m", "body" => "export NEW=1", "order" => 1}
+    fragment = %{"id" => "app", "marker" => "# m", "body" => "export NEW=1"}
 
     File.write!(Path.join(home, ".zshrc"), "# m\nexport OLD=0\n")
 
@@ -339,7 +339,7 @@ defmodule Workstation.Core.PreconditionsTest do
       "journal" =>
         journal(%{
           "fragments" => %{
-            ".zshrc" => [%{"id" => "app", "marker" => "# m", "body" => "export OLD=0", "order" => 1}]
+            ".zshrc" => [%{"id" => "app", "marker" => "# m", "body" => "export OLD=0"}]
           }
         }),
       "pending" => []
@@ -356,7 +356,7 @@ defmodule Workstation.Core.PreconditionsTest do
     recorded_override =
       journal(%{
         "fragments" => %{
-          ".zshrc" => [%{"id" => "app", "marker" => "# m", "body" => "export NEW=1", "order" => 1}]
+          ".zshrc" => [%{"id" => "app", "marker" => "# m", "body" => "export NEW=1"}]
         }
       })
 

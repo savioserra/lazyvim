@@ -113,7 +113,10 @@ defmodule Workstation.Core.Contracts.Contract.Discover do
   def contracts do
     Workstation.Core.Contracts.Discovery.modules(%{
       # The engine-owned effect contracts publish through the code-path
-      # namespace arm; package-owned ones arrive via the tree walk.
+      # namespace arm. The namespace is the whole candidate set: no package
+      # tree is loaded for this surface (a bare host resolving a recorded
+      # envelope — offline replay, the boot smoke — stays tree-free), and
+      # today every effect contract is engine-owned by construction.
       namespace: "Elixir.Workstation.",
       behaviour: Workstation.Core.Contracts.Contract,
       callbacks: @callbacks,

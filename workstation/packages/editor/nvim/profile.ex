@@ -1,7 +1,7 @@
 defmodule Workstation.Packages.Nvim.Profile do
   @moduledoc """
   The nvim capability's own profile compositor, owned by its package module:
-  collects nvim-profile intents, fixes their order, and serializes the
+  collects nvim-profile intents in collection order and serializes the
   shared deployed profile file. Implements the generic
   `Workstation.Core.Contracts.Provider` contract, so the assembler discovers
   and dispatches it without naming this capability — dependency direction:
@@ -51,8 +51,8 @@ defmodule Workstation.Packages.Nvim.Profile do
   project_files — so native intents compare equal to the recorded envelope
   and validate through the compositor's own entry validator.
   """
-  @spec contribute(pos_integer(), map()) :: %{provider: String.t(), spec: map()}
-  def contribute(order, raw), do: Profile.contribution(id(), order, raw)
+  @spec contribute(map()) :: %{provider: String.t(), spec: map()}
+  def contribute(raw), do: Profile.contribution(id(), raw)
 
   @impl Workstation.Core.Contracts.Provider
   @doc """
@@ -73,8 +73,6 @@ defmodule Workstation.Packages.Nvim.Profile do
   @spec validate_spec(map()) :: :ok
   @impl Workstation.Core.Contracts.Provider
   def validate_spec(spec) do
-    order = spec[:order]
-    unless is_integer(order) and order > 0, do: raise_arg("Neovim profile recipe requires a positive integer order")
     unless is_map(spec[:entry]), do: raise_arg("Neovim profile recipe requires an entry table")
     validate_entry(spec[:entry], "Neovim profile entry #{spec[:entry][:id] |> to_string()}")
     :ok

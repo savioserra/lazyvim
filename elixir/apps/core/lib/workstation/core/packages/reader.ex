@@ -173,13 +173,14 @@ defmodule Workstation.Core.Packages.Reader do
   # here. This is the same dispatch `Catalog.load` applies to recorded
   # envelopes — a data manifest is just the declaration the engine reads
   # itself.
-  defp contribution!(_path, package_id, entry) when is_map(entry) do
+  defp contribution!(path, package_id, entry) when is_map(entry) do
     unknown = Map.keys(entry) -- @contribution_fields
     unknown == [] || raise(ArgumentError, "#{package_id} contribution has unknown fields: #{inspect(unknown)}")
 
     provider = manifest_string!(package_id, entry, "provider")
     spec = Map.get(entry, "spec")
     is_map(spec) || raise(ArgumentError, "#{package_id} contribution spec must be an object")
+    reject_ordering_keys!(path, package_id, spec)
     spec = expand_rendered_values(spec)
 
     ctx = %{
@@ -225,6 +226,30 @@ defmodule Workstation.Core.Packages.Reader do
 
   defp contribution!(_path, package_id, other),
     do: raise(ArgumentError, "#{package_id} contribution must be an object, got: #{inspect(other)}")
+
+  # The banned-design walk — the package-level rule extended to every
+  # declared contribution, at every nesting depth: an ordering knob anywhere
+  # in a data manifest is a rejected field, because composition order is
+  # collection order (the stable walk: dependencies first, ties by id sort)
+  # and a declared number reintroduces the hand-coordinated registry.
+  defp reject_ordering_keys!(path, package_id, value) when is_map(value) do
+    Enum.each(value, fn
+      {key, _inner} when key in @banned_fields ->
+        raise ArgumentError,
+              "#{path} declares \"#{key}\" inside #{package_id}'s contribution — integer " <>
+                "ordering fields are banned on package declarations; composition order is " <>
+                "collection order (the stable walk: dependencies first, ties by id sort)"
+
+      {_key, inner} ->
+        reject_ordering_keys!(path, package_id, inner)
+    end)
+  end
+
+  defp reject_ordering_keys!(path, package_id, value) when is_list(value) do
+    Enum.each(value, &reject_ordering_keys!(path, package_id, &1))
+  end
+
+  defp reject_ordering_keys!(_path, _package_id, _leaf), do: :ok
 
   # The engine-rendered sentinel vocabulary — the one thing a data manifest
   # cannot carry as bytes: a declared value of exactly %{"$theme_data" => true}

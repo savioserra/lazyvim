@@ -5,9 +5,10 @@ defmodule Workstation.Core.Platform.Shell do
   (`Workstation.Core.Contracts.Shell.compose/3`, whose emitted program bytes
   ARE the deployed source state).
 
-  A fragment is the envelope `%{id, marker, body, order}` — a stable marker
-  plus a literal single-line body, an explicit order key with collection
-  order as the tie-break. This platform owns everything the law requires of
+  A fragment is the envelope `%{id, marker, body}` — a stable marker plus
+  a literal single-line body. Ordering between fragments is never a declared
+  number: a group composes in collection order, which is the graph's stable
+  walk (dependencies first, ties by id sort). This platform owns everything the law requires of
   fragments: envelope validation (the atom-keyed declared shape), per-target
   grouping with fragment-id and marker uniqueness, the string-keyed journal
   projection, and the retirement rule (a target whose every recorded
@@ -25,16 +26,17 @@ defmodule Workstation.Core.Platform.Shell do
   alias Workstation.Core.Contracts.Shell
 
   @doc """
-  The fragment envelope law: exactly the `%{id, marker, body, order}` fields,
-  the three strings non-empty and single-line, the order key a positive
-  integer. Returns the fragment unchanged; raises `ArgumentError` otherwise.
+  The fragment envelope law: exactly the `%{id, marker, body}` fields, the
+  three strings non-empty and single-line. Ordering is never declared —
+  composition order is collection order (the stable walk). Returns the
+  fragment unchanged; raises `ArgumentError` otherwise.
   """
   @spec validate_fragment(term()) :: :ok
   def validate_fragment(fragment) do
     unless is_map(fragment), do: invalid("shell fragment must be a table")
 
     for field <- Map.keys(fragment) do
-      unless field in [:id, :marker, :body, :order] do
+      unless field in [:id, :marker, :body] do
         invalid("shell fragment has unknown field #{inspect(field)}")
       end
     end
@@ -42,12 +44,6 @@ defmodule Workstation.Core.Platform.Shell do
     nonempty_string?(fragment[:id]) || invalid("shell fragment requires an id")
     nonempty_string?(fragment[:marker]) || invalid("shell fragment requires a marker")
     nonempty_string?(fragment[:body]) || invalid("shell fragment requires a body")
-
-    order = fragment[:order]
-
-    unless is_integer(order) and order > 0 do
-      invalid("shell fragment requires a positive integer order")
-    end
 
     # Ids, markers and bodies are embedded in generated shell comments and
     # programs; control bytes and newlines could not survive literally.
@@ -98,9 +94,9 @@ defmodule Workstation.Core.Platform.Shell do
   @type record :: %{required(:owner) => String.t(), required(:spec) => Shell.t()}
 
   @doc """
-  Group collected shell records per shared target in collection order;
-  explicit fragment order keys plus collection order as tie-break keep every
-  group's output stable. Every spec is re-validated through the contract,
+  Group collected shell records per shared target in collection order —
+  the stable walk (dependencies first, ties by id sort) is the whole order;
+  no fragment declares a number. Every spec is re-validated through the contract,
   and the group law fails closed: one fragment id and one marker per target,
   each rejection naming the target.
   """
@@ -118,7 +114,6 @@ defmodule Workstation.Core.Platform.Shell do
         id: record.spec.fragment.id,
         marker: record.spec.fragment.marker,
         body: record.spec.fragment.body,
-        order: record.spec.fragment.order,
         owner: record.owner,
         sequence: sequence
       }
@@ -135,10 +130,11 @@ defmodule Workstation.Core.Platform.Shell do
     |> Map.new()
   end
 
-  # Per-target group law: explicit order key with the collection sequence as
-  # the stable tie-break; one fragment id per target; one marker per target.
+  # Per-target group law: collection order (the stable graph walk) is the
+  # whole order — declared integer ordering is banned; one fragment id per
+  # target; one marker per target.
   defp finish_group(group) do
-    fragments = Enum.sort_by(group.fragments, fn fragment -> {fragment.order, fragment.sequence} end)
+    fragments = group.fragments
 
     ids = MapSet.new(Enum.map(fragments, & &1.id))
 
@@ -176,7 +172,6 @@ defmodule Workstation.Core.Platform.Shell do
         "id" => fragment.id,
         "marker" => fragment.marker,
         "body" => fragment.body,
-        "order" => fragment.order,
         "owner" => fragment.owner,
         "sequence" => fragment.sequence
       }

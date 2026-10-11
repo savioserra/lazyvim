@@ -8,8 +8,9 @@ defmodule Workstation.Core.Platform.Profile do
   The profile platform — the envelope and ordering law every editor
   capability's profile compositor rides.
 
-  A profile recipe is the envelope `%{order: pos_integer, entry: map}`: the
-  explicit order key fixes domain order, graph collection order breaks ties.
+  A profile recipe is the envelope `%{entry: map}`. Composition order is
+  collection order — the graph's stable walk (dependencies first, ties by
+  id sort); an intent never declares a number.
   An editor capability declares its own field vocabulary as a `shape` —
 
       %{
@@ -21,8 +22,8 @@ defmodule Workstation.Core.Platform.Profile do
   — and owns its serialization (the deployed file's own format). This
   platform owns everything else: shape-driven entry validation, the
   declared/recorded normalization twins (atom-keyed declarations vs the
-  recorded envelope's string keys), composition ordering (explicit order
-  key, collection-order tie-break), and duplicate-id rejection. A new
+  recorded envelope's string keys), composition ordering (collection order —
+  the stable walk, never a declared number), and duplicate-id rejection. A new
   editor implements the same compositor shape on its own vocabulary without
   the engine learning its name.
   """
@@ -37,17 +38,14 @@ defmodule Workstation.Core.Platform.Profile do
 
 
   @doc """
-  The composition ordering law: entries sorted by the recipe's explicit
-  order key with collection order as tie-break. Owners are NOT threaded
-  through here on purpose — attribution stays the caller's fact about
-  contribution, in collection order.
+  The composition ordering law: collection order — the graph's stable walk
+  (dependencies first, ties by id sort); an intent never declares a number.
+  Owners are NOT threaded through here on purpose — attribution stays the
+  caller's fact about contribution, in collection order.
   """
   @spec order_intents([intent()]) :: [map()]
   def order_intents(intents) when is_list(intents) do
-    intents
-    |> Enum.with_index(1)
-    |> Enum.sort_by(fn {intent, sequence} -> {intent.spec[:order], sequence} end)
-    |> Enum.map(fn {intent, _sequence} -> intent.spec[:entry] end)
+    Enum.map(intents, fn intent -> intent.spec[:entry] end)
   end
 
   @doc """
@@ -128,19 +126,14 @@ defmodule Workstation.Core.Platform.Profile do
 
   @doc """
   Denormalize one recorded-envelope recipe (string-keyed golden bytes) back
-  to the declared atom shape: order must be a positive integer, the entry a
-  table; list values fail closed on non-strings, unknown fields are
-  tolerated (the validator checks known fields without an allowlist).
-  Raises `ArgumentError` on invalid shape; `label` prefixes the messages.
+  to the declared atom shape: the entry must be a table; list values fail
+  closed on non-strings, unknown fields are tolerated (the validator checks
+  known fields without an allowlist). Raises `ArgumentError` on invalid
+  shape; `label` prefixes the messages.
   """
   @spec recorded_spec(map(), shape(), String.t()) :: map()
   def recorded_spec(spec, shape, label) when is_map(spec) do
-    order = Map.get(spec, "order")
-
-    unless is_integer(order) and order > 0,
-      do: raise_arg(label <> " order must be a positive integer")
-
-    %{order: order, entry: recorded_entry(Map.get(spec, "entry"), shape, label)}
+    %{entry: recorded_entry(Map.get(spec, "entry"), shape, label)}
   end
 
   def recorded_spec(_spec, _shape, label), do: raise_arg(label <> " recipe must be a table")

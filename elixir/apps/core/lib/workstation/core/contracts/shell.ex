@@ -58,8 +58,7 @@ defmodule Workstation.Core.Contracts.Shell do
           fragment: %{
             required(:id) => String.t(),
             required(:marker) => String.t(),
-            required(:body) => String.t(),
-            required(:order) => pos_integer()
+            required(:body) => String.t()
           }
         }
 
@@ -89,7 +88,7 @@ defmodule Workstation.Core.Contracts.Shell do
     components = String.split(options[:target], "/", trim: true)
 
     fragment = options[:fragment]
-    fragment = fragment |> then(&%{id: &1[:id], marker: &1[:marker], body: &1[:body], order: &1[:order]})
+    fragment = fragment |> then(&%{id: &1[:id], marker: &1[:marker], body: &1[:body]})
 
     %__MODULE__{
       target: Enum.join(components, "/"),
@@ -120,8 +119,7 @@ defmodule Workstation.Core.Contracts.Shell do
       fragment: %{
         id: fields.string!(fragment, "id", package_id),
         marker: fields.string!(fragment, "marker", package_id),
-        body: fields.string!(fragment, "body", package_id),
-        order: fields.positive_integer!(fragment, "order", package_id)
+        body: fields.string!(fragment, "body", package_id)
       }
     })
   end
@@ -146,8 +144,8 @@ defmodule Workstation.Core.Contracts.Shell do
 
   @doc """
   Compose the native modify program for one shared target. `desired` is the
-  ordered list of fragment records `{id, marker, body, order}` (explicit
-  fragment order with collection order as the stable tie-breaker);
+  ordered list of fragment records `{id, marker, body}` in collection order
+  (the stable graph walk — no fragment declares a number);
   `recorded` maps fragment id to the previously applied `{id, marker, body}`.
   Returns the program bytes and the ordered owner-fragment ids.
 
@@ -167,9 +165,8 @@ defmodule Workstation.Core.Contracts.Shell do
       desired
       |> Enum.with_index(1)
       |> Enum.map(fn {fragment, sequence} ->
-        %{order: fragment[:order] || 0, marker: fragment[:marker], body: fragment[:body], id: fragment[:id], sequence: sequence}
+        %{marker: fragment[:marker], body: fragment[:body], id: fragment[:id], sequence: sequence}
       end)
-      |> Enum.sort_by(&{&1.order, &1.sequence})
 
     removals = planned_removals(ordered, recorded)
 

@@ -143,7 +143,7 @@ hard-cut; retired paths are deleted in the lane that retires them.
   justification in the feat commit message; no reordered pair is
   load-bearing (all `requires` edges still precede their dependents; the
   only semantic-adjacent move is the synthetic tied intent pair in
-  `nvim-profile`, deliberately tied at intent order 20).
+  `nvim-profile`, composing in collection order since the integer order keys died).
 - Real-host re-sync after this lane is supervisor-owned (the launcher
   anchor fix means the host shim now exports the anchor itself; no env
   override needed).
@@ -376,9 +376,9 @@ Profiles: `minimal` (foundation shell fragments), `full-home` (the complete
 catalog in discovery order — module-name sort), `theme` (theme/tmux/agent
 closure: chezmoi-data envelope, template files, symlink), `conflicts` (two
 declarers, one shared target: directory merges plus an exact single-owner
-directory), `shell-order` (explicit fragment order keys with the
-collection-order tie-break inside a package), `nvim-profile` (composed
-profile intents with the same within-collection tie-break).
+directory), `shell-order` (fragment collection order — the stable walk, no declared
+order keys — inside a package), `nvim-profile` (composed profile intents
+in the same collection order).
 
 `input.json` is the only replay input: engine-agnostic normalized recipe
 envelopes (`packages[].{id,requires,after?,supported_hosts,contributes[].{provider,spec}}`,

@@ -54,8 +54,7 @@
         "fragment": {
           "body": "[ -r /etc/ntfy/notifier.env ] && { set -a; . /etc/ntfy/notifier.env; set +a; }",
           "id": "managed-ntfy-notifier-env",
-          "marker": "# chezmoi: managed ntfy notifier env",
-          "order": 40
+          "marker": "# chezmoi: managed ntfy notifier env"
         },
         "target": ".profile"
       }

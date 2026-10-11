@@ -78,7 +78,8 @@ defmodule Workstation.Core.Contracts.Provider.Discover do
       namespace: "Elixir.Workstation.Core.Contracts.",
       behaviour: Workstation.Core.Contracts.Provider,
       callbacks: @callbacks,
-      label: "source-provider"
+      label: "source-provider",
+      tree: true
     })
   end
 

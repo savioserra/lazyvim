@@ -407,8 +407,7 @@ defmodule Workstation.Core.Golden do
         %{
           "id" => spec.fragment.id,
           "marker" => spec.fragment.marker,
-          "body" => spec.fragment.body,
-          "order" => spec.fragment.order
+          "body" => spec.fragment.body
         }
         |> drop_nil_fields()
     }
@@ -526,8 +525,7 @@ defmodule Workstation.Core.Golden do
               "fragment" => %{
                 "id" => "late-a",
                 "marker" => "# goldens: late",
-                "body" => "export GOLDEN_ORDER=late",
-                "order" => 30
+                "body" => "export GOLDEN_ORDER=late"
               }
             }
           },
@@ -538,8 +536,7 @@ defmodule Workstation.Core.Golden do
               "fragment" => %{
                 "id" => "first-a",
                 "marker" => "# goldens: first",
-                "body" => "export GOLDEN_ORDER=first",
-                "order" => 10
+                "body" => "export GOLDEN_ORDER=first"
               }
             }
           }
@@ -556,8 +553,7 @@ defmodule Workstation.Core.Golden do
               "fragment" => %{
                 "id" => "middle-b",
                 "marker" => "# goldens: middle",
-                "body" => "export GOLDEN_ORDER=middle",
-                "order" => 20
+                "body" => "export GOLDEN_ORDER=middle"
               }
             }
           },
@@ -568,8 +564,7 @@ defmodule Workstation.Core.Golden do
               "fragment" => %{
                 "id" => "tied-b",
                 "marker" => "# goldens: tied",
-                "body" => "export GOLDEN_ORDER=tied",
-                "order" => 10
+                "body" => "export GOLDEN_ORDER=tied"
               }
             }
           }
@@ -587,7 +582,6 @@ defmodule Workstation.Core.Golden do
           %{
             "provider" => "nvim-profile",
             "spec" => %{
-              "order" => 10,
               "entry" => %{
                 "id" => "goldens-go",
                 "requires" => ["go"],
@@ -612,7 +606,6 @@ defmodule Workstation.Core.Golden do
           %{
             "provider" => "nvim-profile",
             "spec" => %{
-              "order" => 20,
               "entry" => %{
                 "id" => "goldens-ts",
                 "lazyvim_extras" => [],
@@ -637,7 +630,6 @@ defmodule Workstation.Core.Golden do
           %{
             "provider" => "nvim-profile",
             "spec" => %{
-              "order" => 20,
               "entry" => %{
                 "id" => "goldens-std",
                 "lazyvim_extras" => ["lazyvim.plugins.extras.lang.toml"],

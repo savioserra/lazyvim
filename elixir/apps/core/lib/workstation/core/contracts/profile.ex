@@ -46,21 +46,20 @@ defmodule Workstation.Core.Contracts.Profile do
   @doc """
   One profile-intent contribution: normalize the declared raw intent to
   the canonical envelope, validate it, and wrap it as
-  `%{provider: provider_id, spec: %{order:, entry:}}`. The caller names
+  `%{provider: provider_id, spec: %{entry:}}`. The caller names
   the profile capability's provider id as data (the same way recipe
   constructors name "chezmoi"), so the contract never names one.
   """
-  @spec contribution(String.t(), pos_integer(), map()) :: %{provider: String.t(), spec: map()}
-  def contribution(provider_id, order, raw) when is_binary(provider_id) do
-    spec = %{order: order, entry: Profile.declared_entry(raw, @shape)}
+  @spec contribution(String.t(), map()) :: %{provider: String.t(), spec: map()}
+  def contribution(provider_id, raw) when is_binary(provider_id) do
+    spec = %{entry: Profile.declared_entry(raw, @shape)}
     :ok = validate_intent_spec(spec, "profile intent")
     %{provider: provider_id, spec: spec}
   end
 
   @doc """
-  Envelope validation for one profile-intent recipe: a positive integer
-  order, an entry table, and the entry valid under the canonical shape.
-  Label prefixes every rejection.
+  Envelope validation for one profile-intent recipe: an entry table whose
+  entry is valid under the canonical shape. Label prefixes every rejection.
   """
   @spec validate_intent_spec(map(), String.t()) :: :ok
   def validate_intent_spec(spec, label) do
@@ -72,15 +71,12 @@ defmodule Workstation.Core.Contracts.Profile do
   def validate_entry(entry, label), do: Profile.validate_entry(entry, @shape, label)
 
   @doc """
-  Envelope validation for one recorded/declared intent recipe: a positive
-  integer order, an entry table, and the entry valid under the canonical
-  shape. Label prefixes every rejection.
+  Envelope validation for one recorded/declared intent recipe: an entry
+  table whose entry is valid under the canonical shape. Label prefixes
+  every rejection.
   """
   @spec validate_intent_spec(map(), shape(), String.t()) :: :ok
   def validate_intent_spec(spec, shape, label) when is_map(spec) do
-    order = spec[:order]
-    unless is_integer(order) and order > 0,
-      do: raise_arg(label <> " recipe requires a positive integer order")
     unless is_map(spec[:entry]), do: raise_arg(label <> " recipe requires an entry table")
     validate_entry(spec[:entry], shape, label <> " entry " <> (spec[:entry][:id] |> to_string()))
     :ok
@@ -90,9 +86,8 @@ defmodule Workstation.Core.Contracts.Profile do
     do: raise_arg(label <> " recipe must be a table")
 
   @doc """
-  The composition ordering law (engine mechanics, delegated): entries
-  sorted by the recipe's explicit order key with collection order as
-  tie-break.
+  The composition ordering law (engine mechanics, delegated): collection
+  order — the graph's stable walk.
   """
   @spec order_intents([map()]) :: [map()]
   def order_intents(intents), do: Profile.order_intents(intents)

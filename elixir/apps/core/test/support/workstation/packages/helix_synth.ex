@@ -33,7 +33,6 @@ defmodule Workstation.Packages.HelixSynth do
         # Payload: a shared-shell fragment on the startup files.
         Packages.shell(".zshrc", %{
           id: "managed-helix-synth",
-          order: 15,
           marker: "# chezmoi: managed helix-synth",
           body: "export HELIX_SYNTH=1"
         })

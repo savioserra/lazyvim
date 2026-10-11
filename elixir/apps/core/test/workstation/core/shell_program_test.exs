@@ -11,41 +11,25 @@ defmodule Workstation.Core.ShellProgramTest do
 
   alias Workstation.Core.ShellProgram
 
-  @fragment_a %{"id" => "app-a", "marker" => "# workstation: app-a", "body" => "export A=1", "order" => 2}
-  @fragment_b %{"id" => "app-b", "marker" => "# workstation: app-b", "body" => "export B=2", "order" => 1}
+  @fragment_a %{"id" => "app-a", "marker" => "# workstation: app-a", "body" => "export A=1"}
+  @fragment_b %{"id" => "app-b", "marker" => "# workstation: app-b", "body" => "export B=2"}
 
   describe "compose" do
-    test "emits the exact anchored program bytes with order + sequence tie-break" do
+    test "emits the exact anchored program bytes in collection order" do
       {program, ids} = ShellProgram.compose(".zshrc", [@fragment_a, @fragment_b], %{})
 
-      assert ids == ["app-b", "app-a"]
+      assert ids == ["app-a", "app-b"]
 
       assert program == ~S"""
              #!/usr/bin/env sh
              # Managed by the workstation engine; do not edit deployed shared state by hand.
-             # Owned fragments: app-b, app-a
+             # Owned fragments: app-a, app-b
              # Emit shell expressions literally for future shells, never evaluate at render time.
              # shellcheck disable=SC2016
              set -eu
              work="$(mktemp)"
              trap 'rm -f "$work" "$work.next"' EXIT HUP INT TERM
              cat >"$work"
-             if grep -Fqx '# workstation: app-b' "$work"; then
-               awk 'BEGIN { m = "# workstation: app-b"; b = "export B=2"; count = 0; bad = 0 }
-             { lines[NR] = $0 }
-             END {
-               for (i = 1; i <= NR; i++) {
-                 if (lines[i] == m) {
-                   count++
-                   if (i < NR && lines[i + 1] == b) { i++ } else { bad = 1 }
-                 }
-               }
-               if (bad || count > 1) exit 70
-             }
-             ' "$work" || exit 70
-             else
-               printf '\n%s\n%s\n' '# workstation: app-b' 'export B=2' >>"$work"
-             fi
              if grep -Fqx '# workstation: app-a' "$work"; then
                awk 'BEGIN { m = "# workstation: app-a"; b = "export A=1"; count = 0; bad = 0 }
              { lines[NR] = $0 }
@@ -62,21 +46,40 @@ defmodule Workstation.Core.ShellProgramTest do
              else
                printf '\n%s\n%s\n' '# workstation: app-a' 'export A=1' >>"$work"
              fi
+             if grep -Fqx '# workstation: app-b' "$work"; then
+               awk 'BEGIN { m = "# workstation: app-b"; b = "export B=2"; count = 0; bad = 0 }
+             { lines[NR] = $0 }
+             END {
+               for (i = 1; i <= NR; i++) {
+                 if (lines[i] == m) {
+                   count++
+                   if (i < NR && lines[i + 1] == b) { i++ } else { bad = 1 }
+                 }
+               }
+               if (bad || count > 1) exit 70
+             }
+             ' "$work" || exit 70
+             else
+               printf '\n%s\n%s\n' '# workstation: app-b' 'export B=2' >>"$work"
+             fi
              cat "$work"
              """
     end
 
-    test "the sequence tie-break keeps equal orders in declaration order" do
-      first = %{"id" => "one", "marker" => "# one", "body" => "export ONE=1", "order" => 3}
-      second = %{"id" => "two", "marker" => "# two", "body" => "export TWO=2", "order" => 3}
+    test "collection order is the whole order — no fragment declares a number" do
+      first = %{"id" => "one", "marker" => "# one", "body" => "export ONE=1"}
+      second = %{"id" => "two", "marker" => "# two", "body" => "export TWO=2"}
 
       {_program, ids} = ShellProgram.compose(".zshrc", [first, second], %{})
       assert ids == ["one", "two"]
+
+      {_program, ids} = ShellProgram.compose(".zshrc", [second, first], %{})
+      assert ids == ["two", "one"]
     end
 
     test "retiring fragments add their exact-block removal before the appends" do
       recorded = %{
-        "retired" => %{"id" => "retired", "marker" => "# old", "body" => "export OLD=0", "order" => 1}
+        "retired" => %{"id" => "retired", "marker" => "# old", "body" => "export OLD=0"}
       }
 
       {program, _ids} = ShellProgram.compose(".zshrc", [@fragment_a], recorded)
@@ -105,7 +108,7 @@ defmodule Workstation.Core.ShellProgramTest do
 
     test "same-id declaration changes remove the recorded old block first" do
       recorded = %{
-        "app-a" => %{"id" => "app-a", "marker" => "# workstation: app-a", "body" => "export OLD=0", "order" => 2}
+        "app-a" => %{"id" => "app-a", "marker" => "# workstation: app-a", "body" => "export OLD=0"}
       }
 
       {program, _ids} = ShellProgram.compose(".zshrc", [@fragment_a], recorded)
@@ -116,7 +119,7 @@ defmodule Workstation.Core.ShellProgramTest do
     end
 
     test "duplicate markers owned by two fragments conflict" do
-      dup = %{"id" => "dup", "marker" => "# workstation: app-a", "body" => "export DUP=1", "order" => 9}
+      dup = %{"id" => "dup", "marker" => "# workstation: app-a", "body" => "export DUP=1"}
 
       assert_raise ArgumentError, ~r/duplicate shell marker owned by two fragments on .zshrc/, fn ->
         ShellProgram.compose(".zshrc", [@fragment_a, dup], %{})
@@ -133,8 +136,7 @@ defmodule Workstation.Core.ShellProgramTest do
       tricky = %{
         "id" => "tricky",
         "marker" => "# it's \"quoted\"",
-        "body" => "export BACKSLASH='a\\b'",
-        "order" => 1
+        "body" => "export BACKSLASH='a\\b'"
       }
 
       {program, _ids} = ShellProgram.compose(".zshrc", [tricky], %{})
@@ -178,7 +180,7 @@ defmodule Workstation.Core.ShellProgramTest do
     end
 
     test "retiring fragments conflict only on edited old blocks", %{path: path} do
-      recorded = %{"gone" => %{"id" => "gone", "marker" => "# gone", "body" => "export GONE=0", "order" => 1}}
+      recorded = %{"gone" => %{"id" => "gone", "marker" => "# gone", "body" => "export GONE=0"}}
 
       File.write!(path, "# gone\nexport GONE=0\n")
       assert ShellProgram.validate_target(path, [], recorded) == {:ok, nil}
@@ -191,7 +193,7 @@ defmodule Workstation.Core.ShellProgramTest do
 
     test "a replaced fragment still expects its recorded old body right now", %{path: path} do
       recorded = %{
-        "app-a" => %{"id" => "app-a", "marker" => "# workstation: app-a", "body" => "export OLD=0", "order" => 2}
+        "app-a" => %{"id" => "app-a", "marker" => "# workstation: app-a", "body" => "export OLD=0"}
       }
 
       File.write!(path, "# workstation: app-a\nexport OLD=0\n")
@@ -243,7 +245,7 @@ defmodule Workstation.Core.ShellProgramTest do
       recipe =
         ShellProgram.recipe(%{
           "target" => ".zshrc",
-          "fragment" => %{"id" => "app", "marker" => "# m", "body" => "export X=1", "order" => 1}
+          "fragment" => %{"id" => "app", "marker" => "# m", "body" => "export X=1"}
         })
 
       assert recipe["provider"] == "shell"
@@ -258,17 +260,19 @@ defmodule Workstation.Core.ShellProgramTest do
         ShellProgram.recipe(%{"target" => ".zshrc", "fragment" => %{"id" => "a"}, "extra" => 1})
       end
 
-      assert_raise ArgumentError, ~r/shell fragment requires a positive integer order/, fn ->
+      # The ordering knob is a rejected field: composition order is collection
+      # order, so a fragment may never declare a number.
+      assert_raise ArgumentError, ~r/shell fragment has unknown field "order"/, fn ->
         ShellProgram.recipe(%{
           "target" => ".zshrc",
-          "fragment" => %{"id" => "a", "marker" => "# m", "body" => "b", "order" => 1.5}
+          "fragment" => %{"id" => "a", "marker" => "# m", "body" => "b", "order" => 1}
         })
       end
 
       assert_raise ArgumentError, ~r/shell fragment marker must not contain control characters or newlines/, fn ->
         ShellProgram.recipe(%{
           "target" => ".zshrc",
-          "fragment" => %{"id" => "a", "marker" => "# m\n", "body" => "b", "order" => 1}
+          "fragment" => %{"id" => "a", "marker" => "# m\n", "body" => "b"}
         })
       end
 
@@ -276,7 +280,7 @@ defmodule Workstation.Core.ShellProgramTest do
         ShellProgram.validate_spec(%{
           "target" => "a/../b",
           "components" => ["a", "..", "b"],
-          "fragment" => %{"id" => "a", "marker" => "# m", "body" => "b", "order" => 1}
+          "fragment" => %{"id" => "a", "marker" => "# m", "body" => "b"}
         })
       end
     end
