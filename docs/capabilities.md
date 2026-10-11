@@ -150,7 +150,8 @@ foundation
 └── nunchux [requires foundation+theme; linux — pinned checkout (git recipe) + platform marker + theme-slot config]
 
 nvim
-└── typescript [requires node+nvim; owns its plugin module, profile intent and verification]
+├── typescript [requires node+nvim; owns its plugin module, profile intent and verification]
+└── elixir [requires nvim; owns its plugin module, profile intent and verification]
 ```
 
 | Package | Setup | Sync | Verify | Host support |
@@ -160,6 +161,7 @@ nvim
 | `node` | nvm and Node archives, then default/environment | — | NVM and Node version | All |
 | `agent` | Hermes Agent pinned checkout via the git recipe (`~/.hermes/hermes-agent` at the pinned commit); managed skills at `~/.hermes/skills/{lazyvim,secrets}` | — | `packages/agent/verify/hermes.sh` (checkout HEAD + launcher `--version` + managed skill files; read-only) | All |
 | `go` | Exact toolchain archive; go link recipe | — | Go version | Linux/WSL/macOS |
+| `elixir` | — | — | Own Mason expectations, plugin module and behavior/formatter cases through nvim leaf helpers | All |
 | `herdr` | Exact pinned binary; herdr link recipe | — | Static binary version only; never server/pane/session lifecycle | All |
 | `secrets` | Pinned op archive member; op env fragment | — | Managed 1Password CLI version; never account or vault state | All supported hosts |
 | `nvim` | — | Locks and parsers | Startup, locks, mason coverage, base/standard/Go behavior | All |
@@ -191,11 +193,11 @@ Domain order is lifecycle order; the mapping today:
 | --- | --- |
 | `base` | `foundation` |
 | `fonts` | `fonts` |
-| `runtime` | `node`, `go` |
-| `editor` | `nvim`, `nvim-typescript`, `helix` |
-| `terminal` | `tmux`, `herdr` |
+| `runtime` | `elixir`, `go`, `node`, `typescript` |
+| `editor` | `nvim` |
+| `terminal` | `nunchux`, `tmux` |
 | `theme` | `theme` |
-| `agent` | `agent` |
+| `agent` | `agent`, `herdr` |
 | `secrets` | `secrets` |
 
 A foundation name outside the pinned lifecycle order still renders
