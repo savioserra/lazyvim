@@ -1,6 +1,6 @@
 ---
 name: lazyvim
-description: Maintains this repository's cross-platform engine-owned workstation monorepo, host packages, Neovim profile, tmux setup, and Pi resources. Use when changing, testing, applying, or releasing this setup.
+description: Maintains this repository's cross-platform engine-owned workstation monorepo, host packages, Neovim profile, tmux setup, and Hermes resources. Use when changing, testing, applying, or releasing this setup.
 ---
 
 # Manage Workstation Monorepo
@@ -23,7 +23,7 @@ description: Maintains this repository's cross-platform engine-owned workstation
 | Work | Reference |
 | --- | --- |
 | Install/daily commands | `README.md` |
-| Packages, lifecycle, Pi verification contracts | `docs/capabilities.md` |
+| Packages, lifecycle, Hermes verification contracts | `docs/capabilities.md` |
 | Generated file backend, engine state, guarded cutover | `docs/chezmoi.md` |
 | Versions, checksums/integrity, pin generation | `docs/tools.md` |
 | Editor profile/locks or tmux | `docs/nvim.md`, `docs/tmux.md` |
@@ -51,9 +51,7 @@ before a backend render; dry-run is not a sandbox. Report actual failures and
 unrun acceptance gates rather than treating synthetic checks as deployment proof.
 Confirm clean status after requested commits.
 
-Before editing skills, read pinned installed Pi `docs/skills.md` and relevant
-linked guidance. Retain valid name/description frontmatter and nested `SKILL.md`
-discovery under `~/.pi/agent/skills/`; relative resource links resolve from the
-skill directory. `pi-skills` owns actual discovery verification. Notifier
-manifest/unit tests do not establish real extension discovery/reload acceptance;
-follow the separate required gate in `docs/capabilities.md`.
+Managed skills deploy to `~/.hermes/skills/` (each skill is a directory holding
+`SKILL.md`). Retain valid name/description frontmatter; relative resource links
+resolve from the skill directory. The `agent` package verify asserts the managed
+skill files at their deployed targets.

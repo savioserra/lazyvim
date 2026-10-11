@@ -1,45 +1,32 @@
 {
   "contributes": [
     {
-      "provider": "chezmoi",
+      "provider": "git",
       "spec": {
-        "asset": "files/.pi/agent/agents/worker.md",
-        "kind": "file",
-        "target": ".pi/agent/agents/worker.md"
+        "url": "https://github.com/NousResearch/hermes-agent",
+        "commit": "46d7718a52ff33accb15dc0501736fbdb6833cab",
+        "target": ".hermes/hermes-agent"
       }
     },
     {
       "provider": "chezmoi",
       "spec": {
-        "asset": "files/.pi/agent/agents/reviewer.md",
+        "asset": "files/.hermes/skills/lazyvim/SKILL.md",
         "kind": "file",
-        "target": ".pi/agent/agents/reviewer.md"
+        "target": ".hermes/skills/lazyvim/SKILL.md"
       }
     },
     {
       "provider": "chezmoi",
       "spec": {
-        "asset": "files/.pi/agent/themes/workstation-dark.json",
+        "asset": "files/.hermes/skills/secrets/SKILL.md",
         "kind": "file",
-        "target": ".pi/agent/themes/workstation-dark.json",
-        "template": true
-      }
-    },
-    {
-      "provider": "chezmoi",
-      "spec": {
-        "asset": "files/.pi/agent/themes/workstation-light.json",
-        "kind": "file",
-        "target": ".pi/agent/themes/workstation-light.json",
-        "template": true
+        "target": ".hermes/skills/secrets/SKILL.md"
       }
     }
   ],
   "foundation": "foundation/agent",
   "id": "agent",
-  "requires": [
-    "node",
-    "theme"
-  ],
+  "requires": [],
   "schema": 1
 }

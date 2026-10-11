@@ -141,10 +141,8 @@ dependency is genuinely needed.
 foundation
 ├── fonts
 ├── node
-│   └── agent [pi coding agent + internal pi-packages.json pinned catalog; delegates installs to the pi CLI]
-│   ├── pi-skills [requires agent]
-│   └── pi-ntfy-notifier [source-managed]
 ├── go [Neovim language toolchain]
+├── agent [Hermes Agent via pinned git recipe; managed skills]
 ├── herdr [pinned terminal-workspace binary; runtime-optional, no server lifecycle]
 ├── secrets
 ├── nvim [requires foundation+node+go; owns base/standard/Go profile intents]
@@ -153,9 +151,6 @@ foundation
 
 nvim
 └── typescript [requires node+nvim; owns its plugin module, profile intent and verification]
-
-herdr
-└── herdr-pi [requires agent+herdr; owns only the official Pi hook bytes]
 ```
 
 | Package | Setup | Sync | Verify | Host support |
@@ -163,12 +158,9 @@ herdr
 | `foundation` | CLI archive members | — | CLI versions | All |
 | `fonts` | Font archives, then host registration/cache | — | Host visibility | All |
 | `node` | nvm and Node archives, then default/environment | — | NVM and Node version | All |
-| `agent` | Exact global pi npm package; internal pi packages from `pi-packages.json`, installed via the pinned pi CLI; agent skill policy; pi-fabric role definitions with per-project memory frontmatter; acp.json delegate-off | — | npm/CLI version, per-package lock integrity, pinned settings entries, role definition files with memory frontmatter, extension discovery tools | All |
-| `pi-skills` | — | — | Managed skill files and Pi discovery | All |
-| `pi-ntfy-notifier` | Source-managed extension | — | Manifest version, extension files, node test suite | All |
+| `agent` | Hermes Agent pinned checkout via the git recipe (`~/.hermes/hermes-agent` at the pinned commit); managed skills at `~/.hermes/skills/{lazyvim,secrets}` | — | `packages/agent/verify/hermes.sh` (checkout HEAD + launcher `--version` + managed skill files; read-only) | All |
 | `go` | Exact toolchain archive; go link recipe | — | Go version | Linux/WSL/macOS |
 | `herdr` | Exact pinned binary; herdr link recipe | — | Static binary version only; never server/pane/session lifecycle | All |
-| `herdr-pi` | — (official hook deploys as a file recipe) | — | Exact hook bytes, integration revision marker, isolated Pi loader discovery | All |
 | `secrets` | Pinned op archive member; op env fragment | — | Managed 1Password CLI version; never account or vault state | All supported hosts |
 | `nvim` | — | Locks and parsers | Startup, locks, mason coverage, base/standard/Go behavior | All |
 | `typescript` | — | — | Own Mason expectations, plugin module and behavior/formatter cases through nvim leaf helpers | All |
@@ -201,9 +193,9 @@ Domain order is lifecycle order; the mapping today:
 | `fonts` | `fonts` |
 | `runtime` | `node`, `go` |
 | `editor` | `nvim`, `nvim-typescript`, `helix` |
-| `terminal` | `tmux`, `herdr`, `herdr-pi` |
+| `terminal` | `tmux`, `herdr` |
 | `theme` | `theme` |
-| `agent` | `agent`, `pi-skills`, `pi-ntfy-notifier` |
+| `agent` | `agent` |
 | `secrets` | `secrets` |
 
 A foundation name outside the pinned lifecycle order still renders
@@ -355,46 +347,18 @@ The former package-side compositor and child-verification helpers
 and died with the engine; the profile contract they enforced now lives in
 `Workstation.Packages.Nvim.Profile`.
 
-## Pi resources
+## Hermes resources
 
-The `agent` capability owns the pi coding agent and every internal pi package.
-The coding agent is pinned in the canonical `workstation/versions.json`; internal
-packages (pi-fabric, pi-web-access, billion-context, pi-simplify, openwiki)
-are pinned with exact versions and registry integrity in the package-local
-`workstation/packages/agent/pi-packages.json` catalog. All install work is
-delegated to the pinned pi CLI (`pi install npm:<name>@<version>`); the engine
-asserts the catalog, then verifies installed versions, settings entries and
-package-lock integrity. Host-side `pi update` drift is converged back to the
-catalog by the next apply, never followed.
-
-The agent capability also owns the subagent skill policy (worker/delegate get the
-managed lazyvim skill) and `~/.pi/acp.json` with `delegate: false`, keeping
-the pi-fabric runtime as the only delegation surface while billion-context compression
-tools stay enabled. It also ships the engine-owned agent role definitions
-(`~/.pi/agent/agents/{worker,reviewer}.md`, sourced from
-`workstation/packages/agent/files/.pi/agent/agents/`). These shadow the bundled
-builtins and carry `memory: {scope: project, path: fleet}` frontmatter — per-agent
-memory is intrinsic to the agent runtime (pi-fabric; the first 200 lines of
-`<repo>/.pi/agent-memory/fleet/MEMORY.md` are injected into each run; worker
-appends, reviewer recalls; no Hermes dependency). The fleet memory seed for this
-repo is tracked at `.pi/agent-memory/fleet/MEMORY.md`. After a pi-fabric
-upgrade, re-diff the shipped definitions against the package builtins. One
-JavaScript verifier per pinned package lives under
-`workstation/packages/agent/verify/` and checks Pi discovery through the
-resource loader.
-
-`pi-skills` verifies managed skill files and discovery through Pi's resource loader.
-`pi-ntfy-notifier` deploys from
-`workstation/packages/agent/pi-ntfy-notifier/files/.pi/agent/extensions/ntfy-notifier/`
-through `workstation apply`, followed by Pi `/reload` or a new process.
-
-Notifier package verification checks manifest/version/files and Node unit tests
-that import the extension with a mock Pi API. These do **not** prove actual Pi
-auto-discovery or reload cleanup. Real discovery and reload acceptance remains a
-separate required check for extension changes: confirm commands/events load once
-and shutdown/reload releases owned resources without duplicate handlers. Keep
-checks independent of credentials; live notification delivery requires separate
-authorization and must not expose tokens.
+The `agent` capability owns the Hermes Agent checkout and the managed skills.
+The agent itself is a pinned git recipe: `workstation/versions.json` carries
+`hermes_agent_git_commit` / `hermes_agent_git_url` (upstream
+`NousResearch/hermes-agent`), and the manifest's git contribution provisions
+`~/.hermes/hermes-agent` at the pinned commit. One read-only verifier,
+`workstation/packages/agent/verify/hermes.sh`, asserts the checkout HEAD, the
+in-checkout launcher (`~/.hermes/hermes-agent/.hermes/bin/hermes --version`)
+and the deployed managed skills. Kanban boards and profiles are runtime state
+the package never owns: the package ships the pin, the skills and the verify
+only.
 
 ## Package payload rule
 

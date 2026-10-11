@@ -310,9 +310,9 @@ Every package declares the foundation layer it belongs to (`foundation:
 is the closed map, `CatalogNativeTest` pins it). Declared layers:
 `foundation/base` (the foundation package), `foundation/editor` (nvim),
 `foundation/runtime` (node, go, elixir, typescript), `foundation/terminal`
-(tmux), `foundation/agent` (agent, herdr, herdr-pi, pi-skills,
-pi-ntfy-notifier), `foundation/theme`, `foundation/fonts`,
-`foundation/secrets`. The declaration is status-wire metadata only — it never
+(tmux), `foundation/agent` (agent, herdr), `foundation/theme`,
+`foundation/fonts`, `foundation/secrets`. The declaration is status-wire
+metadata only — it never
 enters graph resolution, envelopes or plan bytes, so catalog order and golden
 bytes are unaffected.
 
