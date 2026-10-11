@@ -332,6 +332,7 @@ detection.
 `packages/editor/nvim` declares the base/standard/Go language intents as
 `nvim-profile` recipes; language capabilities such as `typescript`
 declare their own intents the same way. The engine composes them
+through the discovered `nvim-profile` provider
 (`Workstation.Packages.Nvim.Profile`): intents compose in collection order —
 the graph's stable walk (dependencies first, ties by id sort; no intent
 declares an order number) — the assembled list is validated by the nvim-owned compositor

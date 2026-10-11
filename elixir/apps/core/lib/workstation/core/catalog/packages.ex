@@ -21,12 +21,13 @@ defmodule Workstation.Core.Catalog.Packages do
   Package ordering comes exclusively from `requires`/`after` edges:
   graph ties among dependency-equal packages resolve by id sort, so no
   module's position in any list is load-bearing. The discovery order is
-  the recorded order the goldens pin; the editor capability (`Nvim`)
-  completes the set.
+  the recorded order the goldens pin; every package — the editor
+  capability (`nvim`) included — declares manifest.json data beside its
+  payloads.
 
   The recipe helpers are the shared constructors for the two recipe kinds
-  (chezmoi / shell) — the declaration constructors the compiled arm and the
-  test-support fixtures call; data manifests declare the same shapes
+  (chezmoi / shell) — the declaration constructors the test-support
+  fixtures call; data manifests declare the same shapes
   string-keyed and denormalize through the discovered owners. Capability-owned
   compositors (e.g. the nvim profile) are NOT wired here: they live in
   their owning package module and are discovered through the

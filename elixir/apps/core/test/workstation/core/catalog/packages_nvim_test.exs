@@ -11,8 +11,6 @@ defmodule Workstation.Core.Catalog.PackagesNvimTest do
 
   use ExUnit.Case, async: true
 
-  alias Workstation.Packages.Nvim
-
   @repo_root Path.expand("../../../../../../..", __DIR__)
   @payload_root Path.join(@repo_root, "workstation/packages/editor/nvim")
 
@@ -60,17 +58,42 @@ defmodule Workstation.Core.Catalog.PackagesNvimTest do
     refute program =~ "tender"
   end
 
+  test "the lockfile merge program carries the engine pins marker exactly once" do
+    program = modify_program()
+    template = File.read!(Path.join(@payload_root, "files/modify/lazy-lock.json.sh"))
+    pins = File.read!(Path.join(@payload_root, "files/.config/nvim/lazy-lock.json"))
+
+    # The composed program is the template with the committed pins
+    # substituted at the single engine-pins marker (first occurrence), so
+    # the deployed seed stays byte-stable with the committed asset.
+    assert template =~ "__WORKSTATION_ENGINE_PINS__"
+    assert program == String.replace(template, "__WORKSTATION_ENGINE_PINS__", pins)
+    refute program =~ "__WORKSTATION_ENGINE_PINS__"
+  end
+
   defp theme_source do
     File.read!(Path.join(@payload_root, "files/.config/nvim/lua/plugins/theme.lua"))
   end
 
   defp modify_program do
     entry =
-      Enum.find(Nvim.spec().contributes, fn entry ->
+      Enum.find(nvim_spec().contributes, fn entry ->
         entry.spec.target == ".config/nvim/lazy-lock.json"
       end)
 
     assert entry, "lazy-lock modify target missing from the nvim spec"
     entry.spec.content
+  end
+
+  # The nvim package's declared spec, read through the production data
+  # seam: the manifest beside the payloads, denormalized by the tree
+  # reader (the same discovery the native catalog serves).
+  defp nvim_spec do
+    {path, spec} =
+      Workstation.Core.Packages.Reader.specs()
+      |> Enum.find(fn {_path, spec} -> spec.id == "nvim" end)
+
+    assert path =~ "workstation/packages/editor/nvim/manifest.json"
+    spec
   end
 end

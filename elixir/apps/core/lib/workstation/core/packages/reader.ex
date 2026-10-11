@@ -10,8 +10,8 @@ defmodule Workstation.Core.Packages.Reader do
   provider/contract owners — the reader names none of them. Adding a
   package is adding a directory.
 
-  Data manifests complement the compiled `manifest.ex` arm while the
-  manifest-to-data conversion runs: `Workstation.Core.Catalog.Discover`
+  Data manifests complement the compiled `manifest.ex` arm where a package
+  still carries one: `Workstation.Core.Catalog.Discover`
   owns the merge and the cross-arm duplicate-id rejection.
   """
 
@@ -31,6 +31,11 @@ defmodule Workstation.Core.Packages.Reader do
   @export_fields ~w(key schema value)
   @context_require_fields ~w(key schema)
   @contribution_fields ~w(provider spec)
+
+  # The `$embed_assets` render descriptor's vocabulary (template + embed are
+  # package-relative asset references; marker is the substitution token the
+  # template carries exactly once).
+  @embed_fields ~w(embed marker template)
 
   # The banned design (the same rule the recorded envelopes enforce through
   # `Catalog.load`): integer ordering fields on the package spec.
@@ -181,7 +186,7 @@ defmodule Workstation.Core.Packages.Reader do
     spec = Map.get(entry, "spec")
     is_map(spec) || raise(ArgumentError, "#{package_id} contribution spec must be an object")
     reject_ordering_keys!(path, package_id, spec)
-    spec = expand_rendered_values(spec)
+    spec = expand_rendered_values(package_id, spec)
 
     ctx = %{
       package_id: package_id,
@@ -252,16 +257,71 @@ defmodule Workstation.Core.Packages.Reader do
   defp reject_ordering_keys!(_path, _package_id, _leaf), do: :ok
 
   # The engine-rendered sentinel vocabulary — the one thing a data manifest
-  # cannot carry as bytes: a declared value of exactly %{"$theme_data" => true}
-  # expands to the theme platform engine's canonical chezmoidata envelope,
-  # rendered from the committed token set (the same engine call the retired
-  # compiled declaration made). The set is closed: a rendered value joins
-  # here or it does not exist.
-  defp expand_rendered_values(spec) do
+  # cannot carry as bytes. The set is closed: a rendered value joins here or
+  # it does not exist.
+  #
+  # * `%{"$theme_data" => true}` expands to the theme platform engine's
+  #   canonical chezmoidata envelope, rendered from the committed token set
+  #   (the same engine call the retired compiled declaration made).
+  # * `%{"$embed_assets" => descriptor}` expands to the composed modify
+  #   program the retired compiled declaration built: pure-filesystem reads
+  #   of the two declared package assets — the template and the embedded
+  #   body — substituted at the declared marker (first occurrence only, the
+  #   single-marker semantics the template itself carries), fail-closed on
+  #   any missing/empty asset, a body that is not a JSON object, an absent
+  #   marker, or a substitution that leaves a marker behind.
+  defp expand_rendered_values(package_id, spec) do
     Map.new(spec, fn
-      {key, %{"$theme_data" => true}} -> {key, Workstation.Core.Theme.Tokens.data_envelope()}
-      {key, value} -> {key, value}
+      {key, %{"$theme_data" => true}} ->
+        {key, Workstation.Core.Theme.Tokens.data_envelope()}
+
+      {key, %{"$embed_assets" => descriptor}} ->
+        {key, embed_assets!(package_id, descriptor)}
+
+      {key, value} ->
+        {key, value}
     end)
+  end
+
+  # The declared-asset embed: template + body reads through the catalog's
+  # one auditable asset seam (package-relative, pure filesystem), then the
+  # exact compiled-arm semantics — the pins must decode as a JSON object and
+  # the template must carry the marker exactly once in effect. Returns the
+  # composed program bytes; every failure names the package and the field.
+  defp embed_assets!(package_id, descriptor) when is_map(descriptor) do
+    unknown = Map.keys(descriptor) -- @embed_fields
+    unknown == [] || raise(ArgumentError, "#{package_id} render descriptor has unknown fields: #{inspect(unknown)}")
+
+    template_ref = field_string!(package_id, descriptor, "template")
+    embed_ref = field_string!(package_id, descriptor, "embed")
+    marker = field_string!(package_id, descriptor, "marker")
+
+    template = Workstation.Core.Catalog.package_asset!(package_id, template_ref)
+    body = Workstation.Core.Catalog.package_asset!(package_id, embed_ref)
+
+    case Workstation.Core.EngineState.decode_json(body) do
+      {:ok, decoded} when is_map(decoded) -> :ok
+      _ -> raise ArgumentError, "#{package_id}: #{embed_ref} asset is not a JSON object"
+    end
+
+    String.contains?(template, marker) ||
+      raise ArgumentError, "#{package_id}: #{template_ref} asset carries no #{marker} marker"
+
+    replaced = :binary.replace(template, marker, body)
+
+    String.contains?(replaced, marker) &&
+      raise ArgumentError, "#{package_id}: #{template_ref} asset substitution failed"
+
+    replaced
+  end
+
+  defp embed_assets!(package_id, other),
+    do: raise(ArgumentError, "#{package_id} render descriptor must be an object, got: #{inspect(other)}")
+
+  defp field_string!(package_id, descriptor, field) do
+    value = Map.get(descriptor, field)
+    is_binary(value) and value != "" || raise(ArgumentError, "#{package_id} render descriptor #{field} must be a non-empty string")
+    value
   end
 
   defp manifest_string!(source, map, field) do

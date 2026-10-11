@@ -9,7 +9,8 @@ defmodule Workstation.Core.Catalog.Discover do
     exactly the modules the loaded package tree declared
     (`Workstation.Core.Packages.Loader.ensure/0` walks it once per node),
     a package is added by adding its directory, and a module outside the
-    tree is structurally invisible to discovery;
+    tree is structurally invisible to discovery (the tree currently
+    carries none — every package declares data);
   * the data arm — a `manifest.json` in the package dir, read and
     denormalized by `Workstation.Core.Packages.Reader`.
 

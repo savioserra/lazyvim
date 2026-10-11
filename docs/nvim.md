@@ -33,8 +33,9 @@
 
 The deployed `languages/profile.lua` is **generated**
 by the nvim-owned compositor (`Workstation.Packages.Nvim.Profile`) from declared
-`nvim-profile` recipes (base/standard/Go from the nvim package module, language
-entries from their own package modules such as `Workstation.Packages.Typescript`),
+`nvim-profile` recipes (base/standard/Go from the nvim package's
+`manifest.json`, language entries from their own packages' manifests such as
+`packages/languages/typescript/manifest.json`),
 ordered Go, TypeScript, standard. The engine compositor checks these fields:
 
 | Field | Shape / use |

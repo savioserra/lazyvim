@@ -15,10 +15,11 @@ defmodule Workstation.Packages.Nvim.Profile do
   semantics: the serialized deployed file's format, and the composition of
   validated nvim-profile intents into ONE attributed chezmoi recipe for
   the shared deployed profile. Sibling language manifests declare their
-  intents against the platform envelope directly and name this capability's
-  provider id as data — they import nothing from nvim. Contributors keep
-  fragment attribution; the compositor never fabricates per-fragment file
-  ownership.
+  intents as pure data against the platform envelope directly and name
+  this capability's provider id as data — they import nothing from nvim,
+  and nvim's own manifest declares its intents the same way. Contributors
+  keep fragment attribution; the compositor never fabricates per-fragment
+  file ownership.
 
   `serialize/1` emits the deployed file as plain editor configuration Lua,
   quoted with Lua `%q` semantics (decimal escapes for control bytes, raw
@@ -42,25 +43,15 @@ defmodule Workstation.Packages.Nvim.Profile do
   @impl Workstation.Core.Contracts.Provider
   def id, do: "nvim-profile"
 
-  @doc """
-  One nvim-profile language intent
-  as declared by the nvim package module. The raw intent map is normalized
-  by the profile platform to the envelope's denormalized shape — every
-  declared entry field present (nil when the language omits it), case
-  records carrying exactly their base fields plus optional string-keyed
-  project_files — so native intents compare equal to the recorded envelope
-  and validate through the compositor's own entry validator.
-  """
-  @spec contribute(map()) :: %{provider: String.t(), spec: map()}
-  def contribute(raw), do: Profile.contribution(id(), raw)
-
   @impl Workstation.Core.Contracts.Provider
   @doc """
   Denormalize one recorded-envelope spec (string-keyed golden bytes) back
   to the declared atom shape via the profile platform: known entry fields to
   atom keys, project_files keys staying data (file names, never structure).
   Unknown fields are tolerated: the validator checks known fields without an
-  allowlist.
+  allowlist. The same reader serves data-manifest declarations (the string
+  keys a manifest.json declares are the recorded dialect), so native
+  declarations denormalize exactly like the golden oracle's bytes.
   """
   def denormalize_spec(spec), do: Profile.recorded_spec(spec, @shape, "nvim-profile")
 

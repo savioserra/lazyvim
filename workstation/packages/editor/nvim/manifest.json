@@ -1,0 +1,277 @@
+{
+  "contributes": [
+    {
+      "provider": "chezmoi",
+      "spec": {
+        "kind": "symlink",
+        "target": ".local/bin/nvim",
+        "to": "/home/golden/.local/opt/nvim/bin/nvim"
+      }
+    },
+    {
+      "provider": "chezmoi",
+      "spec": {
+        "content": {
+          "$embed_assets": {
+            "embed": "files/.config/nvim/lazy-lock.json",
+            "marker": "__WORKSTATION_ENGINE_PINS__",
+            "template": "files/modify/lazy-lock.json.sh"
+          }
+        },
+        "executable": true,
+        "kind": "modify",
+        "target": ".config/nvim/lazy-lock.json"
+      }
+    },
+    {
+      "provider": "chezmoi",
+      "spec": {
+        "asset": "files/.config/nvim/.gitignore",
+        "kind": "file",
+        "target": ".config/nvim/.gitignore"
+      }
+    },
+    {
+      "provider": "chezmoi",
+      "spec": {
+        "asset": "files/.config/nvim/init.lua",
+        "kind": "file",
+        "target": ".config/nvim/init.lua"
+      }
+    },
+    {
+      "provider": "chezmoi",
+      "spec": {
+        "asset": "files/.config/nvim/lazyvim.json",
+        "kind": "file",
+        "target": ".config/nvim/lazyvim.json"
+      }
+    },
+    {
+      "provider": "chezmoi",
+      "spec": {
+        "asset": "files/.config/nvim/mason-lock.json",
+        "kind": "file",
+        "target": ".config/nvim/mason-lock.json"
+      }
+    },
+    {
+      "provider": "chezmoi",
+      "spec": {
+        "asset": "files/.config/nvim/neoconf.json",
+        "kind": "file",
+        "target": ".config/nvim/neoconf.json"
+      }
+    },
+    {
+      "provider": "chezmoi",
+      "spec": {
+        "asset": "files/.config/nvim/stylua.toml",
+        "kind": "file",
+        "target": ".config/nvim/stylua.toml"
+      }
+    },
+    {
+      "provider": "chezmoi",
+      "spec": {
+        "asset": "files/.config/nvim/lua/config/autocmds.lua",
+        "kind": "file",
+        "target": ".config/nvim/lua/config/autocmds.lua"
+      }
+    },
+    {
+      "provider": "chezmoi",
+      "spec": {
+        "asset": "files/.config/nvim/lua/config/keymaps.lua",
+        "kind": "file",
+        "target": ".config/nvim/lua/config/keymaps.lua"
+      }
+    },
+    {
+      "provider": "chezmoi",
+      "spec": {
+        "asset": "files/.config/nvim/lua/config/lazy.lua",
+        "kind": "file",
+        "target": ".config/nvim/lua/config/lazy.lua"
+      }
+    },
+    {
+      "provider": "chezmoi",
+      "spec": {
+        "asset": "files/.config/nvim/lua/config/options.lua",
+        "kind": "file",
+        "target": ".config/nvim/lua/config/options.lua"
+      }
+    },
+    {
+      "provider": "chezmoi",
+      "spec": {
+        "asset": "files/.config/nvim/lua/config/sync.lua",
+        "kind": "file",
+        "target": ".config/nvim/lua/config/sync.lua"
+      }
+    },
+    {
+      "provider": "chezmoi",
+      "spec": {
+        "asset": "files/.config/nvim/lua/plugins/debugging.lua",
+        "kind": "file",
+        "target": ".config/nvim/lua/plugins/debugging.lua"
+      }
+    },
+    {
+      "provider": "chezmoi",
+      "spec": {
+        "asset": "files/.config/nvim/lua/plugins/editor.lua",
+        "kind": "file",
+        "target": ".config/nvim/lua/plugins/editor.lua"
+      }
+    },
+    {
+      "provider": "chezmoi",
+      "spec": {
+        "asset": "files/.config/nvim/lua/plugins/lsp.lua",
+        "kind": "file",
+        "target": ".config/nvim/lua/plugins/lsp.lua"
+      }
+    },
+    {
+      "provider": "chezmoi",
+      "spec": {
+        "asset": "files/.config/nvim/lua/plugins/mason-lock.lua",
+        "kind": "file",
+        "target": ".config/nvim/lua/plugins/mason-lock.lua"
+      }
+    },
+    {
+      "provider": "chezmoi",
+      "spec": {
+        "asset": "files/.config/nvim/lua/plugins/mason.lua",
+        "kind": "file",
+        "target": ".config/nvim/lua/plugins/mason.lua"
+      }
+    },
+    {
+      "provider": "chezmoi",
+      "spec": {
+        "asset": "files/.config/nvim/lua/plugins/testing.lua",
+        "kind": "file",
+        "target": ".config/nvim/lua/plugins/testing.lua"
+      }
+    },
+    {
+      "provider": "chezmoi",
+      "spec": {
+        "asset": "files/.config/nvim/lua/plugins/theme.lua",
+        "kind": "file",
+        "target": ".config/nvim/lua/plugins/theme.lua"
+      }
+    },
+    {
+      "provider": "chezmoi",
+      "spec": {
+        "asset": "files/.config/nvim/lua/plugins/treesitter.lua",
+        "kind": "file",
+        "target": ".config/nvim/lua/plugins/treesitter.lua"
+      }
+    },
+    {
+      "provider": "chezmoi",
+      "spec": {
+        "asset": "files/.config/nvim/lua/plugins/ui.lua",
+        "kind": "file",
+        "target": ".config/nvim/lua/plugins/ui.lua"
+      }
+    },
+    {
+      "provider": "nvim-profile",
+      "spec": {
+        "entry": {
+          "id": "go",
+          "language_cases": [
+            {
+              "client": "gopls",
+              "contents": "package behavior\n\nvar answer = 42\n",
+              "filename": "attachment_test.go",
+              "language": "go"
+            }
+          ],
+          "lazyvim_extras": [
+            "lazyvim.plugins.extras.lang.go"
+          ],
+          "requires": [
+            "go"
+          ]
+        }
+      }
+    },
+    {
+      "provider": "nvim-profile",
+      "spec": {
+        "entry": {
+          "id": "standard",
+          "language_cases": [
+            {
+              "client": "lua_ls",
+              "contents": "local answer = 42\n",
+              "filename": "attachment-test.lua",
+              "language": "lua"
+            },
+            {
+              "client": "html",
+              "contents": "<!doctype html><title>test</title>\n",
+              "filename": "attachment-test.html",
+              "language": "html"
+            },
+            {
+              "client": "cssls",
+              "contents": "body { color: red; }\n",
+              "filename": "attachment-test.css",
+              "language": "css"
+            },
+            {
+              "client": "jsonls",
+              "contents": "{ \"answer\": 42 }\n",
+              "filename": "attachment-test.json",
+              "language": "json"
+            },
+            {
+              "client": "yamlls",
+              "contents": "answer: 42\n",
+              "filename": "attachment-test.yaml",
+              "language": "yaml"
+            },
+            {
+              "client": "marksman",
+              "contents": "# Behavior test\n",
+              "filename": "attachment-test.md",
+              "language": "markdown"
+            },
+            {
+              "client": "dockerls",
+              "contents": "FROM scratch\n",
+              "filename": "Dockerfile",
+              "language": "dockerfile"
+            }
+          ],
+          "lazyvim_extras": [
+            "lazyvim.plugins.extras.lang.docker",
+            "lazyvim.plugins.extras.lang.json",
+            "lazyvim.plugins.extras.lang.markdown",
+            "lazyvim.plugins.extras.lang.tailwind",
+            "lazyvim.plugins.extras.lang.toml",
+            "lazyvim.plugins.extras.lang.yaml"
+          ]
+        }
+      }
+    }
+  ],
+  "foundation": "foundation/editor",
+  "id": "nvim",
+  "requires": [
+    "foundation",
+    "node",
+    "go"
+  ],
+  "schema": 1
+}
