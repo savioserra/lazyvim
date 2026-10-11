@@ -27,7 +27,7 @@ defmodule Workstation.Core.Catalog.DiscoverTest do
     # not only to direct validate_specs calls. Every package — the editor
     # capability included — is served by the data-manifest arm.
     assert Packages.packages() == Discover.specs()
-    assert length(Packages.packages()) == 16
+    assert length(Packages.packages()) == 13
   end
 
   test "the data-manifest arm serves nunchux without a compiled module" do

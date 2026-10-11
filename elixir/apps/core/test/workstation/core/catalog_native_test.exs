@@ -19,7 +19,7 @@ defmodule Workstation.Core.CatalogNativeTest do
   alias Workstation.Core.Catalog.Packages
   alias Workstation.Core.EngineState
 
-  @native_count 16
+  @native_count 13
 
   @goldens_root Path.expand("../../../../../../tests/goldens", __DIR__)
 
@@ -59,22 +59,19 @@ defmodule Workstation.Core.CatalogNativeTest do
     graph = Catalog.compose(host: "linux")
 
     # Post-order DFS over the id-sorted specs: dependencies first, ties by
-    # id sort — theme and agent land before their dependents, typescript
-    # (the last id) stays last.
+    # id sort — agent (no requires) leads, theme lands inside nunchux's
+    # requires closure, typescript (the last id) stays last.
     assert Enum.map(graph.ordered, & &1.id) == [
+             "agent",
              "foundation",
              "node",
-             "theme",
-             "agent",
              "go",
              "nvim",
              "elixir",
              "fonts",
              "herdr",
-             "herdr-pi",
+             "theme",
              "nunchux",
-             "pi-ntfy-notifier",
-             "pi-skills",
              "secrets",
              "tmux",
              "typescript"
@@ -94,10 +91,30 @@ defmodule Workstation.Core.CatalogNativeTest do
       )
     end
 
-    # On an unsupportable host the theme closure is excluded, so every
-    # HOME-writing dependent fails closed on its disabled dependency.
-    assert_raise ArgumentError, ~r/agent requires unsupported capability theme/, fn ->
-      Catalog.compose(host: "windows")
+    # On an unsupportable host the theme closure is excluded before its
+    # dependents' requires are checked: theme, tmux and nunchux all gate
+    # themselves to linux/darwin, and agent (host-universal) no longer
+    # follows the theme — composition succeeds without the closure.
+    windows = Catalog.compose(host: "windows")
+
+    refute windows.enabled["theme"]
+    refute windows.enabled["tmux"]
+    refute windows.enabled["nunchux"]
+    ordered_ids = Enum.map(windows.ordered, & &1.id)
+    assert "agent" in ordered_ids
+    refute "theme" in ordered_ids
+
+    # A supported dependent on an excluded capability still fails closed
+    # through the same seam (the native catalog has no such shape left —
+    # the synthetic set mirrors the cycle case above).
+    assert_raise ArgumentError, ~r/consumer requires unsupported capability theme/, fn ->
+      Catalog.compose(
+        host: "windows",
+        specifications: [
+          %{id: "consumer", requires: ["theme"], supported_hosts: nil, contributes: []},
+          %{id: "theme", requires: [], supported_hosts: %{"linux" => true}, contributes: []}
+        ]
+      )
     end
   end
 
@@ -219,7 +236,7 @@ defmodule Workstation.Core.CatalogNativeTest do
       assert taxonomy["secrets"] == "foundation/secrets"
       assert taxonomy["foundation"] == "foundation/base"
 
-      for agent <- ~w(agent herdr herdr-pi pi-skills pi-ntfy-notifier) do
+      for agent <- ~w(agent herdr) do
         assert taxonomy[agent] == "foundation/agent"
       end
 
