@@ -52,8 +52,8 @@ replace Linux/WSL and native macOS arm64 acceptance.
 | Host tool version | `workstation/versions.json`, owning package URL/checksum, `docs/tools.md` |
 | Node version | `workstation/packages/languages/node/files/.node-version`, canonical Node URL/checksum |
 | Global npm capability | Exact version, registry integrity, feature setup/verify, docs |
-| Pi extension package | Entry in `workstation/packages/agent/pi-packages.json` (exact version + integrity), agent setup/verify, Pi discovery verifier, docs |
-| Pi skill | `workstation/packages/agent/pi-skills/files/.pi/agent/skills/<name>/SKILL.md`, `pi-skills` verification, docs |
+| Hermes Agent pin | `workstation/packages/agent/manifest.json` git recipe commit, `workstation/versions.json` (`hermes_agent_git_commit`), `docs/tools.md` |
+| Managed Hermes skill | `workstation/packages/agent/files/.hermes/skills/<name>/SKILL.md`, agent manifest contributes entry, `workstation/packages/agent/verify/hermes.sh`, `docs/capabilities.md` |
 | tmux plugin pin | `workstation/packages/terminal/tmux/init.lua` (payload data; the checkouts themselves provision via the capability layer, not engine recipes), `docs/tmux.md` |
 | Workstation package | native catalog module (`elixir/apps/core/.../catalog/packages/<name>.ex`), payload assets, tests, docs |
 | Neovim language | `nvim-profile` recipe in the owning package, lockfiles if needed, behavior case |
