@@ -19,12 +19,14 @@
 | `default-terminal` | `tmux-256color` |
 | `terminal-features[100]` | `xterm-256color:RGB` |
 | `@tmux_navigator_disable_when_zoomed` | `1` |
+| `scroll-on-clear` | `off` inside `%if "#{>=:#{version},3.5}"` — the guard keeps the conf parse-safe on tmux releases without the option (pre-3.4); this host's 3.4 has it default-on (aurora mobile-client mitigation) |
+| `@oasis_module_clock` | minutes clock override — upstream pill styling verbatim, `%H:%M` in place of the seconds conditional (aurora mobile-client mitigation) |
 | Window cycling | root `S-Left` / `S-Right` — `previous-window` / `next-window`, no prefix |
 
 Load order:
 
 1. Base tmux settings and plugin declarations.
-2. Plugin options, including `@oasis_flavor "starlight_dark"`.
+2. Plugin options, including `@oasis_flavor "starlight_dark"` and the minutes-clock `@oasis_module_clock` override.
 3. `~/.tmux/plugins/tpm/tpm`.
 
 `~/.config/tmux/tmux.conf` is a managed symlink to `~/.tmux.conf` so tmux
@@ -162,6 +164,22 @@ look. The tokens slot layer stays in [theme](theme.md) for future
 consumers; the retired `~/.config/tmux/themes/tmux2k.conf` target carries a
 recorded-ownership removal tombstone in the package recipe (already-absent
 no-op on homes that never had it).
+
+Mobile-client redraw mitigation (aurora, 2026-10-13): the aurora
+investigation reproduced Termius/iOS stacking the powerline bar on re-render
+at byte level — tmux-oasis's clock module hardcodes seconds (`%H:%M:%S`), so
+tmux re-renders the status bar every second, and on tmux 3.7 each re-render
+emits heavy scroll-style repaints (242 EL+CRLF + scroll-region resets per 18s
+idle vs 66 on tmux 3.4, same config) that limited mobile clients render as
+stacked lines instead of replacing the screen. `.tmux.conf` mitigates: the
+`@oasis_module_clock` override drops the seconds (upstream's pill styling
+verbatim, `%H:%M` — the format is the only delta), and `scroll-on-clear off`
+keeps the clear-scrolls-history repaint out of the picture, wrapped in
+`%if "#{>=:#{version},3.5}"` so tmux releases without the option (pre-3.4)
+never see it at parse time — an unknown option fails the whole conf.
+Re-enabling seconds is a deliberate local choice: restoring
+upstream's conditional (or any `%S` format) costs a 1Hz status re-render on
+every client.
 
 ## Omarchy interactions
 

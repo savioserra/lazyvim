@@ -106,8 +106,20 @@ defmodule Workstation.Core.Catalog.PackagesTmuxTest do
     conf = conf_source()
 
     # Upstream's themes/dark/oasis_starlight_dark.conf is canonical; setting
-    # any @thm_* option here would fork the advertised look.
-    refute conf =~ "@thm_"
+    # any @thm_* option here would fork the advertised look. Format *reads*
+    # stay legal — the aurora clock override mirrors upstream's own module
+    # pill, which reads the theme tokens (#{@thm_surface}) — so the contract
+    # is write-shaped: every @thm_* mention must be a comment or a format
+    # read, never an option assignment.
+    assert conf
+           |> String.split("\n")
+           |> Enum.filter(&String.contains?(&1, "@thm_"))
+           |> Enum.all?(fn line ->
+             String.starts_with?(String.trim_leading(line), "#") or
+               String.contains?(line, ~S(#{@thm_))
+           end),
+           ".tmux.conf must never set @thm_* options — comments and format reads only"
+
     refute conf =~ "tmux2k"
 
     # The retired slot template is gone from the payload tree and its target
