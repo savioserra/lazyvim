@@ -332,10 +332,23 @@ banned on package specs (`Workstation.Core.Catalog.Spec.validate!/2`).
 | --- | --- |
 | `elixir/mix.exs` | Umbrella root: `apps/` path, hoisted `deps/` and `mix.lock` |
 | `elixir/.mise.toml` | Toolchain pins: Erlang/OTP 28.5, Elixir 1.18.5-otp-27 (mise only) |
+| `.tool-versions` | Repo-root mise pin (Elixir 1.18.5-otp-27, Erlang/OTP 28): per-clone in-repo activation |
 | `elixir/apps/core/` | `Workstation.Core.*` — pure engine port, zero runtime deps |
 | `elixir/apps/cli/` | `Workstation.CLI.*` — optimus CLI, term_ui TUI (exact `2.0.0-rc.2` pin) |
 | `elixir/apps/daemon/` | `Workstation.Daemon.*` — Zoi strict wire schemas, frame codec, protocol |
 | `elixir/test/direct_boot.sh` | Release tarball boot smoke: checksum sidecar, headless boot, golden replay from a bare extract (never the real `$HOME`) |
+
+Toolchain activation: the repo-root `.tool-versions` pins the battery
+toolchain, so mise activates it automatically in-repo — plain `mise exec`
+under the checkout resolves to the pins and the batteries command
+(`mise exec elixir@1.18.5-otp-27`) is unchanged. The per-host side is
+package-managed: the elixir package ships the activation fragment
+(`.config/shell/mise.sh`, wired into the shell rc files as `managed-mise` —
+the node package's managed-nvm pattern; bash/zsh eval the activate hook,
+plain sh stays a guarded no-op) and the managed default-version config
+(`.config/mise/config.toml`, whose `[tools]` table carries only the
+elixir/erlang defaults — an existing foreign file conflicts instead of being
+adopted).
 
 Dependency direction: `daemon -> core`, `cli -> daemon + core` — one frame
 codec and Protocol live in the daemon app; its supervision tree is inert in

@@ -151,7 +151,7 @@ foundation
 
 nvim
 ├── typescript [requires node+nvim; owns its plugin module, profile intent and verification]
-└── elixir [requires nvim; owns its plugin module, profile intent and verification]
+└── elixir [requires nvim; owns its plugin module, profile intent, verification and the mise activation/default payloads]
 ```
 
 | Package | Setup | Sync | Verify | Host support |
@@ -161,7 +161,7 @@ nvim
 | `node` | nvm and Node archives, then default/environment | — | NVM and Node version | All |
 | `agent` | Hermes Agent pinned checkout via the git recipe (`~/.hermes/hermes-agent` at the pinned commit); managed skills at `~/.hermes/skills/{lazyvim,secrets}` | — | `packages/agent/verify/hermes.sh` (checkout HEAD + launcher `--version` + managed skill files; read-only) | All |
 | `go` | Exact toolchain archive; go link recipe | — | Go version | Linux/WSL/macOS |
-| `elixir` | — | — | Own Mason expectations, plugin module and behavior/formatter cases through nvim leaf helpers | All |
+| `elixir` | Managed mise activation fragment (`.config/shell/mise.sh` via the managed-mise rc fragment) and default toolchain config (`.config/mise/config.toml`; installs no mise — the fragment is a guarded no-op until mise exists) | — | Own Mason expectations, plugin module and behavior/formatter cases through nvim leaf helpers | All |
 | `herdr` | Exact pinned binary; herdr link recipe | — | Static binary version only; never server/pane/session lifecycle | All |
 | `secrets` | Pinned op archive member; op env fragment | — | Managed 1Password CLI version; never account or vault state | All supported hosts |
 | `nvim` | — | Locks and parsers | Startup, locks, mason coverage, base/standard/Go behavior | All |
