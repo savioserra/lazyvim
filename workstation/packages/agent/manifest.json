@@ -4,7 +4,7 @@
       "provider": "git",
       "spec": {
         "url": "https://github.com/NousResearch/hermes-agent",
-        "commit": "46d7718a52ff33accb15dc0501736fbdb6833cab",
+        "commit": "b23600860f82bd66d345c0a1baefd0f264605955",
         "target": ".hermes/hermes-agent"
       }
     },

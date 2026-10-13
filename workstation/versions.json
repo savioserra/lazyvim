@@ -29,7 +29,7 @@
   "herdr_darwin_arm64_url": "https://github.com/herdrdev/herdr/releases/download/v{V}/herdr-macos-aarch64",
   "herdr_linux_x86_64_sha256": "4fa1a01158dd8043da92d31b270780b0dcc10603038d9b61cac4d81ab63fb71f",
   "herdr_linux_x86_64_url": "https://github.com/herdrdev/herdr/releases/download/v{V}/herdr-linux-x86_64",
-  "hermes_agent_git_commit": "46d7718a52ff33accb15dc0501736fbdb6833cab",
+  "hermes_agent_git_commit": "b23600860f82bd66d345c0a1baefd0f264605955",
   "hermes_agent_git_note": "git recipe; upstream NousResearch/hermes-agent",
   "hermes_agent_git_url": "https://github.com/NousResearch/hermes-agent",
   "lazygit": "0.63.1",
