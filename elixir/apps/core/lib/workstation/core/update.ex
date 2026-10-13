@@ -20,9 +20,9 @@ defmodule Workstation.Core.Update do
   it.
 
   Engine-checkout resolution: the update lifecycle operates on the
-  engine-owned source checkout — the directory holding
-  `bootstrap/bootstrap.pins`, `versions.json` and `bin/workstation`. The
-  native catalog reads package asset bytes from the same checkout.
+  engine-owned source checkout — the directory holding `versions.json` and
+  `bin/workstation`. The native catalog reads package asset bytes from the
+  same checkout.
   Resolution order: explicit `:engine_root` option, then
   `WORKSTATION_ENGINE_REPO` (with or without the `workstation` child), then
   the dev checkout anchor walked upwards — bounded, fail-closed, so
@@ -39,8 +39,8 @@ defmodule Workstation.Core.Update do
   then `WORKSTATION_ENGINE_REPO` (itself or its `workstation` child), then
   the dev checkout anchor walked upwards. Raises when no
   candidate carries the engine payload — a tree without
-  `bootstrap/bootstrap.pins` is not an engine checkout, and updating one
-  anyway would mutate an unrelated directory.
+  `versions.json` and `bin/workstation` is not an engine checkout, and
+  updating one anyway would mutate an unrelated directory.
   """
   @spec engine_root(keyword()) :: String.t()
   def engine_root(opts) when is_list(opts) do
@@ -58,7 +58,7 @@ defmodule Workstation.Core.Update do
         case walk_up(anchor, 4) do
           nil ->
             raise ArgumentError,
-                  "no engine checkout found (bootstrap.pins, versions.json and bin/workstation required); " <>
+                  "no engine checkout found (versions.json and bin/workstation required); " <>
                     "looked at #{inspect(candidates)} and above #{inspect(anchor)}"
 
           root ->
@@ -122,8 +122,7 @@ defmodule Workstation.Core.Update do
   end
 
   defp engine_checkout?(dir) when is_binary(dir) do
-    File.regular?(Path.join(dir, "bootstrap/bootstrap.pins")) and
-      File.regular?(Path.join(dir, "versions.json")) and
+    File.regular?(Path.join(dir, "versions.json")) and
       File.regular?(Path.join(dir, "bin/workstation"))
   end
 

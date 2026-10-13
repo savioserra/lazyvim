@@ -285,7 +285,11 @@ of the way:
 2. **Acquisition** (bootstrap only): `workstation/bootstrap/install-runtime.sh`
    installs the pinned editor runtime and, when driven from an engine checkout
    with a `mise` toolchain, builds the engine release from `elixir/` and stages
-   it under `$HOME/.local/opt/workstation` (private, engine-owned).
+   it under `$HOME/.local/opt/workstation` (private, engine-owned). The
+   download pins derive from the checkout's `versions.json` (the single
+   source of truth): a fresh machine parses it inline with the same
+   fail-closed record validations, while the daemon-driven refresh receives
+   the engine's derivation as `NEOVIM_*` env.
 3. **Anchor**: launched from an engine checkout (an `elixir/mix.exs` sibling
    of the script's `engine_root`, or `engine_root` itself when the checkout is
    nested under `workstation/`), the launcher exports
@@ -511,9 +515,11 @@ the lifecycle phases of `docs/capabilities.md`:
   `merge --ff-only`, never a destructive reset; git config pinned to
   /dev/null and `GIT_TERMINAL_PROMPT=0` so an update can neither read the
   operator's git configuration nor hang on a credential prompt);
-* `bootstrap` — the `bootstrap.pins`/versions.json-bound runtime install
-  (digest-keyed caches, traversal-checked extraction, mkdir-lock serialized
-  sibling-rename activation), the pinned chezmoi backend artifact, and the
+* `bootstrap` — the versions.json-derived runtime install (pins derived
+  fail-closed from the checkout's `versions.json`; the release refresh hands
+  them to `install-runtime.sh` as env; digest-keyed caches, traversal-checked
+  extraction, mkdir-lock serialized sibling-rename activation), the pinned
+  chezmoi backend artifact, and the
   canonical public launcher symlink (conflicting paths are refused, never
   replaced);
 * `apply` — a fresh server-side plan executed inline

@@ -5,13 +5,19 @@ defmodule Workstation.Core.Update.Bootstrap do
 
   Integrity is the step's whole point, so the semantics are strict:
 
-  * `bootstrap.pins` is generated data with a fixed shape — the
-    `versions-sha256|<hash>` header must equal the SHA-256 of the checkout's
-    `versions.json`, exactly two platform records must follow in fixed order
-    with validated fields (version digits/dots only, URL pinned to the
-    pinned version's GitHub release path with a restricted character set,
-    64-hex digest, no extra fields or trailing records). A manifest that
-    fails any check refuses the bootstrap instead of downloading from it.
+  * the runtime pins are DERIVED from the checkout's `versions.json` — the
+    single source of truth (the retired `bootstrap.pins` manifest was fully
+    derivable data whose hand regeneration rotted twice). The derivation is
+    strict: exactly the two supported platforms, the `neovim` version
+    digits/dots only, each platform's URL pinned to the pinned version's
+    GitHub release path with a restricted character set after `{V}`
+    substitution, 64-hex digests, and no `neovim_*` field outside the ones
+    the derivation consumes. A versions.json that fails any check refuses
+    the bootstrap instead of downloading from it. The release refresh hands
+    the derived records to the shell installer as env (`NEOVIM_VERSION`,
+    `NEOVIM_<PLAT>_URL`, `NEOVIM_<PLAT>_SHA256`), so a fresh machine and a
+    daemon-driven refresh validate the same derivation; versions.json
+    itself is checkout source whose integrity rides the git checkout.
   * artifacts are hash-checked on EVERY use and cached under their digest
     (`<home>/.cache/workstation/bootstrap/<digest>` for the runtime,
     `<home>/.cache/workstation/downloads/<sha256>` for the backend); a
@@ -90,57 +96,84 @@ defmodule Workstation.Core.Update.Bootstrap do
      }}
   end
 
-  ## Pins manifest reader
+  ## Pins derivation (versions.json is the single source of truth)
+
+  # Fixed platform set: the derivation yields exactly these two records, so
+  # an unknown or duplicated platform cannot enter a bootstrap.
+  @platforms ["linux_x86_64", "darwin_arm64"]
+
+  @doc """
+  Derive the runtime pins from the checkout's `versions.json`: the `neovim`
+  version plus each platform's `{V}`-substituted GitHub release URL and
+  SHA-256. Returns `%{"linux_x86_64" => record, "darwin_arm64" => record}`
+  with records `{"asset", "version", "url", "digest"}`; raises
+  `ArgumentError` on any validation failure.
+  """
+  @spec pins!(String.t()) :: %{String.t() => %{String.t() => String.t()}}
+  def pins!(root) do
+    versions = versions!(root)
+    version = pin_field!(versions, "neovim")
+
+    unless version != "" and Regex.match?(~r/\A[0-9.]+\z/, version),
+      do: raise(ArgumentError, "bootstrap: invalid runtime version")
+
+    records =
+      Map.new(@platforms, fn asset ->
+        url = versions |> pin_field!("neovim_#{asset}_url") |> String.replace("{V}", version)
+        digest = pin_field!(versions, "neovim_#{asset}_sha256")
+        {asset, validate_record!(asset, version, url, digest)}
+      end)
+
+    # No extra fields: every neovim-prefixed key must be one the derivation
+    # consumed. A future platform or field added to versions.json without
+    # extending this derivation is a loud refusal, never a silently ignored
+    # pin the installer would never see.
+    expected =
+      MapSet.new(["neovim" | Enum.flat_map(@platforms, &["neovim_#{&1}_url", "neovim_#{&1}_sha256"])])
+
+    extras =
+      versions
+      |> Map.keys()
+      |> Enum.filter(&String.starts_with?(&1, "neovim"))
+      |> MapSet.new()
+      |> MapSet.difference(expected)
+      |> MapSet.to_list()
+      |> Enum.sort()
+
+    case extras do
+      [] -> records
+      extras -> raise ArgumentError, "bootstrap: unexpected neovim pin field(s): #{Enum.join(extras, ", ")}"
+    end
+  end
 
   @doc false
   @spec pins!(String.t(), String.t()) :: %{String.t() => String.t()}
   def pins!(root, platform) do
-    records =
-      case File.read!(Path.join(root, "bootstrap/bootstrap.pins")) |> String.split("\n", trim: true) do
-        [header, linux, darwin] ->
-          header!(header, Path.join(root, "versions.json"))
-          [validate_record!("linux_x86_64", linux), validate_record!("darwin_arm64", darwin)]
-
-        _other ->
-          raise ArgumentError, "bootstrap: invalid manifest header"
-      end
-
-    case Enum.find(records, &(&1["asset"] == platform)) do
-      nil -> raise ArgumentError, "bootstrap: no pin for platform #{platform}"
-      pin -> pin
+    case pins!(root) do
+      %{^platform => pin} -> pin
+      _other -> raise ArgumentError, "bootstrap: no pin for platform #{platform}"
     end
   end
 
-  # Fixed record order/count prohibit unknown/duplicate/missing platforms;
-  # field validation mirrors the shell reader field by field.
-  defp header!(header, versions_path) do
-    binding = String.trim_leading(header, "versions-sha256|")
-
-    unless header == "versions-sha256|" <> binding and valid_hash?(binding),
-      do: raise(ArgumentError, "bootstrap: invalid manifest header")
-
-    unless Workstation.Core.EngineState.sha256(File.read!(versions_path)) == binding,
-      do: raise(ArgumentError, "bootstrap: bootstrap manifest is stale; regenerate from versions.json")
+  defp pin_field!(versions, field) do
+    case Map.fetch(versions, field) do
+      {:ok, value} when is_binary(value) -> value
+      _other -> raise ArgumentError, "bootstrap: missing or invalid neovim pin field: #{field}"
+    end
   end
 
-  defp validate_record!(asset, record) do
-    case String.split(record, "|", parts: 5) do
-      [^asset, version, url, digest] ->
-        unless version != "" and Regex.match?(~r/\A[0-9.]+\z/, version),
-          do: raise(ArgumentError, "bootstrap: invalid runtime version")
+  # Field validation mirrors the shell installer's record checks field by
+  # field; the version check ran in pins!/1 before the {V} substitution, so
+  # the URL prefix is bound to an already-validated pinned version.
+  defp validate_record!(asset, version, url, digest) do
+    unless String.starts_with?(url, "https://github.com/neovim/neovim/releases/download/v#{version}/nvim-") and
+             String.ends_with?(url, ".tar.gz") and
+             Regex.match?(~r/\A[a-zA-Z0-9.\/:_-]+\z/, url),
+           do: raise(ArgumentError, "bootstrap: invalid runtime URL")
 
-        unless String.starts_with?(url, "https://github.com/neovim/neovim/releases/download/v#{version}/nvim-") and
-                 String.ends_with?(url, ".tar.gz") and
-                 Regex.match?(~r/\A[a-zA-Z0-9.\/:_-]+\z/, url),
-               do: raise(ArgumentError, "bootstrap: invalid runtime URL")
+    unless valid_hash?(digest), do: raise(ArgumentError, "bootstrap: invalid manifest record")
 
-        unless valid_hash?(digest), do: raise(ArgumentError, "bootstrap: invalid manifest record")
-
-        %{"asset" => asset, "version" => version, "url" => url, "digest" => digest}
-
-      _other ->
-        raise ArgumentError, "bootstrap: invalid manifest record"
-    end
+    %{"asset" => asset, "version" => version, "url" => url, "digest" => digest}
   end
 
   ## Runtime install (install-runtime.sh semantics)

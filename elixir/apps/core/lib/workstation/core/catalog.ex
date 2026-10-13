@@ -295,8 +295,8 @@ defmodule Workstation.Core.Catalog do
   def canonical_home, do: @canonical_home
 
   # Resolve one package's declared assets against the engine checkout. The
-  # engine root is the update checkout anchor (bootstrap.pins + versions.json
-  # + bin/workstation): without a checkout there is no honest asset source,
+  # engine root is the update checkout anchor (versions.json + bin/workstation):
+  # without a checkout there is no honest asset source,
   # so resolution fails closed instead of guessing a sibling tree.
   defp inline_assets(packages, assets) do
     Enum.map_reduce(packages, assets, fn package, acc ->

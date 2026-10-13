@@ -49,12 +49,20 @@ checksum still pins their content. See [lifecycle contracts](capabilities.md#lif
 
 ## Bootstrap pin maintenance
 
-The backend SHA256 values come from the official v2.72.1
-`chezmoi_2.72.1_checksums.txt` release asset. `workstation/bootstrap/bootstrap.pins`
-is generated, SHA256-bound data over `workstation/versions.json`, never code.
-Regenerating means updating `versions.json` and recomputing the
-`versions-sha256|` header plus the pinned release rows; the bootstrap contract
-validates the shape fail-closed and re-verifies every digest on every use.
+`workstation/versions.json` is the single source of truth for the bootstrap
+download pins: the `neovim` version plus each platform's `neovim_<plat>_url`
+template (`{V}` is substituted with the pinned version at derivation) and
+`neovim_<plat>_sha256`. The backend SHA256 values come from the official
+v2.72.1 `chezmoi_2.72.1_checksums.txt` release asset. The retired
+`workstation/bootstrap/bootstrap.pins` manifest (generated, SHA256-bound
+rows over `versions.json`) is gone — bumping a pin means updating
+`versions.json` only. The engine derives and validates the records
+fail-closed on every bootstrap (version digits/dots, GitHub release path
+bound to the pinned version, restricted URL character set, 64-hex digests,
+no un-consumed `neovim_*` fields) and re-verifies every digest on every
+use; the release refresh passes the derived records to
+`bootstrap/install-runtime.sh` as env, and a fresh machine derives them
+inline from the same file.
 
 Concurrent runtime installers serialize on `.local/opt/.nvim-bootstrap.lock`;
 after interrupted SIGKILL, inspect/recover that lock and any `previous` tree before

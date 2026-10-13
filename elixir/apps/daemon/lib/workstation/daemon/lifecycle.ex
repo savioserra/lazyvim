@@ -541,10 +541,10 @@ defmodule Workstation.Daemon.Lifecycle do
     ]
   end
 
-  # The installer is shell, not downloaded code; it validates the checkout's
-  # pins, installs the pinned editor runtime, and — pointed at the anchor by
-  # WORKSTATION_ENGINE_REPO — builds and activates the release, stamping it
-  # with the source HEAD. A non-zero exit is the refresh failure text.
+  # The installer is shell, not downloaded code; it installs the pinned
+  # editor runtime and — pointed at the anchor by
+  # WORKSTATION_ENGINE_REPO — builds and activates the release, stamping
+  # it with the source HEAD. A non-zero exit is the refresh failure text.
   defp run_installer(opts, checkout, anchor, platform, home) do
     installer = Path.join(checkout, "bootstrap/install-runtime.sh")
     fun = opts[:installer] || default_installer(checkout, installer, platform, home, anchor)
@@ -556,11 +556,25 @@ defmodule Workstation.Daemon.Lifecycle do
   end
 
   defp default_installer(checkout, installer, platform, home, anchor) do
+    # The runtime pins are the ENGINE's derivation of the checkout's
+    # versions.json (validated fail-closed here — a malformed pin set fails
+    # the bootstrap before any shell runs); handing the derived records to
+    # the installer as env keeps the refresh on the same derivation a fresh
+    # machine takes, instead of a second shell-side parse of the source.
+    pins = Update.Bootstrap.pins!(checkout)
+
+    env = [
+      {"HOME", home},
+      {"WORKSTATION_ENGINE_REPO", anchor},
+      {"NEOVIM_VERSION", pins["linux_x86_64"]["version"]},
+      {"NEOVIM_LINUX_X86_64_URL", pins["linux_x86_64"]["url"]},
+      {"NEOVIM_LINUX_X86_64_SHA256", pins["linux_x86_64"]["digest"]},
+      {"NEOVIM_DARWIN_ARM64_URL", pins["darwin_arm64"]["url"]},
+      {"NEOVIM_DARWIN_ARM64_SHA256", pins["darwin_arm64"]["digest"]}
+    ]
+
     fn _anchor, _home ->
-      System.cmd("sh", [installer, checkout, platform],
-        env: [{"HOME", home}, {"WORKSTATION_ENGINE_REPO", anchor}],
-        stderr_to_stdout: true
-      )
+      System.cmd("sh", [installer, checkout, platform], env: env, stderr_to_stdout: true)
     end
   end
 

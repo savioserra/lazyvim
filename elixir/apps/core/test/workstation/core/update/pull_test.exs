@@ -96,9 +96,7 @@ defmodule Workstation.Core.Update.PullTest do
   # fixture must be a complete one — this is also the guard that keeps a
   # fixture-less test from falling through to the real repository checkout.
   defp materialize_engine_payload!(root) do
-    File.mkdir_p!(Path.join(root, "bootstrap"))
     File.mkdir_p!(Path.join(root, "bin"))
-    File.write!(Path.join(root, "bootstrap/bootstrap.pins"), "fixture")
     File.write!(Path.join(root, "versions.json"), "{}")
     File.write!(Path.join(root, "bin/workstation"), "#!/bin/sh\n")
     root

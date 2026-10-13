@@ -33,62 +33,53 @@ defmodule Workstation.Core.Update.BootstrapTest do
     %{base: base, home: home}
   end
 
-  ## pins! validation matrix (pure manifest reading)
+  ## pins! derivation matrix (pure versions.json derivation)
 
-  test "pins! returns the platform pin for a valid manifest", %{base: base} do
+  test "pins! derives the platform pin from versions.json", %{base: base} do
     %{root: root} = engine_fixture(base)
 
     pin = Bootstrap.pins!(root, Bootstrap.platform())
     assert pin["version"] == @fixture_version
-    assert pin["url"] == "https://github.com/neovim/neovim/releases/download/v#{@fixture_version}/nvim-#{Bootstrap.platform()}.tar.gz"
+    assert pin["url"] == github_url(Bootstrap.platform())
     assert byte_size(pin["digest"]) == 64 and Regex.match?(~r/\A[0-9a-f]+\z/, pin["digest"])
+
+    # The derivation yields exactly the two supported platforms.
+    both = Bootstrap.pins!(root)
+    assert MapSet.new(Map.keys(both)) == MapSet.new(["linux_x86_64", "darwin_arm64"])
+    assert both["linux_x86_64"]["asset"] == "linux_x86_64"
+    assert both["darwin_arm64"]["asset"] == "darwin_arm64"
+    assert both["darwin_arm64"]["version"] == @fixture_version
   end
 
-  test "pins! refuses a stale manifest binding", %{base: base} do
-    %{root: root} = engine_fixture(base, bind: :wrong)
-
-    assert_raise ArgumentError, ~r/manifest is stale/, fn ->
-      Bootstrap.pins!(root, Bootstrap.platform())
-    end
-  end
-
-  test "pins! refuses malformed manifests", %{base: base} do
+  test "pins! refuses derivations that fail any record validation", %{base: base} do
     good_digest = String.duplicate("ab", 32)
     good_url = github_url("linux_x86_64")
-    other_url = github_url("darwin_arm64")
-    other_digest = String.duplicate("cd", 32)
-    header = "versions-sha256|#{Workstation.Core.EngineState.sha256("{}")}"
 
     cases = [
-      # wrong record count (missing darwin record)
-      {"invalid manifest header", "#{header}\nlinux_x86_64|0.0.0|#{good_url}|#{good_digest}\n"},
       # version outside digits/dots
-      {"invalid runtime version", "#{header}\nlinux_x86_64|0..0-alpha|#{good_url}|#{good_digest}\ndarwin_arm64|0.0.0|#{other_url}|#{other_digest}\n"},
+      {"invalid runtime version", %{"neovim" => "0..0-alpha"}},
+      # half-bumped source: the URL template is still pinned to the OLD
+      # version — the exact rot the derivation refuses at run time
+      {"invalid runtime URL", %{"neovim" => "0.0.1"}},
       # URL outside the pinned release path
-      {"invalid runtime URL", "#{header}\nlinux_x86_64|0.0.0|https://evil.example/nvim-1.0.tar.gz|#{good_digest}\ndarwin_arm64|0.0.0|#{other_url}|#{other_digest}\n"},
-      # digest not 64 lowercase hex
-      {"invalid manifest record", "#{header}\nlinux_x86_64|0.0.0|#{good_url}|NOTAHASH\ndarwin_arm64|0.0.0|#{other_url}|#{other_digest}\n"},
-      # extra field in a record
-      {"invalid manifest record", "#{header}\nlinux_x86_64|0.0.0|#{good_url}|#{good_digest}|extra\ndarwin_arm64|0.0.0|#{other_url}|#{other_digest}\n"},
-      # a trailing fourth record
-      {"invalid manifest header", "#{header}\nlinux_x86_64|0.0.0|#{good_url}|#{good_digest}\ndarwin_arm64|0.0.0|#{other_url}|#{other_digest}\nwindows_x86|0.0.0|#{good_url}|#{good_digest}\n"}
+      {"invalid runtime URL", %{"neovim_linux_x86_64_url" => "https://evil.example/nvim-1.0.tar.gz"}},
+      # digest not 64 lowercase hex / short digest
+      {"invalid manifest record", %{"neovim_linux_x86_64_sha256" => "NOTAHASH"}},
+      {"invalid manifest record", %{"neovim_linux_x86_64_sha256" => String.duplicate("ab", 31)}},
+      # a missing pin field / a non-string pin field
+      {"missing or invalid neovim pin field", %{"neovim_darwin_arm64_url" => :drop}},
+      {"missing or invalid neovim pin field", %{"neovim" => 5}},
+      # an extra platform the derivation does not consume
+      {"unexpected neovim pin field", %{"neovim_windows_x86_64_url" => good_url}},
+      {"unexpected neovim pin field", %{"neovim_windows_x86_64_sha256" => good_digest}}
     ]
 
-    for {expected, records} <- cases do
-      root = pins_fixture(base, "#{records}")
+    for {expected, overrides} <- cases do
+      root = pin_versions_fixture(base, overrides)
 
       assert_raise ArgumentError, ~r/#{expected}/, fn ->
         Bootstrap.pins!(root, "linux_x86_64")
       end
-    end
-  end
-
-  test "pins! refuses a malformed header shape even with well-formed records", %{base: base} do
-    good_digest = String.duplicate("ab", 32)
-    root = pins_fixture(base, "versions-sha256:#{good_digest}\n")
-
-    assert_raise ArgumentError, ~r/invalid manifest header/, fn ->
-      Bootstrap.pins!(root, "linux_x86_64")
     end
   end
 
@@ -275,14 +266,12 @@ defmodule Workstation.Core.Update.BootstrapTest do
 
   ## fixtures
 
-  # An engine checkout fixture: payload markers, a versions.json whose hash
-  # the pins bind, and a pins manifest for the runtime archive. The runtime
-  # record's URL is https/github-shaped but NEVER fetched in tests (the
-  # cache is seeded); the backend record carries the file:// fixture.
+  # An engine checkout fixture: payload markers and a versions.json carrying
+  # BOTH the derived runtime pins (https/github-shaped URLs, never fetched —
+  # the cache is seeded) and the backend file:// fixture record.
   defp engine_fixture(base, opts \\ []) do
     root = Path.join(base, "engine")
     fixture_dir = Path.join(base, "fixtures")
-    File.mkdir_p!(Path.join(root, "bootstrap"))
     File.mkdir_p!(Path.join(root, "bin"))
     File.mkdir_p!(fixture_dir)
 
@@ -295,6 +284,11 @@ defmodule Workstation.Core.Update.BootstrapTest do
 
     versions =
       Jason.encode!(%{
+        "neovim" => @fixture_version,
+        "neovim_linux_x86_64_url" => github_url("linux_x86_64"),
+        "neovim_linux_x86_64_sha256" => runtime_digest,
+        "neovim_darwin_arm64_url" => github_url("darwin_arm64"),
+        "neovim_darwin_arm64_sha256" => runtime_digest,
         "chezmoi" => "1.2.3",
         "chezmoi_linux_x86_64_url" => "file://#{chezmoi_archive}",
         "chezmoi_linux_x86_64_sha256" => chezmoi_digest,
@@ -304,14 +298,6 @@ defmodule Workstation.Core.Update.BootstrapTest do
 
     File.write!(Path.join(root, "versions.json"), versions)
 
-    binding = if opts[:bind] == :wrong, do: String.duplicate("00", 32), else: Workstation.Core.EngineState.sha256(versions)
-
-    File.write!(
-      Path.join(root, "bootstrap/bootstrap.pins"),
-      "versions-sha256|#{binding}\nlinux_x86_64|#{@fixture_version}|#{github_url("linux_x86_64")}|#{runtime_digest}\n" <>
-        "darwin_arm64|#{@fixture_version}|#{github_url("darwin_arm64")}|#{String.duplicate("cd", 32)}\n"
-    )
-
     %{
       root: root,
       runtime_archive: runtime_archive,
@@ -320,11 +306,26 @@ defmodule Workstation.Core.Update.BootstrapTest do
     }
   end
 
-  defp pins_fixture(base, records) do
+  # A minimal versions.json fixture for the derivation-refusal matrix: the
+  # valid base record set with per-case overrides (:drop removes a field).
+  defp pin_versions_fixture(base, overrides) do
     root = Path.join(base, "pins-#{System.unique_integer([:positive])}")
-    File.mkdir_p!(Path.join(root, "bootstrap"))
-    File.write!(Path.join(root, "versions.json"), "{}")
-    File.write!(Path.join(root, "bootstrap/bootstrap.pins"), records)
+    File.mkdir_p!(root)
+
+    versions =
+      Map.merge(
+        %{
+          "neovim" => @fixture_version,
+          "neovim_linux_x86_64_url" => github_url("linux_x86_64"),
+          "neovim_linux_x86_64_sha256" => String.duplicate("ab", 32),
+          "neovim_darwin_arm64_url" => github_url("darwin_arm64"),
+          "neovim_darwin_arm64_sha256" => String.duplicate("cd", 32)
+        },
+        overrides
+      )
+      |> Map.reject(fn {_key, value} -> value == :drop end)
+
+    File.write!(Path.join(root, "versions.json"), Jason.encode!(versions))
     root
   end
 

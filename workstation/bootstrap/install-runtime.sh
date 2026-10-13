@@ -1,5 +1,7 @@
 #!/bin/sh
-# Minimal POSIX runtime installer. bootstrap.pins is generated data, never code.
+# Minimal POSIX runtime installer. The download pins are DERIVED from the
+# checkout's versions.json — the single source of truth; there is no pins
+# manifest. The engine-driven refresh passes the derived records as env.
 set -eu
 root=$1
 platform=$2
@@ -12,26 +14,64 @@ valid_hash() {
 	[ "${#1}" -eq 64 ] || return 1
 	case "$1" in *[!0-9a-f]*) return 1 ;; esac
 }
-# Fixed record order/count and field validation prohibit unknown/duplicate keys.
-{
-	IFS= read -r record
-	binding=${record#versions-sha256|}
-	if ! { [ "$record" = "versions-sha256|$binding" ] && valid_hash "$binding"; }; then fail 'invalid manifest header'; fi
-	[ "$(hash "$root/versions.json")" = "$binding" ] || fail 'bootstrap manifest is stale; regenerate from versions.json'
-	for expected in linux_x86_64 darwin_arm64; do
-		IFS= read -r record
-		IFS='|' read -r asset version url digest extra <<EOF
-$record
-EOF
-		if ! { [ "$record" = "$asset|$version|$url|$digest" ] && [ "$asset" = "$expected" ] && [ -z "$extra" ] && valid_hash "$digest"; }; then fail 'invalid manifest record'; fi
-		case "$version" in ''|*[!0-9.]*) fail 'invalid runtime version' ;; esac
-		case "$url" in https://github.com/neovim/neovim/releases/download/v"$version"/nvim-*.tar.gz) ;; *) fail 'invalid runtime URL' ;; esac
-		case "$url" in *[!a-zA-Z0-9./:_-]*) fail 'invalid URL characters' ;; esac
-		if [ "$asset" = "$platform" ]; then pin_version=$version; pin_url=$url; pin_digest=$digest; fi
-	done
-	extra=''
-	if IFS= read -r extra || [ -n "$extra" ]; then fail 'unexpected manifest record'; fi
-} < "$root/bootstrap/bootstrap.pins"
+# Record validation, field by field the engine's derivation: version
+# digits/dots only, URL pinned to the pinned version's GitHub release path
+# with the restricted character set, 64-hex digest. Fail closed.
+validate_record() {
+	# $1=version $2=url $3=digest
+	case "$1" in ''|*[!0-9.]*) fail 'invalid runtime version' ;; esac
+	case "$2" in https://github.com/neovim/neovim/releases/download/v"$1"/nvim-*.tar.gz) ;; *) fail 'invalid runtime URL' ;; esac
+	case "$2" in *[!a-zA-Z0-9./:_-]*) fail 'invalid URL characters' ;; esac
+	valid_hash "$3" || fail 'invalid manifest record'
+}
+# Bounded field extraction for the fresh-machine path: the engine-owned
+# versions.json is canonical JSON (one quoted member per line), so exactly
+# one anchored match per field is enough to EXTRACT — the record
+# validations are the integrity gate, and any parse miss (missing,
+# duplicated, or non-plain-string field) fails closed.
+json_string() {
+	_key=$1
+	[ "$(grep -c "^[[:space:]]*\"$_key\"[[:space:]]*:" "$root/versions.json" || true)" = 1 ] \
+		|| fail "versions.json: $_key missing or duplicated"
+	_value=$(sed -n "s/^[[:space:]]*\"$_key\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\"[[:space:]]*,\{0,1\}[[:space:]]*\$/\1/p" "$root/versions.json")
+	[ -n "$_value" ] || fail "versions.json: $_key is not a plain string"
+	printf '%s\n' "$_value"
+}
+version=${NEOVIM_VERSION-}
+linux_url=${NEOVIM_LINUX_X86_64_URL-}
+linux_digest=${NEOVIM_LINUX_X86_64_SHA256-}
+darwin_url=${NEOVIM_DARWIN_ARM64_URL-}
+darwin_digest=${NEOVIM_DARWIN_ARM64_SHA256-}
+if [ -n "$version" ]; then
+	# Engine-driven refresh: the daemon derived both records from the same
+	# checkout's versions.json and handed them over; an incomplete env is a
+	# loud failure, never a partial pin.
+	if [ -z "$linux_url" ] || [ -z "$linux_digest" ] || [ -z "$darwin_url" ] || [ -z "$darwin_digest" ]; then
+		fail 'engine pin env incomplete: NEOVIM_VERSION and the four NEOVIM_<PLAT>_URL/_SHA256 fields are required'
+	fi
+else
+	# Fresh-machine path (no engine yet): derive inline from versions.json.
+	[ -f "$root/versions.json" ] || fail 'engine checkout lacks versions.json'
+	version=$(json_string neovim)
+	case "$version" in ''|*[!0-9.]*) fail 'invalid runtime version' ;; esac
+	linux_url=$(json_string neovim_linux_x86_64_url)
+	linux_digest=$(json_string neovim_linux_x86_64_sha256)
+	darwin_url=$(json_string neovim_darwin_arm64_url)
+	darwin_digest=$(json_string neovim_darwin_arm64_sha256)
+	# POSIX has no global ${var//}; the version is validated digits/dots
+	# first, so the sed program carries no metacharacters.
+	subst() {
+		printf '%s\n' "$1" | sed "s/{V}/$version/g"
+	}
+	linux_url=$(subst "$linux_url")
+	darwin_url=$(subst "$darwin_url")
+fi
+validate_record "$version" "$linux_url" "$linux_digest"
+validate_record "$version" "$darwin_url" "$darwin_digest"
+case "$platform" in
+	linux_x86_64) pin_version=$version pin_url=$linux_url pin_digest=$linux_digest ;;
+	darwin_arm64) pin_version=$version pin_url=$darwin_url pin_digest=$darwin_digest ;;
+esac
 
 parent=$HOME/.local/opt
 cache=$WORKSTATION_CACHE/bootstrap

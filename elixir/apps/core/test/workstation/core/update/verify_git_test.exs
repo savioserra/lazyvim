@@ -77,9 +77,7 @@ defmodule Workstation.Core.Update.VerifyGitTest do
   ## fixtures (mirroring VerifyTest + GitTest: real git, fake backend)
 
   defp engine_payload!(root) do
-    File.mkdir_p!(Path.join(root, "bootstrap"))
     File.mkdir_p!(Path.join(root, "bin"))
-    File.write!(Path.join(root, "bootstrap/bootstrap.pins"), "fixture")
     File.write!(Path.join(root, "versions.json"), "{}")
     File.write!(Path.join(root, "bin/workstation"), "#!/bin/sh\n")
     root

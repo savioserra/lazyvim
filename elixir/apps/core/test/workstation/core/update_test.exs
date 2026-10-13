@@ -26,12 +26,9 @@ defmodule Workstation.Core.UpdateTest do
   end
 
   # The payload probe is the contract: a directory is an engine checkout only
-  # when bootstrap/bootstrap.pins, versions.json and bin/workstation are all
-  # regular files.
+  # when versions.json and bin/workstation are regular files.
   defp engine_fixture(root) do
-    File.mkdir_p!(Path.join(root, "bootstrap"))
     File.mkdir_p!(Path.join(root, "bin"))
-    File.write!(Path.join(root, "bootstrap/bootstrap.pins"), "pins\n")
     File.write!(Path.join(root, "versions.json"), "{}\n")
     File.write!(Path.join(root, "bin/workstation"), "#!/bin/sh\n")
 

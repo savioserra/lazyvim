@@ -36,16 +36,15 @@ defmodule Workstation.Daemon.LifecycleHandoffTest do
   end
 
   test "release refresh skips honestly without a buildable anchor", %{home: home} do
-    # A valid ENGINE checkout (the launcher's three anchor files) that does
-    # not ship the elixir/ umbrella — laid out as <tmp>/workstation so the
-    # engine's anchor resolution evaluates this tree and finds no release
-    # source: engine_root accepts it, and the honest answer is a skip.
+    # A valid ENGINE checkout (the launcher's anchor files: versions.json and
+    # bin/workstation) that does not ship the elixir/ umbrella — laid out as
+    # <tmp>/workstation so the engine's anchor resolution evaluates this tree
+    # and finds no release source: engine_root accepts it, and the honest
+    # answer is a skip.
     parent = Path.join(System.tmp_dir!(), "ws-anchorless-#{System.unique_integer([:positive])}")
     anchorless = Path.join(parent, "workstation")
     File.mkdir_p!(Path.join([anchorless, "bin"]))
-    File.mkdir_p!(Path.join([anchorless, "bootstrap"]))
 
-    File.cp!(Path.join([repo_root(), "workstation", "bootstrap", "bootstrap.pins"]), Path.join([anchorless, "bootstrap", "bootstrap.pins"]))
     File.cp!(Path.join([repo_root(), "workstation", "versions.json"]), Path.join([anchorless, "versions.json"]))
     File.cp!(Path.join([repo_root(), "workstation", "bin", "workstation"]), Path.join([anchorless, "bin", "workstation"]))
 
@@ -77,6 +76,57 @@ defmodule Workstation.Daemon.LifecycleHandoffTest do
              Lifecycle.release_refresh(engine_root: repo_root(), home: home,
                installer: fn _a, _h -> {"boom\n", 1} end
              )
+  end
+
+  test "the production refresh passes the engine's derived pins to the installer as env", %{home: home} do
+    # default_installer runs the checkout's own install-runtime.sh; the stub
+    # records the NEOVIM_* env it received, proving the refresh rides the
+    # engine's derivation of versions.json ({V} substituted) instead of a
+    # second shell-side parse.
+    parent = Path.join(System.tmp_dir!(), "ws-installer-env-#{System.unique_integer([:positive])}")
+    root = Path.join(parent, "workstation")
+    File.mkdir_p!(Path.join(root, "bootstrap"))
+    File.mkdir_p!(Path.join(root, "bin"))
+    File.mkdir_p!(Path.join(root, "elixir"))
+    on_exit(fn -> File.rm_rf!(parent) end)
+
+    # The checkout probe needs the payload markers, the buildable-anchor
+    # gate needs the umbrella marker; the stub installer is the script under
+    # test and only records its pin env.
+    File.write!(Path.join([root, "bin", "workstation"]), "#!/bin/sh\n")
+    File.write!(Path.join([root, "elixir", "mix.exs"]), "")
+
+    File.write!(Path.join([root, "bootstrap", "install-runtime.sh"]), """
+    #!/bin/sh
+    {
+      printf 'version=%s\\n' "$NEOVIM_VERSION"
+      printf 'linux_url=%s\\n' "$NEOVIM_LINUX_X86_64_URL"
+      printf 'linux_digest=%s\\n' "$NEOVIM_LINUX_X86_64_SHA256"
+      printf 'darwin_url=%s\\n' "$NEOVIM_DARWIN_ARM64_URL"
+      printf 'darwin_digest=%s\\n' "$NEOVIM_DARWIN_ARM64_SHA256"
+    } > "$1/pin-env-captured"
+    """)
+
+    digest = String.duplicate("ab", 32)
+
+    File.write!(Path.join(root, "versions.json"), """
+    {
+      "neovim": "9.9.9",
+      "neovim_darwin_arm64_sha256": "#{digest}",
+      "neovim_darwin_arm64_url": "https://github.com/neovim/neovim/releases/download/v{V}/nvim-macos-arm64.tar.gz",
+      "neovim_linux_x86_64_sha256": "#{digest}",
+      "neovim_linux_x86_64_url": "https://github.com/neovim/neovim/releases/download/v{V}/nvim-linux-x86_64.tar.gz"
+    }
+    """)
+
+    assert {:ok, true} = Lifecycle.release_refresh(engine_root: root, home: home)
+
+    captured = File.read!(Path.join(root, "pin-env-captured"))
+    assert captured =~ "version=9.9.9"
+    assert captured =~ "linux_url=https://github.com/neovim/neovim/releases/download/v9.9.9/nvim-linux-x86_64.tar.gz"
+    assert captured =~ "linux_digest=#{digest}"
+    assert captured =~ "darwin_url=https://github.com/neovim/neovim/releases/download/v9.9.9/nvim-macos-arm64.tar.gz"
+    assert captured =~ "darwin_digest=#{digest}"
   end
 
   test "the bootstrap step records the refresh and leaves a handoff note for its own release", %{home: home} do
