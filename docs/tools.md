@@ -27,6 +27,7 @@ Supported deployment policy is Linux, WSL-as-Linux, and macOS (arm64).
 | Hermes Agent | commit `46d7718a52` (git pin, `hermes_agent_git_commit`) | github.com/NousResearch/hermes-agent | pinned checkout `~/.hermes/hermes-agent` (git recipe); launcher `~/.hermes/hermes-agent/.hermes/bin/hermes`; verified by `packages/agent/verify/hermes.sh` | linux-x86_64, darwin-arm64 |
 | JetBrainsMono Nerd Font | 3.5.0 | github.com/ryanoasis/nerd-fonts | Linux: `.local/share/fonts/JetBrainsMonoNerdFont`; darwin: `Library/Fonts/JetBrainsMonoNerdFont` | linux-x86_64, darwin-arm64 |
 | nunchux (launcher package; plugin active) | 3.1.3 | github.com/datamadsen/nunchux | pinned checkout `.tmux/plugins/nunchux` (git recipe at the v3.1.3 commit; carries the repo-tracked binary) + `bin/.platform` marker so upstream's `ensure_binary` never fetches ([tmux](tmux.md)) | linux-amd64 (repo build, content-pinned); package is linux-only, darwin release pin recorded as inventory |
+| TPM plugin set (tpm, tmux-oasis, tmux-yank, tmux-resurrect, vim-tmux-navigator) | pinned commits ([tmux](tmux.md) Plugin pins) | github.com/tmux-plugins/tpm, github.com/uhs-robert/tmux-oasis, github.com/tmux-plugins/tmux-yank, github.com/tmux-plugins/tmux-resurrect, github.com/christoomey/vim-tmux-navigator | engine-provisioned pinned checkouts `~/.tmux/plugins/<name>` (git recipes in the tmux package manifest; tpm leads — it must exist before the first tmux start); verified by `packages/tmux/verify/tmux.sh` | linux-x86_64, darwin-arm64 |
 
 ## Provisioning ownership
 

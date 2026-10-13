@@ -1,6 +1,46 @@
 {
   "contributes": [
     {
+      "provider": "git",
+      "spec": {
+        "url": "https://github.com/tmux-plugins/tpm",
+        "commit": "e261deb1b47614eed3400089ce7197dc68acc4eb",
+        "target": ".tmux/plugins/tpm"
+      }
+    },
+    {
+      "provider": "git",
+      "spec": {
+        "url": "https://github.com/uhs-robert/tmux-oasis",
+        "commit": "9903964ee8abdddaf08834871f12ccc093a4cbcf",
+        "target": ".tmux/plugins/tmux-oasis"
+      }
+    },
+    {
+      "provider": "git",
+      "spec": {
+        "url": "https://github.com/tmux-plugins/tmux-yank",
+        "commit": "acfd36e4fcba99f8310a7dfb432111c242fe7392",
+        "target": ".tmux/plugins/tmux-yank"
+      }
+    },
+    {
+      "provider": "git",
+      "spec": {
+        "url": "https://github.com/tmux-plugins/tmux-resurrect",
+        "commit": "cff343cf9e81983d3da0c8562b01616f12e8d548",
+        "target": ".tmux/plugins/tmux-resurrect"
+      }
+    },
+    {
+      "provider": "git",
+      "spec": {
+        "url": "https://github.com/christoomey/vim-tmux-navigator",
+        "commit": "e41c431a0c7b7388ae7ba341f01a0d217eb3a432",
+        "target": ".tmux/plugins/vim-tmux-navigator"
+      }
+    },
+    {
       "provider": "chezmoi",
       "spec": {
         "asset": "files/.tmux.conf",

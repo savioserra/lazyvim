@@ -51,17 +51,23 @@ on an isolated server.
 Pinning rules:
 
 - Keep `@plugin` values as bare `user/repo` for TPM.
-- Store exact commits in this table. The four TPM-installed checkouts are
-  (re)created by TPM's `prefix + I` and repairable via `workstation apply`'s
-  recorded pins; nunchux is the exception — its checkout is
-  engine-provisioned by the package's pinned-clone recipe (below), never by
-  TPM.
+- Store exact commits in this table. All six checkouts are
+  engine-provisioned pinned clones, never placed by hand: the tmux package
+  manifest declares tpm, tmux-oasis, tmux-yank, tmux-resurrect and
+  vim-tmux-navigator as pinned git recipes (url + commit + target under
+  `~/.tmux/plugins/`, tpm first — it must exist before the first tmux start,
+  which sources it via the `run-shell` at the end of `.tmux.conf`), and
+  nunchux rides its own package's pinned-clone recipe (below). TPM sees the
+  pre-installed checkouts and sources them without cloning. Never run TPM's
+  `prefix + I`: a TPM clone/pull would fight the pins — `workstation apply`
+  re-asserts them.
 - tmux-oasis's commit + URL are additionally pinned in
   `workstation/versions.json` (`tmux_oasis*` keys) and asserted by the
   package tests.
 - Keep the `TMUX_PLUGIN_MANAGER_PATH` pin ahead of the TPM `run-shell`; TPM's
   default path logic alone would select the unmanaged XDG plugin root.
-- Update this table with implementation pins.
+- Update this table with implementation pins, and the package manifest's
+  recipes with it.
 
 TPM `user/repo#ref` supports branches/tags, not exact raw commits.
 
@@ -169,7 +175,10 @@ file, restore with `workstation apply` and remove any `tmux.conf.bak.*` it left 
 
 ## Verification
 
-- assert each checkout commit;
+- assert each engine-provisioned checkout at its pinned commit —
+  `packages/tmux/verify/tmux.sh` reads the manifest's git recipes and checks
+  every `~/.tmux/plugins/<name>` HEAD against its pin (read-only, fails
+  closed on the first mismatch);
 - assert the XDG symlink target;
 - start an isolated tmux socket and server;
 - assert session name;

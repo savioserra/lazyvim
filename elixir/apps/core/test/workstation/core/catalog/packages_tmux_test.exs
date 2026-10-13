@@ -128,13 +128,46 @@ defmodule Workstation.Core.Catalog.PackagesTmuxTest do
     end
   end
 
-  test "tmux contributes ride the chezmoi provider seam" do
-    assert Enum.all?(tmux_spec().contributes, &(&1.provider == "chezmoi"))
+  test "tmux payloads ride the chezmoi seam; the plugin set rides pinned git recipes" do
+    for entry <- tmux_spec().contributes do
+      case entry.provider do
+        "chezmoi" ->
+          assert entry.spec.kind in [:file, :symlink, :remove]
+
+        "git" ->
+          # The engine-provisioned plugin checkouts: https pins at exact
+          # commits under the managed plugin root (docs/tmux.md).
+          assert String.starts_with?(entry.spec.url, "https://github.com/")
+          assert entry.spec.commit =~ ~r/\A[0-9a-f]{40}\z/
+          assert String.starts_with?(entry.spec.target, ".tmux/plugins/")
+
+        other ->
+          flunk("unexpected tmux provider #{inspect(other)}")
+      end
+    end
+
+    # The whole engine-provisioned set, in manifest order: tpm leads because
+    # it must exist before the first tmux start (the run-shell at the end of
+    # .tmux.conf sources it). nunchux is excluded on purpose — its checkout
+    # is owned by the nunchux package, never by this one.
+    git_targets =
+      tmux_spec().contributes
+      |> Enum.filter(&(&1.provider == "git"))
+      |> Enum.map(& &1.spec.target)
+
+    assert git_targets == [
+             ".tmux/plugins/tpm",
+             ".tmux/plugins/tmux-oasis",
+             ".tmux/plugins/tmux-yank",
+             ".tmux/plugins/tmux-resurrect",
+             ".tmux/plugins/vim-tmux-navigator"
+           ]
   end
 
   test "the tmux2k template is no longer a contributed target" do
     refute Enum.any?(tmux_spec().contributes, fn entry ->
-             entry.spec.kind == :file and entry.spec.target == ".config/tmux/themes/tmux2k.conf"
+             entry.provider == "chezmoi" and entry.spec.kind == :file and
+               entry.spec.target == ".config/tmux/themes/tmux2k.conf"
            end)
   end
 
