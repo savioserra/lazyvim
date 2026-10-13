@@ -80,4 +80,35 @@ return {
 			{ "<leader>gq", "<cmd>DiffviewClose<cr>", desc = "Close Diffview" },
 		},
 	},
+
+	-- Show all declaration kinds in LSP symbol pickers (`<leader>ss`/`<leader>sS`).
+	-- LazyVim's default kind_filter drops Constant/Variable/TypeParameter/EnumMember,
+	-- hiding `const`/`let`/`type` exports (most of a TS codebase's symbols) that
+	-- VS Code's Ctrl+T workspace symbol search includes.
+	{
+		"LazyVim/LazyVim",
+		opts = {
+			kind_filter = {
+				default = {
+					"Class",
+					"Constant",
+					"Constructor",
+					"Enum",
+					"EnumMember",
+					"Field",
+					"Function",
+					"Interface",
+					"Method",
+					"Module",
+					"Namespace",
+					"Package",
+					"Property",
+					"Struct",
+					"Trait",
+					"TypeParameter",
+					"Variable",
+					},
+				},
+		},
+	},
 }
