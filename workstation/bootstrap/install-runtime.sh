@@ -91,6 +91,27 @@ if [ -n "$repo" ]; then
 	fi
 	release_stage=$lock/workstation-stage
 	mkdir "$release_stage"
+	# The daemon-driven release refresh runs this installer as a child of the
+	# running engine release, whose launcher exported the installed release's
+	# OTP state: an erts-first PATH plus ROOTDIR/BINDIR/RELEASE_ROOT and kin.
+	# Under that PATH `mix` resolves erl inside the installed release's ERTS --
+	# an erts-only tree with no top-level boot file -- so the build crashes
+	# before compiling anything. Strip the installed engine tree from PATH and
+	# clear the release launcher variables; mise (or any user toolchain) then
+	# resolves normally. A user-shell bootstrap carries none of these.
+	build_path=
+	old_ifs=$IFS
+	IFS=:
+	for dir in $PATH; do
+		case $dir in
+		"$parent"/workstation|"$parent"/workstation/*) ;;
+		*) build_path=${build_path:+$build_path:}$dir ;;
+		esac
+	done
+	IFS=$old_ifs
+	PATH=$build_path
+	export PATH
+	unset ROOTDIR BINDIR EMU PROGNAME REL_VSN RELEASE_ROOT
 	# Fresh machines have no Hex/Rebar in the fixture-less HOME and mix would
 	# prompt; the acquisition must be non-interactive by contract. Locale is
 	# pinned because env -i hosts often run a latin1 name encoding.
