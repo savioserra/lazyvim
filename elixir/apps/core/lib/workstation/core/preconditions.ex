@@ -9,9 +9,13 @@ defmodule Workstation.Core.Preconditions do
   Intervening home edits (full type/mode/content/link state), first adoption
   of unrecorded whole files, exact-directory ownership of existing contents,
   shared-target fragment integrity and removal safety all conflict BEFORE any
-  backend mutation. The plan is bound to the journal revision it was built
-  against. This module never mutates anything: conflicts raise, and the
-  engine stays the sole writer of home and journal state.
+  backend mutation. One exception keeps the retry law honest: targets that a
+  pending attempt of the SAME generation already wrote are excused from the
+  owned-fingerprint equality check, because that on-disk state is the plan's
+  own; pending records of any other generation still guard. The plan is bound
+  to the journal revision it was built against. This module never mutates
+  anything: conflicts raise, and the engine stays the sole writer of home and
+  journal state.
   """
 
   alias Workstation.Core.EngineState
@@ -90,8 +94,20 @@ defmodule Workstation.Core.Preconditions do
       end
     end)
 
+    # Same-generation pending attempts are the plan's own writes: a pending
+    # record whose generation equals the plan's proves that any on-disk drift
+    # on its targets came from THIS interrupted fold, so the owned-target
+    # fingerprint equality check is excused for exactly those targets and
+    # retrying the same desired generation converges idempotently. Pending
+    # records of any other generation keep the unresolved-attempt guard above.
+    excused =
+      pending
+      |> Enum.filter(fn record -> record["generation"] == plan["generation"] end)
+      |> Enum.flat_map(fn record -> record["targets"] || [] end)
+      |> MapSet.new()
+
     Enum.each(plan["entries"], fn entry ->
-      check_entry(home, journal, entry)
+      check_entry(home, journal, entry, excused)
     end)
 
     Enum.each(plan["removals"] || [], fn removal ->
@@ -123,7 +139,7 @@ defmodule Workstation.Core.Preconditions do
     end
   end
 
-  defp check_entry(home, journal, entry) do
+  defp check_entry(home, journal, entry, excused) do
     target = entry["target"]
     path = EngineState.join_home(home, target)
     stat = EngineState.lstat(path)
@@ -180,16 +196,24 @@ defmodule Workstation.Core.Preconditions do
       true ->
         recorded = journal && journal["targets"] && journal["targets"][target]
 
-        if recorded do
-          fingerprint = Journal.target_fingerprint(home, target)
+        cond do
+          recorded && MapSet.member?(excused, target) ->
+            # The interrupted attempt that wrote this target belongs to THIS
+            # plan's generation: its pending record proves the on-disk state
+            # is the plan's own, so equality against the older successful
+            # generation cannot hold and must not block the retry.
+            :ok
 
-          if fingerprint == nil or fingerprint["type"] != recorded["type"] or
-               fingerprint["sha256"] != recorded["sha256"] or fingerprint["link"] != recorded["link"] or
-               fingerprint["mode"] != recorded["mode"] do
-            conflict(entry, "target changed since the last successful apply")
-          end
-        else
-          if entry["expected"] do
+          recorded ->
+            fingerprint = Journal.target_fingerprint(home, target)
+
+            if fingerprint == nil or fingerprint["type"] != recorded["type"] or
+                 fingerprint["sha256"] != recorded["sha256"] or fingerprint["link"] != recorded["link"] or
+                 fingerprint["mode"] != recorded["mode"] do
+              conflict(entry, "target changed since the last successful apply")
+            end
+
+          entry["expected"] ->
             fingerprint = Journal.target_fingerprint(home, target)
 
             if fingerprint["type"] != entry["expected"]["type"] or
@@ -202,9 +226,9 @@ defmodule Workstation.Core.Preconditions do
                   "inspect it and remove or back it up explicitly"
               )
             end
-          else
+
+          true ->
             conflict(entry, "backend-rendered target exists without an owned record")
-          end
         end
     end
   end

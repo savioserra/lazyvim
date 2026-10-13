@@ -75,13 +75,18 @@ metadata; stale locks are never stolen — inspect the recorded owner and remove
 the lock file only as a deliberate operator action. The exact generation path
 is passed to the backend, never a mutable pointer. Last-applied metadata is
 updated only after backend success; a failed attempt preserves pending/failed
-evidence and requires conflict-aware recovery (retrying the same desired
-generation converges idempotently; changed generations re-check every
-precondition).
+evidence and requires conflict-aware recovery. Retrying the same desired
+generation converges idempotently: a pending record whose generation equals
+the plan's excuses exactly its touched targets from the owned-fingerprint
+check, because their on-disk state is that interrupted attempt's own writes;
+pending records of any other generation still guard, and no recovery step
+clears the pending/failed evidence — the next successful apply does.
 
 Preconditions stop before backend mutation:
 
-- an owned target that changed since the last successful apply is a conflict;
+- an owned target that changed since the last successful apply is a conflict,
+  unless the plan's own same-generation pending attempt record proves the
+  change is that interrupted fold's write;
 - first adoption of an existing, unrecorded, differing whole file or link is a
   conflict rather than a silent takeover (identical or absent targets are safe);
 - backend-rendered (template) targets never adopt unrecorded existing state;

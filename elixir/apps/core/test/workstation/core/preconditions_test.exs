@@ -246,6 +246,87 @@ defmodule Workstation.Core.PreconditionsTest do
     assert Preconditions.check(plan([entry(%{})]), context) == :ok
   end
 
+  test "an interrupted same-generation fold converges on retry", %{home: home} do
+    File.mkdir_p!(Path.join(home, ".config"))
+    # The interrupted attempt of THIS plan's generation already rewrote the
+    # owned target, so it no longer matches the last successful journal.
+    File.write!(Path.join(home, ".config/rc"), "half-applied")
+
+    context = %{
+      "home" => home,
+      "journal" =>
+        journal(%{
+          "targets" => %{".config/rc" => %{"type" => "file", "mode" => 0o644, "sha256" => Workstation.Core.EngineState.sha256("original")}}
+        }),
+      "pending" => [
+        %{"generation" => String.duplicate("ab", 32), "targets" => [".config/rc"]}
+      ]
+    }
+
+    assert Preconditions.check(plan([entry(%{})]), context) == :ok
+  end
+
+  test "a foreign-generation pending attempt does not excuse a changed owned target", %{home: home} do
+    File.mkdir_p!(Path.join(home, ".config"))
+    File.write!(Path.join(home, ".config/rc"), "changed")
+
+    context = %{
+      "home" => home,
+      "journal" =>
+        journal(%{
+          "targets" => %{".config/rc" => %{"type" => "file", "mode" => 0o644, "sha256" => Workstation.Core.EngineState.sha256("original")}}
+        }),
+      "pending" => [
+        %{"generation" => String.duplicate("99", 32), "targets" => [".config/rc"]}
+      ]
+    }
+
+    assert_raise ArgumentError, ~r/target changed since the last successful apply/, fn ->
+      Preconditions.check(plan([entry(%{})]), context)
+    end
+  end
+
+  test "a converging retry leaves the pending and failed evidence untouched", %{home: home} do
+    File.mkdir_p!(Path.join(home, ".config"))
+    File.write!(Path.join(home, ".config/rc"), "half-applied")
+
+    state_root = Path.join([home | Workstation.Core.EngineState.state_components()])
+    generation = String.duplicate("ab", 32)
+
+    :ok =
+      Workstation.Core.Journal.write_pending(home, %{
+        "generation" => generation,
+        "at" => System.system_time(:second),
+        "pid" => :os.getpid(),
+        "entries" => 1,
+        "targets" => [".config/rc"]
+      })
+
+    :ok = Workstation.Core.Journal.write_failed(home, generation, %ArgumentError{message: "backend interrupted"})
+
+    pending = Workstation.Core.Journal.pending(state_root)
+    assert [%{"generation" => ^generation, "targets" => [".config/rc"]}] = pending
+
+    context = %{
+      "home" => home,
+      "journal" =>
+        journal(%{
+          "targets" => %{".config/rc" => %{"type" => "file", "mode" => 0o644, "sha256" => Workstation.Core.EngineState.sha256("original")}}
+        }),
+      "pending" => pending
+    }
+
+    assert Preconditions.check(plan([entry(%{})]), context) == :ok
+
+    # The read-only check consumed neither the pending anchor nor the failed
+    # record: recovery stays conflict-aware, never a silent evidence purge.
+    assert Workstation.Core.Journal.pending(state_root) == pending
+
+    failed_dir = Path.join([state_root, "journal", "failed"])
+    assert [failed_name] = File.ls!(failed_dir)
+    assert String.starts_with?(failed_name, generation <> "-")
+  end
+
   test "first adoption requires the expected whole-file state", %{home: home} do
     File.mkdir_p!(Path.join(home, ".config"))
     File.write!(Path.join(home, ".config/rc"), "unexpected")
