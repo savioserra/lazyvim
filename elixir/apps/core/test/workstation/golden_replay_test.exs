@@ -77,6 +77,7 @@ defmodule Workstation.Core.GoldenReplayTest do
                "full-home",
                "git",
                "minimal",
+               "mise",
                "nvim-profile",
                "shell-order",
                "theme"

@@ -64,7 +64,11 @@ defmodule Workstation.Core.SelfServeProofTest do
   end
 
   defp compose do
-    native = Discover.specs()
+    # The inlined native declarations (asset references resolved against the
+    # checkout, exactly like production composition): the engine-owned base
+    # package carries an asset-backed activation fragment, so the raw
+    # discovery specs would compose a plan without its bytes.
+    native = Catalog.native().packages
 
     Catalog.compose(
       host: "linux",

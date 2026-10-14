@@ -15,8 +15,10 @@ manager:
   Tools.
 - POSIX shell, HTTPS curl, tar/gzip, unzip, SHA-256 tools (`sha256sum` on Linux,
   `shasum` on macOS), and ordinary Unix filesystem tools.
-- tmux >=3.2 and btop on macOS only: the fresh-install sequence acquires both
-  on Linux through mise; macOS keeps them as host prerequisites.
+- tmux >=3.2 and btop: managed through the engine mise contract on both hosts
+  from the first apply; the fresh-install sequence first-acquires them on Linux
+  through the installer, so a macOS box may supply them as host prerequisites
+  until then.
 - C compiler/build tools for parser and application-package builds (macOS Command
   Line Tools); Linux fontconfig (`fc-cache`, `fc-list`). macOS supplies
   `system_profiler` for font verification.
@@ -61,8 +63,10 @@ and no Lua or nvim execution in the engine path. Any checkout can host the
 launcher. The installer is mise-first: after the clone it acquires the pinned
 mise binary, provisions the first-acquisition Linux tool pins (`tmux`, `btop`,
 then the pinned Erlang/Elixir toolchain) through mise backends, and only then
-bootstraps. Bootstrap prepares the checksum-pinned Neovim runtime and chezmoi
-backend (managed capabilities), builds/installs the engine release, then
+bootstraps; the engine's mise contract owns the tool set from the first apply
+onward (engine-pinned binary, composed global config, tool state under the
+engine state root). Bootstrap prepares the checksum-pinned Neovim runtime and
+chezmoi backend (managed capabilities), builds/installs the engine release, then
 atomically creates
 `~/.local/bin/workstation` pointing to that checkout's actual repo-native launcher.
 A matching link is retained; conflicting user files/links/directories are refused,

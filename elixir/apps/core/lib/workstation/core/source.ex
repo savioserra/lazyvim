@@ -18,6 +18,7 @@ defmodule Workstation.Core.Source do
 
   alias Workstation.Backends.Chezmoi
   alias Workstation.Core.Contracts.Download
+  alias Workstation.Core.Contracts.Mise
   alias Workstation.Core.Digest
   alias Workstation.Core.Source.{Downloads, Entries, Manifest, Paths, Removals, Shell}
 
@@ -29,20 +30,21 @@ defmodule Workstation.Core.Source do
   # provider plugs in with zero edits to the assembler.
 
   defstruct entries: [],
-            removals: [],
-            declared_removals: [],
-            unsupported_reversals: [],
-            git_retirements: [],
-            profile: nil,
-            context: %{},
-            fragments_journal: %{},
-            remove_file: nil,
-            journal_revision: 0,
-            baseline_generation: nil,
-            data: nil,
-            downloads: [],
-            manifest: [],
-            generation: nil
+          removals: [],
+          declared_removals: [],
+          unsupported_reversals: [],
+          git_retirements: [],
+          profile: nil,
+          context: %{},
+          fragments_journal: %{},
+          remove_file: nil,
+          journal_revision: 0,
+          baseline_generation: nil,
+          data: nil,
+          downloads: [],
+          mise: nil,
+          manifest: [],
+          generation: nil
 
   @type entry :: %{
           optional(:owner) => String.t(),
@@ -86,6 +88,7 @@ defmodule Workstation.Core.Source do
           baseline_generation: String.t() | nil,
           data: %{required(:owner) => String.t(), required(:bytes) => String.t()} | nil,
           downloads: [map()],
+          mise: map() | nil,
           manifest: [map()],
           generation: String.t() | nil
         }
@@ -106,6 +109,9 @@ defmodule Workstation.Core.Source do
     collected = collected ++ Enum.map(capability, &elem(&1, 0))
     profile = capability_profiles(capability)
     downloads = Downloads.compose(collected)
+    # The managed mise tool set composes against the download pins: a
+    # catalog that declares tools without the engine mise pin fails here.
+    mise = Mise.compose_tools(collected, downloads)
     # The golden replay always records against a fresh journal: applied_record
     # is nil, so no fragments are recorded and no retirements are reconciled.
     journal = nil
@@ -147,6 +153,9 @@ defmodule Workstation.Core.Source do
     # checked before the plan exists so replay fails loudly.
     Downloads.check_conflicts(downloads, entries, declared_removals)
 
+    # The mise contract's owned surfaces carry the same exclusivity law.
+    Mise.check_conflicts(mise, entries, declared_removals, downloads)
+
     plan = %__MODULE__{
       entries: entries,
       removals: removals,
@@ -159,7 +168,8 @@ defmodule Workstation.Core.Source do
       journal_revision: 0,
       baseline_generation: nil,
       data: data,
-      downloads: downloads
+      downloads: downloads,
+      mise: mise
     }
 
     manifest = Manifest.build(plan.entries, pinned_files(plan))
@@ -310,7 +320,9 @@ defmodule Workstation.Core.Source do
         data -> base ++ [{Chezmoi.data_filename(), data.bytes}]
       end
 
-    base ++ Enum.map(plan.downloads, fn download -> {download.source_name, Download.pin_bytes(download)} end)
+    download_pins = Enum.map(plan.downloads, fn download -> {download.source_name, Download.pin_bytes(download)} end)
+
+    base ++ download_pins ++ Mise.pinned_files(plan.mise)
   end
 
   @doc """

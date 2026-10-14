@@ -50,6 +50,7 @@ defmodule Workstation.Core.Golden do
     "nvim-profile",
     "download",
     "git",
+    "mise",
     "context"
   ]
 
@@ -201,12 +202,24 @@ defmodule Workstation.Core.Golden do
             "commit" => effect[:commit],
             "fingerprint" => effect[:fingerprint],
             "attribution" => effect[:attribution],
-            "generation" => effect[:generation]
+            "generation" => effect[:generation],
+            "tools" => tools_view(effect[:tools])
           }
           |> Enum.reject(fn {_key, value} -> is_nil(value) end)
           |> Map.new()
         end)
     end
+  end
+
+  # The managed-tool pins travel on the wire string-keyed (the recorded
+  # envelope's vocabulary); absent on every other contract's effects.
+  defp tools_view(nil), do: nil
+
+  defp tools_view(tools) do
+    Enum.map(tools, fn tool ->
+      %{"name" => tool.name, "version" => tool.version}
+      |> Map.merge(tool[:backend] && %{"backend" => tool.backend} || %{})
+    end)
   end
 
   # --- envelope construction ---
@@ -344,6 +357,9 @@ defmodule Workstation.Core.Golden do
 
       provider == Workstation.Core.Contracts.Download.provider_id() ->
         {%{"provider" => provider, "spec" => normalize_download_spec(spec)}, assets}
+
+      provider == Workstation.Core.Contracts.Mise.provider_id() ->
+        {%{"provider" => provider, "spec" => stringify(spec)}, assets}
 
       true ->
         case Workstation.Core.Contracts.Provider.Discover.lookup(provider) do
@@ -702,6 +718,57 @@ defmodule Workstation.Core.Golden do
               "url" => "https://goldens.invalid/git/goldens-repo.git",
               "commit" => "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
               "target" => ".local/share/goldens/checkouts/repo"
+            }
+          }
+        ]
+      }
+    ]
+  end
+
+  # The mise profile exercises the managed-tool contract without any
+  # package wiring: one synthetic contribution declares the engine mise
+  # binary pin (the download the tool set requires) and a second declares
+  # two managed tools with their backends. The composed config descriptor is
+  # content-addressed into the manifest and the three typed effects (compose
+  # config, PATH link, tool installs) are declared on the recorded wire. The
+  # urls are under the reserved .invalid TLD and the checksums are synthetic
+  # — replay never fetches, the pure plan only pins.
+  defp synthetic_records("mise") do
+    [
+      %{
+        "id" => "mise-foundation-goldens",
+        "requires" => [],
+        "contributes" => [
+          %{
+            "provider" => "download",
+            "spec" => %{
+              "version" => "2026.10.8",
+              "target" => ".local/opt/mise/2026.10.8/bin/mise",
+              "assets" => %{
+                "darwin_arm64" => %{
+                  "url" => "https://goldens.invalid/mise/mise-v2026.10.8-macos-arm64",
+                  "sha256" => "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0"
+                },
+                "linux_x86_64" => %{
+                  "url" => "https://goldens.invalid/mise/mise-v2026.10.8-linux-x64",
+                  "sha256" => "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
+                }
+              }
+            }
+          }
+        ]
+      },
+      %{
+        "id" => "mise-tools-goldens",
+        "requires" => [],
+        "contributes" => [
+          %{
+            "provider" => "mise",
+            "spec" => %{
+              "tools" => [
+                %{"name" => "tmux", "version" => "3.7c", "backend" => "aqua:tmux/tmux-builds"},
+                %{"name" => "btop", "version" => "1.4.7", "backend" => "github:aristocratos/btop"}
+              ]
             }
           }
         ]

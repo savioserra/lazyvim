@@ -1,6 +1,31 @@
 {
   "contributes": [
     {
+      "provider": "download",
+      "spec": {
+        "version": "2026.10.8",
+        "target": ".local/opt/mise/2026.10.8/bin/mise",
+        "assets": {
+          "darwin_arm64": {
+            "sha256": "dd77de9a7574e38d8409fb06fa85e1581415896639d075987791d8c4e5a57b73",
+            "url": "https://github.com/jdx/mise/releases/download/v2026.10.8/mise-v2026.10.8-macos-arm64"
+          },
+          "linux_x86_64": {
+            "sha256": "c72477ae6c3a8e7d817a322f43da70e4643e75ee5c21265f1c19c894273b7428",
+            "url": "https://github.com/jdx/mise/releases/download/v2026.10.8/mise-v2026.10.8-linux-x64"
+          }
+        }
+      }
+    },
+    {
+      "provider": "chezmoi",
+      "spec": {
+        "asset": "files/mise.sh",
+        "kind": "file",
+        "target": ".config/shell/mise.sh"
+      }
+    },
+    {
       "provider": "shell",
       "spec": {
         "fragment": {
@@ -29,6 +54,39 @@
           "body": "case \":$PATH:\" in *\":$HOME/.local/bin:\"*) ;; *) [ -d \"$HOME/.local/bin\" ] && PATH=\"$HOME/.local/bin:$PATH\" ;; esac",
           "id": "user-local-bin",
           "marker": "# chezmoi: managed user-local bin"
+        },
+        "target": ".zshrc"
+      }
+    },
+    {
+      "provider": "shell",
+      "spec": {
+        "fragment": {
+          "body": "[ -r \"$HOME/.config/shell/mise.sh\" ] && . \"$HOME/.config/shell/mise.sh\"",
+          "id": "managed-mise",
+          "marker": "# chezmoi: load managed mise"
+        },
+        "target": ".profile"
+      }
+    },
+    {
+      "provider": "shell",
+      "spec": {
+        "fragment": {
+          "body": "[ -r \"$HOME/.config/shell/mise.sh\" ] && . \"$HOME/.config/shell/mise.sh\"",
+          "id": "managed-mise",
+          "marker": "# chezmoi: load managed mise"
+        },
+        "target": ".bashrc"
+      }
+    },
+    {
+      "provider": "shell",
+      "spec": {
+        "fragment": {
+          "body": "[ -r \"$HOME/.config/shell/mise.sh\" ] && . \"$HOME/.config/shell/mise.sh\"",
+          "id": "managed-mise",
+          "marker": "# chezmoi: load managed mise"
         },
         "target": ".zshrc"
       }

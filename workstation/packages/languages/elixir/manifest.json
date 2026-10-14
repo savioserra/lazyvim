@@ -35,60 +35,26 @@
       }
     },
     {
+      "provider": "mise",
+      "spec": {
+        "tools": [
+          {
+            "name": "elixir",
+            "version": "1.18.5-otp-27"
+          },
+          {
+            "name": "erlang",
+            "version": "28.5"
+          }
+        ]
+      }
+    },
+    {
       "provider": "chezmoi",
       "spec": {
         "asset": "files/languages/plugins/elixir.lua",
         "kind": "file",
         "target": ".config/nvim/lua/languages/plugins/elixir.lua"
-      }
-    },
-    {
-      "provider": "chezmoi",
-      "spec": {
-        "asset": "files/mise.sh",
-        "kind": "file",
-        "target": ".config/shell/mise.sh"
-      }
-    },
-    {
-      "provider": "chezmoi",
-      "spec": {
-        "asset": "files/mise.toml",
-        "kind": "file",
-        "target": ".config/mise/config.toml"
-      }
-    },
-    {
-      "provider": "shell",
-      "spec": {
-        "fragment": {
-          "body": "[ -r \"$HOME/.config/shell/mise.sh\" ] && . \"$HOME/.config/shell/mise.sh\"",
-          "id": "managed-mise",
-          "marker": "# chezmoi: load managed mise"
-        },
-        "target": ".profile"
-      }
-    },
-    {
-      "provider": "shell",
-      "spec": {
-        "fragment": {
-          "body": "[ -r \"$HOME/.config/shell/mise.sh\" ] && . \"$HOME/.config/shell/mise.sh\"",
-          "id": "managed-mise",
-          "marker": "# chezmoi: load managed mise"
-        },
-        "target": ".bashrc"
-      }
-    },
-    {
-      "provider": "shell",
-      "spec": {
-        "fragment": {
-          "body": "[ -r \"$HOME/.config/shell/mise.sh\" ] && . \"$HOME/.config/shell/mise.sh\"",
-          "id": "managed-mise",
-          "marker": "# chezmoi: load managed mise"
-        },
-        "target": ".zshrc"
       }
     }
   ],

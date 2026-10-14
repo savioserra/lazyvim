@@ -27,9 +27,9 @@ Supported deployment policy is Linux, WSL-as-Linux, and macOS (arm64).
 | Hermes Agent | commit `46d7718a52` (git pin, `hermes_agent_git_commit`) | github.com/NousResearch/hermes-agent | pinned checkout `~/.hermes/hermes-agent` (git recipe); launcher `~/.hermes/hermes-agent/.hermes/bin/hermes`; verified by `packages/agent/verify/hermes.sh` | linux-x86_64, darwin-arm64 |
 | JetBrainsMono Nerd Font | 3.5.0 | github.com/ryanoasis/nerd-fonts | Linux: `.local/share/fonts/JetBrainsMonoNerdFont`; darwin: `Library/Fonts/JetBrainsMonoNerdFont` | linux-x86_64, darwin-arm64 |
 | nunchux (launcher package; plugin active) | 3.1.3 | github.com/datamadsen/nunchux | pinned checkout `.tmux/plugins/nunchux` (git recipe at the v3.1.3 commit; carries the repo-tracked binary) + `bin/.platform` marker so upstream's `ensure_binary` never fetches ([tmux](tmux.md)) | linux-amd64 (repo build, content-pinned); package is linux-only, darwin release pin recorded as inventory |
-| mise | 2026.10.8 | github.com/jdx/mise | `.local/bin/mise` (installer first acquisition; activated in shells by the managed mise fragment) | linux-x86_64, darwin-arm64 |
-| tmux (binary) | 3.7c | `aqua:tmux/tmux-builds` via mise | mise-managed first acquisition; resolvable through the mise activation fragment plus the installer-written `~/.config/mise/conf.d/workstation-bootstrap.toml`. macOS keeps host tmux | linux-x86_64 (darwin host prerequisite) |
-| btop | 1.4.7 | `github:aristocratos/btop` via mise | mise-managed first acquisition, same resolution path as the tmux binary. macOS keeps host btop | linux-x86_64 (darwin host prerequisite) |
+| mise | 2026.10.8 | github.com/jdx/mise | Engine-owned: the raw release binary pinned at `.local/opt/mise/<version>/bin/mise` (download contract, `mise_bin_<plat>_url`/`_sha256`), surfaced on PATH as the contract-maintained symlink `.local/bin/mise`; activated in shells by the managed mise fragment. The installer's first-acquisition copy at `.local/bin/mise` is absorbed by content proof at apply | linux-x86_64, darwin-arm64 |
+| tmux (binary) | 3.7c | `aqua:tmux/tmux-builds` via the engine mise contract | Contract-declared in the tmux package's managed tool set (`MISE_DATA_DIR` under the engine state root, composed `.config/mise/config.toml`); resolution probes go through mise itself (`mise where`) | linux-x86_64, darwin-arm64 |
+| btop | 1.4.7 | `github:aristocratos/btop` via the engine mise contract | Same managed tool set as the tmux binary | linux-x86_64, darwin-arm64 |
 | TPM plugin set (tpm, tmux2k, tmux-yank, tmux-resurrect, vim-tmux-navigator) | pinned commits ([tmux](tmux.md) Plugin pins) | github.com/tmux-plugins/tpm, github.com/2KAbhishek/tmux2k, github.com/tmux-plugins/tmux-yank, github.com/tmux-plugins/tmux-resurrect, github.com/christoomey/vim-tmux-navigator | engine-provisioned pinned checkouts `~/.tmux/plugins/<name>` (git recipes in the tmux package manifest; tpm leads — it must exist before the first tmux start); verified by `packages/tmux/verify/tmux.sh` | linux-x86_64, darwin-arm64 |
 
 ## Provisioning ownership
@@ -43,6 +43,7 @@ Supported deployment policy is Linux, WSL-as-Linux, and macOS (arm64).
 | `secrets` | op | ZIP member `op` → `.local/bin/op`, mode 0755; verify only `--version`, never account/vault state |
 | Engine bootstrap | Neovim | Strip one root; exact `.local/opt/nvim`; no competing package installer |
 | Engine file backend | chezmoi | Selected archive member; never package-owned |
+| Engine mise contract | The managed tool set (tmux, btop, the erlang/elixir pins) | `MISE_DATA_DIR` under the engine state root; composed `.config/mise/config.toml` (the generation pins its descriptor); PATH symlink `.local/bin/mise` with content-proof absorption of the installer's copy; the installer conf.d fragment is absorbed (deleted) at apply |
 
 Package setup uses checksum-verified provisioning and installed-content comparison;
 unchanged installations are retained. Directory specs may declare `ignore` lists of
@@ -77,7 +78,23 @@ before anything else runs), and `tmux`/`tmux_mise_backend` plus
 the installer then asserts the resolved `tmux -V`/`btop --version` banners
 against the pinned versions. These installer-side records are first
 acquisition only — steady-state declarations belong to the engine mise
-contract.
+contract, which owns the binary from the first apply onward.
+
+The engine's mise contract keeps its own pin set alongside the installer's:
+`mise_bin_<plat>_url`/`_sha256` pin the RAW release binaries (no archive
+extraction — the download contract installs single files), consumed by the
+engine-owned base package's download contribution into
+`.local/opt/mise/<version>/bin/mise`. A mise bump updates both pin sets
+(tarball for the installer, raw binary for the engine), the engine's
+versioned opt target, and the managed tool set declarations; the applied
+generation moves because the composed config descriptor is pinned into it.
+Tool state (`MISE_DATA_DIR`) lives under the engine state root
+(`.local/state/workstation/mise`) — this mise generation honors
+`MISE_DATA_DIR` (the historical `MISE_DATA_HOME` is not read for tool
+resolution), and the engine never redirects `XDG_DATA_HOME` in user shells.
+Dropping a tool from the declarations leaves its installed version on disk
+unrecorded (the record covers the declared set); remove it explicitly if it
+must go.
 
 Concurrent runtime installers serialize on `.local/opt/.nvim-bootstrap.lock`;
 after interrupted SIGKILL, inspect/recover that lock and any `previous` tree before
@@ -88,7 +105,7 @@ retrying. Do not remove a lock while its installer is still running.
 | Tool | Why | Where it's handled |
 | --- | --- | --- |
 | Git on Linux (distro) | The single distro prerequisite, deliberately unpinned: no first-party static git passes the acquisition audit (upstream git/git ships no release assets; `aqua:git` is not carried by the aqua registry), and the erlang/elixir mise backends clone through git, so it must exist before the toolchain install | One `apt install git` on the fresh box (README prerequisites); `install.sh` verifies it fail-closed and refuses without it |
-| tmux >=3.2 and btop on macOS; Bash >=5.2 | User/CI unmanaged prerequisites on macOS; no lifecycle OS installs | The tmux binary and btop are mise-first-acquired on Linux (table above); tmux plugin commits/setup are managed separately by the tmux package (`Workstation.Packages.Tmux`, payload `workstation/packages/terminal/tmux/`) |
+| tmux >=3.2 and btop on macOS; Bash >=5.2 | User/CI unmanaged prerequisites on macOS; no lifecycle OS installs | The tmux binary and btop are contract-managed through the engine mise contract on both hosts (managed tool set, table above); darwin acceptance runs in CI. tmux plugin commits/setup are managed separately by the tmux package (`Workstation.Packages.Tmux`, payload `workstation/packages/terminal/tmux/`) |
 | C compiler/build tools, Linux fontconfig, macOS Command Line Tools | Parser/application builds and font verification prerequisites | User or CI image; see README |
 | ShellCheck | Validation tool supplied by Linux CI image; used wherever available | `.github/scripts/check.sh`; no unpinned lint downloads |
 | 1Password desktop app and account session | User application and interactive authentication are outside source state | Install the official app, enable CLI integration, and sign in interactively |

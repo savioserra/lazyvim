@@ -26,7 +26,11 @@ defmodule Workstation.Core.Catalog.PackagesTmuxTest do
   test "the nunchux config target moved to the nunchux package" do
     # Ownership moved with the payload (the nunchux manifest owns the
     # theme-slot template now); tmux must not contribute the target anymore.
-    refute Enum.any?(tmux_spec().contributes, &(&1.spec.target == ".config/nunchux/config"))
+    refute Enum.any?(
+             tmux_spec().contributes,
+             &(&1.provider == "chezmoi" and &1.spec.target == ".config/nunchux/config")
+           )
+
     refute File.exists?(Path.join(@payload_root, "files/.config/nunchux/config"))
   end
 
@@ -123,7 +127,10 @@ defmodule Workstation.Core.Catalog.PackagesTmuxTest do
     refute File.exists?(Path.join(@payload_root, "files/.config/tmux/themes/tmux2k.conf"))
 
     removal =
-      Enum.find(tmux_spec().contributes, &(&1.spec.target == ".config/tmux/themes/tmux2k.conf"))
+      Enum.find(
+        tmux_spec().contributes,
+        &(&1.provider == "chezmoi" and &1.spec.target == ".config/tmux/themes/tmux2k.conf")
+      )
 
     assert removal && removal.spec.kind == :remove
     assert is_nil(removal.spec.content) and is_nil(removal.spec.asset)
@@ -148,6 +155,15 @@ defmodule Workstation.Core.Catalog.PackagesTmuxTest do
           assert String.starts_with?(entry.spec.url, "https://github.com/")
           assert entry.spec.commit =~ ~r/\A[0-9a-f]{40}\z/
           assert String.starts_with?(entry.spec.target, ".tmux/plugins/")
+
+        "mise" ->
+          # The managed binary pins: the tmux binary and the btop popup
+          # resolve through the mise contract (exact versions, declared
+          # backends; docs/tools.md).
+          assert entry.spec.tools == [
+                   %{name: "tmux", version: "3.7c", backend: "aqua:tmux/tmux-builds"},
+                   %{name: "btop", version: "1.4.7", backend: "github:aristocratos/btop"}
+                 ]
 
         other ->
           flunk("unexpected tmux provider #{inspect(other)}")

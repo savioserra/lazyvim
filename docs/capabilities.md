@@ -39,7 +39,7 @@ bootstrap, never an engine dependency.
 | `Workstation.Core.Catalog.Spec` | The package-spec provider behaviour + spec shape validation (including the banned integer-ordering fields) |
 | `Workstation.Core.Catalog.Discover` | Runtime provider discovery (`:code.all_available/0` + behaviour conformance, test-tree exclusion, duplicate-id rejection) |
 | `Workstation.Core.Graph` | Host selection, `requires` (necessity + ordering) and `after` (ordering-only) edges, topological ordering with id-sort ties |
-| `Workstation.Core.Source` | Source plan and manifest over the recipe provider contracts (chezmoi dialect via `Workstation.Backends.Chezmoi`, shared shell via `Workstation.Core.Contracts.Shell`) |
+| `Workstation.Core.Source` | Source plan and manifest over the recipe provider contracts (chezmoi dialect via `Workstation.Backends.Chezmoi`, shared shell and pinned downloads via `Workstation.Core.Contracts.Shell`/`Download`, managed mise tools via `Workstation.Core.Contracts.Mise`) |
 | `Workstation.Pipeline` | The one stage-list fold: preconditions, publish, backend apply, journal record, post-apply verify |
 | `Workstation.Core.Provisioner` | Chezmoi backend with an exact generation |
 | `Workstation.Core.Policy` | Engine-owned legacy tombstones |

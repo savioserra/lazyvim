@@ -1,6 +1,23 @@
 {
   "contributes": [
     {
+      "provider": "mise",
+      "spec": {
+        "tools": [
+          {
+            "backend": "aqua:tmux/tmux-builds",
+            "name": "tmux",
+            "version": "3.7c"
+          },
+          {
+            "backend": "github:aristocratos/btop",
+            "name": "btop",
+            "version": "1.4.7"
+          }
+        ]
+      }
+    },
+    {
       "provider": "git",
       "spec": {
         "url": "https://github.com/tmux-plugins/tpm",

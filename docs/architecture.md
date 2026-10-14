@@ -15,7 +15,8 @@ capability-keyed — never direct references.
    the capability provided by package X satisfied".
 2. **Contracts (ports)** — the technology-neutral capability surfaces:
    a thing that wants colors (theme), a thing that owns files (source), a
-   thing that fetches pinned artifacts (download), a thing that composes
+   thing that fetches pinned artifacts (download), a thing that provisions
+   mise-managed tools (mise), a thing that composes
    shell state, a thing with profiles. Contracts define the handshake, never
    an implementation.
 3. **Backends (adapters)** — one dialect per backend behind a contract
@@ -116,7 +117,7 @@ architecture's documentation surface:
    machinery. Each kernel moduledoc states the kernel law: it names no
    package, backend, or consumer — it speaks only contracts and shapes.
 2. **Contracts — `Workstation.Core.Contracts`** (the capability
-   provider contract, download, shell): handshakes, never
+   provider contract, download, mise, shell): handshakes, never
    implementations. A contract moduledoc names its purpose and states
    its implementor policy — where implementations live (package modules
    under `Workstation.Packages.*`) and that the engine discovers them,

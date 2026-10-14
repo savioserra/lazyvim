@@ -101,7 +101,7 @@ defmodule Workstation.Pipeline do
   """
 
   alias Workstation.Core.{Catalog, EngineState, Graph, Journal, Preconditions, Provisioner, Source}
-  alias Workstation.Core.Contracts.{Contract, Git}
+  alias Workstation.Core.Contracts.{Contract, Git, Mise}
   alias Workstation.Pipeline.CollectFailed
 
   @stage_order [:discover, :resolve, :compose, :check, :stage, :anchor, :interpret, :claim, :verify]
@@ -172,8 +172,9 @@ defmodule Workstation.Pipeline do
   lock). `opts` carry `"home"` (defaults to the target home), the optional
   `"requested_generation"` (when present it must equal the plan's generation,
   turning a client that asks for a different generation than the built plan
-  into the same stale-plan refusal as any other divergence) and the optional
-  `"fetch"` (injected download fetch, tests). Raises `ArgumentError` on stale
+  into the same stale-plan refusal as any other divergence), the optional
+  `"fetch"` (injected download fetch, tests) and the optional `"mise"`
+  (injected mise runner, tests). Raises `ArgumentError` on stale
   plans, conflicts, effect failures and invariant violations.
   """
   @spec execute(Source.t(), map()) :: String.t()
@@ -314,7 +315,8 @@ defmodule Workstation.Pipeline do
       "entries" => length(plan.entries),
       "targets" =>
         Enum.map(plan.entries, & &1.target) ++
-          Enum.map(plan.downloads, & &1.target) ++ Enum.map(plan.git_retirements, & &1.target)
+          Enum.map(plan.downloads, & &1.target) ++ Enum.map(plan.git_retirements, & &1.target) ++
+          Mise.owned_targets_for(plan.mise)
     })
 
     run
@@ -371,7 +373,7 @@ defmodule Workstation.Pipeline do
   # --- effect helpers ---
 
   defp effect_ctx(%Workstation.Pipeline.Run{} = run) do
-    %{home: run.home, plan: run.plan, directory: run.directory, fetch: run.opts["fetch"]}
+    %{home: run.home, plan: run.plan, directory: run.directory, fetch: run.opts["fetch"], mise: run.opts["mise"]}
   end
 
   defp declared_effect(effect, contract) do
