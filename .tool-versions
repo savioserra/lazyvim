@@ -1,2 +1,5 @@
 elixir 1.18.5-otp-27
-erlang 28
+# Single in-repo toolchain pin: the umbrella restructure consolidated the
+# former elixir/.mise.toml here (a root .mise.toml would shadow this file;
+# 28.5 is the erlang the engine battery runs).
+erlang 28.5
