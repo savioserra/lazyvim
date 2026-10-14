@@ -231,7 +231,7 @@ The graph rejects duplicate IDs, unknown dependencies, dependency cycles, and en
 | `bootstrap` | Whole source checkout, shell prerequisites | Install verified pinned runtime/backend, then the engine provisions and verifies the conflict-safe public launcher symlink |
 | `plan` | Source declarations and journal | Validate and preview attributable change sets, generated-source patches, target preconditions and unsupported reversals; mutate nothing |
 | `diff` | Same desired-state generation as apply | Ensure backend, preview file changes only; no retirement/setup/sync/verify |
-| `apply` | Validated plan | Retire owned real-account legacy service (never scratch), publish the immutable generation, apply through the backend, refresh Node pin/PATH, setup |
+| `apply` | Validated plan | Retire owned real-account legacy service (never scratch), retire recorded clones whose recipe the plan dropped (guarded: HEAD at the recorded pin on a clean tree — drift refuses with the divergence named), publish the immutable generation, apply through the backend, refresh Node pin/PATH, setup |
 | `setup` | Applied target home | Provision package archives and configure host state |
 | `sync` | Configured applications | Restore mutable application state |
 | `verify` | Complete target home | Assert versions and observable behavior |

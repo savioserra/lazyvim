@@ -71,7 +71,10 @@ Pinning rules:
 - Keep the `TMUX_PLUGIN_MANAGER_PATH` pin ahead of the TPM `run-shell`; TPM's
   default path logic alone would select the unmanaged XDG plugin root.
 - Update this table with implementation pins, and the package manifest's
-  recipes with it.
+  recipes with it. Dropping a recipe from the manifest retires its recorded
+  checkout on the next apply: the engine removes it only when HEAD still
+  sits at the recorded pin on a clean tree — a moved HEAD or local changes
+  refuse the apply with the divergence named, never deleted silently.
 
 TPM `user/repo#ref` supports branches/tags, not exact raw commits.
 

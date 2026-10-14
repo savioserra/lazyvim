@@ -17,6 +17,7 @@ defmodule Workstation.Core.Contracts.GitTest do
   alias Workstation.Core.Contracts.Git
 
   @commit "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
+  @dropped_commit "b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3"
 
   setup context do
     home = Path.join(System.tmp_dir!(), "workstation-git-#{context.test}-#{:os.getpid()}")
@@ -106,6 +107,168 @@ defmodule Workstation.Core.Contracts.GitTest do
 
       assert clone.commit == @commit
       assert clone.url == "https://goldens.invalid/git/goldens-repo.git"
+    end
+
+    test "an activated retirement derives a retire effect before the apply effect" do
+      retirement = retirement_record(".tmux/plugins/tmux-oasis")
+      plan = build_plan(pins: []) |> with_retirements([retirement])
+
+      assert [%{contract: "git", kind: :retire, phase: :target} = retire,
+              %{contract: "chezmoi", kind: :apply, phase: :apply}] = Pipeline.effects(plan)
+
+      assert retire.target == ".tmux/plugins/tmux-oasis"
+      assert retire.commit == retirement.commit
+      assert Map.has_key?(retire, :fingerprint) == false
+    end
+  end
+
+  describe "retirement activation (the journal-driven composition boundary)" do
+    test "a recorded clone whose recipe was dropped becomes a candidate; a still-pinned one does not" do
+      pinned_target = ".local/share/goldens/checkouts/repo"
+      dropped_target = ".tmux/plugins/tmux-oasis"
+
+      journal = %{
+        "revision" => 3,
+        "generation" => "abc123",
+        "targets" => %{
+          pinned_target => git_record("https://goldens.invalid/git/goldens-repo.git", @commit, pinned_target),
+          dropped_target => git_record("https://example.invalid/oasis.git", @dropped_commit, dropped_target),
+          ".config/app/file" => %{"type" => "file", "sha256" => "x"}
+        }
+      }
+
+      plan = Git.activate_retirements(build_plan(git_pins: 1), journal)
+
+      assert [%{target: ^dropped_target, owner: "checkouts", commit: @dropped_commit}] = plan.git_retirements
+    end
+
+    test "a nil journal (fresh home, golden replay) retires nothing" do
+      plan = Git.activate_retirements(build_plan(git_pins: 1), nil)
+      assert plan.git_retirements == []
+    end
+
+    test "a git-typed record that lost part of its claim is corruption, not provenance" do
+      dropped_target = ".tmux/plugins/tmux-oasis"
+
+      for missing <- ["commit", "url", "owner", "source_fingerprint"] do
+        record = Map.delete(git_record("https://example.invalid/oasis.git", @dropped_commit, dropped_target), missing)
+
+        assert_raise ArgumentError, ~r/has no #{missing}/, fn ->
+          Git.activate_retirements(build_plan(pins: []), %{"targets" => %{dropped_target => record}})
+        end
+      end
+    end
+
+    test "a record whose source fingerprint does not re-derive from the recorded pin refuses" do
+      dropped_target = ".tmux/plugins/tmux-oasis"
+
+      record =
+        git_record("https://example.invalid/oasis.git", @dropped_commit, dropped_target)
+        |> Map.put("source_fingerprint", String.duplicate("0", 64))
+
+      assert_raise ArgumentError, ~r/source fingerprint does not re-derive/, fn ->
+        Git.activate_retirements(build_plan(pins: []), %{"targets" => %{dropped_target => record}})
+      end
+    end
+
+    test "a candidate overlapping a still-declared pin refuses in either direction" do
+      pinned = %{git_pin: true, target: ".local/share/goldens/checkouts/repo"}
+
+      record = git_record("https://example.invalid/oasis.git", @dropped_commit, ".local/share/goldens")
+
+      assert_raise ArgumentError, ~r/never deletes through a declared checkout/, fn ->
+        Git.activate_retirements(build_plan(pins: [pinned]), %{"targets" => %{".local/share/goldens" => record}})
+      end
+
+      inner_record = git_record("https://example.invalid/oasis.git", @dropped_commit, ".local/share/goldens/checkouts/repo/inner")
+
+      assert_raise ArgumentError, ~r/never deletes through a declared checkout/, fn ->
+        Git.activate_retirements(build_plan(pins: [pinned]), %{"targets" => %{".local/share/goldens/checkouts/repo/inner" => inner_record}})
+      end
+    end
+  end
+
+  describe "run_effect retirement against real fixture repositories" do
+    test "a matching clone retires; re-running stays retired", %{home: home} do
+      {url, commit} = fixture_repo(home)
+      target = ".local/share/checkouts/repo"
+      ctx = %{home: home}
+
+      assert :ok = Git.Effects.run_effect(pin_effect(url, commit, target), ctx)
+      directory = Path.join(home, target)
+      assert File.dir?(Path.join(directory, ".git"))
+
+      assert :ok = Git.Effects.run_effect(retire_effect(url, commit, target), ctx)
+      refute File.exists?(directory), "the recorded clone is gone"
+
+      # Idempotent arm: an absent target is already retired.
+      assert :ok = Git.Effects.run_effect(retire_effect(url, commit, target), ctx)
+
+      # The retire claim is absence, recorded as nothing.
+      assert Git.Effects.fingerprint(retire_effect(url, commit, target), ctx) == %{}
+    end
+
+    test "a checkout pinned to another commit refuses with the divergence named and stays on disk", %{home: home} do
+      {url, commit, other_commit} = fixture_repo(home, commits: 2)
+      target = ".local/share/checkouts/repo"
+      ctx = %{home: home}
+
+      assert :ok = Git.Effects.run_effect(pin_effect(url, commit, target), ctx)
+
+      directory = Path.join(home, target)
+      git!(home, ["-C", directory, "fetch", "--quiet", "origin"])
+      git!(home, ["-C", directory, "checkout", "--quiet", other_commit])
+
+      assert_raise ArgumentError, ~r/HEAD is at #{other_commit}, but the recorded pin is #{commit}/, fn ->
+        Git.Effects.run_effect(retire_effect(url, commit, target), ctx)
+      end
+
+      assert File.dir?(directory), "a refused retirement never deletes"
+    end
+
+    test "a dirty checkout refuses with the local changes named", %{home: home} do
+      {url, commit} = fixture_repo(home)
+      target = ".local/share/checkouts/repo"
+      ctx = %{home: home}
+
+      assert :ok = Git.Effects.run_effect(pin_effect(url, commit, target), ctx)
+      File.write!(Path.join([home, target, "scratch.txt"]), "local work\n")
+
+      assert_raise ArgumentError, ~r/local changes \(.*scratch\.txt/, fn ->
+        Git.Effects.run_effect(retire_effect(url, commit, target), ctx)
+      end
+
+      assert File.dir?(Path.join(home, target))
+    end
+
+    test "a directory that is not a checkout refuses; a file at the target refuses", %{home: home} do
+      {url, commit} = fixture_repo(home)
+      target = ".local/share/checkouts/repo"
+
+      File.mkdir_p!(Path.join(home, target))
+
+      assert_raise ArgumentError, ~r/is not a git checkout/, fn ->
+        Git.Effects.run_effect(retire_effect(url, commit, target), %{home: home})
+      end
+
+      File.rm_rf!(Path.join(home, target))
+      File.write!(Path.join(home, target), "not a directory")
+
+      assert_raise ArgumentError, ~r/exists as file/, fn ->
+        Git.Effects.run_effect(retire_effect(url, commit, target), %{home: home})
+      end
+    end
+
+    test "the retire claim raises while the checkout is still present", %{home: home} do
+      {url, commit} = fixture_repo(home)
+      target = ".local/share/checkouts/repo"
+      ctx = %{home: home}
+
+      assert :ok = Git.Effects.run_effect(pin_effect(url, commit, target), ctx)
+
+      assert_raise ArgumentError, ~r/did not remove the checkout/, fn ->
+        Git.Effects.fingerprint(retire_effect(url, commit, target), ctx)
+      end
     end
   end
 
@@ -245,6 +408,73 @@ defmodule Workstation.Core.Contracts.GitTest do
       failed = Path.join(failed_dir, name) |> File.read!() |> Jason.decode!()
       assert failed["error"] =~ "git"
     end
+
+    test "a dropped recipe retires through the fold and the journal drops the record", %{home: home} do
+      {url, commit} = fixture_repo(home)
+      plan = build_plan(git_url: url, git_commit: commit)
+      install_fake_chezmoi(home, [])
+
+      assert Pipeline.execute(plan, %{"home" => home}) == plan.generation
+
+      state_root = Path.join([home | EngineState.state_components()])
+      target = ".local/share/goldens/checkouts/repo"
+      assert File.dir?(Path.join(home, target))
+
+      # The next composition drops the recipe: the journal still records the
+      # clone, so the production boundary arms the retirement, the fold
+      # removes the checkout, and the applied record drops the target.
+      journal = Journal.applied(state_root)
+      retired_plan = build_plan(pins: []) |> Source.with_baseline(journal) |> Git.activate_retirements(journal)
+
+      assert [%{target: ^target, commit: ^commit}] = retired_plan.git_retirements
+      assert Pipeline.execute(retired_plan, %{"home" => home}) == retired_plan.generation
+
+      refute File.exists?(Path.join(home, target))
+      refute Map.has_key?(Journal.applied(state_root)["targets"], target)
+      assert Journal.applied(state_root)["revision"] == 2
+      assert Journal.pending(state_root) == []
+
+      # The retirement was a one-time convergence: re-applying the identical
+      # generation derives no candidates and stays the idempotent no-op.
+      reapply = build_plan(pins: []) |> Source.with_baseline(Journal.applied(state_root)) |> Git.activate_retirements(Journal.applied(state_root))
+      assert reapply.git_retirements == []
+      assert Pipeline.execute(reapply, %{"home" => home}) == reapply.generation
+    end
+
+    test "a drifted clone refuses the apply, anchors the failure and stays on disk", %{home: home} do
+      {url, commit, other_commit} = fixture_repo(home, commits: 2)
+      plan = build_plan(git_url: url, git_commit: commit)
+      install_fake_chezmoi(home, [])
+
+      assert Pipeline.execute(plan, %{"home" => home}) == plan.generation
+
+      state_root = Path.join([home | EngineState.state_components()])
+      target = ".local/share/goldens/checkouts/repo"
+      directory = Path.join(home, target)
+
+      # The operator moved HEAD behind the engine's back; the dropped recipe
+      # must surface the divergence, never delete through it.
+      git!(home, ["-C", directory, "fetch", "--quiet", "origin"])
+      git!(home, ["-C", directory, "checkout", "--quiet", other_commit])
+
+      journal = Journal.applied(state_root)
+      retired_plan = build_plan(pins: []) |> Source.with_baseline(journal) |> Git.activate_retirements(journal)
+
+      assert_raise ArgumentError, ~r/git retirement of #{target} refused: HEAD is at #{other_commit}/, fn ->
+        Pipeline.execute(retired_plan, %{"home" => home})
+      end
+
+      assert File.dir?(directory), "a refused retirement never deletes"
+      assert Journal.applied(state_root)["revision"] == 1
+      assert [%{"generation" => generation}] = Journal.pending(state_root)
+      assert generation == retired_plan.generation
+      assert Map.has_key?(Journal.applied(state_root)["targets"], target)
+
+      failed_dir = Path.join([state_root, "journal", "failed"])
+      [name] = File.ls!(failed_dir)
+      failed = Path.join(failed_dir, name) |> File.read!() |> Jason.decode!()
+      assert failed["error"] =~ "retirement"
+    end
   end
 
   ## fixtures
@@ -329,23 +559,20 @@ defmodule Workstation.Core.Contracts.GitTest do
     bin
   end
 
-  # A plan carrying one git pin (composed through the real provider so the
-  # plan's capability profile carries the pin inventory) and no entries.
+  # A plan carrying git pins (composed through the real provider so the
+  # plan's capability profile carries the pin inventory), optional activated
+  # retirements, and no entries. `pins: []` is the dropped-recipe composition
+  # — the inventory the retirement activation reads.
   defp build_plan(opts) do
     url = Keyword.get(opts, :git_url, "https://goldens.invalid/git/goldens-repo.git")
     commit = Keyword.get(opts, :git_commit, @commit)
+    target = ".local/share/goldens/checkouts/repo"
 
-    pins = [
-      %{
-        id: "git",
-        git_pin: true,
-        owner: "checkouts",
-        url: url,
-        commit: commit,
-        target: ".local/share/goldens/checkouts/repo",
-        fingerprint: Git.pin_fingerprint(url, commit, ".local/share/goldens/checkouts/repo")
-      }
-    ]
+    pins =
+      case Keyword.fetch(opts, :pins) do
+        {:ok, pins} -> pins
+        :error -> [pin_record(url, commit, target)]
+      end
 
     remove_file = Policy.remove_file([])
     manifest = Manifest.build([], [{".chezmoiremove", remove_file}])
@@ -355,6 +582,7 @@ defmodule Workstation.Core.Contracts.GitTest do
       removals: [],
       declared_removals: [],
       unsupported_reversals: [],
+      git_retirements: Keyword.get(opts, :git_retirements, []),
       profile: pins,
       fragments_journal: %{},
       remove_file: remove_file,
@@ -366,4 +594,57 @@ defmodule Workstation.Core.Contracts.GitTest do
       generation: Digest.sha256(Workstation.Core.CanonicalJSON.encode(manifest))
     }
   end
+
+  defp pin_record(url, commit, target) do
+    %{
+      id: "git",
+      git_pin: true,
+      owner: "checkouts",
+      url: url,
+      commit: commit,
+      target: target,
+      fingerprint: Git.pin_fingerprint(url, commit, target)
+    }
+  end
+
+  # The journal-shaped git claim the retirement activation reads (the exact
+  # record Git.Effects.fingerprint/2 writes at claim time).
+  defp git_record(url, commit, target, owner \\ "checkouts") do
+    %{
+      "type" => "git",
+      "commit" => commit,
+      "url" => url,
+      "owner" => owner,
+      "operation" => "clone",
+      "source_fingerprint" => Git.pin_fingerprint(url, commit, target)
+    }
+  end
+
+  # The plan-field retirement candidate shape (atom keys) — what
+  # Git.activate_retirements/2 derives for a dropped recipe.
+  defp retirement_record(target) do
+    url = "https://example.invalid/oasis.git"
+
+    %{
+      target: target,
+      url: url,
+      commit: @dropped_commit,
+      owner: "checkouts",
+      source_fingerprint: Git.pin_fingerprint(url, @dropped_commit, target)
+    }
+  end
+
+  defp retire_effect(url, commit, target) do
+    %{
+      contract: "git",
+      kind: :retire,
+      phase: :target,
+      owner: "checkouts",
+      target: target,
+      url: url,
+      commit: commit
+    }
+  end
+
+  defp with_retirements(plan, retirements), do: %{plan | git_retirements: retirements}
 end

@@ -101,7 +101,7 @@ defmodule Workstation.Pipeline do
   """
 
   alias Workstation.Core.{Catalog, EngineState, Graph, Journal, Preconditions, Provisioner, Source}
-  alias Workstation.Core.Contracts.Contract
+  alias Workstation.Core.Contracts.{Contract, Git}
   alias Workstation.Pipeline.CollectFailed
 
   @stage_order [:discover, :resolve, :compose, :check, :stage, :anchor, :interpret, :claim, :verify]
@@ -269,6 +269,7 @@ defmodule Workstation.Pipeline do
       |> Source.plan()
       |> Source.with_baseline(journal)
       |> Source.activate_removals(journal, home)
+      |> Git.activate_retirements(journal)
 
     %{run | journal: journal, plan: plan}
   end
@@ -301,7 +302,8 @@ defmodule Workstation.Pipeline do
 
   # The pending attempt record lands BEFORE the effects fold: a crashed apply
   # must leave a recoverable anchor, and the record already carries every
-  # target the fold may touch.
+  # target the fold may touch — entries, downloads and the git retirements
+  # the plan activated against the journal.
   defp anchor(%Workstation.Pipeline.Run{} = run) do
     plan = run.plan
 
@@ -310,7 +312,9 @@ defmodule Workstation.Pipeline do
       "at" => System.system_time(:second),
       "pid" => :os.getpid(),
       "entries" => length(plan.entries),
-      "targets" => Enum.map(plan.entries, & &1.target) ++ Enum.map(plan.downloads, & &1.target)
+      "targets" =>
+        Enum.map(plan.entries, & &1.target) ++
+          Enum.map(plan.downloads, & &1.target) ++ Enum.map(plan.git_retirements, & &1.target)
     })
 
     run

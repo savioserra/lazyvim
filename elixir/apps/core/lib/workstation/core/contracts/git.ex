@@ -25,6 +25,17 @@ defmodule Workstation.Core.Contracts.Git do
   only, the commit must be a 40-hex lowercase sha, the target is a relative
   literal path that never touches engine-private state, and one checkout
   target may have only one owner.
+
+  Convergence is the kind's law on BOTH edges: a composed pin clones, and a
+  RECORDED clone whose recipe was dropped retires. `activate_retirements/2`
+  derives the retirement candidates at the apply-mode composition boundary
+  (journal-driven, like `Workstation.Core.Source.activate_removals/3` — the
+  pure `plan/1` composes no journal, so a replay stays a function of its
+  input bytes): a journal target record typed `git` whose target the pin
+  inventory no longer names. A candidate must still carry the full
+  git-shaped claim (url, 40-hex commit, owner, re-derivable source
+  fingerprint) and must not overlap a still-declared pin — anything less is
+  journal corruption surfaced at plan time, never a silent skip.
   """
 
   @behaviour Workstation.Core.Contracts.Provider
@@ -133,6 +144,78 @@ defmodule Workstation.Core.Contracts.Git do
     {record, Enum.map(pins, &Map.put(&1, :git_pin, true))}
   end
 
+  @doc """
+  Activate the journal-driven retirement candidates on one composed plan:
+  every journal target record typed `git` whose target the plan's pin
+  inventory no longer names. The pure `Workstation.Core.Source.plan/1`
+  probes no journal, so this runs at the one production composition boundary
+  (`Workstation.Pipeline` apply-mode compose), where the journal record the
+  plan was built against is readable — the same seam that activates declared
+  removals. A nil journal (fresh home, golden replay) retires nothing.
+
+  Fail-closed on the record, not silent: a `git`-typed record that lost any
+  part of its claim (url, 40-hex commit, owner, source fingerprint that no
+  longer re-derives from the recorded triple) raises — a half-decoded record
+  must never arm a deletion. The https posture itself is the recipe
+  constructor's law (declared pins only); a recorded candidate is proven by
+  the fingerprint re-derivation, which any tampered field breaks. A
+  candidate whose target overlaps a still-declared pin (either direction)
+  raises too: retirement never deletes through a declared checkout.
+  """
+  @spec activate_retirements(Workstation.Core.Source.t(), map() | nil) ::
+          Workstation.Core.Source.t()
+  def activate_retirements(%Workstation.Core.Source{} = plan, journal) do
+    recorded = (is_map(journal) && Map.get(journal, "targets")) || %{}
+    pinned = MapSet.new(pins(plan), & &1.target)
+
+    candidates =
+      recorded
+      |> Enum.filter(fn {_target, record} -> is_map(record) && Map.get(record, "type") == "git" end)
+      |> Enum.reject(fn {target, _record} -> MapSet.member?(pinned, target) end)
+      |> Enum.map(fn {target, record} -> retirement_candidate(target, record, pinned) end)
+
+    %{plan | git_retirements: candidates}
+  end
+
+  defp pins(plan), do: plan.profile |> List.wrap() |> Enum.filter(&Map.get(&1, :git_pin))
+
+  defp retirement_candidate(target, record, pinned) do
+    url = claim_field(record, "url", target)
+    commit = claim_field(record, "commit", target)
+    owner = claim_field(record, "owner", target)
+    source_fingerprint = claim_field(record, "source_fingerprint", target)
+
+    validate_target(target)
+    validate_commit(commit)
+    # The recorded url is inert provenance — retirement never dereferences
+    # it — and the source-fingerprint re-derivation below is the strictly
+    # stronger claim check: any tampered field breaks it.
+
+    source_fingerprint == pin_fingerprint(url, commit, target) ||
+      raise(ArgumentError,
+        "git retirement of #{target} refused: the journal record's source fingerprint does not re-derive " <>
+          "from the recorded pin; the record is not a provable clone claim"
+      )
+
+    Enum.each(pinned, fn pin_target ->
+      not is_within(target, pin_target) and not is_within(pin_target, target) ||
+        raise(ArgumentError,
+          "git retirement of #{target} refused: the pin inventory still owns #{pin_target} at the same path; " <>
+            "retirement never deletes through a declared checkout"
+        )
+    end)
+
+    %{target: target, url: url, commit: commit, owner: owner, source_fingerprint: source_fingerprint}
+  end
+
+  defp claim_field(record, key, target) do
+    value = Map.get(record, key)
+    is_binary(value) and value != "" ||
+      raise(ArgumentError, "git retirement of #{target} refused: the journal record has no #{key}; " <>
+             "a git-typed record without its claim is corruption, not provenance")
+    value
+  end
+
   # --- validation ---
 
   defp field(attrs, key) do
@@ -193,6 +276,17 @@ defmodule Workstation.Core.Contracts.Git.Effects do
   ownership record (type + commit — a checkout's bytes move upstream, the
   pin is the owned identity).
 
+  Retirement is the kind's convergence edge (`Git.activate_retirements/2`
+  derives the candidates): a `:retire` effect removes a RECORDED clone whose
+  recipe the plan dropped, guarded exactly like a chezmoi removal — the
+  recorded identity must still match the live checkout (a directory, HEAD at
+  the recorded pin, clean tree) before anything is deleted; on drift the
+  effect fails closed naming the divergence (moved HEAD, dirty tree,
+  non-checkout), never a silent destructive adoption. An absent target is
+  already retired — the idempotent arm. The retire claim is absence: the
+  effect verifies the checkout is gone, records nothing, and the next
+  applied journal drops the target record.
+
   Clones are shallow-safe: `git init` + `git fetch --depth 1 origin <sha>`,
   falling back to one unshallowed fetch of the pinned commit when the
   remote refuses shallow SHA fetches; the checkout is a detached HEAD
@@ -213,38 +307,63 @@ defmodule Workstation.Core.Contracts.Git.Effects do
   def validate_spec(spec), do: Workstation.Core.Contracts.Git.validate_spec(spec)
 
   @doc """
-  The plan's clone effects: one typed effect per composed pin, derived from
-  the provider's domain view carried by the plan (the capability profile
-  entries marked `git_pin`). Per-target phase — every clone runs before the
-  staged-generation apply effect.
+  The plan's clone and retirement effects: one typed effect per composed pin
+  (derived from the provider's domain view carried by the plan — the
+  capability profile entries marked `git_pin`) and one typed effect per
+  activated retirement (the journal-driven candidates the composition
+  boundary derived). Per-target phase — every clone and retirement runs
+  before the staged-generation apply effect.
   """
   @impl Workstation.Core.Contracts.Contract
   @spec plan_effect(term(), map()) :: [map()]
   def plan_effect(plan, _ctx) do
-    plan.profile
-    |> List.wrap()
-    |> Enum.filter(&Map.get(&1, :git_pin))
-    |> Enum.map(fn pin ->
-      %{
-        contract: id(),
-        kind: :clone,
-        phase: :target,
-        owner: pin.owner,
-        target: pin.target,
-        url: pin.url,
-        commit: pin.commit,
-        fingerprint: pin.fingerprint
-      }
-    end)
+    clone_effects =
+      plan.profile
+      |> List.wrap()
+      |> Enum.filter(&Map.get(&1, :git_pin))
+      |> Enum.map(fn pin ->
+        %{
+          contract: id(),
+          kind: :clone,
+          phase: :target,
+          owner: pin.owner,
+          target: pin.target,
+          url: pin.url,
+          commit: pin.commit,
+          fingerprint: pin.fingerprint
+        }
+      end)
+
+    retire_effects =
+      plan.git_retirements
+      |> List.wrap()
+      |> Enum.map(fn retirement ->
+        %{
+          contract: id(),
+          kind: :retire,
+          phase: :target,
+          owner: retirement.owner,
+          target: retirement.target,
+          url: retirement.url,
+          commit: retirement.commit
+        }
+      end)
+
+    clone_effects ++ retire_effects
   end
 
   @doc """
-  Idempotent pinned clone at the apply boundary. The git executable is
-  resolved from PATH (fail-closed when absent — install git or run
-  bootstrap).
+  Idempotent pinned clone at the apply boundary, or the guarded retirement
+  of a dropped recipe's recorded clone. The git executable is resolved from
+  PATH (fail-closed when absent — install git or run bootstrap).
   """
   @impl Workstation.Core.Contracts.Contract
   @spec run_effect(map(), map()) :: :ok
+  def run_effect(%{kind: :retire} = effect, ctx) do
+    git = git_executable!()
+    retire(git, ctx.home, effect)
+  end
+
   def run_effect(effect, ctx) do
     git = git_executable!()
     home = ctx.home
@@ -307,12 +426,22 @@ defmodule Workstation.Core.Contracts.Git.Effects do
   def verify_record(_record, _ctx), do: :unclaimed
 
   @doc """
-  The applied-target ownership claim for one clone: the pin verify against
+  The applied-target ownership claim for one effect: the pin verify against
   the ACTUAL checkout — HEAD must carry the pinned commit or the claim
-  raises instead of recording.
+  raises instead of recording. A retirement's claim is ABSENCE: the checkout
+  must be gone (an effect that did not produce exactly its declared outcome
+  raises instead of recording), and the empty map records nothing — the next
+  applied journal drops the target record.
   """
   @impl Workstation.Core.Contracts.Contract
   @spec fingerprint(map(), map()) :: map()
+  def fingerprint(%{kind: :retire} = effect, ctx) do
+    Workstation.Core.EngineState.lstat(Path.join(ctx.home, effect.target)) &&
+      raise(ArgumentError, "git retirement of #{effect.target} did not remove the checkout")
+
+    %{}
+  end
+
   def fingerprint(effect, ctx) do
     directory = Path.join(ctx.home, effect.target)
 
@@ -339,6 +468,51 @@ defmodule Workstation.Core.Contracts.Git.Effects do
   end
 
   # --- clone mechanics (shallow-safe, fail-closed) ---
+
+  # The retirement guard mirrors the chezmoi removal precondition
+  # (Workstation.Core.Preconditions.check_removal/3): the recorded identity
+  # must still match the live target before anything is deleted. Drift
+  # (moved HEAD, dirty tree, non-checkout, wrong type) refuses with the
+  # divergence named — the checkout stays on disk for the operator to
+  # resolve, never silently deleted. An absent target is already retired.
+  defp retire(git, home, effect) do
+    directory = Path.join(home, effect.target)
+
+    case Workstation.Core.EngineState.lstat(directory) do
+      nil ->
+        :ok
+
+      %{type: "directory"} ->
+        head = rev_parse(git, home, directory)
+
+        cond do
+          head == nil ->
+            raise ArgumentError,
+                  "git retirement of #{effect.target} refused: it exists and is not a git checkout " <>
+                    "(recorded pin #{effect.commit} unverifiable); inspect it and remove it explicitly"
+
+          head != effect.commit ->
+            raise ArgumentError,
+                  "git retirement of #{effect.target} refused: HEAD is at #{head}, but the recorded pin is " <>
+                    "#{effect.commit}; the checkout drifted from its record, resolve it explicitly"
+
+          true ->
+            dirty = status_porcelain(git, home, directory)
+
+            dirty == [] ||
+              raise ArgumentError,
+                    "git retirement of #{effect.target} refused: the checkout carries local changes " <>
+                      "(#{Enum.join(dirty, "; ")}); commit or discard them explicitly"
+
+            File.rm_rf!(directory)
+            :ok
+        end
+
+      %{type: other} ->
+        raise ArgumentError,
+              "git retirement of #{effect.target} refused: it exists as #{other}, not the recorded checkout"
+    end
+  end
 
   defp clone(git, home, directory, effect) do
     File.mkdir_p!(Path.dirname(directory))
@@ -376,6 +550,17 @@ defmodule Workstation.Core.Contracts.Git.Effects do
     case System.cmd(git, ["-C", directory, "rev-parse", "HEAD"], env: git_env(home), stderr_to_stdout: false) do
       {out, 0} -> String.trim_trailing(out)
       {_out, _code} -> nil
+    end
+  end
+
+  # The clean-tree arm of the retirement guard: `status --porcelain` names
+  # every staged, modified or untracked path (ignored files stay ignored —
+  # the standard clean-tree definition), so a checkout the operator touched
+  # can never be retired behind their back.
+  defp status_porcelain(git, home, directory) do
+    case System.cmd(git, ["-C", directory, "status", "--porcelain"], env: git_env(home), stderr_to_stdout: false) do
+      {out, 0} -> out |> String.split("\n", trim: true) |> Enum.take(3)
+      {_out, _code} -> ["status unreadable"]
     end
   end
 
