@@ -30,7 +30,7 @@ conflict-aware through the journal, never a blind replay.
   """
   @spec applied(String.t()) :: map() | nil
   def applied(state_root) do
-    case verify_journal_tree() do
+    case verify_journal_tree(state_root) do
       :ok ->
         case EngineState.read_json(Path.join([state_root, "journal", "applied.json"])) do
           {:ok, record} when is_map(record) -> record
@@ -52,7 +52,7 @@ conflict-aware through the journal, never a blind replay.
   def pending(state_root) do
     # A missing journal root answers "no pending attempts" (the write path
     # creates it on first write); a violated guard must still raise.
-    case verify_journal_tree() do
+    case verify_journal_tree(state_root) do
       :absent ->
         []
 
@@ -95,9 +95,29 @@ conflict-aware through the journal, never a blind replay.
   # ownership provenance feeding preconditions and changeset baselines.
   # `:absent` (no journal yet, nothing ever applied) is the callers' "empty"
   # answer, never a mutation: this side never creates the directory.
-  @spec verify_journal_tree() :: :ok | :absent
-  defp verify_journal_tree do
-    EngineState.verify_tree!(EngineState.home(), EngineState.state_components() ++ ["journal"], "journal root")
+  #
+  # The guard anchors on the STATE ROOT ARGUMENT, not the ambient
+  # `WORKSTATION_HOME`: a reader keyed by `state_root` must be a function of
+  # that root. (The env anchor made the answer depend on whichever home the
+  # process environment named — invisible in the pinned-home daemon, and a
+  # read race under any caller whose environment is not the read's subject,
+  # e.g. the async test battery, where the read could answer another home's
+  # `:absent`.) The walked chain is unchanged: the home recovered from the
+  # state root through the fixed state-component suffix, then the same
+  # no-follow components down to `journal`.
+  @spec verify_journal_tree(String.t()) :: :ok | :absent
+  defp verify_journal_tree(state_root) do
+    home = home_of_state_root(state_root)
+
+    EngineState.verify_tree!(home, EngineState.state_components() ++ ["journal"], "journal root")
+  end
+
+  # `<home>/<state_components...>` minus its fixed suffix recovers the home
+  # anchor. A root without the suffix walks from wherever the dirname chain
+  # lands, which the guarded walk then answers :missing → :absent — the
+  # readers' empty answer, never a guess about some other tree.
+  defp home_of_state_root(state_root) do
+    Enum.reduce(1..length(EngineState.state_components()), state_root, fn _, acc -> Path.dirname(acc) end)
   end
 
   @doc "Fingerprint one owned target (type, mode, digest/link); `nil` when absent or unsupported."
