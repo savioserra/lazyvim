@@ -48,6 +48,14 @@ defmodule Workstation.Core.Contracts.Download do
 
   @platform_tags ~w(linux_x86_64 darwin_arm64)
 
+  # The redirect chain the default fetch follows itself, one TLS session per
+  # hop: inets' autoredirect reuses a single flat ssl option set across hops,
+  # which is exactly how a GitHub release fetch ends up TLS-ing to
+  # release-assets.githubusercontent.com with github.com's identity.
+  @max_redirects 5
+  @redirect_statuses [301, 302, 303, 307, 308]
+  @transient_connect_errors [:closed, :timeout, :econnreset]
+
   @doc "The wire provider id for pinned-artifact contributions."
   @spec provider_id() :: String.t()
   def provider_id, do: "download"
@@ -381,26 +389,101 @@ defmodule Workstation.Core.Contracts.Download do
     raise ArgumentError, "download fetch for #{target} returned non-binary: #{inspect(other)}"
   end
 
-  @doc "The default fetch: one HTTPS GET returning the response body."
+  @doc """
+  The default fetch: one HTTPS GET returning the response body, with the
+  redirect chain followed hop by hop.
+
+  Every hop gets its own TLS session options: `server_name_indication` and
+  the hostname-check reference id must name the host the connection actually
+  talks to (a GitHub release pin redirects to a different host, e.g.
+  `release-assets.githubusercontent.com`), and the peer cert is verified
+  with `public_key.pkix_verify_hostname_match_fun(:https)` so single-label
+  wildcard certs (`*.githubusercontent.com`) match per RFC 6125 — ssl's
+  default hostname check is exact-match and fails such chains with
+  `hostname_check_failed`. inets' own autoredirect carries one flat ssl
+  option set across hops, so the fetch owns the chain: at most
+  #{@max_redirects} redirects, never downgrading to plain http. The pinned
+  sha256 of the FINAL body is verified by `install/3` exactly as before.
+  """
   @spec http_fetch(String.t()) :: binary()
   def http_fetch(url) do
     {:ok, _} = Application.ensure_all_started(:inets)
     {:ok, _} = Application.ensure_all_started(:ssl)
 
+    fetch_hop(url, cacerts(), 0)
+  end
+
+  defp fetch_hop(url, cacerts, hop, retry \\ true)
+
+  defp fetch_hop(url, cacerts, hop, retry) when hop <= @max_redirects do
     request = {String.to_charlist(url), []}
-    http_options = [ssl: [verify: :verify_peer, cacerts: cacerts(), depth: 3]]
+
+    http_options = [
+      ssl: [
+        verify: :verify_peer,
+        cacerts: cacerts,
+        depth: 3,
+        server_name_indication: connected_host(url),
+        customize_hostname_check: [match_fun: hostname_match_fun()]
+      ],
+      autoredirect: false
+    ]
 
     case :httpc.request(:get, request, http_options, body_format: :binary) do
-      {:ok, {{_version, 200, _reason}, _headers, body}} -> body
-      {:ok, {{_version, status, reason}, _headers, _body}} -> raise ArgumentError, "download fetch for #{url} failed: HTTP #{status} #{reason}"
-      {:error, reason} -> raise ArgumentError, "download fetch for #{url} failed: #{inspect(reason)}"
+      {:ok, {{_version, 200, _reason}, _headers, body}} ->
+        body
+
+      {:ok, {{_version, status, _reason}, headers, _body}} when status in @redirect_statuses ->
+        fetch_hop(redirect_location(headers, url), cacerts, hop + 1)
+
+      {:ok, {{_version, status, reason}, _headers, _body}} ->
+        raise ArgumentError, "download fetch for #{url} failed: HTTP #{status} #{reason}"
+
+      {:error, reason} when retry and reason in @transient_connect_errors ->
+        # inets pools connections; a server-side close can race the next
+        # hop's request on a just-closed pooled socket. One retry of the
+        # hop absorbs that transport race — the pinned sha256 of the FINAL
+        # body stays the real gate.
+        fetch_hop(url, cacerts, hop, false)
+
+      {:error, reason} ->
+        raise ArgumentError, "download fetch for #{url} failed: #{inspect(reason)}"
     end
+  end
+
+  defp fetch_hop(url, _cacerts, _hop, _retry),
+    do: raise(ArgumentError, "download fetch for #{url} failed: exceeded #{@max_redirects} redirects")
+
+  # The SNI value and the hostname reference id are the CONNECTED host's
+  # name — never a pre-resolved address or a previous hop's identity.
+  defp connected_host(url) do
+    case URI.parse(url).host do
+      host when is_binary(host) and host != "" -> String.to_charlist(host)
+      _ -> raise ArgumentError, "download fetch for #{url} failed: url has no hostname"
+    end
+  end
+
+  defp redirect_location(headers, url) do
+    location =
+      Enum.find_value(headers, fn {name, value} ->
+        String.downcase(to_string(name)) == "location" && to_string(value)
+      end)
+
+    location || raise ArgumentError, "download fetch for #{url} failed: redirect without a location"
+
+    target = url |> URI.parse() |> URI.merge(location) |> URI.to_string()
+
+    String.starts_with?(target, "https://") ||
+      raise ArgumentError, "download fetch for #{url} refuses non-https redirect: #{target}"
+
+    target
   end
 
   # Resolved at runtime through apply/3: the compiler has no compile-time
   # view of the Erlang distribution's public_key app, and the call stays
   # fail-closed -- a missing trust store raises, it never disables checks.
   defp cacerts, do: apply(:public_key, :cacerts_get, [])
+  defp hostname_match_fun, do: apply(:public_key, :pkix_verify_hostname_match_fun, [:https])
 
   # --- validation ---
 
