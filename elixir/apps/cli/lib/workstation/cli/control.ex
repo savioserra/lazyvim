@@ -16,10 +16,13 @@ defmodule Workstation.CLI.Control do
 
   alias Workstation.CLI.DaemonClient
 
-  # The daemon halts ~250ms after its `daemon.stop` ack; the halt budget
-  # covers ordinary exit jitter plus slow flushes. SIGTERM then SIGKILL are
-  # the escalation for a wedged exit — bounded, never an unbounded wait.
-  @halt_confirm_ms 5_000
+  # The daemon's graceful stop drains in-flight ops (up to its
+  # `:drain_timeout_ms`, default 30s) after the ~250ms reply flush, removes
+  # the socket node, then halts — so the halt-confirmation budget covers the
+  # drain plus ordinary exit jitter. SIGTERM then SIGKILL remain the
+  # escalation for a WEDGED exit, never for a legitimate drain — the
+  # pre-replace path (`Workstation.CLI.PreReplace`) has no escalation at all.
+  @halt_confirm_ms 35_000
   @term_confirm_ms 3_000
   @kill_confirm_ms 2_000
   @poll_ms 100

@@ -7,7 +7,11 @@ defmodule Workstation.Daemon.Capabilities.Control do
   gate already proved the caller) asks the daemon to stop itself. The stop
   is scheduled through `Workstation.Daemon.Shutdown` AFTER this op's reply
   flushes, so the client receives its `ok` and then observes the socket
-  close. Authentication is the daemon's own peercred check; the op adds
+  close. The scheduled stop is the GRACEFUL sequence — bounded drain of
+  in-flight op tasks (their apply locks release by settling), then the
+  socket node's removal, then the halt — which is the contract the
+  lifecycle verbs' pre-replace stop (`Workstation.CLI.PreReplace`) waits
+  on. Authentication is the daemon's own peercred check; the op adds
   nothing to it.
   """
 

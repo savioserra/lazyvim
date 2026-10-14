@@ -51,6 +51,7 @@ defmodule Workstation.CLI.Router do
   alias Workstation.CLI.TUI
   alias Workstation.CLI.TUI.{Apply, Update}
   alias Workstation.CLI.Control
+  alias Workstation.CLI.PreReplace
   alias Workstation.Core.CanonicalJSON
   alias Workstation.Daemon.Boot
 
@@ -354,7 +355,29 @@ defmodule Workstation.CLI.Router do
     end
   end
 
-  defp dispatch(command, result, _mode) when command in [:bootstrap, :sync, :verify, :pull] do
+  # `bootstrap` (and every verb that may replace the installed release —
+  # `apply`, `update` below) asks a LIVE daemon to exit gracefully BEFORE
+  # any work is dispatched: the daemon runs the installed release in memory,
+  # and a replacement under a surviving beam would leave stale code serving.
+  # The refusal is fail-closed (never killed); the verb's own first call
+  # re-spawns a fresh daemon on demand from the current release.
+  defp dispatch(:bootstrap, result, _mode) do
+    home = resolve_home(result)
+    pre_replace_stop(home)
+
+    case DaemonClient.call("bootstrap.run", %{}, client_opts(result, @lifecycle_timeout_ms)) do
+      {:ok, record} ->
+        emit_record(record)
+
+      {:error, {tag, message}} when is_atom(tag) ->
+        fail(4, "error: #{tag}: #{message}")
+
+      {:error, code, message} ->
+        fail(lifecycle_exit(code), "error: #{code}: #{message}")
+    end
+  end
+
+  defp dispatch(command, result, _mode) when command in [:sync, :verify, :pull] do
     case DaemonClient.call(lifecycle_op(command), %{}, client_opts(result, @lifecycle_timeout_ms)) do
       {:ok, record} ->
         emit_record(record)
@@ -417,11 +440,15 @@ defmodule Workstation.CLI.Router do
     # unrelated engine error discovered while planning.
     cond do
       result.flags[:headless] ->
+        pre_replace_stop(home)
+
         with {:ok, plan} <- evaluate(:plan, home, result) do
           Plain.run(:apply, destination: home, plan: plan)
         end
 
       usable_terminal?() ->
+        pre_replace_stop(home)
+
         with {:ok, plan} <- evaluate(:plan, home, result) do
           run_tui(Apply, destination: home, plan: plan)
         end
@@ -442,9 +469,15 @@ defmodule Workstation.CLI.Router do
         fail(2, "error: --resume-from is an internal handoff flag and requires --headless")
 
       result.flags[:headless] ->
+        # A --resume-from child re-execing after a refresh handoff composes
+        # with the daemon's own self-stop: the stop is idempotent daemon-side
+        # (the pending-stop marker), so a second request is a no-op and the
+        # bounded wait simply observes the same shutdown.
+        pre_replace_stop(home)
         Plain.run(:update, destination: home, resume_from: result.options[:resume_from])
 
       usable_terminal?() ->
+        pre_replace_stop(home)
         run_tui(Update, destination: home)
 
       true ->
@@ -587,6 +620,19 @@ defmodule Workstation.CLI.Router do
   defp read_op(:diff), do: "diff.run"
 
   defp lifecycle_op(command), do: "#{command}.run"
+
+  # The graceful pre-replace stop for the verbs that may replace the
+  # installed release (bootstrap/apply/update): a live daemon drains, removes
+  # its socket and halts; a refusal or a wedged exit FAILS CLOSED here (exit
+  # 4, the engine-failure code) — the verb never proceeds to replace the
+  # release under a surviving stale daemon, and never signals the process.
+  @spec pre_replace_stop(String.t()) :: :ok
+  defp pre_replace_stop(home) do
+    case PreReplace.stop_daemon(home: home) do
+      :ok -> :ok
+      {:error, message} -> fail(4, "error: pre-replace daemon stop failed: #{message}")
+    end
+  end
 
   # Client-side daemon failures use the operator vocabulary directly
   # ("daemon_unavailable", "daemon_died", …); `locked` keeps its

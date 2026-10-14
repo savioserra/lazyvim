@@ -6,6 +6,7 @@ elixir/apps/cli/lib/workstation/cli/core.ex:Workstation.CLI.Core:no-layer
 elixir/apps/cli/lib/workstation/cli/daemon_client.ex:Workstation.CLI.DaemonClient:no-layer
 elixir/apps/cli/lib/workstation/cli/output.ex:Workstation.CLI.Output:no-layer
 elixir/apps/cli/lib/workstation/cli/plain.ex:Workstation.CLI.Plain:no-layer
+elixir/apps/cli/lib/workstation/cli/pre_replace.ex:Workstation.CLI.PreReplace:no-layer
 elixir/apps/cli/lib/workstation/cli/render.ex:Workstation.CLI.Render:no-layer
 elixir/apps/cli/lib/workstation/cli/router.ex:Workstation.CLI.Router:no-layer
 elixir/apps/cli/lib/workstation/cli/tui.ex:Workstation.CLI.TUI:no-layer

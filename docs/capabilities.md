@@ -247,7 +247,27 @@ client's ensure-daemon spawns a daemon detached from the installed release
 when the socket is absent or dead (bounded handshake; `workstation daemon
 stop` retires it manually); there is no in-process fallback — a missing
 daemon is an operator error, because the apply lock must have exactly one
-owner. Long ops stream structured events (`run.started`/`step.started`/
+owner.
+
+The verbs that may replace the installed release (`apply`, `update`,
+`bootstrap`) first ask a LIVE daemon to exit gracefully
+(`Workstation.CLI.PreReplace`): the daemon runs the installed release in
+memory, so a replacement under a surviving beam would keep serving stale
+code. The daemon's `daemon.stop` is the graceful contract — after the
+reply flushes it DRAINS its in-flight op tasks (bounded; each settling op
+releases its own apply lock), removes the socket node (no-follow
+owned-socket proof), then halts 0 — and the client waits, bounded (~10s),
+for BOTH the socket node's removal and the beam's actual exit before
+proceeding; the verb's own first call then spawns the fresh daemon on
+demand from the current release. A refusal (including a daemon too old to
+know `daemon.stop`) or a wedged exit FAILS CLOSED with an explicit error —
+the verb never replaces the release under a surviving stale daemon and
+never signals the process; killing is only ever the MANUAL stop verb's
+escalation ladder. The pre-replace stop composes with the release-refresh
+handoff: both share the daemon's pending-stop marker, so a second request
+while a stop is pending is a daemon-side no-op.
+
+Long ops stream structured events (`run.started`/`step.started`/
 `step.done`/`run.log`/`run.finished`, stamped with an `op_ref`) that both
 the headless lines and the TUI rows render; `op.abort` cancels the running
 op at its NEXT STEP BOUNDARY (never mid-step — a boundary is the only
@@ -291,7 +311,10 @@ captures the WRITER's identity as of before the installer re-stamps the
 release (`.built-from` stamp; an in-place refresh reuses the same release
 root, so identity can never be the path), writes the handoff note under
 the destination state root (writer stamp + the REMAINING steps), answers
-the op with the `handoff` outcome, and stops itself. The CLIENT observes
+the op with the `handoff` outcome, and stops itself — the GRACEFUL stop
+(drain, socket-node removal, exit 0; see the verb table narrative above),
+which the client's pre-replace gate composes with instead of fighting. The
+CLIENT observes
 the disconnect, re-spawns the daemon from the REFRESHED release
 (ensure-daemon, bounded handshake), and re-sends the remaining sub-chain —
 the fresh daemon consumes the note, resumes the remaining steps under the

@@ -229,10 +229,20 @@ defmodule Workstation.Daemon.Listener do
   # mode bits — otherwise a regular file planted at the socket path would pass
   # the ownership check and be deleted on takeover. The daemon only ever
   # unlinks what it can PROVE is its own dead socket node.
+  #
+  # Public because the graceful stop (`Workstation.Daemon.Shutdown`) removes
+  # the socket node through the SAME proof — one spelling of "this daemon may
+  # unlink this path", shared by the takeover and the shutdown.
   @s_ifmt 0o170000
   @s_ifsock 0o140000
 
-  defp owned_socket?(path) do
+  @doc """
+  Whether `path` is, no-follow, a socket owned by this uid — the ONLY proof
+  that lets the daemon unlink the node: the takeover's stale-socket removal
+  and the graceful stop's socket removal both go through this check.
+  """
+  @spec owned_socket?(String.t()) :: boolean()
+  def owned_socket?(path) do
     case File.lstat(path) do
       {:ok, stat} ->
         :erlang.band(stat.mode, @s_ifmt) == @s_ifsock and stat.uid == EngineState.uid()
