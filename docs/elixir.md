@@ -454,7 +454,9 @@ dead and are unlinked (after an owner/type re-check) and rebound.
 Wire format: 4-byte big-endian unsigned length + UTF-8 JSON;
 `{v:1,id,op,params}` answered by `{id,ok:true,result}` or
 `{id,ok:false,error:{code,message}}`; hello negotiates
-`workstation.daemon/1` (mismatch closes); caps — max request 1 MiB, max
+`workstation.daemon/1` (mismatch closes) and advertises the socket-auth
+proof of the running generation (`"proof": "peercred" | "dir-owner"`);
+caps — max request 1 MiB, max
 response 16 MiB, 5 s frame-completion timeout, 300 s inter-frame idle
 budget, 16-session ceiling, JSON depth ≤ 32; Zoi schemas are strict
 (unknown fields/ops rejected). The served op set is assembled at compile time
@@ -518,10 +520,30 @@ socket option is typespec-declared but unimplemented in the pinned OTP 28
 probe on the pinned toolchain returned `{:ok, <<0,0,0,0, 255,255,255,255,
 255,255,255,255>>}` (pid 0, uid/gid -1 sentinel) for a pre-connection socket,
 proving the option is live; real connections carry real creds and any peer
-whose decoded uid ≠ the socket owner's uid is refused fail-closed. Because
-auth is the daemon's only trust boundary, the listener verifies the
-capability at boot and exits `{:peercred_unavailable, why}` rather than
-serving unauthenticated.
+whose decoded uid ≠ the socket owner's uid is refused fail-closed.
+
+Platform-aware proof (2026-10-14 darwin ruling): the boot resolves the
+socket-owner proof ONCE (`Listener.resolve_proof/2`) and every handshake
+records the marker (`"proof": "peercred" | "dir-owner"`). Linux is
+byte-identical: the `SO_PEERCRED` sentinel decides, uid equality per
+connection. On darwin the Linux option answers `:eopnotsupp`, so the boot
+probes darwin's `LOCAL_PEERCRED` (`SOL_LOCAL` 0 / option 1, `struct xucred`
+— uid also the second native int32, no pid field) and prefers it when the
+probe proves it reachable; when it is not reachable without a NIF (the
+expected pre-connection answer is `:enotconn`, and the pinned OTP has no
+socketpair) the boot degrades EXPLICITLY to the dir-owner proof — the
+socket lives under the 0700 state root, so a peer that connected IS the
+owner uid and the per-connection check re-verifies the chain (0700 owned
+dir + owned socket, no-follow) at every accept. The degrade is never
+silent: the `why` is recorded in the proof, the marker rides the hello
+handshake, and the boot log names it. Only a BROKEN kernel proof on the
+primary (Linux) arm still fails closed with
+`{:peercred_unavailable, why}`; an unsupported option must never kill a
+darwin boot. The same ruling gives the stop path a platform-independent
+pid: `daemon.stop`'s wire result carries the daemon's own OS pid, which a
+Linux client ignores in favor of its `SO_PEERCRED` read (pid is the first
+ucred field) and a darwin/dir-owner client uses because xucred has no pid
+to offer.
 
 ## Update lifecycle (apps/core `Workstation.Core.Update.*`, apps/daemon `Workstation.Daemon.Lifecycle`)
 

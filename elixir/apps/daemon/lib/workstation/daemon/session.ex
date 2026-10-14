@@ -15,19 +15,23 @@ defmodule Workstation.Daemon.Session do
   under the protocol budgets, op dispatch, one in-flight op, and — the
   live-streaming half — progress-event forwarding while that op runs.
 
-  Authentication (app-level, never OTP distribution): the listener fetches
-  the peer credential ONCE at accept time through
-  `:socket.getopt_native(sock, {1, 17}, 12)` — Linux `SOL_SOCKET`/`SO_PEERCRED`
-  returning `struct ucred`. The named `:peercred` option is typespec-declared
-  but NOT implemented by the `:socket` NIF on the pinned OTP 28 (probed:
-  `prim_socket:supports(options)` reports `{{socket,peercred}, false}`), so the
-  documented native form is the only spelling that works. The struct decodes
-  as three native-int32 fields `{pid, uid, gid}` — the AUTH FIELD IS THE
-  SECOND one (`uid`); the first is the peer pid. The session refuses the
-  connection unless that uid equals the uid owning the socket file, re-checked
-  no-follow at session start (both checks failing closed on any error, short
-  buffer or decode failure — an unauthenticated daemon is worse than no
-  daemon, and on platforms without SO_PEERCRED every connection is refused).
+  Authentication (app-level, never OTP distribution): the listener authorizes
+  the connection ONCE at accept time through its boot-resolved socket proof
+  (`Workstation.Daemon.Listener.resolve_proof/2`) and hands this session the
+  peer uid — on Linux the kernel's `SO_PEERCRED` (read via
+  `:socket.getopt_native(sock, {1, 17}, 12)`; the named `:peercred` option is
+  typespec-declared but NOT implemented by the `:socket` NIF on the pinned
+  OTP 28, so the documented native form is the only spelling that works),
+  decoded as three native-int32 fields `{pid, uid, gid}` where the AUTH FIELD
+  IS THE SECOND one (`uid`); on darwin the mechanism is `LOCAL_PEERCRED`
+  (`struct xucred`, uid also the second field) or — when the kernel read is
+  not provable on the platform — the dir-owner proof, where the uid is the
+  socket owner's own uid because the 0700 state root already excludes every
+  other peer. The session refuses the connection unless that uid equals the
+  uid owning the socket file, re-checked no-follow at session start (both
+  checks failing closed on any error, short buffer or decode failure — an
+  unauthenticated daemon is worse than no daemon). Which proof the running
+  generation uses is advertised in the hello handshake's `proof` field.
 
   Structure: a small READER process owns the blocking `recv` calls and
   forwards `{:frame, body}` messages, so the session's main loop can

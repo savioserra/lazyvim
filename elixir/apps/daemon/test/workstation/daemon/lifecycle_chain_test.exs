@@ -15,7 +15,7 @@ defmodule Workstation.Daemon.LifecycleChainTest do
 
   use ExUnit.Case, async: false
 
-  alias Workstation.Core.{Catalog, Digest, EngineState, Graph, Journal, Source}
+  alias Workstation.Core.{ApplyLock, CanonicalJSON, Catalog, Digest, EngineState, Graph, Journal, Source}
   alias Workstation.Daemon.{ApplyOrchestrator, Lifecycle, Listener, Protocol}
 
   setup do
@@ -85,6 +85,78 @@ defmodule Workstation.Daemon.LifecycleChainTest do
 
       # The orchestration serialized through the SAME lock; it is released.
       refute File.exists?(ApplyOrchestrator.lock_path(EngineState.state_root()))
+    end
+  end
+
+  # The 2026-10-14 aurora recovery: a killed beam (the pre-daemon.stop
+  # cross-generation stop gap) left `<state_root>/apply.lock` behind, and the
+  # next bootstrap had to be unblocked by a manual rm. The lock now carries a
+  # parseable holder pid; a holder provably dead on this host is taken over
+  # with an audit record, so the bootstrap-after-kill sequence recovers on
+  # the next run BY ITSELF.
+  describe "the stale-lock takeover (the bootstrap-after-kill recovery)" do
+    test "a killed holder's lock is taken over with an audit record and the op completes without a manual rm", %{
+      home: home
+    } do
+      state_root = EngineState.state_root()
+      :ok = EngineState.ensure_roots!(home)
+      lock = ApplyOrchestrator.lock_path(state_root)
+
+      # The kill: a real OS process, gone before the next run reads its pid —
+      # never a fabricated number, because the judge only accepts proof.
+      {out, 0} = System.cmd("sh", ["-c", "echo $$"])
+      dead = String.to_integer(String.trim(out))
+
+      File.write!(
+        lock,
+        CanonicalJSON.encode(%{
+          "owner" => "uid=1000 node=killed.host (pid #{dead})",
+          "pid" => dead,
+          "purpose" => "killed bootstrap.run",
+          "token" => "#Reference<0.1.2.3>"
+        })
+      )
+
+      ran = :atomics.new(1, signed: false)
+
+      assert {:ok, %{"step" => "bootstrap", "status" => "ok"} = record} =
+               Lifecycle.verb("bootstrap",
+                 home: home,
+                 bootstrap_run: fn _opts ->
+                   :atomics.put(ran, 1, 1)
+                   {:ok, %{"step" => "bootstrap", "status" => "ok"}}
+                 end,
+                 # The refresh's test seam (same shape as the handoff suite):
+                 # the sandbox anchors no buildable checkout, so the real
+                 # installer must never run while this op proves the lock.
+                 installer: fn _anchor, _home -> {"refresh skipped by test seam", 0} end
+               )
+
+      # The op RAN and the takeover's record says so.
+      assert :atomics.get(ran, 1) == 1
+      assert record["release_refreshed"] == true
+
+      # The takeover is on the record, and the lock is released once the op
+      # answers — the next run starts clean, no manual rm anywhere.
+      assert File.exists?(ApplyLock.audit_path(state_root))
+      refute File.exists?(lock)
+    end
+
+    test "a live holder still refuses the bootstrap with the recorded owner, never a steal" do
+      {:ok, token, lock} = ApplyOrchestrator.acquire("held by this test")
+
+      assert {:error, "locked", message} =
+               Lifecycle.verb("bootstrap",
+                 home: EngineState.home(),
+                 engine_root: EngineState.home(),
+                 bootstrap_run: fn _opts -> flunk("the op must not run under a live holder's lock") end
+               )
+
+      assert message == "apply lock held by uid=#{EngineState.uid()} node=#{inspect(node())} (pid #{:os.getpid() |> List.to_string()})"
+      assert File.exists?(lock)
+      refute File.exists?(ApplyLock.audit_path(EngineState.state_root()))
+
+      :ok = ApplyOrchestrator.release(token)
     end
   end
 

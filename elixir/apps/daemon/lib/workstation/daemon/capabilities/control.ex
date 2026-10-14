@@ -30,7 +30,15 @@ defmodule Workstation.Daemon.Capabilities.Control do
   @impl true
   def handle("daemon.stop", _params, _ctx) do
     :ok = Shutdown.stop_after("daemon.stop op")
-    {:ok, %{"stopping" => true}}
+
+    # The daemon's OWN OS pid rides the result. The client confirms the beam
+    # actually exits after the acknowledged stop, and its kernel peercred
+    # read has no pid to give on every platform: darwin's `struct xucred`
+    # carries uid/gid only, and a dir-owner-proof generation has no kernel
+    # read at all. The wire pid is the platform-independent source; a Linux
+    # client keeps preferring its own `SO_PEERCRED` read (pid is the FIRST
+    # ucred field) and never needs this field.
+    {:ok, %{"stopping" => true, "pid" => String.to_integer(System.pid())}}
   end
 
   @impl true

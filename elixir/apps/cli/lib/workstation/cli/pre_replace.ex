@@ -26,10 +26,12 @@ defmodule Workstation.CLI.PreReplace do
     on demand, from the current release;
   * the wait is bounded (`:wait_ms`, default #{@wait_ms |> div(1_000)}s) and
     polls TWO conditions: the socket node gone AND the daemon's beam OS
-    process dead (the peer pid from `SO_PEERCRED`, probed through the same
-    `:cli, :beam_alive` seam as `Workstation.CLI.Control` — the daemon's own
-    halt can wedge, and a socket-less-but-alive beam would make the next
-    ensure-spawn die on `:already_running`);
+    process dead (the peer pid from `SO_PEERCRED` where the platform
+    provides one, else the `daemon.stop` wire pid — see
+    `DaemonClient.daemon_pid/2`; probed through the same `:cli, :beam_alive`
+    seam as `Workstation.CLI.Control` — the daemon's own halt can wedge, and
+    a socket-less-but-alive beam would make the next ensure-spawn die on
+    `:already_running`);
   * on timeout or a refused stop, the verb FAILS CLOSED with an explicit
     error — this module never signals the process. Killing is the manual
     stop verb's escalation ladder (`Workstation.CLI.Control`), never the

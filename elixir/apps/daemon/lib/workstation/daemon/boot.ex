@@ -24,8 +24,10 @@ defmodule Workstation.Daemon.Boot do
   Start the daemon tree and park. Returns only on a start failure —
   `{:error, {:already_running, socket_path}}` when another daemon owns the
   socket (a live peer on the socket path, or an in-VM double boot),
-  `{:error, {:peercred_unavailable, why}}` when the platform cannot
-  authenticate peers.
+  `{:error, {:peercred_unavailable, why}}` when the platform's kernel
+  peer-credential proof is broken (not merely absent: a platform with no
+  such option — darwin — degrades to the recorded dir-owner proof instead,
+  see `Workstation.Daemon.Listener.resolve_proof/2`).
   """
   @spec run() :: :ok | {:error, term()}
   def run do

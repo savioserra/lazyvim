@@ -48,7 +48,9 @@ defmodule Workstation.Daemon.ProtocolTest do
 
   describe "hello handshake" do
     test "capabilities advertise the protocol, version, ops, domains and caps" do
-      caps = Protocol.capabilities()
+      # The marker is the listener's resolved proof, threaded verbatim; the
+      # registry is what passes the boot-resolved one in production.
+      caps = Protocol.capabilities("peercred")
 
       # The literal payload is the published wire contract; CapabilitiesTest
       # pins only its derivation — this pin is what breaks when the published
@@ -79,6 +81,10 @@ defmodule Workstation.Daemon.ProtocolTest do
 
       # Domains come from the capabilities that register them.
       assert caps["domains"] == ["theme"]
+      # The socket-auth proof marker rides every handshake (audit trail:
+      # "peercred" | "dir-owner" — which proof this generation runs).
+      assert caps["proof"] == "peercred"
+      assert Protocol.capabilities("dir-owner")["proof"] == "dir-owner"
       assert caps["caps"]["max_request_bytes"] == 1_048_576
       assert caps["caps"]["max_response_bytes"] == 16_777_216
       assert caps["caps"]["frame_timeout_ms"] == 5_000

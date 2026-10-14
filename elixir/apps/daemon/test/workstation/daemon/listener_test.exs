@@ -5,7 +5,7 @@ defmodule Workstation.Daemon.ListenerTest do
   # test in here is serial and never touches the real HOME (env override is
   # the engine's own contract: WORKSTATION_HOME wins over HOME).
   alias Workstation.Core.EngineState
-  alias Workstation.Daemon.{EventBus, Listener, Protocol, Sessions}
+  alias Workstation.Daemon.{CapabilityRegistry, EventBus, Listener, Protocol, Sessions}
 
   setup do
     home = Path.join(System.tmp_dir!(), "b6-daemon-test-#{System.unique_integer([:positive])}")
@@ -300,5 +300,140 @@ defmodule Workstation.Daemon.ListenerTest do
       assert :invalid = Listener.ucred_uid(<<1, 2, 3>>)
       assert :invalid = Listener.ucred_uid(<<-1::native-signed-integer-size(32), -1::native-signed-integer-size(32), -1::native-signed-integer-size(32)>>)
     end
+
+    test "xucred_uid/1 returns the SECOND field (struct xucred = version, uid, ...)" do
+      assert {:ok, 501} =
+               Listener.xucred_uid(
+                 <<0::native-unsigned-integer-size(32), 501::native-signed-integer-size(32),
+                   1::native-signed-integer-size(32), 0::unsigned-integer-size(32)>>
+               )
+
+      # Too short to carry version + uid, or a negative (sentinel) uid.
+      assert :invalid = Listener.xucred_uid(<<1, 2, 3>>)
+
+      assert :invalid =
+               Listener.xucred_uid(
+                 <<0::native-unsigned-integer-size(32), -1::native-signed-integer-size(32)>>
+               )
+    end
+  end
+
+  # --- platform proof resolution (the darwin degrade is explicit) -----------
+
+  describe "platform socket proof" do
+    test "resolve_proof/0 answers from the live platform" do
+      case :os.type() do
+        # Linux CI: the kernel sentinel proves SO_PEERCRED live — the proof,
+        # option spelling and flavor are byte-identical to the original ruling.
+        {:unix, :linux} ->
+          assert {:ok, %{mode: :peercred, native: {1, 17}, flavor: :ucred}} = Listener.resolve_proof()
+
+        # Darwin acceptance: a reachable LOCAL_PEERCRED is preferred; anything
+        # less degrades to the recorded dir-owner proof — never a boot failure.
+        _other ->
+          assert {:ok, %{mode: mode}} = Listener.resolve_proof()
+          assert mode in [:peercred, :dir_owner]
+      end
+    end
+
+    test "an unsupported SO_PEERCRED prefers the darwin xucred proof when it answers" do
+      linux = fn -> {:error, :eopnotsupp} end
+
+      darwin = fn ->
+        {:ok,
+         <<0::native-unsigned-integer-size(32), 501::native-signed-integer-size(32),
+           0::unsigned-integer-size(32)>>}
+      end
+
+      assert {:ok, %{mode: :peercred, native: {0, 1}, flavor: :xucred}} =
+               Listener.resolve_proof(linux, darwin)
+    end
+
+    test "an unprovable darwin read degrades EXPLICITLY to the recorded dir-owner proof" do
+      linux = fn -> {:error, :eopnotsupp} end
+      darwin = fn -> {:error, :enotconn} end
+
+      assert {:ok, %{mode: :dir_owner, why: {:peercred_unproven, :enotconn}}} =
+               Listener.resolve_proof(linux, darwin)
+
+      # The audit marker names the weaker proof — never a silent peercred claim.
+      assert Listener.proof_marker(%{mode: :dir_owner, why: {:peercred_unproven, :enotconn}}) ==
+               "dir-owner"
+    end
+
+    test "a malformed darwin xucred degrades to dir-owner with the recorded reason" do
+      linux = fn -> {:error, :eopnotsupp} end
+      darwin = fn -> {:ok, <<1, 2, 3>>} end
+
+      assert {:ok, %{mode: :dir_owner, why: {:peercred_unproven, :malformed_xucred}}} =
+               Listener.resolve_proof(linux, darwin)
+    end
+
+    test "a NON-unsupported failure on the primary (Linux) arm still fails closed" do
+      linux = fn -> {:error, :eperm} end
+      darwin = fn -> flunk("darwin probe must not run when Linux fails closed") end
+
+      assert {:error, :eperm} = Listener.resolve_proof(linux, darwin)
+    end
+
+    test "the default boot records its resolved proof marker in hello", %{path: path} do
+      boot_tree()
+
+      {:ok, proof} = Listener.resolve_proof()
+      expected_marker = Listener.proof_marker(proof)
+
+      sock = connect(path)
+      reply = roundtrip(sock, hello_request("proof-marker"))
+      assert %{"ok" => true, "result" => %{"proof" => ^expected_marker}} = reply
+      :socket.close(sock)
+    end
+  end
+
+  # --- dir-owner proof: the explicit degrade, exercised end to end -----------
+
+  @dir_owner_proof %{mode: :dir_owner, why: {:peercred_unproven, :forced_test}}
+
+  # The production tree's rest_for_one order with the proof FORCED to the
+  # degrade branch: the Linux CI box has no real LOCAL_PEERCRED to fall back
+  # from, so the forced proof is how the darwin branch gets exercised here.
+  defp boot_dir_owner_tree(home) do
+    start_supervised!({Listener, home: home, proof: @dir_owner_proof})
+    start_supervised!(Sessions)
+    start_supervised!(EventBus)
+    start_supervised!(CapabilityRegistry)
+    wait_for_file(Listener.socket_path())
+  end
+
+  test "a dir-owner generation serves same-uid peers and records the marker", %{home: home, path: path} do
+    boot_dir_owner_tree(home)
+
+    uid = EngineState.uid()
+    :ok = EventBus.subscribe(:session)
+
+    sock = connect(path)
+    assert %{"ok" => true, "result" => %{"proof" => "dir-owner"}} = roundtrip(sock, hello_request("dir-owner"))
+    :socket.close(sock)
+
+    # The deduced owner uid rides the same lifecycle event shape.
+    assert_receive {:daemon_event, :session, {:session_opened, ^uid}}
+  end
+
+  test "a broken ownership chain is refused under the dir-owner proof", %{home: home, path: path} do
+    boot_dir_owner_tree(home)
+
+    # The 0700 dir IS the boundary in this mode: widening it breaks the
+    # proof and the connection is refused at accept time (fail closed,
+    # never served — the chmod race can only ever lose connections).
+    File.chmod!(Path.dirname(path), 0o755)
+
+    sock = connect(path)
+    :ok = :socket.send(sock, Protocol.encode_frame(hello_request("tampered")))
+
+    # The refusal tears the connection down with the hello frame still
+    # unread — the kernel may answer the close with RST (econnreset) or a
+    # plain FIN (closed); both prove the same thing: no reply, no service.
+    assert {:error, reason} = :socket.recv(sock, 1, 2_000)
+    assert reason in [:closed, :econnreset]
+    :socket.close(sock)
   end
 end

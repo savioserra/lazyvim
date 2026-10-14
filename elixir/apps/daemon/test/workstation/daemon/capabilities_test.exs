@@ -34,7 +34,7 @@ defmodule Workstation.Daemon.CapabilitiesTest do
 
       expected = Enum.sort(["hello" | Capabilities.ops()])
       assert Protocol.ops() == expected
-      assert Protocol.capabilities()["ops"] == expected
+      assert Protocol.capabilities("peercred")["ops"] == expected
     end
 
     test "each op has exactly one owning capability and schema lookup routes to it" do
@@ -62,7 +62,7 @@ defmodule Workstation.Daemon.CapabilitiesTest do
       assert "theme" in Capabilities.domains()
       assert {:ok, Workstation.Daemon.Capabilities.Theme} = Capabilities.domain_owner("theme")
 
-      assert Protocol.capabilities()["domains"] == Capabilities.domains()
+      assert Protocol.capabilities("peercred")["domains"] == Capabilities.domains()
     end
 
     test "domain ownership is exclusive by construction (one owner per name)" do

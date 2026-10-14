@@ -176,6 +176,40 @@ defmodule Workstation.Daemon.ShutdownTest do
     assert EngineState.home() == home
   end
 
+  test "daemon.stop carries the daemon's own OS pid for the client's exit confirmation", %{
+    socket_path: socket_path
+  } do
+    # The wire pid is the platform-independent source for the CLI's stop
+    # ladder (darwin's xucred has no pid field; a dir-owner generation has
+    # no kernel read at all) — in-process the daemon IS this test VM. The
+    # halt is hooked (the test VM must survive); the reason is recorded in
+    # a persistent term because the hook fires in the op task's process,
+    # not the test's.
+    Application.put_env(:daemon, :shutdown_hook, fn _delay_ms, reason ->
+      :persistent_term.put({__MODULE__, :hook_reason}, reason)
+    end)
+
+    Shutdown.reset()
+    boot_tree()
+
+    sock = connect(socket_path)
+
+    hello =
+      Jason.encode!(%{"v" => 1, "id" => "p1", "op" => "hello", "params" => %{"protocol" => Protocol.protocol_name()}})
+
+    assert %{"ok" => true} = roundtrip(sock, hello)
+
+    stop = Jason.encode!(%{"v" => 1, "id" => "p2", "op" => "daemon.stop", "params" => %{}})
+    assert %{"ok" => true, "result" => %{"stopping" => true, "pid" => pid}} = roundtrip(sock, stop)
+    assert is_integer(pid) and pid > 0
+    # The daemon tree runs in this VM; the wire pid is its OS pid as an
+    # integer (System.pid/0 spells it as a string).
+    assert pid == String.to_integer(System.pid())
+    assert :persistent_term.get({__MODULE__, :hook_reason}, nil) == "daemon.stop op"
+    :persistent_term.erase({__MODULE__, :hook_reason})
+    :ok = :socket.close(sock)
+  end
+
   test "the pending-stop marker stays idempotent across the graceful sequence" do
     Application.put_env(:daemon, :shutdown_hook, fn _delay_ms, _reason -> send(self(), {:hook, :fired}) end)
     Shutdown.reset()

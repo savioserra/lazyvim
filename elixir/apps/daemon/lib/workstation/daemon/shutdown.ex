@@ -29,8 +29,9 @@ defmodule Workstation.Daemon.Shutdown do
        drained stop never leaves the "apply lock not released cleanly"
        debris a kill leaves. A drain that outlives its budget logs and
        proceeds — the stop is never unbounded, and a lock left behind by an
-       interrupted op is fail-closed operator recovery (stale locks are
-       never stolen), named in the log.
+       interrupted op is fail-closed recovery: a holder provably dead on
+       this host is taken over (with an audit record) on the next run, a
+       live or pid-less lock still requires deliberate operator removal.
     2. REMOVE THE SOCKET — unlink the socket node after the no-follow
        owned-socket proof (`Workstation.Daemon.Listener.owned_socket?/1`).
        Existing sessions keep their established connections; new connects
@@ -129,8 +130,9 @@ defmodule Workstation.Daemon.Shutdown do
       monotonic_ms() >= deadline ->
         Logger.warning(
           "daemon stop: drain budget spent with op task(s) still in flight; stopping anyway — " <>
-            "an interrupted op may leave its apply lock in place (stale locks are never stolen; " <>
-            "recovery is deliberate operator removal)"
+            "an interrupted op may leave its apply lock in place (a holder provably dead on " <>
+            "this host is taken over with an audit record on the next run; a live or " <>
+            "pid-less lock still requires deliberate operator removal)"
         )
 
         :ok

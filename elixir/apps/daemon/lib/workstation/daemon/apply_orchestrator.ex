@@ -3,16 +3,20 @@ defmodule Workstation.Daemon.ApplyOrchestrator do
   Single orchestrated generation: the daemon-side serialization and lock
   primitive around apply-shaped work.
 
-  Lock semantics:
+  Lock semantics (the shared contract lives in `Workstation.Core.ApplyLock`):
 
   * the lock file is `<state_root>/apply.lock` — the SAME file the one-shot
-    apply takes, so a daemon orchestration and a one-shot apply can
-    never run concurrently against one target; mutual exclusion is a
-    filesystem fact, not a convention between two Elixir processes;
-  * the lock is created exclusively (`wx`, mode 0600); when it already
-    exists the recorded owner metadata is reported and the acquisition FAILS
-    CLOSED — stale locks are never stolen, recovery is always the operator
-    inspecting the recorded owner and removing the file deliberately;
+    era used, so a daemon orchestration and any other acquirer can never run
+    concurrently against one target; mutual exclusion is a filesystem fact,
+    not a convention between two Elixir processes;
+  * the lock is created exclusively (`wx`, mode 0600) carrying a parseable
+    holder record (owner line + pid); a LIVE holder is reported and the
+    acquisition FAILS CLOSED — the refusal names the recorded owner;
+  * a holder whose pid is PROVABLY DEAD on this host (a killed beam's
+    debris — the cross-generation stop gap) is taken over with an audit
+    record in the state root, so a bootstrap-after-kill recovers on the
+    next run without a manual rm; pid-less or foreign locks are never
+    judged and never stolen;
   * an unreadable or malformed lock body is reported as
     "unreadable or malformed lock" instead of being treated as absent, so a
     corrupted lock cannot silently re-enable concurrency;
@@ -24,8 +28,8 @@ defmodule Workstation.Daemon.ApplyOrchestrator do
   GenServer mailbox (one orchestrated generation at a time for the whole
   daemon) before any lock is taken, so sessions queue here instead of racing
   on the filesystem. The lock file semantics themselves live in
-  `Workstation.Core.ApplyLock` (shared verbatim with the one-shot CLI
-  driver); the flag-gated engine applier
+  `Workstation.Core.ApplyLock` (the engine's one lock contract); the
+  flag-gated engine applier
   (`Workstation.Daemon.Apply`) runs its real pipeline inside `with_lock/2`;
   the refusal path keeps exercising the same lock while the graduation gate
   is closed.
@@ -38,8 +42,9 @@ defmodule Workstation.Daemon.ApplyOrchestrator do
   @lock_name "apply.lock"
   @doc """
   Run `fun` while holding the target's apply lock. Returns `fun`'s result or
-  `{:error, {:locked, owner, lock_path}}` when another operation holds the
-  lock — the daemon never waits the lock out and never steals it.
+  `{:error, {:locked, owner, lock_path}}` when a LIVE holder owns the lock —
+  the daemon never waits the lock out; a holder provably dead on this host
+  is taken over with an audit record (`Workstation.Core.ApplyLock`).
   """
   @spec with_lock(String.t(), (-> result)) :: result | {:error, {:locked, String.t(), String.t()}} when result: var
   def with_lock(purpose, fun) do
@@ -93,9 +98,10 @@ defmodule Workstation.Daemon.ApplyOrchestrator do
     {:reply, release_lock(lock_path(state.state_root), token), state}
   end
 
-  # Exclusive create, mode 0600, body = owner metadata + token, never
-  # stolen: the exact `Workstation.Core.ApplyLock` contract, shared with the
-  # one-shot CLI driver so both callers race on one filesystem fact.
+  # Exclusive create, mode 0600, body = owner metadata + pid + token: the
+  # exact `Workstation.Core.ApplyLock` contract (a live holder refuses, a
+  # provably-dead holder's debris is taken over with an audit record) so
+  # every caller races on one filesystem fact.
   defp acquire_lock(state_root, purpose), do: ApplyLock.acquire(state_root, purpose)
 
   defp release_lock(path, token), do: ApplyLock.release(path, token)

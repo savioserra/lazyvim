@@ -264,11 +264,12 @@ defmodule Workstation.Daemon.ApplyTest do
       # Over the socket there is no sandbox collector injection: the step
       # EXECUTES and fails honestly on the sandbox home. The wire proof is
       # the code — the apply step's own failure code, never the graduation
-      # gate and never the chain code. The frame budget is 30s, not 2s: the
+      # gate and never the chain code. The frame budget is 60s, not 2s: the
       # real checkout catalog now carries the nunchux pinned-clone pin
       # (r2.nunchux-wiring), so the honest-failure path runs a real network
-      # clone first — the assertion is unchanged, only the wait.
-      reply = request("update.run", %{"step" => "apply"}, 30_000)
+      # clone first — the assertion is unchanged, only the wait (the 30s
+      # budget flaked under a loaded box; the clone itself is unchanged).
+      reply = request("update.run", %{"step" => "apply"}, 60_000)
       assert %{"ok" => false, "error" => %{"code" => "apply_failed"}} = reply
     end
 

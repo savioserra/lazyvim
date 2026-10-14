@@ -2,7 +2,7 @@ defmodule Workstation.Daemon.CapabilityRegistry do
   @moduledoc """
   Holds the assembled capability snapshot served by the `hello` handshake.
 
-  The view is captured from `Workstation.Daemon.Protocol.capabilities/0` —
+  The view is captured from `Workstation.Daemon.Protocol.capabilities/1` —
   itself derived from the compile-time `Workstation.Daemon.Capabilities`
   registry — at boot. Keeping the snapshot in a process means every session
   answers hello from one consistent view for the daemon's lifetime.
@@ -40,7 +40,20 @@ defmodule Workstation.Daemon.CapabilityRegistry do
   end
 
   @impl GenServer
-  def init(_opts), do: {:ok, %{capabilities: Protocol.capabilities()}}
+  def init(_opts) do
+    # The proof is resolved by the listener at boot (rest_for_one starts the
+    # registry strictly after it, so a served generation always has one on
+    # record); without one there is no honest handshake to serve.
+    proof = Workstation.Daemon.Listener.current_proof()
+
+    marker =
+      case proof do
+        %{mode: _} = resolved -> Workstation.Daemon.Listener.proof_marker(resolved)
+        _other -> exit({:proof_unresolved, Workstation.Daemon.Listener})
+      end
+
+    {:ok, %{capabilities: Protocol.capabilities(marker)}}
+  end
 
   @impl GenServer
   def handle_call(:capabilities, _from, state), do: {:reply, state.capabilities, state}

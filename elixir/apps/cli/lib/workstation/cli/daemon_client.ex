@@ -140,16 +140,18 @@ defmodule Workstation.CLI.DaemonClient do
   end
 
   @doc """
-  `control/2` plus the daemon's OS pid, captured from the connected
-  socket's `SO_PEERCRED` before the request. `workstation daemon stop`
-  needs the pid to CONFIRM the beam actually exits after the acknowledged
-  stop before printing "stopped" (`Workstation.CLI.Control.confirm_exit/2`) —
-  the daemon's own halt can wedge, and it did (a beam alive 7m41s after
-  `daemon: stopped`). The pid is the PEER's ucred pid — the mirror image of
-  the daemon's own per-connection auth read
-  (`Workstation.Daemon.Listener`), so it is as reliable as the connection
-  itself; on any failure it is `nil` and the caller refuses to report
-  success unverified.
+  `control/2` plus the daemon's OS pid, needed to CONFIRM the beam actually
+  exits after the acknowledged stop before printing "stopped"
+  (`Workstation.CLI.Control.confirm_exit/2` — the daemon's own halt can
+  wedge, and it did: a beam alive 7m41s after `daemon: stopped`). The pid is
+  the kernel's first (`SO_PEERCRED` of the connected socket answers the
+  PEER's `struct ucred`, the mirror image of the daemon's own per-connection
+  auth read — `Workstation.Daemon.Listener`); on platforms where that read
+  has no pid to give (darwin's `struct xucred` carries uid/gid only; a
+  dir-owner-proof generation has no kernel read at all) the daemon's own
+  wire pid (`daemon.stop` carries it) answers instead — see `daemon_pid/2`.
+  On any failure it is `nil` and the caller refuses to report success
+  unverified.
 
   Returns `{:ok, result, daemon_pid}` (`daemon_pid` is a positive integer
   or `nil`), or `{:error, reason}` shaped exactly like `control/2`.
@@ -164,11 +166,11 @@ defmodule Workstation.CLI.DaemonClient do
     op_timeout = Keyword.get(opts, :timeout_ms, @control_timeout_ms)
 
     with {:ok, sock} <- reach(sock_path, home, hello_timeout) do
-      daemon_pid = peer_pid(sock)
+      kernel_pid = peer_pid(sock)
 
       try do
         case request(sock, op, params, timeout_ms: op_timeout) do
-          {:ok, result} -> {:ok, result, daemon_pid}
+          {:ok, result} -> {:ok, result, daemon_pid(kernel_pid, result)}
           # The structural {code, message} op-refusal shape is matched LAST:
           # the tagged client-side failures (daemon_died/timeout/unavailable)
           # are the same tuple arity and must render as plain messages.
@@ -215,8 +217,9 @@ defmodule Workstation.CLI.DaemonClient do
   # daemon's) `struct ucred` — pid first, same 12 bytes the daemon decodes
   # per connection (`Workstation.Daemon.Listener.ucred_uid/1`). Raw form
   # `(level 1, opt 17)` because the named option is unimplemented in the
-  # pinned OTP 28 `:socket` NIF. Best-effort: `nil` just means the stop
-  # verb cannot verify the exit and must refuse to claim success.
+  # pinned OTP 28 `:socket` NIF. Best-effort: `nil` means the platform gave
+  # no pid and `daemon_pid/2` must fall back to the wire pid (or the stop
+  # verb refuses to claim verified success).
   defp peer_pid(sock) do
     case :socket.getopt_native(sock, {1, 17}, 12) do
       {:ok,
@@ -229,6 +232,19 @@ defmodule Workstation.CLI.DaemonClient do
         nil
     end
   end
+
+  @doc false
+  # The daemon's OS pid for the stop-confirmation ladder: the kernel's
+  # peercred read when the platform provides one (Linux, byte-identical),
+  # else the daemon's own wire pid (the `daemon.stop` result carries it —
+  # darwin's xucred has no pid field and a dir-owner generation no kernel
+  # read at all). `nil` only when BOTH are absent: the caller must then
+  # refuse to claim verified success, never guess.
+  def daemon_pid(kernel_pid, _result) when is_integer(kernel_pid) and kernel_pid > 0,
+    do: kernel_pid
+
+  def daemon_pid(_kernel_pid, %{"pid" => pid}) when is_integer(pid) and pid > 0, do: pid
+  def daemon_pid(_kernel_pid, _result), do: nil
 
   ## wire
 

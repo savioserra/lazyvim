@@ -24,14 +24,23 @@ defmodule Workstation.Daemon.Listener do
   because a killed daemon's socket can still complete handshakes from the
   kernel backlog — the handshake, not the connect, is the liveness signal.
 
-  Per-connection flow: accept, read `SO_PEERCRED` via
-  `:socket.getopt_native(sock, {1, 17}, 12)` (the named `:peercred` option is
-  typespec-declared but unimplemented in the pinned OTP 28 `:socket` NIF;
-  the bytes are `struct ucred` = `{pid, uid, gid}` with the AUTH FIELD second),
-  refuse any peer whose uid is not the socket owner's uid, then hand the
-  accepted socket to `Workstation.Daemon.Session` and flip socket control to
-  it. Overflow past the session cap refuses the socket immediately instead of
-  queueing unbounded state.
+  Per-connection flow: accept, authorize through the boot-resolved socket
+  proof (`resolve_proof/2`), then hand the accepted socket to
+  `Workstation.Daemon.Session` and flip socket control to it. On Linux the
+  proof is the kernel's `SO_PEERCRED` via `:socket.getopt_native(sock,
+  {1, 17}, 12)` (the named `:peercred` option is typespec-declared but
+  unimplemented in the pinned OTP 28 `:socket` NIF; the bytes are
+  `struct ucred` = `{pid, uid, gid}` with the AUTH FIELD second). On darwin
+  the kernel mechanism is `LOCAL_PEERCRED`/`getpeereid` (`struct xucred`,
+  auth uid also the second field) — probed at boot and used when reachable;
+  when it is not reachable without a NIF the dir-owner proof stands in
+  instead: the socket lives under the 0700 state root, so a peer that
+  connected IS the owner uid and peercred is hardening, not the boundary.
+  Which proof a generation runs is recorded in the hello handshake
+  (`"proof": "peercred" | "dir-owner"`) and never decided silently. Any
+  peer whose uid is not the socket owner's uid is refused. Overflow past
+  the session cap refuses the socket immediately instead of queueing
+  unbounded state.
   """
 
   use GenServer
@@ -43,8 +52,19 @@ defmodule Workstation.Daemon.Listener do
 
   @daemon_dir "daemon"
   # Linux SOL_SOCKET(1)/SO_PEERCRED(17); 12 bytes = struct ucred.
-  @peercred_native {1, 17}
+  @peercred_linux {1, 17}
   @ucred_size 12
+  # Darwin SOL_LOCAL(0)/LOCAL_PEERCRED(1); struct xucred = {cr_version,
+  # cr_uid, cr_ngroups, cr_groups[16], pad} — the auth uid is the SECOND
+  # native int32, exactly like ucred. The read size is generous on purpose:
+  # getsockopt returns the OS's own length and the decoder needs only the
+  # first 8 bytes.
+  @peercred_darwin {0, 1}
+  @xucred_size 96
+  # The "this platform does not have that option" error family. `:eopnotsupp`
+  # is the observed darwin answer to the Linux option; `:enoprotoopt` and
+  # `:enotsup` are its kernel-family siblings.
+  @unsupported_options [:eopnotsupp, :enoprotoopt, :enotsup]
   @probe_timeout_ms 2_000
   @socket_mode 0o600
   @dir_mode 0o700
@@ -68,6 +88,130 @@ defmodule Workstation.Daemon.Listener do
 
   def ucred_uid(_other), do: :invalid
 
+  @doc """
+  Decode `struct xucred` bytes (darwin `LOCAL_PEERCRED`) and return the auth
+  uid — the SECOND native int32, after `cr_version`. Only the first 8 bytes
+  are pinned; the trailing groups array varies across BSD layout revisions.
+  """
+  @spec xucred_uid(binary()) :: {:ok, non_neg_integer()} | :invalid
+  def xucred_uid(raw) when is_binary(raw) and byte_size(raw) >= 8 do
+    case raw do
+      <<_version::native-unsigned-integer-size(32), uid::native-signed-integer-size(32), _rest::binary>> when uid >= 0 ->
+        {:ok, uid}
+
+      _other ->
+        :invalid
+    end
+  end
+
+  def xucred_uid(_other), do: :invalid
+
+  @typedoc """
+  The socket-owner proof a daemon generation runs, resolved once at boot:
+
+  * `:peercred` — the kernel answers a peer-credential read (`:ucred` on
+    Linux, `:xucred` on darwin); per-connection auth compares the kernel's
+    peer uid against the socket owner's uid.
+  * `:dir_owner` — the platform has no usable peer-credential read; the
+    proof is the ownership chain itself (0700 owned dir + 0600 owned
+    socket, re-checked no-follow at accept time). `:why` records why the
+    kernel proof was not provable — the audit trail never shows a silent
+    weaken.
+  """
+  @type proof ::
+          %{:mode => :peercred, :native => {integer(), integer()}, :flavor => :ucred | :xucred}
+          | %{:mode => :dir_owner, :why => term()}
+
+  @doc """
+  Resolve this platform's socket-owner proof for the daemon socket. Linux is
+  decided by the pre-connection `SO_PEERCRED` sentinel (a well-formed
+  12-byte answer proves the option is live; real connections carry real
+  creds). When that option is UNSUPPORTED (`:eopnotsupp` family — the
+  darwin signature) the darwin arm probes `LOCAL_PEERCRED` and prefers it
+  when it answers a well-formed `struct xucred`; anything else on the darwin
+  arm degrades EXPLICITLY to the dir-owner proof with the recorded reason —
+  the 0700 state root is already the primary boundary there. Every
+  NON-unsupported error on the primary (Linux) arm still fails closed:
+  `{:error, reason}` — the caller (init) must refuse to become a daemon.
+  """
+  @spec resolve_proof((() -> :ok | {:error, term()}), (() -> {:ok, binary()} | {:error, term()})) ::
+          {:ok, proof()} | {:error, term()}
+  def resolve_proof(linux_probe \\ &probe_linux/0, darwin_probe \\ &probe_darwin/0) do
+    case linux_probe.() do
+      :ok ->
+        {:ok, %{mode: :peercred, native: @peercred_linux, flavor: :ucred}}
+
+      {:error, reason} when reason in @unsupported_options ->
+        darwin_proof(darwin_probe.())
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp darwin_proof({:ok, raw}) do
+    case xucred_uid(raw) do
+      {:ok, _uid} ->
+        {:ok, %{mode: :peercred, native: @peercred_darwin, flavor: :xucred}}
+
+      :invalid ->
+        {:ok, %{mode: :dir_owner, why: {:peercred_unproven, :malformed_xucred}}}
+    end
+  end
+
+  defp darwin_proof({:error, reason}),
+    do: {:ok, %{mode: :dir_owner, why: {:peercred_unproven, reason}}}
+
+  # Pre-connection SO_PEERCRED probe: a well-formed 12-byte answer (the
+  # documented pid=0/uid=-1/gid=-1 sentinel included) proves the option is
+  # live; the bytes are decoded for real per connection (see ucred_uid/1).
+  defp probe_linux do
+    probe_native_option(@peercred_linux, @ucred_size, fn
+      {:ok, <<_::binary-size(@ucred_size)>>} -> :ok
+      {:ok, _other} -> {:error, :malformed_ucred}
+      {:error, reason} -> {:error, reason}
+    end)
+  end
+
+  # Pre-connection LOCAL_PEERCRED probe: darwin answers a well-formed
+  # `struct xucred` where the option is reachable (the peer of a real
+  # connection carries its real uid, decoded per connection by xucred_uid/1).
+  # The expected pre-connection answer on darwin is `:enotconn` — peer creds
+  # exist only after a connect, and the pinned OTP has no socketpair to
+  # fabricate a connected pair. That outcome is precisely "not reachable
+  # without a NIF", so ANY failure here degrades to the recorded dir-owner
+  # proof instead of exiting: the boot must survive the platform that gave
+  # us no usable option (b6/lane darwin ruling), with the reason on record.
+  defp probe_darwin do
+    probe_native_option(@peercred_darwin, @xucred_size, fn
+      {:ok, raw} when is_binary(raw) -> {:ok, raw}
+      {:error, reason} -> {:error, reason}
+    end)
+  end
+
+  defp probe_native_option(native, size, classify) do
+    {:ok, probe} = :socket.open(:local, :stream, :default)
+
+    try do
+      classify.(:socket.getopt_native(probe, native, size))
+    after
+      :ok = :socket.close(probe)
+    end
+  end
+
+  @doc "The audit-trail marker for a proof, recorded in the hello handshake."
+  @spec proof_marker(proof()) :: String.t()
+  def proof_marker(%{mode: :peercred}), do: "peercred"
+  def proof_marker(%{mode: :dir_owner}), do: "dir-owner"
+
+  @doc """
+  The proof resolved by the CURRENT generation's listener (rest_for_one
+  boots the registry strictly after the listener, so a served daemon always
+  reads a resolved proof here).
+  """
+  @spec current_proof() :: proof() | :unresolved
+  def current_proof, do: :persistent_term.get({__MODULE__, :proof}, :unresolved)
+
   @doc false
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts \\ []) do
@@ -79,52 +223,45 @@ defmodule Workstation.Daemon.Listener do
     home = Keyword.get(opts, :home) || EngineState.home()
     path = socket_path(home)
 
-    # Fail closed before anything is served: authentication is the daemon's
-    # only trust boundary, so a platform where peercred is unreadable must
-    # refuse to become a daemon at all (supervisor ruling, b6 lane).
-    assert_peercred_capability!()
+    # Resolve the socket-owner proof before anything is served. The default
+    # (production) path fails closed on a non-unsupported probe error —
+    # authentication is the daemon's only trust boundary, so a platform
+    # where the kernel proof is BROKEN must refuse to become a daemon at
+    # all (supervisor ruling, b6 lane) — while an option-UNSUPPORTED
+    # platform (darwin) degrades to the recorded dir-owner proof instead.
+    # Tests may force a proof with `proof:` to exercise the non-Linux
+    # branches on the Linux CI box.
+    proof =
+      case Keyword.get(opts, :proof) do
+        %{} = forced -> forced
+        _other -> resolve_proof!()
+      end
+
+    # The registry (rest_for_one: strictly after this listener) snapshots
+    # the proof marker into the hello handshake from here.
+    :persistent_term.put({__MODULE__, :proof}, proof)
+
     sock = bind_or_takeover!(path)
-    Logger.info("daemon listening on #{path} pid=#{inspect(self())}")
-    {:ok, %{sock: sock, path: path}, {:continue, :accept}}
+    Logger.info("daemon listening on #{path} pid=#{inspect(self())} proof=#{proof_marker(proof)}")
+    {:ok, %{sock: sock, path: path, proof: proof}, {:continue, :accept}}
   end
 
   @impl true
   def handle_continue(:accept, state) do
     # The listener's only job is this loop; it never handles calls.
-    accept_loop(state.sock, state.path)
+    accept_loop(state)
   end
 
   ## Binding / takeover -------------------------------------------------------
 
-  # Capability probe for the native SO_PEERCRED read used by auth. The named
-  # `:peercred` socket option is typespec-declared but unimplemented in the
-  # pinned OTP 28 `:socket` NIF, so support is established at boot via the
-  # raw (level 1, opt 17) form; anything else exits and the tree never boots.
-  @spec assert_peercred_capability!() :: :ok
-  def assert_peercred_capability! do
-    {:ok, probe} = :socket.open(:local, :stream, :default)
-
-    verdict =
-      try do
-        case :socket.getopt_native(probe, @peercred_native, @ucred_size) do
-          # A pre-connection socket answers with the documented sentinel
-          # (pid=0, uid=-1, gid=-1); any well-formed 12-byte ucred proves the
-          # option is live. Real connections carry real creds (see ucred_uid/1).
-          {:ok, <<_::binary-size(@ucred_size)>>} -> :ok
-
-          {:ok, _other} ->
-            {:peercred_unavailable, :malformed_ucred}
-
-          {:error, reason} ->
-            {:peercred_unavailable, reason}
-        end
-      after
-        :ok = :socket.close(probe)
-      end
-
-    case verdict do
-      :ok -> :ok
-      {:peercred_unavailable, why} -> exit({:peercred_unavailable, why})
+  # The boot-time resolution: `{:error, why}` — a BROKEN kernel proof on the
+  # primary platform — refuses to become a daemon. This is the same
+  # fail-closed exit the old capability probe raised, still wrapped by the
+  # supervisor and mapped by `Workstation.Daemon.Boot`.
+  defp resolve_proof! do
+    case resolve_proof() do
+      {:ok, proof} -> proof
+      {:error, why} -> exit({:peercred_unavailable, why})
     end
   end
 
@@ -263,7 +400,8 @@ defmodule Workstation.Daemon.Listener do
     # Harden to 0600 immediately after the no-follow ownership check. The
     # mode is defense-in-depth, not the auth: a foreign uid that somehow
     # connected (0700 dir + this chmod as the barriers) is still refused by
-    # the SO_PEERCRED uid equality check in serve_client/2, so the worst case
+    # the per-connection proof in serve_client/2 (kernel peer-credential uid
+    # equality, or the dir-owner chain re-check), so the worst case
     # of a lost chmod race is a refused connection, never an authorized one.
     # (No umask dance: file:umask/1 is not exported by the pinned OTP's
     # file module — probed undef at runtime.)
@@ -302,11 +440,11 @@ defmodule Workstation.Daemon.Listener do
 
   ## Accept loop ---------------------------------------------------------------
 
-  defp accept_loop(sock, path) do
+  defp accept_loop(%{sock: sock} = state) do
     case :socket.accept(sock) do
       {:ok, client} ->
-        serve_client(client, path)
-        accept_loop(sock, path)
+        serve_client(client, state)
+        accept_loop(state)
 
       # A closed listener ends the loop; anything else is a blip worth one
       # retry after a short backoff rather than a hot spin.
@@ -315,24 +453,64 @@ defmodule Workstation.Daemon.Listener do
 
       {:error, _reason} ->
         Process.sleep(10)
-        accept_loop(sock, path)
+        accept_loop(state)
     end
   end
 
-  defp serve_client(client, path) do
-    with {:ok, raw} <- :socket.getopt_native(client, @peercred_native, @ucred_size),
-         {:ok, peer_uid} <- ucred_uid(raw),
-         true <- peer_uid == EngineState.uid() do
-      hand_off(client, path, peer_uid)
-    else
-      # Refused peers learn only that the connection went away; credential
-      # errors and foreign uids are all just "closed".
-      _ ->
+  defp serve_client(client, %{path: path, proof: proof}) do
+    case connection_peer_uid(client, path, proof) do
+      {:ok, peer_uid} ->
+        hand_off(client, path, peer_uid)
+
+      :refused ->
+        # Refused peers learn only that the connection went away; credential
+        # errors, foreign uids and a broken ownership chain are all "closed".
         Logger.warning("daemon refused connection on #{path}")
         _ = :socket.close(client)
         :ok
     end
   end
+
+  # Peercred mode: the kernel answers the CONNECTED socket with the peer's
+  # credentials and uid equality is the auth. The Linux path — this clause,
+  # the read shape and the decode are byte-identical to the original ruling.
+  defp connection_peer_uid(client, _path, %{mode: :peercred, native: native, flavor: flavor}) do
+    with {:ok, raw} <- :socket.getopt_native(client, native, cred_size(flavor)),
+         {:ok, peer_uid} <- decode_peer_uid(raw, flavor),
+         true <- peer_uid == EngineState.uid() do
+      {:ok, peer_uid}
+    else
+      _ -> :refused
+    end
+  end
+
+  # Dir-owner mode: no kernel peer-credential read is provable on this
+  # platform, so the proof is the ownership chain itself, RE-CHECKED at
+  # accept time — a 0700 directory owned by this uid plus a socket owned by
+  # this uid, both no-follow. Connecting to a unix socket requires search
+  # permission on every directory component and write on the socket node, so
+  # a peer that connected IS the owner uid; the marker in the hello
+  # handshake keeps the weaker (but primary, on that platform) boundary
+  # visible in the audit trail.
+  defp connection_peer_uid(_client, path, %{mode: :dir_owner}) do
+    if dir_owner_proof?(path), do: {:ok, EngineState.uid()}, else: :refused
+  end
+
+  defp dir_owner_proof?(path) do
+    case EngineState.lstat(Path.dirname(path)) do
+      %{type: "directory", uid: uid, mode: mode} ->
+        uid == EngineState.uid() and :erlang.band(mode, 0o077) == 0 and owned_socket?(path)
+
+      _other ->
+        false
+    end
+  end
+
+  defp decode_peer_uid(raw, :ucred), do: ucred_uid(raw)
+  defp decode_peer_uid(raw, :xucred), do: xucred_uid(raw)
+
+  defp cred_size(:ucred), do: @ucred_size
+  defp cred_size(:xucred), do: @xucred_size
 
   defp hand_off(client, path, peer_uid) do
     case Sessions.start_session(sock: client, sock_path: path, peer_uid: peer_uid) do

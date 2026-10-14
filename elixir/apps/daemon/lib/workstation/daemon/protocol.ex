@@ -78,11 +78,15 @@ defmodule Workstation.Daemon.Protocol do
 
   @doc """
   The hello handshake payload: protocol identity, version, served ops,
-  registered domains and transport caps. Ops are the handshake op plus every
-  capability op (sorted); domains derive from the capability registry.
+  registered domains, transport caps and the socket-auth proof marker.
+  Ops are the handshake op plus every capability op (sorted); domains derive
+  from the capability registry. `proof_marker` is the listener's resolved
+  socket-owner proof (`"peercred"` | `"dir-owner"`) — the audit trail states
+  which proof this generation runs, so a platform degraded to the dir-owner
+  boundary is visible in every handshake, never silent.
   """
-  @spec capabilities() :: map()
-  def capabilities do
+  @spec capabilities(String.t()) :: map()
+  def capabilities(proof_marker) when is_binary(proof_marker) do
     %{
       "protocol" => @protocol_name,
       "version" => @version,
@@ -95,6 +99,9 @@ defmodule Workstation.Daemon.Protocol do
       # honest: a mismatch is a loud operator error, never a silent
       # mutation of some other home).
       "home" => Workstation.Core.EngineState.home(),
+      # The resolved socket-owner proof of this daemon generation (see
+      # `Workstation.Daemon.Listener.resolve_proof/2`).
+      "proof" => proof_marker,
       "caps" => %{
         "max_request_bytes" => @max_request_bytes,
         "max_response_bytes" => @max_response_bytes,
