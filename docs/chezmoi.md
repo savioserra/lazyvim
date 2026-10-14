@@ -135,6 +135,37 @@ general removal API. The guarded real-account service retirement runs before
 any file deletion; scratch targets never contact the live user manager (see
 [capabilities](capabilities.md#lifecycle-phases)).
 
+## Guarded-apply recovery
+
+Apply refusals on hosts with hand-made or out-of-band changes are the guarded
+cutover doing its job: each refusal names the target, and each has one
+documented recovery. Never disable preconditions to force an apply.
+
+- **Hand-edited owned target** ("target changed since the last successful
+  apply", "exists without an owned record"): compare the target's bytes
+  against the payload/landed content it should carry. Identical or honestly
+  superseded → remove the target and re-apply; the engine recreates it and
+  records ownership. Verify content identity BEFORE handing the file to the
+  engine; the engine state, not the hand edit, wins the cutover.
+- **Journal vs chezmoi boltdb split-brain** (chezmoi refuses "changed since
+  chezmoi last wrote it" after targets were removed or rewritten out of
+  band): move `~/.config/chezmoi/chezmoistate.boltdb` aside (keep the
+  `.bak-*` copy) and re-apply — a fresh boltdb re-applies the full source
+  state, and converged targets are rewritten byte-identical.
+- **Partial apply without a stamp**: an apply that wrote targets and then
+  failed leaves them written-but-unowned, and each rerun surfaces the next
+  one. Keep removing the surfaced target and rerunning until the apply
+  completes; the successful run records everything.
+
+An error that reads like code you cannot find in the source names a **stale
+speaker**, not a source bug: `grep -rn "<exact error string>" elixir/` — an
+absent string identifies the layer serving old code. The **installed
+release** predating a source change is rebuilt by running bootstrap from the
+checkout; the **resident daemon** serving old code in memory is retired with
+`workstation daemon stop` (a graceful drain — release-replacing verbs ask it
+to stop first) and auto-respawns from the installed release on the next
+verb; verify the restart by the process start time.
+
 ## Isolated validation
 
 Public preview: `workstation plan` and `workstation diff`. A file-only

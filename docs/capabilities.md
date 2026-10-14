@@ -159,7 +159,7 @@ nvim
 | `foundation` | CLI archive members | — | CLI versions | All |
 | `fonts` | Font archives, then host registration/cache | — | Host visibility | All |
 | `node` | nvm and Node archives, then default/environment | — | NVM and Node version | All |
-| `agent` | Hermes Agent pinned checkout via the git recipe (`~/.hermes/hermes-agent` at the pinned commit); managed skills at `~/.hermes/skills/{lazyvim,secrets}` | — | `packages/agent/verify/hermes.sh` (checkout HEAD + launcher `--version` + managed skill files; read-only) | All |
+| `agent` | Hermes Agent pinned checkout via the git recipe (`~/.hermes/hermes-agent` at the pinned commit); managed skills at `~/.hermes/skills/secrets` (the retired `lazyvim` skill target carries a recorded-ownership removal tombstone) | — | `packages/agent/verify/hermes.sh` (checkout HEAD + launcher `--version` + managed skill file; read-only) | All |
 | `go` | Exact toolchain archive; go link recipe | — | Go version | Linux/WSL/macOS |
 | `elixir` | Managed mise activation fragment (`.config/shell/mise.sh` via the managed-mise rc fragment) and default toolchain config (`.config/mise/config.toml`; installs no mise — the fragment is a guarded no-op until mise exists) | — | Own Mason expectations, plugin module and behavior/formatter cases through nvim leaf helpers | All |
 | `herdr` | Exact pinned binary; herdr link recipe | — | Static binary version only; never server/pane/session lifecycle | All |

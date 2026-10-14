@@ -6,7 +6,7 @@
 # (workstation/versions.json hermes_agent_git_commit), the in-checkout
 # launcher (~/.hermes/hermes-agent/.hermes/bin/hermes) is an executable that
 # reports its version with exit 0, and the managed skills deploy at their
-# declared targets (~/.hermes/skills/{lazyvim,secrets}/SKILL.md).
+# declared targets (~/.hermes/skills/secrets/SKILL.md).
 #
 # The engine never runs this script; it is the host lane's assertion surface
 # (docs/capabilities.md "Package payload rule"). Exits nonzero with a message
@@ -42,9 +42,7 @@ head=$(git -C "$checkout" rev-parse HEAD 2>/dev/null || true)
 [ -x "$launcher" ] || fail "launcher at $launcher is not executable"
 "$launcher" --version >/dev/null 2>&1 || fail "launcher --version failed at $launcher"
 
-for skill in lazyvim secrets; do
-  [ -f "$home/.hermes/skills/$skill/SKILL.md" ] ||
-    fail "managed skill missing at $home/.hermes/skills/$skill/SKILL.md"
-done
+[ -f "$home/.hermes/skills/secrets/SKILL.md" ] ||
+  fail "managed skill missing at $home/.hermes/skills/secrets/SKILL.md"
 
 echo "hermes verify: ok — $checkout is at the pinned commit $pin_commit; launcher and managed skills present"

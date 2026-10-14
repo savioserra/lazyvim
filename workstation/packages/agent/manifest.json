@@ -11,17 +11,16 @@
     {
       "provider": "chezmoi",
       "spec": {
-        "asset": "files/.hermes/skills/lazyvim/SKILL.md",
+        "asset": "files/.hermes/skills/secrets/SKILL.md",
         "kind": "file",
-        "target": ".hermes/skills/lazyvim/SKILL.md"
+        "target": ".hermes/skills/secrets/SKILL.md"
       }
     },
     {
       "provider": "chezmoi",
       "spec": {
-        "asset": "files/.hermes/skills/secrets/SKILL.md",
-        "kind": "file",
-        "target": ".hermes/skills/secrets/SKILL.md"
+        "kind": "remove",
+        "target": ".hermes/skills/lazyvim"
       }
     }
   ],
