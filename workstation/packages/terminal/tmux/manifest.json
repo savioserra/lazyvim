@@ -11,9 +11,9 @@
     {
       "provider": "git",
       "spec": {
-        "url": "https://github.com/uhs-robert/tmux-oasis",
-        "commit": "9903964ee8abdddaf08834871f12ccc093a4cbcf",
-        "target": ".tmux/plugins/tmux-oasis"
+        "url": "https://github.com/2KAbhishek/tmux2k",
+        "commit": "07b3228b56c1a7b6109f00009df80b53f7eae892",
+        "target": ".tmux/plugins/tmux2k"
       }
     },
     {

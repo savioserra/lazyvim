@@ -2,7 +2,7 @@
 # tmux package verify — the pinned-checkout contract (read-only).
 #
 # Asserts the TPM plugin set is engine-provisioned: every git recipe in the
-# tmux package manifest (tpm, tmux-oasis, tmux-yank, tmux-resurrect,
+# tmux package manifest (tpm, tmux2k, tmux-yank, tmux-resurrect,
 # vim-tmux-navigator) has its checkout at ~/.tmux/plugins/<name> with HEAD
 # at the pinned commit — so TPM sources pre-installed checkouts and a fresh
 # box never loads a half-installed or un-themed plugin set. nunchux, the

@@ -1,17 +1,18 @@
 defmodule Workstation.Core.Catalog.PackagesTmuxTest do
   @moduledoc """
   The tmux package's pin contracts, enforced *here* because plugin checkouts
-  are never managed source state. The status bar is the pinned tmux-oasis
-  plugin's own layout at the upstream `starlight_dark` flavor: `.tmux.conf`
-  must carry the active `@plugin` pin and the flavor option ahead of TPM
-  init (upstream's README install pattern), `versions.json` must record the
-  upstream commit + URL, and no `@thm_*` options may be set — upstream's
-  oasis_starlight_dark.conf is canonical. The nunchux launcher grew into
+  are never managed source state. The status bar is the pinned tmux2k
+  plugin at the upstream `onedark` theme with tmux2k's own separators and
+  plugin icons: `.tmux.conf` must carry the active `@plugin` pin, the
+  theme, the right-side plugin list (cpu/ram/time with the btop popup) and
+  the clock format ahead of TPM init, `versions.json` must record the
+  upstream commit + URL, and no `@oasis_*`/`@thm_*` options may be set —
+  tmux2k's onedark defaults are canonical. The nunchux launcher grew into
   its own package (the nunchux data manifest — config target, pinned
   binary pre-seed, platform marker); this suite keeps the tmux-side
   contracts: the ACTIVE `@plugin` pin and root `C-Space` chord in
   `.tmux.conf` (live with the engine-provisioned checkout,
-  r2.nunchux-wiring) and the tmux-oasis status-bar pins. See docs/tmux.md.
+  r2.nunchux-wiring) and the tmux2k status-bar pins. See docs/tmux.md.
   """
 
   use ExUnit.Case, async: true
@@ -75,52 +76,47 @@ defmodule Workstation.Core.Catalog.PackagesTmuxTest do
     refute Enum.any?(lines, &String.starts_with?(&1, "#bind -n C-Space"))
   end
 
-  test "the tmux-oasis pin is active with the upstream starlight flavor ahead of TPM init" do
+  test "the tmux2k pin, theme and right-side plugins are active ahead of TPM init" do
     lines = String.split(conf_source(), "\n")
 
-    plugin_line = Enum.find_index(lines, &(&1 == "set -g @plugin 'uhs-robert/tmux-oasis'"))
+    plugin_line = Enum.find_index(lines, &(&1 == "set -g @plugin '2KAbhishek/tmux2k'"))
 
-    flavor_line =
-      Enum.find_index(lines, &(&1 == ~s(set -g @oasis_flavor "starlight_dark")))
+    theme_line = Enum.find_index(lines, &(&1 == "set -g @tmux2k-theme 'onedark'"))
+
+    plugins_line =
+      Enum.find_index(lines, &(&1 == "set -g @tmux2k-right-plugins 'cpu ram time'"))
+
+    popup_line = Enum.find_index(lines, &(&1 == "set -g @tmux2k-ram-popup-cmd 'btop'"))
 
     tpm_line =
       Enum.find_index(lines, &String.starts_with?(&1, "run-shell '~/.tmux/plugins/tpm/tpm'"))
 
-    assert plugin_line && flavor_line && tpm_line
-    # Both options must precede TPM init or the plugin loads without them.
-    assert plugin_line < tpm_line and flavor_line < tpm_line
+    assert plugin_line && theme_line && plugins_line && popup_line && tpm_line
+    # Every option must precede TPM init or the plugin loads without them.
+    assert plugin_line < tpm_line and theme_line < tpm_line and plugins_line < tpm_line
   end
 
-  test "the versions manifest records the tmux-oasis commit and URL" do
+  test "the versions manifest records the tmux2k commit and URL" do
     manifest =
       @repo_root
       |> Path.join("workstation/versions.json")
       |> File.read!()
       |> Jason.decode!()
 
-    assert manifest["tmux_oasis"] == "9903964ee8abdddaf08834871f12ccc093a4cbcf"
-    assert manifest["tmux_oasis_url"] == "https://github.com/uhs-robert/tmux-oasis"
+    assert manifest["tmux2k"] == "07b3228b56c1a7b6109f00009df80b53f7eae892"
+    assert manifest["tmux2k_url"] == "https://github.com/2KAbhishek/tmux2k"
   end
 
-  test "the bar stays upstream-truthed: no theme overrides, no tmux2k remnants" do
+  test "the bar stays tmux2k-truthed: no theme overrides, no oasis remnants" do
     conf = conf_source()
 
-    # Upstream's themes/dark/oasis_starlight_dark.conf is canonical; setting
-    # any @thm_* option here would fork the advertised look. Format *reads*
-    # stay legal — the aurora clock override mirrors upstream's own module
-    # pill, which reads the theme tokens (#{@thm_surface}) — so the contract
-    # is write-shaped: every @thm_* mention must be a comment or a format
-    # read, never an option assignment.
-    assert conf
-           |> String.split("\n")
-           |> Enum.filter(&String.contains?(&1, "@thm_"))
-           |> Enum.all?(fn line ->
-             String.starts_with?(String.trim_leading(line), "#") or
-               String.contains?(line, ~S(#{@thm_))
-           end),
-           ".tmux.conf must never set @thm_* options — comments and format reads only"
-
-    refute conf =~ "tmux2k"
+    # tmux2k's onedark theme is canonical: no @oasis_* option may be set and
+    # no starlight flavor may survive — the aurora investigation retired the
+    # oasis bar entirely (its seconds clock pinned a 1Hz re-render whose
+    # scroll-style repaints stacked on limited mobile clients).
+    refute conf =~ "@oasis_"
+    refute conf =~ "tmux-oasis"
+    refute conf =~ "starlight_dark"
 
     # The retired slot template is gone from the payload tree and its target
     # carries a recorded-ownership removal tombstone (already-absent no-op).
@@ -169,7 +165,7 @@ defmodule Workstation.Core.Catalog.PackagesTmuxTest do
 
     assert git_targets == [
              ".tmux/plugins/tpm",
-             ".tmux/plugins/tmux-oasis",
+             ".tmux/plugins/tmux2k",
              ".tmux/plugins/tmux-yank",
              ".tmux/plugins/tmux-resurrect",
              ".tmux/plugins/vim-tmux-navigator"

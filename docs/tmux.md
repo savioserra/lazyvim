@@ -4,7 +4,7 @@
 | --- | --- |
 | Hosts | Linux, macOS |
 | Main target | `~/.tmux.conf` and `~/.config/tmux/tmux.conf` symlink |
-| Status bar | tmux-oasis, upstream `starlight_dark` flavor |
+| Status bar | tmux2k, upstream `onedark` theme |
 | Package implementation | `Workstation.Packages.Tmux` (payload `workstation/packages/terminal/tmux/`) |
 | Plugin root | `~/.tmux/plugins/` |
 
@@ -20,13 +20,15 @@
 | `terminal-features[100]` | `xterm-256color:RGB` |
 | `@tmux_navigator_disable_when_zoomed` | `1` |
 | `scroll-on-clear` | `off` inside `%if "#{>=:#{version},3.5}"` — the guard keeps the conf parse-safe on tmux releases without the option (pre-3.4); this host's 3.4 has it default-on (aurora mobile-client mitigation) |
-| `@oasis_module_clock` | minutes clock override — upstream pill styling verbatim, `%H:%M` in place of the seconds conditional (aurora mobile-client mitigation) |
+| `@tmux2k-theme` | `onedark` |
+| `@tmux2k-right-plugins` | `cpu ram time` — clicking cpu opens btop; ram's popup is pinned to btop too |
+| `@tmux2k-time-format` | `%a %H:%M` — no seconds: a seconds clock pins the status bar to a 1Hz re-render, which limited mobile clients render as stacked lines (aurora mobile-client mitigation) |
 | Window cycling | root `S-Left` / `S-Right` — `previous-window` / `next-window`, no prefix |
 
 Load order:
 
 1. Base tmux settings and plugin declarations.
-2. Plugin options, including `@oasis_flavor "starlight_dark"` and the minutes-clock `@oasis_module_clock` override.
+2. tmux2k options — theme, right-side plugin list, the btop popup pin and the clock format.
 3. `~/.tmux/plugins/tpm/tpm`.
 
 `~/.config/tmux/tmux.conf` is a managed symlink to `~/.tmux.conf` so tmux
@@ -44,7 +46,7 @@ on an isolated server.
 | Plugin | Commit |
 | --- | --- |
 | `tmux-plugins/tpm` | `e261deb1b47614eed3400089ce7197dc68acc4eb` |
-| `uhs-robert/tmux-oasis` | `9903964ee8abdddaf08834871f12ccc093a4cbcf` |
+| `2KAbhishek/tmux2k` | `07b3228b56c1a7b6109f00009df80b53f7eae892` |
 | `tmux-plugins/tmux-yank` | `acfd36e4fcba99f8310a7dfb432111c242fe7392` |
 | `christoomey/vim-tmux-navigator` | `e41c431a0c7b7388ae7ba341f01a0d217eb3a432` |
 | `tmux-plugins/tmux-resurrect` | `cff343cf9e81983d3da0c8562b01616f12e8d548` |
@@ -55,7 +57,7 @@ Pinning rules:
 - Keep `@plugin` values as bare `user/repo` for TPM.
 - Store exact commits in this table. All six checkouts are
   engine-provisioned pinned clones, never placed by hand: the tmux package
-  manifest declares tpm, tmux-oasis, tmux-yank, tmux-resurrect and
+  manifest declares tpm, tmux2k, tmux-yank, tmux-resurrect and
   vim-tmux-navigator as pinned git recipes (url + commit + target under
   `~/.tmux/plugins/`, tpm first — it must exist before the first tmux start,
   which sources it via the `run-shell` at the end of `.tmux.conf`), and
@@ -63,8 +65,8 @@ Pinning rules:
   pre-installed checkouts and sources them without cloning. Never run TPM's
   `prefix + I`: a TPM clone/pull would fight the pins — `workstation apply`
   re-asserts them.
-- tmux-oasis's commit + URL are additionally pinned in
-  `workstation/versions.json` (`tmux_oasis*` keys) and asserted by the
+- tmux2k's commit + URL are additionally pinned in
+  `workstation/versions.json` (`tmux2k*` keys) and asserted by the
   package tests.
 - Keep the `TMUX_PLUGIN_MANAGER_PATH` pin ahead of the TPM `run-shell`; TPM's
   default path logic alone would select the unmanaged XDG plugin root.
@@ -134,52 +136,39 @@ the verify lane.
 
 Setup removes stale `~/.tmux/plugins/tmux-fingers` checkouts.
 
-## Status bar (tmux-oasis)
+## Status bar (tmux2k, onedark)
 
-The status bar is the pinned `tmux-oasis` plugin's own six-module layout at
-the upstream `starlight_dark` flavor — the look advertised by upstream's
-starlight_dark screenshots. `.tmux.conf` sets only the `@plugin` pin and
-`set -g @oasis_flavor "starlight_dark"` ahead of TPM init (upstream's README
-install pattern); it deliberately sets NO `@thm_*` options — upstream's
-`themes/dark/oasis_starlight_dark.conf` is canonical, the same
-upstream-truthed relationship as nvim's `oasis.nvim` pin ([theme](theme.md):
-our tokens mirror upstream hexes for our own consumers, they do not feed the
-bar).
+The status bar is the pinned `tmux2k` plugin at the upstream `onedark`
+theme with tmux2k's own powerline separators and plugin icons. `.tmux.conf`
+sets the `@plugin` pin, the theme, the right-side plugin list (`cpu ram
+time` — clicking cpu opens btop, ram's popup is pinned to btop via
+`@tmux2k-ram-popup-cmd`) and the clock format ahead of TPM init; it
+deliberately sets NO color overrides — upstream's onedark palette is
+canonical.
 
-| Surface | Value (upstream defaults) |
-| --- | --- |
-| Layout | six modules — mode + session on `status-left`, sync + folder + clock on `status-right`, `status-justify left` |
-| Status style | `bg=@thm_mantle, fg=@thm_secondary` |
-| Dividers | upstream defaults (no custom separators) |
-| Panes | `pane-border-status off`, single border lines; `@oasis_dim_inactive on` paints inactive panes `bg=@thm_crust` |
-| Modes / menus / popups | upstream message, mode, menu and popup styles (menu/popup behind tmux >= 3.4 guards) |
-
-Recorded tradeoff (ADDENDUM 2, operator permission — drop tmux2k and adopt
-the oasis statusline wholesale): tmux2k's slot layer followed the live
-terminal palette via tmux named colors (OSC 4 retints restyled the bar
-without a reload); the oasis bar uses literal starlight hexes, so terminal
-retints no longer reach it and a dark/light switch flips `@oasis_flavor`.
-The swap traded live palette-following for the upstream-literal starlight
-look. The tokens slot layer stays in [theme](theme.md) for future
-consumers; the retired `~/.config/tmux/themes/tmux2k.conf` target carries a
-recorded-ownership removal tombstone in the package recipe (already-absent
-no-op on homes that never had it).
+Recorded tradeoffs: ADDENDUM 2 dropped tmux2k for the tmux-oasis
+starlight_dark statusline (operator permission, 2026-10-12); the aurora
+investigation (2026-10-13) reverted it — oasis's seconds clock pinned a 1Hz
+status re-render whose scroll-style repaints stacked on limited mobile
+clients (Termius/iOS), while tmux2k's `|` separators and HH:MM clock are
+narrow-phone-safe. The tokens slot layer stays in [theme](theme.md) for
+future consumers; the retired `~/.config/tmux/themes/tmux2k.conf` target
+carries a recorded-ownership removal tombstone in the package recipe
+(already-absent no-op on homes that never had it).
 
 Mobile-client redraw mitigation (aurora, 2026-10-13): the aurora
 investigation reproduced Termius/iOS stacking the powerline bar on re-render
-at byte level — tmux-oasis's clock module hardcodes seconds (`%H:%M:%S`), so
-tmux re-renders the status bar every second, and on tmux 3.7 each re-render
-emits heavy scroll-style repaints (242 EL+CRLF + scroll-region resets per 18s
-idle vs 66 on tmux 3.4, same config) that limited mobile clients render as
-stacked lines instead of replacing the screen. `.tmux.conf` mitigates: the
-`@oasis_module_clock` override drops the seconds (upstream's pill styling
-verbatim, `%H:%M` — the format is the only delta), and `scroll-on-clear off`
-keeps the clear-scrolls-history repaint out of the picture, wrapped in
-`%if "#{>=:#{version},3.5}"` so tmux releases without the option (pre-3.4)
-never see it at parse time — an unknown option fails the whole conf.
-Re-enabling seconds is a deliberate local choice: restoring
-upstream's conditional (or any `%S` format) costs a 1Hz status re-render on
-every client.
+at byte level — tmux 3.7's status re-renders emit heavy scroll-style
+repaints (242 EL+CRLF + scroll-region resets per 18s idle vs 66 on tmux 3.4,
+same config) that limited mobile clients render as stacked lines instead of
+replacing the screen. `.tmux.conf` mitigates: the tmux2k clock format
+carries no seconds (`%a %H:%M` — a `%S` format pins a 1Hz re-render on
+every client), `scroll-on-clear off` keeps the clear-scrolls-history
+repaint out of the picture (wrapped in `%if "#{>=:#{version},3.5}"` so
+releases without the option never see it at parse time), and the tmux2k
+separator set is single-width (`|`) rather than PUA powerline arrows, which
+clients without a nerd font render double-width. Re-enabling seconds or
+powerline arrows is a deliberate local choice.
 
 ## Omarchy interactions
 
@@ -200,8 +189,8 @@ file, restore with `workstation apply` and remove any `tmux.conf.bak.*` it left 
 - assert the XDG symlink target;
 - start an isolated tmux socket and server;
 - assert session name;
-- assert the `uhs-robert/tmux-oasis` `@plugin` pin in `.tmux.conf`;
-- assert `@oasis_flavor=starlight_dark` ahead of TPM init;
-- assert the `workstation/versions.json` tmux-oasis pin (commit + URL);
+- assert the `2KAbhishek/tmux2k` `@plugin` pin in `.tmux.conf`;
+- assert `@tmux2k-theme=onedark`, the `cpu ram time` right side and the btop popup pin ahead of TPM init;
+- assert the `workstation/versions.json` tmux2k pin (commit + URL);
 - assert the pinned `TMUX_PLUGIN_MANAGER_PATH`;
 - kill the isolated server on success or failure.

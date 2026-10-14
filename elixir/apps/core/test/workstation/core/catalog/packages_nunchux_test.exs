@@ -2,7 +2,7 @@ defmodule Workstation.Core.Catalog.PackagesNunchuxTest do
   @moduledoc """
   The nunchux package's pin contracts. The checkout is the first
   package-wired git contribution: the spec's pin must mirror
-  `workstation/versions.json` exactly (the tmux-oasis pin-mirror pattern),
+  `workstation/versions.json` exactly (the tmux2k pin-mirror pattern),
   target the TPM plugin checkout root, and own every checkout byte —
   including the repo-tracked `bin/nunchux` the plugin runs. The `.platform`
   marker is the pre-seed upstream's `nunchux.tmux` `ensure_binary` checks:
