@@ -151,7 +151,7 @@ hard-cut; retired paths are deleted in the lane that retires them.
 ## Architecture: capability/contract isolation (dep-guarded)
 
 Three dependency rules are enforced by `ArchitectureDepsTest`
-(`elixir/apps/core/test/workstation/core/architecture_deps_test.exs`, a
+(`apps/core/test/workstation/core/architecture_deps_test.exs`, a
 source-scan suite) and must never regrow:
 
 1. **Theme engine is generic.** The theme engine (`Workstation.Core.Theme`,
@@ -246,11 +246,10 @@ only when behind; `[u]` hands off to the standard update flow.
 
 ## Distribution
 
-One artifact pair per platform, checked into `elixir/` (gitignored, rebuilt
+One artifact pair per platform, checked into the repo root (gitignored, rebuilt
 locally):
 
 ```sh
-cd elixir
 mise exec -- env MIX_ENV=prod mix release workstation --overwrite
 (cd _build/prod/rel && tar -czf ../../../workstation-0.1.0-linux-x64.tar.gz workstation)
 sha256sum workstation-0.1.0-linux-x64.tar.gz > workstation-0.1.0-linux-x64.tar.gz.sha256
@@ -267,7 +266,7 @@ sha256sum workstation-0.1.0-linux-x64.tar.gz > workstation-0.1.0-linux-x64.tar.g
   so musl-only systems (Alpine) are unsupported. **macOS arm64 is explicitly
   out of scope** (release erts must be built on the target OS; no Darwin
   build host exists in this repo's acceptance set).
-- Boot smoke: `sh elixir/test/direct_boot.sh` verifies the sidecar checksum,
+- Boot smoke: `sh tests/direct_boot.sh` verifies the sidecar checksum,
   extracts to a scratch dir, boots the release headless against a marked
   private test home, replays `tests/goldens/minimal/input.json` and compares
   the plan/manifest/generation bytes against the recorded goldens — proving
@@ -284,15 +283,15 @@ of the way:
    `HOME`/`WORKSTATION_HOME`/`USERPROFILE`/XDG rebase to the destination.
 2. **Acquisition** (bootstrap only): `workstation/bootstrap/install-runtime.sh`
    installs the pinned editor runtime and, when driven from an engine checkout
-   with a `mise` toolchain, builds the engine release from `elixir/` and stages
+   with a `mise` toolchain, builds the engine release at the repo root and stages
    it under `$HOME/.local/opt/workstation` (private, engine-owned). The
    download pins derive from the checkout's `versions.json` (the single
    source of truth): a fresh machine parses it inline with the same
    fail-closed record validations, while the daemon-driven refresh receives
    the engine's derivation as `NEOVIM_*` env.
-3. **Anchor**: launched from an engine checkout (an `elixir/mix.exs` sibling
-   of the script's `engine_root`, or `engine_root` itself when the checkout is
-   nested under `workstation/`), the launcher exports
+3. **Anchor**: launched from an engine checkout (a `mix.exs` at the script's
+   `engine_root`, or at its parent when the checkout is nested under
+   `workstation/`), the launcher exports
    `WORKSTATION_ENGINE_REPO` so EVERY verb — not only bootstrap — collects
    the checkout catalog; on a bare host no anchor exists and nothing is
    exported (installed-release behavior is unchanged). Gate:
@@ -330,13 +329,12 @@ banned on package specs (`Workstation.Core.Catalog.Spec.validate!/2`).
 
 | Path | Role |
 | --- | --- |
-| `elixir/mix.exs` | Umbrella root: `apps/` path, hoisted `deps/` and `mix.lock` |
-| `elixir/.mise.toml` | Toolchain pins: Erlang/OTP 28.5, Elixir 1.18.5-otp-27 (mise only) |
-| `.tool-versions` | Repo-root mise pin (Elixir 1.18.5-otp-27, Erlang/OTP 28): per-clone in-repo activation |
-| `elixir/apps/core/` | `Workstation.Core.*` — pure engine port, zero runtime deps |
-| `elixir/apps/cli/` | `Workstation.CLI.*` — optimus CLI, term_ui TUI (exact `2.0.0-rc.2` pin) |
-| `elixir/apps/daemon/` | `Workstation.Daemon.*` — Zoi strict wire schemas, frame codec, protocol |
-| `elixir/test/direct_boot.sh` | Release tarball boot smoke: checksum sidecar, headless boot, golden replay from a bare extract (never the real `$HOME`) |
+| `mix.exs` | Umbrella root (repo root): `apps/` path, hoisted `deps/` and `mix.lock` |
+| `.tool-versions` | Repo-wide toolchain pin (Elixir 1.18.5-otp-27, Erlang/OTP 28.5): per-clone in-repo activation |
+| `apps/core/` | `Workstation.Core.*` — pure engine port, zero runtime deps |
+| `apps/cli/` | `Workstation.CLI.*` — optimus CLI, term_ui TUI (exact `2.0.0-rc.2` pin) |
+| `apps/daemon/` | `Workstation.Daemon.*` — Zoi strict wire schemas, frame codec, protocol |
+| `tests/direct_boot.sh` | Release tarball boot smoke: checksum sidecar, headless boot, golden replay from a bare extract (never the real `$HOME`) |
 
 Toolchain activation: the repo-root `.tool-versions` pins the battery
 toolchain, so mise activates it automatically in-repo — plain `mise exec`
@@ -357,8 +355,7 @@ CLI one-shot mode.
 ## Test
 
 ```sh
-cd elixir
-mise exec -- mix deps.get   # once, warms elixir/deps
+mise exec -- mix deps.get   # once, warms deps/
 mise exec -- mix test       # umbrella suite
 ```
 

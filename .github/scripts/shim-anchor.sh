@@ -27,7 +27,7 @@
 #      detection and not a socket answer from a leaked daemon.
 set -eu
 repo_root=$(CDPATH='' cd -P "$(dirname "$0")/../.." && pwd -P)
-tarball=$repo_root/elixir/workstation-0.1.0-linux-x64.tar.gz
+tarball=$repo_root/workstation-0.1.0-linux-x64.tar.gz
 [ -f "$tarball" ] ||
 	{ echo 'shim-anchor: release tarball missing; build it first (docs/elixir.md §distribution)' >&2; exit 1; }
 
@@ -72,6 +72,11 @@ sh "$repo_root/.github/scripts/test-home.sh" sh -eu -c '
 	# environment of an earlier step, never through this shim).
 	[ ! -e "$HOME/.local/state/workstation" ] ||
 		fail "fixture home already carries daemon state; bare-host assertion would be vacuous"
+	# Read from the fixture home, mirroring step 1: since the umbrella
+	# flattening, the release dev anchor walks up from the working directory
+	# and adopts a `workstation/` payload child, so a repo-root cwd would
+	# hand the bare copy the very checkout this step refuses.
+	cd "$HOME"
 	if "$bare/workstation" diff --home "$HOME" >/dev/null 2>"$HOME/bare-diff.err"; then
 		fail "bare-host shim unexpectedly reached an engine (anchor export or leaked daemon)"
 	fi

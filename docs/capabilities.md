@@ -50,7 +50,7 @@ bootstrap, never an engine dependency.
 ## Contribution contract
 
 A package contributes its catalog identity through a **pure-data Elixir
-module** under `elixir/apps/core/lib/workstation/core/catalog/packages/`
+module** under `apps/core/lib/workstation/core/catalog/packages/`
 (one module per package) that declares `@behaviour
 Workstation.Core.Catalog.Spec` and implements `spec/0`. There is no
 registration list: discovery (`Workstation.Core.Catalog.Discover`) scans
@@ -301,7 +301,7 @@ Bootstrap's engine step owns the `~/.local/bin/workstation` launcher symlink:
 identical canonical target, conflicting user files refused, no completion
 after a backend failure. Update refreshes the installed release from the
 freshly pulled checkout before the lifecycle steps so pin and engine changes
-take effect: when the engine checkout carries a buildable `elixir/` umbrella
+take effect: when the engine checkout carries a buildable mix umbrella
 (the anchor resolution matches the launcher shim's), the platform is
 supported and the `mise` toolchain is present, the bootstrap step runs the
 same `bootstrap/install-runtime.sh` acquisition a fresh machine takes. The
@@ -345,7 +345,7 @@ TUI does not survive a rebuild: interactive operators re-run
 path. See [installation and daily use](../README.md).
 
 The launcher shim (`workstation/bin/workstation`) resolves the checkout repo
-anchor — the directory holding the `elixir/` umbrella — for EVERY verb and
+anchor — the mix umbrella root — for EVERY verb and
 exports `WORKSTATION_ENGINE_REPO` when one exists, so a checkout-launched
 release resolves package assets and update steps without a preset
 environment (the anchor gate is `.github/scripts/shim-anchor.sh`, run by
@@ -407,7 +407,7 @@ packages/agent/verify/
 ```
 
 Everything the engine must know about a package is declared in its native
-catalog module (`elixir/apps/core/lib/workstation/core/catalog/packages/`);
+catalog module (`apps/core/lib/workstation/core/catalog/packages/`);
 anything requiring host execution is expressed as a provisioning recipe the
 backend executes, a verify assertion the engine evaluates, or package-owned
 payload the host tool consumes.

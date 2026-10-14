@@ -123,8 +123,8 @@ mv "$stage" "$parent/nvim"
 # above is the whole contract.
 repo=${WORKSTATION_ENGINE_REPO:-}
 if [ -n "$repo" ]; then
-	if [ ! -f "$repo/elixir/mix.exs" ]; then
-		fail "engine checkout at $repo has no elixir/ umbrella"
+	if [ ! -f "$repo/mix.exs" ]; then
+		fail "engine checkout at $repo has no mix umbrella"
 	fi
 	if ! command -v mise >/dev/null 2>&1; then
 		fail 'engine checkout present but mise is not on PATH; the release cannot be built'
@@ -156,7 +156,7 @@ if [ -n "$repo" ]; then
 	# prompt; the acquisition must be non-interactive by contract. Locale is
 	# pinned because env -i hosts often run a latin1 name encoding.
 	if ! (
-		cd "$repo/elixir" || exit 1
+		cd "$repo" || exit 1
 		LANG=${LANG:-C.UTF-8}
 		LC_ALL=${LC_ALL:-C.UTF-8}
 		export LANG LC_ALL
@@ -171,7 +171,7 @@ if [ -n "$repo" ]; then
 	# mix release emits the OTP tree under _build/prod/rel/workstation;
 	# stage a private copy so activation is a sibling rename, never a
 	# partial tree.
-	cp -a "$repo/elixir/_build/prod/rel/workstation" "$release_stage/workstation"
+	cp -a "$repo/_build/prod/rel/workstation" "$release_stage/workstation"
 	[ -x "$release_stage/workstation/bin/workstation" ] || fail 'built release lacks bin/workstation'
 	if [ -e "$parent/workstation" ]; then mv "$parent/workstation" "$lock/workstation-previous"; fi
 	mv "$release_stage/workstation" "$parent/workstation"
