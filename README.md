@@ -15,10 +15,10 @@ manager:
   Tools.
 - POSIX shell, HTTPS curl, tar/gzip, unzip, SHA-256 tools (`sha256sum` on Linux,
   `shasum` on macOS), and ordinary Unix filesystem tools.
-- tmux >=3.2 and btop: managed through the engine mise contract on both hosts
-  from the first apply; the fresh-install sequence first-acquires them on Linux
-  through the installer, so a macOS box may supply them as host prerequisites
-  until then.
+- tmux >=3.2 and btop: mise-contract-managed on Linux — the tools are declared
+  with the `linux` platform scope, so a macOS apply omits them and they remain
+  host prerequisites there (brew); the fresh-install sequence first-acquires
+  them on Linux through the installer.
 - C compiler/build tools for parser and application-package builds (macOS Command
   Line Tools); Linux fontconfig (`fc-cache`, `fc-list`). macOS supplies
   `system_profiler` for font verification.

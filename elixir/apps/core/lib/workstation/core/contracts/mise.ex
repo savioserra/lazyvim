@@ -33,6 +33,18 @@ defmodule Workstation.Core.Contracts.Mise do
     writers must never coexist). The composed bytes are pinned into the
     generation (a tool-pin change moves the generation id), the same
     provenance law the download descriptors follow;
+  * a tool declaration may carry an optional platform scope
+    (`platforms: ["linux"]` — default: every supported host; the scope
+    vocabulary is the graph's host names, closed and validated at the
+    declaration). Composition filters the declared set against the RUNNING
+    host — the resolved graph's host — before the merge law, so a tool
+    scoped away on this host contributes nothing (not to the composed
+    config, not to the owners, not to the installs) and per-host
+    alternative pins never conflict with each other; a catalog whose every
+    tool is scoped away composes nil and the contract contributes nothing
+    on that host, exactly like no declarations. The terminal tools are
+    linux-scoped: on macOS tmux/btop stay host prerequisites (brew), not
+    contract effects;
   * tool state lives under the engine state root, pinned through
     `MISE_DATA_DIR=<home>/.local/state/workstation/mise` on every mise
     subprocess (the env name this mise generation honors; the historical
@@ -74,6 +86,10 @@ defmodule Workstation.Core.Contracts.Mise do
   @tool_name_regex ~r/\A[a-z0-9][a-z0-9._-]*\z/
   @tool_version_regex ~r/\A[0-9A-Za-z][0-9A-Za-z._+-]*\z/
   @backend_regex ~r/\A[a-z0-9]+:[A-Za-z0-9][A-Za-z0-9._\/-]*\z/
+  # The platform-scope vocabulary: the graph's host names (`Catalog.host`).
+  # Closed and validated at the declaration, so a typo'd scope is a
+  # declaration error, never a silently-never-matching pin.
+  @host_scopes ~w(linux darwin)
 
   @doc "The wire provider id for managed-tool declarations."
   @spec provider_id() :: String.t()
@@ -95,9 +111,10 @@ defmodule Workstation.Core.Contracts.Mise do
 
   @doc """
   Validate one declared spec: exactly a non-empty `tools` list, each tool
-  carrying a lowercase short name, a non-empty exact version and an
-  optional `<prefix>:<path>` backend. Raises `ArgumentError` on the first
-  invalid field.
+  carrying a lowercase short name, a non-empty exact version, an
+  optional `<prefix>:<path>` backend and an optional `platforms` scope
+  (a non-empty list of supported host names). Raises `ArgumentError` on the
+  first invalid field.
   """
   @impl Workstation.Core.Contracts.Contract
   @spec validate_spec(term()) :: :ok
@@ -140,6 +157,7 @@ defmodule Workstation.Core.Contracts.Mise do
             version: tool_string(tool, "version")
           }
           |> put_backend(Map.get(tool, "backend"))
+          |> put_platforms(Map.get(tool, "platforms"))
 
         validate_tool(tool)
         tool
@@ -159,17 +177,28 @@ defmodule Workstation.Core.Contracts.Mise do
 
   @doc """
   Compose the collected declarations (graph-ordered records contributed
-  under this provider id) into the plan's managed tool set: the deduplicated,
+  under this provider id) into the plan's managed tool set for the RUNNING
+  host: platform-scoped tools (`platforms:` on a declaration) outside the
+  host are skipped before the merge law — a scoped pin never conflicts with
+  a peer host's alternative, a record whose every tool is skipped drops out
+  (its id leaves the owners), and a catalog whose every tool is scoped away
+  composes nil, the contract contributes nothing on that host exactly like
+  no declarations. What survives composes as before: the deduplicated,
   deterministically sorted tool pins, the owning package ids, the
   content-addressed fingerprint, and the resolved engine mise pin. A
-  catalog that declares tools without exactly one opt-root mise pin fails
-  here, at plan time. A catalog without declarations composes nil — the
-  contract contributes nothing.
+  catalog that still declares tools without exactly one opt-root mise pin
+  fails here, at plan time. A catalog without declarations composes nil —
+  the contract contributes nothing.
   """
-  @spec compose_tools([map()], [map()]) :: map() | nil
-  def compose_tools(collected, downloads) do
+  @spec compose_tools([map()], [map()], String.t()) :: map() | nil
+  def compose_tools(collected, downloads, host) when is_binary(host) and host != "" do
     collected
     |> Enum.filter(&(&1.provider == provider_id()))
+    |> Enum.map(fn record ->
+      tools = Enum.filter(record.spec.tools, &scoped_to?(&1, host))
+      %{record | spec: Map.put(record.spec, :tools, tools)}
+    end)
+    |> Enum.reject(&(&1.spec.tools == []))
     |> case do
       [] ->
         nil
@@ -187,6 +216,13 @@ defmodule Workstation.Core.Contracts.Mise do
         }
     end
   end
+
+  # The scope law: a tool without platforms is universal; a scoped tool
+  # contributes only on a host its scope names. Scopes are validated at the
+  # declaration against the closed host vocabulary, so membership here is
+  # total — nothing to guess at composition time.
+  defp scoped_to?(%{platforms: platforms}, host) when is_list(platforms), do: host in platforms
+  defp scoped_to?(_tool, _host), do: true
 
   @doc "The tool-set fingerprint: content address over the exact pinned set."
   @spec fingerprint_tools([map()]) :: String.t()
@@ -716,7 +752,24 @@ defmodule Workstation.Core.Contracts.Mise do
         raise(ArgumentError, "mise tool #{name} backend must be <prefix>:<path>, got: #{backend}")
     end
 
-    unknown = Map.keys(tool) -- [:name, :version, :backend, "name", "version", "backend"]
+    platforms = Map.get(tool, :platforms) || Map.get(tool, "platforms")
+
+    if platforms do
+      is_list(platforms) and platforms != [] ||
+        raise(ArgumentError, "mise tool #{name} platforms must be a non-empty list of host names")
+
+      Enum.each(platforms, fn host ->
+        host in @host_scopes ||
+          raise(ArgumentError,
+            "mise tool #{name} platform scope must be one of #{Enum.join(@host_scopes, ", ")}, got: #{inspect(host)}"
+          )
+      end)
+    end
+
+    unknown =
+      Map.keys(tool) --
+        [:name, :version, :backend, :platforms, "name", "version", "backend", "platforms"]
+
     unknown == [] || raise(ArgumentError, "mise tool #{name} has unknown fields: #{inspect(unknown)}")
 
     :ok
@@ -726,6 +779,9 @@ defmodule Workstation.Core.Contracts.Mise do
 
   defp put_backend(tool, nil), do: tool
   defp put_backend(tool, backend), do: Map.put(tool, :backend, backend)
+
+  defp put_platforms(tool, nil), do: tool
+  defp put_platforms(tool, platforms), do: Map.put(tool, :platforms, platforms)
 
   defp field(attrs, key) do
     value = Map.get(attrs, key) || Map.get(attrs, Atom.to_string(key))

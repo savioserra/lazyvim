@@ -103,7 +103,7 @@ defmodule Workstation.Core.Contracts.MiseTest do
 
   describe "composition" do
     test "a catalog without declarations composes nil" do
-      assert Mise.compose_tools([], []) == nil
+      assert Mise.compose_tools([], [], "linux") == nil
     end
 
     test "declarations merge, sort deterministically and dedupe identical pins" do
@@ -113,7 +113,7 @@ defmodule Workstation.Core.Contracts.MiseTest do
         %{owner: "alpha", provider: "mise", spec: %{tools: [%{name: "tmux", version: "3.7c", backend: "aqua:tmux/tmux-builds"}]}}
       ]
 
-      mise = Mise.compose_tools(collected, [mise_pin()])
+      mise = Mise.compose_tools(collected, [mise_pin()], "linux")
 
       assert Enum.map(mise.tools, & &1.name) == ["btop", "tmux"]
       assert mise.owners == ["alpha", "zeta"]
@@ -129,7 +129,7 @@ defmodule Workstation.Core.Contracts.MiseTest do
       ]
 
       assert_raise ArgumentError, ~r/diverging versions/, fn ->
-        Mise.compose_tools(collected, [mise_pin()])
+        Mise.compose_tools(collected, [mise_pin()], "linux")
       end
     end
 
@@ -137,7 +137,7 @@ defmodule Workstation.Core.Contracts.MiseTest do
       collected = [%{owner: "alpha", provider: "mise", spec: %{tools: @tools}}]
 
       assert_raise ArgumentError, ~r/no pinned download provides the mise binary/, fn ->
-        Mise.compose_tools(collected, [])
+        Mise.compose_tools(collected, [], "linux")
       end
     end
 
@@ -146,12 +146,14 @@ defmodule Workstation.Core.Contracts.MiseTest do
       pin = %{mise_pin() | target: ".local/opt/mise/mise"}
 
       assert_raise ArgumentError, ~r/must be .local\/opt\/mise\/<version>\/bin\/mise/, fn ->
-        Mise.compose_tools(collected, [pin])
+        Mise.compose_tools(collected, [pin], "linux")
       end
     end
 
     test "owned targets may not overlap entries, removals or downloads" do
-      mise = Mise.compose_tools([%{owner: "alpha", provider: "mise", spec: %{tools: @tools}}], [mise_pin()])
+      mise =
+        Mise.compose_tools([%{owner: "alpha", provider: "mise", spec: %{tools: @tools}}], [mise_pin()], "linux")
+
       entry = %{target: ".config/mise", attribution: ["someone"], owner: "someone"}
 
       assert_raise ArgumentError, ~r/overlaps owned target/, fn ->
@@ -174,7 +176,8 @@ defmodule Workstation.Core.Contracts.MiseTest do
 
   describe "the composed managed config" do
     test "the bytes are one deterministic document with quoted backend keys" do
-      mise = Mise.compose_tools([%{owner: "alpha", provider: "mise", spec: %{tools: @tools}}], [mise_pin()])
+      mise =
+        Mise.compose_tools([%{owner: "alpha", provider: "mise", spec: %{tools: @tools}}], [mise_pin()], "linux")
 
       bytes = Mise.config_bytes(mise)
 
@@ -511,6 +514,141 @@ defmodule Workstation.Core.Contracts.MiseTest do
     end
   end
 
+  describe "platform scopes" do
+    test "a declaration may scope a tool to hosts; the scope vocabulary is closed" do
+      assert :ok = Mise.validate_spec(%{tools: [%{name: "tmux", version: "3.7c", platforms: ["linux"]}]})
+
+      assert :ok =
+               Mise.validate_spec(%{tools: [%{name: "tmux", version: "3.7c", platforms: ["linux", "darwin"]}]})
+
+      assert_raise ArgumentError, ~r/platform scope must be one of linux, darwin/, fn ->
+        Mise.validate_spec(%{tools: [%{name: "tmux", version: "3.7c", platforms: ["macos"]}]})
+      end
+
+      assert_raise ArgumentError, ~r/non-empty list of host names/, fn ->
+        Mise.validate_spec(%{tools: [%{name: "tmux", version: "3.7c", platforms: []}]})
+      end
+
+      assert_raise ArgumentError, ~r/non-empty list of host names/, fn ->
+        Mise.validate_spec(%{tools: [%{name: "tmux", version: "3.7c", platforms: "linux"}]})
+      end
+    end
+
+    test "denormalization round-trips the scope through validation" do
+      recorded = %{
+        "tools" => [
+          %{
+            "name" => "btop",
+            "version" => "1.4.7",
+            "backend" => "github:aristocratos/btop",
+            "platforms" => ["linux"]
+          }
+        ]
+      }
+
+      assert Mise.from_recorded(recorded, %{package_id: "goldens"}) == %{
+               tools: [
+                 %{name: "btop", version: "1.4.7", backend: "github:aristocratos/btop", platforms: ["linux"]}
+               ]
+             }
+
+      assert_raise ArgumentError, ~r/invalid mise recipe for goldens/, fn ->
+        Mise.from_recorded(
+          %{"tools" => [%{"name" => "btop", "version" => "1.4.7", "platforms" => ["macos"]}]},
+          %{package_id: "goldens"}
+        )
+      end
+    end
+
+    test "a linux-scoped tool is kept on linux and skipped on darwin" do
+      collected = [
+        %{
+          owner: "alpha",
+          provider: "mise",
+          spec: %{tools: [%{name: "btop", version: "1.4.7", backend: "github:aristocratos/btop", platforms: ["linux"]}]}
+        }
+      ]
+
+      # Every tool scoped away: the contract contributes nothing on that host.
+      assert Mise.compose_tools(collected, [mise_pin()], "darwin") == nil
+
+      mise = Mise.compose_tools(collected, [mise_pin()], "linux")
+      assert Enum.map(mise.tools, & &1.name) == ["btop"]
+      assert mise.owners == ["alpha"]
+    end
+
+    test "scoped-away records leave the owners; unscoped tools survive on every host" do
+      collected = [
+        %{owner: "tmux", provider: "mise", spec: %{tools: scoped_tools()}},
+        %{owner: "elixir", provider: "mise", spec: %{tools: [%{name: "erlang", version: "28.5"}]}}
+      ]
+
+      darwin = Mise.compose_tools(collected, [mise_pin()], "darwin")
+      assert Enum.map(darwin.tools, & &1.name) == ["erlang"]
+      assert darwin.owners == ["elixir"]
+
+      # The composed config omits the skipped tools on the platform.
+      refute Mise.config_bytes(darwin) =~ "btop"
+      refute Mise.config_bytes(darwin) =~ "tmux"
+
+      linux = Mise.compose_tools(collected, [mise_pin()], "linux")
+      assert Enum.map(linux.tools, & &1.name) == ["btop", "erlang", "tmux"]
+      assert linux.owners == ["elixir", "tmux"]
+    end
+
+    test "per-host alternative pins compose clean; same-host divergence still fails" do
+      alternative = [
+        %{
+          owner: "alpha",
+          provider: "mise",
+          spec: %{tools: [%{name: "tmux", version: "3.7c", backend: "aqua:tmux/tmux-builds", platforms: ["linux"]}]}
+        },
+        %{
+          owner: "zeta",
+          provider: "mise",
+          spec: %{tools: [%{name: "tmux", version: "4.0", backend: "aqua:tmux/tmux-builds", platforms: ["darwin"]}]}}
+      ]
+
+      assert %{tools: [%{version: "3.7c"}], owners: ["alpha"]} = Mise.compose_tools(alternative, [mise_pin()], "linux")
+
+      assert %{tools: [%{version: "4.0"}], owners: ["zeta"]} =
+               Mise.compose_tools(alternative, [mise_pin()], "darwin")
+
+      # The same divergence on ONE host is still the one-pin law's failure.
+      conflicting = [
+        %{
+          owner: "alpha",
+          provider: "mise",
+          spec: %{tools: [%{name: "tmux", version: "3.7c", backend: "aqua:tmux/tmux-builds", platforms: ["linux"]}]}
+        },
+        %{
+          owner: "zeta",
+          provider: "mise",
+          spec: %{tools: [%{name: "tmux", version: "4.0", backend: "aqua:tmux/tmux-builds", platforms: ["linux"]}]}}
+      ]
+
+      assert_raise ArgumentError, ~r/diverging versions/, fn ->
+        Mise.compose_tools(conflicting, [mise_pin()], "linux")
+      end
+    end
+
+    test "a darwin-hosted plan omits the linux-scoped tools and still applies clean", %{home: home} do
+      install_fake_chezmoi(home)
+      plan = build_plan(host: "darwin")
+
+      assert plan.mise == nil
+      refute Enum.any?(plan.manifest, &String.starts_with?(&1["name"], "mise/"))
+      assert Pipeline.effects(plan) |> Enum.filter(&(&1.contract == "mise")) == []
+
+      opts = %{"home" => home, "fetch" => fn _url -> @fake_mise end}
+      assert Pipeline.execute(plan, opts) == plan.generation
+
+      state_root = Path.join([home | EngineState.state_components()])
+      assert Journal.applied(state_root)["generation"] == plan.generation
+      assert Journal.pending(state_root) == []
+    end
+  end
+
   # --- helpers ---
 
   defp agent do
@@ -591,9 +729,12 @@ defmodule Workstation.Core.Contracts.MiseTest do
 
   # The synthetic mise golden envelope through the real composition — the
   # same string-keyed shape the committed goldens pin (download pin package
-  # plus a tools declarer; no entries, no shell fragments).
+  # plus a tools declarer; no entries, no shell fragments). The tools carry
+  # the terminal package's real linux scope, so the linux profile composes
+  # them and a darwin profile (host: "darwin") skips them all.
   defp build_plan(opts \\ []) do
     tools? = Keyword.get(opts, :tools, true)
+    host = Keyword.get(opts, :host, "linux")
 
     packages = [
       %{
@@ -633,8 +774,18 @@ defmodule Workstation.Core.Contracts.MiseTest do
                   "provider" => "mise",
                   "spec" => %{
                     "tools" => [
-                      %{"name" => "tmux", "version" => "3.7c", "backend" => "aqua:tmux/tmux-builds"},
-                      %{"name" => "btop", "version" => "1.4.7", "backend" => "github:aristocratos/btop"}
+                      %{
+                        "name" => "tmux",
+                        "version" => "3.7c",
+                        "backend" => "aqua:tmux/tmux-builds",
+                        "platforms" => ["linux"]
+                      },
+                      %{
+                        "name" => "btop",
+                        "version" => "1.4.7",
+                        "backend" => "github:aristocratos/btop",
+                        "platforms" => ["linux"]
+                      }
                     ]
                   }
                 }
@@ -645,9 +796,19 @@ defmodule Workstation.Core.Contracts.MiseTest do
         packages
       end
 
-    catalog = Catalog.load(%{"profile" => "mise-test", "host" => "linux", "home" => Catalog.canonical_home(), "packages" => packages, "assets" => %{}})
+    catalog =
+      Catalog.load(%{"profile" => "mise-test", "host" => host, "home" => Catalog.canonical_home(), "packages" => packages, "assets" => %{}})
+
     graph = Graph.order(%{host: catalog.host, specifications: catalog.packages})
     Source.plan(%{graph: graph})
+  end
+
+  # The terminal package's real declaration shape: linux-scoped tools.
+  defp scoped_tools do
+    [
+      %{name: "tmux", version: "3.7c", backend: "aqua:tmux/tmux-builds", platforms: ["linux"]},
+      %{name: "btop", version: "1.4.7", backend: "github:aristocratos/btop", platforms: ["linux"]}
+    ]
   end
 
   defp plan_with_mise(mise), do: %{build_plan() | mise: mise}

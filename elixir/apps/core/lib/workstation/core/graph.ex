@@ -25,7 +25,7 @@ defmodule Workstation.Core.Graph do
     the composition nor pulls the package in.
   """
 
-  defstruct [:ordered, :enabled]
+  defstruct [:ordered, :enabled, :host]
 
   @type specification :: %{
           required(:id) => String.t(),
@@ -38,9 +38,12 @@ defmodule Workstation.Core.Graph do
 
   @doc """
   Resolve `specifications` (the validated catalog packages) for `host`.
-  Returns `%Graph{}` with `ordered` (topological, id-stable) and `enabled`
-  (the set of included ids). The input list order never leaks into the
-  result: iteration starts from the id-sorted specs.
+  Returns `%Graph{}` with `ordered` (topological, id-stable), `enabled`
+  (the set of included ids), and `host` — the resolved host the order was
+  computed for, carried so downstream composition (the plan's platform-
+  scoped contract surfaces) selects on the same host name without re-deriving
+  it. The input list order never leaks into the result: iteration starts
+  from the id-sorted specs.
   """
   @spec order(%{required(:host) => String.t(), required(:specifications) => [specification()]}) ::
           %__MODULE__{}
@@ -96,7 +99,7 @@ defmodule Workstation.Core.Graph do
     # before its own spec, so a final flatten preserves post-order stability.
     ordered = List.flatten(visited_results)
 
-    %__MODULE__{ordered: ordered, enabled: enabled}
+    %__MODULE__{ordered: ordered, enabled: enabled, host: host}
   end
 
   defp visit(id, capabilities, enabled, visited, stack) do

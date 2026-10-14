@@ -109,9 +109,11 @@ defmodule Workstation.Core.Source do
     collected = collected ++ Enum.map(capability, &elem(&1, 0))
     profile = capability_profiles(capability)
     downloads = Downloads.compose(collected)
-    # The managed mise tool set composes against the download pins: a
-    # catalog that declares tools without the engine mise pin fails here.
-    mise = Mise.compose_tools(collected, downloads)
+    # The managed mise tool set composes against the download pins and the
+    # graph's resolved host: a catalog that declares tools without the engine
+    # mise pin fails here, and platform-scoped tools outside the host are
+    # skipped at composition.
+    mise = Mise.compose_tools(collected, downloads, graph.host)
     # The golden replay always records against a fresh journal: applied_record
     # is nil, so no fragments are recorded and no retirements are reconciled.
     journal = nil

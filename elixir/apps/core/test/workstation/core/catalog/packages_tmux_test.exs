@@ -159,10 +159,21 @@ defmodule Workstation.Core.Catalog.PackagesTmuxTest do
         "mise" ->
           # The managed binary pins: the tmux binary and the btop popup
           # resolve through the mise contract (exact versions, declared
-          # backends; docs/tools.md).
+          # backends, the linux platform scope — on darwin they stay brew
+          # host prerequisites; docs/tools.md).
           assert entry.spec.tools == [
-                   %{name: "tmux", version: "3.7c", backend: "aqua:tmux/tmux-builds"},
-                   %{name: "btop", version: "1.4.7", backend: "github:aristocratos/btop"}
+                   %{
+                     name: "tmux",
+                     version: "3.7c",
+                     backend: "aqua:tmux/tmux-builds",
+                     platforms: ["linux"]
+                   },
+                   %{
+                     name: "btop",
+                     version: "1.4.7",
+                     backend: "github:aristocratos/btop",
+                     platforms: ["linux"]
+                   }
                  ]
 
         other ->

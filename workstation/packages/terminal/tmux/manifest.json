@@ -7,11 +7,13 @@
           {
             "backend": "aqua:tmux/tmux-builds",
             "name": "tmux",
+            "platforms": ["linux"],
             "version": "3.7c"
           },
           {
             "backend": "github:aristocratos/btop",
             "name": "btop",
+            "platforms": ["linux"],
             "version": "1.4.7"
           }
         ]
