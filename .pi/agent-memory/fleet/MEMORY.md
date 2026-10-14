@@ -495,11 +495,15 @@ required.
   apply of the parent target. Fate decided 2026-10-14 (operator, dashboard
   comment on the landing card): the lazyvim skill is DROPPED, not landed —
   repository docs are the knowledge home. The agent manifest now carries a
-  recorded-ownership removal tombstone for `.hermes/skills/lazyvim` (the
-  next apply deletes the deployed dir, untracked `references/` leftover
-  included), the payload file is gone, and the still-true guidance landed
-  refreshed in docs: guarded-apply recovery + stale speakers
-  (docs/chezmoi.md), live re-theme + hyphenated format vars (docs/tmux.md).
+  recorded-ownership removal tombstone for
+  `.hermes/skills/lazyvim/SKILL.md` (the journal-owned file — dir-target
+  removals always conflict: directories are never journaled), the payload
+  file is gone, and the still-true guidance landed refreshed in docs:
+  guarded-apply recovery + stale speakers (docs/chezmoi.md), live re-theme +
+  hyphenated format vars (docs/tmux.md). The parent DIR and any untracked
+  leftovers (references/) are not engine cleanup targets — remove them
+  per-host by hand (documented recovery: verify content identity, remove,
+  re-apply).
 - Retirement window: `record_applied` REPLACES the targets map wholesale,
   so a dropped recipe's journal record dies at the very next apply — a
   retirement contract landing after that apply can never derive the

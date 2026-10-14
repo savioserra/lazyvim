@@ -20,7 +20,7 @@
       "provider": "chezmoi",
       "spec": {
         "kind": "remove",
-        "target": ".hermes/skills/lazyvim"
+        "target": ".hermes/skills/lazyvim/SKILL.md"
       }
     }
   ],
