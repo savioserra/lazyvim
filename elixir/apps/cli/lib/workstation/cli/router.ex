@@ -372,6 +372,19 @@ defmodule Workstation.CLI.Router do
       {:error, {tag, message}} when is_atom(tag) ->
         fail(4, "error: #{tag}: #{message}")
 
+      # ensure-daemon's spawn refusal rides as a bare message (no release
+      # binary, spawn failure) — engine exit, never a CaseClause crash.
+      {:error, message} when is_binary(message) ->
+        fail(4, "error: #{message}")
+
+      # The daemon-side refusal classes arrive over the wire as STRING codes
+      # (JSON) — the aurora bootstrap handoff crashed right here with a
+      # CaseClauseError on a `locked` refusal whose holder pid was dead
+      # (2026-10-14). Same mapping as the read verbs: the code keeps the
+      # client exit table (`locked` is precondition, everything else engine).
+      {:error, {code, message}} when is_binary(code) and is_binary(message) ->
+        fail(lifecycle_exit(code), "error: #{code}: #{message}")
+
       {:error, code, message} ->
         fail(lifecycle_exit(code), "error: #{code}: #{message}")
     end
@@ -384,6 +397,16 @@ defmodule Workstation.CLI.Router do
 
       {:error, {tag, message}} when is_atom(tag) ->
         fail(4, "error: #{tag}: #{message}")
+
+      # ensure-daemon's spawn refusal rides as a bare message — engine exit,
+      # never a CaseClause crash.
+      {:error, message} when is_binary(message) ->
+        fail(4, "error: #{message}")
+
+      # Wire refusals are STRING-coded pairs (JSON) — same mapping as the
+      # bootstrap arm above and the read verbs' client contract.
+      {:error, {code, message}} when is_binary(code) and is_binary(message) ->
+        fail(lifecycle_exit(code), "error: #{code}: #{message}")
 
       {:error, code, message} ->
         fail(lifecycle_exit(code), "error: #{code}: #{message}")

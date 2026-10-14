@@ -106,6 +106,22 @@ defmodule Workstation.CLITest do
 
       assert {:shutdown, 2} = run_main(["bogus", "--home", home])
     end
+
+    # Regression (the same 2026-10-14 defect class as the locked-refusal
+    # crash): ensure-daemon's spawn refusal rides out of DaemonClient.call
+    # as a BARE message (no release binary in a mix env), and the bootstrap
+    # arm's case clauses matched neither it nor the wire's string-coded
+    # refusals — a CaseClauseError instead of the clean exit-4 operator
+    # error. No daemon is running here, so the verb reaches the spawn path.
+    test "bootstrap without an installable daemon fails closed with the spawn refusal" do
+      {_root, home} = temp_test_root()
+
+      {result, stderr} = capture_main_with_stderr(["bootstrap", "--home", home])
+
+      assert {:shutdown, 4} = result
+      assert stderr =~ "error: no release binary at"
+      assert stderr =~ "workstation bootstrap"
+    end
   end
 
   # The live-read slices of this suite (canonical-json wire shape, status/diff

@@ -62,7 +62,8 @@ checkout or Git:
 | Path | Purpose |
 | --- | --- |
 | `generations/<sha256>` | Immutable published source generations; reused only after byte/type/mode reverification |
-| `apply.lock` | Fail-closed per-target operation lock (0600, owner metadata) |
+| `apply.lock` | Fail-closed per-target operation lock (0600, owner metadata + parseable holder pid) |
+| `apply.lock.audit` | Append-only JSONL record of stale-lock takeovers |
 | `journal/applied.json` | Last successful generation, owned target fingerprints, fragment records |
 | `journal/pending/`, `journal/failed/` | Attempt evidence; no automatic garbage collection |
 
@@ -71,8 +72,15 @@ engine-state root and journal directory on first use; that incidental creation
 is confined by the same no-follow/ownership/mode guards and stores nothing
 beyond engine metadata. `apply` and `diff` hold the lock through publication,
 backend execution and journal completion. A contending command refuses with the recorded owner
-metadata; stale locks are never stolen — inspect the recorded owner and remove
-the lock file only as a deliberate operator action. The exact generation path
+metadata. The lock records its holder's OS pid, so contention is judged, never
+guessed: a LIVE holder is never interrupted; a holder provably dead on this
+host (a killed beam's debris — no `/proc` entry on Linux/WSL, `kill -0`
+elsewhere) is taken over after a fresh no-follow check that the path is still
+an owned regular file, and the takeover is recorded in `apply.lock.audit`, so
+a bootstrap-after-kill recovers on the next run without a manual rm. A lock
+without a parseable pid (pre-pid release or hand-written) is unknowable and
+is never stolen — inspect the recorded owner and remove the lock file only as
+a deliberate operator action. The exact generation path
 is passed to the backend, never a mutable pointer. Last-applied metadata is
 updated only after backend success; a failed attempt preserves pending/failed
 evidence and requires conflict-aware recovery. Retrying the same desired

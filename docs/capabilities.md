@@ -267,7 +267,12 @@ reply flushes it DRAINS its in-flight op tasks (bounded; each settling op
 releases its own apply lock), removes the socket node (no-follow
 owned-socket proof), then halts 0 — and the client waits, bounded (~10s),
 for BOTH the socket node's removal and the beam's actual exit before
-proceeding; the verb's own first call then spawns the fresh daemon on
+proceeding (the daemon's OS pid comes from the client's `SO_PEERCRED` read
+where the platform provides one — Linux — and otherwise from the
+`daemon.stop` wire result, which carries the daemon's own pid since
+darwin's `xucred` has no pid field and a dir-owner-proof generation no
+kernel read at all; a pid from neither source refuses fail-closed); the
+verb's own first call then spawns the fresh daemon on
 demand from the current release. A refusal (including a daemon too old to
 know `daemon.stop`) or a wedged exit FAILS CLOSED with an explicit error —
 the verb never replaces the release under a surviving stale daemon and

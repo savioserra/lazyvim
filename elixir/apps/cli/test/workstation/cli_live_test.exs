@@ -17,7 +17,7 @@ defmodule Workstation.CLI.LiveTest do
   use ExUnit.Case, async: false
 
   alias Workstation.CLI.{DaemonClient, Plain, Router}
-  alias Workstation.Daemon.Listener
+  alias Workstation.Daemon.{ApplyOrchestrator, Listener}
 
   setup do
     home = Path.join(System.tmp_dir!(), "ws-cli-live-#{System.unique_integer([:positive])}")
@@ -181,6 +181,22 @@ defmodule Workstation.CLI.LiveTest do
     {_result, output} = capture_main(["json", "status", "--home", home])
     wire = Jason.decode!(output)
     refute Map.has_key?(wire, "update")
+  end
+
+  # Regression (the 2026-10-14 aurora crash): a `locked` refusal arrives
+  # over the wire as a STRING-coded pair (JSON), which matched no clause in
+  # the lifecycle verbs' dispatch and crashed the CLI with a CaseClauseError
+  # instead of the clean exit-3 lock-contention answer. `sync` rides the
+  # same clause group as `bootstrap` — the verb where aurora hit it.
+  test "a locked lifecycle verb exits 3 with the owner message instead of crashing", %{home: home} do
+    {:ok, token, _lock} = ApplyOrchestrator.acquire("held by the contention test")
+
+    {result, stderr} = run_main_capturing_streams(["sync", "--home", home])
+
+    assert {:shutdown, 3} = result
+    assert stderr =~ "error: locked: apply lock held by uid="
+
+    :ok = ApplyOrchestrator.release(token)
   end
 
   # Regression (final-gate P1): a fresh home's capabilities envelope carries

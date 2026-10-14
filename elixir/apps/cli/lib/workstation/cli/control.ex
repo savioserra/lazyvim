@@ -35,8 +35,9 @@ defmodule Workstation.CLI.Control do
   """
   @spec stop() :: :ok | {:error, String.t()}
   def stop do
-    # The op's wire result is %{{"stopping" => true}} plus the daemon's OS
-    # pid (SO_PEERCRED of the connected socket) — a plain `:ok` arm can
+    # The op's wire result is %{{"stopping" => true, "pid" => <daemon os
+    # pid>}} — the pid from the client's SO_PEERCRED read where the platform
+    # provides one, else the daemon's own wire pid — a plain `:ok` arm can
     # never match and would crash the operator's stop with a
     # CaseClauseError exactly when it succeeded.
     case DaemonClient.control_with_pid("daemon.stop") do

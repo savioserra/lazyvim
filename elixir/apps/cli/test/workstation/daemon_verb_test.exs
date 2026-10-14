@@ -321,6 +321,27 @@ defmodule Workstation.CLI.DaemonVerbTest do
     {result, stdout, stderr}
   end
 
+  # The wire pid fallback: darwin's xucred has no pid field and a dir-owner
+  # generation no kernel read at all, so the stop ladder's pid source is
+  # kernel-first (Linux, byte-identical) with the daemon's own wire pid as
+  # the recorded fallback — and nil ONLY when both are absent.
+  describe "DaemonClient.daemon_pid/2 (the stop ladder's pid source)" do
+    test "the kernel peercred pid wins when the platform provides one" do
+      assert DaemonClient.daemon_pid(4242, %{"pid" => 1}) == 4242
+      assert DaemonClient.daemon_pid(4242, %{}) == 4242
+    end
+
+    test "the daemon's wire pid answers when the kernel read has no pid" do
+      assert DaemonClient.daemon_pid(nil, %{"stopping" => true, "pid" => 4242}) == 4242
+    end
+
+    test "nil only when both sources are absent — the caller refuses, never guesses" do
+      assert DaemonClient.daemon_pid(nil, %{"stopping" => true}) == nil
+      assert DaemonClient.daemon_pid(nil, %{"pid" => 0}) == nil
+      assert DaemonClient.daemon_pid(nil, %{"pid" => -3}) == nil
+    end
+  end
+
   # Minimal stand-in for a foreign daemon on the socket path: accept the
   # takeover probe's connection and answer it with one byte — any reply
   # proves a live generation owns the endpoint.
