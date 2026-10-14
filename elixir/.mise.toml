@@ -1,4 +1,0 @@
-# Canonical migration toolchain pins (implementation brief §1).
-[tools]
-erlang = "28.5"
-elixir = "1.18.5-otp-27"

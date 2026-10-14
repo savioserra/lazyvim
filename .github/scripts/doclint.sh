@@ -2,11 +2,11 @@
 # doclint — the moduledoc convention linter (r3.doclint).
 #
 # Every engine module states its layer and its one law; contract modules name
-# their implementor policy. The lint reads the elixir sources tree-side and
-# never edits them: headers are owned by the elixir partition, this check only
+# their implementor policy. The lint reads the engine sources tree-side and
+# never edits them: headers are owned by the engine tree, this check only
 # holds the line.
 #
-# Rules (over the engine lib sources, elixir/apps/*/lib/**/*.ex, one check
+# Rules (over the engine lib sources, apps/*/lib/**/*.ex, one check
 # per defmodule; test support and fixtures are data, not engine surface):
 #   no-moduledoc     module has no @moduledoc at all
 #   moduledoc-false  @moduledoc false (a module that refuses to introduce itself)
@@ -313,8 +313,8 @@ done
 cd "$repo_root"
 # Engine lib sources only: apps/*/lib — find(1) gets no shell glob, so the
 # lib boundary is enforced by the path filter.
-files=$(find elixir/apps -type f -name '*.ex' 2>/dev/null | grep '/lib/' | LC_ALL=C sort)
-[ -n "$files" ] || die "no elixir lib sources found under elixir/apps"
+files=$(find apps -type f -name '*.ex' 2>/dev/null | grep '/lib/' | LC_ALL=C sort)
+[ -n "$files" ] || die "no engine lib sources found under apps"
 
 # The find output is a plain path list; splitting is deliberate.
 # shellcheck disable=SC2086

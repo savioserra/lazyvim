@@ -87,7 +87,7 @@ required.
   real ~/.local/state/workstation/journal and fail/skip under test-home.sh.
 - check.sh's elixir gate runs the umbrella under the fixture HOME with
   MISE_DATA_DIR=shared; keep deps/ and _build warm for the canonical pin
-  (elixir/.tool-versions: erlang 28.5, elixir 1.18.5-otp-27) or mix hits the
+  (root .tool-versions: erlang 28.5, elixir 1.18.5-otp-27) or mix hits the
   interactive Hex prompt and the suite dies mid-output (exit 1, truncated log).
 
 ## Graduation lane lessons (c3, 2026-10-04)
@@ -115,7 +115,7 @@ required.
 - Elixir module attributes do NOT scope nested modules: bare `Foundation` in
   @package_modules resolves to top-level ::Foundation at runtime — alias
   Workstation.Core.Catalog.Packages.{...} explicitly.
-- elixir/ has NO .formatter.exs and existing modules are NOT mix-format clean
+- The repo has NO .formatter.exs and existing modules are NOT mix-format clean
   (hand-kept long-line style); never run bare `mix format` over existing
   files — only your own.
 - [SUPERSEDED c5: golden.lua deleted — the oracle is `mix workstation.goldens`;
@@ -255,8 +255,8 @@ required.
   child (BEAM has NO exec(2) — child + exit-forwarding is the handoff).
 - Update.engine_root VALIDATES candidates (bootstrap/bootstrap.pins +
   versions.json + bin/workstation) and falls through to the dev anchor on
-  an invalid explicit root — fixtures for "checkout without elixir/" must
-  carry the three anchor files AND be named .../workstation.
+  an invalid explicit root — fixtures for a bare checkout (no mix umbrella)
+  must carry the three anchor files AND be named .../workstation.
 - Enum.reduce_while returns the {:halt, x} PAYLOAD unwrapped — outer case
   clauses match x, never {:halt, x}.
 - Installer stamps releases with .built-from = source HEAD; a release
@@ -325,8 +325,8 @@ required.
   existing engine release (release_refreshed=false is honest — the shim skips
   when an engine exists). The refresh path is `workstation update` (bootstrap
   step rebuilds when $parent/workstation/.built-from != checkout HEAD; stamp
-  written by install-runtime.sh). Rebuild by hand: cd elixir && mise exec --
-  env MIX_ENV=prod mix release workstation --overwrite (tarball is a separate
+  written by install-runtime.sh). Rebuild by hand: mise exec -- env
+  MIX_ENV=prod mix release workstation --overwrite (tarball is a separate
   check.sh artifact, installer copies _build/prod/rel/workstation directly).
 - Stop semantics ruling precedent (gate v3 d1): a clean stop leaves the
   0-byte socket FILE by design (listener.ex fail-closed: never unlink a
@@ -450,8 +450,8 @@ required.
   note does NOT describe this script's exit code; a printed FAILED with
   exit 1 is red. Trust the printed verdict.
 - After ANY catalog/asset change: rebuild prod release
-  (`cd elixir && mise exec -- env MIX_ENV=prod mix release workstation
-  --overwrite`) AND repack the tarball per docs/elixir.md:228-229
+  (`mise exec -- env MIX_ENV=prod mix release workstation --overwrite`) AND
+  repack the tarball per docs/elixir.md:254-255
   (`tar -czf ../../../workstation-0.1.0-linux-x64.tar.gz workstation` +
   sha256 file, both gitignored) — shim-anchor + boot-smoke gates exec the
   TARBALL and fail closed on stale embedded beams ("native catalog asset

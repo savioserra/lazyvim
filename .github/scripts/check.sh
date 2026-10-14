@@ -11,13 +11,13 @@ fail=0
 step() { printf '\n== %s\n' "$1"; }
 
 step 'engine suite (mix test)'
-(cd elixir && mise exec -- mix test) || fail=1
+mise exec -- mix test || fail=1
 
 step 'moduledoc convention (doclint)'
 sh .github/scripts/doclint.sh || fail=1
 
 step 'golden contract (byte-identical replay)'
-if (cd elixir && mise exec -- mix workstation.goldens /tmp/workstation-goldens-check) \
+if mise exec -- mix workstation.goldens /tmp/workstation-goldens-check \
 	&& diff -r /tmp/workstation-goldens-check tests/goldens; then
 	rm -rf /tmp/workstation-goldens-check
 else
@@ -39,17 +39,17 @@ if ! command -v shellcheck >/dev/null 2>&1; then
 fi
 
 step 'release boot smoke (skipped when the local release build is cold)'
-if [ -f elixir/workstation-0.1.0-linux-x64.tar.gz ]; then
-	sh elixir/test/direct_boot.sh || fail=1
+if [ -f workstation-0.1.0-linux-x64.tar.gz ]; then
+	sh tests/direct_boot.sh || fail=1
 else
-	printf 'no release tarball built; skipping (build with: cd elixir && mise exec -- env MIX_ENV=prod mix release workstation --overwrite)\n'
+	printf 'no release tarball built; skipping (build with: mise exec -- env MIX_ENV=prod mix release workstation --overwrite)\n'
 fi
 
 step 'shim engine-repo anchor (non-bootstrap verb through the checkout shim)'
-if [ -f elixir/workstation-0.1.0-linux-x64.tar.gz ]; then
+if [ -f workstation-0.1.0-linux-x64.tar.gz ]; then
 	sh .github/scripts/shim-anchor.sh || fail=1
 else
-	printf 'no release tarball built; skipping (build with: cd elixir && mise exec -- env MIX_ENV=prod mix release workstation --overwrite)\n'
+	printf 'no release tarball built; skipping (build with: mise exec -- env MIX_ENV=prod mix release workstation --overwrite)\n'
 fi
 
 step 'whitespace (git diff --check)'

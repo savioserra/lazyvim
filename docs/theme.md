@@ -114,15 +114,15 @@ they resolve through `Workstation.Core.Theme.resolve/1` against the same
 token set, so there is exactly one color truth per layer.
 
 
-- `elixir/apps/core/test/workstation/core/theme/tokens_test.exs`: parity
+- `apps/core/test/workstation/core/theme/tokens_test.exs`: parity
   anchor — the mirror's rendered `.chezmoidata.toml` envelope is
   byte-identical to the committed theme goldens fixture, contract values
   match `tokens.lua`, the role set is complete, and every palette role is
   overlay-settable.
-- `elixir/apps/cli/test/workstation/cli/tui/theme_test.exs`: the CLI base
+- `apps/cli/test/workstation/cli/tui/theme_test.exs`: the CLI base
   palette mirrors the core tokens exactly; daemon resolutions carry the
   closed role set.
-- `elixir/apps/core/test/workstation/golden_generate_test.exs`: the plan
+- `apps/core/test/workstation/golden_generate_test.exs`: the plan
   pipeline regenerates the committed goldens byte-for-byte, so any engine
   edit that forgets the Elixir mirror or the rendered envelope fails the
   drift anchor.
