@@ -92,12 +92,24 @@ fresh-installation documents curl+sh+git as the only distro prerequisites.
 **Parity-proof still open** — what the sprint proved: fresh homes apply,
 sync and verify from the package tree (68d0a79a; mise-contract rehearsal
 76bab61e byte-deterministic across two fresh homes) and the VPS re-converged
-to ca4933ef on the rebuilt release; what it did NOT prove: the
-byte-identical fresh-apply-vs-managed-host comparison the exit asks for,
-and the aurora fresh-box rehearsal (the operator gate) — the host was
-offline at gate time (tailnet last seen 6h prior), so the documented
-install.sh path has not yet run on real operator hardware. r5.gate waits
-on both.
+to ca4933ef on the rebuilt release. **Aurora rehearsal (2026-10-14, the
+operator gate): the host came online LIVED-IN, not bare** — an existing
+install (release 6b6a30a, private clone, operator tooling incl. a personal
+mise + codex pin) — so what ran was the convergence path, not install.sh:
+release rebuilt to f7ce3d6, apply exercised the guarded cutover for real
+(three conflicts surfaced and resolved: handed-over .tmux.conf, removed
+un-owned interim artifact, pre-seeded the mise download with sha256 verify),
+sync + verify green (gen 8a371a55, 12 packages, packages=12 on both hosts),
+and the live tmux2k bar confirmed on-box (onedark, cpu/ram/time, checkout
+at the bash-fix pin d8c5c292). The operator's codex pin was preserved by
+moving it to the unmanaged `~/.config/mise/conf.d/local.toml` layer — user
+tools never belong in a managed file. What the rehearsal did NOT prove: the
+install.sh bare-box path on real hardware (the stop-rule forbids cloning
+over an existing install — that needs a genuinely bare host) and the
+byte-identical fresh-apply-vs-managed-host comparison. Two engine defects
+the rehearsal surfaced are carded: the download fetch's SNI/hostname-check
+failure on GitHub release-asset redirects, and the bootstrap handoff's raw
+CaseClauseError on a stale apply.lock. r5.gate waits on both.
 
 Exit: a new machine reaches this host's state from nothing but the engine
 release and the package tree — the strangler gap closed for good.
