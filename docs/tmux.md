@@ -21,10 +21,10 @@
 | `@tmux_navigator_disable_when_zoomed` | `1` |
 | `scroll-on-clear` | `off` inside `%if "#{>=:#{version},3.5}"` — the guard keeps the conf parse-safe on tmux releases without the option (pre-3.4); this host's 3.4 has it default-on (aurora mobile-client mitigation) |
 | `@tmux2k-theme` | `onedark` |
-| `@tmux2k-show-powerline` | `false` — text-only bar: no separator paint |
-| `@tmux2k-bg-main` / `@tmux2k-bg-alt` / `@tmux2k-dark-blue` | `default` — the no-background slots; tmux2k's variable indirection turns them into `bg=default` |
+| `@tmux2k-bg-main` / `@tmux2k-bg-alt` / `@tmux2k-dark-blue` | `default` — the window no-background slots; tmux2k's variable indirection turns them into `bg=default` |
 | `@tmux2k-white` | onedark comment gray — inactive window text |
-| `@tmux2k-*-colors` | per-segment `dark_blue <accent>` pairs — text-only modules (session white, cwd blue, git green, cpu light-green, ram yellow, time light-blue); window list `blue dark_blue` = active window blue text |
+| `@tmux2k-window-list-colors` | `blue dark_blue` — active window = onedark blue text, no background |
+| `@tmux2k-window-list-left-sep` / `-right-sep` | empty — the window separator spans style zero characters, so they paint nothing (module segments keep upstream powerline pills) |
 | `@tmux2k-right-plugins` | `cpu ram time` — clicking cpu opens btop; ram's popup is pinned to btop too |
 | `@tmux2k-time-format` | `%a %H:%M` — no seconds: a seconds clock pins the status bar to a 1Hz re-render, which limited mobile clients render as stacked lines (aurora mobile-client mitigation) |
 | Window cycling | root `S-Left` / `S-Right` — `previous-window` / `next-window`, no prefix |
