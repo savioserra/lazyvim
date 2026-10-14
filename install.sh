@@ -8,10 +8,14 @@
 #
 # mise-first chain: the shell pins mise (version + SHA-256 from the cloned
 # checkout's workstation/versions.json), mise provides the first-acquisition
-# tool pins (tmux, btop, then the pinned Erlang/Elixir toolchain the release
-# build resolves), and the engine bootstrap works unchanged from there. These
-# shell-level pins are first acquisition only: steady-state management of the
-# tools belongs to the engine's mise contract.
+# tool pins (tmux, btop on Linux — skipped on darwin, where they are host
+# prerequisites; the skip is stated in the banner — then the pinned
+# Erlang/Elixir toolchain the release build resolves), and the engine
+# bootstrap works unchanged from there. Every mise resolution in the chain
+# is scoped to the checkout's own pins: the ambient global config/conf.d is
+# isolated out, so a stale linux-only pin can never abort a darwin install.
+# These shell-level pins are first acquisition only: steady-state management
+# of the tools belongs to the engine's mise contract.
 #
 # Host prerequisites: POSIX shell, curl, git and the ordinary archive/hash
 # tools (tar/gzip, sha256sum or shasum). On Linux git is the single distro
@@ -166,14 +170,23 @@ if [ "$platform" = linux_x86_64 ]; then
 	esac
 	export PATH
 else
-	say 'macOS: tmux and btop stay host prerequisites; the installer acquires them on Linux only'
+	say 'tmux/btop pins skipped on darwin: host prerequisites (brew); provisioning the toolchain pins only'
 fi
 
 # The pinned Erlang/Elixir toolchain from the checkout's .tool-versions — the
 # same pins the release build resolves. The erlang/elixir mise backends clone
-# through git, which is why the git prerequisite precedes this step.
+# through git, which is why the git prerequisite precedes this step. The
+# resolution is scoped to exactly those checkout pins: the ambient global
+# config/conf.d never enters this install — a stale engine-managed config.toml
+# (composed before the platform-scope contract) can still declare the
+# linux-only tmux/btop pins, and a bare `mise install` provisions every
+# declared tool, aborting darwin ("No matching asset found for platform
+# macos-arm64"). The empty MISE_CONFIG_DIR drops that slot from the chain;
+# the release build (bootstrap/install-runtime.sh) applies the same isolation.
 say 'installing the pinned elixir/erlang toolchain via mise'
-(cd "$DEST" && mise install)
+toolchain_config=$tmp/mise-config
+mkdir "$toolchain_config"
+(cd "$DEST" && MISE_CONFIG_DIR="$toolchain_config" mise install)
 
 # Interactive verbs render the TUI on a terminal and hard-error without one,
 # so a piped run (curl | sh) must pass --headless explicitly. Only bootstrap

@@ -26,8 +26,10 @@ manager:
 Bootstrap itself needs only the shell/download/archive/hash/filesystem essentials
 plus git and curl — not Node, Python, jq, system Neovim, LuaJIT, a preinstalled
 chezmoi or a preinstalled mise. The installer is mise-first: it acquires a
-checksum-pinned mise, provisions the first-acquisition tool pins (tmux, btop,
-then the pinned Erlang/Elixir toolchain the release build resolves), and the
+checksum-pinned mise, provisions the first-acquisition tool pins (tmux and
+btop on Linux; skipped on darwin, where they remain host prerequisites and
+the banner states the skip — then the pinned Erlang/Elixir toolchain the
+release build resolves), and the
 engine itself — a checksummed Elixir OTP release — builds from the checkout
 with that toolchain; the installed release thereafter manages its own
 re-acquisition (`workstation bootstrap` refreshes it after `pull`). Managed
@@ -63,7 +65,12 @@ and no Lua or nvim execution in the engine path. Any checkout can host the
 launcher. The installer is mise-first: after the clone it acquires the pinned
 mise binary, provisions the first-acquisition Linux tool pins (`tmux`, `btop`,
 then the pinned Erlang/Elixir toolchain) through mise backends, and only then
-bootstraps; the engine's mise contract owns the tool set from the first apply
+bootstraps; on darwin the tmux/btop pins are skipped (host prerequisites,
+stated in the banner) and every mise resolution in the chain — the toolchain
+install and the release build alike — is scoped to the checkout's own pins,
+so an ambient global pin (a stale linux-only declaration in
+`~/.config/mise/config.toml` or `conf.d`) can never abort the install. The
+engine's mise contract owns the tool set from the first apply
 onward (engine-pinned binary, composed global config, tool state under the
 engine state root). Bootstrap prepares the checksum-pinned Neovim runtime and
 chezmoi backend (managed capabilities), builds/installs the engine release, then

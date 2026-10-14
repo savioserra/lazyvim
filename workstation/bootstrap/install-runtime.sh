@@ -2,6 +2,10 @@
 # Minimal POSIX runtime installer. The download pins are DERIVED from the
 # checkout's versions.json — the single source of truth; there is no pins
 # manifest. The engine-driven refresh passes the derived records as env.
+# The engine release build is platform-scoped like the engine contract: its
+# mise resolution carries only the checkout's toolchain pins, never the
+# ambient global config/conf.d (a stale linux-only pin must not abort a
+# darwin build).
 set -eu
 root=$1
 platform=$2
@@ -131,6 +135,28 @@ if [ -n "$repo" ]; then
 	fi
 	release_stage=$lock/workstation-stage
 	mkdir "$release_stage"
+	# Platform-scoped provisioning — the same gate the engine contract applies
+	# at apply time, here for the acquisition build: the build's mise
+	# resolution carries ONLY the checkout's toolchain pins (.tool-versions).
+	# mise auto-installs every declared-but-missing tool on exec, and the
+	# ambient global config/conf.d can still declare the linux-only pins
+	# (tmux/btop — composed by an engine release from before the
+	# platform-scope contract, or any other writer): on darwin that aborts
+	# the build with "No matching asset found for platform macos-arm64".
+	# Those tools are host prerequisites on macOS (brew), so the skip is
+	# stated in the banner. The empty MISE_CONFIG_DIR drops the ambient
+	# global slot from the chain while tool STATE stays at the default
+	# location — an inherited MISE_DATA_DIR (an activated engine shell) is
+	# dropped for the same determinism, so toolchain installs from the
+	# fresh-box chain still resolve.
+	mise_config_dir=$release_stage/mise-config
+	mkdir "$mise_config_dir"
+	MISE_CONFIG_DIR=$mise_config_dir
+	unset MISE_DATA_DIR
+	export MISE_CONFIG_DIR
+	if [ "$platform" = darwin_arm64 ]; then
+		echo 'workstation bootstrap: tmux/btop pins skipped on darwin: host prerequisites (brew)'
+	fi
 	# The daemon-driven release refresh runs this installer as a child of the
 	# running engine release, whose launcher exported the installed release's
 	# OTP state: an erts-first PATH plus ROOTDIR/BINDIR/RELEASE_ROOT and kin.

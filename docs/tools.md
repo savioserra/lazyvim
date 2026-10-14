@@ -74,8 +74,19 @@ one-anchored-match extraction: `mise` plus `mise_<plat>_url`/`_sha256` pin
 the manager itself (digest verified, then the `--version` banner asserted,
 before anything else runs), and `tmux`/`tmux_mise_backend` plus
 `btop`/`btop_mise_backend` pin the first-acquisition sources handed to
-`mise install`. mise's own backends verify the tool artifacts they fetch;
-the installer then asserts the resolved `tmux -V`/`btop --version` banners
+`mise install` on Linux; on darwin those pins are skipped — the tools are
+host prerequisites there (brew) and the installer banner states the skip
+("skipped on darwin: host prerequisites"). Both installers scope every mise
+resolution to the checkout's own pins: the toolchain install and the
+bootstrap's release build run under an isolated `MISE_CONFIG_DIR`, so the
+ambient global config/conf.d (a stale engine-managed `config.toml` from
+before the platform-scope contract, for instance) never enters the
+acquisition chain — a bare `mise install` provisions every declared tool,
+and mise's exec auto-installs declared-but-missing tools, so an
+unconditional chain would abort a darwin bootstrap on the linux-only pins.
+mise's own backends verify the tool artifacts they fetch;
+on Linux the installer then asserts the resolved `tmux -V`/`btop --version`
+banners
 against the pinned versions. These installer-side records are first
 acquisition only — steady-state declarations belong to the engine mise
 contract, which owns the binary from the first apply onward.
