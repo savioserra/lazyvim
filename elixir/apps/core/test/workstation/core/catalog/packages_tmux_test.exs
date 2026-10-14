@@ -107,7 +107,7 @@ defmodule Workstation.Core.Catalog.PackagesTmuxTest do
       |> File.read!()
       |> Jason.decode!()
 
-    assert manifest["tmux2k"] == "07b3228b56c1a7b6109f00009df80b53f7eae892"
+    assert manifest["tmux2k"] == "d8c5c2924c557835f984dd44eb71315b897bc4f5"
     assert manifest["tmux2k_url"] == "https://github.com/2KAbhishek/tmux2k"
   end
 

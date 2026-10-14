@@ -46,7 +46,7 @@ on an isolated server.
 | Plugin | Commit |
 | --- | --- |
 | `tmux-plugins/tpm` | `e261deb1b47614eed3400089ce7197dc68acc4eb` |
-| `2KAbhishek/tmux2k` | `07b3228b56c1a7b6109f00009df80b53f7eae892` |
+| `2KAbhishek/tmux2k` | `d8c5c2924c557835f984dd44eb71315b897bc4f5` |
 | `tmux-plugins/tmux-yank` | `acfd36e4fcba99f8310a7dfb432111c242fe7392` |
 | `christoomey/vim-tmux-navigator` | `e41c431a0c7b7388ae7ba341f01a0d217eb3a432` |
 | `tmux-plugins/tmux-resurrect` | `cff343cf9e81983d3da0c8562b01616f12e8d548` |
@@ -148,6 +148,29 @@ time` — clicking cpu opens btop, ram's popup is pinned to btop via
 `@tmux2k-ram-popup-cmd`) and the clock format ahead of TPM init; it
 deliberately sets NO color overrides — upstream's onedark palette is
 canonical.
+
+Bash 5.x empty-lookahead abort (fixed by the pin move, 2026-10-14): tmux2k's
+powerline assembly looks ahead one plugin (`${plugins[$((plugin_index + 1))]}`)
+to draw each separator; for the LAST plugin of each side that expansion is
+empty, and the old pin's `get_plugin_colors ""` indexed `plugin_colors[]`
+with the empty subscript — on bash 5.2 a fatal `plugin_colors: bad array
+subscript` (its main.sh line 96) that aborted `main.sh` mid-assembly and left
+the status bar empty until `2k.tmux` was re-run (the crash was intermittent;
+a re-run could crash once before succeeding). Upstream fixed the class with
+an early return on an empty plugin name in `get_plugin_colors` (`55e597e`,
+2026-09-15; its caller already falls back to the main background for an empty
+lookahead), and the pin moved to upstream HEAD `d8c5c292` — proven on a bash
+5.2.21 host: `source-file` + `2k.tmux` twice, status-left/right non-empty both
+times. Interim recovery on a home still carrying the old pin is the `2k.tmux`
+re-run; the real fix is `workstation apply` at the new pin.
+
+Pin-move migration (apply refuses to move a checkout): the git contract never
+moves an existing checkout to a different commit (fail-closed — a checkout is
+never overwritten in place), so a home carrying the tmux2k checkout at the
+retired `07b3228b` pin gets `refusing to move it to d8c5c292…; remove it
+explicitly` on the first apply after this bump. Recovery: remove
+`~/.tmux/plugins/tmux2k` once and re-apply; fresh homes clone directly at the
+new pin. Same pattern as the nunchux pre-seed migration note above.
 
 Recorded tradeoffs: ADDENDUM 2 dropped tmux2k for the tmux-oasis
 starlight_dark statusline (operator permission, 2026-10-12); the aurora

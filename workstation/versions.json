@@ -88,7 +88,7 @@
   "ripgrep_linux_x86_64_sha256": "33e15bcf1624b25cdd2a55813a47a2f95dbe126268203e76aa6a585d1e7b149c",
   "ripgrep_linux_x86_64_url": "https://github.com/BurntSushi/ripgrep/releases/download/{V}/ripgrep-{V}-x86_64-unknown-linux-musl.tar.gz",
   "tmux": "3.7c",
-  "tmux2k": "07b3228b56c1a7b6109f00009df80b53f7eae892",
+  "tmux2k": "d8c5c2924c557835f984dd44eb71315b897bc4f5",
   "tmux2k_url": "https://github.com/2KAbhishek/tmux2k",
   "tmux_mise_backend": "aqua:tmux/tmux-builds",
   "tree_sitter": "0.26.11",

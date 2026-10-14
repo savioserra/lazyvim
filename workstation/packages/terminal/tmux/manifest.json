@@ -29,7 +29,7 @@
       "provider": "git",
       "spec": {
         "url": "https://github.com/2KAbhishek/tmux2k",
-        "commit": "07b3228b56c1a7b6109f00009df80b53f7eae892",
+        "commit": "d8c5c2924c557835f984dd44eb71315b897bc4f5",
         "target": ".tmux/plugins/tmux2k"
       }
     },
