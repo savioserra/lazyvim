@@ -463,3 +463,50 @@ required.
 - Refute-guards on config bytes (`refute conf =~ "@thm_"`) also match
   explanatory comments — never mention the banned literal in surrounding
   prose.
+
+## Sprint 7 closing gate lane (2026-10-14)
+
+- Cross-generation daemon stop: an OLD release's daemon halts bare and
+  strands its socket, so the FIRST post-553a899d release-replacing verb
+  fails closed once ("did not exit within 10s … socket still present, beam
+  pid exited") — re-running succeeds (PreReplace probes no live daemon →
+  `:ok`; the fresh daemon's takeover removes the stale socket via the
+  no-follow proof). Never hand-delete the socket node.
+- Engine inets fetch cannot complete GitHub release-asset TLS on this host
+  (OTP wildcard-cert hostname check vs the multi-label
+  release-assets.githubusercontent.com). Established method: curl the
+  pinned bytes, `sha256sum` against versions.json BEFORE placement, then
+  apply — the download contract re-verifies and absorbs
+  (`:already_installed`); a mismatched pre-existing artifact is refused
+  with "inspect it and remove it explicitly".
+- Guarded-cutover ladder that converged the VPS (each refusal names the
+  divergence; nothing is silent): verify content identity → move the
+  target aside (`mv` to receipts, never `rm`) → re-apply. Pin-move refusals
+  want the checkout explicitly removed (verify it sits clean at the
+  recorded old pin first). chezmoi "has changed since chezmoi last wrote
+  it" after removals = boltdb split-brain → move
+  `~/.config/chezmoi/chezmoistate.boltdb` aside (keep the `.bak`) and
+  re-apply; converged targets rewrite byte-identical.
+- Sprint workers: NEVER hand-edit deployed engine-owned targets mid-run.
+  The unlanded `~/.hermes/skills/lazyvim/SKILL.md` edit cost the gate a
+  convergence cycle; payload first, then apply. Knowledge meant to survive
+  must live in the payload tree or a card — unowned extra files (e.g.
+  `references/`) are invisible to the engine and get shadowed by the next
+  apply of the parent target.
+- Retirement window: `record_applied` REPLACES the targets map wholesale,
+  so a dropped recipe's journal record dies at the very next apply — a
+  retirement contract landing after that apply can never derive the
+  candidate (tmux-oasis on the VPS is now an unowned leftover the contract
+  cannot see; it needs a policy tombstone or explicit manual removal).
+  Retirement-derivation features must land BEFORE the state change they
+  guard.
+- Live tmux2k bar capture without a client: `tmux display-message -p
+  '#{T:status-left}'` / `#{T:status-right}` (the `T:` flag expands the
+  assembled bar, `#(...)` included); hyphenated format vars only. First
+  assembly needs ~14s after `new-session -d`.
+- mise two-slug residue: installer-era `~/.local/share/mise/shims` can sit
+  on PATH in inherited sessions even after the contract absorbs conf.d —
+  fresh shells resolve through the foundation fragment
+  (`~/.config/shell/mise.sh`, MISE_DATA_DIR = engine state root) and the
+  composed `~/.config/mise/config.toml`. Verify with `command -v` AFTER
+  sourcing the fragment; identical pins (tmux 3.7c, btop 1.4.7) both sides.
