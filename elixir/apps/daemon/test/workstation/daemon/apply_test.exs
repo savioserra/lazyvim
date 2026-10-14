@@ -16,6 +16,7 @@ defmodule Workstation.Daemon.ApplyTest do
 
   alias Workstation.Core.{Catalog, Digest, EngineState, Graph, Source}
   alias Workstation.Daemon.{Apply, Listener, Protocol}
+  alias Workstation.Pipeline
 
   setup do
     home = Path.join(System.tmp_dir!(), "c1-daemon-apply-#{System.unique_integer([:positive])}")
@@ -107,6 +108,136 @@ defmodule Workstation.Daemon.ApplyTest do
       assert record["generation"] == generation
     end
 
+    test "first convergence after a state change applies through the daemon's own plan", %{home: home} do
+      Application.put_env(:daemon, :engine_apply, true)
+
+      # The state change: an earlier generation deployed the tmux2k theme and
+      # the current catalog declares its removal. The target is on disk AND
+      # journal-recorded — the first-convergence window, where the apply-mode
+      # composition activates the removal (rebuilding .chezmoiremove, the
+      # manifest and the generation) and the pure read-mode plan cannot see it.
+      target = ".config/tmux/themes/tmux2k.conf"
+      path = Path.join(home, target)
+      File.mkdir_p!(Path.dirname(path))
+      File.write!(path, "old theme\n")
+
+      state = Path.join([home | EngineState.state_components()])
+      File.mkdir_p!(Path.join(state, "journal"))
+      File.chmod!(Path.join(state, "journal"), 0o700)
+
+      # The prior generation's journal record in the shape every reader
+      # verifies (the plan wire's baseline check re-verifies the recorded
+      # generation directory and derives patches against it): the recorded
+      # generation staged exactly the engine's policy tombstone.
+      old_generation = String.duplicate("a", 64)
+      old_directory = EngineState.generation_directory(state, old_generation)
+      File.mkdir_p!(old_directory)
+
+      old_tombstone = Workstation.Core.Policy.remove_file([])
+      File.write!(Path.join(old_directory, ".chezmoiremove"), old_tombstone)
+      File.chmod!(Path.join(old_directory, ".chezmoiremove"), 0o644)
+
+      old_manifest = [
+        %{"name" => ".chezmoiremove", "type" => "file", "mode" => 0o644, "sha256" => Digest.sha256(old_tombstone)}
+      ]
+
+      File.write!(Path.join([state, "journal", "applied.json"]),
+        Jason.encode!(%{
+          "revision" => 1,
+          "generation" => old_generation,
+          "at" => 1_700_000_000,
+          "targets" => %{target => EngineState.target_fingerprint(home, target)},
+          "manifest" => old_manifest,
+          "source_index" => %{},
+          "fragments" => %{}
+        })
+      )
+
+      # The fake backend mirrors the real chezmoi behavior for this plan: the
+      # staged .chezmoiremove names the target, so the apply REMOVES it (the
+      # tombstone is consumed), which is what heals the divergence below.
+      install_fake_chezmoi(
+        home,
+        fixture_target(home) <> "\nrm -f '#{path}'\n"
+      )
+
+      # The read-mode plan (what `plan.run` serves and what the client used to
+      # confirm) is NOT the generation the mutation surface builds: confirming
+      # it refuses as stale — the double-collect divergence, pinned.
+      read_generation = read_mode_generation(home)
+
+      assert {:error, {"apply_refused", message}} =
+               Apply.run(read_generation, home: home, collector: fn -> {:ok, sandbox_catalog(home)} end)
+
+      assert message =~ "stale plan"
+
+      # `apply.plan` serves the composition the daemon executes; the confirmed
+      # generation IS the executed one and the first convergence applies.
+      assert {:ok, %{"schema" => "workstation.plan.v1", "generation" => generation}} =
+               Apply.plan(home: home, collector: fn -> {:ok, sandbox_catalog(home)} end)
+
+      refute generation == read_generation
+
+      assert {:ok, %{"generation" => ^generation}} =
+               Apply.run(generation, home: home, collector: fn -> {:ok, sandbox_catalog(home)} end)
+
+      record = applied_record(home)
+      assert record["generation"] == generation
+      assert record["revision"] == 2
+
+      # The executed generation carried the ACTIVE removal — the divergence's
+      # substance, staged exactly as the backend consumed it.
+      directory = Path.join([home | EngineState.state_components() ++ ["generations", generation]])
+      tombstone = File.read!(Path.join(directory, ".chezmoiremove"))
+      assert tombstone =~ target
+
+      # Steady state: the tombstone consumed the target, so the read-mode plan
+      # and the mutation plan agree AGAIN — the divergence was the first
+      # convergence window, and a fresh confirmation pair re-applies cleanly.
+      assert {:ok, %{"schema" => "workstation.plan.v1", "generation" => steady_generation}} =
+               Apply.plan(home: home, collector: fn -> {:ok, sandbox_catalog(home)} end)
+
+      refute steady_generation == generation
+      assert steady_generation == read_mode_generation(home)
+
+      assert {:ok, %{"generation" => ^steady_generation}} =
+               Apply.run(steady_generation, home: home, collector: fn -> {:ok, sandbox_catalog(home)} end)
+
+      assert applied_record(home)["revision"] == 3
+    end
+
+    test "over the wire, apply.plan serves the mutation-bound composition and the guard still binds", %{home: home} do
+      Application.put_env(:daemon, :engine_apply, true)
+      wait_for_file(Listener.socket_path())
+
+      # The live catalog declares the tmux2k removal; present on disk, it
+      # activates at the apply-mode boundary — the wire's two plan surfaces
+      # structurally diverge exactly as they do on a real first convergence.
+      target = ".config/tmux/themes/tmux2k.conf"
+      path = Path.join(home, target)
+      File.mkdir_p!(Path.dirname(path))
+      File.write!(path, "old theme\n")
+
+      assert %{"ok" => true, "result" => %{"schema" => "workstation.plan.v1", "generation" => generation}} =
+               request("apply.plan", %{}, 30_000)
+
+      assert byte_size(generation) == 64
+
+      assert %{"ok" => true, "result" => %{"generation" => read_generation}} = request("plan.run", %{}, 30_000)
+      refute generation == read_generation
+
+      # The guard still binds: a client confirming a generation the daemon is
+      # not building is refused as stale, whatever served it.
+      assert %{"ok" => false, "error" => %{"code" => "apply_refused", "message" => message}} =
+               request("apply.run", %{"generation" => read_generation, "entries" => []})
+
+      assert message =~ "stale plan"
+
+      # And the served confirmation composes deterministically: a second
+      # apply.plan answers the same generation the execute would build.
+      assert %{"ok" => true, "result" => %{"generation" => ^generation}} = request("apply.plan", %{}, 30_000)
+    end
+
     test "with the gate open, a contended apply lock maps to the locked protocol error", %{home: home} do
       Application.put_env(:daemon, :engine_apply, true)
 
@@ -163,6 +294,15 @@ defmodule Workstation.Daemon.ApplyTest do
     home && generation
   end
 
+  # The read-mode plan generation — what `plan.run` serves and what the apply
+  # client confirmed before `apply.plan` existed. Pure compose: no journal
+  # stamp, no removal activation, so a first-convergence home composes a
+  # DIFFERENT generation than the mutation surface builds.
+  defp read_mode_generation(home) do
+    run = Pipeline.run(%Pipeline.Run{input: {:file, fixture_envelope(home)}, mode: :read, home: home}, :compose)
+    run.plan.generation
+  end
+
   defp sandbox_catalog(home), do: Catalog.load(fixture_envelope(home))
 
   defp fixture_envelope(home) do
@@ -179,6 +319,14 @@ defmodule Workstation.Daemon.ApplyTest do
             %{
               "provider" => "chezmoi",
               "spec" => %{"asset" => "fixture:files/rc", "kind" => "file", "target" => ".config/fixture/rc"}
+            },
+            # A declared removal of a target an earlier generation deployed:
+            # inactive while the target is absent, ACTIVE (journal-recorded or
+            # home-present) at the apply-mode boundary — the first-convergence
+            # divergence between the read-mode plan and the mutation plan.
+            %{
+              "provider" => "chezmoi",
+              "spec" => %{"kind" => "remove", "target" => ".config/tmux/themes/tmux2k.conf"}
             },
             %{
               "provider" => "chezmoi-data",

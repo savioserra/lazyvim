@@ -442,14 +442,14 @@ defmodule Workstation.CLI.Router do
       result.flags[:headless] ->
         pre_replace_stop(home)
 
-        with {:ok, plan} <- evaluate(:plan, home, result) do
+        with {:ok, plan} <- apply_plan(result) do
           Plain.run(:apply, destination: home, plan: plan)
         end
 
       usable_terminal?() ->
         pre_replace_stop(home)
 
-        with {:ok, plan} <- evaluate(:plan, home, result) do
+        with {:ok, plan} <- apply_plan(result) do
           run_tui(Apply, destination: home, plan: plan)
         end
 
@@ -577,6 +577,11 @@ defmodule Workstation.CLI.Router do
             # timed out — engine-exit operator error, message verbatim.
             fail(4, "error: #{tag}: #{message}")
 
+          # ensure-daemon's spawn refusal rides as a bare message (no release
+          # binary, spawn failure) — engine exit, never a CaseClause crash.
+          {:error, message} when is_binary(message) ->
+            fail(4, "error: #{message}")
+
           # The daemon-side read failure classes over the wire: Read's
           # {:core, _}/{:engine, _} arrive as STRING codes (JSON), so a
           # bare-host engine-checkout refusal used to fall through every
@@ -618,6 +623,43 @@ defmodule Workstation.CLI.Router do
   defp read_op(:status), do: "status.run"
   defp read_op(:plan), do: "plan.run"
   defp read_op(:diff), do: "diff.run"
+
+  # The apply verb's confirmation plan: the daemon's `apply.plan` op — the
+  # SAME composition `apply.run` executes (apply-mode: journal baseline,
+  # removal activation, retirements), not the read-mode projection `plan.run`
+  # serves. On a home where a declared removal activates (first convergence
+  # after a state change) the two generations structurally differ, so a
+  # read-mode confirmation would refuse as stale a plan the daemon can build
+  # and apply — confirming against `apply.plan` makes the guard's comparison
+  # like for like. Error mapping mirrors the read verbs' client contract.
+  defp apply_plan(result) do
+    case DaemonClient.call("apply.plan", %{}, client_opts(result, @read_timeout_ms)) do
+      {:ok, wire} ->
+        {:ok, wire}
+
+      {:error, {tag, message}} when is_atom(tag) ->
+        # Daemon transport failure: unavailable, died mid-op, or
+        # timed out — engine-exit operator error, message verbatim.
+        fail(4, "error: #{tag}: #{message}")
+
+      # ensure-daemon's spawn refusal rides as a bare message (no release
+      # binary, spawn failure) — an engine-exit operator error, never a crash.
+      {:error, message} when is_binary(message) ->
+        fail(4, "error: #{message}")
+
+      {:error, {"core", message}} when is_binary(message) ->
+        fail(3, "error: core evaluation failed: #{message}")
+
+      {:error, {"engine", message}} when is_binary(message) ->
+        fail(4, "error: #{format_engine_error(message)}")
+
+      {:error, {code, message}} when is_binary(code) and is_binary(message) ->
+        fail(client_exit(code), "error: #{code}: #{message}")
+
+      {:error, code, message} ->
+        fail(client_exit(code), "error: #{code}: #{message}")
+    end
+  end
 
   defp lifecycle_op(command), do: "#{command}.run"
 

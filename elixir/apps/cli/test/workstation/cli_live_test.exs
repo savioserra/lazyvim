@@ -6,7 +6,8 @@ defmodule Workstation.CLI.LiveTest do
 
   Migrated from `Workstation.CLITest` (engine work, M1): live reads route
   through `status.run` / `plan.run` / `diff.run` and the headless apply
-  chain drives `plan.run` + `apply.run` over the socket, so these tests
+  chain drives `apply.plan` (the daemon's own mutation-bound composition)
+  + `apply.run` over the socket, so these tests
   need a daemon pinned to the sandbox home and must never run concurrent
   with the async suite (WORKSTATION_HOME and the daemon tree are
   process-global). Assertions are carried over verbatim from the
@@ -15,7 +16,7 @@ defmodule Workstation.CLI.LiveTest do
 
   use ExUnit.Case, async: false
 
-  alias Workstation.CLI.{DaemonClient, Router}
+  alias Workstation.CLI.{DaemonClient, Plain, Router}
   alias Workstation.Daemon.Listener
 
   setup do
@@ -79,28 +80,92 @@ defmodule Workstation.CLI.LiveTest do
   end
 
   # --headless is the ONLY way a non-interactive caller reaches the plain
-  # runner; on this pipe the gate passing is proven by the plain runner's
-  # stdout ("Apply to ...") appearing at all, with the run NOT exiting 1.
-  # MUTATING RUN: everything anchors on the sandbox home — the setup pins
-  # WORKSTATION_HOME to it and the daemon serves that home, so the plan,
-  # the apply, and the journal all live in the sandbox (the 2026-10-05
-  # 17:37 real-host write incident stays structurally impossible).
-  test "--headless bypasses the gate and reaches the plain runner", %{home: home} do
+  # runner. MUTATING-RUN safety: everything anchors on the sandbox home —
+  # the setup pins WORKSTATION_HOME to it and the daemon serves that home.
+  # The verb's pre-replace stop DRAINS the live in-process daemon gracefully
+  # (the self-stop's HALT is hooked — a supervisor-spec test tree must not
+  # halt the mix run; without the hook the daemon's System.halt(0) killed
+  # this suite mid-run and it passed vacuously: exit 0, no summary). The
+  # verb then fails closed: the fresh daemon can only be spawned from an
+  # INSTALLED RELEASE, and the mix test env has none — the honest shape of
+  # the production contract here (in production the same ensure-spawn boots
+  # the fresh daemon from the release and the run proceeds).
+  test "headless apply stops a live daemon gracefully, then fails closed without an installed release",
+       %{home: home} do
     original = System.get_env("TERM")
+    socket_path = Listener.socket_path(home)
+    stopped = :atomics.new(1, signed: false)
+
+    # The graceful sequence runs for real (drain + socket removal); the hook
+    # replaces only the HALT (the tree stays under ExUnit's management, like
+    # the shutdown tests' hooks). "The daemon is alive" means "the stop hook
+    # has not fired yet" — the in-process daemon's OS pid IS this test VM, so
+    # the real kill -0 probe would rightly refuse to claim a beam death that
+    # cannot happen here.
+    Elixir.Application.put_env(:daemon, :shutdown_hook, fn _delay_ms, _reason ->
+      :atomics.put(stopped, 1, 1)
+    end)
+
+    Elixir.Application.put_env(:cli, :beam_alive, fn _pid -> :atomics.get(stopped, 1) == 0 end)
 
     try do
       System.put_env("TERM", "xterm-256color")
 
-      {result, stdout} = capture_main(["apply", "--headless", "--home", home])
+      {result, stderr} =
+        run_main_capturing_streams(["apply", "--headless", "--home", home])
 
-      assert stdout =~ "Apply to "
-      refute result == {:shutdown, 1}
+      assert {:shutdown, 4} = result
+      assert stderr =~ "no release binary"
 
-      # The journal belongs to the sandbox state root, never the real one.
-      assert File.exists?(Path.join([home, ".local", "state", "workstation", "journal"]))
+      # The graceful stop ran: drain, socket node removed, hook fired in
+      # place of the halt — and the verb never reached the plain runner.
+      assert :atomics.get(stopped, 1) == 1
+      refute File.exists?(socket_path)
     after
+      Elixir.Application.delete_env(:daemon, :shutdown_hook)
+      Elixir.Application.delete_env(:cli, :beam_alive)
+
       if original, do: System.put_env("TERM", original), else: System.delete_env("TERM")
+
+      _ = Workstation.Daemon.Shutdown.reset()
     end
+  end
+
+  # The public headless apply chain — the plain runner over the PRODUCTION
+  # executor (the same chain Router drives after its release gate) — confirms
+  # the daemon's OWN composition: the confirmation wire is `apply.plan` (the
+  # apply-mode composition the mutation executes), so on this first-
+  # convergence home (the live catalog declares the tmux2k removal and the
+  # target is on disk) the staleness guard passes and the run refuses on
+  # MERIT (the unowned removal target) — never on the stale-plan false
+  # positive. The old confirmation source (`plan.run`'s read-mode generation)
+  # is what false-positived; driving the chain with it is refused as stale —
+  # the divergence this fix removes, pinned on its old shape.
+  test "the headless apply chain confirms the daemon's own composition", %{home: home} do
+    target = ".config/tmux/themes/tmux2k.conf"
+    path = Path.join(home, target)
+    File.mkdir_p!(Path.dirname(path))
+    File.write!(path, "old theme\n")
+
+    assert {:ok, %{"schema" => "workstation.plan.v1", "generation" => generation} = apply_wire} =
+             DaemonClient.call("apply.plan", %{}, home: home, timeout_ms: 60_000)
+
+    assert {:ok, %{"generation" => read_generation}} = DaemonClient.call("plan.run", %{}, home: home, timeout_ms: 60_000)
+    refute generation == read_generation
+
+    # The fixed chain: past the guard, refused on merit downstream.
+    {chain_stdout, chain_stderr} = run_apply_chain(home, apply_wire)
+
+    assert chain_stdout =~ "Apply to #{home} (generation #{generation})"
+    refute chain_stdout =~ "stale plan"
+    assert chain_stderr =~ "apply failed"
+    assert chain_stderr =~ "never recorded as owned"
+    refute chain_stderr =~ "stale plan"
+
+    # The old confirmation source: the same chain, read-mode wire — refused
+    # as stale before any engine work.
+    {_old_stdout, old_stderr} = run_apply_chain(home, read_wire_as_plan(read_generation))
+    assert old_stderr =~ "stale plan"
   end
 
   ## main plumbing (same contract as Workstation.CLITest's helpers)
@@ -183,6 +248,89 @@ defmodule Workstation.CLI.LiveTest do
 
     {result, output}
   end
+
+  # capture_main with both streams: the verb renders progress on stdout and
+  # the failure line on stderr. The failing main must not unwind the captures,
+  # so the spawn forwards each stream separately.
+  defp run_main_capturing_streams(argv) do
+    me = self()
+
+    {pid, ref} =
+      spawn_monitor(fn ->
+        stderr =
+          ExUnit.CaptureIO.capture_io(:stderr, fn ->
+            {result, output} = capture_main(argv)
+            send(me, {:main_result, result})
+            send(me, {:main_output, output})
+          end)
+
+        send(me, {:main_stderr, stderr})
+      end)
+
+    result =
+      receive do
+        {:main_result, result} -> result
+        {:DOWN, ^ref, :process, ^pid, reason} -> {:down, reason}
+      after
+        120_000 -> flunk("router main did not finish")
+      end
+
+    output =
+      receive do
+        {:main_output, output} -> output
+      after
+        5_000 -> ""
+      end
+
+    _ = output
+
+    stderr =
+      receive do
+        {:main_stderr, stderr} -> stderr
+      after
+        5_000 -> ""
+      end
+
+    {result, stderr}
+  end
+
+  # The public headless chain — `Plain.run` over the production executor —
+  # with both streams captured and the chain's exit swallowed (the assertions
+  # read the streams; the runner's own failure shape is the CLI exit table).
+  defp run_apply_chain(destination, plan) do
+    me = self()
+
+    stderr =
+      ExUnit.CaptureIO.capture_io(:stderr, fn ->
+        stdout =
+          ExUnit.CaptureIO.capture_io(:stdio, fn ->
+            try do
+              Plain.run(:apply, destination: destination, plan: plan)
+            catch
+              :exit, {:shutdown, _code} -> :failed
+            end
+
+            send(me, {:chain_done, :ok})
+          end)
+
+        send(me, {:chain_stdout, stdout})
+      end)
+
+    assert_receive({:chain_done, :ok}, 120_000)
+
+    stdout =
+      receive do
+        {:chain_stdout, stdout} -> stdout
+      after
+        5_000 -> ""
+      end
+
+    {stdout, stderr}
+  end
+
+  # The minimal read-mode plan wire shape the old chain confirmed from
+  # (`plan.run`'s projection); only the fields the chain consumes.
+  defp read_wire_as_plan(generation), do: %{"generation" => generation, "plan" => %{"entries" => []}}
 
   defp canonical_json(value) when is_map(value) do
     value

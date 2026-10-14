@@ -145,24 +145,40 @@ defmodule Workstation.Pipeline do
   end
 
   @doc """
-  The composition boundary every mutation surface shares: the live native
-  catalog (or a sandbox `collect` — a zero-arity callable returning
-  `{:ok, %Catalog{}}`), the ordered graph, the journal-stamped baseline and
-  the removal activation. Runs the pipeline to `compose` in apply mode.
+  The composition boundary's full run — the one every mutation surface
+  shares: the live native catalog (or a sandbox `collect` — a zero-arity
+  callable returning `{:ok, %Catalog{}}`), the ordered graph, the
+  journal-stamped baseline and the removal activation. Keeps the whole
+  `%Workstation.Pipeline.Run{}` so a read-side projection can render the
+  composed plan with its catalog identity. Runs the pipeline to `compose` in
+  apply mode.
   Errors keep their cause explicit so each surface can apply its own wire
   coding: `{:error, {:collect_failed, reason}}` for catalog collection
   failures, `{:error, message}` for engine preconditions' verbatim
   `ArgumentError` text.
   """
-  @spec composed_plan(String.t(), (-> {:ok, Catalog.t()} | {:error, term()}) | nil) ::
-          {:ok, Source.t()} | {:error, {:collect_failed, term()}} | {:error, String.t()}
-  def composed_plan(home, collect \\ nil) do
-    case run(%Workstation.Pipeline.Run{input: {:collector, collect}, mode: :apply, home: home}, :compose) do
-      %{plan: plan} -> {:ok, plan}
-    end
+  @spec composed_run(String.t(), (-> {:ok, Catalog.t()} | {:error, term()}) | nil) ::
+          {:ok, Workstation.Pipeline.Run.t()}
+          | {:error, {:collect_failed, term()}}
+          | {:error, String.t()}
+  def composed_run(home, collect \\ nil) do
+    {:ok, run(%Workstation.Pipeline.Run{input: {:collector, collect}, mode: :apply, home: home}, :compose)}
   rescue
     error in [CollectFailed] -> {:error, {:collect_failed, error.reason}}
     error in [ArgumentError] -> {:error, Exception.message(error)}
+  end
+
+  @doc """
+  The composed plan of the composition boundary: `composed_run/2`'s plan —
+  the plan every mutating surface executes.
+  """
+  @spec composed_plan(String.t(), (-> {:ok, Catalog.t()} | {:error, term()}) | nil) ::
+          {:ok, Source.t()} | {:error, {:collect_failed, term()}} | {:error, String.t()}
+  def composed_plan(home, collect \\ nil) do
+    case composed_run(home, collect) do
+      {:ok, %{plan: plan}} -> {:ok, plan}
+      error -> error
+    end
   end
 
   @doc """

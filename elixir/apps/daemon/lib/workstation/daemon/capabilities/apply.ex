@@ -18,7 +18,13 @@ defmodule Workstation.Daemon.Capabilities.Apply do
 
   alias Workstation.Daemon.ApplyOrchestrator
 
-  @op "apply.run"
+  @op "apply.plan"
+
+  # Empty params by design, like every read op: the daemon serves its own
+  # pinned home and there is nothing for a client to negotiate.
+  @empty_schema Zoi.object(%{}, unrecognized_keys: :error)
+
+  @apply_run_op "apply.run"
 
   @apply_run_params_schema Zoi.object(
                              %{
@@ -29,13 +35,25 @@ defmodule Workstation.Daemon.Capabilities.Apply do
                            )
 
   @impl true
-  def ops, do: [@op]
+  def ops, do: [@op, @apply_run_op]
 
   @impl true
-  def schema(@op), do: @apply_run_params_schema
+  def schema(@op), do: @empty_schema
+  def schema(@apply_run_op), do: @apply_run_params_schema
 
   @impl true
-  def handle(@op, %{"generation" => generation}, ctx) do
+  def handle(@op, _params, _ctx) do
+    # Read-shaped: the confirmation surface composes without mutating, so it
+    # takes no apply lock and is not graduation-gated (the gate covers
+    # mutations; a plan preview never mutates).
+    case Workstation.Daemon.Apply.plan([]) do
+      {:ok, wire} -> {:ok, wire}
+      {:error, {code, message}} -> {:error, {code, message}}
+    end
+  end
+
+  @impl true
+  def handle(@apply_run_op, %{"generation" => generation}, ctx) do
     if Workstation.Daemon.Apply.enabled?() do
       Workstation.Daemon.Apply.run(generation, op_ref: Capability.op_ref(ctx))
     else

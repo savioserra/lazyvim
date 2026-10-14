@@ -243,6 +243,15 @@ TUI are thin protocol clients over the per-user Unix socket: reads map to
 `status.run`/`plan.run`/`diff.run`, lifecycle verbs to
 `bootstrap.run`/`apply.run`/`update.run`/`sync.run`/`verify.run`, and
 `update` carries the whole chain in ONE op (a `steps` sub-chain). The
+`apply` verb sources its confirmation plan from the read-shaped
+`apply.plan` — the daemon's own mutation-bound composition (journal
+baseline, removal activation, retirements), NOT `plan.run`'s pure
+read-mode projection, whose generation is structurally different exactly
+when a declared removal activates (first convergence after a state
+change). Confirming against the composition the daemon executes keeps the
+stale-plan guard a true freshness comparison: it refuses a world that
+changed between the confirmation and the locked run, never that
+structural divergence. The
 client's ensure-daemon spawns a daemon detached from the installed release
 when the socket is absent or dead (bounded handshake; `workstation daemon
 stop` retires it manually); there is no in-process fallback — a missing

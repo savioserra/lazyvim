@@ -32,7 +32,7 @@ defmodule Workstation.Daemon.Apply do
 
   alias Workstation.Core.EngineState
   alias Workstation.Pipeline
-  alias Workstation.Daemon.{ApplyOrchestrator, Events}
+  alias Workstation.Daemon.{ApplyOrchestrator, Events, Read}
 
   @engine_apply_default true
 
@@ -56,8 +56,29 @@ defmodule Workstation.Daemon.Apply do
   def enabled?, do: Application.get_env(:daemon, :engine_apply, @engine_apply_default)
 
   @doc """
+  The apply verb's confirmation surface: compose the plan this daemon would
+  execute — the SAME server-side collect `run/2` executes (the shared
+  composition boundary, the sandbox collector seam) — WITHOUT mutating, and
+  project it through the read plan wire (`Workstation.Daemon.Read.apply_plan/2`).
+  The client confirms the generation this daemon actually builds, so `run/2`'s
+  `requested_generation` staleness comparison is like for like: it refuses
+  only a world that genuinely changed between the confirmation and the locked
+  execute, never the read-mode plan's structural divergence. Read-shaped: no
+  apply lock, no graduation gate, no mutation.
+  """
+  @spec plan(keyword()) :: {:ok, map()} | {:error, {String.t(), String.t()}}
+  def plan(opts \\ []) when is_list(opts) do
+    home = opts[:home] || EngineState.home()
+
+    case Read.apply_plan(home, opts[:collector]) do
+      {:ok, wire} -> {:ok, wire}
+      {:error, {tag, message}} -> {:error, {Atom.to_string(tag), message}}
+    end
+  end
+
+  @doc """
   Run one generation apply for `requested_generation` under the exclusive
-  apply lock. Returns `{:ok, %{"generation" => generation}}` or a protocol
+  apply lock. Returns the applied generation record or a protocol
   error tuple; lock contention maps to the orchestrator's `locked` report.
 
   Options: `:home` (defaults to the target home) and `:collector` — a

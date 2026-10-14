@@ -58,6 +58,7 @@ defmodule Workstation.Daemon.ProtocolTest do
       # The served op set is derived from the capability registry, not
       # hardcoded here; hello is the handshake op, the rest are capabilities.
       assert caps["ops"] == [
+               "apply.plan",
                "apply.run",
                "bootstrap.run",
                "daemon.stop",

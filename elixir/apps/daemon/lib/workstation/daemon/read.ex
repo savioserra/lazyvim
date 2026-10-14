@@ -93,6 +93,41 @@ defmodule Workstation.Daemon.Read do
   end
 
   @doc """
+  The apply verb's confirmation plan wire (`workstation.plan.v1`): the SAME
+  server-side composition the mutation surface executes — the apply-mode
+  `Workstation.Pipeline` reduction (journal baseline, removal activation,
+  retirement reconciliation) — projected through the identical wire builder
+  the read verbs use. `plan.run`'s read-mode compose stays pure by the replay
+  law (no journal, no filesystem probing), so on a home where a declared
+  removal activates (first convergence after a state change) its generation
+  is structurally NOT the generation the daemon builds. The client confirms
+  against THIS wire, so the stale-plan guard compares like with like and
+  cannot false-positive on that structural divergence.
+
+  Read-shaped: composition runs OUTSIDE the apply lock (like every mutation
+  surface's collect) and nothing mutates. The collector is the sandbox seam
+  (tests); production composes the native live catalog.
+  """
+  @spec apply_plan(String.t(), (-> {:ok, Catalog.t()} | {:error, term()}) | nil) ::
+          {:ok, map()} | {:error, {:core, String.t()}} | {:error, {:engine, String.t()}}
+  def apply_plan(home, collector \\ nil) when is_binary(home) do
+    expanded = Path.expand(home)
+
+    bracket(expanded, fn ->
+      case Pipeline.composed_run(expanded, collector) do
+        {:ok, run} ->
+          plan(expanded, run)
+
+        {:error, {:collect_failed, reason}} ->
+          {:error, {:engine, "apply plan collection failed: #{inspect(reason)}"}}
+
+        {:error, message} when is_binary(message) ->
+          {:error, {:core, message}}
+      end
+    end)
+  end
+
+  @doc """
   Build the status wire. `packages` are the collected envelope packages
   (id/requires/supported_hosts verbatim), `graph_order` the resolved
   package ids, `journal` the applied record or nil when nothing was ever

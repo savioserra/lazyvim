@@ -489,7 +489,11 @@ daemon itself runs from; the op surface, wire schema, and lock
 serialization never churned across the flip. Flag-off behavior still
 answers `not_graduated` on `apply.run`, and the flag-off refusal
 tests stay. Reads (`status.run`/`plan.run`/`diff.run`) serve the hard-cut
-wires from the daemon's own pinned home; `update.check` (read-only,
+wires from the daemon's own pinned home; `apply.plan` serves the apply
+verb's confirmation wire — the SAME apply-mode composition `apply.run`
+executes (journal baseline, removal activation, retirements), projected
+through the plan wire, read-shaped: no lock, no gate, no mutation —
+`update.check` (read-only,
 TTL-cached, see the architecture section) and `theme.resolve` complete the
 surface. Ops that take perceptible time run in a supervised task
 (`Workstation.Daemon.TaskSupervisor`) OUTSIDE the session process — the
@@ -621,7 +625,11 @@ Every verb is a daemon client (`Workstation.CLI.DaemonClient`): reads send
 daemon-side — the CLI renders it unchanged), lifecycle verbs send
 `bootstrap.run`/`apply.run`/`update.run`/`sync.run`/`verify.run`, control
 surfaces send `daemon.stop`/`op.abort` over a short-lived connection that
-never spawns anything. `workstation json <status|plan|diff>` prints the raw
+never spawns anything. The `apply` verb confirms against `apply.plan` —
+the daemon's mutation-bound composition, not `plan.run`'s read-mode
+projection — so the confirmed generation and the executed generation are
+the same composition function (see the architecture section).
+`workstation json <status|plan|diff>` prints the raw
 wire for boundary debugging. Ensure-daemon runs before every verb (see the
 architecture section); there is NO in-process fallback — a daemon that
 cannot be reached or spawned is the verb's error.
