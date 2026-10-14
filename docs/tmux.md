@@ -21,6 +21,10 @@
 | `@tmux_navigator_disable_when_zoomed` | `1` |
 | `scroll-on-clear` | `off` inside `%if "#{>=:#{version},3.5}"` — the guard keeps the conf parse-safe on tmux releases without the option (pre-3.4); this host's 3.4 has it default-on (aurora mobile-client mitigation) |
 | `@tmux2k-theme` | `onedark` |
+| `@tmux2k-show-powerline` | `false` — text-only bar: no separator paint |
+| `@tmux2k-bg-main` / `@tmux2k-bg-alt` / `@tmux2k-dark-blue` | `default` — the no-background slots; tmux2k's variable indirection turns them into `bg=default` |
+| `@tmux2k-white` | onedark comment gray — inactive window text |
+| `@tmux2k-*-colors` | per-segment `dark_blue <accent>` pairs — text-only modules (session white, cwd blue, git green, cpu light-green, ram yellow, time light-blue); window list `blue dark_blue` = active window blue text |
 | `@tmux2k-right-plugins` | `cpu ram time` — clicking cpu opens btop; ram's popup is pinned to btop too |
 | `@tmux2k-time-format` | `%a %H:%M` — no seconds: a seconds clock pins the status bar to a 1Hz re-render, which limited mobile clients render as stacked lines (aurora mobile-client mitigation) |
 | Window cycling | root `S-Left` / `S-Right` — `previous-window` / `next-window`, no prefix |
@@ -142,12 +146,18 @@ Setup removes stale `~/.tmux/plugins/tmux-fingers` checkouts.
 ## Status bar (tmux2k, onedark)
 
 The status bar is the pinned `tmux2k` plugin at the upstream `onedark`
-theme with tmux2k's own powerline separators and plugin icons. `.tmux.conf`
-sets the `@plugin` pin, the theme, the right-side plugin list (`cpu ram
-time` — clicking cpu opens btop, ram's popup is pinned to btop via
-`@tmux2k-ram-popup-cmd`) and the clock format ahead of TPM init; it
-deliberately sets NO color overrides — upstream's onedark palette is
-canonical.
+theme, rendered TEXT-ONLY: no segment backgrounds — the terminal's own
+background shows through and segments are highlighted by text color alone
+(operator decision, 2026-10-14). `.tmux.conf` sets the `@plugin` pin, the
+theme, `@tmux2k-show-powerline false` (drops the separator paint), the
+no-background color slots (`@tmux2k-bg-main`/`-bg-alt`/`-dark-blue` =
+`default`), the per-segment `@tmux2k-*-colors` text pairs (session white,
+cwd blue, git green, cpu light-green, ram yellow, time light-blue; window
+list: active blue, inactive gray via `@tmux2k-white`), the right-side
+plugin list (`cpu ram time` — clicking cpu opens btop, ram's popup is
+pinned to btop via `@tmux2k-ram-popup-cmd`) and the clock format ahead of
+TPM init. Everything else stays upstream onedark — the accents ARE the
+theme; they just stopped painting backgrounds.
 
 Bash 5.x empty-lookahead abort (fixed by the pin move, 2026-10-14): tmux2k's
 powerline assembly looks ahead one plugin (`${plugins[$((plugin_index + 1))]}`)
@@ -171,6 +181,27 @@ retired `07b3228b` pin gets `refusing to move it to d8c5c292…; remove it
 explicitly` on the first apply after this bump. Recovery: remove
 `~/.tmux/plugins/tmux2k` once and re-apply; fresh homes clone directly at the
 new pin. Same pattern as the nunchux pre-seed migration note above.
+
+Live re-theming (experimenting with `@tmux2k-*` options on a running
+server): the server keeps every `@<plugin>-*` option ever set — a config
+reload sets but never unsets, so experiment leftovers (custom separators,
+old palettes) override the new theme's defaults. Unset them explicitly, then
+reload in order:
+
+```sh
+for opt in $(tmux show-options -g | grep -oE '@<plugin>-[a-z0-9-]+'); do
+  tmux set-option -gu "$opt"; done
+tmux source-file ~/.tmux.conf
+tmux run-shell -b '~/.tmux/plugins/tpm/tpm'        # re-init plugin sourcing
+tmux run-shell -b '~/.tmux/plugins/tmux2k/2k.tmux' # re-assemble the bar
+```
+
+Never kill the session server to re-theme. When reading assembled bar
+content, use the HYPHENATED format vars (`#{status-left}`,
+`#{status-right}`); the underscore variants are not tmux format variables —
+they render empty and mimic a broken bar, which costs a false debugging
+loop. Popups run in tmux's shell: a popup-resolved binary (e.g. btop) must
+be on the PATH the activation fragments build, not just on the SSH session's.
 
 Recorded tradeoffs: ADDENDUM 2 dropped tmux2k for the tmux-oasis
 starlight_dark statusline (operator permission, 2026-10-12); the aurora
