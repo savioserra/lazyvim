@@ -78,10 +78,26 @@ and v2.0.0 ships from it.
 
 | task | owner | depends on | scope / exit |
 |---|---|---|---|
-| r5.bootstrap-tree | core | R4 gate | bootstrap consumes the package tree (engine release + self-contained packages) — no store, no lockfile |
-| r5.parity-proof | gate | r5.bootstrap-tree | clean sandbox home → full apply from the package tree → byte-identical to this host's managed state |
-| r5.runbook | tree | r5.bootstrap-tree | fresh-box runbook in docs |
-| r5.gate | gate | r5.parity-proof, r5.runbook | SWARM R5: DONE |
+| r5.bootstrap-tree | core | R4 gate | ✅ bootstrap consumes the package tree (engine release + self-contained packages) — no store, no lockfile |
+| r5.parity-proof | gate | r5.bootstrap-tree | ⬜ clean sandbox home → full apply from the package tree → byte-identical to this host's managed state |
+| r5.runbook | tree | r5.bootstrap-tree | ✅ fresh-box runbook in docs |
+| r5.gate | gate | r5.parity-proof, r5.runbook | ⬜ SWARM R5: DONE |
+
+Sprint 7 status (2026-10-14 closing gate): **bootstrap-tree proven** —
+a9254aa2 mise-first acquisition provisions tmux/btop/elixir/erlang from a
+bare checkout (sandbox fresh-box rehearsal: bootstrap → apply → sync →
+verify green, gen 68d0a79a), and the VPS release rebuild/bootstrap stamped
+`.built-from` == HEAD (b4673e4a). **Runbook landed** — README
+fresh-installation documents curl+sh+git as the only distro prerequisites.
+**Parity-proof still open** — what the sprint proved: fresh homes apply,
+sync and verify from the package tree (68d0a79a; mise-contract rehearsal
+76bab61e byte-deterministic across two fresh homes) and the VPS re-converged
+to ca4933ef on the rebuilt release; what it did NOT prove: the
+byte-identical fresh-apply-vs-managed-host comparison the exit asks for,
+and the aurora fresh-box rehearsal (the operator gate) — the host was
+offline at gate time (tailnet last seen 6h prior), so the documented
+install.sh path has not yet run on real operator hardware. r5.gate waits
+on both.
 
 Exit: a new machine reaches this host's state from nothing but the engine
 release and the package tree — the strangler gap closed for good.
