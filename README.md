@@ -6,22 +6,30 @@ resources on Linux x86_64 (including WSL-as-Linux) and macOS arm64.
 
 ## Prerequisites
 
-The user or CI image supplies these; workstation never runs an OS package manager:
+The user or CI image supplies these; workstation never runs an OS package
+manager:
 
-- Git; tmux >=3.2.
+- Git. On Linux this is the single distro prerequisite (`apt install git` on
+  Ubuntu/WSL — no pinnable first-party static build exists, see
+  [`docs/tools.md`](docs/tools.md)); macOS ships it with the Command Line
+  Tools.
 - POSIX shell, HTTPS curl, tar/gzip, unzip, SHA-256 tools (`sha256sum` on Linux,
   `shasum` on macOS), and ordinary Unix filesystem tools.
+- tmux >=3.2 and btop on macOS only: the fresh-install sequence acquires both
+  on Linux through mise; macOS keeps them as host prerequisites.
 - C compiler/build tools for parser and application-package builds (macOS Command
   Line Tools); Linux fontconfig (`fc-cache`, `fc-list`). macOS supplies
   `system_profiler` for font verification.
 
-Bootstrap itself needs only the shell/download/archive/hash/filesystem essentials,
-not Node, Python, jq, system Neovim, LuaJIT or a preinstalled chezmoi. The
-engine itself is a checksummed Elixir OTP release: a fresh bootstrap builds it
-from the checkout when a `mise` Erlang/Elixir toolchain is available, and the
-installed release thereafter manages its own re-acquisition (`workstation
-bootstrap` refreshes it after `pull`). Managed tools and their exact pins are
-listed in [`docs/tools.md`](docs/tools.md).
+Bootstrap itself needs only the shell/download/archive/hash/filesystem essentials
+plus git and curl — not Node, Python, jq, system Neovim, LuaJIT, a preinstalled
+chezmoi or a preinstalled mise. The installer is mise-first: it acquires a
+checksum-pinned mise, provisions the first-acquisition tool pins (tmux, btop,
+then the pinned Erlang/Elixir toolchain the release build resolves), and the
+engine itself — a checksummed Elixir OTP release — builds from the checkout
+with that toolchain; the installed release thereafter manages its own
+re-acquisition (`workstation bootstrap` refreshes it after `pull`). Managed
+tools and their exact pins are listed in [`docs/tools.md`](docs/tools.md).
 
 ## Fresh installation
 
@@ -50,7 +58,10 @@ lives with its owning package under `workstation/packages/`, and the engine —
 an Elixir OTP release built from the checkout — generates target-specific
 chezmoi source at apply time; there is no checked-in centralized payload tree
 and no Lua or nvim execution in the engine path. Any checkout can host the
-launcher. Bootstrap prepares the checksum-pinned Neovim runtime and chezmoi
+launcher. The installer is mise-first: after the clone it acquires the pinned
+mise binary, provisions the first-acquisition Linux tool pins (`tmux`, `btop`,
+then the pinned Erlang/Elixir toolchain) through mise backends, and only then
+bootstraps. Bootstrap prepares the checksum-pinned Neovim runtime and chezmoi
 backend (managed capabilities), builds/installs the engine release, then
 atomically creates
 `~/.local/bin/workstation` pointing to that checkout's actual repo-native launcher.
