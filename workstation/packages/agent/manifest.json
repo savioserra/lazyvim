@@ -9,6 +9,45 @@
       }
     },
     {
+      "provider": "download",
+      "spec": {
+        "archive": "tar.gz",
+        "assets": {
+          "darwin_arm64": {
+            "sha256": "30daa970c7d223530120f1693cd3c6fa4c0c0d31ef158710b0dd77f286a5b23e",
+            "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20260901/cpython-3.14.7+20260901-aarch64-apple-darwin-install_only.tar.gz"
+          },
+          "linux_x86_64": {
+            "sha256": "0ab3305457051cd3e7c031857e005f1bda17c218a1990567dacaaac6dd1d14f0",
+            "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20260901/cpython-3.14.7+20260901-x86_64-unknown-linux-gnu-install_only.tar.gz"
+          }
+        },
+        "probe": {
+          "argv": ["bin/python3", "--version"],
+          "output": "Python {V}"
+        },
+        "target": ".local/opt/hermes/python",
+        "version": "3.14.7"
+      }
+    },
+    {
+      "provider": "chezmoi",
+      "spec": {
+        "asset": "files/hermes-launcher.sh",
+        "executable": true,
+        "kind": "file",
+        "target": ".local/opt/hermes/bin/hermes"
+      }
+    },
+    {
+      "provider": "chezmoi",
+      "spec": {
+        "kind": "symlink",
+        "target": ".local/bin/hermes",
+        "to": "../opt/hermes/bin/hermes"
+      }
+    },
+    {
       "provider": "chezmoi",
       "spec": {
         "asset": "files/.hermes/skills/secrets/SKILL.md",

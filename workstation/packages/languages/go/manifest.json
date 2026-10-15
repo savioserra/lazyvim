@@ -1,6 +1,28 @@
 {
   "contributes": [
     {
+      "provider": "download",
+      "spec": {
+        "archive": "tar.gz",
+        "assets": {
+          "darwin_arm64": {
+            "sha256": "ee215d57e0ec269c60cc9ceca68e6bda321ba9ee5afe24f4b0988703c2d87d12",
+            "url": "https://go.dev/dl/go1.27.1.darwin-arm64.tar.gz"
+          },
+          "linux_x86_64": {
+            "sha256": "63d339f0da5ab53635a56f2490a7984dfe12dfcff22ad749f63edaf590168445",
+            "url": "https://go.dev/dl/go1.27.1.linux-amd64.tar.gz"
+          }
+        },
+        "probe": {
+          "argv": ["bin/go", "version"],
+          "output": "go version go{V}"
+        },
+        "target": ".local/opt/go",
+        "version": "1.27.1"
+      }
+    },
+    {
       "provider": "chezmoi",
       "spec": {
         "kind": "symlink",

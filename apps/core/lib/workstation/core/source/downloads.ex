@@ -26,49 +26,86 @@ defmodule Workstation.Core.Source.Downloads do
       :ok = Download.validate(spec)
 
       # The declared shape travels verbatim: a dispatched pin carries its
-      # assets unresolved (the apply boundary resolves through the contract).
-      base = %{owner: record.owner, target: spec.target, version: spec.version}
+      # assets and its per-platform targets unresolved (the apply boundary
+      # resolves through the contract), and the archive form's fields ride
+      # the same way (nil on every file pin).
+      base = %{owner: record.owner, target: spec.target, targets: spec.targets, version: spec.version}
 
       pin =
         case spec.assets do
-          nil -> Map.merge(base, %{url: spec.url, sha256: spec.sha256, assets: nil})
-          assets -> Map.put(base, :assets, assets)
+          nil ->
+            Map.merge(base, %{
+              url: spec.url,
+              sha256: spec.sha256,
+              assets: nil,
+              archive: spec.archive,
+              layout: spec.layout,
+              probe: spec.probe
+            })
+
+          assets ->
+            base
+            |> Map.put(:assets, assets)
+            |> Map.put(:archive, spec.archive)
+            |> Map.put(:layout, spec.layout)
+            |> Map.put(:probe, spec.probe)
         end
 
       pin
       |> Map.merge(%{fingerprint: Download.fingerprint(spec), source_name: Download.pin_source_name(spec)})
     end)
     |> Enum.reduce({[], MapSet.new()}, fn download, {downloads, seen} ->
-      if MapSet.member?(seen, download.target) do
-        Paths.invalid!("duplicate download target #{download.target}: one artifact target may have only one owner")
+      key = ownership_key(download)
+
+      if MapSet.member?(seen, key) do
+        Paths.invalid!("duplicate download target #{download.target || Enum.join(declared_targets(download), ", ")}: one artifact target may have only one owner")
       end
 
-      {downloads ++ [download], MapSet.put(seen, download.target)}
+      {downloads ++ [download], MapSet.put(seen, key)}
     end)
     |> elem(0)
   end
 
+  # The exclusive-ownership key: the literal target, or the sorted declared
+  # per-platform targets for a dispatched pin.
+  defp ownership_key(download) do
+    case download.target do
+      nil -> {:targets, declared_targets(download)}
+      target -> {:target, target}
+    end
+  end
+
+  defp declared_targets(download) do
+    case download.targets do
+      nil -> [download.target]
+      targets -> targets |> Map.values() |> Enum.sort()
+    end
+  end
+
   # Downloaded artifacts own their targets exclusively: a chezmoi entry or
   # a declared removal reaching the same path is a composition conflict,
-  # checked before the plan exists so replay fails loudly.
+  # checked before the plan exists so replay fails loudly. A dispatched pin
+  # declares every platform's destination, and each of them is exclusive.
   @spec check_conflicts([map()], [map()], [map()]) :: :ok
   def check_conflicts(downloads, entries, removals) do
     Enum.each(downloads, fn download ->
-      Enum.each(entries, fn entry ->
-        overlapping =
-          download.target == entry.target or Paths.encompasses?(download.target, entry.target) or
-            Paths.encompasses?(entry.target, download.target)
+      Enum.each(declared_targets(download), fn target ->
+        Enum.each(entries, fn entry ->
+          overlapping =
+            target == entry.target or Paths.encompasses?(target, entry.target) or
+              Paths.encompasses?(entry.target, target)
 
-        overlapping &&
-          Paths.invalid!(
-            "download target #{download.target} overlaps owned target #{entry.target} " <>
-              "(#{Enum.join(entry.attribution, ",")})"
-          )
-      end)
+          overlapping &&
+            Paths.invalid!(
+              "download target #{target} overlaps owned target #{entry.target} " <>
+                "(#{Enum.join(entry.attribution, ",")})"
+            )
+        end)
 
-      Enum.each(removals, fn removal ->
-        not Paths.encompasses?(removal.target, download.target) ||
-          Paths.invalid!("declared removal #{removal.target} overlaps download target #{download.target}")
+        Enum.each(removals, fn removal ->
+          not Paths.encompasses?(removal.target, target) ||
+            Paths.invalid!("declared removal #{removal.target} overlaps download target #{target}")
+        end)
       end)
     end)
   end

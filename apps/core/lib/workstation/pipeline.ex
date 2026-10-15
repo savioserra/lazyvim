@@ -331,7 +331,13 @@ defmodule Workstation.Pipeline do
       "entries" => length(plan.entries),
       "targets" =>
         Enum.map(plan.entries, & &1.target) ++
-          Enum.map(plan.downloads, & &1.target) ++ Enum.map(plan.git_retirements, & &1.target) ++
+          Enum.flat_map(plan.downloads, fn download ->
+            case download.target do
+              nil -> Map.values(download.targets || %{})
+              target -> [target]
+            end
+          end) ++
+          Enum.map(plan.git_retirements, & &1.target) ++
           Mise.owned_targets_for(plan.mise)
     })
 

@@ -13,12 +13,20 @@ manager:
   Ubuntu/WSL — no pinnable first-party static build exists, see
   [`docs/tools.md`](docs/tools.md)); macOS ships it with the Command Line
   Tools.
-- POSIX shell, HTTPS curl, tar/gzip, unzip, SHA-256 tools (`sha256sum` on Linux,
-  `shasum` on macOS), and ordinary Unix filesystem tools.
+- POSIX shell, HTTPS curl, tar/gzip, xz (the tar.xz archive pins — Node, the
+  Nerd Font — extract through it), unzip (the zip archive pins — op,
+  tree-sitter), SHA-256 tools (`sha256sum` on Linux, `shasum` on macOS), and
+  ordinary Unix filesystem tools.
 - tmux >=3.2 and btop: mise-contract-managed on Linux — the tools are declared
   with the `linux` platform scope, so a macOS apply omits them and they remain
   host prerequisites there (brew); the fresh-install sequence first-acquires
   them on Linux through the installer.
+- Hermes Agent is provisioned full-stack by the engine (pinned git checkout,
+  pinned interpreter, engine launcher on PATH) — no manual runtime step. The
+  runtime pins live in `workstation/versions.json`
+  (`hermes_agent_git_commit`, `hermes_python` + per-platform URL/SHA-256);
+  see [`docs/capabilities.md`](docs/capabilities.md#hermes-resources) for
+  the provisioning contract.
 - C compiler/build tools for parser and application-package builds (macOS Command
   Line Tools); Linux fontconfig (`fc-cache`, `fc-list`). macOS supplies
   `system_profiler` for font verification.

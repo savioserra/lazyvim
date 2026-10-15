@@ -34,7 +34,6 @@ apps/core/lib/workstation/core/changesets.ex:Workstation.Core.Changesets:no-laye
 apps/core/lib/workstation/core/contracts/contract.ex:Workstation.Core.Contracts.Contract.Discover:no-layer
 apps/core/lib/workstation/core/contracts/contract.ex:Workstation.Core.Contracts.Contract.Discover:no-policy
 apps/core/lib/workstation/core/contracts/contract.ex:Workstation.Core.Contracts.Contract:no-layer
-apps/core/lib/workstation/core/contracts/download.ex:Workstation.Core.Contracts.Download:no-layer
 apps/core/lib/workstation/core/contracts/provider.ex:Workstation.Core.Contracts.Provider.Discover:no-layer
 apps/core/lib/workstation/core/contracts/provider.ex:Workstation.Core.Contracts.Provider:no-layer
 apps/core/lib/workstation/core/contracts/provider.ex:Workstation.Core.Contracts.Provider:no-policy

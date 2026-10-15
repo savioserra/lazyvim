@@ -1,6 +1,50 @@
 {
   "contributes": [
     {
+      "provider": "download",
+      "spec": {
+        "version": "0.40.4",
+        "archive": "tar.gz",
+        "target": ".local/opt/nvm",
+        "probe": {
+          "member": "nvm.sh",
+          "sha256": "7bb0324a92b1b7a3d612a00fd361f0daa78960cb4d404e7e42acf76eb53f6850"
+        },
+        "assets": {
+          "darwin_arm64": {
+            "sha256": "5949b50e4640f2be2263f963952673d7f1a8745a83f05365e99f032fe78307fd",
+            "url": "https://github.com/nvm-sh/nvm/archive/refs/tags/v0.40.4.tar.gz"
+          },
+          "linux_x86_64": {
+            "sha256": "5949b50e4640f2be2263f963952673d7f1a8745a83f05365e99f032fe78307fd",
+            "url": "https://github.com/nvm-sh/nvm/archive/refs/tags/v0.40.4.tar.gz"
+          }
+        }
+      }
+    },
+    {
+      "provider": "download",
+      "spec": {
+        "version": "24.19.0",
+        "archive": "tar.xz",
+        "target": ".local/opt/nvm/versions/node/v24.19.0",
+        "probe": {
+          "argv": ["bin/node", "--version"],
+          "output": "v{V}"
+        },
+        "assets": {
+          "darwin_arm64": {
+            "sha256": "3f1cf157479c1480352083105e13faf9d008ede98e7e157746b6df940d197b94",
+            "url": "https://nodejs.org/dist/v24.19.0/node-v24.19.0-darwin-arm64.tar.xz"
+          },
+          "linux_x86_64": {
+            "sha256": "14b342e71204f811bde6153be8e04b62aef63c236fef92b55f9c83154b409647",
+            "url": "https://nodejs.org/dist/v24.19.0/node-v24.19.0-linux-x64.tar.xz"
+          }
+        }
+      }
+    },
+    {
       "provider": "chezmoi",
       "spec": {
         "asset": "files/.node-version",

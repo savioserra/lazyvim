@@ -416,24 +416,43 @@ defmodule Workstation.Daemon.Read do
   end
 
   # One wire record per typed effect (contract, kind, ordering fields);
-  # nil fields are absent keys like everywhere else on the wire.
+  # nil fields are absent keys like everywhere else on the wire. The field
+  # set is the recorded plan's projection (Golden's plan_effects_view): the
+  # `plan --input` wire asserts byte parity with the committed goldens, so
+  # the two views name the same fields — archive-form and dispatched-target
+  # pins carry their declared shape verbatim.
   defp effects_view(plan) do
     Enum.map(Pipeline.effects(plan), fn effect ->
       %{
         "contract" => effect.contract,
         "kind" => to_string(effect.kind),
         "target" => effect[:target],
+        "targets" => effect[:targets],
         "owner" => effect[:owner],
         "url" => effect[:url],
         "version" => effect[:version],
         "sha256" => effect[:sha256],
+        "archive" => effect[:archive],
+        "layout" => effect[:layout],
         "commit" => effect[:commit],
         "fingerprint" => effect[:fingerprint],
         "attribution" => effect[:attribution],
-        "generation" => effect[:generation]
+        "generation" => effect[:generation],
+        "tools" => tools_view(effect[:tools])
       }
       |> Enum.reject(fn {_key, value} -> is_nil(value) end)
       |> Map.new()
+    end)
+  end
+
+  # The managed-tool pins travel string-keyed (the recorded envelope's
+  # vocabulary); absent on every other contract's effects.
+  defp tools_view(nil), do: nil
+
+  defp tools_view(tools) do
+    Enum.map(tools, fn tool ->
+      %{"name" => tool.name, "version" => tool.version}
+      |> Map.merge(tool[:backend] && %{"backend" => tool.backend} || %{})
     end)
   end
 

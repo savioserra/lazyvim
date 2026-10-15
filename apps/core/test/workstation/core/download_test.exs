@@ -4,12 +4,17 @@ defmodule Workstation.Core.DownloadTest do
   (pins content-addressed into the generation, exclusive target ownership),
   fail-closed install (checksum mismatch installs nothing, a mismatched
   existing target is never overwritten, a matching target is an idempotent
-  no-op that skips the fetch) and the apply-boundary journal integration.
+  no-op that skips the fetch), the archive form (traversal-checked,
+  single-rooted, strip-one-root exact-tree installs gated by the declared
+  probe — idempotent through the probe, refused overwrite on version drift,
+  a claim and a verify seam that re-probe the actual tree) and the
+  apply-boundary journal integration.
   """
 
   use ExUnit.Case, async: false
 
   require Record
+  import Bitwise
 
   alias Workstation.Core.{Digest, EngineState, Graph, Journal, Source}
   alias Workstation.Pipeline
@@ -394,6 +399,630 @@ defmodule Workstation.Core.DownloadTest do
 
       assert spec == recipe()
     end
+
+    test "a recorded archive spec denormalizes to the native archive recipe" do
+      recorded = %{
+        "archive" => "tar.gz",
+        "probe" => %{"argv" => ["bin/go", "version"], "output" => "go version go{V}"},
+        "url" => "https://example.invalid/artifacts/tool/1.0.0/tool.tar.gz",
+        "version" => "1.0.0",
+        "sha256" => sha_a(),
+        "target" => ".local/opt/tool"
+      }
+
+      assert Download.from_recorded(recorded) ==
+               Download.recipe(%{
+                 archive: "tar.gz",
+                 probe: %{argv: ["bin/go", "version"], output: "go version go{V}"},
+                 url: "https://example.invalid/artifacts/tool/1.0.0/tool.tar.gz",
+                 version: "1.0.0",
+                 sha256: sha_a(),
+                 target: ".local/opt/tool"
+               })
+
+      assert_raise ArgumentError, ~r/download archive pin requires a probe/, fn ->
+        Download.from_recorded(Map.delete(recorded, "probe"))
+      end
+    end
+  end
+
+  describe "archive form" do
+    @probe %{argv: ["bin/go", "version"], output: "go version go{V}"}
+    @fixture_banner "go version go1.27.1 linux/amd64"
+
+    test "recipe validation holds the archive vocabulary" do
+      spec = Download.recipe(%{url: "https://example.invalid/go.tar.gz", version: "1.27.1", sha256: sha_a(), target: ".local/opt/go", archive: "tar.gz", probe: @probe})
+      assert spec.archive == "tar.gz"
+      assert spec.probe == @probe
+      :ok = Download.validate(spec)
+
+      assert_raise ArgumentError, ~r/download archive must be one of tar\.gz, tar\.xz, zip/, fn ->
+        Download.recipe(%{url: "https://example.invalid/go.tar.bz2", version: "1.27.1", sha256: sha_a(), target: ".local/opt/go", archive: "tar.bz2", probe: @probe})
+      end
+
+      assert_raise ArgumentError, ~r/download probe requires an archive pin/, fn ->
+        Download.recipe(%{url: "https://example.invalid/tool", version: "1.0.0", sha256: sha_a(), target: ".local/bin/tool", probe: @probe})
+      end
+
+      assert_raise ArgumentError, ~r/download archive pin requires a probe/, fn ->
+        Download.recipe(%{url: "https://example.invalid/go.tar.gz", version: "1.27.1", sha256: sha_a(), target: ".local/opt/go", archive: "tar.gz"})
+      end
+
+      assert_raise ArgumentError, ~r/must be a relative member/, fn ->
+        Download.recipe(%{url: "https://example.invalid/go.tar.gz", version: "1.27.1", sha256: sha_a(), target: ".local/opt/go", archive: "tar.gz", probe: %{argv: ["../outside/go", "version"], output: "go version go{V}"}})
+      end
+
+      assert_raise ArgumentError, ~r/exactly the \{V\} version template/, fn ->
+        Download.recipe(%{url: "https://example.invalid/go.tar.gz", version: "1.27.1", sha256: sha_a(), target: ".local/opt/go", archive: "tar.gz", probe: %{argv: ["bin/go", "version"], output: "go version"}})
+      end
+
+      assert_raise ArgumentError, ~r/exactly the \{V\} version template/, fn ->
+        Download.recipe(%{url: "https://example.invalid/go.tar.gz", version: "1.27.1", sha256: sha_a(), target: ".local/opt/go", archive: "tar.gz", probe: %{argv: ["bin/go", "version"], output: "{V} go version {V}"}})
+      end
+
+      # The pin's content address changes when the archive form joins it.
+      file_pin = Download.recipe(%{url: "https://example.invalid/go.tar.gz", version: "1.27.1", sha256: sha_a(), target: ".local/opt/go"})
+      refute Download.fingerprint(file_pin) == Download.fingerprint(spec)
+
+      descriptor = Jason.decode!(Download.pin_bytes(spec))
+      assert descriptor["archive"] == "tar.gz"
+      assert descriptor["probe"] == %{"argv" => ["bin/go", "version"], "output" => "go version go{V}"}
+    end
+
+    test "installs the exact tree probe-verified, then is an idempotent no-op without a fetch" do
+      home = fresh_home()
+      {bytes, digest} = tree_fixture(@fixture_banner)
+      spec = archive_recipe(sha256: digest)
+      {:ok, calls} = Agent.start_link(fn -> 0 end)
+
+      fetch = fn _url ->
+        Agent.update(calls, &(&1 + 1))
+        bytes
+      end
+
+      assert {:ok, :installed} = Download.install(spec, home, fetch: fetch)
+
+      tree = Path.join(home, ".local/opt/go")
+      assert File.read!(Path.join(tree, "VERSION")) == "go-1.27.1\n"
+      assert mode_of(Path.join(tree, "bin/go")) == 0o755
+      # Nothing else at the target: the staging directory is gone.
+      assert Enum.sort(File.ls!(Path.dirname(tree))) == ["go"]
+
+      assert {:ok, :already_installed} = Download.install(spec, home, fetch: fetch)
+      assert Agent.get(calls, & &1) == 1, "a tree already carrying the pinned tool must not refetch"
+    end
+
+    test "a checksum mismatch installs nothing and leaves no staging debris" do
+      home = fresh_home()
+      spec = archive_recipe()
+
+      assert_raise ArgumentError, ~r/failed the pinned checksum/, fn ->
+        Download.install(spec, home, fetch: fn _url -> "not the archive" end)
+      end
+
+      refute File.exists?(Path.join(home, ".local/opt/go"))
+      # The staging debris is swept with the staging directory itself.
+      assert File.ls!(Path.join(home, ".local/opt")) == []
+    end
+
+    test "a traversal member refuses before extraction" do
+      home = fresh_home()
+      {bytes, digest} = tree_fixture(@fixture_banner, extra: {"../evil.txt", "escaped"})
+      spec = archive_recipe(sha256: digest)
+
+      assert_raise ArgumentError, ~r/unsafe archive member/, fn ->
+        Download.install(spec, home, fetch: fn _url -> bytes end)
+      end
+
+      refute File.exists?(Path.join(home, ".local/opt/go"))
+      refute File.exists?(Path.join(home, "evil.txt"))
+      assert File.ls!(Path.join(home, ".local/opt")) == []
+    end
+
+    test "a multi-root archive refuses" do
+      home = fresh_home()
+      {bytes, digest} = tree_fixture(@fixture_banner, extra: {"other/file.txt", "second root"})
+      spec = archive_recipe(sha256: digest)
+
+      assert_raise ArgumentError, ~r/exactly one root directory/, fn ->
+        Download.install(spec, home, fetch: fn _url -> bytes end)
+      end
+
+      refute File.exists?(Path.join(home, ".local/opt/go"))
+    end
+
+    test "a staged tree failing the probe never activates" do
+      home = fresh_home()
+      {bytes, digest} = tree_fixture("go version go1.99.0 linux/amd64")
+      spec = archive_recipe(sha256: digest)
+
+      assert_raise ArgumentError, ~r/does not carry the pinned tool/, fn ->
+        Download.install(spec, home, fetch: fn _url -> bytes end)
+      end
+
+      refute File.exists?(Path.join(home, ".local/opt/go"))
+    end
+
+    test "an existing tree reporting a prefix-trapped version is never overwritten" do
+      home = fresh_home()
+      {bytes, digest} = tree_fixture("go version go1.27.10 linux/amd64")
+
+      # The pin reads 1.27.1; the tree's banner says go1.27.10 — a prefix of
+      # the pinned template but a different tool.
+      spec = archive_recipe(sha256: digest, version: "1.27.1")
+      File.mkdir_p!(Path.join(home, ".local/opt/go/bin"))
+      File.write!(Path.join(home, ".local/opt/go/bin/go"), "#!/bin/sh\necho 'go version go1.27.10 linux/amd64'\n")
+      File.chmod!(Path.join(home, ".local/opt/go/bin/go"), 0o755)
+
+      assert_raise ArgumentError, ~r/refusing to overwrite — inspect and remove the tree explicitly/, fn ->
+        Download.install(spec, home, fetch: fn _url -> raise("a mismatched tree must fail before any fetch") end)
+      end
+
+      assert File.read!(Path.join(home, ".local/opt/go/bin/go")) == "#!/bin/sh\necho 'go version go1.27.10 linux/amd64'\n"
+    end
+
+    test "an existing non-directory at an archive target is refused" do
+      home = fresh_home()
+      {bytes, digest} = tree_fixture(@fixture_banner)
+      spec = archive_recipe(sha256: digest)
+      File.mkdir_p!(Path.dirname(Path.join(home, ".local/opt/go")))
+      File.write!(Path.join(home, ".local/opt/go"), "someone else's file")
+
+      assert_raise ArgumentError, ~r/exists as file; refusing to replace/, fn ->
+        Download.install(spec, home, fetch: fn _url -> bytes end)
+      end
+    end
+
+    test "the applied claim re-probes the actual tree and records the archive record" do
+      home = fresh_home()
+      {bytes, digest} = tree_fixture(@fixture_banner)
+      spec = archive_recipe(sha256: digest)
+
+      assert {:ok, :installed} = Download.install(spec, home, fetch: fn _url -> bytes end)
+
+      effect = %{
+        contract: "download",
+        kind: :install,
+        phase: :target,
+        owner: "go",
+        target: ".local/opt/go",
+        version: "1.27.1",
+        archive: "tar.gz",
+        probe: @probe,
+        url: "https://example.invalid/go.tar.gz",
+        sha256: digest,
+        fingerprint: "pinfp"
+      }
+
+      record = Map.fetch!(Download.fingerprint(effect, %{home: home}), ".local/opt/go")
+      assert record["type"] == "download-archive"
+      assert record["version"] == "1.27.1"
+      assert record["archive_sha256"] == digest
+      assert record["owner"] == "go"
+      assert record["probe"] == %{"argv" => ["bin/go", "version"], "output" => "go version go{V}"}
+
+      # A missing tree is a failed claim, never a recorded one.
+      File.rm_rf!(Path.join(home, ".local/opt/go"))
+
+      assert_raise ArgumentError, ~r/apply did not produce download target/, fn ->
+        Download.fingerprint(effect, %{home: home})
+      end
+    end
+
+    test "the verify seam re-probes the recorded tree and refuses drift" do
+      home = fresh_home()
+      {bytes, digest} = tree_fixture(@fixture_banner)
+      spec = archive_recipe(sha256: digest)
+      {:ok, :installed} = Download.install(spec, home, fetch: fn _url -> bytes end)
+
+      record = %{
+        "type" => "download-archive",
+        "target" => ".local/opt/go",
+        "version" => "1.27.1",
+        "probe" => %{"argv" => ["bin/go", "version"], "output" => "go version go{V}"}
+      }
+
+      assert Download.verify_record(record, %{"home" => home}) == :ok
+
+      # Tool drift: the probe member no longer reports the pinned version.
+      File.write!(Path.join(home, ".local/opt/go/bin/go"), "#!/bin/sh\necho 'go version go1.99.0 linux/amd64'\n")
+      File.chmod!(Path.join(home, ".local/opt/go/bin/go"), 0o755)
+
+      assert_raise ArgumentError, ~r/does not carry the pinned tool/, fn ->
+        Download.verify_record(record, %{"home" => home})
+      end
+
+      # A gone tree is a failed verify.
+      File.rm_rf!(Path.join(home, ".local/opt/go"))
+
+      assert_raise ArgumentError, ~r/verify: download target .* is gone/, fn ->
+        Download.verify_record(record, %{"home" => home})
+      end
+
+      # Everything else stays :unclaimed for the default verification.
+      assert Download.verify_record(%{"type" => "file"}, %{"home" => home}) == :unclaimed
+    end
+
+    test "apply installs the pinned archive tree, records the archive claim, and re-apply is an idempotent no-op", %{home: home} do
+      install_fake_chezmoi(home)
+      {bytes, digest} = tree_fixture(@fixture_banner)
+
+      package = %{
+        id: "archiver",
+        requires: [],
+        contributes: [%{provider: "download", spec: archive_recipe(sha256: digest, target: "tools/archived/tool")}]
+      }
+
+      plan = plan_for([package])
+      {:ok, calls} = Agent.start_link(fn -> 0 end)
+
+      fetch = fn _url ->
+        Agent.update(calls, &(&1 + 1))
+        bytes
+      end
+
+      assert Pipeline.execute(plan, %{"home" => home, "fetch" => fetch}) == plan.generation
+      assert String.contains?(File.read!(Path.join(home, "tools/archived/tool/bin/go")), @fixture_banner)
+      assert Agent.get(calls, & &1) == 1
+
+      state_root = Path.join([home | EngineState.state_components()])
+      record = Map.fetch!(Journal.applied(state_root)["targets"], "tools/archived/tool")
+      assert record["type"] == "download-archive"
+      assert record["owner"] == "archiver"
+      assert record["archive_sha256"] == digest
+
+      # Re-apply: the tree already carries the pinned tool, so no more fetches.
+      assert Pipeline.execute(plan, %{"home" => home, "fetch" => fetch}) == plan.generation
+      assert Agent.get(calls, & &1) == 1
+      assert Journal.applied(state_root)["revision"] == 2
+    end
+
+    test "plan effects and composition carry the declared archive fields" do
+      spec = archive_recipe(sha256: sha_a())
+
+      go = %{
+        id: "go",
+        requires: [],
+        contributes: [
+          %{provider: Download.provider_id(), spec: spec},
+          %{provider: "chezmoi", spec: Chezmoi.recipe(%{target: ".local/bin/go", kind: :symlink, to: "../opt/go/bin/go"})}
+        ]
+      }
+
+      plan = plan_for([go])
+      [effect] = Download.plan_effect(plan, %{})
+      assert effect.archive == "tar.gz"
+      assert effect.probe == @probe
+      assert effect.target == ".local/opt/go"
+
+      # An owned entry INSIDE the archive target is a composition conflict.
+      squatter = %{
+        id: "squatter",
+        requires: [],
+        contributes: [
+          %{provider: "chezmoi", spec: Chezmoi.recipe(%{target: ".local/opt/go/bin/squatter", kind: :file, content: "x"})}
+        ]
+      }
+
+      assert_raise ArgumentError, ~r/overlaps/, fn -> plan_for([go, squatter]) end
+    end
+  end
+
+  describe "archive layouts" do
+    test "a lone root file is the installed tree (the single-binary release shape)" do
+      {bytes, digest} = single_file_fixture("fzf", "#!/bin/sh\necho '0.74.2 (3337be9d)'\n")
+
+      spec =
+        archive_recipe(version: "0.74.2", sha256: digest, target: ".local/opt/fzf", probe: %{argv: ["fzf", "--version"], output: "{V}"})
+
+      home = fresh_home()
+
+      assert {:ok, :installed} = Download.install(spec, home, fetch: fn _url -> bytes end)
+      assert File.read!(Path.join([home, ".local/opt/fzf/fzf"])) == "#!/bin/sh\necho '0.74.2 (3337be9d)'\n"
+
+      # Idempotent: the probe passes on the existing tree, no fetch happens.
+      assert {:ok, :already_installed} = Download.install(spec, home, fetch: fn _url -> flunk("must not fetch") end)
+    end
+
+    test "the flat layout extracts top-level members as they are (the bare-release shape)" do
+      {bytes, digest} =
+        flat_tar_fixture([
+          {"lazygit", "#!/bin/sh\necho 'version=0.63.1, os=linux'\n"},
+          {"LICENSE", "MIT\n"},
+          {"README.md", "lazygit\n"}
+        ])
+
+      spec =
+        Download.recipe(%{
+          url: "https://example.invalid/artifacts/lazygit/0.63.1/lazygit.tar.gz",
+          version: "0.63.1",
+          sha256: digest,
+          target: ".local/opt/lazygit",
+          archive: "tar.gz",
+          layout: "flat",
+          probe: %{argv: ["lazygit", "--version"], output: "version={V},"}
+        })
+
+      home = fresh_home()
+      assert {:ok, :installed} = Download.install(spec, home, fetch: fn _url -> bytes end)
+      tree = Path.join(home, ".local/opt/lazygit")
+
+      assert File.read!(Path.join(tree, "LICENSE")) == "MIT\n"
+      assert File.read!(Path.join(tree, "README.md")) == "lazygit\n"
+      assert File.read!(Path.join(tree, "lazygit")) =~ "version=0.63.1"
+    end
+
+    test "the flat layout through a zip archive installs the exact members" do
+      script = "#!/bin/sh\necho '2.39.0'\n"
+      bytes = zip_fixture([{"op", script, 0o100755}, {"op.sig", "signature\n", 0o100644}])
+      digest = Digest.sha256(bytes)
+
+      spec =
+        Download.recipe(%{
+          url: "https://example.invalid/artifacts/op/2.39.0/op.zip",
+          version: "2.39.0",
+          sha256: digest,
+          target: ".local/opt/op",
+          archive: "zip",
+          layout: "flat",
+          probe: %{argv: ["op", "--version"], output: "{V}"}
+        })
+
+      home = fresh_home()
+      assert {:ok, :installed} = Download.install(spec, home, fetch: fn _url -> bytes end)
+      assert File.read!(Path.join([home, ".local/opt/op/op.sig"])) == "signature\n"
+
+      # The exec bit rides the zip's external attributes — the probe gate
+      # requires it.
+      %{mode: mode} = Workstation.Core.EngineState.lstat(Path.join([home, ".local/opt/op/op"]))
+      assert Bitwise.band(mode, 0o111) != 0
+    end
+
+    test "a tar.xz flat layout proves a data tree through the content probe" do
+      ttf = :binary.copy("font-bytes-", 100) <> "regular"
+      {bytes, digest} = tar_xz_fixture([{"JetMonoNerdFont-Regular.ttf", ttf}, {"JetMonoNerdFont-Bold.ttf", "bold\n"}])
+
+      spec =
+        Download.recipe(%{
+          url: "https://example.invalid/artifacts/font/3.5.0/JetBrainsMono.tar.xz",
+          version: "3.5.0",
+          sha256: digest,
+          target: ".local/share/fonts/JetMonoNerdFont",
+          archive: "tar.xz",
+          layout: "flat",
+          probe: %{member: "JetMonoNerdFont-Regular.ttf", sha256: Digest.sha256(ttf)}
+        })
+
+      home = fresh_home()
+      assert {:ok, :installed} = Download.install(spec, home, fetch: fn _url -> bytes end)
+      assert File.read!(Path.join([home, ".local/share/fonts/JetMonoNerdFont/JetMonoNerdFont-Bold.ttf"])) == "bold\n"
+
+      # The applied claim: a download-archive record whose content probe
+      # verify re-runs against the actual tree.
+      record = %{
+        "type" => "download-archive",
+        "target" => ".local/share/fonts/JetMonoNerdFont",
+        "version" => "3.5.0",
+        "probe" => %{"member" => "JetMonoNerdFont-Regular.ttf", "sha256" => Digest.sha256(ttf)}
+      }
+
+      assert :ok = Download.verify_record(record, %{"home" => home})
+
+      diverged = put_in(record, ["probe", "sha256"], String.duplicate("0", 64))
+      assert_raise ArgumentError, ~r/does not carry the pinned member/, fn ->
+        Download.verify_record(diverged, %{"home" => home})
+      end
+    end
+
+    test "the release layout still demands one root and rejects stray siblings" do
+      {bytes, digest} = tree_fixture("unused", extra: [{"go/VERSION", "x\n"}, {"STRAY", "sibling\n"}])
+
+      assert_raise ArgumentError, ~r/exactly one root directory/, fn ->
+        Download.install(archive_recipe(sha256: digest), fresh_home(), fetch: fn _url -> bytes end)
+      end
+
+      {multi, multi_digest} = single_file_fixture_pair([{"a", "a\n"}, {"b", "b\n"}])
+
+      assert_raise ArgumentError, ~r/exactly one root directory/, fn ->
+        Download.install(archive_recipe(sha256: multi_digest), fresh_home(), fetch: fn _url -> multi end)
+      end
+    end
+
+    test "a zip pin under the release layout fails closed instead of pretending to strip" do
+      bytes = zip_fixture([{"tool/tool", "x\n", 0o100755}])
+
+      assert_raise ArgumentError, ~r/no root directory to strip/, fn ->
+        Download.install(
+          Download.recipe(%{
+            url: "https://example.invalid/artifacts/tool/1.0.0/tool.zip",
+            version: "1.0.0",
+            sha256: Digest.sha256(bytes),
+            target: ".local/opt/tool",
+            archive: "zip",
+            probe: %{argv: ["tool", "--version"], output: "{V}"}
+          }),
+          fresh_home(),
+          fetch: fn _url -> bytes end
+        )
+      end
+    end
+
+    test "recipe validation: layouts, target tables and the content probe" do
+      base = %{url: "https://example.invalid/x.tar.gz", version: "1.0.0", sha256: sha_a(), target: ".local/opt/x", archive: "tar.gz", probe: @probe}
+
+      assert_raise ArgumentError, ~r/layout must be one of release, flat/, fn ->
+        Download.recipe(Map.put(base, :layout, "rootless"))
+      end
+
+      assert_raise ArgumentError, ~r/layout requires an archive pin/, fn ->
+        Download.recipe(%{url: "https://example.invalid/x", version: "1.0.0", sha256: sha_a(), target: ".local/bin/x", layout: "flat"})
+      end
+
+      assert_raise ArgumentError, ~r/both target and targets/, fn ->
+        Download.recipe(%{version: "1.0.0", target: ".local/x", targets: %{"linux_x86_64" => ".local/y"}})
+      end
+
+      assert_raise ArgumentError, ~r/unknown platform tag "linux-amd64"/, fn ->
+        Download.recipe(%{version: "1.0.0", targets: %{"linux-amd64" => ".local/y"}})
+      end
+
+      assert_raise ArgumentError, ~r/download recipe requires target/, fn ->
+        Download.recipe(%{version: "1.0.0"})
+      end
+
+      assert_raise ArgumentError, ~r/one shape per probe/, fn ->
+        Download.recipe(
+          Map.merge(base, %{probe: %{argv: ["x", "--version"], output: "{V}", member: "x", sha256: sha_a()}})
+        )
+      end
+
+      assert_raise ArgumentError, ~r/64 lowercase hex/, fn ->
+        Download.recipe(Map.merge(base, %{probe: %{member: "x", sha256: "ZZ"}}))
+      end
+
+      assert_raise ArgumentError, ~r/relative member/, fn ->
+        Download.recipe(Map.merge(base, %{probe: %{member: "../escape", sha256: sha_a()}}))
+      end
+
+      # The content probe validates and carries through the struct.
+      spec = Download.recipe(Map.merge(base, %{probe: %{member: "nvm.sh", sha256: sha_a()}, layout: "release"}))
+      assert spec.probe == %{member: "nvm.sh", sha256: sha_a()}
+      assert spec.layout == "release"
+    end
+  end
+
+  describe "per-platform targets" do
+    test "resolve returns the executing host's declared target" do
+      spec =
+        Download.recipe(%{
+          version: "3.5.0",
+          targets: %{"linux_x86_64" => ".local/share/fonts/f", "darwin_arm64" => "Library/Fonts/f"},
+          assets: %{
+            "linux_x86_64" => %{url: "https://example.invalid/f-linux", sha256: sha_a()},
+            "darwin_arm64" => %{url: "https://example.invalid/f-darwin", sha256: sha_b()}
+          }
+        })
+
+      assert Download.resolve(spec, "linux_x86_64") == %{
+               url: "https://example.invalid/f-linux",
+               sha256: sha_a(),
+               target: ".local/share/fonts/f"
+             }
+
+      assert Download.resolve(spec, "darwin_arm64").target == "Library/Fonts/f"
+    end
+
+    test "an archive install lands at the resolved platform target" do
+      {bytes, digest} = single_file_fixture("tool", "#!/bin/sh\necho '1.0.0'\n")
+
+      spec =
+        Download.recipe(%{
+          version: "1.0.0",
+          url: "https://example.invalid/artifacts/tool/1.0.0/tool.tar.gz",
+          sha256: digest,
+          targets: %{"linux_x86_64" => ".local/opt/tool-linux", "darwin_arm64" => ".local/opt/tool-darwin"},
+          archive: "tar.gz",
+          probe: %{argv: ["tool", "--version"], output: "{V}"}
+        })
+
+      home = fresh_home()
+      assert {:ok, :installed} = Download.install(spec, home, fetch: fn _url -> bytes end)
+      assert File.exists?(Path.join([home, ".local/opt/tool-linux/tool"]))
+      refute File.exists?(Path.join([home, ".local/opt/tool-darwin"]))
+    end
+
+    test "dispatched targets ride the plan effect and the pending anchor verbatim" do
+      package = %{
+        id: "fonts",
+        requires: [],
+        contributes: [
+          %{
+            provider: "download",
+            spec:
+              Download.recipe(%{
+                version: "3.5.0",
+                targets: %{"linux_x86_64" => ".local/share/fonts/f", "darwin_arm64" => "Library/Fonts/f"},
+                assets: %{
+                  "linux_x86_64" => %{url: "https://example.invalid/f", sha256: sha_a()},
+                  "darwin_arm64" => %{url: "https://example.invalid/f", sha256: sha_a()}
+                },
+                archive: "tar.xz",
+                layout: "flat",
+                probe: %{member: "f.ttf", sha256: sha_a()}
+              })
+          }
+        ]
+      }
+
+      plan = plan_for([package])
+      assert [pin] = plan.downloads
+      assert pin.target == nil
+      assert pin.targets == %{"linux_x86_64" => ".local/share/fonts/f", "darwin_arm64" => "Library/Fonts/f"}
+
+      [effect] = Download.plan_effect(plan, %{})
+      assert effect.target == nil
+      assert effect.targets == pin.targets
+      assert effect.archive == "tar.xz" and effect.layout == "flat"
+    end
+
+    test "a declared per-platform target overlapping an owned entry is a composition conflict" do
+      fonts = %{
+        id: "fonts",
+        requires: [],
+        contributes: [
+          %{
+            provider: "download",
+            spec:
+              Download.recipe(%{
+                version: "3.5.0",
+                targets: %{"linux_x86_64" => ".config/owned", "darwin_arm64" => "Library/Fonts/f"},
+                assets: %{
+                  "linux_x86_64" => %{url: "https://example.invalid/f", sha256: sha_a()},
+                  "darwin_arm64" => %{url: "https://example.invalid/f", sha256: sha_a()}
+                },
+                archive: "tar.xz",
+                probe: %{member: "f.ttf", sha256: sha_a()}
+              })
+          }
+        ]
+      }
+
+      owner = %{
+        id: "owner",
+        requires: [],
+        contributes: [
+          %{provider: "chezmoi", spec: Chezmoi.recipe(%{target: ".config/owned/keep", kind: :file, content: "x"})}
+        ]
+      }
+
+      assert_raise ArgumentError, ~r/overlaps owned target/, fn -> plan_for([fonts, owner]) end
+    end
+
+    test "the recorded envelope round-trips layout, targets and the content probe" do
+      recorded = %{
+        "version" => "3.5.0",
+        "targets" => %{"linux_x86_64" => ".local/share/fonts/f", "darwin_arm64" => "Library/Fonts/f"},
+        "assets" => %{
+          "linux_x86_64" => %{"url" => "https://example.invalid/f", "sha256" => sha_a()},
+          "darwin_arm64" => %{"url" => "https://example.invalid/f", "sha256" => sha_a()}
+        },
+        "archive" => "tar.xz",
+        "layout" => "flat",
+        "probe" => %{"member" => "f.ttf", "sha256" => sha_a()}
+      }
+
+      spec = Download.from_recorded(recorded)
+      assert spec.targets == %{"linux_x86_64" => ".local/share/fonts/f", "darwin_arm64" => "Library/Fonts/f"}
+      assert spec.layout == "flat"
+      assert spec.probe == %{member: "f.ttf", sha256: sha_a()}
+      :ok = Download.validate(spec)
+
+      # The descriptor stays machine-independent and drops nil fields.
+      descriptor = Jason.decode!(Download.pin_bytes(spec))
+      assert descriptor["targets"] == recorded["targets"]
+      assert descriptor["layout"] == "flat"
+      refute Map.has_key?(descriptor, "target")
+    end
   end
 
   describe "default fetch through redirected TLS" do
@@ -467,6 +1096,163 @@ defmodule Workstation.Core.DownloadTest do
       target: Keyword.get(overrides, :target, ".local/bin/tool")
     })
   end
+
+  # The archive form's fixture pin; the sha256 must pin exactly the bytes
+  # the injected fetch returns, so tests build the recipe from the fixture's
+  # own digest.
+  defp archive_recipe(overrides \\ []) do
+    Download.recipe(%{
+      url: "https://example.invalid/artifacts/go/1.27.1/go.tar.gz",
+      version: Keyword.get(overrides, :version, "1.27.1"),
+      sha256: Keyword.get(overrides, :sha256, sha_a()),
+      target: Keyword.get(overrides, :target, ".local/opt/go"),
+      archive: "tar.gz",
+      probe: Keyword.get(overrides, :probe, @probe)
+    })
+  end
+
+  # A tar.gz carrying ONE top-level file: the single-binary release shape
+  # (fzf, rainfrog). Deterministic in-memory ustar bytes, like tree_fixture.
+  defp single_file_fixture(name, body), do: single_file_fixture_pair([{name, body}])
+
+  defp single_file_fixture_pair(entries) do
+    bytes =
+      entries
+      |> Enum.map(fn {name, body} -> ustar(name, body) end)
+      |> IO.iodata_to_binary()
+      |> :zlib.gzip()
+
+    {bytes, Digest.sha256(bytes)}
+  end
+
+  # A tar.gz whose members live at the top level with no owning root: the
+  # bare-release shape (lazygit, op).
+  defp flat_tar_fixture(entries), do: single_file_fixture_pair(entries)
+
+  # The same ustar stream compressed as tar.xz (the font shape) — xz is one
+  # of the apply-time extraction tools this layout's pins require, so the
+  # fixture rides the same host tool the apply path uses.
+  defp tar_xz_fixture(entries) do
+    ustar_stream =
+      entries
+      |> Enum.map(fn {name, body} -> ustar(name, body) end)
+      |> IO.iodata_to_binary()
+
+    dir = Path.join(System.tmp_dir!(), "workstation-fixture-#{:os.getpid()}-#{System.unique_integer([:positive])}")
+    File.mkdir_p!(dir)
+    tar_path = Path.join(dir, "fixture.tar")
+    xz_path = tar_path <> ".xz"
+
+    File.write!(tar_path, ustar_stream)
+    {_, 0} = System.cmd("xz", ["-z", "-0", "-f", tar_path], stderr_to_stdout: true)
+    bytes = File.read!(xz_path)
+    File.rm_rf!(dir)
+    {bytes, Digest.sha256(bytes)}
+  end
+
+  # A minimal STORED (method 0) zip archive, built in memory: local file
+  # headers, central directory, end-of-central-directory. The external
+  # attributes carry the unix mode so Info-ZIP unzip restores the exec bit
+  # exactly like the real release archives do.
+  defp zip_fixture(entries) do
+    dos_time = 0
+    dos_date = (2026 - 1980) <<< 9 ||| 1 <<< 5 ||| 1
+
+    {_mapped, {locals_rev, centrals_rev, _end_offset}} =
+      Enum.map_reduce(entries, {[], [], 0}, fn {name, body, mode}, {locals, centrals, offset} ->
+        crc = :erlang.crc32(body)
+        name_bytes = IO.iodata_to_binary(name)
+
+        local = [
+          <<0x04034B50::little-32, 20::little-16, 0::little-16, 0::little-16, dos_time::little-16,
+            dos_date::little-16, crc::little-32, byte_size(body)::little-32, byte_size(body)::little-32,
+            byte_size(name_bytes)::little-16, 0::little-16, name_bytes::binary, body::binary>>
+        ]
+
+        central = [
+          <<0x02014B50::little-32, (3 <<< 8 ||| 20)::little-16, 20::little-16, 0::little-16, 0::little-16,
+            dos_time::little-16, dos_date::little-16, crc::little-32, byte_size(body)::little-32,
+            byte_size(body)::little-32, byte_size(name_bytes)::little-16, 0::little-16, 0::little-16,
+            0::little-16, 0::little-16, mode <<< 16::little-32, offset::little-32, name_bytes::binary>>
+          | centrals
+        ]
+
+        {local, {[local | locals], central, offset + IO.iodata_length(local)}}
+      end)
+
+    local_bytes = locals_rev |> Enum.reverse() |> IO.iodata_to_binary()
+    central_bytes = centrals_rev |> Enum.reverse() |> IO.iodata_to_binary()
+    count = length(entries)
+
+    eocd = <<
+      0x06054B50::little-32, 0::little-16, 0::little-16, count::little-16, count::little-16,
+      byte_size(central_bytes)::little-32, byte_size(local_bytes)::little-32, 0::little-16
+    >>
+
+    IO.iodata_to_binary([local_bytes, central_bytes, eocd])
+  end
+
+  # A tar.gz whose extraction yields an exact tree: `go/VERSION`, and
+  # `go/bin/go` a probe script printing the given banner. Archives are built
+  # as DETERMINISTIC IN-MEMORY ustar bytes (fixed headers, the same
+  # construction the bootstrap fixtures use), so the digest under test is
+  # the digest of the bytes the fetch returns — never a re-read of a
+  # just-tarred file.
+  defp tree_fixture(banner, opts \\ []) do
+    base = [
+      {"go/VERSION", "go-1.27.1\n"},
+      {"go/bin/go", "#!/bin/sh\necho '#{banner}'\n"}
+    ]
+
+    entries = base ++ List.wrap(Keyword.get(opts, :extra))
+
+    bytes =
+      entries
+      |> Enum.map(fn {name, body} -> ustar(name, body) end)
+      |> IO.iodata_to_binary()
+      |> :zlib.gzip()
+
+    {bytes, Digest.sha256(bytes)}
+  end
+
+  # One ustar member: 512-byte header (mode 0755) + body padded to 512.
+  defp ustar(name, body) do
+    if byte_size(name) > 100, do: raise(ArgumentError, "fixture member name too long")
+    size = byte_size(body)
+
+    head =
+      pad(name, 100) <>
+        "0000755\u0000" <>
+        "0000000\u0000" <>
+        "0000000\u0000" <>
+        (IO.iodata_to_binary(Integer.to_string(size, 8) |> String.pad_leading(11, "0")) <> "\u0000") <>
+        "00000000000\u0000"
+
+    tail =
+      "0" <>
+        :binary.copy(<<0>>, 100) <>
+        "ustar\u0000" <>
+        "00" <>
+        :binary.copy(<<0>>, 32) <>
+        :binary.copy(<<0>>, 32) <>
+        :binary.copy(<<0>>, 8) <>
+        :binary.copy(<<0>>, 8) <>
+        :binary.copy(<<0>>, 155) <>
+        :binary.copy(<<0>>, 12)
+
+    # The checksum is the byte sum of the header with the checksum field
+    # itself filled with eight spaces (the POSIX ustar rule).
+    checksum =
+      (head <> "        " <> tail)
+      |> :binary.bin_to_list()
+      |> Enum.sum()
+
+    header = head <> IO.iodata_to_binary(Integer.to_string(checksum, 8) |> String.pad_leading(6, "0")) <> "\u0000 " <> tail
+    padded = body <> :binary.copy(<<0>>, 512 - rem(byte_size(body), 512))
+    header <> padded
+  end
+
+  defp pad(string, width), do: string <> :binary.copy(<<0>>, width - byte_size(string))
 
   defp payload_bytes, do: "#!/usr/bin/env sh\nexit 0\n"
 
@@ -563,13 +1349,21 @@ exit 0
     %{port: port, cacerts: [root_der]}
   end
 
-  defp accept_loop(listen, port, mode, payload) do
+  defp accept_loop(listen, port, mode, payload, backoff \\ 0) do
     case :ssl.transport_accept(listen) do
       {:ok, sock} ->
         # One handler per connection: a hop's handshake must never queue
         # behind the previous hop's close.
         spawn(fn -> serve_connection(sock, port, mode, payload) end)
         accept_loop(listen, port, mode, payload)
+
+      {:error, reason} when reason in [:emfile, :enfile, :temporarily_unavailable] and backoff < 50 ->
+        # Under a loaded test VM the listener can transiently refuse an
+        # accept (fd pressure from the parallel suite). Dying here would
+        # close every later hop and turn a load spike into a flake; re-arm
+        # with a bounded backoff instead.
+        Process.sleep(5)
+        accept_loop(listen, port, mode, payload, backoff + 5)
 
       {:error, _closed} ->
         :ok

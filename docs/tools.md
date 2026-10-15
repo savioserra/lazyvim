@@ -13,18 +13,18 @@ Supported deployment policy is Linux, WSL-as-Linux, and macOS (arm64).
 | --- | --- | --- | --- | --- |
 | chezmoi backend | 2.72.1 | github.com/twpayne/chezmoi | `.local/opt/chezmoi/bin/chezmoi` (engine-owned) | linux-x86_64, darwin-arm64 |
 | Neovim | 0.12.4 | github.com/neovim/neovim | `.local/opt/nvim` (exact tree, engine bootstrap) | linux-x86_64, darwin-arm64 |
-| Go | 1.27.1 | go.dev | `.local/opt/go` (exact tree, `go` setup) | linux-x86_64, darwin-arm64 |
+| Go | 1.27.1 | go.dev | `.local/opt/go` (exact tree via the download contract's archive form) + `.local/bin/go` link | linux-x86_64, darwin-arm64 |
 | Herdr | 0.9.0 | github.com/herdrdev/herdr | `.local/opt/herdr/bin/herdr` (`herdr` setup) + `.local/bin/herdr` link | linux-x86_64, darwin-arm64 (WSL uses the Linux asset) |
-| nvm-sh | 0.40.4 | github.com/nvm-sh/nvm | `.local/opt/nvm` (non-exact tree, `node` setup) | linux-x86_64, darwin-arm64 |
-| Node.js | `workstation/packages/languages/node/files/.node-version` (currently 24.19.0) | nodejs.org | `.local/opt/nvm/versions/node/v<version>` (non-exact, `node` setup) | linux-x86_64, darwin-arm64 |
-| ripgrep | 15.2.0 | github.com/BurntSushi/ripgrep | `.local/bin/rg` | linux-x86_64, darwin-arm64 |
-| fd | 10.4.2 | github.com/sharkdp/fd | `.local/bin/fd` | linux-x86_64, darwin-arm64 |
-| fzf | 0.74.2 | github.com/junegunn/fzf | `.local/bin/fzf` | linux-x86_64, darwin-arm64 |
-| lazygit | 0.63.1 | github.com/jesseduffield/lazygit | `.local/bin/lazygit` | linux-x86_64, darwin-arm64 |
-| tree-sitter (CLI) | 0.26.11 | github.com/tree-sitter/tree-sitter | `.local/bin/tree-sitter` | linux-x86_64, darwin-arm64 |
-| rainfrog | 0.4.4 | github.com/achristmascarl/rainfrog | `.local/bin/rainfrog` | linux-x86_64, darwin-arm64 |
-| 1Password CLI | 2.39.0 | cache.agilebits.com | `.local/bin/op`; verified by the `secrets` capability | linux-x86_64, darwin-arm64 |
-| Hermes Agent | commit `46d7718a52` (git pin, `hermes_agent_git_commit`) | github.com/NousResearch/hermes-agent | pinned checkout `~/.hermes/hermes-agent` (git recipe); launcher `~/.hermes/hermes-agent/.hermes/bin/hermes`; verified by `packages/agent/verify/hermes.sh` | linux-x86_64, darwin-arm64 |
+| nvm-sh | 0.40.4 | github.com/nvm-sh/nvm | `.local/opt/nvm` (exact tree via the download contract, content probe `nvm.sh`; `node` package) | linux-x86_64, darwin-arm64 |
+| Node.js | `workstation/packages/languages/node/files/.node-version` (currently 24.19.0) | nodejs.org | `.local/opt/nvm/versions/node/v<version>` (exact tree via the download contract, probe `bin/node --version`; nested in the provisioned nvm tree, declared parent-first) | linux-x86_64, darwin-arm64 |
+| ripgrep | 15.2.0 | github.com/BurntSushi/ripgrep | `.local/opt/ripgrep` (download-contract archive, probe `rg --version`) + `.local/bin/rg` link | linux-x86_64, darwin-arm64 |
+| fd | 10.4.2 | github.com/sharkdp/fd | `.local/opt/fd` (download-contract archive, probe `fd --version`) + `.local/bin/fd` link | linux-x86_64, darwin-arm64 |
+| fzf | 0.74.2 | github.com/junegunn/fzf | `.local/opt/fzf` (download-contract archive — the lone root file IS the tree, probe `fzf --version`) + `.local/bin/fzf` link | linux-x86_64, darwin-arm64 |
+| lazygit | 0.63.1 | github.com/jesseduffield/lazygit | `.local/opt/lazygit` (download-contract archive, `flat` rootless layout, exec probe carrying the pinned release metadata) + `.local/bin/lazygit` link | linux-x86_64, darwin-arm64 |
+| tree-sitter (CLI) | 0.26.11 | github.com/tree-sitter/tree-sitter | `.local/opt/tree-sitter` (download-contract zip archive, probe `tree-sitter --version`) + `.local/bin/tree-sitter` link | linux-x86_64, darwin-arm64 |
+| rainfrog | 0.4.4 | github.com/achristmascarl/rainfrog | `.local/opt/rainfrog` (download-contract archive, `flat` layout, exec probe carrying the pinned build id) + `.local/bin/rainfrog` link | linux-x86_64, darwin-arm64 |
+| 1Password CLI | 2.39.0 | cache.agilebits.com | `.local/opt/op` (download-contract zip archive, `flat` layout — `op` + `op.sig`, probe `op --version`) + `.local/bin/op` link; verified by the `secrets` capability | linux-x86_64, darwin-arm64 |
+| Hermes Agent | commit `b23600860f8` (git pin, `hermes_agent_git_commit`) + python-build-standalone `3.14.7` (archive pin, `hermes_python`; the release hermes-agent's `pm/lock.json` carries at the commit) | github.com/NousResearch/hermes-agent; github.com/astral-sh/python-build-standalone | Engine-provisioned full stack: pinned checkout `~/.hermes/hermes-agent` (git recipe), pinned interpreter `.local/opt/hermes/python` (download contract, probe `bin/python3 --version`), engine launcher `.local/opt/hermes/bin/hermes` surfaced as `.local/bin/hermes`; managed skills engine-owned; verified by `packages/agent/verify/hermes.sh` (consumer smoke `hermes --version` on every host) | linux-x86_64, darwin-arm64 |
 | JetBrainsMono Nerd Font | 3.5.0 | github.com/ryanoasis/nerd-fonts | Linux: `.local/share/fonts/JetBrainsMonoNerdFont`; darwin: `Library/Fonts/JetBrainsMonoNerdFont` | linux-x86_64, darwin-arm64 |
 | nunchux (launcher package; plugin active) | 3.1.3 | github.com/datamadsen/nunchux | pinned checkout `.tmux/plugins/nunchux` (git recipe at the v3.1.3 commit; carries the repo-tracked binary) + `bin/.platform` marker so upstream's `ensure_binary` never fetches ([tmux](tmux.md)) | linux-amd64 (repo build, content-pinned); package is linux-only, darwin release pin recorded as inventory |
 | mise | 2026.10.8 | github.com/jdx/mise | Engine-owned: the raw release binary pinned at `.local/opt/mise/<version>/bin/mise` (download contract, `mise_bin_<plat>_url`/`_sha256`), surfaced on PATH as the contract-maintained symlink `.local/bin/mise`; activated in shells by the managed mise fragment. The installer's first-acquisition copy at `.local/bin/mise` is absorbed by content proof at apply | linux-x86_64, darwin-arm64 |
@@ -36,11 +36,12 @@ Supported deployment policy is Linux, WSL-as-Linux, and macOS (arm64).
 
 | Owner | Setup assets | Layout policy |
 | --- | --- | --- |
-| `foundation` | rg, fd, fzf, lazygit, tree-sitter, rainfrog | Selected archive members → `.local/bin`, mode 0755; no parent-directory replacement |
-| `go` | Go toolchain | Strip one archive root; exact `.local/opt/go` |
-| `node` | nvm, then pinned Node | Strip one root each; non-exact overlays preserve aliases, other Node versions and unrelated global npm packages; `node_modules` stays manifest-ignored (checksum-pinned at download) |
-| `fonts` | JetBrainsMono Nerd Font | Exact font-only directory, no root stripping; provision before host cache/registration |
-| `secrets` | op | ZIP member `op` → `.local/bin/op`, mode 0755; verify only `--version`, never account/vault state |
+| `foundation` | rg, fd, fzf, lazygit, tree-sitter, rainfrog | Download-contract archive form per tool: SHA-256-gated release archive, member-checked extraction under the declared layout (release single-root — a lone root file IS the tree; `flat` for lazygit's rootless tarball; zip for tree-sitter), probe-verified exact `.local/opt/<tool>`; the `.local/bin/<tool>` link recipes point into the trees |
+| `go` | Go toolchain | Download-contract archive form: SHA-256-gated tarball, member-checked single-root extraction, one root stripped, probe-verified exact `.local/opt/go`; the `.local/bin/go` link recipe points into it |
+| `node` | nvm, then pinned Node | Download-contract archive form both: exact `.local/opt/nvm` (content probe pins `nvm.sh` bytes — a checkout has no executable to version), then the exact Node tree nested at `.local/opt/nvm/versions/node/v<version>` (probe `bin/node --version`), declared parent-first so the nest extracts into the provisioned nvm tree; the rc loader and `.node-version` recipes are unchanged |
+| `fonts` | JetBrainsMono Nerd Font | Download-contract archive form: tar.xz `flat` (the ttf set ships rootless), per-platform `targets` (linux `.local/share/fonts/JetBrainsMonoNerdFont`, darwin `Library/Fonts/JetBrainsMonoNerdFont`); the content probe pins `JetBrainsMonoNerdFont-Regular.ttf` bytes; host cache/registration reads the provisioned directory |
+| `secrets` | op | Download-contract zip archive, `flat` layout (`op` + `op.sig`): probe-verified exact `.local/opt/op`; the `.local/bin/op` link recipe points into it; verify only `--version`, never account/vault state |
+| `herdr` | Herdr binary | Exact pinned single binary via the download contract → `.local/opt/herdr/bin/herdr` (per-platform SHA-256, mode 0755); the `.local/bin/herdr` link recipe points at it |
 | Engine bootstrap | Neovim | Strip one root; exact `.local/opt/nvim`; no competing package installer |
 | Engine file backend | chezmoi | Selected archive member; never package-owned |
 | Engine mise contract | The managed tool set (tmux, btop, the erlang/elixir pins) | `MISE_DATA_DIR` under the engine state root; composed `.config/mise/config.toml` (the generation pins its descriptor); PATH symlink `.local/bin/mise` with content-proof absorption of the installer's copy; the installer conf.d fragment is absorbed (deleted) at apply |
@@ -92,8 +93,9 @@ acquisition only — steady-state declarations belong to the engine mise
 contract, which owns the binary from the first apply onward.
 
 The engine's mise contract keeps its own pin set alongside the installer's:
-`mise_bin_<plat>_url`/`_sha256` pin the RAW release binaries (no archive
-extraction — the download contract installs single files), consumed by the
+`mise_bin_<plat>_url`/`_sha256` pin the RAW release binaries (single-file
+pins by choice — the download contract also installs archive trees, but
+mise needs exactly one executable, not a tree), consumed by the
 engine-owned base package's download contribution into
 `.local/opt/mise/<version>/bin/mise`. A mise bump updates both pin sets
 (tarball for the installer, raw binary for the engine), the engine's

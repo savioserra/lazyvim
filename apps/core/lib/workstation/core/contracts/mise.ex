@@ -285,8 +285,18 @@ defmodule Workstation.Core.Contracts.Mise do
       end)
 
       Enum.each(downloads, fn download ->
-        overlaps?(target, download.target) &&
-          Paths.invalid!("mise target #{target} overlaps download target #{download.target}")
+        # A dispatched pin (per-platform targets) checks every destination
+        # it declares; a literal pin checks its own.
+        declared =
+          case Map.get(download, :targets) do
+            nil -> [download.target]
+            targets -> Map.values(targets)
+          end
+
+        Enum.each(declared, fn dl_target ->
+          overlaps?(target, dl_target) &&
+            Paths.invalid!("mise target #{target} overlaps download target #{dl_target}")
+        end)
       end)
     end)
   end
@@ -697,7 +707,7 @@ defmodule Workstation.Core.Contracts.Mise do
   # the subtree this contract owns.
   defp mise_pin(downloads) do
     downloads
-    |> Enum.filter(&String.starts_with?(&1.target, ".local/opt/mise/"))
+    |> Enum.filter(&(is_binary(&1.target) and String.starts_with?(&1.target, ".local/opt/mise/")))
     |> case do
       [pin] ->
         case Regex.run(@mise_pin_regex, pin.target) do

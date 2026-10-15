@@ -18,7 +18,10 @@
 # of the tools belongs to the engine's mise contract.
 #
 # Host prerequisites: POSIX shell, curl, git and the ordinary archive/hash
-# tools (tar/gzip, sha256sum or shasum). On Linux git is the single distro
+# tools (tar/gzip, sha256sum or shasum). The ENGINE's apply additionally
+# extracts the package-tree archives — tar.xz pins (Node, the Nerd Font)
+# need xz, zip pins (op, tree-sitter) need unzip; a missing tool fails the
+# apply with its name. On Linux git is the single distro
 # prerequisite (`apt install git` — no reputable first-party static git
 # artifact exists to pin; see docs/tools.md); macOS ships git with the
 # Command Line Tools. Everything lives under $HOME: the script never needs

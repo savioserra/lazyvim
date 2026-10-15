@@ -195,10 +195,13 @@ defmodule Workstation.Core.Golden do
             "contract" => effect.contract,
             "kind" => to_string(effect.kind),
             "target" => effect[:target],
+            "targets" => effect[:targets],
             "owner" => effect[:owner],
             "url" => effect[:url],
             "version" => effect[:version],
             "sha256" => effect[:sha256],
+            "archive" => effect[:archive],
+            "layout" => effect[:layout],
             "commit" => effect[:commit],
             "fingerprint" => effect[:fingerprint],
             "attribution" => effect[:attribution],
@@ -407,6 +410,18 @@ defmodule Workstation.Core.Golden do
       "target" => spec.target
     }
 
+    base =
+      case spec.targets do
+        nil -> base
+        targets -> base |> Map.put("target", nil) |> Map.put("targets", targets)
+      end
+
+    base =
+      case spec.archive do
+        nil -> base
+        archive -> Map.merge(base, %{"archive" => archive, "layout" => spec.layout, "probe" => stringify_probe(spec.probe)})
+      end
+
     case spec.assets do
       nil ->
         Map.merge(base, %{"url" => spec.url, "sha256" => spec.sha256})
@@ -414,7 +429,13 @@ defmodule Workstation.Core.Golden do
       assets ->
         Map.put(base, "assets", Map.new(assets, fn {tag, asset} -> {tag, %{"url" => asset.url, "sha256" => asset.sha256}} end))
     end
+    |> drop_nil_fields()
   end
+
+  # The probe records per its shape: the exec template (argv + output) or
+  # the content claim (member + sha256).
+  defp stringify_probe(%{argv: argv, output: output}), do: %{"argv" => argv, "output" => output}
+  defp stringify_probe(%{member: member, sha256: sha256}), do: %{"member" => member, "sha256" => sha256}
 
   defp normalize_shell_spec(spec) do
     %{
@@ -693,6 +714,17 @@ defmodule Workstation.Core.Golden do
               "version" => "1.2.3",
               "sha256" => "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0",
               "target" => ".local/bin/goldens-ls"
+            }
+          },
+          %{
+            "provider" => "download",
+            "spec" => %{
+              "archive" => "tar.gz",
+              "probe" => %{"argv" => ["bin/goldens-tool", "version"], "output" => "goldens tool {V}"},
+              "url" => "https://goldens.invalid/artifacts/goldens-tool/2.0.0/goldens-tool.tar.gz",
+              "version" => "2.0.0",
+              "sha256" => "11223344556677889900aabbccddeeff00112233445566778899aabbccddeeff",
+              "target" => ".local/opt/goldens-tool"
             }
           }
         ]

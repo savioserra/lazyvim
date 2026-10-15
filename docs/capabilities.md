@@ -39,7 +39,7 @@ bootstrap, never an engine dependency.
 | `Workstation.Core.Catalog.Spec` | The package-spec provider behaviour + spec shape validation (including the banned integer-ordering fields) |
 | `Workstation.Core.Catalog.Discover` | Runtime provider discovery (`:code.all_available/0` + behaviour conformance, test-tree exclusion, duplicate-id rejection) |
 | `Workstation.Core.Graph` | Host selection, `requires` (necessity + ordering) and `after` (ordering-only) edges, topological ordering with id-sort ties |
-| `Workstation.Core.Source` | Source plan and manifest over the recipe provider contracts (chezmoi dialect via `Workstation.Backends.Chezmoi`, shared shell and pinned downloads via `Workstation.Core.Contracts.Shell`/`Download`, managed mise tools via `Workstation.Core.Contracts.Mise`) |
+| `Workstation.Core.Source` | Source plan and manifest over the recipe provider contracts (chezmoi dialect via `Workstation.Backends.Chezmoi`, shared shell and pinned downloads — single artifacts and probe-gated archive trees — via `Workstation.Core.Contracts.Shell`/`Download`, managed mise tools via `Workstation.Core.Contracts.Mise`) |
 | `Workstation.Pipeline` | The one stage-list fold: preconditions, publish, backend apply, journal record, post-apply verify |
 | `Workstation.Core.Provisioner` | Chezmoi backend with an exact generation |
 | `Workstation.Core.Policy` | Engine-owned legacy tombstones |
@@ -142,7 +142,7 @@ foundation
 ├── fonts
 ├── node
 ├── go [Neovim language toolchain]
-├── agent [Hermes Agent via pinned git recipe; managed skills]
+├── agent [Hermes Agent provisioned full-stack: pinned git checkout, pinned interpreter, engine launcher; managed skills]
 ├── herdr [pinned terminal-workspace binary; runtime-optional, no server lifecycle]
 ├── secrets
 ├── nvim [requires foundation+node+go; owns base/standard/Go profile intents]
@@ -156,19 +156,85 @@ nvim
 
 | Package | Setup | Sync | Verify | Host support |
 | --- | --- | --- | --- | --- |
-| `foundation` | CLI archive members | — | CLI versions | All |
-| `fonts` | Font archives, then host registration/cache | — | Host visibility | All |
-| `node` | nvm and Node archives, then default/environment | — | NVM and Node version | All |
-| `agent` | Hermes Agent pinned checkout via the git recipe (`~/.hermes/hermes-agent` at the pinned commit); managed skills at `~/.hermes/skills/secrets` (the retired `lazyvim` skill target carries a recorded-ownership removal tombstone) | — | `packages/agent/verify/hermes.sh` (checkout HEAD + launcher `--version` + managed skill file; read-only) | All |
-| `go` | Exact toolchain archive; go link recipe | — | Go version | Linux/WSL/macOS |
+| `foundation` | The CLI tools the editor surface consumes, each a checksum-gated download-contract archive pin at `.local/opt/<tool>` (ripgrep, fd, fzf, lazygit, tree-sitter, rainfrog — per-platform SHA-256 from `versions.json`; the `release` layout for rg/fd/fzf/tree-sitter/rainfrog, `flat` for lazygit's rootless tarball, `zip` for tree-sitter), each probe-gated (`<tool> --version` carries the pinned version) and surfaced on PATH by a `.local/bin/<tool>` link recipe; plus the mise binary pin, the managed mise fragment and the PATH fragments | — | `download-archive` journal records (probes re-run on claim and on verify) + the link records | All |
+| `fonts` | Exact pinned JetBrainsMono Nerd Font tree via the download contract (tar.xz `flat` archive, SHA-256-gated; per-platform `targets`: linux `.local/share/fonts/JetBrainsMonoNerdFont`, darwin `Library/Fonts/JetBrainsMonoNerdFont`); the content probe pins `JetBrainsMonoNerdFont-Regular.ttf` bytes — a data tree with no executable to version; host cache/registration reads the provisioned directory | — | `download-archive` record (the content probe re-runs on claim and on verify) | All |
+| `node` | nvm via the download contract (pinned v0.40.4 tarball, exact tree at `.local/opt/nvm`, content probe pins `nvm.sh` bytes) then the pinned Node (tar.xz archive, exact tree at `.local/opt/nvm/versions/node/v<version>`, probe `bin/node --version` = `v{V}`) — declared parent-first so the nested target extracts into the provisioned nvm tree; the rc loader (`.config/shell/nvm.sh`) and `.node-version` recipes unchanged | — | `download-archive` records (both probes re-run on claim and on verify) + NVM and Node version | All |
+| `agent` | Hermes Agent provisioned full-stack: the pinned git recipe (`~/.hermes/hermes-agent` at the `hermes_agent_git_commit` pin), the pinned interpreter (`.local/opt/hermes/python` — a checksum-gated `hermes_python` archive pin, the same python-build-standalone release hermes-agent's own `pm/lock.json` carries at the pinned commit), the engine launcher (`.local/opt/hermes/bin/hermes` payload, resolved at run time) surfaced on PATH as `.local/bin/hermes`, and the managed skills at `~/.hermes/skills/secrets` (the retired `lazyvim` skill target carries a recorded-ownership removal tombstone) | — | `packages/agent/verify/hermes.sh` (resources + runtime on every host: checkout HEAD at the pin, managed skill file, pinned interpreter, launcher `--version` consumer smoke; read-only; full-stack or exit 1) | All |
+| `go` | Exact pinned toolchain tree via the download contract's archive form (`.local/opt/go` — per-platform SHA-256, member-checked single-root tarball, one root stripped, probe-verified `bin/go version` = `go version go{V}`); go link recipe (`.local/bin/go`) | — | `download-archive` journal record (the probe re-runs on claim and on verify — version drift fails loudly) + the link record | Linux/WSL/macOS |
 | `elixir` | Managed mise activation fragment (`.config/shell/mise.sh` via the managed-mise rc fragment) and default toolchain config (`.config/mise/config.toml`; installs no mise — the fragment is a guarded no-op until mise exists) | — | Own Mason expectations, plugin module and behavior/formatter cases through nvim leaf helpers | All |
-| `herdr` | Exact pinned binary; herdr link recipe | — | Static binary version only; never server/pane/session lifecycle | All |
-| `secrets` | Pinned op archive member; op env fragment | — | Managed 1Password CLI version; never account or vault state | All supported hosts |
+| `herdr` | Exact pinned binary via the download contract (`.local/opt/herdr/bin/herdr`, per-platform SHA-256); herdr link recipe | — | Applied-download fingerprint (binary bytes carry the pinned checksum) + the link record; never server/pane/session lifecycle | All |
+| `secrets` | Pinned op via the download contract (zip `flat` archive — the `op` + `op.sig` pair — exact tree at `.local/opt/op`, probe `op --version`); op env fragment; op link recipe (`.local/bin/op`) | — | `download-archive` record + the link record; verify only `--version`, never account or vault state | All supported hosts |
 | `nvim` | — | Locks and parsers | Startup, locks, mason coverage, base/standard/Go behavior | All |
 | `typescript` | — | — | Own Mason expectations, plugin module and behavior/formatter cases through nvim leaf helpers | All |
 | `theme` | Single source-root `.chezmoidata.toml` token envelope via `provision.chezmoi_data`; deploys no home target | — | Envelope bytes against the tokens module; requires `foundation` | All |
 | `tmux` | Plugin checkout; tmux config/theme/link recipes | — | Commits, server, theme | Linux/macOS |
 | `nunchux` | Pinned plugin checkout via the git recipe (`.tmux/plugins/nunchux` at the v3.1.3 commit — carries the repo-tracked launcher binary) plus the `.platform` marker (upstream `ensure_binary` never fetches); theme-slot launcher config | — | `packages/nunchux/verify/nunchux.sh` (checkout HEAD + binary content pin + platform marker; read-only, never executes the binary) | Linux (darwin deferred — linux-only package; the darwin release pin stays recorded in `versions.json`) |
+
+### Go toolchain acquisition
+
+Decision recorded 2026-10-15 (card t_1d7be74b): the Go toolchain is a
+download-contract ARCHIVE pin, not a host prerequisite. The documented
+layout (`.local/opt/go` exact tree + the `.local/bin/go` link) and the
+`versions.json` go pins predate the engine's data-manifest cutover but had
+no provisioning path — the link dangled on every fresh host. Extending the
+download contract keeps one pinned-artifact seam (https-only fetch, 64-hex
+SHA-256 gate, per-platform asset dispatch, staged install, exclusive
+target ownership) instead of a second acquisition lane, and honors the
+operating-contract law: a package that names a tool ships the tool.
+
+The archive form is domain-neutral data on the pin: `archive` names the
+format, `probe` (argv + first-line output template with `{V}`) is the
+honesty gate — the tree must prove it is the pinned tool before it
+activates, on already-converged hosts the probe skips the fetch entirely,
+and the applied record (`type: download-archive`) re-probes on every
+verify. Extraction is the bootstrap's discipline: traversal-checked
+single-root members, exactly one root stripped, private sibling staging,
+one rename into place — serialized by the apply lock the pipeline's caller
+already holds, so no second installer lock exists. A tree that does not
+carry the pinned version is never overwritten: inspect and remove it
+explicitly to re-install (pin bumps included). The pins stay byte-identical
+to `versions.json` (`go`, `go_<plat>_url`/`_sha256`); a bump re-records the
+generation because the pin descriptor is content-addressed.
+
+### Fresh-host archive provisioning: foundation tools, fonts, op, nvm/Node
+
+Decision recorded 2026-10-15 (card t_cf14f71b, after the audit t_bf0c0acc
+found the docs claiming provisioning no source implemented): every tool
+class above is a download-contract ARCHIVE pin — none stays a documented
+host prerequisite, per the operating-contract law. The seam is the same
+one contract the go decision grew; the audit's forbidden outcome (docs
+claim, source silent) is closed on all four rows. What the contract
+gained, each fail-closed and tested:
+
+* formats `tar.xz` and `zip` join `tar.gz` (the apply-time host tools
+  `xz`/`unzip` are named prerequisites — a missing tool is a loud,
+  named failure, never a silent fallback);
+* the declared `layout` names the root discipline — `release` (default:
+  exactly one root; a root directory strips one component, a lone root
+  file IS the tree — the fzf/tree-sitter shape) and `flat` (rootless
+  top-level members — lazygit, the op pair, the font set — safe because
+  the staging directory is always fresh);
+* the probe has a second shape, the content probe
+  (`{member, sha256}`), for trees that carry no executable at all —
+  nvm's checkout and the font directory prove their identity by pinned
+  member bytes instead of faking a version line;
+* the destination may dispatch per platform (`targets`, the mirror of
+  `assets`) — the font lands in `.local/share/fonts` on linux and
+  `Library/Fonts` on darwin, and the resolution happens only at the
+  apply boundary so a recorded plan stays machine-independent.
+
+Per-tool seams: ripgrep, fd, fzf, tree-sitter, rainfrog at
+`.local/opt/<tool>` + a `.local/bin` link (release layout; lazygit
+`flat`); op at `.local/opt/op` + link (zip, `flat`); the JetBrainsMono
+Nerd Font exact tree (tar.xz, `flat`, content probe, per-platform
+targets; host cache/registration reads the directory); nvm at
+`.local/opt/nvm` (release, content probe) with the pinned Node nested at
+`.local/opt/nvm/versions/node/v<version>` (release, exec probe),
+declared parent-first in the node package's manifest. Every url and
+SHA-256 mirrors `versions.json` byte-for-byte — no pin catalog key
+changed. The full-home golden envelope carries the provisioned state;
+the generation ids move because the pin descriptors are
+content-addressed.
 
 ## Capability domains
 
@@ -388,16 +454,50 @@ and died with the engine; the profile contract they enforced now lives in
 
 ## Hermes resources
 
-The `agent` capability owns the Hermes Agent checkout and the managed skills.
-The agent itself is a pinned git recipe: `workstation/versions.json` carries
-`hermes_agent_git_commit` / `hermes_agent_git_url` (upstream
-`NousResearch/hermes-agent`), and the manifest's git contribution provisions
-`~/.hermes/hermes-agent` at the pinned commit. One read-only verifier,
-`workstation/packages/agent/verify/hermes.sh`, asserts the checkout HEAD, the
-in-checkout launcher (`~/.hermes/hermes-agent/.hermes/bin/hermes --version`)
-and the deployed managed skills. Kanban boards and profiles are runtime state
-the package never owns: the package ships the pin, the skills and the verify
-only.
+The `agent` capability provisions Hermes Agent **full-stack** (operator
+ruling 2026-10-15, "and we still dont have hermes?": the engine owns the
+stack — resources-without-runtime is a defect, not a documented manual
+step; recorded in AGENTS.md's operating-contract law). The capability owns
+four surfaces:
+
+1. **The pinned checkout** — the git recipe (`workstation/versions.json`
+   carries `hermes_agent_git_commit` / `hermes_agent_git_url`, upstream
+   `NousResearch/hermes-agent`) provisioning `~/.hermes/hermes-agent` at
+   the pinned commit.
+2. **The pinned interpreter** — a checksum-gated download pin
+   (`hermes_python` + per-platform URL/SHA-256 in `workstation/versions.json`)
+   installing the python-build-standalone `install_only` archive at
+   `.local/opt/hermes/python` (one root stripped, probe
+   `bin/python3 --version`). The pin is the SAME release hermes-agent's own
+   `pm/lock.json` carries at `hermes_agent_git_commit` — the pinned commit
+   is the authority for which interpreter build the runtime expects, and the
+   engine mirrors it with the usual URL+SHA-256 discipline.
+3. **The engine launcher** — an engine-authored payload at
+   `.local/opt/hermes/bin/hermes` (executable), surfaced on PATH as the
+   contract-maintained symlink `.local/bin/hermes`. The launcher resolves
+   the interpreter and the checkout from `$HOME` at run time (no baked
+   paths), runs the interpreter isolated (`-I`, no inherited `PYTHON*`
+   config, bytecode kept out of the engine-owned checkout) and fails closed
+   with a named message when either pin is missing.
+4. **The managed skills** — `~/.hermes/skills/secrets` (the retired
+   `lazyvim` skill target carries a recorded-ownership removal tombstone).
+
+One verifier, `workstation/packages/agent/verify/hermes.sh`, asserts all of
+it on every host and ends in the consumer smoke: `hermes --version` through
+the PATH entry must succeed — full-stack or exit 1; a missing or broken
+runtime is provisioning drift, never a documented state. Beyond the
+consumer gate the runtime stays upstream's: `hermes update`'s pm-managed
+dependency closure, tool store (`~/.hermes/tools/...`) and gateway are
+runtime-extended state the package never freezes — the engine provisions
+the interpreter and the entry point exactly as it provisions mise and nvim,
+and upstream's own machinery fills its store from its own locks on demand.
+Runtime updates go through the engine: bump `hermes_agent_git_commit`, move
+the `hermes_python` pins to the release the new commit's `pm/lock.json`
+names, remove the checkout explicitly (the git contract never moves a
+pinned checkout), re-apply.
+
+Kanban boards and profiles are runtime state the package never owns: the
+package ships the pins, the launcher, the skills and the verify only.
 
 ## Package payload rule
 
@@ -425,4 +525,8 @@ payload the host tool consumes.
 - Verify Neovim imports by successful startup.
 - Verify languages with real files, parsers, and attached LSP clients.
 - Verify formatters by comparing on-disk output.
+- Verify the agent package's full stack on every host: resources (pinned
+  checkout, managed skills) and runtime (pinned interpreter, engine
+  launcher) alike, ending in the `hermes --version` consumer smoke — an
+  absent or broken runtime is provisioning drift, never a documented state.
 - Treat directory existence as supporting evidence, not final proof.
