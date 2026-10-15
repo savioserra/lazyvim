@@ -272,16 +272,33 @@ defmodule Workstation.CLI.TUI.ApplyTest do
       assert frame |> Frame.row_text(11) =~ "× Apply failed: engine refused"
     end
 
+    # House pairing rule (shell_home_frame_test.exs pattern): the test's own
+    # receive/settle budgets can stack to ~40s of harness waits before the
+    # self-describing flunk, so the ExUnit wall-clock tag is pinned above
+    # 2x that — the 60s default truncated slower budgets under battery load.
+    @tag timeout: 300_000
     test "toast expires through its own timer command" do
       runtime = start_apply(toast_ms: 30)
 
       arm(runtime)
-      # toast_ms 30 expires inside the drain's quiet window, so the first
-      # frame is already post-expiry; force a redraw and assert on that.
-      _visible = latest_frame()
-      send_event(runtime, TermUI.Event.resize(80, 12))
 
-      frame = latest_frame()
+      # The toast renders through the screen's event loop after the
+      # executor returns — synchronize on it first, so the expiry below
+      # can never pass on a run that never showed the toast.
+      await_frame(fn frame ->
+        Frame.row_text(frame, 11) =~ "✓ Applied generation gen-1"
+      end)
+
+      # The expiry is the screen's own timer command (`term_ui_toast_expire`
+      # through update/2), and under host load its redraw can land after any
+      # single drain's quiet window — the render lands before the timer
+      # retires the message. Poll to a deadline instead of trusting one
+      # render-after-wait: the expiry redraw itself is the matching frame.
+      frame =
+        await_frame(fn frame ->
+          not (frame |> Frame.row_text(11) =~ "Applied generation")
+        end)
+
       refute frame |> Frame.row_text(11) =~ "Applied generation"
     end
 
@@ -376,7 +393,8 @@ defmodule Workstation.CLI.TUI.ApplyTest do
 
       state =
         Apply.update(
-          {:apply_event, ref, %{"type" => "run.started", "op" => "apply.run", "op_ref" => "op-7"}},
+          {:apply_event, ref,
+           %{"type" => "run.started", "op" => "apply.run", "op_ref" => "op-7"}},
           state
         )
 
@@ -421,13 +439,16 @@ defmodule Workstation.CLI.TUI.ApplyTest do
 
       state =
         Apply.update(
-          {:check_done, {:ok, %{"status" => "behind", "local" => "abc1234", "remote" => "def5678"}}},
+          {:check_done,
+           {:ok, %{"status" => "behind", "local" => "abc1234", "remote" => "def5678"}}},
           state
         )
 
       assert state.update_hint == %{"local" => "abc1234", "remote" => "def5678"}
 
-      state = Apply.update({:check_done, {:ok, %{"status" => "unknown", "reason" => "offline"}}}, state)
+      state =
+        Apply.update({:check_done, {:ok, %{"status" => "unknown", "reason" => "offline"}}}, state)
+
       assert state.update_hint == nil
     end
 
@@ -451,7 +472,8 @@ defmodule Workstation.CLI.TUI.ApplyTest do
 
       state =
         Apply.update(
-          {:check_done, {:ok, %{"status" => "behind", "local" => "abc1234", "remote" => "def5678"}}},
+          {:check_done,
+           {:ok, %{"status" => "behind", "local" => "abc1234", "remote" => "def5678"}}},
           state
         )
 

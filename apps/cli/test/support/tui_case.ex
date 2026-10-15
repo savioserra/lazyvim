@@ -67,9 +67,11 @@ defmodule Workstation.CLITest.TUI do
   @doc """
   Drains draw messages until the mailbox is quiet for `@quiet_ms` and
   returns the LAST frame. A drain swallows every redraw in its quiet
-  window — including toast-expiry redraws shorter than `@quiet_ms`. To
-  assert a post-expiry frame, force a deterministic redraw afterwards
-  (e.g. send an Event.Resize) and drain again.
+  window — including toast-expiry redraws shorter than `@quiet_ms` — so
+  a render-after-wait assertion races whatever timer or slow answer
+  still has to produce the awaited state (the ApplyTest toast-expiry
+  flake). To assert a state that has yet to happen, poll `await_frame/2`
+  instead: it matches frames as they arrive, to a deadline.
   """
   @spec latest_frame() :: TermUI.Frame.t()
   def latest_frame do
