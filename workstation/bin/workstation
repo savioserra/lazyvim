@@ -18,8 +18,7 @@ script_dir=$(CDPATH='' cd -P "$(dirname "$script")" && pwd -P)
 engine_root=$(CDPATH='' cd -P "$script_dir/.." && pwd -P)
 
 # The checkout repo anchor (the mix umbrella root — the repo root since the
-# elixir/ umbrella was flattened there; the legacy elixir/ arms stay until the
-# cleanup card drops them). The
+# umbrella wrapper was flattened there). The
 # shim lives at <repo>/workstation/bin/workstation, so the anchor is
 # engine_root itself for a self-contained engine tree, or its parent for the
 # checkout layout. A bare host matches neither and exports nothing — the
@@ -31,10 +30,6 @@ repo_anchor=""
 if [ -f "$engine_root/mix.exs" ]; then
 	repo_anchor=$engine_root
 elif [ "$(basename "$engine_root")" = workstation ] && [ -f "$engine_root/../mix.exs" ]; then
-	repo_anchor=$engine_root/..
-elif [ -f "$engine_root/elixir/mix.exs" ]; then
-	repo_anchor=$engine_root
-elif [ "$(basename "$engine_root")" = workstation ] && [ -f "$engine_root/../elixir/mix.exs" ]; then
 	repo_anchor=$engine_root/..
 fi
 if [ -n "$repo_anchor" ]; then

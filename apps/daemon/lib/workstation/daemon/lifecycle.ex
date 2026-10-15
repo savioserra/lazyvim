@@ -472,20 +472,12 @@ defmodule Workstation.Daemon.Lifecycle do
   # The repo anchor — the directory holding the buildable umbrella root —
   # mirrors the launcher's resolution exactly: the checkout itself for a
   # self-contained engine tree, its parent for the standard
-  # <repo>/workstation checkout layout. Dual-anchor tolerance: both the
-  # flattened spelling (`mix.exs` at the checkout root) and the pre-flatten
-  # `elixir/` umbrella spelling are accepted, so an installed release keeps
-  # resolving a freshly pulled checkout during the restructure window; the
-  # legacy arms are dropped once no installed release predates the move.
-  # Without an anchor there is no buildable release source and the refresh
-  # skips.
+  # <repo>/workstation checkout layout. Without an anchor there is no
+  # buildable release source and the refresh skips.
   defp build_anchor(root) do
     cond do
       File.exists?(Path.join(root, "mix.exs")) -> {:ok, root}
       Path.basename(root) == "workstation" and File.exists?(Path.join(root, "../mix.exs")) ->
-        {:ok, Path.expand("..", root)}
-      File.exists?(Path.join(root, "elixir/mix.exs")) -> {:ok, root}
-      Path.basename(root) == "workstation" and File.exists?(Path.join(root, "../elixir/mix.exs")) ->
         {:ok, Path.expand("..", root)}
       true -> nil
     end
