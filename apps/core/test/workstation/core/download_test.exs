@@ -615,12 +615,25 @@ defmodule Workstation.Core.DownloadTest do
       spec = archive_recipe(sha256: digest)
       {:ok, :installed} = Download.install(spec, home, fetch: fn _url -> bytes end)
 
-      record = %{
-        "type" => "download-archive",
-        "target" => ".local/opt/go",
-        "version" => "1.27.1",
-        "probe" => %{"argv" => ["bin/go", "version"], "output" => "go version go{V}"}
+      # The record UNDER TEST is the WRITER's own output round-tripped —
+      # the shape verify actually receives from the journal, not a
+      # hand-built lookalike (the target-key gap shipped exactly here).
+      effect = %{
+        contract: "download",
+        kind: :install,
+        phase: :target,
+        owner: "go",
+        target: ".local/opt/go",
+        version: "1.27.1",
+        archive: "tar.gz",
+        probe: @probe,
+        url: "https://example.invalid/go.tar.gz",
+        sha256: digest,
+        fingerprint: "pinfp"
       }
+
+      record = Map.fetch!(Download.fingerprint(effect, %{home: home}), ".local/opt/go")
+      assert Map.fetch!(record, "target") == ".local/opt/go"
 
       assert Download.verify_record(record, %{"home" => home}) == :ok
 

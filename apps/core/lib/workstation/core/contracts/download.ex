@@ -650,6 +650,7 @@ defmodule Workstation.Core.Contracts.Download do
         %{target =>
            %{
              "type" => "download-archive",
+             "target" => target,
              "mode" => mode,
              "version" => effect.version,
              "archive" => archive,
