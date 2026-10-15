@@ -27,5 +27,4 @@ exec env -i PATH="$PATH" HOME="$root/home" WORKSTATION_HOME="$root/home" \
 	XDG_STATE_HOME="$root/state" XDG_CACHE_HOME="$root/cache" XDG_RUNTIME_DIR="$root/run" \
 	XDG_CONFIG_DIRS="$root/config" XDG_DATA_DIRS="$root/data" WORKSTATION_CACHE="$root/cache/workstation" \
 	GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_SYSTEM=/dev/null GIT_CONFIG_GLOBAL=/dev/null \
-	${WORKSTATION_NESTED_CHECK:+WORKSTATION_NESTED_CHECK=$WORKSTATION_NESTED_CHECK} \
 	"$@"
