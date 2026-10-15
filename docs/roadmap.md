@@ -79,37 +79,36 @@ and v2.0.0 ships from it.
 | task | owner | depends on | scope / exit |
 |---|---|---|---|
 | r5.bootstrap-tree | core | R4 gate | ✅ bootstrap consumes the package tree (engine release + self-contained packages) — no store, no lockfile |
-| r5.parity-proof | gate | r5.bootstrap-tree | ⬜ clean sandbox home → full apply from the package tree → byte-identical to this host's managed state |
+| r5.parity-proof | gate | r5.bootstrap-tree | ✅ clean sandbox home → full apply from the package tree → byte-identical to this host's managed state (gen 7df6e5e5 from tree ba878f67; every delta decomposed) |
 | r5.runbook | tree | r5.bootstrap-tree | ✅ fresh-box runbook in docs |
-| r5.gate | gate | r5.parity-proof, r5.runbook | ⬜ SWARM R5: DONE |
+| r5.gate | gate | r5.parity-proof, r5.runbook | ✅ SWARM R5: DONE (2026-10-15) |
 
-Sprint 7 status (2026-10-14 closing gate): **bootstrap-tree proven** —
-a9254aa2 mise-first acquisition provisions tmux/btop/elixir/erlang from a
-bare checkout (sandbox fresh-box rehearsal: bootstrap → apply → sync →
-verify green, gen 68d0a79a), and the VPS release rebuild/bootstrap stamped
-`.built-from` == HEAD (b4673e4a). **Runbook landed** — README
-fresh-installation documents curl+sh+git as the only distro prerequisites.
-**Parity-proof still open** — what the sprint proved: fresh homes apply,
-sync and verify from the package tree (68d0a79a; mise-contract rehearsal
-76bab61e byte-deterministic across two fresh homes) and the VPS re-converged
-to ca4933ef on the rebuilt release. **Aurora rehearsal (2026-10-14, the
-operator gate): the host came online LIVED-IN, not bare** — an existing
-install (release 6b6a30a, private clone, operator tooling incl. a personal
-mise + codex pin) — so what ran was the convergence path, not install.sh:
-release rebuilt to f7ce3d6, apply exercised the guarded cutover for real
-(three conflicts surfaced and resolved: handed-over .tmux.conf, removed
-un-owned interim artifact, pre-seeded the mise download with sha256 verify),
-sync + verify green (gen 8a371a55, 12 packages, packages=12 on both hosts),
-and the live tmux2k bar confirmed on-box (onedark, cpu/ram/time, checkout
-at the bash-fix pin d8c5c292). The operator's codex pin was preserved by
-moving it to the unmanaged `~/.config/mise/conf.d/local.toml` layer — user
-tools never belong in a managed file. What the rehearsal did NOT prove: the
-install.sh bare-box path on real hardware (the stop-rule forbids cloning
-over an existing install — that needs a genuinely bare host) and the
-byte-identical fresh-apply-vs-managed-host comparison. Two engine defects
-the rehearsal surfaced are carded: the download fetch's SNI/hostname-check
-failure on GitHub release-asset redirects, and the bootstrap handoff's raw
-CaseClauseError on a stale apply.lock. r5.gate waits on both.
+Sprint 7 status (2026-10-15 closing gate): **R5 DONE — fresh-box parity
+proven on both legs.** **Parity-proof (t_fa2e57ba)**: managed host and a
+fresh sandbox container (stock ubuntu:24.04) both applied generation
+`7df6e5e5` from tree `ba878f67` (== origin/main) — generation source trees
+byte-identical (`diff -r` clean), journals identical (71/71 targets, 66/71
+records byte-equal), and all live managed state re-verified against records
+on both sides: 38 files + 13 links byte-identical, 7 clones at identical
+commits, 12/12 archive pins equal with extracted trees content-matched.
+Every delta decomposed (PROOF.md): RC files differ only in user-owned base +
+fragment accumulation order; the rest is host runtime state outside the
+apply surface (reconciled per t_41c36f22). **Bare-box leg (t_a99c1216,
+operator-authorized container-equivalent, dashboard 2026-10-15 22:19)**: two
+fresh stock ubuntu:24.04 boxes ran the verbatim README one-liner from tree
+`889ee65e` (== origin/main at run time) — with the runbook's stated prereqs
+the apply fails closed naming the missing tool (`xz`, INSTALL_EXIT=4;
+measured prereq set: git+curl+ca-certificates+xz-utils+unzip), and with the
+corrected set the whole chain goes green from nothing (INSTALL_EXIT=0,
+generation `fa75498a`, verify 14 packages; stop-rule refusal on a second
+run; drift detection + re-convergence proven on-box). Carded follow-ups,
+none blocking the exit criterion: t_3ce571c5 (prereq docs truth-fix — apply
+needs xz-utils+unzip beyond git+curl), t_7b9a45e7 (piped `curl | sh` masks
+fetch failure as exit 0), t_d9806820 (zombie-as-alive daemon-stop guard;
+engine side landed in 3d74c489), t_3b3298aa (latin1 locale guard). What the
+2026-10-14 gate proved still holds: bootstrap-tree (a9254aa2) and the
+runbook landed, and the aurora rehearsal converged a lived-in host from the
+package tree (gen 8a371a55) — full history in the docs(roadmap) commit log.
 
 Exit: a new machine reaches this host's state from nothing but the engine
 release and the package tree — the strangler gap closed for good.
