@@ -256,6 +256,7 @@ defmodule Workstation.Daemon.ApplyTest do
       assert message == "apply lock held by uid=1000 node=test@host (pid 4242)"
     end
 
+    @tag timeout: 300_000
     test "with the gate open, the update apply step is served, not gated", %{home: _home} do
       Application.put_env(:daemon, :engine_apply, true)
 
@@ -272,6 +273,15 @@ defmodule Workstation.Daemon.ApplyTest do
       # catalog's real archive fetches further before failing — the
       # assertion is unchanged, only the wait (the 30s budget flaked under a
       # loaded box; the clone itself is unchanged).
+      #
+      # The frame budget and this test's ExUnit timeout are a PAIR: the
+      # timeout must stay ≥ 2 × the frame budget, because request/3 applies
+      # the full budget to the hello recv AND to every result/event recv
+      # (fresh budget per drained frame), so a legitimate slow run can
+      # legally wait ~240s before the assertion. The 60s ExUnit default
+      # truncated the 120s wire budget — that mismatch was the load flake;
+      # 300_000 covers the arithmetic with margin (house convention for
+      # slow tests, cf. shell_home_frame_test.exs).
       reply = request("update.run", %{"step" => "apply"}, 120_000)
       assert %{"ok" => false, "error" => %{"code" => "apply_failed"}} = reply
     end
