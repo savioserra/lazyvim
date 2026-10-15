@@ -18,17 +18,18 @@ required.
 
 - Gates use the 1/0/7 exit alphabet: 1=green (verified), 0=red (verified
   failure), 7=exceptional (couldn't verify — never fake 0/1). Preserve exactly.
-- `sh .github/scripts/check.sh` is the mandatory final gate (tests + StyLua +
-  sh -n + git diff --check under test-home.sh private roots). It can invoke a
-  pager — set GIT_PAGER=cat / PAGER=cat in scripts to avoid hangs.
-- Test suites run from repo root as `lua tests/<name>.test.lua`; private test
-  homes come from tests/test-home.sh helpers, never the real $HOME.
+- `sh .github/scripts/check.sh` is the mandatory final gate (Elixir-native:
+  full mix suite + byte-identical goldens replay + sh -n/ShellCheck + git
+  diff --check under test-home.sh private roots; docs/testing.md). It can
+  invoke a pager — set GIT_PAGER=cat / PAGER=cat in scripts to avoid hangs.
+- Private test homes come from tests/test-home.sh helpers, never the real
+  $HOME.
 - AGENTS.md change rule: one workstation package change = combined contribution
   + catalog + tests + docs edit in the same commit.
 - Never edit deployed targets (~/.config, ~/.tmux.conf, ...) or
   ~/.local/state/workstation directly; repo source is the only write surface.
-- Untracked WIP that must be preserved across lanes: tests/lua-workspace.test.lua,
-  workstation/packages/rainfrog/, plus any active fleet WIP pile.
+- Untracked WIP: preserve any active fleet WIP pile across lanes (the old
+  lua-workspace/rainfrog preservation list is retired — both shipped/deleted).
 
 ## Elixir / term_ui gotchas
 
@@ -118,12 +119,9 @@ required.
 - The repo has NO .formatter.exs and existing modules are NOT mix-format clean
   (hand-kept long-line style); never run bare `mix format` over existing
   files — only your own.
-- [SUPERSEDED c5: golden.lua deleted — the oracle is `mix workstation.goldens`;
-  see the c4b entry below] Test oracle pattern that worked pre-c5:
-  `nvim -l workstation/lua/workstation/golden.lua <out>` with
-  HOME/WORKSTATION_HOME/XDG_* pointed at a throwaway temp home; ~50 ms,
-  records all 15 golden input.json envelopes. Golden recorder is
-  test-only oracle for the native catalog equivalence (catalog_native_test.exs).
+- (Pre-c5 golden.lua oracle history pruned 2026-10-15 — the Lua engine is
+  gone; the only generator/replay oracle is `mix workstation.goldens`, see
+  c4b below.)
 
 ## Golden re-anchor lane (c4b, 2026-10-04)
 
@@ -153,11 +151,10 @@ required.
 - Zero-mutation snapshots must lstat SYMLINK targets (4 launcher links, mode
   0o120777, no sha) and treat dirs as mode-only; `.pi/agent` dir mtime churns
   from the live worker session itself — not an engine mutation signal.
-- Full `workstation/lua/**` core retirement stays BLOCKED: bin/workstation →
-  run.lua serves all lifecycle verbs (setup/verify/sync/apply/update) and
-  real-home reads; the Elixir CLI has no lifecycle verbs and refuses real
-  homes. Retired in c5: report.lua bridge, tests/report.test.lua, golden.lua,
-  tests/goldens.test.lua, WORKSTATION_ENGINE_PRIV.
+- (2026-10-15: `workstation/lua/**` retirement COMPLETED since c5 — the Lua
+  engine is gone entirely; this entry's old BLOCKED status is history.
+  Retired in c5: report.lua bridge, tests/report.test.lua, golden.lua,
+  tests/goldens.test.lua, WORKSTATION_ENGINE_PRIV.)
 
 ## Daemon arch lane (arch-capability, 2026-10-05)
 
@@ -521,3 +518,29 @@ required.
   (`~/.config/shell/mise.sh`, MISE_DATA_DIR = engine state root) and the
   composed `~/.config/mise/config.toml`. Verify with `command -v` AFTER
   sourcing the fragment; identical pins (tmux 3.7c, btop 1.4.7) both sides.
+
+## R5 fresh-box parity gate lane (2026-10-15)
+
+- Container box-equivalence: rehearse with `docker run --init`; `sleep
+  infinity` as PID 1 never reaps, beam children pile up as zombies (ppid=1,
+  stat=Z) and the pre-replace daemon-stop guard reads them alive →
+  INSTALL_EXIT=4 in both containers. tini/real init reaps. Engine-side
+  guard landed 3d74c489; card t_d9806820.
+- Bare-box locale: POSIX/latin1 makes the VM fall back to latin1 (Elixir
+  native-name encoding risk); exec rehearsals with LANG=C.UTF-8. Permanent
+  guard landing in the shim + install chain (t_3b3298aa).
+- `curl -fsSL <url> | sh` masks fetch failure: dead curl hands empty stdin
+  to sh → exit 0 with NOTHING installed (observed directly). Rehearse with
+  the guarded `-o install.sh && sh install.sh` form; fix carded t_7b9a45e7.
+- Measured bare-box prereq set: git+curl+ca-certificates+xz-utils+unzip —
+  apply fails CLOSED naming the missing tool (`xz`, INSTALL_EXIT=4); docs
+  truth-fix carded t_3ce571c5.
+- Parity-proof technique (t_fa2e57ba): same tree both sides → `diff -r` the
+  two generation trees → `jq -S` compare journal fragments/manifest/
+  source_index → per-target parity TSV (sha256/readlink/rev-parse vs
+  records, 71/71) → recursive content hash of extracted archive trees
+  (find|sort|xargs sha256sum). Exclude runtime state by CLASS: __pycache__
+  pyc, npm -g inside managed node, nvm staging trees — outside apply surface.
+- Stop rule + drift both proven on-box: second install run refuses (exit 1,
+  no mutation, cutover pointer); a rewritten lazy-lock.json was flagged by
+  verify on exactly that target and re-converged via `apply --headless`.
