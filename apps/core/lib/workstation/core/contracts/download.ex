@@ -737,14 +737,10 @@ defmodule Workstation.Core.Contracts.Download do
   defp run_exec_probe!(tree, target, executable, args, template, version) do
     binary = Path.join(tree, executable)
 
-    case Workstation.Core.EngineState.lstat(binary) do
-      %{type: "file", mode: mode} ->
-        Bitwise.band(mode, 0o111) != 0 ||
-          raise ArgumentError, "download probe member #{executable} is not executable in tree #{target}"
+    mode = probed_file_mode!(tree, binary, target, executable)
 
-      _other ->
-        raise ArgumentError, "download tree #{target} lacks the probe member #{executable}"
-    end
+    Bitwise.band(mode, 0o111) != 0 ||
+      raise ArgumentError, "download probe member #{executable} is not executable in tree #{target}"
 
     case System.cmd(binary, args, stderr_to_stdout: true) do
       {out, 0} ->
@@ -766,20 +762,60 @@ defmodule Workstation.Core.Contracts.Download do
   defp run_content_probe!(tree, target, member, sha256) do
     path = Path.join(tree, member)
 
+    probed_file_mode!(tree, path, target, member)
+    actual = path |> File.read!() |> Digest.sha256()
+
+    actual == sha256 ||
+      raise ArgumentError,
+            "download tree #{target} does not carry the pinned member " <>
+              "(#{member} hashes to #{actual}, expected #{sha256})"
+
+    :ok
+  end
+
+  # The probe member may be a symlink to a regular file (python-build-
+  # standalone ships bin/python3 -> python3.14): lstat sees the link, the
+  # probe must judge the file it resolves to. A dangling link, a link out
+  # of the tree, or a non-file is a loud "lacks the probe member", never a
+  # silent pass. Link chains resolve hop by hop, bounded.
+  @max_link_depth 8
+
+  defp probed_file_mode!(tree, path, target, member) do
+    probed_file_mode!(tree, path, target, member, @max_link_depth)
+  end
+
+  defp probed_file_mode!(_tree, _path, target, member, 0) do
+    missing_probe_member!(target, member)
+  end
+
+  defp probed_file_mode!(tree, path, target, member, depth) do
     case Workstation.Core.EngineState.lstat(path) do
-      %{type: "file"} ->
-        actual = path |> File.read!() |> Digest.sha256()
+      %{type: "link"} ->
+        case File.read_link(path) do
+          {:ok, link} ->
+            resolved = Path.expand(link, Path.dirname(path))
+            in_tree? = String.starts_with?(resolved, tree <> "/") or resolved == tree
 
-        actual == sha256 ||
-          raise ArgumentError,
-                "download tree #{target} does not carry the pinned member " <>
-                  "(#{member} hashes to #{actual}, expected #{sha256})"
+            case Workstation.Core.EngineState.lstat(resolved) do
+              %{type: "file", mode: mode} when in_tree? -> mode
+              _other when in_tree? -> probed_file_mode!(tree, resolved, target, member, depth - 1)
+              _other -> missing_probe_member!(target, member)
+            end
 
-        :ok
+          {:error, _reason} ->
+            missing_probe_member!(target, member)
+        end
+
+      %{type: "file", mode: mode} ->
+        mode
 
       _other ->
-        raise ArgumentError, "download tree #{target} lacks the probe member #{member}"
+        missing_probe_member!(target, member)
     end
+  end
+
+  defp missing_probe_member!(target, member) do
+    raise ArgumentError, "download tree #{target} lacks the probe member #{member}"
   end
 
   # The probe field map travels atom-keyed (recipes, effects) and

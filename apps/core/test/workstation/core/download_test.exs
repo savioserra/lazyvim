@@ -643,6 +643,30 @@ defmodule Workstation.Core.DownloadTest do
       assert Download.verify_record(%{"type" => "file"}, %{"home" => home}) == :unclaimed
     end
 
+    test "a symlinked probe member (python3 -> python3.14 shape) probes through the link" do
+      home = fresh_home()
+      {bytes, digest} = symlink_tree_fixture(@fixture_banner)
+      spec = archive_recipe(sha256: digest)
+
+      assert {:ok, :installed} = Download.install(spec, home, fetch: fn _url -> bytes end)
+
+      record = %{
+        "type" => "download-archive",
+        "target" => ".local/opt/go",
+        "version" => "1.27.1",
+        "probe" => %{"argv" => ["bin/go", "version"], "output" => "go version go{V}"}
+      }
+
+      assert Download.verify_record(record, %{"home" => home}) == :ok
+
+      # A dangling link is a loud failure, never a silent pass.
+      File.rm_rf!(Path.join(home, ".local/opt/go/bin/go.real"))
+
+      assert_raise ArgumentError, ~r/lacks the probe member/, fn ->
+        Download.verify_record(record, %{"home" => home})
+      end
+    end
+
     test "apply installs the pinned archive tree, records the archive claim, and re-apply is an idempotent no-op", %{home: home} do
       install_fake_chezmoi(home)
       {bytes, digest} = tree_fixture(@fixture_banner)
@@ -1240,6 +1264,41 @@ defmodule Workstation.Core.DownloadTest do
         :binary.copy(<<0>>, 155) <>
         :binary.copy(<<0>>, 12)
 
+    header = ustar_header(head, tail)
+    padded = body <> :binary.copy(<<0>>, 512 - rem(byte_size(body), 512))
+    header <> padded
+  end
+
+  # The python3 -> python3.14 shape: a symlink probe member. Typeflag 2, the
+  # target in the linkname field, zero size.
+  defp ustar_symlink(name, linkname) do
+    if byte_size(name) > 100 or byte_size(linkname) > 100,
+      do: raise(ArgumentError, "fixture member name too long")
+
+    head =
+      pad(name, 100) <>
+        "0000777\u0000" <>
+        "0000000\u0000" <>
+        "0000000\u0000" <>
+        "00000000000\u0000" <>
+        "00000000000\u0000"
+
+    tail =
+      "2" <>
+        pad(linkname, 100) <>
+        "ustar\u0000" <>
+        "00" <>
+        :binary.copy(<<0>>, 32) <>
+        :binary.copy(<<0>>, 32) <>
+        :binary.copy(<<0>>, 8) <>
+        :binary.copy(<<0>>, 8) <>
+        :binary.copy(<<0>>, 155) <>
+        :binary.copy(<<0>>, 12)
+
+    ustar_header(head, tail)
+  end
+
+  defp ustar_header(head, tail) do
     # The checksum is the byte sum of the header with the checksum field
     # itself filled with eight spaces (the POSIX ustar rule).
     checksum =
@@ -1247,9 +1306,25 @@ defmodule Workstation.Core.DownloadTest do
       |> :binary.bin_to_list()
       |> Enum.sum()
 
-    header = head <> IO.iodata_to_binary(Integer.to_string(checksum, 8) |> String.pad_leading(6, "0")) <> "\u0000 " <> tail
-    padded = body <> :binary.copy(<<0>>, 512 - rem(byte_size(body), 512))
-    header <> padded
+    head <> IO.iodata_to_binary(Integer.to_string(checksum, 8) |> String.pad_leading(6, "0")) <> "\u0000 " <> tail
+  end
+
+  # The release layout with the probe member a SYMLINK to a real script —
+  # the python-build-standalone install_only layout (bin/python3 ->
+  # python3.14) that broke the exec probe on symlink-blind lstat.
+  defp symlink_tree_fixture(banner) do
+    entries = [
+      ustar("go/VERSION", "go-1.27.1\n"),
+      ustar("go/bin/go.real", "#!/bin/sh\necho '#{banner}'\n"),
+      ustar_symlink("go/bin/go", "go.real")
+    ]
+
+    bytes =
+      entries
+      |> IO.iodata_to_binary()
+      |> :zlib.gzip()
+
+    {bytes, Digest.sha256(bytes)}
   end
 
   defp pad(string, width), do: string <> :binary.copy(<<0>>, width - byte_size(string))
