@@ -32,6 +32,7 @@ Read the nearest scoped `AGENTS.md` and follow the owning reference:
 - Bootstrap owns pinned Neovim/backend and launcher; setup owns other downloads. No Node bootstrap dependency, unpinned downloads, `sudo` or OS-package-manager installation of managed tools.
 - Keep language composition in the Neovim profile. Do not recreate the retired root Go CLI (`go.mod`, `internal/`, `cmd/`), nested Go service modules, daemons, actor runtimes or any Makefile; Go is an editor toolchain here.
 - Never commit generated plugin/Mason/parser/cache/session/history state or secret values. Secret-reference/vault work requires explicit user `/skill:secrets` invocation; authentication stays user-owned.
+- Work lands roadmap-style: future work is seeded as a parent-chained chain (task1 → task2 → …), serial within a surface. A card whose declared surface overlaps an in-flight card's waits behind it via a parent link — never dispatched alongside it. Operator ruling 2026-10-15.
 
 ## Required checks
 
