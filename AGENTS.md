@@ -22,6 +22,8 @@ Read the nearest scoped `AGENTS.md` and follow the owning reference:
 
 ## Operating contract
 
+- A package that names a tool ships the tool: resources-without-runtime (a clone, a symlink or a config with no provisioned, working binary) is a defect, not a documented manual step. Verify must smoke the consumer (`hermes --version`-class checks), not only fingerprints. Operator ruling 2026-10-15.
+
 - Edit source, not deployed state. Every home-state payload and recipe lives with its owning package under `workstation/packages/`; home source state is generated per target by the engine, never checked in. Never implicitly overwrite a clone or delete a legacy payload.
 - `workstation/bin/workstation` is the sole public lifecycle interface. Chezmoi is the explicit-source/destination file backend; no public chezmoi aliases, source-path discovery, externals, lifecycle scripts or root wrappers.
 - Register each lifecycle capability once as a native data module in the Elixir catalog (`apps/core/lib/workstation/core/catalog/packages.ex`); payload files stay with the owning package under `workstation/packages/`. Keep core domain-neutral: no catalog/package/Neovim imports. Detailed composition and lifecycle rules belong to `docs/elixir.md`.
