@@ -9,9 +9,10 @@ sh .github/scripts/check.sh
 The fused engine's matrix is Elixir-native: the full `mix test` suite
 (hermetic fixture homes, no host state touched), the byte-identical golden
 replay (`mix workstation.goldens` vs `tests/goldens`), `sh -n` + ShellCheck
-over the remaining shell scripts, the release boot smoke when a local release
-tarball is built, and `git diff --check`. ShellCheck is required in Linux CI;
-report local absence.
+over the remaining shell scripts, the UTF-8 locale guard gate over the POSIX
+shim (stubbed `locale`, stub release; no tarball needed), the release boot
+smoke when a local release tarball is built, and `git diff --check`.
+ShellCheck is required in Linux CI; report local absence.
 
 The retired Lua suites, the `nvim -l` syntax pass and StyLua died with the Lua
 engine; `tests/goldens/` stays canonical and is regenerated, never hand-edited.

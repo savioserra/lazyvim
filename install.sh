@@ -40,6 +40,49 @@ die() { printf 'install: %s\n' "$*" >&2; exit 1; }
 command -v git >/dev/null 2>&1 || die 'git is required; on Linux: apt install git (the single distro prerequisite — see docs/tools.md)'
 command -v curl >/dev/null 2>&1 || die 'curl is required (https://curl.se)'
 
+# UTF-8 locale guard: Elixir expects a UTF-8 native name encoding, and a
+# bare box often runs LANG= / LC_CTYPE=POSIX — the VM falls back to latin1,
+# which Elixir documents as a malfunction risk for non-ASCII names (this
+# payload ships dotfiles and font names). Guard the whole install chain
+# (toolchain build, release build, engine verbs):
+#   - a real UTF-8 locale: nothing to do.
+#   - nothing set at all and the host ships the glibc-builtin C.UTF-8:
+#     default LANG=C.UTF-8 for this launch. A fallback for the unconfigured
+#     host, never a fix for its locale config — the banner says so.
+#   - any other non-UTF-8 environment: prefix ELIXIR_ERL_OPTIONS with +fnu
+#     (unicode filename mode) so name handling stays UTF-8-safe, and advise
+#     a real UTF-8 locale on stderr.
+# The decision body is mirrored verbatim in workstation/bin/workstation
+# (which must stay standalone); keep the two in lockstep. Behavioral gate:
+# .github/scripts/shim-locale-guard.sh.
+ws_locale_ok=0
+if command -v locale >/dev/null 2>&1; then
+	ws_charmap=$(locale charmap 2>/dev/null) || ws_charmap=''
+	case "$ws_charmap" in
+		UTF-8|utf-8|UTF8|utf8) ws_locale_ok=1 ;;
+	esac
+else
+	# No locale(1) on the host: judge by the environment alone.
+	case ${LC_ALL:-${LC_CTYPE:-${LANG:-}}} in
+		*[Uu][Tt][Ff]-8|*[Uu][Tt][Ff]8) ws_locale_ok=1 ;;
+	esac
+fi
+if [ "$ws_locale_ok" -eq 0 ]; then
+	if [ -z "${LC_ALL:-}" ] && [ -z "${LC_CTYPE:-}" ] && [ -z "${LANG:-}" ] \
+		&& locale -a 2>/dev/null | grep -Eqi '^C[.]utf-?8$'; then
+		LANG=C.UTF-8
+		export LANG
+		printf '%s\n' 'install: no locale is configured; defaulting LANG=C.UTF-8 for this install — a fallback for the unconfigured host, not a fix: configure a real UTF-8 locale' >&2
+	else
+		case ${ELIXIR_ERL_OPTIONS:-} in
+			'') ELIXIR_ERL_OPTIONS=+fnu ;;
+			*) ELIXIR_ERL_OPTIONS="+fnu $ELIXIR_ERL_OPTIONS" ;;
+		esac
+		export ELIXIR_ERL_OPTIONS
+		printf '%s\n' 'install: the locale is not UTF-8; exporting ELIXIR_ERL_OPTIONS=+fnu for engine VM launches — configure a real UTF-8 locale on this host' >&2
+	fi
+fi
+
 case "$DEST" in
 /*) ;;
 *) die "WORKSTATION_DEST must be an absolute path: $DEST" ;;

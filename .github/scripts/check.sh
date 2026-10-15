@@ -52,6 +52,9 @@ else
 	printf 'no release tarball built; skipping (build with: mise exec -- env MIX_ENV=prod mix release workstation --overwrite)\n'
 fi
 
+step 'shim UTF-8 locale guard (stubbed locale, stub release)'
+sh .github/scripts/shim-locale-guard.sh || fail=1
+
 step 'whitespace (git diff --check)'
 git diff --check || fail=1
 
