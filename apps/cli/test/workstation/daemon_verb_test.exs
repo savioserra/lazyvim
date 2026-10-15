@@ -98,9 +98,22 @@ defmodule Workstation.CLI.DaemonVerbTest do
     # signal mechanics are pinned by ControlTest against child processes.
     stopped = :atomics.new(1, signed: false)
 
-    Elixir.Application.put_env(:daemon, :shutdown_hook, fn _delay_ms, _reason ->
+    Elixir.Application.put_env(:daemon, :shutdown_hook, fn delay_ms, _reason ->
       :atomics.put(stopped, 1, 1)
-      spawn(fn -> Supervisor.stop(Workstation.Daemon.Supervisor) end)
+
+      # The hook replaces the HALT, not the timing: the real path sleeps the
+      # flush window INSIDE its spawned stop process so the ack frame is on
+      # the wire before any teardown begins. Honoring delay_ms here (the
+      # sleep must be in the spawned process — the hook itself runs inside
+      # the scheduling op task, so sleeping there would delay the ack by the
+      # same window and re-create the race) keeps this handshake the
+      # production contract instead of a teardown-vs-ack race the suite used
+      # to lose under load: the bus registry died before the session's
+      # finish_op and the granted stop reported {:shutdown, 4}.
+      spawn(fn ->
+        Process.sleep(delay_ms)
+        Supervisor.stop(Workstation.Daemon.Supervisor)
+      end)
     end)
 
     Elixir.Application.put_env(:cli, :beam_alive, fn _pid ->
@@ -159,9 +172,22 @@ defmodule Workstation.CLI.DaemonVerbTest do
     # ladder's real signal mechanics are pinned by ControlTest.
     stopped = :atomics.new(1, signed: false)
 
-    Elixir.Application.put_env(:daemon, :shutdown_hook, fn _delay_ms, _reason ->
+    Elixir.Application.put_env(:daemon, :shutdown_hook, fn delay_ms, _reason ->
       :atomics.put(stopped, 1, 1)
-      spawn(fn -> Supervisor.stop(Workstation.Daemon.Supervisor) end)
+
+      # The hook replaces the HALT, not the timing: the real path sleeps the
+      # flush window INSIDE its spawned stop process so the ack frame is on
+      # the wire before any teardown begins. Honoring delay_ms here (the
+      # sleep must be in the spawned process — the hook itself runs inside
+      # the scheduling op task, so sleeping there would delay the ack by the
+      # same window and re-create the race) keeps this handshake the
+      # production contract instead of a teardown-vs-ack race the suite used
+      # to lose under load: the bus registry died before the session's
+      # finish_op and the granted stop reported {:shutdown, 4}.
+      spawn(fn ->
+        Process.sleep(delay_ms)
+        Supervisor.stop(Workstation.Daemon.Supervisor)
+      end)
     end)
 
     Elixir.Application.put_env(:cli, :beam_alive, fn _pid ->

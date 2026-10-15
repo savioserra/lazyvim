@@ -37,11 +37,34 @@ defmodule Workstation.Daemon.EventBus do
     :ok
   end
 
-  @doc "Stop receiving `{topic, event}` messages (idempotent)."
+  @doc """
+  Stop receiving `{topic, event}` messages (idempotent).
+
+  Into a bus that is NOT RUNNING (the `:rest_for_one` teardown stops the bus
+  before the sessions — a session draining its last frames, e.g. the stop
+  ack's `finish_op` unsubscribe, can reach a dead registry) this is a no-op,
+  not a crash: the same teardown-race contract `publish/2` documents. A
+  crash here ate the operator's `daemon stop` ack under load — the session
+  died before the reply frame and the verb reported a stop that was granted
+  as a failure.
+  """
   @spec unsubscribe(topic()) :: :ok
   def unsubscribe(topic) do
-    Registry.unregister(Workstation.Daemon.EventBus, topic)
-    :ok
+    case :erlang.whereis(Workstation.Daemon.EventBus) do
+      :undefined ->
+        :ok
+
+      _bus ->
+        try do
+          Registry.unregister(Workstation.Daemon.EventBus, topic)
+        rescue
+          # The bus died between the whereis check and the unregister (the
+          # teardown race, narrowed but not eliminated).
+          ArgumentError -> :ok
+        end
+
+        :ok
+    end
   end
 
   @doc """

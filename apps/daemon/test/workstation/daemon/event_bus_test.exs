@@ -70,4 +70,29 @@ defmodule Workstation.Daemon.EventBusTest do
     :ok = EventBus.publish(:op, {:op_served, "late"})
     assert_receive {:daemon_event, :op, {:op_served, "late"}}
   end
+
+  test "a NOT-RUNNING bus: publish and unsubscribe are no-ops, not crashes" do
+    # The teardown race the rest_for_one order creates: the bus stops
+    # BEFORE the sessions, so a session draining its last frames — the stop
+    # ack's finish_op unsubscribe is exactly that last mile — can reach the
+    # bus after it is gone. Under load this surfaced as a session GenServer
+    # crash (ArgumentError: unknown registry) that ate the operator's
+    # `daemon stop` ack: the verb then reported {:shutdown, 4} on a stop
+    # that was actually granted. Nobody is owed the event and nobody needs
+    # the unregistration — the teardown must never surface as a crash.
+    :ok = GenServer.stop(Workstation.Daemon.EventBus)
+    wait_bus_down()
+
+    assert :ok = EventBus.publish(:op, {:op_served, "nobody is owed this"})
+    assert :ok = EventBus.unsubscribe(:op)
+  end
+
+  defp wait_bus_down do
+    if Process.whereis(Workstation.Daemon.EventBus) == nil do
+      :ok
+    else
+      Process.sleep(10)
+      wait_bus_down()
+    end
+  end
 end
