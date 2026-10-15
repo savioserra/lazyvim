@@ -31,7 +31,10 @@ defmodule Workstation.CLI.PreReplace do
     `DaemonClient.daemon_pid/2`; probed through the same `:cli, :beam_alive`
     seam as `Workstation.CLI.Control` — the daemon's own halt can wedge, and
     a socket-less-but-alive beam would make the next ensure-spawn die on
-    `:already_running`);
+    `:already_running`); the production probe reads the `/proc/<pid>/stat`
+    state on Linux and counts a zombie (`Z`) as EXITED — under a pid 1 that
+    never reaps (containers, chroots) the defunct entry outlives the beam's
+    death, and a bare `kill -0` existence probe reads it as alive;
   * on timeout or a refused stop, the verb FAILS CLOSED with an explicit
     error — this module never signals the process. Killing is the manual
     stop verb's escalation ladder (`Workstation.CLI.Control`), never the
@@ -126,9 +129,10 @@ defmodule Workstation.CLI.PreReplace do
     end
   end
 
-  # Same probe seam as Workstation.CLI.Control: the production probe is
-  # `kill -0`; in-process test trees re-aim it (the test VM's OS pid IS the
-  # "daemon" pid the peercred read captured).
+  # Same probe seam as Workstation.CLI.Control: the production probe reads
+  # the /proc state on Linux and falls back to `kill -0` elsewhere;
+  # in-process test trees re-aim it (the test VM's OS pid IS the "daemon"
+  # pid the peercred read captured).
   defp beam_alive?(pid) do
     case Application.get_env(:cli, :beam_alive) do
       fun when is_function(fun, 1) -> fun.(pid)
@@ -136,7 +140,66 @@ defmodule Workstation.CLI.PreReplace do
     end
   end
 
+  # The production probe. `kill -0` is existence-only, and a zombie EXISTS:
+  # under a pid 1 that never reaps (`sleep infinity` in a container or
+  # chroot — the 2026-10-15 bare-box rehearsal), the beam's defunct entry
+  # outlives its death indefinitely, and the old probe read it as "still
+  # alive", refusing every replace. On Linux the `/proc/<pid>/stat` state
+  # character decides (`Z` is exited) and only an unreadable stat — no
+  # /proc on macOS, hidepid, a pid that vanished mid-read — falls back to
+  # `kill -0`.
   defp process_alive?(pid) do
+    case File.read("/proc/#{pid}/stat") do
+      {:ok, stat} ->
+        case stat_alive?(stat) do
+          nil -> kill_zero_alive?(pid)
+          alive? -> alive?
+        end
+
+      {:error, _reason} ->
+        kill_zero_alive?(pid)
+    end
+  end
+
+  @doc """
+  The `/proc/<pid>/stat` liveness verdict behind the production probe:
+  `false` when the state character is `Z` — a zombie has exited and only
+  awaits reap, so under a pid 1 that never reaps it is dead for every
+  purpose this wait has — `true` for any other parseable state, `nil` when
+  the stat text cannot be parsed (the caller falls back to the
+  existence-only `kill -0` probe). Public because the zombie branch IS the
+  contract this module carries: the bare-box rehearsal's false "still
+  alive" was a defunct beam.
+  """
+  @spec stat_alive?(String.t()) :: boolean() | nil
+  def stat_alive?(stat) do
+    case proc_stat_state(stat) do
+      nil -> nil
+      "Z" -> false
+      _state -> true
+    end
+  end
+
+  # stat is `pid (comm) state ppid ...`; comm is free text that may itself
+  # contain spaces and parentheses, so the state character sits after the
+  # LAST `)` — none of the fields that follow contain one.
+  defp proc_stat_state(stat) do
+    case :binary.matches(stat, ")") do
+      [] ->
+        nil
+
+      matches ->
+        {pos, 1} = List.last(matches)
+        rest = binary_part(stat, pos + 1, byte_size(stat) - pos - 1)
+
+        case String.trim_leading(rest) do
+          <<state, _tail::binary>> when state in ?A..?Z or state in ?a..?z -> <<state>>
+          _other -> nil
+        end
+    end
+  end
+
+  defp kill_zero_alive?(pid) do
     {_, status} = System.cmd("kill", ["-0", Integer.to_string(pid)], stderr_to_stdout: true)
     status == 0
   end

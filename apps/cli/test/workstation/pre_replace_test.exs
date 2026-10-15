@@ -12,7 +12,11 @@ defmodule Workstation.CLI.PreReplaceTest do
     * no daemon — a silent no-op that never spawns;
     * wedged daemon — the wait expires and the caller must refuse to
       replace the release;
-    * refused stop (a daemon too old to know `daemon.stop`) — fail closed.
+    * refused stop (a daemon too old to know `daemon.stop`) — fail closed;
+    * the production probe itself (no seam) — a reaped pid is exited, a
+      genuinely live pid holds the wait, and the /proc stat verdict counts
+      a zombie (`Z`) as exited: the bare-box rehearsal's false "still
+      alive" (a pid 1 that never reaps leaves the defunct beam in /proc).
   """
 
   use ExUnit.Case, async: false
@@ -141,6 +145,75 @@ defmodule Workstation.CLI.PreReplaceTest do
              )
 
     assert message =~ "could not identify the daemon process"
+  end
+
+  test "the /proc stat verdict counts a zombie as exited (the bare-box defect: pid 1 never reaps)" do
+    # The 2026-10-15 rehearsal's exact shape: the beam exited, the
+    # container's `sleep infinity` pid 1 never reaped it, and the defunct
+    # entry sat in /proc with ppid 1 — `ps aux` showed `[beam.smp]
+    # <defunct>` while the old `kill -0` existence probe reported the
+    # daemon alive and the replace was refused.
+    zombie_stat =
+      "3340 (beam.smp) Z 1 3290 3290 0 -1 4194560 0 0 0 0 0 0 0 0 20 0 1 0 " <>
+        "883100938 905675264 18446744073709551615 1 1 0 0 0 0 0 16777216 " <>
+        "134222336 32729 BEST_EFFORT 0 0 0 17 2 0 0 0 0 0 0 0 0 0 0 0 0 0 0"
+
+    assert PreReplace.stat_alive?(zombie_stat) == false
+  end
+
+  test "the /proc stat verdict: live states are alive, the comm's own parens don't fool it, unparseable text defers" do
+    for state <- ["R", "S", "D", "T", "t", "I"] do
+      assert PreReplace.stat_alive?("3340 (beam.smp) #{state} 1 3290 3290 0 -1 4194560") == true,
+             "state #{state} must read as alive"
+    end
+
+    # comm is free text: a comm carrying spaces and parentheses must not
+    # shift the state field (the verdict reads past the LAST `)`).
+    assert PreReplace.stat_alive?("12 (a) comm (with) parens ) S 0 1 1 0 -1") == true
+    assert PreReplace.stat_alive?("3340 (weird (comm)) Z 1 1 1 0 -1") == false
+
+    # Anything the parser cannot pin a state character on defers to the
+    # caller's `kill -0` fallback.
+    assert PreReplace.stat_alive?("not a stat line") == nil
+    assert PreReplace.stat_alive?("3340 (beam.smp)   ") == nil
+    assert PreReplace.stat_alive?("") == nil
+  end
+
+  test "the production probe (no seam): a reaped pid satisfies the exit wait", %{home: home} do
+    # A real pid that WAS a process and is now reaped — the exit-status
+    # message is the waitpid receipt — so /proc/<pid>/stat is gone and
+    # `kill -0` answers ESRCH: the default probe must accept it as exited
+    # on the first poll.
+    port = Port.open({:spawn_executable, "/bin/sh"}, [:exit_status, args: ["-c", "sleep 0.2; exit 0"]])
+    os_pid = elem(Port.info(port, :os_pid), 1)
+
+    assert_receive {^port, {:exit_status, 0}}, 5_000
+    if Port.info(port), do: Port.close(port)
+
+    assert :ok =
+             PreReplace.stop_daemon(
+               home: home,
+               live: fn _home -> true end,
+               stop: fn _home -> {:ok, %{"stopping" => true}, os_pid} end,
+               socket_gone?: fn _path -> true end
+             )
+  end
+
+  test "the production probe (no seam): a genuinely live pid holds the wait to the deadline", %{home: home} do
+    # The test VM itself is the live pid: the default probe must read it
+    # alive through the real /proc stat (or `kill -0` off-Linux), so the
+    # wait fails closed rather than reporting a phantom exit.
+    assert {:error, message} =
+             PreReplace.stop_daemon(
+               home: home,
+               live: fn _home -> true end,
+               stop: fn _home -> {:ok, %{"stopping" => true}, List.to_integer(:os.getpid())} end,
+               socket_gone?: fn _path -> true end,
+               wait_ms: 50
+             )
+
+    assert message =~ "did not exit within"
+    assert message =~ "still alive"
   end
 
   ## fixtures (the daemon-verb test's shapes, verbatim)
