@@ -19,9 +19,11 @@ defmodule Workstation.Core.ApplyLock do
     or size guess: a holder whose pid is ALIVE is reported and the
     acquisition FAILS CLOSED — the refusal is the recorded owner line (pid
     included), and a live holder is never interrupted;
-  * a holder whose pid is PROVABLY DEAD ON THIS HOST (the same judge the
-    runtime installer lock uses: no `/proc` entry on Linux/WSL, `kill -0`
-    elsewhere) is debris from a killed beam (the cross-generation stop gap),
+  * a holder whose pid is PROVABLY DEAD ON THIS HOST (the shared
+    `/proc/<pid>/stat` judge, `Workstation.Core.ProcessState`: the kernel's
+    own state character decides and a zombie is exited — a holder that
+    exited but awaits reap cannot run code, so it cannot hold the lock) is
+    debris from a killed beam (the cross-generation stop gap),
     and the lock is TAKEN OVER: only after a fresh no-follow check that the
     path is still a regular file owned by this account (the lock's mirror of
     the daemon's owned-socket proof — anything else is never deleted), the
@@ -72,14 +74,22 @@ defmodule Workstation.Core.ApplyLock do
   """
   @spec acquire(String.t(), String.t()) ::
           {:ok, reference(), String.t()} | {:error, {:locked, String.t(), String.t()}}
-  def acquire(state_root, purpose), do: try_acquire(lock_path(state_root), purpose, nil, @takeover_attempts)
+  def acquire(state_root, purpose),
+    do: try_acquire(lock_path(state_root), purpose, nil, @takeover_attempts)
 
   # `takeover` carries the judged-dead holder of the round whose debris this
   # call's create replaced (nil on a clean first create); `attempts` bounds
   # the takeover loop.
   defp try_acquire(path, purpose, takeover, attempts) do
     token = make_ref()
-    body = Workstation.Core.CanonicalJSON.encode(%{"owner" => owner_metadata(), "pid" => os_pid(), "purpose" => purpose, "token" => reference_string(token)})
+
+    body =
+      Workstation.Core.CanonicalJSON.encode(%{
+        "owner" => owner_metadata(),
+        "pid" => os_pid(),
+        "purpose" => purpose,
+        "token" => reference_string(token)
+      })
 
     # :file (not Elixir File.open/3) because the lock must be private from
     # creation; Elixir's File.open has no mode argument.
@@ -101,7 +111,9 @@ defmodule Workstation.Core.ApplyLock do
             # and the lock this call just created is released again (its own
             # token), so the next attempt re-judges a clean filesystem.
             _ = release(path, token)
-            {:error, {:locked, "stale lock takeover could not be recorded (#{inspect(reason)})", path}}
+
+            {:error,
+             {:locked, "stale lock takeover could not be recorded (#{inspect(reason)})", path}}
         end
 
       {:error, :eexist} ->
@@ -209,33 +221,21 @@ defmodule Workstation.Core.ApplyLock do
   end
 
   # The same "provably dead ON THIS HOST" judge the runtime installer lock
-  # uses (`Workstation.Core.Update.Bootstrap`): a holder is alive while its
-  # pid has a `/proc` entry (Linux/WSL) or answers `kill -0` elsewhere. An
-  # unclear probe reads ALIVE — a takeover must be provable, never probable;
-  # the cost of an unclear probe is one refused apply, never a stolen lock.
-  defp holder_alive?(pid) when is_integer(pid) and pid > 0 do
-    case :os.type() do
-      {:unix, :linux} ->
-        if File.dir?("/proc/self") do
-          File.dir?("/proc/" <> Integer.to_string(pid))
-        else
-          kill_zero_alive?(pid)
-        end
-
-      _other ->
-        kill_zero_alive?(pid)
-    end
-  end
+  # uses, and every other probe: the shared liveness verdict
+  # (`Workstation.Core.ProcessState`). The `/proc/<pid>/stat` state character
+  # decides and a zombie state (`Z`) is EXITED — the kernel's own proof the
+  # holder exited; a zombie cannot run code, so it cannot hold the lock, and
+  # taking over is exactly the killed-beam recovery the takeover exists for.
+  # (Under a pid 1 that never reaps the defunct entry outlives the death, and
+  # the old `/proc` existence probe read it as alive, refusing every apply.)
+  # The fail-closed posture is intact: an unclear probe — unreadable stat,
+  # inconclusive `kill -0` — still reads ALIVE. A takeover must be provable,
+  # never probable; the cost of an unclear probe is one refused apply, never
+  # a stolen lock.
+  defp holder_alive?(pid) when is_integer(pid) and pid > 0,
+    do: Workstation.Core.ProcessState.alive?(pid)
 
   defp holder_alive?(_unparsable), do: true
-
-  defp kill_zero_alive?(pid) do
-    case System.cmd("kill", ["-0", Integer.to_string(pid)], stderr_to_stdout: true) do
-      {_out, 0} -> true
-      {_out, 1} -> false
-      {_out, _other} -> true
-    end
-  end
 
   # Deleting the debris only after a fresh no-follow check that it is still a
   # regular file owned by this account (the lock's mirror of the daemon's
@@ -256,7 +256,8 @@ defmodule Workstation.Core.ApplyLock do
   defp owned_lock_file?(path) do
     case File.lstat(path) do
       {:ok, stat} ->
-        :erlang.band(stat.mode, @s_ifmt) == @s_ifreg and stat.uid == Workstation.Core.EngineState.uid()
+        :erlang.band(stat.mode, @s_ifmt) == @s_ifreg and
+          stat.uid == Workstation.Core.EngineState.uid()
 
       {:error, _reason} ->
         false

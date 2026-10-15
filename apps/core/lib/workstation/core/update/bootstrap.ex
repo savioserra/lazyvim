@@ -42,7 +42,10 @@ defmodule Workstation.Core.Update.Bootstrap do
     (`<home>/.local/opt/.nvim-bootstrap-lock`, bounded retries), because two
     concurrent bootstraps renaming `<home>/.local/opt/nvim` is exactly the
     race the lock exists to prevent. The lock carries its owner (host, pid,
-    since): a lock whose owner is provably dead ON THIS HOST is debris from
+    since): a lock whose owner is provably dead ON THIS HOST (the shared
+    `/proc`-stat judge, `Workstation.Core.ProcessState` — a zombie owner is
+    exited, so a defunct installer under a non-reaping pid 1 never reads as
+    alive) is debris from
     an interrupted installer — the R2 refresh deadlock, where one stale lock
     stalled every later update — and is stolen exactly once per acquisition
     (atomic rename first, contents re-checked immediately before it).
@@ -680,12 +683,17 @@ defmodule Workstation.Core.Update.Bootstrap do
     end
   end
 
-  defp pid_alive?(pid) do
-    case :os.type() do
-      {:unix, :linux} -> File.exists?("/proc/" <> pid)
-      _other -> match?({_, 0}, System.cmd("kill", ["-0", pid], stderr_to_stdout: true))
-    end
-  end
+  # The staleness judge is the shared liveness verdict
+  # (`Workstation.Core.ProcessState`), the same "provably dead ON THIS HOST"
+  # verdict the apply lock's takeover uses: the `/proc/<pid>/stat` state
+  # character decides and a zombie owner is EXITED — the kernel's own proof
+  # the installer exited. (Under a pid 1 that never reaps the defunct entry
+  # outlives the death, and the old `/proc` existence probe read it as alive,
+  # refusing every steal: the R2 refresh deadlock's own shape.) Fail-closed
+  # is intact: an unclear probe — unreadable stat, inconclusive `kill -0`, a
+  # non-numeric pid — reads ALIVE, so a corrupt owner record is operator
+  # recovery, never a stolen lock.
+  defp pid_alive?(pid), do: Workstation.Core.ProcessState.alive?(pid)
 
   defp hostname do
     {:ok, name} = :inet.gethostname()

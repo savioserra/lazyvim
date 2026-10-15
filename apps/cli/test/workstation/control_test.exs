@@ -77,6 +77,27 @@ defmodule Workstation.CLI.ControlTest do
     assert_raise FunctionClauseError, fn -> Control.confirm_exit(0) end
   end
 
+  test "the production probe (no seam): a real exited pid confirms the exit" do
+    # A REAL dead pid: a shell gone by the time the ladder's first poll
+    # reads — the shipped probe (the shared `/proc`-stat verdict with the
+    # `kill -0` fallback) answers dead on the first poll, so the exit
+    # confirms with no signal and no escalation. This pins the seam's
+    # production default; the zombie branch of the verdict (state `Z` is
+    # exited — the bare-box defect that made a bare `kill -0` default burn
+    # this ladder over a dead beam) is pinned where it lives, in
+    # `Workstation.Core.ProcessStateTest` with the rehearsal's own stat
+    # shapes.
+    {out, 0} = System.cmd("sh", ["-c", "echo $$"])
+    dead = String.to_integer(String.trim(out))
+
+    assert :ok =
+             Control.confirm_exit(dead,
+               halt_timeout_ms: 500,
+               term_timeout_ms: 100,
+               kill_timeout_ms: 100
+             )
+  end
+
   defp spawn_os_process(sh_args) do
     port = Port.open({:spawn_executable, "/bin/sh"}, [:exit_status, args: sh_args])
     assert {:os_pid, os_pid} = :erlang.port_info(port, :os_pid)

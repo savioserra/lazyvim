@@ -15,6 +15,7 @@ defmodule Workstation.CLI.Control do
   """
 
   alias Workstation.CLI.DaemonClient
+  alias Workstation.Core.ProcessState
 
   # The daemon's graceful stop drains in-flight ops (up to its
   # `:drain_timeout_ms`, default 30s) after the ~250ms reply flush, removes
@@ -63,7 +64,10 @@ defmodule Workstation.CLI.Control do
   `:kill_timeout_ms`. The liveness probe is overridable with
   `Application.put_env(:cli, :beam_alive, fun/1)` for test trees whose
   "daemon" runs in-process (the real probe would see the test VM's own
-  pid) — the shipped probe is `kill -0`.
+  pid) — the shipped probe is the shared `/proc`-stat verdict
+  (`Workstation.Core.ProcessState`: a zombie is exited — under a pid 1 that
+  never reaps the daemon's defunct entry answers `kill -0` forever), falling
+  back to `kill -0` only where the stat is unreadable.
   """
   @spec confirm_exit(pos_integer()) :: :ok | {:error, String.t()}
   def confirm_exit(daemon_pid, opts \\ []) when is_integer(daemon_pid) and daemon_pid > 0 do
@@ -108,13 +112,17 @@ defmodule Workstation.CLI.Control do
     end
   end
 
-  # The real probe: `kill -0` — no signal is delivered, existence only. A
-  # nonzero status means the process is gone (or unowned, which for the
-  # same-uid daemon the peercred contract forbids).
-  defp process_alive?(pid) do
-    {_, status} = System.cmd("kill", ["-0", Integer.to_string(pid)], stderr_to_stdout: true)
-    status == 0
-  end
+  # The real probe is the shared liveness verdict
+  # (`Workstation.Core.ProcessState`): the `/proc/<pid>/stat` state character
+  # decides and a zombie is EXITED. A bare `kill -0` is existence-only, and
+  # under a pid 1 that never reaps (the 2026-10-15 bare-box rehearsal) the
+  # daemon's defunct entry answered it forever — this ladder burned SIGTERM +
+  # SIGKILL and a 2s budget, then failed "did not exit after SIGTERM and
+  # SIGKILL" over a beam that was already dead. `kill -0` decides only where
+  # the stat is unreadable, and an inconclusive answer reads ALIVE: the
+  # ladder keeps waiting and reports honestly rather than declaring a death
+  # it could not see.
+  defp process_alive?(pid), do: ProcessState.alive?(pid)
 
   defp alive?(pid) do
     case Application.get_env(:cli, :beam_alive) do
