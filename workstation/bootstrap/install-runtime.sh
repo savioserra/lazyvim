@@ -114,7 +114,16 @@ if ! { [ -x "$stage/bin/nvim" ] && [ ! -L "$stage/bin/nvim" ]; }; then fail 'run
 actual=$("$stage/bin/nvim" --version)
 case "$actual" in "NVIM v$pin_version"|"NVIM v$pin_version
 "*) ;; *) fail 'runtime version mismatch' ;; esac
-# Sibling renames; the exit trap restores the previous tree on failed activation.
+# Sibling renames; the exit trap restores the previous tree on failed
+# activation. rename(2) refuses a lower-layer tree — an overlayfs lower
+# layer (a docker-committed container's opt/nvim) answers EXDEV — but
+# POSIX mv falls back to copy+remove when rename answers EXDEV, so the
+# shell move-aside survives where the engine's raw File.rename needed
+# its own staged fallback (the a4a0e4d3 twin). Measured on a
+# redirect_dir=N overlay against this exact dance: GNU coreutils 9.4
+# and busybox 1.36.1 both land the move-aside with contents and exec
+# bits intact. The copy fallback is not atomic — a signal mid-copy can
+# strand a partial backup, which the exit trap then restores.
 if [ -e "$parent/nvim" ]; then mv "$parent/nvim" "$backup"; fi
 mv "$stage" "$parent/nvim"
 
@@ -199,6 +208,10 @@ if [ -n "$repo" ]; then
 	# partial tree.
 	cp -a "$repo/_build/prod/rel/workstation" "$release_stage/workstation"
 	[ -x "$release_stage/workstation/bin/workstation" ] || fail 'built release lacks bin/workstation'
+	# The release twin of the runtime move-aside above: an overlayfs lower
+	# layer refuses rename(2) with EXDEV, and mv's POSIX copy fallback
+	# covers it (measured: GNU coreutils and busybox both survive), so no
+	# explicit staged fallback is needed here, unlike the engine.
 	if [ -e "$parent/workstation" ]; then mv "$parent/workstation" "$lock/workstation-previous"; fi
 	mv "$release_stage/workstation" "$parent/workstation"
 	# Stamp the activated release with the source HEAD it was built from:
