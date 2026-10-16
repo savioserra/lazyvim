@@ -4,7 +4,7 @@
 # the engine, apply, sync and verify. This is the guarded fresh-install
 # sequence from README.md ("Fresh installation") encoded as one command:
 #
-#	curl -fsSL https://raw.githubusercontent.com/savioserra/lazyvim/main/install.sh | sh
+#	curl -fsSL https://raw.githubusercontent.com/savioserra/lazyvim/main/install.sh -o /tmp/workstation-install.sh && sh /tmp/workstation-install.sh
 #
 # mise-first chain: the shell pins mise (version + SHA-256 from the cloned
 # checkout's workstation/versions.json), mise provides the first-acquisition
