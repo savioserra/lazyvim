@@ -9,14 +9,19 @@ resources on Linux x86_64 (including WSL-as-Linux) and macOS arm64.
 The user or CI image supplies these; workstation never runs an OS package
 manager:
 
-- Git. On Linux this is the single distro prerequisite (`apt install git` on
-  Ubuntu/WSL — no pinnable first-party static build exists, see
-  [`docs/tools.md`](docs/tools.md)); macOS ships it with the Command Line
+- Git, HTTPS curl, xz and unzip. On Linux these four are the whole distro
+  prerequisite set, as measured on a bare box: a stock `ubuntu:24.04` image
+  is missing all four (`apt install git curl xz-utils unzip` on Ubuntu/WSL —
+  the base image already ships tar, gzip, `sha256sum` and sh). Git stays
+  deliberately unpinned — no pinnable first-party static build exists, see
+  [`docs/tools.md`](docs/tools.md); macOS ships it with the Command Line
   Tools.
-- POSIX shell, HTTPS curl, tar/gzip, xz (the tar.xz archive pins — Node, the
-  Nerd Font — extract through it), unzip (the zip archive pins — op,
-  tree-sitter), SHA-256 tools (`sha256sum` on Linux, `shasum` on macOS), and
-  ordinary Unix filesystem tools.
+- POSIX shell, tar/gzip, SHA-256 tools (`sha256sum` on Linux, `shasum` on
+  macOS), and ordinary Unix filesystem tools. The tar.xz archive pins (Node,
+  the Nerd Font) extract through xz and the zip archive pins (op,
+  tree-sitter) through unzip: the installer fail-closes on git and curl up
+  front, and a missing xz/unzip surfaces at the first `apply` as a named
+  extraction refusal.
 - tmux >=3.2 and btop: mise-contract-managed on Linux — the tools are declared
   with the `linux` platform scope, so a macOS apply omits them and they remain
   host prerequisites there (brew); the fresh-install sequence first-acquires
@@ -56,6 +61,12 @@ overrides: `WORKSTATION_REPO`, `WORKSTATION_REF`, `WORKSTATION_DEST`):
 ```sh
 curl -fsSL https://raw.githubusercontent.com/savioserra/lazyvim/main/install.sh | sh
 ```
+
+On a bare Debian/Ubuntu box, install the distro set first — `apt install git
+curl xz-utils unzip`; those four are the whole list (see
+[Prerequisites](#prerequisites)). The installer fail-closes on git and curl
+before touching anything; without `xz`/`unzip` the chain stays green through
+bootstrap and refuses at the first `apply`, naming the missing extractor.
 
 Or manually:
 git clone https://github.com/savioserra/lazyvim.git "$HOME/.local/share/workstation"
