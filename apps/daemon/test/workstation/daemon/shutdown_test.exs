@@ -302,4 +302,81 @@ defmodule Workstation.Daemon.ShutdownTest do
     refute_received {:hook, :fired}
     assert Shutdown.stopping?()
   end
+
+  # A stop process OUTLIVES its scheduling op by the flush handshake plus
+  # the drain — under load that window routinely crosses a test boundary in
+  # a shared VM (the LiveTest `daemon_died`-on-apply.plan flake: a previous
+  # test's still-running stop sequence hit the NEXT test's freshly booted
+  # tree). The sequence must therefore be pinned to its OWN generation: the
+  # socket path and the task supervisor are captured at schedule time, so a
+  # late stop removes ITS OWN socket node and drains ITS OWN tasks — never
+  # whatever home or registered name is ambient by the time its budget
+  # expires.
+  test "a late stop process is pinned to its own generation, never the next one", %{
+    home: home,
+    socket_path: socket_path
+  } do
+    # The scheduling generation, booted as :temporary so the direct stop
+    # below ends it for good (a :permanent child would respawn under the
+    # test supervisor and re-take the name).
+    spec = Workstation.Daemon.Application.supervisor_spec() |> Map.put(:restart, :temporary)
+    sup_a = start_supervised!(spec)
+    wait_for_file(socket_path)
+
+    # The stop whose ack never arrives: the stop process parks in the
+    # bounded flush wait, so it is still pending when its generation dies —
+    # exactly the outlived-stop shape under load.
+    Application.put_env(:daemon, :reply_flush_ms, 0)
+    Application.put_env(:daemon, :flush_wait_ms, 200)
+
+    parent = self()
+
+    Application.put_env(:daemon, :shutdown_hook, fn _delay_ms, _reason -> send(parent, {:hook, :fired}) end)
+
+    Shutdown.reset()
+    assert :ok = Shutdown.stop_after("zombie generation test", "op-never-acked")
+
+    # The scheduling generation dies BEFORE the stop process gets past the
+    # flush wait.
+    :ok = Supervisor.stop(sup_a)
+    wait_until(fn -> Process.whereis(Workstation.Daemon.Supervisor) == nil end, "tree A never freed the name")
+
+    # The NEXT generation boots under the same global name, in its own home.
+    # (Short name on purpose: the socket path must stay under sun_path's
+    # 108-byte cap for EVERY unique_integer width — a 5-digit roll on the
+    # longer spelling pushed the path to exactly 108 chars and the bind
+    # answered :invalid, failing the pin on path length, not on merit.)
+    next_home = Path.join(System.tmp_dir!(), "ws-shut-next-#{System.unique_integer([:positive])}")
+    File.mkdir_p!(next_home)
+    previous_home = System.get_env("WORKSTATION_HOME")
+    System.put_env("WORKSTATION_HOME", next_home)
+
+    try do
+      start_supervised!(Workstation.Daemon.Application.supervisor_spec())
+      next_socket_path = Listener.socket_path(next_home)
+      wait_for_file(next_socket_path)
+
+      # The zombie stop runs to completion against ITS OWN generation.
+      assert_receive {:hook, :fired}, 5_000
+
+      # ITS OWN socket node is the one removed...
+      wait_until(fn -> not File.exists?(socket_path) end, "the zombie stop never cleaned its own socket node")
+
+      # ...and the NEXT generation is untouched: its socket node survives
+      # and it still serves. (An ambient-scoped stop would have unlinked
+      # next_socket_path and left socket_path alone — both asserts red.)
+      assert File.exists?(next_socket_path), "the late stop removed the NEXT generation's socket node"
+
+      sock = connect(next_socket_path)
+
+      hello =
+        Jason.encode!(%{"v" => 1, "id" => "z1", "op" => "hello", "params" => %{"protocol" => Protocol.protocol_name()}})
+
+      assert %{"ok" => true} = roundtrip(sock, hello)
+      :ok = :socket.close(sock)
+    after
+      if previous_home, do: System.put_env("WORKSTATION_HOME", previous_home), else: System.delete_env("WORKSTATION_HOME")
+      File.rm_rf!(next_home)
+    end
+  end
 end

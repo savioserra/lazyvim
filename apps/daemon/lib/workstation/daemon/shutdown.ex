@@ -109,6 +109,19 @@ defmodule Workstation.Daemon.Shutdown do
       :ok
     else
       :persistent_term.put({__MODULE__, :stopping}, true)
+
+      # Pin the sequence to THIS generation: the socket path and the task
+      # supervisor are resolved HERE — while the scheduling daemon is
+      # definitely the ambient one — and the stop process carries the values.
+      # Resolving them at execution time instead let a late stop process
+      # (it outlives the scheduling op by the flush handshake plus the
+      # drain) drain a LATER tree's op tasks and unlink a LATER home's
+      # socket node — in a test VM the ambient home and the registered
+      # names belong to whichever generation is current when the budget
+      # expires, not to the generation that scheduled the stop.
+      sock_path = Listener.socket_path()
+      task_sup = Process.whereis(TaskSupervisor)
+
       ack = :atomics.new(1, signed: false)
 
       # Armed BEFORE the spawn: a fast reply can ack before the stop
@@ -123,8 +136,8 @@ defmodule Workstation.Daemon.Shutdown do
           spawn(fn ->
             Process.sleep(delay_ms)
             await_reply_flushed(op_ref, ack)
-            drain_ops!()
-            remove_socket!()
+            drain_ops!(task_sup)
+            remove_socket!(sock_path)
             hook.(delay_ms, reason)
           end)
 
@@ -132,8 +145,8 @@ defmodule Workstation.Daemon.Shutdown do
           spawn(fn ->
             Process.sleep(delay_ms)
             await_reply_flushed(op_ref, ack)
-            drain_ops!()
-            remove_socket!()
+            drain_ops!(task_sup)
+            remove_socket!(sock_path)
             Logger.info("workstation daemon stopping: #{reason}")
             _ = Application.stop(:daemon)
             System.halt(0)
@@ -214,22 +227,25 @@ defmodule Workstation.Daemon.Shutdown do
   # so this waits for genuinely OTHER ops: a settling op releases its own
   # apply lock, and the stop never un-bounds. A supervisor-less context
   # (CLI one-shot, plain unit tests) has no tasks to wait for at all.
-  defp drain_ops! do
+  # `task_sup` is the scheduling generation's supervisor, captured at
+  # schedule time: a dead pid means the generation rolled and its ops died
+  # with it — nothing of ours is in flight, so the drain is already done.
+  defp drain_ops!(task_sup) do
     deadline = monotonic_ms() + drain_budget()
 
-    case in_flight_tasks() do
+    case in_flight_tasks(task_sup) do
       [] ->
         :ok
 
       tasks ->
         Logger.info("daemon stop: draining #{length(tasks)} in-flight op task(s)")
-        await_drain(deadline)
+        await_drain(task_sup, deadline)
     end
   end
 
-  defp await_drain(deadline) do
+  defp await_drain(task_sup, deadline) do
     cond do
-      in_flight_tasks() == [] ->
+      in_flight_tasks(task_sup) == [] ->
         :ok
 
       # Not a fresh liveness check — the budget bounds the WHOLE drain, so a
@@ -246,19 +262,17 @@ defmodule Workstation.Daemon.Shutdown do
 
       true ->
         Process.sleep(@drain_poll_ms)
-        await_drain(deadline)
+        await_drain(task_sup, deadline)
     end
   end
 
-  defp in_flight_tasks do
-    case Process.whereis(TaskSupervisor) do
-      nil ->
-        []
-
-      supervisor ->
-        supervisor
-        |> DynamicSupervisor.which_children()
-        |> Enum.map(&elem(&1, 1))
+  defp in_flight_tasks(task_sup) do
+    if is_pid(task_sup) and Process.alive?(task_sup) do
+      task_sup
+      |> DynamicSupervisor.which_children()
+      |> Enum.map(&elem(&1, 1))
+    else
+      []
     end
   end
 
@@ -266,10 +280,11 @@ defmodule Workstation.Daemon.Shutdown do
   # once the drain proves this daemon will serve nothing further. Only a
   # provably owned socket node is ever removed (the takeover's no-follow
   # proof); anything else at the path is left for the next boot's takeover
-  # to judge, and an absent path is already the drained state.
-  defp remove_socket! do
-    path = Listener.socket_path()
-
+  # to judge, and an absent path is already the drained state. `path` is
+  # THIS generation's socket path, captured at schedule time — the ambient
+  # home by the time a late stop process executes may already belong to a
+  # different generation, and this stop must never touch it.
+  defp remove_socket!(path) do
     if Listener.owned_socket?(path) do
       case File.rm(path) do
         :ok ->
