@@ -9,6 +9,12 @@ defmodule Workstation.Core.Update.BootstrapTest do
   itself, whose URL validation pins it to the real GitHub release path; the
   corrupt-cache refusal is pinned through the same discard-and-refetch code
   via the corrupt RUNTIME cache entry (the honest https failure follows).
+
+  The EXDEV fallback (a filesystem that cannot rename the installed tree —
+  an overlayfs lower layer, e.g. a docker-committed container) is exercised
+  by stubbing the activation renames through the fixture-only `rename` opt:
+  the fallback must land the install, and a failed activation must roll the
+  COPIED tree back with its modes and links intact.
   """
 
   use ExUnit.Case, async: false
@@ -26,7 +32,10 @@ defmodule Workstation.Core.Update.BootstrapTest do
     System.put_env("WORKSTATION_HOME", home)
 
     on_exit(fn ->
-      if previous, do: System.put_env("WORKSTATION_HOME", previous), else: System.delete_env("WORKSTATION_HOME")
+      if previous,
+        do: System.put_env("WORKSTATION_HOME", previous),
+        else: System.delete_env("WORKSTATION_HOME")
+
       File.rm_rf!(base)
     end)
 
@@ -62,7 +71,8 @@ defmodule Workstation.Core.Update.BootstrapTest do
       # version — the exact rot the derivation refuses at run time
       {"invalid runtime URL", %{"neovim" => "0.0.1"}},
       # URL outside the pinned release path
-      {"invalid runtime URL", %{"neovim_linux_x86_64_url" => "https://evil.example/nvim-1.0.tar.gz"}},
+      {"invalid runtime URL",
+       %{"neovim_linux_x86_64_url" => "https://evil.example/nvim-1.0.tar.gz"}},
       # digest not 64 lowercase hex / short digest
       {"invalid manifest record", %{"neovim_linux_x86_64_sha256" => "NOTAHASH"}},
       {"invalid manifest record", %{"neovim_linux_x86_64_sha256" => String.duplicate("ab", 31)}},
@@ -85,7 +95,10 @@ defmodule Workstation.Core.Update.BootstrapTest do
 
   ## full run (offline: runtime cache pre-seeded, backend over file://)
 
-  test "run installs runtime, backend and launcher from verified artifacts", %{base: base, home: home} do
+  test "run installs runtime, backend and launcher from verified artifacts", %{
+    base: base,
+    home: home
+  } do
     fixture = engine_fixture(base)
     seed_runtime_cache!(home, fixture)
 
@@ -116,20 +129,28 @@ defmodule Workstation.Core.Update.BootstrapTest do
     assert link == Workstation.Core.Update.realpath(Path.join(fixture.root, "bin/workstation"))
 
     # Caches: both artifacts cached under their own digest.
-    assert File.regular?(Path.join([home, ".cache", "workstation", "bootstrap", fixture.runtime_digest]))
+    assert File.regular?(
+             Path.join([home, ".cache", "workstation", "bootstrap", fixture.runtime_digest])
+           )
+
     assert [_one] = File.ls!(Path.join([home, ".cache", "workstation", "downloads"]))
 
     # No lock or staging debris survives a successful run.
     refute File.exists?(Path.join([home, ".local", "opt", ".nvim-bootstrap-lock"]))
 
     # Idempotent: a second run over installed state succeeds.
-    assert {:ok, %{"status" => "ok"}} = Bootstrap.run(engine_root: fixture.root, home: home, allow_file_urls: true)
+    assert {:ok, %{"status" => "ok"}} =
+             Bootstrap.run(engine_root: fixture.root, home: home, allow_file_urls: true)
   end
 
   test "a corrupt runtime cache entry is discarded, never trusted", %{base: base, home: home} do
     fixture = engine_fixture(base)
     seed_runtime_cache!(home, fixture)
-    File.write!(Path.join([home, ".cache", "workstation", "bootstrap", fixture.runtime_digest]), "corrupt bytes")
+
+    File.write!(
+      Path.join([home, ".cache", "workstation", "bootstrap", fixture.runtime_digest]),
+      "corrupt bytes"
+    )
 
     # The https-only runtime download cannot run in this sandbox; what this
     # pins is the DISCARD: the corrupt entry is gone before the honest
@@ -138,11 +159,17 @@ defmodule Workstation.Core.Update.BootstrapTest do
       Bootstrap.run(engine_root: fixture.root, home: home)
     end
 
-    refute File.exists?(Path.join([home, ".cache", "workstation", "bootstrap", fixture.runtime_digest]))
+    refute File.exists?(
+             Path.join([home, ".cache", "workstation", "bootstrap", fixture.runtime_digest])
+           )
+
     assert File.regular?(fixture.runtime_archive)
   end
 
-  test "a backend download whose bytes do not hash to the pin is refused", %{base: base, home: home} do
+  test "a backend download whose bytes do not hash to the pin is refused", %{
+    base: base,
+    home: home
+  } do
     fixture = engine_fixture(base)
     seed_runtime_cache!(home, fixture)
     File.write!(fixture.chezmoi_archive, "not the pinned bytes")
@@ -154,7 +181,10 @@ defmodule Workstation.Core.Update.BootstrapTest do
     refute File.exists?(Path.join([home, ".local", "opt", "chezmoi", "bin", "chezmoi"]))
   end
 
-  test "a runtime archive with a traversing member is refused before extraction", %{base: base, home: home} do
+  test "a runtime archive with a traversing member is refused before extraction", %{
+    base: base,
+    home: home
+  } do
     fixture = engine_fixture(base, runtime_archive: tar_fixture!([{"../evil.txt", "evil\n"}]))
     seed_runtime_cache!(home, fixture)
 
@@ -165,9 +195,14 @@ defmodule Workstation.Core.Update.BootstrapTest do
     refute File.exists?(Path.join([home, ".local", "opt", "nvim"]))
   end
 
-  test "a runtime tree without bin/nvim, or with a wrong version banner, is refused", %{base: base, home: home} do
+  test "a runtime tree without bin/nvim, or with a wrong version banner, is refused", %{
+    base: base,
+    home: home
+  } do
     # no bin/nvim at all
-    fixture = engine_fixture(base, runtime_archive: tar_fixture!([{"fixture/README", "nothing here\n"}]))
+    fixture =
+      engine_fixture(base, runtime_archive: tar_fixture!([{"fixture/README", "nothing here\n"}]))
+
     seed_runtime_cache!(home, fixture)
 
     assert_raise ArgumentError, ~r/lacks executable bin\/nvim/, fn ->
@@ -179,6 +214,7 @@ defmodule Workstation.Core.Update.BootstrapTest do
       engine_fixture(base,
         runtime_archive: tar_fixture!([{"fixture/bin/nvim", "#!/bin/sh\necho 'NVIM v9.9.9'\n"}])
       )
+
     seed_runtime_cache!(home, fixture)
 
     assert_raise ArgumentError, ~r/runtime version mismatch/, fn ->
@@ -206,7 +242,11 @@ defmodule Workstation.Core.Update.BootstrapTest do
     lock = Path.join([home, ".local", "opt", ".nvim-bootstrap-lock"])
     File.mkdir_p!(lock)
     {:ok, hostname} = :inet.gethostname()
-    File.write!(Path.join(lock, "owner"), "#{hostname}|#{:os.getpid()}|#{System.system_time(:millisecond)}")
+
+    File.write!(
+      Path.join(lock, "owner"),
+      "#{hostname}|#{:os.getpid()}|#{System.system_time(:millisecond)}"
+    )
 
     assert_raise ArgumentError, ~r/runtime installer locked/, fn ->
       Bootstrap.run(engine_root: fixture.root, home: home, lock_retries: 1, lock_wait_ms: 1)
@@ -229,7 +269,10 @@ defmodule Workstation.Core.Update.BootstrapTest do
     assert File.dir?(lock)
   end
 
-  test "a stale-owned lock is debris: stolen once, the install proceeds", %{base: base, home: home} do
+  test "a stale-owned lock is debris: stolen once, the install proceeds", %{
+    base: base,
+    home: home
+  } do
     fixture = engine_fixture(base)
     seed_runtime_cache!(home, fixture)
     lock = Path.join([home, ".local", "opt", ".nvim-bootstrap-lock"])
@@ -240,14 +283,143 @@ defmodule Workstation.Core.Update.BootstrapTest do
     {out, 0} = System.cmd("sh", ["-c", "echo $$"], stderr_to_stdout: true)
     dead_pid = String.trim(out)
     {:ok, hostname} = :inet.gethostname()
-    File.write!(Path.join(lock, "owner"), "#{hostname}|#{dead_pid}|#{System.system_time(:millisecond)}")
 
-    assert {:ok, %{"status" => "ok"}} = Bootstrap.run(engine_root: fixture.root, home: home, allow_file_urls: true)
+    File.write!(
+      Path.join(lock, "owner"),
+      "#{hostname}|#{dead_pid}|#{System.system_time(:millisecond)}"
+    )
+
+    assert {:ok, %{"status" => "ok"}} =
+             Bootstrap.run(engine_root: fixture.root, home: home, allow_file_urls: true)
 
     # The steal left no debris: the renamed lock is gone, the fresh one was
     # cleaned up by the successful install.
     refute File.exists?(lock)
     assert Path.wildcard(Path.join([home, ".local", "opt", ".nvim-bootstrap-lock.stale-*"])) == []
+  end
+
+  ## the EXDEV fallback (stubbed activation renames)
+
+  test "an EXDEV move-aside falls back to a copy and the install still proceeds", %{
+    base: base,
+    home: home
+  } do
+    fixture = engine_fixture(base)
+    seed_runtime_cache!(home, fixture)
+
+    # The first run installs the tree the second run must replace; the
+    # second run's move-aside of that tree is what a lower-layer filesystem
+    # (docker-committed container) answers with EXDEV.
+    assert {:ok, %{"status" => "ok"}} =
+             Bootstrap.run(engine_root: fixture.root, home: home, allow_file_urls: true)
+
+    installed = installed_path(home)
+    backup = backup_path(home)
+
+    stub = fn
+      ^installed, ^backup -> {:error, :exdev}
+      source, destination -> File.rename(source, destination)
+    end
+
+    assert {:ok, %{"status" => "ok", "runtime" => @fixture_version}} =
+             Bootstrap.run(
+               engine_root: fixture.root,
+               home: home,
+               allow_file_urls: true,
+               rename: stub
+             )
+
+    # The replacement is live and runnable, and the fallback left no lock
+    # or staging debris anywhere under opt.
+    assert {banner, 0} = System.cmd(Path.join([installed, "bin", "nvim"]), [])
+    assert String.trim_trailing(banner) == @nvim_banner
+    assert Path.wildcard(Path.join(opt_dir(home), ".nvim-bootstrap-lock*")) == []
+  end
+
+  test "the EXDEV fallback keeps the lock discipline: a failed activation rolls the copied tree back",
+       %{
+         base: base,
+         home: home
+       } do
+    fixture = engine_fixture(base)
+    seed_runtime_cache!(home, fixture)
+
+    assert {:ok, %{"status" => "ok"}} =
+             Bootstrap.run(engine_root: fixture.root, home: home, allow_file_urls: true)
+
+    # Age the installed tree with state the fixture archive does not carry:
+    # a marker, a relative symlink and a private mode. If the fallback
+    # re-extracted the archive instead of copying THIS tree, every assert
+    # below would fail (755, no marker, no link).
+    installed = installed_path(home)
+    backup = backup_path(home)
+    stage = stage_path(home)
+    File.mkdir_p!(Path.join(installed, "share"))
+    File.write!(Path.join([installed, "share", "old-marker"]), "previous tree\n")
+    File.ln_s!("nvim", Path.join([installed, "bin", "nvim-link"]))
+    File.chmod!(Path.join([installed, "bin", "nvim"]), 0o700)
+
+    stub = fn
+      ^installed, ^backup -> {:error, :exdev}
+      ^stage, ^installed -> {:error, :eio}
+      source, destination -> File.rename(source, destination)
+    end
+
+    assert_raise File.RenameError, ~r/could not rename/, fn ->
+      Bootstrap.run(engine_root: fixture.root, home: home, allow_file_urls: true, rename: stub)
+    end
+
+    # The ORIGINAL tree is back in place — the copy captured it faithfully:
+    # marker bytes, the relative link and the private mode all survived.
+    assert File.read!(Path.join([installed, "share", "old-marker"])) == "previous tree\n"
+    assert {:ok, "nvim"} = File.read_link(Path.join([installed, "bin", "nvim-link"]))
+    assert Bitwise.band(File.stat!(Path.join([installed, "bin", "nvim"])).mode, 0o777) == 0o700
+    assert {banner, 0} = System.cmd(Path.join([installed, "bin", "nvim"]), [])
+    assert String.trim_trailing(banner) == @nvim_banner
+
+    # Lock discipline held: the lock — with its staging sibling inside — is
+    # gone, so a crash mid-copy could never have published a half-populated
+    # `previous`.
+    assert Path.wildcard(Path.join(opt_dir(home), ".nvim-bootstrap-lock*")) == []
+  end
+
+  test "a non-EXDEV move-aside refusal keeps the rename error and the installed tree", %{
+    base: base,
+    home: home
+  } do
+    fixture = engine_fixture(base)
+    seed_runtime_cache!(home, fixture)
+
+    assert {:ok, %{"status" => "ok"}} =
+             Bootstrap.run(engine_root: fixture.root, home: home, allow_file_urls: true)
+
+    installed = installed_path(home)
+    backup = backup_path(home)
+
+    stub = fn
+      ^installed, ^backup -> {:error, :eperm}
+      source, destination -> File.rename(source, destination)
+    end
+
+    assert_raise File.RenameError,
+                 ~r/could not rename from .*opt\/nvim.* to .*previous.*: not owner/,
+                 fn ->
+                   Bootstrap.run(
+                     engine_root: fixture.root,
+                     home: home,
+                     allow_file_urls: true,
+                     rename: stub
+                   )
+                 end
+
+    # Untouched: the installed tree is exactly what the first run laid
+    # down, and no fallback copy ever started.
+    assert File.read!(Path.join([installed, "bin", "nvim"])) ==
+             "#!/bin/sh\necho 'NVIM v#{@fixture_version}'\n"
+
+    assert Path.wildcard(Path.join(opt_dir(home), "*"))
+           |> Enum.map(&Path.basename/1)
+           |> Enum.sort() == ["chezmoi", "nvim"]
   end
 
   test "a conflicting launcher path is refused, never replaced", %{base: base, home: home} do
@@ -280,6 +452,7 @@ defmodule Workstation.Core.Update.BootstrapTest do
 
     %{archive: runtime_archive, digest: runtime_digest} =
       Keyword.get_lazy(opts, :runtime_archive, fn -> runtime_fixture_archive!(base) end)
+
     %{archive: chezmoi_archive, digest: chezmoi_digest} = chezmoi_fixture_archive!(fixture_dir)
 
     versions =
@@ -329,7 +502,9 @@ defmodule Workstation.Core.Update.BootstrapTest do
     root
   end
 
-  defp github_url(asset), do: "https://github.com/neovim/neovim/releases/download/v#{@fixture_version}/nvim-#{asset}.tar.gz"
+  defp github_url(asset),
+    do:
+      "https://github.com/neovim/neovim/releases/download/v#{@fixture_version}/nvim-#{asset}.tar.gz"
 
   # A tar.gz whose extraction yields bin/nvim printing the fixture banner.
   defp runtime_fixture_archive!(base),
@@ -345,6 +520,14 @@ defmodule Workstation.Core.Update.BootstrapTest do
     File.cp!(fixture.runtime_archive, Path.join(cache, fixture.runtime_digest))
     :ok
   end
+
+  # The bootstrap's lock/replace layout under `<home>/.local/opt` — the
+  # paths the EXDEV stubs pattern-match on.
+  defp opt_dir(home), do: Path.join([home, ".local", "opt"])
+  defp installed_path(home), do: Path.join(opt_dir(home), "nvim")
+  defp lock_path(home), do: Path.join(opt_dir(home), ".nvim-bootstrap-lock")
+  defp stage_path(home), do: Path.join(lock_path(home), "stage")
+  defp backup_path(home), do: Path.join(lock_path(home), "previous")
 
   # Archives are built as DETERMINISTIC IN-MEMORY bytes (fixed ustar
   # headers, mtime 0) and written once, then hashed from the same bytes the
@@ -397,7 +580,11 @@ defmodule Workstation.Core.Update.BootstrapTest do
       |> :binary.bin_to_list()
       |> Enum.sum()
 
-    header = head <> IO.iodata_to_binary(Integer.to_string(checksum, 8) |> String.pad_leading(6, "0")) <> "  " <> tail
+    header =
+      head <>
+        IO.iodata_to_binary(Integer.to_string(checksum, 8) |> String.pad_leading(6, "0")) <>
+        "  " <> tail
+
     padded = body <> :binary.copy(<<0>>, 512 - rem(byte_size(body), 512))
     header <> padded
   end

@@ -27,7 +27,16 @@ defmodule Workstation.Core.Update.Bootstrap do
     `..`-traversing names), extracted into a private staging directory, and
     activated by sibling rename with the previous tree kept as backup until
     activation commits — an interrupted installer can never leave a
-    half-installed runtime in place of a working one.
+    half-installed runtime in place of a working one. A filesystem that
+    cannot rename the installed tree (EXDEV: an overlayfs lower layer, e.g.
+    a docker-committed container's `<home>/.local/opt/nvim`) moves the old
+    tree aside by copy instead: `cp -a` into a staging sibling inside the
+    lock dir, flush best effort, then the same-directory rename commits
+    `previous` in one atomic step before the source is removed. The
+    activation renames are injectable (the `rename` opt — a 2-arity fun in
+    the same fixture/test-only class as `allow_file_urls`, never a
+    production argument) so the EXDEV branch is exercisable on a plain
+    single-filesystem host.
   * the whole runtime install (download included, the shell's
     `$lock/download` staging) is serialized through a mkdir lock
     (`<home>/.local/opt/.nvim-bootstrap-lock`, bounded retries), because two
@@ -60,13 +69,18 @@ defmodule Workstation.Core.Update.Bootstrap do
   def platform do
     case :os.type() do
       {:unix, :linux} ->
-        if x86_64?(), do: "linux_x86_64", else: raise(ArgumentError, "bootstrap: unsupported platform: linux/#{arch()}")
+        if x86_64?(),
+          do: "linux_x86_64",
+          else: raise(ArgumentError, "bootstrap: unsupported platform: linux/#{arch()}")
 
       {:unix, :darwin} ->
-        if arm64?(), do: "darwin_arm64", else: raise(ArgumentError, "bootstrap: unsupported platform: darwin/#{arch()}")
+        if arm64?(),
+          do: "darwin_arm64",
+          else: raise(ArgumentError, "bootstrap: unsupported platform: darwin/#{arch()}")
 
       _other ->
-        raise ArgumentError, "bootstrap: supported hosts are Linux x86_64 (including WSL) and Darwin arm64"
+        raise ArgumentError,
+              "bootstrap: supported hosts are Linux x86_64 (including WSL) and Darwin arm64"
     end
   end
 
@@ -129,7 +143,9 @@ defmodule Workstation.Core.Update.Bootstrap do
     # extending this derivation is a loud refusal, never a silently ignored
     # pin the installer would never see.
     expected =
-      MapSet.new(["neovim" | Enum.flat_map(@platforms, &["neovim_#{&1}_url", "neovim_#{&1}_sha256"])])
+      MapSet.new([
+        "neovim" | Enum.flat_map(@platforms, &["neovim_#{&1}_url", "neovim_#{&1}_sha256"])
+      ])
 
     extras =
       versions
@@ -141,8 +157,12 @@ defmodule Workstation.Core.Update.Bootstrap do
       |> Enum.sort()
 
     case extras do
-      [] -> records
-      extras -> raise ArgumentError, "bootstrap: unexpected neovim pin field(s): #{Enum.join(extras, ", ")}"
+      [] ->
+        records
+
+      extras ->
+        raise ArgumentError,
+              "bootstrap: unexpected neovim pin field(s): #{Enum.join(extras, ", ")}"
     end
   end
 
@@ -166,7 +186,10 @@ defmodule Workstation.Core.Update.Bootstrap do
   # field; the version check ran in pins!/1 before the {V} substitution, so
   # the URL prefix is bound to an already-validated pinned version.
   defp validate_record!(asset, version, url, digest) do
-    unless String.starts_with?(url, "https://github.com/neovim/neovim/releases/download/v#{version}/nvim-") and
+    unless String.starts_with?(
+             url,
+             "https://github.com/neovim/neovim/releases/download/v#{version}/nvim-"
+           ) and
              String.ends_with?(url, ".tar.gz") and
              Regex.match?(~r/\A[a-zA-Z0-9.\/:_-]+\z/, url),
            do: raise(ArgumentError, "bootstrap: invalid runtime URL")
@@ -189,7 +212,11 @@ defmodule Workstation.Core.Update.Bootstrap do
     wait = Keyword.get(opts, :lock_wait_ms, @lock_wait_ms)
 
     unless acquire_lock(lock, retries, wait),
-      do: raise(ArgumentError, "bootstrap: runtime installer locked at #{lock} (check for an interrupted installer)")
+      do:
+        raise(
+          ArgumentError,
+          "bootstrap: runtime installer locked at #{lock} (check for an interrupted installer)"
+        )
 
     stage = Path.join(lock, "stage")
     backup = Path.join(lock, "previous")
@@ -202,7 +229,7 @@ defmodule Workstation.Core.Update.Bootstrap do
       archive = cached_archive(cache, pin, lock, opts)
       extract_runtime!(archive, stage)
       verify_runtime!(stage, pin)
-      activate_runtime!(parent, stage, backup)
+      activate_runtime!(parent, stage, backup, opts)
       pin["version"]
     after
       File.rm_rf!(lock)
@@ -216,8 +243,11 @@ defmodule Workstation.Core.Update.Bootstrap do
 
     fresh? =
       case File.lstat(archive) do
-        {:ok, %{type: :regular}} -> Workstation.Core.EngineState.sha256(File.read!(archive)) == pin["digest"]
-        _other -> false
+        {:ok, %{type: :regular}} ->
+          Workstation.Core.EngineState.sha256(File.read!(archive)) == pin["digest"]
+
+        _other ->
+          false
       end
 
     if fresh? do
@@ -247,14 +277,28 @@ defmodule Workstation.Core.Update.Bootstrap do
   defp curl!(url, partial, allow_file_urls, artifact) do
     proto = if allow_file_urls, do: "=https,file", else: "=https"
 
-    case System.cmd("curl", ["--proto", proto, "--proto-redir", "=https", "-fSL", "--retry", "3", "-o", partial, url],
+    case System.cmd(
+           "curl",
+           [
+             "--proto",
+             proto,
+             "--proto-redir",
+             "=https",
+             "-fSL",
+             "--retry",
+             "3",
+             "-o",
+             partial,
+             url
+           ],
            stderr_to_stdout: true
          ) do
       {_, 0} ->
         :ok
 
       {out, code} ->
-        raise ArgumentError, "bootstrap: #{artifact} download failed (exit #{code}): #{String.trim_trailing(out)}"
+        raise ArgumentError,
+              "bootstrap: #{artifact} download failed (exit #{code}): #{String.trim_trailing(out)}"
     end
   end
 
@@ -266,18 +310,22 @@ defmodule Workstation.Core.Update.Bootstrap do
 
     File.mkdir!(stage)
 
-    case System.cmd("tar", ["-xf", archive, "-C", stage, "--strip-components=1"], stderr_to_stdout: true) do
+    case System.cmd("tar", ["-xf", archive, "-C", stage, "--strip-components=1"],
+           stderr_to_stdout: true
+         ) do
       {_, 0} ->
         :ok
 
       {out, code} ->
-        raise ArgumentError, "bootstrap: runtime extraction failed (exit #{code}): #{String.trim_trailing(out)}"
+        raise ArgumentError,
+              "bootstrap: runtime extraction failed (exit #{code}): #{String.trim_trailing(out)}"
     end
   end
 
   defp safe_member!(name) do
     traversal? =
-      name == "" or String.starts_with?(name, "/") or name == ".." or String.starts_with?(name, "../") or
+      name == "" or String.starts_with?(name, "/") or name == ".." or
+        String.starts_with?(name, "../") or
         String.contains?(name, "/../") or String.ends_with?(name, "/..")
 
     unless not traversal?, do: raise(ArgumentError, "bootstrap: unsafe archive member")
@@ -297,19 +345,106 @@ defmodule Workstation.Core.Update.Bootstrap do
   end
 
   # Sibling renames; the previous tree is restored when activation failed
-  # and the new tree is not in place (the shell's exit trap).
-  defp activate_runtime!(parent, stage, backup) do
+  # and the new tree is not in place (the shell's exit trap). The renames
+  # go through the injectable `rename` opt (production: `File.rename/2`),
+  # and a filesystem that refuses to rename the installed tree — EXDEV,
+  # an overlayfs lower layer — falls back to the copy-based move-aside.
+  defp activate_runtime!(parent, stage, backup, opts) do
+    rename = Keyword.get(opts, :rename, &File.rename/2)
     installed = Path.join(parent, "nvim")
     had_installed? = File.exists?(installed)
 
-    if had_installed?, do: File.rename!(installed, backup)
+    if had_installed? do
+      case rename.(installed, backup) do
+        :ok ->
+          :ok
+
+        # Overlayfs lower layer (any container whose opt/nvim sits in an
+        # image layer, e.g. after docker commit): the tree cannot be
+        # renamed, only copied. The lock discipline survives through the
+        # staging-then-commit move-aside below; every other refusal keeps
+        # the exact `File.rename!/2` error shape.
+        {:error, :exdev} ->
+          copy_installed_aside!(installed, backup)
+
+        {:error, reason} ->
+          raise File.RenameError,
+            reason: reason,
+            action: "rename",
+            source: installed,
+            destination: backup
+      end
+    end
 
     try do
-      File.rename!(stage, installed)
+      rename_bang!(rename, stage, installed)
     rescue
       error ->
-        if had_installed? and not File.exists?(installed), do: File.rename!(backup, installed)
+        if had_installed? and not File.exists?(installed),
+          do: rename_bang!(rename, backup, installed)
+
         reraise error, __STACKTRACE__
+    end
+  end
+
+  # `File.rename!/2` over the injectable rename fun, raising the exact
+  # bang's error shape (the fun returns `{:error, reason}` tuples).
+  defp rename_bang!(rename, source, destination) do
+    case rename.(source, destination) do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        raise File.RenameError,
+          reason: reason,
+          action: "rename",
+          source: source,
+          destination: destination
+    end
+  end
+
+  # The EXDEV fallback: a POSIX-safe equivalent of the move-aside rename.
+  # `cp -a` the installed tree into a STAGING sibling inside the lock dir
+  # (modes, links and times preserved), flush it best effort, and commit
+  # the backup with a rename INSIDE the lock dir — atomic, so a crash
+  # mid-copy can never leave `previous` half-populated — before the source
+  # goes away.
+  defp copy_installed_aside!(installed, backup) do
+    staged = backup <> ".staging-" <> Integer.to_string(System.unique_integer([:positive]))
+
+    case System.cmd("cp", ["-a", installed, staged], stderr_to_stdout: true) do
+      {_, 0} ->
+        flush_tree_best_effort(staged)
+        File.rename!(staged, backup)
+        File.rm_rf!(installed)
+
+      {out, code} ->
+        File.rm_rf(staged)
+
+        raise ArgumentError,
+              "bootstrap: runtime backup copy failed (exit #{code}): #{String.trim_trailing(out)}"
+    end
+  end
+
+  # The copied backup's crash window closes only when its bytes reach the
+  # disk, so walk the tree and flush every regular file — best effort: the
+  # fallback runs on exactly the filesystems where a flush can be refused,
+  # and the backup is rollback convenience, never worth failing the
+  # install over.
+  defp flush_tree_best_effort(path) do
+    case File.lstat(path) do
+      {:ok, %{type: :directory}} ->
+        case File.ls(path) do
+          {:ok, children} -> Enum.each(children, &flush_tree_best_effort(Path.join(path, &1)))
+          {:error, _reason} -> :ok
+        end
+
+      {:ok, %{type: :regular}} ->
+        File.open(path, [:raw, :read], &:file.sync/1)
+        :ok
+
+      _other ->
+        :ok
     end
   end
 
@@ -341,7 +476,8 @@ defmodule Workstation.Core.Update.Bootstrap do
           :ok
 
         {out, code} ->
-          raise ArgumentError, "bootstrap: backend extraction failed (exit #{code}): #{String.trim_trailing(out)}"
+          raise ArgumentError,
+                "bootstrap: backend extraction failed (exit #{code}): #{String.trim_trailing(out)}"
       end
 
       inner = Path.join(staging, "chezmoi")
@@ -361,7 +497,10 @@ defmodule Workstation.Core.Update.Bootstrap do
   # versions.json is checkout source (not guarded home state): strict decode
   # so a malformed pin set is a loud failure, never a partial download.
   defp versions!(root) do
-    case root |> then(&Path.join(&1, "versions.json")) |> File.read!() |> Workstation.Core.EngineState.decode_json() do
+    case root
+         |> then(&Path.join(&1, "versions.json"))
+         |> File.read!()
+         |> Workstation.Core.EngineState.decode_json() do
       {:ok, %{} = versions} when map_size(versions) > 0 -> versions
       _other -> raise ArgumentError, "bootstrap: malformed versions.json"
     end
@@ -381,8 +520,11 @@ defmodule Workstation.Core.Update.Bootstrap do
 
     fresh? =
       case File.lstat(cached) do
-        {:ok, %{type: :regular}} -> Workstation.Core.EngineState.sha256(File.read!(cached)) == digest
-        _other -> false
+        {:ok, %{type: :regular}} ->
+          Workstation.Core.EngineState.sha256(File.read!(cached)) == digest
+
+        _other ->
+          false
       end
 
     unless fresh? do
@@ -429,13 +571,19 @@ defmodule Workstation.Core.Update.Bootstrap do
     directory = Path.join([home, ".local", "bin"])
     launcher = Path.join(directory, "workstation")
     File.mkdir_p!(directory)
-    conflict = "bootstrap: refusing conflicting launcher at #{launcher}; inspect and move it aside explicitly"
+
+    conflict =
+      "bootstrap: refusing conflicting launcher at #{launcher}; inspect and move it aside explicitly"
 
     case File.lstat(launcher) do
       {:error, :enoent} ->
         case File.ln_s(target, launcher) do
-          :ok -> :ok
-          {:error, reason} -> raise ArgumentError, "bootstrap: cannot publish launcher at #{launcher}: #{inspect(reason)}"
+          :ok ->
+            :ok
+
+          {:error, reason} ->
+            raise ArgumentError,
+                  "bootstrap: cannot publish launcher at #{launcher}: #{inspect(reason)}"
         end
 
       {:ok, %{type: :symlink}} ->
@@ -448,7 +596,8 @@ defmodule Workstation.Core.Update.Bootstrap do
         raise ArgumentError, conflict
 
       {:error, reason} ->
-        raise ArgumentError, "bootstrap: cannot inspect launcher at #{launcher}: #{inspect(reason)}"
+        raise ArgumentError,
+              "bootstrap: cannot inspect launcher at #{launcher}: #{inspect(reason)}"
     end
   end
 
@@ -479,7 +628,8 @@ defmodule Workstation.Core.Update.Bootstrap do
         end
 
       {:error, reason} ->
-        raise ArgumentError, "bootstrap: cannot create runtime installer lock at #{lock}: #{inspect(reason)}"
+        raise ArgumentError,
+              "bootstrap: cannot create runtime installer lock at #{lock}: #{inspect(reason)}"
     end
   end
 
@@ -487,7 +637,10 @@ defmodule Workstation.Core.Update.Bootstrap do
   # owner file) and a foreign-host lock are unknowable or not ours to
   # judge — never stolen.
   defp write_owner(lock) do
-    File.write(Path.join(lock, "owner"), "#{hostname()}|#{:os.getpid()}|#{System.system_time(:millisecond)}")
+    File.write(
+      Path.join(lock, "owner"),
+      "#{hostname()}|#{:os.getpid()}|#{System.system_time(:millisecond)}"
+    )
   end
 
   defp read_owner(lock) do
@@ -559,7 +712,8 @@ defmodule Workstation.Core.Update.Bootstrap do
     end
   end
 
-  defp valid_hash?(value), do: is_binary(value) and byte_size(value) == 64 and Regex.match?(~r/\A[0-9a-f]+\z/, value)
+  defp valid_hash?(value),
+    do: is_binary(value) and byte_size(value) == 64 and Regex.match?(~r/\A[0-9a-f]+\z/, value)
 
   defp arch, do: to_string(:erlang.system_info(:system_architecture))
   defp x86_64?, do: String.contains?(arch(), "x86_64")
