@@ -156,7 +156,20 @@ defmodule Workstation.Core.Contracts.Download do
   # release-assets.githubusercontent.com with github.com's identity.
   @max_redirects 5
   @redirect_statuses [301, 302, 303, 307, 308]
-  @transient_connect_errors [:closed, :timeout, :econnreset]
+
+  # Transport-level errors one idempotent hop may absorb with a bounded
+  # retry. :closed/:econnreset/:timeout are the classic async-close and
+  # timeout shapes; :einval is the loaded-scheduler shape pinned by the
+  # t_79669ce0 suite battery — the peer answers and closes cleanly, the
+  # client still loses the response at the inet/ssl driver.
+  @transient_connect_errors [:closed, :timeout, :econnreset, :einval]
+
+  # Retries settle before each re-attempt so a scheduler/fd spike can drain;
+  # the schedule is exponential (25ms before attempt 2, doubling to 200ms)
+  # because the battery pinned back-to-back losses: bursts outlive any
+  # single fixed gap. Bounded per hop and never counted as redirect hops.
+  @max_hop_attempts 5
+  @hop_retry_settle_ms [25, 50, 100, 200]
 
   @doc "The wire provider id for pinned-artifact contributions."
   @spec provider_id() :: String.t()
@@ -1057,8 +1070,11 @@ defmodule Workstation.Core.Contracts.Download do
   default hostname check is exact-match and fails such chains with
   `hostname_check_failed`. inets' own autoredirect carries one flat ssl
   option set across hops, so the fetch owns the chain: at most
-  #{@max_redirects} redirects, never downgrading to plain http. The pinned
-  sha256 of the FINAL body is verified by `install/3` exactly as before.
+  #{@max_redirects} redirects, never downgrading to plain http. A hop's GET
+  is idempotent, so a transport-level loss is retried on a fresh connection
+  (bounded #{@max_hop_attempts} attempts, short settle — retries never count
+  as hops). The pinned sha256 of the FINAL body is verified by `install/3`
+  exactly as before.
   """
   @spec http_fetch(String.t()) :: binary()
   def http_fetch(url) do
@@ -1068,9 +1084,9 @@ defmodule Workstation.Core.Contracts.Download do
     fetch_hop(url, cacerts(), 0)
   end
 
-  defp fetch_hop(url, cacerts, hop, retry \\ true)
+  defp fetch_hop(url, cacerts, hop, attempts_left \\ @max_hop_attempts)
 
-  defp fetch_hop(url, cacerts, hop, retry) when hop <= @max_redirects do
+  defp fetch_hop(url, cacerts, hop, attempts_left) when hop <= @max_redirects do
     request = {String.to_charlist(url), []}
 
     http_options = [
@@ -1094,19 +1110,26 @@ defmodule Workstation.Core.Contracts.Download do
       {:ok, {{_version, status, reason}, _headers, _body}} ->
         raise ArgumentError, "download fetch for #{url} failed: HTTP #{status} #{reason}"
 
-      {:error, reason} when retry and reason in @transient_connect_errors ->
-        # inets pools connections; a server-side close can race the next
-        # hop's request on a just-closed pooled socket. One retry of the
-        # hop absorbs that transport race — the pinned sha256 of the FINAL
-        # body stays the real gate.
-        fetch_hop(url, cacerts, hop, false)
+      {:error, reason} when reason in @transient_connect_errors and attempts_left > 1 ->
+        # A hop's GET is idempotent, so a transport-level loss is retried on
+        # a fresh connection (RFC 7230 6.3.1: a client must recover from an
+        # asynchronous close). Pinned under the loaded-suite battery: the
+        # server answers and closes cleanly, the client still reads
+        # :einval/:closed off the wire (inet/ssl driver race under scheduler
+        # pressure) — ~5% of requests under load, in bursts: back-to-back
+        # losses on one hop are common, so each retry settles exponentially
+        # instead of racing the spike. Retries never count as redirect
+        # hops; the pinned sha256 of the FINAL body stays the real gate.
+        index = @max_hop_attempts - attempts_left
+        Process.sleep(Enum.at(@hop_retry_settle_ms, index))
+        fetch_hop(url, cacerts, hop, attempts_left - 1)
 
       {:error, reason} ->
         raise ArgumentError, "download fetch for #{url} failed: #{inspect(reason)}"
     end
   end
 
-  defp fetch_hop(url, _cacerts, _hop, _retry),
+  defp fetch_hop(url, _cacerts, _hop, _attempts_left),
     do: raise(ArgumentError, "download fetch for #{url} failed: exceeded #{@max_redirects} redirects")
 
   # The SNI value and the hostname reference id are the CONNECTED host's
