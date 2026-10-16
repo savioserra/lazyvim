@@ -6,9 +6,14 @@
 sh .github/scripts/check.sh
 ```
 
-The fused engine's matrix is Elixir-native: the full `mix test` suite
-(hermetic fixture homes, no host state touched), the byte-identical golden
-replay (`mix workstation.goldens` vs `tests/goldens`), `sh -n` + ShellCheck
+The fused engine's matrix is Elixir-native and fails fast on golden drift:
+the byte-identical golden replay (`mix workstation.goldens` vs
+`tests/goldens`) is the FIRST check.sh step, so a payload edit under
+`workstation/packages/` without a golden re-record reds in seconds — with a
+message naming `mise exec -- mix workstation.goldens` — before the full
+`mix test` suite (hermetic fixture homes, no host state touched). The
+in-suite drift anchor (`Workstation.Core.GoldenGenerateTest`) carries the
+same assertion for direct `mix test` runs. Then: `sh -n` + ShellCheck
 over the remaining shell scripts, the UTF-8 locale guard gate over the POSIX
 shim (stubbed `locale`, stub release; no tarball needed), the release boot
 smoke when a local release tarball is built, and `git diff --check`.

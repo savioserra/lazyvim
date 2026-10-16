@@ -7,6 +7,10 @@ defmodule Workstation.Core.GoldenGenerateTest do
   `CanonicalJSON` is deterministic and carries no encoder seeding. A drift
   is an engine or envelope change: re-record deliberately via
   `mix workstation.goldens` after review — never by editing goldens.
+
+  check.sh runs the same byte-identical replay as its FIRST gate step, so
+  the common path (a payload edit without a golden re-record) reds there in
+  seconds; this anchor carries the assertion for direct `mix test` runs.
   """
 
   use ExUnit.Case, async: false
@@ -26,11 +30,11 @@ defmodule Workstation.Core.GoldenGenerateTest do
 
     for {profile, files} <- generated do
       assert MapSet.new(Map.keys(files)) == MapSet.new(committed_files(profile)),
-             "file set differs for profile #{profile}"
+             "file set differs for profile #{profile} — re-record deliberately with: mise exec -- mix workstation.goldens (never hand-edit tests/goldens)"
 
       for {relative, bytes} <- files do
         assert bytes == File.read!(Path.join([@goldens_root, profile, relative])),
-               "golden drift in #{profile}/#{relative}"
+               "golden drift in #{profile}/#{relative} — re-record deliberately with: mise exec -- mix workstation.goldens (never hand-edit tests/goldens)"
       end
     end
   end
