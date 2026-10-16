@@ -21,10 +21,12 @@
 # tools (tar/gzip, sha256sum or shasum). The ENGINE's apply additionally
 # extracts the package-tree archives — tar.xz pins (Node, the Nerd Font)
 # need xz, zip pins (op, tree-sitter) need unzip; a missing tool fails the
-# apply with its name. On Linux git is the single distro
-# prerequisite (`apt install git` — no reputable first-party static git
-# artifact exists to pin; see docs/tools.md); macOS ships git with the
-# Command Line Tools. Everything lives under $HOME: the script never needs
+# apply with its name. On Linux the distro prerequisite set is
+# `apt install git curl xz-utils unzip` — a bare box is missing all four
+# (measured on a stock ubuntu:24.04); git stays deliberately unpinned (no
+# first-party static git artifact exists to pin; see docs/tools.md); macOS
+# ships git with the Command Line Tools. Everything lives under $HOME: the
+# script never needs
 # root. It refuses to touch an existing checkout, which may be the old
 # deployed engine payload (see docs/chezmoi.md "breaking cutover").
 set -eu
@@ -37,7 +39,7 @@ say() { printf 'install: %s\n' "$*"; }
 die() { printf 'install: %s\n' "$*" >&2; exit 1; }
 
 [ -n "${HOME:-}" ] || die 'HOME is not set; a user home is required'
-command -v git >/dev/null 2>&1 || die 'git is required; on Linux: apt install git (the single distro prerequisite — see docs/tools.md)'
+command -v git >/dev/null 2>&1 || die 'git is required; on Linux: apt install git curl xz-utils unzip (the distro prerequisite set — see docs/tools.md)'
 command -v curl >/dev/null 2>&1 || die 'curl is required (https://curl.se)'
 
 # UTF-8 locale guard: Elixir expects a UTF-8 native name encoding, and a
