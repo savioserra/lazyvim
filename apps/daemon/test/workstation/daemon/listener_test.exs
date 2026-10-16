@@ -436,4 +436,43 @@ defmodule Workstation.Daemon.ListenerTest do
     assert reason in [:closed, :econnreset]
     :socket.close(sock)
   end
+
+  # --- per-connection crash-proofing -----------------------------------------
+
+  # A proof flavor with no decode clause: every connection's credential read
+  # raises inside the per-connection path. This is the injected form of any
+  # unexpected raise in serve_client/connection_peer_uid/hand_off — which,
+  # before the outer rescue, propagated out of accept_loop and killed the
+  # LISTENER. That listener is the FIRST child of a rest_for_one tree, so
+  # one raise rolled the whole serving generation and cut every session's
+  # connection mid-op (the non-stop `daemon_died` flake family). The
+  # contract now: a per-connection failure costs exactly that connection —
+  # refused fail-closed — and the listener keeps accepting.
+  @poisoned_proof %{mode: :peercred, native: {1, 17}, flavor: :no_such_flavor}
+
+  test "a per-connection failure is refused, never fatal to the listener", %{home: home, path: path} do
+    start_supervised!({Listener, home: home, proof: @poisoned_proof})
+    wait_for_file(path)
+
+    listener_pid = Process.whereis(Listener)
+    assert is_pid(listener_pid)
+
+    # Three consecutive connections, each hitting the raise inside the
+    # per-connection path. Every one must be closed by the daemon (refused
+    # fail-closed — a poisoned proof serves nobody) and the listener must
+    # still be alive and accepting after all of them: the failure never
+    # leaves the per-connection scope.
+    Enum.each(1..3, fn i ->
+      sock = connect(path)
+
+      assert {:error, reason} = :socket.recv(sock, 1, 2_000),
+             "connection #{i}: the poisoned connection was served instead of refused"
+
+      assert reason in [:closed, :econnreset]
+      :socket.close(sock)
+    end)
+
+    assert Process.alive?(listener_pid), "the listener died with a per-connection failure"
+    assert Process.whereis(Listener) == listener_pid
+  end
 end

@@ -457,7 +457,28 @@ defmodule Workstation.Daemon.Listener do
     end
   end
 
+  # The per-connection path is CRASH-PROOF BY CONSTRUCTION: this listener is
+  # the FIRST child of a rest_for_one tree, so one raise here would roll the
+  # WHOLE serving generation — killing every session and cutting every
+  # in-flight op's connection mid-frame (the client sees a daemon death on a
+  # read-only op). A per-connection failure must cost exactly that
+  # connection: log it, close the refused socket, keep accepting.
   defp serve_client(client, %{path: path, proof: proof}) do
+    try do
+      do_serve_client(client, path, proof)
+    catch
+      kind, value ->
+        Logger.error(
+          "daemon listener: per-connection path failed (#{inspect(kind)}:#{inspect(value)}); " <>
+            "the connection is refused, the listener keeps accepting path=#{path}"
+        )
+
+        _ = :socket.close(client)
+        :ok
+    end
+  end
+
+  defp do_serve_client(client, path, proof) do
     case connection_peer_uid(client, path, proof) do
       {:ok, peer_uid} ->
         hand_off(client, path, peer_uid)
