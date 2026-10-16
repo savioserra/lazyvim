@@ -62,7 +62,7 @@ defmodule Workstation.Daemon.Session do
   require Logger
 
   alias Workstation.Core.EngineState
-  alias Workstation.Daemon.{Capabilities, CapabilityRegistry, EventBus, Events, Protocol, TaskSupervisor}
+  alias Workstation.Daemon.{Capabilities, CapabilityRegistry, EventBus, Events, Protocol, Shutdown, TaskSupervisor}
 
   @enforce_keys [:sock, :sock_path, :peer_uid]
   defstruct [:sock, :sock_path, :peer_uid, :reader, inflight: nil, events: 0]
@@ -437,19 +437,30 @@ defmodule Workstation.Daemon.Session do
     })
   end
 
-  defp finish_op(%{inflight: %{op: op}} = state, result) do
+  defp finish_op(%{inflight: %{op: op, op_ref: op_ref}} = state, result) do
     EventBus.unsubscribe(:op)
     retarget_budget(state.reader, @idle_timeout_ms)
 
-    case result do
-      {:ok, payload} ->
-        reply(state, state.inflight.id, payload)
-        EventBus.publish(:op, {:op_served, op})
+    sent =
+      case result do
+        {:ok, payload} ->
+          sent = reply(state, state.inflight.id, payload)
+          EventBus.publish(:op, {:op_served, op})
+          sent
 
-      {:error, {code, message}} ->
-        reply(state, state.inflight.id, {code, message})
-        EventBus.publish(:op, {:op_rejected, code})
-    end
+        {:error, {code, message}} ->
+          sent = reply(state, state.inflight.id, {code, message})
+          EventBus.publish(:op, {:op_rejected, code})
+          sent
+      end
+
+    # The stop handshake's session half: once the reply frame has actually
+    # been handed to the socket, a graceful stop scheduled by THIS op may
+    # proceed — the daemon's teardown must never race the reply off the
+    # wire (the pre-handshake fixed flush window was exactly that race
+    # under load). A failed send (the peer vanished) stays unacked; the
+    # stop's bounded flush budget covers it.
+    if sent == :ok, do: Shutdown.reply_flushed(op_ref)
 
     loop(%{state | inflight: nil, events: 0})
   end
@@ -479,11 +490,10 @@ defmodule Workstation.Daemon.Session do
     # Match, never assert: a peer that vanished between reading its frame and
     # this write must take the graceful close path (the next read of the dead
     # socket ends the loop and close_and_stop/1 publishes {:session_closed}),
-    # not crash this session and skip the event.
-    case :socket.send(state.sock, frame) do
-      :ok -> state
-      {:error, _reason} -> state
-    end
+    # not crash this session and skip the event. The send result IS the
+    # reply's "flushed" verdict: the stop handshake's session half
+    # (finish_op) acks only a frame that actually reached the socket.
+    :socket.send(state.sock, frame)
   end
 
   # Best-effort id echo for decode failures: only when the body parses AND

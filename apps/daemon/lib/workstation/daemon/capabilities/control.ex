@@ -6,8 +6,11 @@ defmodule Workstation.Daemon.Capabilities.Control do
   stop stays manual"): an authorized local client (the session peercred
   gate already proved the caller) asks the daemon to stop itself. The stop
   is scheduled through `Workstation.Daemon.Shutdown` AFTER this op's reply
-  flushes, so the client receives its `ok` and then observes the socket
-  close. The scheduled stop is the GRACEFUL sequence — bounded drain of
+  flushes — a deterministic handshake, not a timing bet: the op carries its
+  wire `op_ref`, the session acks the reply frame through
+  `Shutdown.reply_flushed/1`, and only then does the stop proceed past the
+  flush handshake, so the client receives its `ok` and then observes the
+  socket close. The scheduled stop is the GRACEFUL sequence — bounded drain of
   in-flight op tasks (their apply locks release by settling), then the
   socket node's removal, then the halt — which is the contract the
   lifecycle verbs' pre-replace stop (`Workstation.CLI.PreReplace`) waits
@@ -17,7 +20,7 @@ defmodule Workstation.Daemon.Capabilities.Control do
 
   @behaviour Workstation.Daemon.Capability
 
-  alias Workstation.Daemon.Shutdown
+  alias Workstation.Daemon.{Capability, Shutdown}
 
   @empty_schema Zoi.object(%{}, unrecognized_keys: :error)
 
@@ -28,8 +31,8 @@ defmodule Workstation.Daemon.Capabilities.Control do
   def schema("daemon.stop"), do: @empty_schema
 
   @impl true
-  def handle("daemon.stop", _params, _ctx) do
-    :ok = Shutdown.stop_after("daemon.stop op")
+  def handle("daemon.stop", _params, ctx) do
+    :ok = Shutdown.stop_after("daemon.stop op", Capability.wire_op_ref(ctx))
 
     # The daemon's OWN OS pid rides the result. The client confirms the beam
     # actually exits after the acknowledged stop, and its kernel peercred

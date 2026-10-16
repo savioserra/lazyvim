@@ -61,6 +61,17 @@ defmodule Workstation.Daemon.Capability do
   def op_ref(_ctx), do: Workstation.Daemon.Events.new_ref()
 
   @doc """
+  The op's stream token for `ctx` when the call is ON THE WIRE, else nil.
+  The stop handshake (`Workstation.Daemon.Shutdown.stop_after/2`) acks
+  only against a wire op_ref: an in-process caller has no session to
+  flush a reply, so its stop keeps the plain delay-floor contract instead
+  of waiting on an ack nobody can deliver.
+  """
+  @spec wire_op_ref(ctx()) :: String.t() | nil
+  def wire_op_ref(%{op_ref: ref}) when is_binary(ref), do: ref
+  def wire_op_ref(_ctx), do: nil
+
+  @doc """
   Caller-supplied op options for `ctx` (fixture seams for module-level
   tests — home, installer, bootstrap run). The wire session never sets
   them: on the wire ops serve the daemon's own pinned environment, so a

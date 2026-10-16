@@ -328,8 +328,11 @@ The verbs that may replace the installed release (`apply`, `update`,
 `bootstrap`) first ask a LIVE daemon to exit gracefully
 (`Workstation.CLI.PreReplace`): the daemon runs the installed release in
 memory, so a replacement under a surviving beam would keep serving stale
-code. The daemon's `daemon.stop` is the graceful contract — after the
-reply flushes it DRAINS its in-flight op tasks (bounded; each settling op
+code. The daemon's `daemon.stop` is the graceful contract — the reply's
+flush ACKs the stop deterministically (the session marks the op's reply
+frame as flushed the moment it reaches the socket, and the stop proceeds
+past that handshake, bounded even when a client vanished mid-op) — after
+which it DRAINS its in-flight op tasks (bounded; each settling op
 releases its own apply lock), removes the socket node (no-follow
 owned-socket proof), then halts 0 — and the client waits, bounded (~10s),
 for BOTH the socket node's removal and the beam's actual exit before

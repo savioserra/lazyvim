@@ -179,8 +179,16 @@ defmodule Workstation.Daemon.LifecycleHandoffTest do
     {_spy, installer} = spy_install()
 
     # The wire-layer stop must not halt the test VM: the shutdown hook seam
-    # replaces the halt, never the bookkeeping.
-    Application.put_env(:daemon, :shutdown_hook, fn _delay_ms, reason -> send(self(), {:daemon_shutdown, reason}) end)
+    # replaces the halt, never the bookkeeping. The hook fires in the stop
+    # process after the flush handshake, so the test plays the session:
+    # once the handle returns (its reply "flushed"), it acks the op_ref and
+    # only then does the stop fire — the same ordering the wire session's
+    # reply_flushed/1 call produces.
+    parent = self()
+    op_ref = Workstation.Daemon.Events.new_ref()
+
+    Application.put_env(:daemon, :shutdown_hook, fn _delay_ms, reason -> send(parent, {:daemon_shutdown, reason}) end)
+
     Workstation.Daemon.Shutdown.reset()
 
     on_exit(fn ->
@@ -190,7 +198,7 @@ defmodule Workstation.Daemon.LifecycleHandoffTest do
 
     assert {:ok, result} =
              Workstation.Daemon.Capabilities.Lifecycle.handle("update.run", %{"steps" => ["bootstrap", "sync"]}, %{
-               op_ref: Workstation.Daemon.Events.new_ref(),
+               op_ref: op_ref,
                opts: [
                  home: home,
                  engine_root: repo_root(),
@@ -202,7 +210,12 @@ defmodule Workstation.Daemon.LifecycleHandoffTest do
 
     assert result["handed_off"] == true
     assert result["remaining_steps"] == ["sync"]
-    assert_received {:daemon_shutdown, "release refresh handoff"}
+
+    # The session half of the handshake: the reply frame is flushed, the
+    # handoff stop may fire.
+    :ok = Workstation.Daemon.Shutdown.reply_flushed(op_ref)
+
+    assert_receive {:daemon_shutdown, "release refresh handoff"}, 5_000
   end
 
   test "the handoff note records the identity captured BEFORE the installer re-stamps (P0 in 0fb69a4f)",

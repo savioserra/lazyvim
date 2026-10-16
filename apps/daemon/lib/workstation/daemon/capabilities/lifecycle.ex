@@ -84,7 +84,7 @@ defmodule Workstation.Daemon.Capabilities.Lifecycle do
     case Lifecycle.run_chain(steps, Capability.op_ref(ctx), Capability.opts(ctx)) do
       {:ok, record, refreshed?} ->
         if refreshed? and Enum.any?(steps, &(&1 in @refresh_steps)) do
-          :ok = Shutdown.stop_after("release refresh handoff")
+          :ok = Shutdown.stop_after("release refresh handoff", Capability.wire_op_ref(ctx))
           {:ok, record}
         else
           {:ok, record}
@@ -95,7 +95,7 @@ defmodule Workstation.Daemon.Capabilities.Lifecycle do
         # live 2026-10-05 incident's exit-2 trigger was an empty
         # --resume-from child). Report the plain ok result; the daemon stop
         # still fires (the release is refreshed).
-        :ok = Shutdown.stop_after("release refresh handoff")
+        :ok = Shutdown.stop_after("release refresh handoff", Capability.wire_op_ref(ctx))
         {:ok, record}
 
       {:handoff, record, remaining} ->
@@ -105,7 +105,7 @@ defmodule Workstation.Daemon.Capabilities.Lifecycle do
         # refreshed release and resumes exactly those (same lock, same
         # chain numbering — docs/capabilities.md "release refresh and
         # handoff").
-        :ok = Shutdown.stop_after("release refresh handoff")
+        :ok = Shutdown.stop_after("release refresh handoff", Capability.wire_op_ref(ctx))
         {:ok, Map.merge(record, %{"handed_off" => true, "remaining_steps" => remaining})}
 
       {:error, code, message} ->
