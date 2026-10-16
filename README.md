@@ -55,12 +55,18 @@ engine payload, not a Git clone. Follow the guarded [cutover procedure](docs/che
 with the operator; never clone over or erase it.
 
 One-line bootstrap — the installer performs exactly the guarded sequence below and
-enforces the same stop rule (audit it first with `curl -fsSL <url> -o install.sh && sh install.sh`;
-overrides: `WORKSTATION_REPO`, `WORKSTATION_REF`, `WORKSTATION_DEST`):
+enforces the same stop rule (overrides: `WORKSTATION_REPO`, `WORKSTATION_REF`,
+`WORKSTATION_DEST`):
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/savioserra/lazyvim/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/savioserra/lazyvim/main/install.sh -o /tmp/workstation-install.sh && sh /tmp/workstation-install.sh
 ```
+
+The guarded form is deliberate: a piped `curl -fsSL <url> | sh` feeds `sh` empty
+stdin when the fetch fails, and `sh` exits 0 on zero commands — the prompt
+returns as if the install succeeded, with nothing installed. To audit first,
+run the same command without the `&& sh /tmp/workstation-install.sh` half, read
+the fetched file, then run it.
 
 On a bare Debian/Ubuntu box, install the distro set first — `apt install git
 curl xz-utils unzip`; those four are the whole list (see
@@ -69,6 +75,7 @@ before touching anything; without `xz`/`unzip` the chain stays green through
 bootstrap and refuses at the first `apply`, naming the missing extractor.
 
 Or manually:
+```sh
 git clone https://github.com/savioserra/lazyvim.git "$HOME/.local/share/workstation"
 "$HOME/.local/share/workstation/workstation/bin/workstation" bootstrap
 "$HOME/.local/bin/workstation" apply
