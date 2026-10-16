@@ -59,7 +59,7 @@ defmodule Workstation.Daemon.ShutdownTest do
   # Bounded poll for a predicate — the graceful sequence runs in the stop
   # process AFTER the reply now, so its observables (socket node gone, the
   # hook's side effects) land a beat after the reply instead of before it.
-  defp wait_until(pred, message \\ "condition became true", tries \\ 200)
+  defp wait_until(pred, message), do: wait_until(pred, message, 200)
 
   defp wait_until(_pred, message, 0), do: flunk("#{message} within the wait budget")
 
