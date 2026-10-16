@@ -253,6 +253,15 @@ defmodule Workstation.Daemon.Session do
 
       {:EXIT, reader, _reason} when reader == state.reader ->
         close_and_stop(state)
+
+      # The supervisor's own teardown (Sessions terminating this child) also
+      # arrives as an EXIT — and the session traps exits, so without this
+      # clause the shutdown exit sat UNPROCESSED in the mailbox while the
+      # loop waited for frames, and the supervisor's child shutdown hung for
+      # the full 5s default child budget on every stop. A teardown EXIT is a
+      # graceful close (the daemon is going down), never a crash.
+      {:EXIT, _other, _reason} ->
+        close_and_stop(state)
     end
   end
 
@@ -299,6 +308,14 @@ defmodule Workstation.Daemon.Session do
         detach_close(state)
 
       {:EXIT, reader, _reason} when reader == state.reader ->
+        detach_close(state)
+
+      # The supervisor's teardown EXIT (see the idle loop's clause): close
+      # the wire promptly instead of hanging the stop for the child-shutdown
+      # budget. The op task is NOT linked to this session — it survives and
+      # settles under its lock (the detach contract), so a stop during an
+      # in-flight op still never abandons a half-run mutation.
+      {:EXIT, _other, _reason} ->
         detach_close(state)
     end
   end
