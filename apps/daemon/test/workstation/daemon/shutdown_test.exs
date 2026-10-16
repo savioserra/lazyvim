@@ -141,12 +141,17 @@ defmodule Workstation.Daemon.ShutdownTest do
     # against the reply is the session's flush ack; the pre-handshake code
     # ran the sequence inside the op task, strictly BEFORE the client could
     # have read any reply — exactly the lost race this handshake replaces.
+    # The comparison is at NATIVE clock resolution: on the pre-handshake
+    # tree the hook and the client's reply-read land within the same
+    # millisecond, so a millisecond-truncated comparison answers the
+    # ordering by rounding luck; the socket write+read between the two
+    # events always separates them by (at least) microseconds.
     Application.put_env(:daemon, :reply_flush_ms, 0)
 
     boot_tree()
 
     Application.put_env(:daemon, :shutdown_hook, fn _delay_ms, reason ->
-      :persistent_term.put({__MODULE__, :hook_fired_at}, now_ms())
+      :persistent_term.put({__MODULE__, :hook_fired_at}, System.monotonic_time())
       :persistent_term.put({__MODULE__, :hook_reason}, reason)
     end)
 
@@ -161,7 +166,7 @@ defmodule Workstation.Daemon.ShutdownTest do
 
     # The reply frame is fully read here; the ack the session armed fires no
     # later than this point, so the hook must never have fired EARLIER.
-    replied_at = now_ms()
+    replied_at = System.monotonic_time()
     wait_until(fn -> :persistent_term.get({__MODULE__, :hook_fired_at}, nil) != nil end, "the stop hook fired")
 
     assert :persistent_term.get({__MODULE__, :hook_fired_at}) >= replied_at,
