@@ -67,6 +67,13 @@ defmodule Workstation.CLI.PreReplaceTest do
     assert :ok = wait_for_socket(socket_path, now_ms() + @spawn_wait_ms),
            "the daemon verb did not bind #{socket_path} within the spawn handshake budget"
 
+    # THIS test's tree supervisor, captured while the global name is
+    # definitively ours — the hook below stops this pid, never the name:
+    # the spawned stop can run after this test has ended, and a name-stop
+    # would then tear down whatever tree a LATER test has registered under
+    # the same global name (the LiveTest daemon_died-on-apply.plan flake).
+    sup_pid = Process.whereis(Workstation.Daemon.Supervisor)
+
     # The daemon-side halt is hooked; the drain and the socket removal run
     # for real. The hook records that the socket node was ALREADY gone when
     # the halt step fired — the removal belongs to the graceful sequence,
@@ -76,7 +83,11 @@ defmodule Workstation.CLI.PreReplaceTest do
     Application.put_env(:daemon, :shutdown_hook, fn _delay_ms, _reason ->
       :persistent_term.put({__MODULE__, :socket_at_halt}, File.exists?(socket_path))
       :atomics.put(stopped, 1, 1)
-      spawn(fn -> Supervisor.stop(Workstation.Daemon.Supervisor) end)
+
+      # By pid (sup_pid, captured at boot), never by name — this spawned
+      # stop can fire after this test has ended and a later test's tree
+      # holds the global name; a pid can only ever be this test's own tree.
+      spawn(fn -> Supervisor.stop(sup_pid) end)
     end)
 
     # The in-process daemon's OS pid IS this test VM, so "the beam is dead"

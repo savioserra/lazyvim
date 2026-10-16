@@ -75,6 +75,17 @@ defmodule Workstation.CLI.DaemonVerbTest do
            "the daemon verb did not bind #{socket_path} within the " <>
              "#{@spawn_wait_ms}ms ensure-spawn handshake budget"
 
+    # The tree's supervisor pid, captured while THIS test's tree is
+    # definitively the one registered under the global name. The teardown
+    # below must stop THIS pid and never the name: the shutdown hook runs
+    # inside the daemon's own spawned stop process, which can still be
+    # finishing its flush/drain budget after this test has ended and a
+    # later test's tree has registered the same global name — a stop by
+    # name then tears down the WRONG tree mid-op (the LiveTest
+    # `daemon_died`-on-apply.plan flake). A pid captured here can only ever
+    # be this test's own tree; stopping a dead pid is a harmless :ok.
+    sup_pid = Process.whereis(Workstation.Daemon.Supervisor)
+
     # The handshake is the liveness signal: the same versioned hello the
     # client's spawn wait re-tries must answer here.
     assert {:ok, %{"schema" => "workstation.status.v1"}} =
@@ -109,10 +120,13 @@ defmodule Workstation.CLI.DaemonVerbTest do
       # same window and re-create the race) keeps this handshake the
       # production contract instead of a teardown-vs-ack race the suite used
       # to lose under load: the bus registry died before the session's
-      # finish_op and the granted stop reported {:shutdown, 4}.
+      # finish_op and the granted stop reported {:shutdown, 4}. The stop is
+      # aimed at THIS test's tree by pid (sup_pid, captured at boot) — a
+      # stop by global name from this still-running spawned process can
+      # outlive the test and tear down the NEXT test's tree.
       spawn(fn ->
         Process.sleep(delay_ms)
-        Supervisor.stop(Workstation.Daemon.Supervisor)
+        Supervisor.stop(sup_pid)
       end)
     end)
 
@@ -162,6 +176,13 @@ defmodule Workstation.CLI.DaemonVerbTest do
            "the daemon verb did not bind #{socket_path} within the " <>
              "#{@spawn_wait_ms}ms ensure-spawn handshake budget"
 
+    # THIS test's tree supervisor, captured while the global name is
+    # definitively ours — the hook below stops this pid, never the name
+    # (a name-stop from the daemon's still-running stop process can
+    # outlive this test and tear down the next test's tree; see the bare
+    # daemon verb test's sup_pid note).
+    sup_pid = Process.whereis(Workstation.Daemon.Supervisor)
+
     # The real stop halts the VM; a supervisor-spec test tree must not —
     # hook the halt to a supervisor stop (identical teardown, no halt).
     # The hook fires in the daemon's own stop process AFTER the flush
@@ -180,7 +201,12 @@ defmodule Workstation.CLI.DaemonVerbTest do
 
     Elixir.Application.put_env(:daemon, :shutdown_hook, fn _delay_ms, _reason ->
       :atomics.put(stopped, 1, 1)
-      Supervisor.stop(Workstation.Daemon.Supervisor)
+
+      # By pid (sup_pid, captured at boot), never by name: this hook runs
+      # inside the daemon's stop process, which can still be winding down
+      # after this test ends — a name-stop would then hit whatever tree
+      # the NEXT test has registered under the global name.
+      Supervisor.stop(sup_pid)
     end)
 
     Elixir.Application.put_env(:cli, :beam_alive, fn _pid ->
