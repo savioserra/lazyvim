@@ -256,33 +256,50 @@ defmodule Workstation.Daemon.ApplyTest do
       assert message == "apply lock held by uid=1000 node=test@host (pid 4242)"
     end
 
-    @tag timeout: 300_000
-    test "with the gate open, the update apply step is served, not gated", %{home: _home} do
+    @tag timeout: 120_000
+    test "with the gate open, the update apply step is served, not gated", %{home: home} do
       Application.put_env(:daemon, :engine_apply, true)
 
       wait_for_file(Listener.socket_path())
 
-      # Over the socket there is no sandbox collector injection: the step
-      # EXECUTES and fails honestly on the sandbox home. The wire proof is
-      # the code — the apply step's own failure code, never the graduation
-      # gate and never the chain code. The frame budget is 120s, not 2s: the
-      # real checkout catalog now carries the nunchux pinned-clone pin
-      # (r2.nunchux-wiring), so the honest-failure path runs a real network
-      # clone first, and since the download seam probes symlinked members
-      # (fix(download): symlinked probe members) the apply also walks the
-      # catalog's real archive fetches further before failing — the
-      # assertion is unchanged, only the wait (the 30s budget flaked under a
-      # loaded box; the clone itself is unchanged).
+      # The wire proof is the CODE — the apply step's own failure code, never
+      # the graduation gate and never a transport artifact. The chain must
+      # answer, and the answer must be the chain's own `apply_failed`.
       #
-      # The frame budget and this test's ExUnit timeout are a PAIR: the
-      # timeout must stay ≥ 2 × the frame budget, because request/3 applies
-      # the full budget to the hello recv AND to every result/event recv
-      # (fresh budget per drained frame), so a legitimate slow run can
-      # legally wait ~240s before the assertion. The 60s ExUnit default
-      # truncated the 120s wire budget — that mismatch was the load flake;
-      # 300_000 covers the arithmetic with margin (house convention for
-      # slow tests, cf. shell_home_frame_test.exs).
-      reply = request("update.run", %{"step" => "apply"}, 120_000)
+      # The failure is seeded at the precondition boundary (an unresolved
+      # foreign pending attempt whose target exists on disk but is neither
+      # journal-owned nor desired — the recovery law's own guard, raised
+      # before any effect runs) so the reply is deterministic. This test
+      # previously let the chain walk the FULL real catalog to its honest
+      # chezmoi-missing failure; that walk is a function of real-world WAN
+      # latency (git pins + ~360MB of archive fetches — 143s on a quiet box
+      # the day this flaked), which no fixed frame budget can bound: it was
+      # raised 30s -> 120s once already and still red'd 4/10 loaded runs
+      # (single CDN transfers stalling >100s mid-flight). The end-to-end
+      # backend apply, journal record and ownership paths stay covered by
+      # the fixture-catalog tests in this family; what this test pins is the
+      # op surface: update.run step=apply composes the LIVE catalog (no
+      # collector injection), takes the real apply lock, runs the chain, and
+      # reports the chain's failure — with the gate open, `not_graduated`
+      # can never be the answer.
+      #
+      # The frame budget and this test's ExUnit timeout are still a PAIR
+      # (request/3 applies the budget to the hello recv and to every drained
+      # frame): 30s wire under a 120s ExUnit ceiling leaves 4x margin for a
+      # saturated box.
+      state = Path.join([home | EngineState.state_components()])
+      File.mkdir_p!(Path.join([state, "journal", "pending"]))
+      File.chmod!(Path.join(state, "journal"), 0o700)
+
+      File.write!(Path.join([state, "journal", "pending", "ghost-attempt.json"]),
+        Jason.encode!(%{"generation" => String.duplicate("b", 64), "targets" => [".config/fixture/ghost"]})
+      )
+
+      ghost = Path.join(home, ".config/fixture/ghost")
+      File.mkdir_p!(Path.dirname(ghost))
+      File.write!(ghost, "ghost\n")
+
+      reply = request("update.run", %{"step" => "apply"}, 30_000)
       assert %{"ok" => false, "error" => %{"code" => "apply_failed"}} = reply
     end
 
