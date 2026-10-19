@@ -26,7 +26,7 @@ defmodule Workstation.CLI.DaemonVerbTest do
   use ExUnit.Case, async: false
 
   alias Workstation.CLI.{Control, DaemonClient, Router}
-  alias Workstation.Daemon.{Boot, Listener, Shutdown}
+  alias Workstation.Daemon.{Boot, Generation, Listener, Shutdown}
 
   # The client's spawn handshake budget: a daemon that binds later than
   # this makes every ensure-spawn fail with daemon_unavailable.
@@ -384,6 +384,50 @@ defmodule Workstation.CLI.DaemonVerbTest do
       assert DaemonClient.daemon_pid(nil, %{"stopping" => true}) == nil
       assert DaemonClient.daemon_pid(nil, %{"pid" => 0}) == nil
       assert DaemonClient.daemon_pid(nil, %{"pid" => -3}) == nil
+    end
+  end
+
+  describe "DaemonClient.verify_generation/2 (the ensure path's rendezvous check)" do
+    # The client's independent second read of the installed-release proof
+    # (`Workstation.Daemon.Generation`): a daemon advertising a generation
+    # the installed stamp disagrees with is refused with an actionable
+    # daemon_unavailable; an undecided home or a protocol-aged daemon
+    # (no `release` advertisement) skips. Pure pins — the wire half rides
+    # the daemon-side gate (Daemon.GenerationTest) and the resume child's
+    # health-check gate (Workstation.CLITest).
+
+    test "a stale advertisement is refused with both generations named" do
+      home = fresh_home()
+
+      on_exit(fn -> File.rm_rf!(home) end)
+      File.mkdir_p!(Path.dirname(Generation.stamp_path(home)))
+      File.write!(Generation.stamp_path(home), "installed-gen")
+
+      assert {:error, {:daemon_unavailable, message}} =
+               DaemonClient.verify_generation(%{"release" => "booted-gen"}, home)
+
+      assert message =~ "booted-gen"
+      assert message =~ "installed-gen"
+      assert message =~ "workstation daemon stop"
+    end
+
+    test "a fresh advertisement, an undecided home and an aged daemon skip" do
+      home = fresh_home()
+
+      on_exit(fn -> File.rm_rf!(home) end)
+      # No installed stamp — undecided, never a guess.
+      assert DaemonClient.verify_generation(%{"release" => "anything"}, home) == :ok
+
+      File.mkdir_p!(Path.dirname(Generation.stamp_path(home)))
+      File.write!(Generation.stamp_path(home), "installed-gen\n")
+      assert DaemonClient.verify_generation(%{"release" => "installed-gen"}, home) == :ok
+
+      # Protocol too old to advertise the generation: the check skips.
+      assert DaemonClient.verify_generation(%{}, home) == :ok
+    end
+
+    defp fresh_home do
+      Path.join(System.tmp_dir!(), "ws-verify-generation-#{System.unique_integer([:positive])}")
     end
   end
 

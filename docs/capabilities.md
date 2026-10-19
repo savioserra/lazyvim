@@ -416,7 +416,15 @@ P0. A handoff decision after the final step is a no-op (never an empty
 resume), and a failing resumed chain is echoed once, never retried. The
 TUI does not survive a rebuild: interactive operators re-run
 `workstation update`, which the refresh stamp makes a fast no-op rebuild
-path. See [installation and daily use](../README.md).
+path. Because the refresh rewrites the release ON DISK while daemon nodes
+may be spawning or surviving against the same tree, the rendezvous gate
+(`Workstation.Daemon.Generation`, docs/elixir.md) backs the handoff:
+every daemon node pins its own generation at boot, refuses to serve when
+the installed `.built-from` stamp proves it stale (`stale_generation` on
+the wire, then a graceful self-stop so the next client respawns the
+installed generation), and the `--resume-from` child health-checks its
+fresh daemon with one real read op through DaemonClient before the
+resumed chain — apply included — proceeds. See [installation and daily use](../README.md).
 
 The launcher shim (`workstation/bin/workstation`) resolves the checkout repo
 anchor — the mix umbrella root — for EVERY verb and

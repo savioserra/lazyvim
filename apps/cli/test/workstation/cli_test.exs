@@ -124,6 +124,43 @@ defmodule Workstation.CLITest do
       assert stderr =~ "error: no release binary at"
       assert stderr =~ "workstation bootstrap"
     end
+
+    # The release-handoff child's gate (the 2026-10-19 aurora fix): a
+    # --resume-from run health-checks the fresh daemon — one real read op
+    # through DaemonClient (`status.run`) — BEFORE the chain dispatches, so
+    # the apply step can never proceed on a node that is not serving. No
+    # daemon (and no installable release) exists in a mix env, so the gate
+    # fails closed with its own lead-in naming the transport refusal —
+    # never the chain's own error shape, and never a silent proceed.
+    test "update --resume-from health-checks the fresh daemon before the chain" do
+      {_root, home} = temp_test_root()
+
+      {result, stderr} =
+        capture_main_with_stderr([
+          "update",
+          "--headless",
+          "--resume-from",
+          "apply,sync,verify",
+          "--home",
+          home
+        ])
+
+      assert {:shutdown, 4} = result
+      assert stderr =~ "error: update health check failed"
+      assert stderr =~ "no release binary at"
+    end
+
+    # A normal (non-resume) update takes no health-check op: its daemon is
+    # proven by its own first op, and the failure surface stays the plain
+    # runner's.
+    test "a non-resume update runs no health-check op" do
+      {_root, home} = temp_test_root()
+
+      {result, stderr} = capture_main_with_stderr(["update", "--headless", "--home", home])
+
+      assert {:shutdown, 4} = result
+      refute stderr =~ "update health check failed"
+    end
   end
 
   # The live-read slices of this suite (canonical-json wire shape, status/diff

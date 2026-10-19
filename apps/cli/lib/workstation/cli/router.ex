@@ -497,7 +497,10 @@ defmodule Workstation.CLI.Router do
         # (the pending-stop marker), so a second request is a no-op and the
         # bounded wait simply observes the same shutdown.
         pre_replace_stop(home)
-        Plain.run(:update, destination: home, resume_from: result.options[:resume_from])
+
+        with :ok <- fresh_daemon_health_check(result.options[:resume_from], result, home) do
+          Plain.run(:update, destination: home, resume_from: result.options[:resume_from])
+        end
 
       usable_terminal?() ->
         pre_replace_stop(home)
@@ -685,6 +688,44 @@ defmodule Workstation.CLI.Router do
   end
 
   defp lifecycle_op(command), do: "#{command}.run"
+
+  # The release-handoff child's gate: a `--resume-from` run starts AFTER the
+  # daemon-side chain refreshed the installed release and the previous
+  # daemon stopped itself, so its first ensure-daemon spawn is the
+  # replacement generation's node — spawning only once the new release is
+  # fully staged (the installer's exit 0 gates the handoff). Before the
+  # chain dispatches — before apply proceeds — the lifecycle HEALTH-CHECKS
+  # that fresh daemon with one real read op through DaemonClient
+  # (`status.run`): the 2026-10-19 aurora incident was a node booted
+  # against mid-replacement release files that went on serving corrupt
+  # evaluations for every verb, apply included. A normal (non-resume)
+  # update skips the extra op — its daemon is proven by its own first op.
+  defp fresh_daemon_health_check(nil, _result, _home), do: :ok
+
+  defp fresh_daemon_health_check(_steps, result, _home) do
+    case DaemonClient.call("status.run", %{}, client_opts(result, @read_timeout_ms)) do
+      {:ok, _wire} ->
+        :ok
+
+      {:error, {tag, message}} when is_atom(tag) ->
+        fail(4, "error: update health check failed: #{tag}: #{message}")
+
+      {:error, message} when is_binary(message) ->
+        fail(4, "error: update health check failed: #{message}")
+
+      {:error, {"core", message}} when is_binary(message) ->
+        fail(3, "error: update health check failed: core evaluation failed: #{message}")
+
+      {:error, {"engine", message}} when is_binary(message) ->
+        fail(4, "error: update health check failed: #{format_engine_error(message)}")
+
+      {:error, {code, message}} when is_binary(code) and is_binary(message) ->
+        fail(client_exit(code), "error: update health check failed: #{code}: #{message}")
+
+      {:error, code, message} ->
+        fail(client_exit(code), "error: update health check failed: #{code}: #{message}")
+    end
+  end
 
   # The graceful pre-replace stop for the verbs that may replace the
   # installed release (bootstrap/apply/update): a live daemon drains, removes

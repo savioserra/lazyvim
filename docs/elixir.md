@@ -451,8 +451,16 @@ dead and are unlinked (after an owner/type re-check) and rebound.
 Wire format: 4-byte big-endian unsigned length + UTF-8 JSON;
 `{v:1,id,op,params}` answered by `{id,ok:true,result}` or
 `{id,ok:false,error:{code,message}}`; hello negotiates
-`workstation.daemon/1` (mismatch closes) and advertises the socket-auth
-proof of the running generation (`"proof": "peercred" | "dir-owner"`);
+`workstation.daemon/1` (mismatch closes), advertises the socket-auth
+proof of the running generation (`"proof": "peercred" | "dir-owner"`) and
+its pinned release generation (`"release"` — the rendezvous gate:
+`Workstation.Daemon.Generation` pins the `.built-from` stamp beside the
+node's own release root at boot, refuses a boot whose root stamp provably
+differs from the installed release's, and at every hello re-reads the
+installed stamp — a mismatch answers `stale_generation` and the daemon
+stops itself gracefully, so ensure-daemon respawns from the fully staged
+installed release; the client's ensure path verifies the same two facts
+independently, liveness and control paths deliberately skip it);
 caps — max request 1 MiB, max
 response 16 MiB, 5 s frame-completion timeout, 300 s inter-frame idle
 budget, 16-session ceiling, JSON depth ≤ 32; Zoi schemas are strict

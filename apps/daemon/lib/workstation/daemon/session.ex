@@ -62,7 +62,7 @@ defmodule Workstation.Daemon.Session do
   require Logger
 
   alias Workstation.Core.EngineState
-  alias Workstation.Daemon.{Capabilities, CapabilityRegistry, EventBus, Events, Protocol, Shutdown, TaskSupervisor}
+  alias Workstation.Daemon.{Capabilities, CapabilityRegistry, EventBus, Events, Generation, Protocol, Shutdown, TaskSupervisor}
 
   @enforce_keys [:sock, :sock_path, :peer_uid]
   defstruct [:sock, :sock_path, :peer_uid, :reader, inflight: nil, events: 0]
@@ -395,15 +395,43 @@ defmodule Workstation.Daemon.Session do
   end
 
   defp dispatch_hello(id, params, state) do
-    if Protocol.version_mismatch?(params) do
-      # Version mismatch closes without a reply: the peer expects a different
-      # daemon generation, so no frame we send could be meaningful to it.
-      EventBus.publish(:op, {:op_rejected, "version_mismatch"})
-      {:stop, :normal, state}
-    else
-      reply(state, id, CapabilityRegistry.capabilities())
-      EventBus.publish(:op, {:op_served, "hello"})
-      state
+    cond do
+      Protocol.version_mismatch?(params) ->
+        # Version mismatch closes without a reply: the peer expects a different
+        # daemon generation, so no frame we send could be meaningful to it.
+        EventBus.publish(:op, {:op_rejected, "version_mismatch"})
+        {:stop, :normal, state}
+
+      true ->
+        rendezvous(id, state)
+    end
+  end
+
+  # The rendezvous gate (`Workstation.Daemon.Generation`): a hello from a
+  # client is the moment this node must prove it serves the INSTALLED
+  # release. A readable installed stamp that differs from this node's
+  # pinned generation means the release changed (or landed) under the
+  # running code — the 2026-10-19 incident's corrupt-speaker state. The
+  # hello is refused with `stale_generation` (the reply flushes before the
+  # teardown: the stop's delay floor orders that) and the daemon schedules
+  # its graceful self-stop, so the client's ensure-daemon respawns a clean
+  # node from the fully staged installed release instead of every later
+  # verb failing until someone TERMs the beam. Undecided (no readable
+  # installed stamp — dev homes, fresh machines) serves normally.
+  defp rendezvous(id, state) do
+    case Generation.verdict() do
+      {:stale, own, installed} ->
+        message = Generation.refusal_message(own, installed)
+        Logger.error("daemon generation mismatch: serving #{inspect(own)}, installed #{inspect(installed)}; stopping")
+        reply(state, id, {"stale_generation", message})
+        EventBus.publish(:op, {:op_rejected, "stale_generation"})
+        :ok = Shutdown.stop_after("stale generation: serving #{inspect(own)}, installed #{inspect(installed)}")
+        state
+
+      _other ->
+        reply(state, id, CapabilityRegistry.capabilities())
+        EventBus.publish(:op, {:op_served, "hello"})
+        state
     end
   end
 
