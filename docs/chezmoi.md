@@ -41,7 +41,7 @@ Ids recorded before this canonical encoding are opaque and may all shift
 once; journal and staleness logic compare ids only against values produced
 by the same engine, so recorded ownership is unaffected.
 
-Shared shell startup files (`.profile`, `.bashrc`, `.zshrc`) compose from
+Shared shell startup files (`.profile`, `.bashrc`, `.bash_profile`, `.zshrc`) compose from
 individually owned fragments (`marker` + single-line literal `body`, explicit
 `order`). Removing a fragment removes exactly its recorded marker+body block
 and preserves unrelated text and other owners; an edited or duplicated owned

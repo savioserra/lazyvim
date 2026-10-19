@@ -226,6 +226,17 @@
       }
     },
     {
+      "provider": "shell",
+      "spec": {
+        "fragment": {
+          "body": "[ -r \"$HOME/.profile\" ] && . \"$HOME/.profile\"",
+          "id": "managed-profile",
+          "marker": "# chezmoi: load managed profile"
+        },
+        "target": ".bash_profile"
+      }
+    },
+    {
       "provider": "chezmoi",
       "spec": {
         "kind": "symlink",
