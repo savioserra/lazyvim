@@ -86,7 +86,61 @@ defmodule Workstation.Daemon.LifecycleChainTest do
       # The orchestration serialized through the SAME lock; it is released.
       refute File.exists?(ApplyOrchestrator.lock_path(EngineState.state_root()))
     end
+
+    test "refuses before evaluation when the installed release provably predates the checkout", %{
+      home: home
+    } do
+      # The 2026-10-19 incident's apply half: the stale generation evaluated
+      # the freshly pulled manifests and answered with a payload-contract
+      # error ("invalid download recipe for fonts") that named the wrong
+      # layer entirely. The skew is a RELEASE fault and must abort BEFORE
+      # any composition, naming the refresh instead.
+      File.mkdir_p!(stamp_path(home))
+      File.write!(Path.join(stamp_path(home), ".built-from"), "0000000000000000000000000000000000000000\n")
+
+      assert {:error, "apply_failed", message} =
+               Lifecycle.run_step("apply",
+                 home: home,
+                 engine_root: repo_root(),
+                 collector: fn -> flunk("a skewed release must not evaluate the source tree") end
+               )
+
+      assert message =~ "stale engine release, refresh the release"
+      assert message =~ "workstation bootstrap"
+      assert message =~ String.slice(repo_head(), 0, 7)
+    end
+
+    test "a release stamped at the checkout HEAD applies as before", %{home: home} do
+      generation = fixture_plan_generation(home)
+      install_fake_chezmoi(home, fixture_target(home))
+      File.mkdir_p!(stamp_path(home))
+      File.write!(Path.join(stamp_path(home), ".built-from"), repo_head() <> "\n")
+
+      assert {:ok, %{"generation" => ^generation}} =
+               Lifecycle.run_step("apply",
+                 home: home,
+                 engine_root: repo_root(),
+                 collector: fn -> {:ok, sandbox_catalog(home)} end
+               )
+    end
   end
+
+  # The repo root doubles as the engine anchor (same derivation as the
+  # handoff suite): engine_root resolution adopts the checkout's
+  # workstation/ payload child and build_anchor walks back to mix.exs.
+  defp repo_root, do: Path.expand("../../../../..", __DIR__)
+
+  defp repo_head do
+    {out, 0} =
+      System.cmd("git", ["-C", repo_root(), "rev-parse", "HEAD"],
+        stderr_to_stdout: true,
+        env: [{"GIT_CONFIG_NOSYSTEM", "1"}, {"GIT_CONFIG_GLOBAL", "/dev/null"}, {"GIT_CONFIG_SYSTEM", "/dev/null"}]
+      )
+
+    String.trim_trailing(out)
+  end
+
+  defp stamp_path(home), do: Path.join([home, ".local", "opt", "workstation"])
 
   # The 2026-10-14 aurora recovery: a killed beam (the pre-daemon.stop
   # cross-generation stop gap) left `<state_root>/apply.lock` behind, and the

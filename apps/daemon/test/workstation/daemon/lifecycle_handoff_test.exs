@@ -78,6 +78,81 @@ defmodule Workstation.Daemon.LifecycleHandoffTest do
              )
   end
 
+  test "a stale release without the build toolchain fails the refresh, naming the skew", %{home: home} do
+    # The 2026-10-19 incident: mise absent from the operator's PATH, the
+    # bootstrap stepped "ok" anyway, and apply then died on a misleading
+    # payload-contract error raised by the STALE release. The toolchain-less
+    # skip is honest only when there is nothing stale to rebuild.
+    File.mkdir_p!(Path.dirname(stamp_path(home)))
+    File.write!(stamp_path(home), "0000000000000000000000000000000000000000\n")
+
+    assert {:error, message} =
+             Lifecycle.release_refresh(engine_root: repo_root(), home: home, toolchain: nil,
+               installer: fn _a, _h -> flunk("a toolchain-less refresh must not run the installer") end
+             )
+
+    assert message =~ "stale engine release"
+    assert message =~ "mise is not on PATH"
+    assert message =~ String.slice(repo_head(), 0, 7)
+  end
+
+  test "a fresh release and a missing release skip honestly without the toolchain", %{home: home} do
+    # Fresh: the stamp already names the pulled HEAD — nothing to rebuild,
+    # so a toolchain-less host proceeds (the steady state on mise-less
+    # machines must keep bootstrapping).
+    File.mkdir_p!(Path.dirname(stamp_path(home)))
+    File.write!(stamp_path(home), repo_head() <> "\n")
+
+    assert {:ok, false} =
+             Lifecycle.release_refresh(engine_root: repo_root(), home: home, toolchain: nil,
+               installer: fn _a, _h -> flunk("a fresh release must not rebuild") end
+             )
+
+    # Missing: no source-built release installed — it manages its own
+    # acquisition and cannot be provably stale.
+    empty = Path.join(System.tmp_dir!(), "ws-toolchainless-#{System.unique_integer([:positive])}")
+    File.mkdir_p!(empty)
+    on_exit(fn -> File.rm_rf!(empty) end)
+
+    assert {:ok, false} =
+             Lifecycle.release_refresh(engine_root: repo_root(), home: empty, toolchain: nil,
+               installer: fn _a, _h -> flunk("a missing release must not rebuild without the toolchain") end
+             )
+  end
+
+  test "an installer that exits 0 without stamping the pulled HEAD fails the refresh", %{home: home} do
+    # Trust the stamp, never the flag: a zero exit is not evidence the
+    # release was rebuilt — the re-read stamp is.
+    File.mkdir_p!(Path.dirname(stamp_path(home)))
+    File.write!(stamp_path(home), "0000000000000000000000000000000000000000\n")
+
+    assert {:error, message} =
+             Lifecycle.release_refresh(engine_root: repo_root(), home: home,
+               installer: fn _a, _h -> {"pretended ok\n", 0} end
+             )
+
+    assert message =~ "stale engine release"
+    assert message =~ "trust the stamp"
+  end
+
+  test "a toolchain-less refresh of a stale release fails the CHAIN at bootstrap, never reaching apply",
+       %{home: home} do
+    File.mkdir_p!(Path.dirname(stamp_path(home)))
+    File.write!(stamp_path(home), "0000000000000000000000000000000000000000\n")
+
+    assert {:error, "bootstrap_failed", message} =
+             Lifecycle.run_chain(["bootstrap", "apply"], Workstation.Daemon.Events.new_ref(),
+               home: home,
+               engine_root: repo_root(),
+               toolchain: nil,
+               bootstrap_run: bootstrap_stub(),
+               installer: fn _a, _h -> flunk("the chain must fail before any installer runs") end
+             )
+
+    assert message =~ "stale engine release"
+    assert message =~ "mise is not on PATH"
+  end
+
   test "the production refresh passes the engine's derived pins to the installer as env", %{home: home} do
     # default_installer runs the checkout's own install-runtime.sh; the stub
     # records the NEOVIM_* env it received, proving the refresh rides the
@@ -296,6 +371,26 @@ defmodule Workstation.Daemon.LifecycleHandoffTest do
     # instead of finishing the chain under stale code; the successful
     # parent clears it (the plain runner pins that half).
     assert File.exists?(note_path(home))
+  end
+
+  test "the apply-time precheck cannot prove a skew without a buildable anchor", %{home: home} do
+    # A release-only install serves its own catalog: a valid ENGINE checkout
+    # that ships no buildable umbrella anchors no HEAD, so even a stale-looking
+    # stamp is not provable skew — the surfaces that applied before keep
+    # applying.
+    parent = Path.join(System.tmp_dir!(), "ws-anchorless-#{System.unique_integer([:positive])}")
+    anchorless = Path.join(parent, "workstation")
+    File.mkdir_p!(Path.join([anchorless, "bin"]))
+
+    File.cp!(Path.join([repo_root(), "workstation", "versions.json"]), Path.join([anchorless, "versions.json"]))
+    File.cp!(Path.join([repo_root(), "workstation", "bin", "workstation"]), Path.join([anchorless, "bin", "workstation"]))
+
+    on_exit(fn -> File.rm_rf!(parent) end)
+
+    File.mkdir_p!(Path.dirname(stamp_path(home)))
+    File.write!(stamp_path(home), "0000000000000000000000000000000000000000\n")
+
+    assert :ok = Lifecycle.release_generation_precheck(engine_root: anchorless, home: home)
   end
 
   test "release identity prefers the installer stamp over the path" do

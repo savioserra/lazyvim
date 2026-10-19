@@ -156,7 +156,7 @@ nvim
 
 | Package | Setup | Sync | Verify | Host support |
 | --- | --- | --- | --- | --- |
-| `foundation` | The CLI tools the editor surface consumes, each a checksum-gated download-contract archive pin at `.local/opt/<tool>` (ripgrep, fd, fzf, lazygit, tree-sitter, rainfrog — per-platform SHA-256 from `versions.json`; the `release` layout for rg/fd/fzf/tree-sitter/rainfrog, `flat` for lazygit's rootless tarball, `zip` for tree-sitter), each probe-gated (`<tool> --version` carries the pinned version) and surfaced on PATH by a `.local/bin/<tool>` link recipe; plus the mise binary pin, the managed mise fragment and the PATH fragments | — | `download-archive` journal records (probes re-run on claim and on verify) + the link records | All |
+| `foundation` | The CLI tools the editor surface consumes, each a checksum-gated download-contract archive pin at `.local/opt/<tool>` (ripgrep, fd, fzf, lazygit, tree-sitter, rainfrog — per-platform SHA-256 from `versions.json`; the `release` layout for rg/fd/fzf/tree-sitter/rainfrog, `flat` for lazygit's rootless tarball, `zip` for tree-sitter), each probe-gated (`<tool> --version` carries the pinned version) and surfaced on PATH by a `.local/bin/<tool>` link recipe; plus the mise binary pin, the managed mise fragment, the PATH fragments and the bash-login include fragment (`~/.bash_profile` sources the managed `~/.profile` — bash login shells read `~/.bash_profile` INSTEAD of `~/.profile` when it exists, so a pre-existing hand file can no longer shadow the engine PATH) | — | `download-archive` journal records (probes re-run on claim and on verify) + the link records | All |
 | `fonts` | Exact pinned JetBrainsMono Nerd Font tree via the download contract (tar.xz `flat` archive, SHA-256-gated; per-platform `targets`: linux `.local/share/fonts/JetBrainsMonoNerdFont`, darwin `Library/Fonts/JetBrainsMonoNerdFont`); the content probe pins `JetBrainsMonoNerdFont-Regular.ttf` bytes — a data tree with no executable to version; host cache/registration reads the provisioned directory | — | `download-archive` record (the content probe re-runs on claim and on verify) | All |
 | `node` | nvm via the download contract (pinned v0.40.4 tarball, exact tree at `.local/opt/nvm`, content probe pins `nvm.sh` bytes) then the pinned Node (tar.xz archive, exact tree at `.local/opt/nvm/versions/node/v<version>`, probe `bin/node --version` = `v{V}`) — declared parent-first so the nested target extracts into the provisioned nvm tree; the rc loader (`.config/shell/nvm.sh`) and `.node-version` recipes unchanged | — | `download-archive` records (both probes re-run on claim and on verify) + NVM and Node version | All |
 | `agent` | Hermes Agent provisioned full-stack: the pinned git recipe (`~/.hermes/hermes-agent` at the `hermes_agent_git_commit` pin), the pinned interpreter (`.local/opt/hermes/python` — a checksum-gated `hermes_python` archive pin, the same python-build-standalone release hermes-agent's own `pm/lock.json` carries at the pinned commit), the engine launcher (`.local/opt/hermes/bin/hermes` payload, resolved at run time) surfaced on PATH as `.local/bin/hermes`, and the managed skills at `~/.hermes/skills/secrets` (the retired `lazyvim` skill target carries a recorded-ownership removal tombstone) | — | `packages/agent/verify/hermes.sh` (resources + runtime on every host: checkout HEAD at the pin, managed skill file, pinned interpreter, launcher `--version` consumer smoke; read-only; full-stack or exit 1) | All |
@@ -387,7 +387,20 @@ same `bootstrap/install-runtime.sh` acquisition a fresh machine takes. The
 installer stamps every activated release with the source HEAD it built
 (`.built-from` beside the release); a stamp equal to the current checkout
 HEAD makes the refresh a no-op, so the update handoff terminates, and a
-failed build aborts the chain instead of continuing under stale code. A bare
+failed build aborts the chain instead of continuing under stale code. A
+refresh that cannot happen is a failure, never a skip: a release whose
+stamp provably differs from the pulled HEAD on a host without the `mise`
+toolchain aborts the bootstrap naming the skew (the 2026-10-19 incident —
+bootstrap "ok", then apply under a stale release dying on a misleading
+payload-contract error), and an installer that exits 0 without stamping
+the pulled HEAD is refused the same way — trust the stamp, never the exit
+status. The apply surfaces enforce the same rule at their own door: the
+update chain's apply step, `apply.run`, and the `apply.plan` confirmation
+refuse a provable stamp-vs-HEAD skew ("stale engine release, refresh the
+release") BEFORE evaluating, because a stale generation evaluating fresh
+manifests reads its failures as payload-contract errors; without a
+buildable checkout or a stamp there is nothing provable and nothing
+changes. A bare
 host (no checkout) keeps the runtime-only bootstrap contract — the update
 chain refreshes nothing engine-side there, and the designed engine-upgrade
 path is re-running the acquisition from a checkout (`workstation bootstrap`).

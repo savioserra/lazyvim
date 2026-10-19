@@ -26,7 +26,7 @@ defmodule Workstation.Daemon.Lifecycle do
   Options pass through to the core steps: `:home` (defaults to the daemon's
   pinned home), `:engine_root`, plus the test seams `:collector` (sandbox
   plan injection), `:installer`, `:bootstrap_run`, `:writer_identity`,
-  and `:release_identity`.
+  `:release_identity`, and `:toolchain` (the mise resolution).
   """
 
   alias Workstation.Core.{EngineState, Update}
@@ -388,7 +388,11 @@ defmodule Workstation.Daemon.Lifecycle do
     do: Path.join([state_root(home(opts)), "update", "handoff.json"])
 
   defp apply_current(opts) do
-    with {:ok, plan} <- composed_plan(opts) do
+    # Generation skew aborts BEFORE evaluation: composing the plan under a
+    # stale release is exactly where the misleading payload-contract errors
+    # come from (release_generation_precheck's doc names the incident).
+    with :ok <- release_generation_precheck(opts),
+         {:ok, plan} <- composed_plan(opts) do
       # guarded/3 calls the closure with the step opts (fun.(opts)) — the
       # 0-arity variant BadArity-crashed the live update chain exactly here
       # (apply ok, then the apply step died before the engine ran). The
@@ -429,24 +433,34 @@ defmodule Workstation.Daemon.Lifecycle do
   contract (docs/capabilities.md): the bootstrap step keeps the installed
   release from going stale after `pull`. Returns `{:ok, refreshed?}` where
   `refreshed?` is true only when the installer actually rebuilt and
-  activated a release, `{:error, output}` when the build failed — a failed
-  refresh aborts the chain instead of silently continuing under stale code.
+  activated a release, `{:error, message}` when the build failed OR the
+  stamp proves the release could not be brought up to the checkout — a
+  refresh that cannot happen aborts the chain instead of silently
+  continuing under stale code.
 
   Gating, in order: a release is refreshable only when the engine checkout
-  carries (or anchors) a buildable umbrella root, the platform is one
-  the launcher supports, and the `mise` toolchain is on PATH — anything
-  else skips honestly (a release installed without a checkout manages its
-  own acquisition; failing because a toolchain is absent is not an error).
-  When the installed release carries a `.built-from` stamp equal to the
-  checkout's current HEAD the refresh is a no-op: the on-disk release was
-  already built from the source this update just pulled, so rebuilding it
-  (and re-execing mid-chain) would be pure waste — this equality is also
-  what makes the update handoff terminate.
+  carries (or anchors) a buildable umbrella root and the platform is one
+  the launcher supports. The `mise` toolchain is then required — but a
+  toolchain-less host skips honestly ONLY when there is nothing stale: a
+  release whose stamp provably differs from the checkout's HEAD fails the
+  refresh with the skew named, because continuing would run apply under a
+  stale generation whose failures read as payload-contract errors (the
+  2026-10-19 "invalid download recipe for fonts" incident). A missing or
+  blank stamp (a release installed without a checkout manages its own
+  acquisition) and an unreadable HEAD cannot prove a skew and stay honest
+  skips. When the installed release carries a `.built-from` stamp equal to
+  the checkout's current HEAD the refresh is a no-op: the on-disk release
+  was already built from the source this update just pulled, so rebuilding
+  it (and re-execing mid-chain) would be pure waste — this equality is
+  also what makes the update handoff terminate. And the installer's exit
+  status is never the verdict: a refresh counts only when the re-read
+  stamp names the pulled HEAD ("trust the stamp, never the flag").
 
   `opts[:installer]` injects the installer invocation for tests (same
   `System.cmd` result shape); production runs the checkout's own
   `bootstrap/install-runtime.sh` — the exact acquisition path a fresh
-  machine takes.
+  machine takes. `opts[:toolchain]` injects the mise resolution for tests
+  (production: `System.find_executable/1`, the operator's PATH).
   """
   @spec release_refresh(keyword()) :: {:ok, boolean()} | {:error, String.t()}
   def release_refresh(opts) when is_list(opts) do
@@ -454,16 +468,62 @@ defmodule Workstation.Daemon.Lifecycle do
     home = home(opts)
 
     with {:ok, anchor} <- build_anchor(root),
-         {:ok, platform} <- platform(),
-         true <- toolchain?() do
-      if release_stale?(anchor, home) do
-        run_installer(opts, root, anchor, platform, home)
-      else
-        {:ok, false}
+         {:ok, platform} <- platform() do
+      cond do
+        not toolchain?(opts) ->
+          # The toolchain-less skip is honest only for a release that needs
+          # no rebuild; a provable skew is the 2026-10-19 incident's exact
+          # shape (bootstrap "ok", apply under a stale release).
+          case provable_skew(anchor, home) do
+            {:stale, stamp, head} -> {:error, unrebuildable_message(stamp, head)}
+            :fresh -> {:ok, false}
+          end
+
+        release_stale?(anchor, home) ->
+          with {:ok, true} <- run_installer(opts, root, anchor, platform, home) do
+            # Exit 0 is not evidence the release was rebuilt — the stamp is.
+            case provable_skew(anchor, home) do
+              {:stale, stamp, head} -> {:error, unrefreshed_message(stamp, head)}
+              :fresh -> {:ok, true}
+            end
+          end
+
+        true ->
+          {:ok, false}
       end
     else
       nil -> {:ok, false}
-      false -> {:ok, false}
+    end
+  end
+
+  @doc """
+  The apply-time generation precheck: refuse to evaluate when the release
+  serving the apply provably predates the checkout it would serve.
+
+  Generation skew is a RELEASE fault, not a payload fault: a stale
+  generation evaluating the freshly pulled manifests produces misleading
+  payload-contract errors (2026-10-19: "invalid download recipe for fonts"
+  was raised by an Oct-14 release that predated the `targets` map form the
+  fresh manifest validly uses). Every apply surface runs this BEFORE any
+  composition — the update chain's apply step, `apply.run`, and the
+  `apply.plan` confirmation — so the operator is sent to refresh the
+  release instead of debugging a manifest that is correct at HEAD.
+
+  The refusal needs proof on both sides: a resolvable buildable anchor
+  with a knowable HEAD, and a non-empty `.built-from` stamp that differs
+  from it. No engine checkout (a release-only install), an unreadable
+  HEAD, no stamp — nothing provable, `:ok`, exactly the surfaces that
+  were applyable before.
+  """
+  @spec release_generation_precheck(keyword()) :: :ok | {:error, String.t()}
+  def release_generation_precheck(opts) when is_list(opts) do
+    with {:ok, anchor} <- skew_anchor(opts) do
+      case provable_skew(anchor, home(opts)) do
+        {:stale, stamp, head} -> {:error, stale_release_message(stamp, head)}
+        :fresh -> :ok
+      end
+    else
+      nil -> :ok
     end
   end
 
@@ -504,7 +564,60 @@ defmodule Workstation.Daemon.Lifecycle do
     end
   end
 
-  defp toolchain?, do: System.find_executable("mise") != nil
+  defp toolchain?(opts),
+    do: Keyword.get(opts, :toolchain, System.find_executable("mise")) != nil
+
+  # The skew verdict the lifecycle trusts instead of any refresh flag: the
+  # installed release's `.built-from` stamp against the checkout's current
+  # HEAD. `{:stale, stamp, head}` only when BOTH sides are knowable and
+  # differ — a missing or blank stamp (no source-built provenance: the
+  # release manages its own acquisition) and an unreadable HEAD (checkout
+  # without git) cannot PROVE a skew and stay honest skips. A checkout that
+  # cannot answer rev-parse stays stale for the REBUILD decision
+  # (release_stale?/2 rebuilds conservatively) but never for a refusal.
+  defp provable_skew(anchor, home) do
+    head = checkout_head(anchor)
+
+    case release_stamp(home) do
+      {:ok, stamp} when is_binary(head) and stamp != head and stamp != "" ->
+        {:stale, stamp, head}
+
+      _other ->
+        :fresh
+    end
+  end
+
+  # The apply-side anchor: engine_root/1 raises when no engine checkout
+  # resolves anywhere — a release-only install has no source tree and must
+  # keep applying. The precheck reads that as "no HEAD knowable", never as
+  # a failure.
+  defp skew_anchor(opts) do
+    {:ok, engine_root(opts)}
+  rescue
+    ArgumentError -> nil
+  end
+
+  # Stamps are full SHAs; the operator message keeps the short form the
+  # incident report used, on both sides of the comparison.
+  defp short(ref), do: String.slice(ref, 0, 7)
+
+  defp unrebuildable_message(stamp, head) do
+    "stale engine release: the installed release was built from #{short(stamp)} " <>
+      "but the checkout is at #{short(head)}, and it cannot be rebuilt because " <>
+      "mise is not on PATH — put mise on PATH and re-run workstation update"
+  end
+
+  defp unrefreshed_message(stamp, head) do
+    "stale engine release: the installer exited 0 but the installed release " <>
+      "still reads built-from #{short(stamp)}, not the checkout's #{short(head)} — " <>
+      "trust the stamp, never the exit status"
+  end
+
+  defp stale_release_message(stamp, head) do
+    "stale engine release, refresh the release: the installed release was built " <>
+      "from #{short(stamp)} but the checkout is at #{short(head)} — run " <>
+      "workstation bootstrap to rebuild before applying"
+  end
 
   # Staleness vs the pulled HEAD: the installer stamps every activated
   # release with the source HEAD it built from; a release whose stamp is
@@ -602,6 +715,7 @@ defmodule Workstation.Daemon.Lifecycle do
       |> Keyword.delete(:bootstrap_run)
       |> Keyword.delete(:writer_identity)
       |> Keyword.delete(:release_identity)
+      |> Keyword.delete(:toolchain)
 
   # Daemon-side locking: requests QUEUE on the orchestrator mailbox (one
   # orchestrated generation for the whole daemon) before the file lock is

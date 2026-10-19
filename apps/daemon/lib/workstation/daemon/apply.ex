@@ -32,7 +32,7 @@ defmodule Workstation.Daemon.Apply do
 
   alias Workstation.Core.EngineState
   alias Workstation.Pipeline
-  alias Workstation.Daemon.{ApplyOrchestrator, Events, Read}
+  alias Workstation.Daemon.{ApplyOrchestrator, Events, Lifecycle, Read}
 
   @engine_apply_default true
 
@@ -70,9 +70,23 @@ defmodule Workstation.Daemon.Apply do
   def plan(opts \\ []) when is_list(opts) do
     home = opts[:home] || EngineState.home()
 
-    case Read.apply_plan(home, opts[:collector]) do
-      {:ok, wire} -> {:ok, wire}
-      {:error, {tag, message}} -> {:error, {Atom.to_string(tag), message}}
+    with :ok <- release_generation_gate(opts) do
+      case Read.apply_plan(home, opts[:collector]) do
+        {:ok, wire} -> {:ok, wire}
+        {:error, {tag, message}} -> {:error, {Atom.to_string(tag), message}}
+      end
+    else
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  # One spelling of the skew refusal for both apply surfaces: the engine
+  # message under this surface's code. A bare {:error, message} from the
+  # precheck never reaches the wire shapes uncoded.
+  defp release_generation_gate(opts) do
+    case Lifecycle.release_generation_precheck(opts) do
+      :ok -> :ok
+      {:error, message} -> {:error, {"apply_refused", message}}
     end
   end
 
@@ -86,7 +100,10 @@ defmodule Workstation.Daemon.Apply do
   tests (production never passes it and always composes the native live
   catalog) — and `:adopt`, the operator-gated adoption door core's
   preconditions honor for probe-verified un-owned targets (default false:
-  fail-closed).
+  fail-closed). The generation precheck
+  (`Workstation.Daemon.Lifecycle.release_generation_precheck/1`) refuses
+  under `apply_refused` before any composition when the installed release
+  provably predates the checkout.
   """
   @spec run(String.t(), keyword()) :: {:ok, map()} | {:error, {String.t(), String.t()}}
   def run(requested_generation, opts \\ []) when is_binary(requested_generation) and is_list(opts) do
@@ -99,7 +116,8 @@ defmodule Workstation.Daemon.Apply do
         Events.emit(op_ref, "run.started", %{"op" => "apply.run", "generation" => requested_generation})
 
     result =
-      with {:ok, plan} <- collect_plan(opts[:collector], home) do
+      with :ok <- release_generation_gate(opts),
+           {:ok, plan} <- collect_plan(opts[:collector], home) do
         execute_locked(plan, requested_generation, home, adopt)
       end
 

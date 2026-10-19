@@ -37,6 +37,38 @@ defmodule Workstation.Daemon.ApplyTest do
     %{home: home}
   end
 
+  describe "the generation precheck (apply.run and apply.plan)" do
+    test "apply.run refuses a provably stale release before any composition", %{home: home} do
+      Application.put_env(:daemon, :engine_apply, true)
+      stamp_stale_release!(home)
+
+      assert {:error, {"apply_refused", message}} =
+               Apply.run("any-generation",
+                 home: home,
+                 engine_root: repo_root(),
+                 collector: fn -> flunk("a skewed release must not evaluate the source tree") end
+               )
+
+      assert message =~ "stale engine release, refresh the release"
+    end
+
+    test "apply.plan refuses the same skew at the confirmation surface", %{home: home} do
+      stamp_stale_release!(home)
+
+      assert {:error, {"apply_refused", message}} =
+               Apply.plan(home: home, engine_root: repo_root(), collector: fn -> flunk("never evaluated") end)
+
+      assert message =~ "stale engine release, refresh the release"
+    end
+
+    test "an unstamped home (release-only install) plans as before", %{home: home} do
+      # No .built-from: no provable provenance, no refusal — the surfaces
+      # that applied before the precheck keep applying.
+      assert {:ok, _wire} =
+               Apply.plan(home: home, engine_root: repo_root(), collector: fn -> {:ok, sandbox_catalog(home)} end)
+    end
+  end
+
   describe "the graduation gate" do
     test "ships ON by default — the daemon is THE mutation engine" do
       Application.delete_env(:daemon, :engine_apply)
@@ -335,6 +367,18 @@ defmodule Workstation.Daemon.ApplyTest do
   end
 
   defp sandbox_catalog(home), do: Catalog.load(fixture_envelope(home))
+
+  # The generation-precheck fixtures: the repo root doubles as the engine
+  # anchor (engine_root resolution adopts the checkout's workstation/
+  # payload child and build_anchor walks back to mix.exs), and a stale
+  # release is a `.built-from` stamp that names no real HEAD.
+  defp repo_root, do: Path.expand("../../../../..", __DIR__)
+
+  defp stamp_stale_release!(home) do
+    stamp = Path.join([home, ".local", "opt", "workstation", ".built-from"])
+    File.mkdir_p!(Path.dirname(stamp))
+    File.write!(stamp, "0000000000000000000000000000000000000000\n")
+  end
 
   defp fixture_envelope(home) do
     %{
