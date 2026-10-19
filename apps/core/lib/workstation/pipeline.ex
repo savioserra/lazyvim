@@ -327,8 +327,9 @@ defmodule Workstation.Pipeline do
 
   # The pending attempt record lands BEFORE the effects fold: a crashed apply
   # must leave a recoverable anchor, and the record already carries every
-  # target the fold may touch — entries, downloads and the git retirements
-  # the plan activated against the journal.
+  # target the fold may touch — the plan's whole desired surface (the same
+  # list the preconditions' unresolved-attempt guard reconciles stale
+  # pending records against).
   defp anchor(%Workstation.Pipeline.Run{} = run) do
     plan = run.plan
 
@@ -337,16 +338,7 @@ defmodule Workstation.Pipeline do
       "at" => System.system_time(:second),
       "pid" => :os.getpid(),
       "entries" => length(plan.entries),
-      "targets" =>
-        Enum.map(plan.entries, & &1.target) ++
-          Enum.flat_map(plan.downloads, fn download ->
-            case download.target do
-              nil -> Map.values(download.targets || %{})
-              target -> [target]
-            end
-          end) ++
-          Enum.map(plan.git_retirements, & &1.target) ++
-          Mise.owned_targets_for(plan.mise)
+      "targets" => desired_targets(plan)
     })
 
     run
@@ -388,7 +380,10 @@ defmodule Workstation.Pipeline do
       end)
 
     Journal.record_applied(run.home, plan.generation, targets, plan.fragments_journal, plan.manifest, source_index(plan))
-    :ok = Journal.clear_pending(run.home)
+    # The completed apply retires the pending anchor: renamed under
+    # journal/retired/ (the evidence convention), never deleted — the
+    # evidence of what the interrupted fold touched is provenance.
+    :ok = Journal.retire_pending(run.home)
     run
   end
 
@@ -426,6 +421,28 @@ defmodule Workstation.Pipeline do
   # --- shape projections (string-keyed views the checks and the journal
   # read; the anchor's schema, verbatim) ---
 
+  # The plan's whole desired target surface, in the anchor's order: the
+  # backend entries plus the bootstrap-provisioned surface the fold
+  # re-produces (download pins, the git retirements the plan activated,
+  # contract-owned targets such as the managed-tool config, its PATH link
+  # and its state directory). The pending anchor records exactly this list,
+  # and the preconditions' unresolved-attempt guard consults it as
+  # `"desired"` — one surface shared by the writer and the guard, so a
+  # stale attempt's targets reconcile against precisely what the fold will
+  # produce (the 2026-10-19 convergence catch-22: a stale anchor listing
+  # only bootstrap-provisioned targets must never wedge every later apply).
+  defp desired_targets(%Source{} = plan) do
+    Enum.map(plan.entries, & &1.target) ++
+      Enum.flat_map(plan.downloads, fn download ->
+        case download.target do
+          nil -> Map.values(download.targets || %{})
+          target -> [target]
+        end
+      end) ++
+      Enum.map(plan.git_retirements, & &1.target) ++
+      Mise.owned_targets_for(plan.mise)
+  end
+
   # Preconditions bind to the string-keyed plan shape; this projection is the
   # executor's view of the in-process plan (the same fields the read side
   # projects to the wire, restricted to what the checks read). Shell
@@ -439,6 +456,7 @@ defmodule Workstation.Pipeline do
       "generation" => plan.generation,
       "journal_revision" => plan.journal_revision,
       "baseline_generation" => plan.baseline_generation,
+      "desired" => desired_targets(plan),
       "entries" =>
         Enum.map(plan.entries, fn entry ->
           %{

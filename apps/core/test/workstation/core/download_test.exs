@@ -233,6 +233,51 @@ defmodule Workstation.Core.DownloadTest do
       assert Journal.applied(Path.join([home | EngineState.state_components()]))["revision"] == 2
     end
 
+    test "a stale pending anchor on bootstrap-provisioned surface reconciles through the apply", %{home: home} do
+      # The 2026-10-19 convergence catch-22: an interrupted attempt's anchor
+      # listed engine-provisioned surface (a pinned download) that no backend
+      # entry ever declares. The next generation desires exactly that
+      # surface, so the anchor must not wedge the apply — the fold
+      # re-produces the target (byte-identical already: an idempotent
+      # no-op), the claim records ownership, and the anchor retires. The
+      # next successful apply is what clears the evidence.
+      install_fake_chezmoi(home)
+      {:ok, bytes} = fetch_payload()
+
+      stale = String.duplicate("79", 32)
+
+      Journal.write_pending(home, %{
+        "generation" => stale,
+        "at" => System.system_time(:second),
+        "pid" => :os.getpid(),
+        "entries" => 0,
+        "targets" => ["tools/downloaded/tool"]
+      })
+
+      # The interrupted attempt's own write: byte-identical to the pin.
+      path = Path.join(home, "tools/downloaded/tool")
+      File.mkdir_p!(Path.dirname(path))
+      File.write!(path, bytes)
+
+      fetch = fn url ->
+        if String.contains?(url, "/other/"), do: "#!/usr/bin/env sh\nexit 1\n", else: bytes
+      end
+
+      plan = plan_with_downloads()
+      assert Pipeline.execute(plan, %{"home" => home, "fetch" => fetch}) == plan.generation
+
+      # The plan's own claim owns the formerly stray target.
+      record = Journal.applied(Path.join([home | EngineState.state_components()]))
+      assert record["targets"]["tools/downloaded/tool"]["operation"] == "download"
+
+      # The anchor retired with the run — renamed, never deleted. Both the
+      # stale record and the run's own anchor are preserved there.
+      state_root = Path.join([home | EngineState.state_components()])
+      assert Journal.pending(state_root) == []
+      names = File.ls!(Path.join([state_root, "journal", "retired"]))
+      assert stale <> ".json" in names and plan.generation <> ".json" in names
+    end
+
     test "a refused download fails the whole apply fail-closed and leaves the pending anchor", %{home: home} do
       install_fake_chezmoi(home)
       plan = plan_with_downloads()

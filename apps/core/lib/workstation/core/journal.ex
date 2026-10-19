@@ -17,7 +17,9 @@ Writes are exclusive and atomic: every record lands through a same-directory
 `wx` temp file at 0600 renamed over the target, so a crashed write can never
 leave a torn journal entry, and every write path first repairs-and-verifies
 its guarded directory chain (0700, owned, no-follow). A failed backend run is
-recorded under `journal/failed/` — recovery from a partial apply is
+recorded under `journal/failed/`, and a completed apply retires the pending
+anchor under `journal/retired/` — renamed, never deleted, because attempt
+evidence is provenance — so recovery from a partial apply is
 conflict-aware through the journal, never a blind replay.
 """
 
@@ -218,30 +220,66 @@ conflict-aware through the journal, never a blind replay.
   end
 
   @doc """
-  Clear every pending attempt record. Names are asserted against the strict
-  `<hex>.json` shape first: an unexpected entry under `journal/pending/` is a
-  corruption signal, never something to sweep away.
+  Retire every pending attempt record into `journal/retired/`: each record
+  RENAMES under the evidence convention (sibling of `pending/` and
+  `failed/`) with its bytes preserved — a retired attempt is the evidence
+  of what the interrupted fold touched, never something to delete, and the
+  pending root empties so the next apply starts unanchored. Names are
+  asserted against the strict `<hex>.json` shape first: an unexpected entry
+  under `journal/pending/` is a corruption signal, never something to sweep
+  away. A collision in `retired/` (the same generation interrupted, retired,
+  then interrupted again) is disambiguated with the failed-record naming
+  (`<stem>-<time>-<seq>.json`), so retirement never overwrites evidence.
   """
-  @spec clear_pending(String.t()) :: :ok
-  def clear_pending(home) do
-    directory = Path.join([home | EngineState.state_components() ++ ["journal", "pending"]])
+  @spec retire_pending(String.t()) :: :ok
+  def retire_pending(home) do
+    pending = Path.join([home | EngineState.state_components() ++ ["journal", "pending"]])
 
-    case EngineState.lstat(directory) do
+    case EngineState.lstat(pending) do
       nil ->
         :ok
 
       %{type: "directory"} ->
-        Enum.each(File.ls!(directory), fn name ->
-          unless Regex.match?(~r/\A[0-9a-f]+\.json\z/, name),
-            do: raise(ArgumentError, "unexpected pending record name: #{name}")
+        case File.ls!(pending) do
+          [] ->
+            :ok
 
-          File.rm!(Path.join(directory, name))
-        end)
+          names ->
+            # Validate EVERY name before anything moves: an unexpected entry
+            # is a corruption signal, and the refusal must leave the tree
+            # exactly as it stood (no retired root created, nothing renamed).
+            Enum.each(names, fn name ->
+              unless Regex.match?(~r/\A[0-9a-f]+\.json\z/, name),
+                do: raise(ArgumentError, "unexpected pending record name: #{name}")
+            end)
 
-        :ok
+            retired = ensure_journal_directory!(home, "retired")
+
+            Enum.each(Enum.sort(names), fn name ->
+              rename_retired!(Path.join(pending, name), retired, name)
+            end)
+
+            :ok
+        end
 
       _other ->
         raise ArgumentError, "pending journal root is not a directory"
+    end
+  end
+
+  # Same-tree rename: atomic, bytes untouched. The strict name shape makes
+  # the destination collision-free per generation; the unique suffix only
+  # ever fires when the same generation was retired before and interrupted
+  # again.
+  defp rename_retired!(source, retired, name) do
+    destination = Path.join(retired, name)
+
+    if EngineState.lstat(destination) == nil do
+      File.rename!(source, destination)
+    else
+      stem = String.replace_trailing(name, ".json", "")
+      unique = "#{stem}-#{System.system_time(:second)}-#{System.unique_integer([:positive])}.json"
+      File.rename!(source, Path.join(retired, unique))
     end
   end
 

@@ -322,6 +322,11 @@ set (the full un-owned target list, computed before any mutation) with a
 per-target probe verdict, and `workstation apply --adopt` is the
 operator-gated door that adopts probe-verified un-owned targets —
 content identity is the law (docs/chezmoi.md, guarded-apply recovery).
+The stale pending-attempt guard reconciles against the plan's whole
+desired surface (bootstrap-provisioned targets included) and refuses
+once with the complete unreconciled set, each line naming its per-class
+recovery door; a completed apply retires the pending anchor under
+`journal/retired/`, renamed and preserved.
 The
 client's ensure-daemon spawns a daemon detached from the installed release
 when the socket is absent or dead (bounded handshake; `workstation daemon

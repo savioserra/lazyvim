@@ -23,9 +23,26 @@ defmodule Workstation.Core.Preconditions do
   converged host with many un-owned stragglers surfaces them in one apply,
   never one per cycle). Each conflict line keeps the exact single-conflict
   wording, so per-target greps and the verbatim wire render stay stable; a
-  lone conflict raises its legacy line alone. The journal-shape, stale-plan
-  and unresolved-attempt guards still refuse immediately: they are plan-level
-  invariants, not per-target conflicts.
+  lone conflict raises its legacy line alone. The journal-shape and
+  stale-plan guards still refuse immediately: they are plan-level
+  invariants, not per-target conflicts. The unresolved-attempt guard is a
+  plan-level invariant too, but it obeys the same full-set law: it collects
+  every unreconciled target of every stale pending record in one pass and
+  refuses ONCE (never one straggler per apply cycle), each line naming its
+  recovery door per class.
+
+  A stale attempt's targets reconcile as "desired" against the plan's WHOLE
+  mutation surface — the backend entries plus the bootstrap-provisioned
+  surface the fold re-produces (download pins, git retirements and
+  contract-owned targets such as a managed-tool config, its PATH link and
+  its state directory; the plan shape carries it as `"desired"`, the same
+  target list the pending anchor records). Bootstrap-provisioned targets
+  are never backend entries, so an entries-only desired test could never
+  resolve them and a stale pending record would wedge every later apply
+  forever — the guard would demand recovery of evidence only a successful
+  apply may clear (the 2026-10-19 convergence catch-22). Desired targets
+  need no recovery: the plan's own effects re-produce them, the claim
+  records their ownership, and the anchor retires with the run.
 
   Un-owned targets (backend-rendered state with no journal record) also carry
   a read-only probe verdict: whether the on-disk state is byte-identical to
@@ -53,12 +70,45 @@ defmodule Workstation.Core.Preconditions do
     "workstation apply conflict at #{entry["target"]} (owner #{Enum.join(entry["attribution"] || [], ",")}): #{message}"
   end
 
+  # ONE unresolved-attempt wording, shared by the lone refusal and every
+  # line of the aggregate: the stale generation, the target, the class
+  # door. The greppable prefix keeps the legacy wording; only the generic
+  # tail ("inspect the journal and recover explicitly") became the
+  # per-class recovery door.
+  defp unresolved_line({generation, target}) do
+    "workstation apply conflict: unresolved partial attempt for generation #{generation} " <>
+      "touched #{target}, which is neither recorded as owned nor desired (#{recovery_door(target)})"
+  end
+
+  # The recovery door per class. The engine-provisioned surface vocabulary
+  # is kernel data: the private state root (`EngineState.state_components`)
+  # and the engine-owned opt root (`.local/opt` — the bootstrap pins,
+  # download pins and provisioned toolchains live there). A stale target
+  # under either is bootstrap-provisioned surface no apply at this
+  # generation desires: the artifact is a stale provisioned artifact the
+  # operator removes explicitly, and the engine's own provisioning
+  # recreates it when a generation desires it again. Anything else is
+  # package payload: remove or back it up, then re-apply (the runbook's
+  # un-owned-recovery door).
+  defp recovery_door(target) do
+    cond do
+      is_within(target, Path.join(EngineState.state_components())) or is_within(target, ".local/opt") ->
+        "bootstrap-provisioned surface: remove the stale artifact explicitly — the guarded-apply recovery runbook"
+
+      true ->
+        "payload target: remove or back it up explicitly, then re-apply — the guarded-apply recovery runbook"
+    end
+  end
+
   @doc """
   Check every planned mutation against the actual home. `context` may pin
   `"home"`, the applied journal record (`"journal"`), `"pending"` records and
   the operator-gated adoption door (`"adopt"`) for tests; nil derives home,
-  journal and pending from the environment, exactly like the anchor. Returns
-  :ok or raises ArgumentError naming the complete conflict set.
+  journal and pending from the environment, exactly like the anchor. The
+  plan shape may carry `"desired"` — the whole mutation surface beyond the
+  entries (download pins, retirements, contract-owned targets), which the
+  unresolved-attempt guard reconciles stale pending targets against.
+  Returns :ok or raises ArgumentError naming the complete conflict set.
   """
   @spec check(map(), map() | nil) :: :ok
   def check(plan, context) do
@@ -96,23 +146,46 @@ defmodule Workstation.Core.Preconditions do
 
     # Unresolved partial attempts are never silently forgotten: when the
     # desired generation changed, any target the attempt touched that is
-    # neither proven owned (journal) nor still desired must be recovered
-    # explicitly before a new generation may apply.
-    Enum.each(pending, fn record ->
-      if record["generation"] != plan["generation"] do
-        Enum.each(record["targets"] || [], fn target ->
-          owned = journal && journal["targets"] && journal["targets"][target]
+    # neither proven owned (journal) nor desired by this plan must be
+    # recovered explicitly before a new generation may apply. "Desired" is
+    # the plan's whole mutation surface (entries plus the plan shape's
+    # `"desired"` list — see the moduledoc), so a stale attempt's
+    # bootstrap-provisioned targets reconcile through the plan's own fold
+    # instead of wedging it. ONE pass collects the COMPLETE unreconciled
+    # set across every stale pending record and the refusal names all of
+    # them at once, each line carrying its per-class recovery door.
+    desired =
+      MapSet.new(plan["entries"], & &1["target"])
+      |> MapSet.union(MapSet.new(plan["desired"] || []))
 
-          if owned == nil and not MapSet.member?(MapSet.new(plan["entries"], & &1["target"]), target) and
-               EngineState.lstat(EngineState.join_home(home, target)) != nil do
-            raise(ArgumentError,
-              "workstation apply conflict: unresolved partial attempt for generation #{record["generation"]} " <>
-                "touched #{target}, which is neither recorded as owned nor desired; inspect the journal and recover explicitly"
-            )
-          end
-        end)
-      end
-    end)
+    unreconciled =
+      pending
+      |> Enum.filter(fn record -> record["generation"] != plan["generation"] end)
+      |> Enum.flat_map(fn record -> Enum.map(record["targets"] || [], &{record["generation"], &1}) end)
+      |> Enum.uniq_by(fn {_generation, target} -> target end)
+      |> Enum.sort_by(fn {_generation, target} -> target end)
+      |> Enum.filter(fn {_generation, target} ->
+        owned = journal && journal["targets"] && journal["targets"][target]
+
+        owned == nil and not MapSet.member?(desired, target) and
+          EngineState.lstat(EngineState.join_home(home, target)) != nil
+      end)
+
+    case unreconciled do
+      [] ->
+        :ok
+
+      [one] ->
+        raise(ArgumentError, unresolved_line(one))
+
+      _many ->
+        raise(
+          ArgumentError,
+          "workstation apply refused: #{length(unreconciled)} unresolved partial attempt targets " <>
+            "(every stale pending record is reconciled in one pass; the full set is computed before any mutation):\n" <>
+            Enum.map_join(unreconciled, "\n", &unresolved_line/1)
+        )
+    end
 
     # Same-generation pending attempts are the plan's own writes: a pending
     # record whose generation equals the plan's proves that any on-disk drift

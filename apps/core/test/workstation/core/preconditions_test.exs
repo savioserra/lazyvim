@@ -94,8 +94,104 @@ defmodule Workstation.Core.PreconditionsTest do
     }
 
     assert_raise ArgumentError,
-                 ~r/unresolved partial attempt for generation .* touched orphan, which is neither recorded as owned nor desired/,
+                 ~r/unresolved partial attempt for generation .* touched orphan, which is neither recorded as owned nor desired \(payload target: remove or back it up explicitly, then re-apply/,
                  fn -> Preconditions.check(plan([]), context) end
+  end
+
+  test "every stale attempt's unreconciled targets refuse ONCE, each with its class door", %{home: home} do
+    # A payload straggler and a bootstrap-provisioned straggler from two
+    # different stale records: one pass collects both, one refusal names
+    # both — never one straggler per apply cycle.
+    File.write!(Path.join(home, "stray"), "leftover")
+
+    File.mkdir_p!(Path.join(home, ".local/opt/mise/2026.10.8/bin"))
+    File.write!(Path.join(home, ".local/opt/mise/2026.10.8/bin/mise"), "stale pinned binary")
+
+    context = %{
+      "home" => home,
+      "journal" => journal(),
+      "pending" => [
+        %{"generation" => String.duplicate("99", 32), "targets" => ["stray"]},
+        %{"generation" => String.duplicate("77", 32), "targets" => [".local/opt/mise/2026.10.8/bin/mise"]}
+      ]
+    }
+
+    error =
+      assert_raise ArgumentError, fn ->
+        Preconditions.check(plan([]), context)
+      end
+
+    message = Exception.message(error)
+    assert message =~ "2 unresolved partial attempt targets"
+    assert message =~ "the full set is computed before any mutation"
+    assert message =~ "touched stray, which is neither recorded as owned nor desired (payload target:"
+    assert message =~
+             "touched .local/opt/mise/2026.10.8/bin/mise, which is neither recorded as owned nor desired " <>
+               "(bootstrap-provisioned surface: remove the stale artifact explicitly"
+  end
+
+  test "a stale attempt whose targets are all bootstrap-provisioned but still desired does not block", %{home: home} do
+    # The 2026-10-19 convergence catch-22: the interrupted attempt touched
+    # only bootstrap-provisioned surface (the pinned download, the managed
+    # config, its PATH link, the state directory) — targets no backend entry
+    # ever declares. The next generation desires exactly that surface, so
+    # the guard reconciles it (the fold re-produces every target) instead of
+    # demanding recovery only a successful apply could perform.
+    for target <- [
+          ".local/opt/mise/2026.11.1/bin/mise",
+          ".config/mise/config.toml",
+          ".local/bin/mise",
+          ".local/state/workstation/mise"
+        ] do
+      path = Path.join(home, target)
+      File.mkdir_p!(Path.dirname(path))
+      File.write!(path, "half-applied")
+    end
+
+    context = %{
+      "home" => home,
+      "journal" => journal(),
+      "pending" => [
+        %{
+          "generation" => String.duplicate("79", 32),
+          "targets" => [
+            ".local/opt/mise/2026.11.1/bin/mise",
+            ".config/mise/config.toml",
+            ".local/bin/mise",
+            ".local/state/workstation/mise"
+          ]
+        }
+      ]
+    }
+
+    desired_surface = [
+      ".local/opt/mise/2026.11.1/bin/mise",
+      ".config/mise/config.toml",
+      ".local/bin/mise",
+      ".local/state/workstation/mise"
+    ]
+
+    assert Preconditions.check(
+             plan([], %{"desired" => desired_surface}),
+             context
+           ) == :ok
+  end
+
+  test "a stale attempt's engine-state straggler refuses once with the bootstrap-surface door", %{home: home} do
+    File.mkdir_p!(Path.join(home, ".local/state/workstation/mise"))
+    File.write!(Path.join(home, ".local/state/workstation/mise/cache"), "leftover")
+
+    context = %{
+      "home" => home,
+      "journal" => journal(),
+      "pending" => [
+        %{"generation" => String.duplicate("77", 32), "targets" => [".local/state/workstation/mise"]}
+      ]
+    }
+
+    assert_raise ArgumentError,
+                 ~r/touched \.local\/state\/workstation\/mise, which is neither recorded as owned nor desired \(bootstrap-provisioned surface:/,
+                 fn -> Preconditions.check(plan([], %{"desired" => [".local/opt/mise/2026.11.1/bin/mise"]}), context) end
   end
 
   test "targets of an old attempt that are still desired or owned do not block", %{home: home} do

@@ -65,7 +65,7 @@ checkout or Git:
 | `apply.lock` | Fail-closed per-target operation lock (0600, owner metadata + parseable holder pid) |
 | `apply.lock.audit` | Append-only JSONL record of stale-lock takeovers |
 | `journal/applied.json` | Last successful generation, owned target fingerprints, fragment records |
-| `journal/pending/`, `journal/failed/` | Attempt evidence; no automatic garbage collection |
+| `journal/pending/`, `journal/failed/`, `journal/retired/` | Attempt evidence; no automatic garbage collection (a completed apply retires the pending anchor into `retired/` — renamed, never deleted) |
 
 Read-only commands (`status`, `plan`, `diff`) may create the private
 engine-state root and journal directory on first use; that incidental creation
@@ -86,9 +86,18 @@ updated only after backend success; a failed attempt preserves pending/failed
 evidence and requires conflict-aware recovery. Retrying the same desired
 generation converges idempotently: a pending record whose generation equals
 the plan's excuses exactly its touched targets from the owned-fingerprint
-check, because their on-disk state is that interrupted attempt's own writes;
-pending records of any other generation still guard, and no recovery step
-clears the pending/failed evidence — the next successful apply does.
+check, because their on-disk state is that interrupted attempt's own writes.
+Pending records of any other generation still guard — but the guard
+reconciles against the plan's WHOLE desired surface, never just backend
+entries: bootstrap-provisioned targets (pinned downloads, the managed-tool
+config, its PATH link, the engine state directory) that the next generation
+still desires reconcile through that apply's own fold instead of wedging it
+forever — the guard must never demand recovery that only a successful apply
+can perform. What remains unreconciled is refused ONCE, every stale target
+in one report, each line naming its recovery door per class
+(bootstrap-provisioned surface vs payload target). No recovery step deletes
+the pending/failed evidence — the next successful apply retires it under
+`journal/retired/`, renamed and preserved.
 
 Preconditions stop before backend mutation:
 
@@ -178,6 +187,14 @@ documented recovery. Never disable preconditions to force an apply.
   remaining set with probe verdicts: adopt the verified copies with
   `--adopt` or remove them, and rerun until the apply completes; the
   successful run records everything.
+- **Partial apply with a pending anchor** ("unresolved partial attempt for
+  generation …"): the anchor names every target the interrupted fold may
+  touch. The next apply reconciles everything its own desired surface still
+  covers — bootstrap-provisioned surface included — and refuses once, all
+  remaining targets together, each with its class door: under the engine's
+  provisioned surface (the state root or the opt root), remove the stale
+  artifact explicitly; a payload target, remove or back it up and re-apply.
+  The successful apply retires the anchor into `journal/retired/`.
 
 An error that reads like code you cannot find in the source names a **stale
 speaker**, not a source bug: `grep -rn "<exact error string>" elixir/` — an
@@ -252,10 +269,10 @@ platform gates.
    `workstation diff`, then approve real apply, sync and verify separately.
    First apply onto a home with existing differing unrecorded whole files
    intentionally conflicts instead of overwriting: inspect and explicitly back
-   up or remove such files. Only real-account apply may retire the identified
+   back up or remove such files. Only real-account apply may retire the identified
    owned legacy service before file removal.
 5. On failure stop. Preserve logs, checkouts/backups and the engine journal
-   (`~/.local/state/workstation`), including pending/failed evidence. To roll
+   (`~/.local/state/workstation`), including pending/failed/retired evidence. To roll
    back the launcher, inspect its current target and replace **only that
    approved link** with the recorded previous target. Restore approved legacy
    paths from their backups only into absent destinations after checking for

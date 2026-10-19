@@ -125,8 +125,23 @@ defmodule Workstation.Core.PipelineRunTest do
                }
              }
 
-      # The pending attempt record was cleared after the success.
-      assert Journal.pending(Path.join([home | EngineState.state_components()])) == []
+      # The pending attempt record was retired after the success: renamed
+      # under journal/retired/ (evidence preserved, never deleted) and the
+      # pending root is empty again.
+      state_root = Path.join([home | EngineState.state_components()])
+      assert Journal.pending(state_root) == []
+
+      retired_dir = Path.join([state_root, "journal", "retired"])
+      [retired_name] = File.ls!(retired_dir)
+      assert retired_name == generation <> ".json"
+
+      retired =
+        Path.join([retired_dir, retired_name])
+        |> File.read!()
+        |> Jason.decode!()
+
+      assert retired["generation"] == generation
+      assert ".config/tooling/rc" in retired["targets"]
     end
 
     test "an empty catalog plan records an object-shaped journal and a second apply succeeds", %{home: home} do
@@ -175,6 +190,8 @@ defmodule Workstation.Core.PipelineRunTest do
       assert mode_of(state_root) == 0o700
       assert mode_of(Path.join(state_root, "generations")) == 0o700
       assert mode_of(Path.join(state_root, "journal")) == 0o700
+      assert mode_of(Path.join([state_root, "journal", "retired"])) == 0o700
+      assert mode_of(Path.join([state_root, "journal", "retired", plan.generation <> ".json"])) == 0o600
       assert mode_of(Path.join([state_root, "journal", "applied.json"])) == 0o600
     end
 
@@ -308,7 +325,7 @@ defmodule Workstation.Core.PipelineRunTest do
       state_root = Path.join([home | EngineState.state_components()])
       # The journal record precedes the post-apply self-check (the ownership
       # claim is the journal; the generation damage is a separate corruption
-      # signal), and the pending record was cleared by the completed
+      # signal), and the pending anchor was retired by the completed
       # pipeline before verification ran.
       assert Journal.applied(state_root)["generation"] == plan.generation
       assert Journal.pending(state_root) == []
@@ -325,6 +342,76 @@ defmodule Workstation.Core.PipelineRunTest do
       state_root = Path.join([home | EngineState.state_components()])
       assert Journal.applied(state_root) == nil
       assert File.ls!(Path.join(state_root, "generations")) == []
+    end
+  end
+
+  describe "pending anchor retirement" do
+    test "retire renames every pending record into journal/retired and never deletes evidence", %{home: home} do
+      state_root = Path.join([home | EngineState.state_components()])
+      generation = String.duplicate("ab", 32)
+
+      :ok =
+        Journal.write_pending(home, %{
+          "generation" => generation,
+          "at" => System.system_time(:second),
+          "pid" => :os.getpid(),
+          "entries" => 1,
+          "targets" => [".config/rc"]
+        })
+
+      assert Journal.retire_pending(home) == :ok
+
+      # The pending root is empty and the record lives on under retired/,
+      # byte-preserved: evidence of what the interrupted fold touched.
+      assert Journal.pending(state_root) == []
+      retired_dir = Path.join([state_root, "journal", "retired"])
+      assert File.ls!(retired_dir) == [generation <> ".json"]
+
+      retired =
+        Path.join([retired_dir, generation <> ".json"])
+        |> File.read!()
+        |> Jason.decode!()
+
+      assert retired["generation"] == generation
+      assert retired["targets"] == [".config/rc"]
+
+      # A second interrupted attempt of the SAME generation (retired once,
+      # interrupted again) is disambiguated, never overwritten: both records
+      # survive under retired/.
+      :ok =
+        Journal.write_pending(home, %{
+          "generation" => generation,
+          "at" => System.system_time(:second),
+          "pid" => :os.getpid(),
+          "entries" => 1,
+          "targets" => [".config/rc"]
+        })
+
+      assert Journal.retire_pending(home) == :ok
+      names = File.ls!(retired_dir)
+      assert length(names) == 2 and generation <> ".json" in names
+      assert Journal.pending(state_root) == []
+    end
+
+    test "retire without pending evidence is a no-op that creates nothing", %{home: home} do
+      state_root = Path.join([home | EngineState.state_components()])
+
+      assert Journal.retire_pending(home) == :ok
+      refute File.dir?(Path.join([state_root, "journal", "retired"]))
+    end
+
+    test "an unexpected pending record name is a corruption signal, never swept away", %{home: home} do
+      state_root = Path.join([home | EngineState.state_components()])
+      pending_dir = Path.join([state_root, "journal", "pending"])
+      File.mkdir_p!(pending_dir)
+      File.write!(Path.join(pending_dir, "hand-edit.json"), "{}")
+
+      assert_raise ArgumentError, ~r/unexpected pending record name: hand-edit.json/, fn ->
+        Journal.retire_pending(home)
+      end
+
+      assert File.ls!(pending_dir) == ["hand-edit.json"]
+      refute File.dir?(Path.join([state_root, "journal", "retired"]))
     end
   end
 
