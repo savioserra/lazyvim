@@ -202,6 +202,45 @@ defmodule Workstation.Core.PipelineRunTest do
              }
     end
 
+    test "the operator-gated adopt door records ownership for probe-verified targets", %{home: home} do
+      # The existing-host shape (the 2026-10-19 aurora incident class): the
+      # journal predates this generation, and the disk carries an honest
+      # hand install byte-identical to what the plan renders.
+      plan = build_plan()
+      target = Path.join(home, ".config/tooling/rc")
+      File.mkdir_p!(Path.dirname(target))
+      File.write!(target, "export A=1\n")
+      File.chmod!(target, 0o644)
+
+      # Without the gate: ONE refusal naming the orphan with its probe
+      # verdict — fail-closed, nothing staged, nothing applied.
+      error =
+        assert_raise ArgumentError, fn ->
+          Pipeline.execute(plan, %{"home" => home})
+        end
+
+      message = Exception.message(error)
+      assert message =~ "workstation apply conflict at .config/tooling/rc (owner tooling)"
+      assert message =~ "probe: the on-disk state matches what the plan renders"
+      assert message =~ "workstation apply --adopt"
+      assert Journal.applied(Path.join([home | EngineState.state_components()])) == nil
+
+      # With the gate: the apply proceeds green and the claim step records
+      # ownership of the adopted target like any other.
+      install_fake_chezmoi(home, deploy_instructions(home, plan))
+      generation = Pipeline.execute(plan, %{"home" => home, "adopt" => true})
+
+      assert generation == plan.generation
+
+      record = Journal.applied(Path.join([home | EngineState.state_components()]))
+      assert record["generation"] == generation
+      assert record["targets"][".config/tooling/rc"]["sha256"] == Digest.sha256("export A=1\n")
+
+      # The adoption converged: the re-applied identical generation is an
+      # idempotent no-op — no door needed once the record exists.
+      assert Pipeline.execute(plan, %{"home" => home}) == plan.generation
+    end
+
     test "the real chezmoi binary applies the generation end to end when it is on PATH", %{home: home} do
       install_real_chezmoi(home)
 

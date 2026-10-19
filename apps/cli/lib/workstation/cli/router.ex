@@ -155,7 +155,15 @@ defmodule Workstation.CLI.Router do
           name: "apply",
           about: "apply the current desired state (TUI by default; --headless for plain)",
           options: lifecycle_options(),
-          flags: [headless: [long: "--headless", help: "force the non-interactive plain runner"]]
+          flags: [
+            headless: [long: "--headless", help: "force the non-interactive plain runner"],
+            adopt: [
+              long: "--adopt",
+              help:
+                "operator-gated adoption: the refusal reports the full un-owned set with probe verdicts; " <>
+                  "probe-verified targets are adopted (content-identity law: engine state wins the cutover)"
+            ]
+          ]
         ],
         update: [
           name: "update",
@@ -457,6 +465,7 @@ defmodule Workstation.CLI.Router do
 
   defp dispatch(:apply, result, _mode) do
     home = resolve_home(result)
+    adopt = result.flags[:adopt] == true
 
     # The terminal gate precedes any engine work: a run that cannot proceed
     # interactively must fail with the terminal contract error, not an
@@ -466,14 +475,14 @@ defmodule Workstation.CLI.Router do
         pre_replace_stop(home)
 
         with {:ok, plan} <- apply_plan(result) do
-          Plain.run(:apply, destination: home, plan: plan)
+          Plain.run(:apply, destination: home, plan: plan, adopt: adopt)
         end
 
       usable_terminal?() ->
         pre_replace_stop(home)
 
         with {:ok, plan} <- apply_plan(result) do
-          run_tui(Apply, destination: home, plan: plan)
+          run_tui(Apply, destination: home, plan: plan, adopt: adopt)
         end
 
       true ->

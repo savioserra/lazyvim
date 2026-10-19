@@ -121,7 +121,9 @@ defmodule Workstation.CLITest do
       {result, stderr} = capture_main_with_stderr(["bootstrap", "--home", home])
 
       assert {:shutdown, 4} = result
-      assert stderr =~ "error: no release binary at"
+      # The spawn refusal is transport-tagged (daemon_unavailable) since
+      # ensure honors its own contract; the operator message is the truth.
+      assert stderr =~ "error: daemon_unavailable: no release binary at"
       assert stderr =~ "workstation bootstrap"
     end
 

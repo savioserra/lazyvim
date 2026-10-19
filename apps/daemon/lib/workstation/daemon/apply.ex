@@ -81,15 +81,18 @@ defmodule Workstation.Daemon.Apply do
   apply lock. Returns the applied generation record or a protocol
   error tuple; lock contention maps to the orchestrator's `locked` report.
 
-  Options: `:home` (defaults to the target home) and `:collector` — a
+  Options: `:home` (defaults to the target home), `:collector` — a
   zero-arity callable returning `{:ok, %Catalog{}}` for SANDBOX catalogs in
-  tests; production never passes it and always composes the native live
-  catalog.
+  tests (production never passes it and always composes the native live
+  catalog) — and `:adopt`, the operator-gated adoption door core's
+  preconditions honor for probe-verified un-owned targets (default false:
+  fail-closed).
   """
   @spec run(String.t(), keyword()) :: {:ok, map()} | {:error, {String.t(), String.t()}}
   def run(requested_generation, opts \\ []) when is_binary(requested_generation) and is_list(opts) do
     home = opts[:home] || EngineState.home()
     op_ref = opts[:op_ref]
+    adopt = Keyword.get(opts, :adopt, false)
 
     if op_ref,
       do:
@@ -97,7 +100,7 @@ defmodule Workstation.Daemon.Apply do
 
     result =
       with {:ok, plan} <- collect_plan(opts[:collector], home) do
-        execute_locked(plan, requested_generation, home)
+        execute_locked(plan, requested_generation, home, adopt)
       end
 
     case result do
@@ -131,7 +134,7 @@ defmodule Workstation.Daemon.Apply do
     end
   end
 
-  defp execute_locked(plan, requested_generation, home) do
+  defp execute_locked(plan, requested_generation, home, adopt) do
     # The lock fun runs in the ORCHESTRATOR process: a raise here would kill
     # that GenServer (socket death for every session) — the same failure mode
     # Workstation.Daemon.Lifecycle.guarded/3 guards on the update chain.
@@ -141,7 +144,13 @@ defmodule Workstation.Daemon.Apply do
     result =
       ApplyOrchestrator.with_lock("apply.run generation=#{requested_generation}", fn ->
         guarded(fn ->
-          generation = Pipeline.execute(plan, %{"home" => home, "requested_generation" => requested_generation})
+          generation =
+            Pipeline.execute(plan, %{
+              "home" => home,
+              "requested_generation" => requested_generation,
+              "adopt" => adopt
+            })
+
           {:ok, %{"generation" => generation}}
         end)
       end)

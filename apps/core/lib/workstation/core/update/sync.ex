@@ -44,7 +44,9 @@ defmodule Workstation.Core.Update.Sync do
         raise(
           ArgumentError,
           "sync: reconciliation failed: the live source plans generation #{inspect(generation)} " <>
-            "but the journal holds applied generation #{inspect(applied["generation"])}; re-run apply"
+            "but the journal holds applied generation #{inspect(applied["generation"])}; re-run apply " <>
+            "(its refusal reports the full conflict set when un-owned targets drive the divergence; " <>
+            "probe-verified copies adopt through the operator-gated `workstation apply --adopt`)"
         )
 
     {:ok, %{"step" => "sync", "status" => "ok", "generation" => generation, "revision" => applied["revision"]}}

@@ -53,7 +53,12 @@ defmodule Workstation.CLI.Plain do
 
     case command do
       :apply ->
-        run_apply(destination, Keyword.fetch!(opts, :plan), Keyword.get(opts, :executor, &Executor.apply_executor/1))
+        run_apply(
+          destination,
+          Keyword.fetch!(opts, :plan),
+          Keyword.get(opts, :executor, &Executor.apply_executor/1),
+          Keyword.get(opts, :adopt, false)
+        )
 
       :update ->
         # The WIRE executor: run_update needs the op record (the handoff
@@ -65,14 +70,18 @@ defmodule Workstation.CLI.Plain do
 
   def run(command, _opts), do: fail(2, "error: unknown command #{inspect(command)}")
 
-  defp run_apply(destination, plan, executor) do
+  defp run_apply(destination, plan, executor, adopt) do
     entries = Apply.entries_from_plan(plan)
     generation = Map.fetch!(plan, "generation")
 
     IO.puts("Apply to #{destination} (generation #{generation})")
     Enum.each(entries, &IO.puts("  #{&1["operation"]}  #{&1["target"]}"))
 
-    case executor.(%{"generation" => generation, "entries" => entries}) do
+    request =
+      %{"generation" => generation, "entries" => entries}
+      |> then(fn request -> if adopt, do: Map.put(request, "adopt", true), else: request end)
+
+    case executor.(request) do
       :ok ->
         # Same 10-tick shape as the TUI Progress: one contract, two renderers.
         Enum.each(1..10, fn tick ->

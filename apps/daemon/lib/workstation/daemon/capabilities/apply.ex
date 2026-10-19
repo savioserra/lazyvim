@@ -29,7 +29,11 @@ defmodule Workstation.Daemon.Capabilities.Apply do
   @apply_run_params_schema Zoi.object(
                              %{
                                "generation" => Zoi.string(min_length: 1),
-                               "entries" => Zoi.array(Zoi.map(Zoi.string(), Zoi.string()))
+                               "entries" => Zoi.array(Zoi.map(Zoi.string(), Zoi.string())),
+                               # Operator-gated adoption door (core's probe-verified
+                               # un-owned targets): an absent key is the fail-closed
+                               # default; only an explicit true opens the door.
+                               "adopt" => Zoi.optional(Zoi.boolean())
                              },
                              unrecognized_keys: :error
                            )
@@ -53,9 +57,9 @@ defmodule Workstation.Daemon.Capabilities.Apply do
   end
 
   @impl true
-  def handle(@apply_run_op, %{"generation" => generation}, ctx) do
+  def handle(@apply_run_op, %{"generation" => generation} = params, ctx) do
     if Workstation.Daemon.Apply.enabled?() do
-      Workstation.Daemon.Apply.run(generation, op_ref: Capability.op_ref(ctx))
+      Workstation.Daemon.Apply.run(generation, adopt: params["adopt"] == true, op_ref: Capability.op_ref(ctx))
     else
       lifecycle_op("apply.run generation=#{generation}")
     end

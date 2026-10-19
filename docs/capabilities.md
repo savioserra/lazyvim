@@ -317,7 +317,12 @@ when a declared removal activates (first convergence after a state
 change). Confirming against the composition the daemon executes keeps the
 stale-plan guard a true freshness comparison: it refuses a world that
 changed between the confirmation and the locked run, never that
-structural divergence. The
+structural divergence. The apply refusal reports the COMPLETE conflict
+set (the full un-owned target list, computed before any mutation) with a
+per-target probe verdict, and `workstation apply --adopt` is the
+operator-gated door that adopts probe-verified un-owned targets —
+content identity is the law (docs/chezmoi.md, guarded-apply recovery).
+The
 client's ensure-daemon spawns a daemon detached from the installed release
 when the socket is absent or dead (bounded handshake; `workstation daemon
 stop` retires it manually); there is no in-process fallback — a missing

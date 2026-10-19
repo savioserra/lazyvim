@@ -29,15 +29,21 @@ defmodule Workstation.CLI.TUI.Executor do
   sink — a `(daemon event map) -> any` callback receiving the op's live
   progress stream); the generation rides to the daemon as the requested
   generation, so a confirm applies exactly the state the operator saw or
-  refuses as stale.
+  refuses as stale. The optional `"adopt"` key (the operator-gated
+  `--adopt` door) forwards to the daemon's apply op; without it the wire
+  params stay exactly as before.
   """
   @spec apply_executor(map()) :: :ok | {:error, String.t()}
   def apply_executor(%{"generation" => generation, "entries" => entries} = request)
       when is_binary(generation) and is_list(entries) do
+    params =
+      %{"generation" => generation, "entries" => entries}
+      |> then(fn params -> if request["adopt"] == true, do: Map.put(params, "adopt", true), else: params end)
+
     fold(
       DaemonClient.call(
         "apply.run",
-        %{"generation" => generation, "entries" => entries},
+        params,
         on_event: events_pipe(request),
         timeout_ms: @lifecycle_timeout_ms
       )

@@ -253,6 +253,21 @@ defmodule Workstation.CLI.DaemonVerbTest do
     refute Process.whereis(Workstation.Daemon.Supervisor)
   end
 
+  test "ensure wraps the spawner's plain refusal in the tagged daemon_unavailable tuple", %{home: home} do
+    # The spawner's refusals are plain messages ("no release binary at ...",
+    # "daemon spawn failed (exit N)"), but ensure's contract — and every
+    # consumer's case clauses, the plain update runner's included — speak
+    # the tagged tuple. A bare passthrough here surfaced as a CaseClauseError
+    # on the update arm exactly when no daemon could be spawned.
+    result =
+      DaemonClient.ensure(
+        home: home,
+        spawner: fn _home, _sock_path, _env -> {:error, "no release binary at nowhere"} end
+      )
+
+    assert {:error, {:daemon_unavailable, "no release binary at nowhere"}} = result
+  end
+
   test "a failed tree start returns the child's reason instead of EXITing the caller",
        %{home: home} do
     # The daemon dir is a dangling symlink: the Listener child cannot create

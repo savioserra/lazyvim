@@ -80,6 +80,9 @@ defmodule Workstation.CLI.TUI.Apply do
     :update_hint,
     :tui_caller,
     :toast_ms,
+    # The operator-gated adoption door (`workstation apply --adopt`): the
+    # confirm request carries it to the daemon's apply op verbatim.
+    adopt: false,
     # The typed-confirm gate's input buffer (dialog phase only; spec §2.3).
     typed: ""
   ]
@@ -103,6 +106,7 @@ defmodule Workstation.CLI.TUI.Apply do
           update_hint: UpdateHint.hint() | nil,
           tui_caller: pid() | nil,
           toast_ms: pos_integer(),
+          adopt: boolean(),
           typed: String.t()
         }
 
@@ -191,7 +195,8 @@ defmodule Workstation.CLI.TUI.Apply do
       check: Keyword.get(opts, :check, &Executor.update_check_executor/0),
       update_hint: nil,
       tui_caller: Keyword.get(opts, :tui_caller),
-      toast_ms: Keyword.get(opts, :toast_ms, 5_000)
+      toast_ms: Keyword.get(opts, :toast_ms, 5_000),
+      adopt: Keyword.get(opts, :adopt, false)
     }
 
     # Screen-open effect: one asynchronous availability check (silent
@@ -464,11 +469,13 @@ defmodule Workstation.CLI.TUI.Apply do
     ref = make_ref()
     runtime = self()
 
-    request = %{
-      "generation" => state.generation,
-      "entries" => state.entries,
-      "events" => fn event -> Runtime.send_message(runtime, {:apply_event, ref, event}) end
-    }
+    request =
+      %{
+        "generation" => state.generation,
+        "entries" => state.entries,
+        "events" => fn event -> Runtime.send_message(runtime, {:apply_event, ref, event}) end
+      }
+      |> then(fn request -> if state.adopt, do: Map.put(request, "adopt", true), else: request end)
 
     command =
       Command.async(fn -> state.executor.(request) end, fn

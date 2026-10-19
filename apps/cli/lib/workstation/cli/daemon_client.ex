@@ -69,8 +69,14 @@ defmodule Workstation.CLI.DaemonClient do
         {:ok, sock}
 
       :unavailable ->
-        with :ok <- spawn_daemon(home, sock_path, opts) do
-          await_handshake(sock_path, home, opts, now_ms() + spawn_wait(opts))
+        # The spawner's refusal is a plain message; the ensure contract (and
+        # every consumer's case clauses) speak the tagged daemon_unavailable
+        # tuple — a bare passthrough here was a CaseClauseError on the
+        # update arm for the exact "no release binary in a mix env" shape
+        # the bootstrap arm already fixed.
+        case spawn_daemon(home, sock_path, opts) do
+          :ok -> await_handshake(sock_path, home, opts, now_ms() + spawn_wait(opts))
+          {:error, message} when is_binary(message) -> {:error, {:daemon_unavailable, message}}
         end
 
       {:error, {:daemon_unavailable, _}} = error ->

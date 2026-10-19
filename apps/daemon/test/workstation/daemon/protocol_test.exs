@@ -191,6 +191,12 @@ defmodule Workstation.Daemon.ProtocolTest do
       assert {:ok, %{"generation" => "g1"}} =
                Protocol.decode_params("apply.run", %{"generation" => "g1", "entries" => []})
 
+      assert {:ok, %{"generation" => "g1", "adopt" => true}} =
+               Protocol.decode_params("apply.run", %{"generation" => "g1", "entries" => [], "adopt" => true})
+
+      assert {:error, {"invalid_params", _}} =
+               Protocol.decode_params("apply.run", %{"generation" => "g1", "adopt" => "yes"})
+
       assert {:error, {"invalid_params", _}} = Protocol.decode_params("apply.run", %{"generation" => ""})
     end
   end

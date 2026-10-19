@@ -354,6 +354,132 @@ defmodule Workstation.Core.PreconditionsTest do
     end
   end
 
+  test "the refusal carries the COMPLETE un-owned set in one failure", %{home: home} do
+    # Three un-owned stragglers across two packages: the operating contract
+    # computes the full set before anything is touched, so ONE apply names
+    # all of them — never one per collect/apply cycle.
+    File.mkdir_p!(Path.join(home, ".config"))
+
+    Enum.each([".config/a", ".config/b", ".config/c", "stray"], fn target ->
+      File.write!(Path.join(home, target), "mystery")
+    end)
+
+    context = %{"home" => home, "journal" => journal(), "pending" => []}
+
+    entries = [
+      entry(%{"target" => ".config/a", "source_name" => "dot_config/a", "attribution" => ["tooling"]}),
+      entry(%{"target" => ".config/b", "source_name" => "dot_config/b", "attribution" => ["tooling"]}),
+      entry(%{"target" => ".config/c", "source_name" => "dot_config/c", "attribution" => ["other"]})
+    ]
+
+    error =
+      assert_raise ArgumentError, fn ->
+        Preconditions.check(plan(entries, %{"removals" => [%{"owner" => "x", "target" => "stray"}]}), context)
+      end
+
+    message = Exception.message(error)
+    assert message =~ ~r/workstation apply refused: 4 target conflicts/
+    assert message =~ "the full set is computed before any mutation"
+    # Every line keeps the exact single-conflict wording, so per-target
+    # greps and the verbatim wire render stay stable.
+    Enum.each([".config/a", ".config/b", ".config/c"], fn target ->
+      assert message =~ "workstation apply conflict at #{target} (owner "
+      assert message =~ "backend-rendered target exists without an owned record"
+    end)
+
+    assert message =~ "removal of stray conflicts: it exists but was never recorded as owned"
+  end
+
+  test "the probe verdict rides the plain refusal: matching orphans point at the adopt door", %{home: home} do
+    # An honest hand install: byte-identical to what the plan renders.
+    File.mkdir_p!(Path.join(home, ".config"))
+    File.write!(Path.join(home, ".config/rc"), "x")
+    File.chmod!(Path.join(home, ".config/rc"), 0o644)
+    context = %{"home" => home, "journal" => journal(), "pending" => []}
+
+    error = assert_raise ArgumentError, fn -> Preconditions.check(plan([entry(%{})]), context) end
+    assert Exception.message(error) =~ "probe: the on-disk state matches what the plan renders"
+    assert Exception.message(error) =~ "workstation apply --adopt"
+  end
+
+  test "the operator-gated adopt door adopts probe-verified targets and refuses the rest", %{home: home} do
+    # Verified: byte- and mode-identical to the plan's rendered target.
+    File.mkdir_p!(Path.join(home, ".config"))
+    File.write!(Path.join(home, ".config/rc"), "x")
+    File.chmod!(Path.join(home, ".config/rc"), 0o644)
+
+    # Foreign: same target path semantics, different bytes.
+    File.write!(Path.join(home, ".config/other"), "hand edit")
+
+    context = %{
+      "home" => home,
+      "journal" => journal(),
+      "pending" => [],
+      "adopt" => true
+    }
+
+    verified = entry(%{})
+    foreign = entry(%{"target" => ".config/other", "source_name" => "dot_config/other", "bytes" => "engine bytes"})
+
+    # The probe-verified target passes; the differing one still conflicts,
+    # fail-closed, with the reason named.
+    error =
+      assert_raise ArgumentError, fn ->
+        Preconditions.check(plan([verified, foreign]), context)
+      end
+
+    refute Exception.message(error) =~ ".config/rc"
+    assert Exception.message(error) =~ "workstation apply conflict at .config/other (owner tooling)"
+    assert Exception.message(error) =~ "probe: on-disk content differs from the rendered bytes"
+  end
+
+  test "adopt probes a symlink target by its rendered link value", %{home: home} do
+    File.mkdir_p!(Path.join(home, ".local/bin"))
+    File.ln_s!("../opt/tool/bin/tool", Path.join(home, ".local/bin/tool"))
+
+    link =
+      entry(%{
+        "target" => ".local/bin/tool",
+        "source_name" => "dot_local/bin/tool",
+        "type" => "link",
+        "mode" => nil,
+        "bytes" => "../opt/tool/bin/tool",
+        "link" => "../opt/tool/bin/tool"
+      })
+
+    # Without the gate the honest copy still conflicts (with the verdict).
+    plain = assert_raise ArgumentError, fn -> Preconditions.check(plan([link]), %{"home" => home, "journal" => journal(), "pending" => []}) end
+    assert Exception.message(plain) =~ "probe: the on-disk state matches what the plan renders"
+
+    assert Preconditions.check(plan([link]), %{"home" => home, "journal" => journal(), "pending" => [], "adopt" => true}) == :ok
+
+    # A foreign link target is never adopted.
+    File.rm!(Path.join(home, ".local/bin/tool"))
+    File.ln_s!("somewhere-else", Path.join(home, ".local/bin/tool"))
+
+    error =
+      assert_raise ArgumentError, fn ->
+        Preconditions.check(plan([link]), %{"home" => home, "journal" => journal(), "pending" => [], "adopt" => true})
+      end
+
+    assert Exception.message(error) =~ "probe: on-disk link is somewhere-else, the plan renders ../opt/tool/bin/tool"
+  end
+
+  test "template entries are probe-unverifiable and never adopted", %{home: home} do
+    File.mkdir_p!(Path.join(home, ".config"))
+    File.write!(Path.join(home, ".config/rc"), "rendered by the backend")
+    context = %{"home" => home, "journal" => journal(), "pending" => [], "adopt" => true}
+
+    # bytes here are the template SOURCE, not the rendered form: no
+    # byte-identity verdict can exist before the backend renders.
+    template = entry(%{"template" => true, "bytes" => "{{ profile }} rc"})
+
+    error = assert_raise ArgumentError, fn -> Preconditions.check(plan([template]), context) end
+
+    assert Exception.message(error) =~ "probe: not verifiable before the backend renders"
+    assert Exception.message(error) =~ "the entry renders through the backend template pass"
+  end
+
   test "removals never adopt unrecorded targets and never remove changed state", %{home: home} do
     File.write!(Path.join(home, "mystery"), "never journaled")
 

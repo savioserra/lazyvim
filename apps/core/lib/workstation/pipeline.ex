@@ -190,7 +190,11 @@ defmodule Workstation.Pipeline do
   turning a client that asks for a different generation than the built plan
   into the same stale-plan refusal as any other divergence), the optional
   `"fetch"` (injected download fetch, tests) and the optional `"mise"`
-  (injected mise runner, tests). Raises `ArgumentError` on stale
+  (injected mise runner, tests). The optional `"adopt"` opens the
+  operator-gated adoption door: un-owned targets whose on-disk state the
+  probe verifies byte-identical to the rendered plan are adopted (the
+  apply's claim step records their ownership), everything else still
+  conflicts. Raises `ArgumentError` on stale
   plans, conflicts, effect failures and invariant violations.
   """
   @spec execute(Source.t(), map()) :: String.t()
@@ -307,7 +311,11 @@ defmodule Workstation.Pipeline do
                 "#{inspect(run.plan.generation)}; rebuild the plan"
     end
 
-    Preconditions.check(precondition_plan(run.plan), %{"home" => run.home})
+    Preconditions.check(
+      precondition_plan(run.plan),
+      %{"home" => run.home, "adopt" => run.opts["adopt"] == true}
+    )
+
     run
   end
 
@@ -422,7 +430,10 @@ defmodule Workstation.Pipeline do
   # executor's view of the in-process plan (the same fields the read side
   # projects to the wire, restricted to what the checks read). Shell
   # fragments are projected id/marker/body because the precondition checks
-  # (and the shared-target validator) read exactly those string keys.
+  # (and the shared-target validator) read exactly those string keys. The
+  # rendered-identity fields (bytes/link/mode/template) feed the un-owned
+  # target probe: bytes travel only for entries the backend does not
+  # template-render, whose on-disk state a probe can verify verbatim.
   defp precondition_plan(plan) do
     %{
       "generation" => plan.generation,
@@ -436,7 +447,11 @@ defmodule Workstation.Pipeline do
             "type" => entry.type,
             "attribution" => Map.get(entry, :attribution) || [entry.owner],
             "exact" => Map.get(entry, :exact),
-            "fragments" => fragments_view(Map.get(entry, :fragments))
+            "fragments" => fragments_view(Map.get(entry, :fragments)),
+            "mode" => Map.get(entry, :mode),
+            "link" => Map.get(entry, :link),
+            "bytes" => probe_bytes(entry),
+            "template" => if(Map.get(entry, :template) == true, do: true)
           }
           |> Enum.reject(fn {_key, value} -> is_nil(value) end)
           |> Map.new()
@@ -447,6 +462,12 @@ defmodule Workstation.Pipeline do
         end)
     }
   end
+
+  # Template source bytes are not the rendered target: a template entry is
+  # probe-unverifiable by construction, so its source never rides the
+  # precondition view as if it were identity.
+  defp probe_bytes(%{template: true}), do: nil
+  defp probe_bytes(entry), do: Map.get(entry, :bytes)
 
   # The reverse-lookup index: which generated source name owns which target,
   # with the attribution and attributes a recovery decision needs.

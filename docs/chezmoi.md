@@ -146,24 +146,38 @@ any file deletion; scratch targets never contact the live user manager (see
 ## Guarded-apply recovery
 
 Apply refusals on hosts with hand-made or out-of-band changes are the guarded
-cutover doing its job: each refusal names the target, and each has one
+cutover doing its job: one refusal names the COMPLETE conflict set (every
+package, every target — the full set is computed before anything is
+refused), each line carrying a read-only `probe:` verdict, and each has one
 documented recovery. Never disable preconditions to force an apply.
 
-- **Hand-edited owned target** ("target changed since the last successful
-  apply", "exists without an owned record"): compare the target's bytes
-  against the payload/landed content it should carry. Identical or honestly
-  superseded → remove the target and re-apply; the engine recreates it and
-  records ownership. Verify content identity BEFORE handing the file to the
+- **Un-owned declared target** ("exists without an owned record"): the
+  `probe:` verdict tells whether the on-disk state matches what the plan
+  renders. Matching → the operator-gated adoption door
+  (`workstation apply --adopt`) adopts probe-verified targets (the apply's
+  journal claim records their ownership) and proceeds green; the engine
+  state wins the cutover. Differing, or `not verifiable` (template entries
+  render only inside the backend): compare the target's bytes against the
+  payload/landed content it should carry. Identical or honestly superseded
+  → remove the target and re-apply; the engine recreates it and records
+  ownership. Verify content identity BEFORE handing the file to the
   engine; the engine state, not the hand edit, wins the cutover.
+- **Hand-edited owned target** ("target changed since the last successful
+  apply"): compare the target's bytes against the payload/landed content it
+  should carry. Identical or honestly superseded → remove the target and
+  re-apply; the engine recreates it and records ownership. Verify content
+  identity BEFORE handing the file to the engine; the engine state, not the
+  hand edit, wins the cutover.
 - **Journal vs chezmoi boltdb split-brain** (chezmoi refuses "changed since
   chezmoi last wrote it" after targets were removed or rewritten out of
   band): move `~/.config/chezmoi/chezmoistate.boltdb` aside (keep the
   `.bak-*` copy) and re-apply — a fresh boltdb re-applies the full source
   state, and converged targets are rewritten byte-identical.
 - **Partial apply without a stamp**: an apply that wrote targets and then
-  failed leaves them written-but-unowned, and each rerun surfaces the next
-  one. Keep removing the surfaced target and rerunning until the apply
-  completes; the successful run records everything.
+  failed leaves them written-but-unowned. One rerun surfaces the full
+  remaining set with probe verdicts: adopt the verified copies with
+  `--adopt` or remove them, and rerun until the apply completes; the
+  successful run records everything.
 
 An error that reads like code you cannot find in the source names a **stale
 speaker**, not a source bug: `grep -rn "<exact error string>" elixir/` — an
