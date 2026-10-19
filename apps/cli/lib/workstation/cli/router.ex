@@ -27,6 +27,13 @@ defmodule Workstation.CLI.Router do
   `workstation daemon stop` stops a running daemon (the manual stop path —
   nothing stops a daemon behind the operator's back).
 
+  `-h/--help` is a global flag: every subcommand answers it with its usage
+  and exit 0 BEFORE any dispatch — a help request never resolves a home,
+  checks a terminal, stops a daemon, or runs the verb (the 2026-10-19
+  aurora incident: `bootstrap --help` ran a real provisioning pass on a
+  release that silently ignored the flag). Unknown flags are a usage error
+  (exit 2) — never silently ignored on a mutating verb.
+
   `--home` selects the destination home (default: `$WORKSTATION_HOME`, else
   `$HOME` — the launcher shim rebases both to the same destination, so verbs
   address the intended home either way). The daemon serves exactly the home
@@ -65,13 +72,25 @@ defmodule Workstation.CLI.Router do
   def main(argv) do
     case Optimus.parse(parser(), argv) do
       {:ok, result} ->
-        dispatch_from_result(result)
+        if help_requested?(result) do
+          print_help([])
+        else
+          dispatch_from_result(result)
+        end
 
       {:ok, [:json, command], result} ->
-        dispatch(command, result, json: true)
+        if help_requested?(result) do
+          print_help([:json, command])
+        else
+          dispatch(command, result, json: true)
+        end
 
       {:ok, [command], result} ->
-        dispatch(command, result, json: false)
+        if help_requested?(result) do
+          print_help([command])
+        else
+          dispatch(command, result, json: false)
+        end
 
       {:error, errors} ->
         fail(2, format_errors(errors))
@@ -83,10 +102,10 @@ defmodule Workstation.CLI.Router do
         {:ok, IO.puts("workstation #{Application.spec(:cli, :vsn) || "0.0.0"}")}
 
       :help ->
-        {:ok, IO.puts(Optimus.help(parser()))}
+        print_help([])
 
-      {:help, _path} ->
-        {:ok, IO.puts(Optimus.help(parser()))}
+      {:help, subcommand_path} ->
+        print_help(subcommand_path)
     end
   end
 
@@ -100,6 +119,21 @@ defmodule Workstation.CLI.Router do
       description: "workstation engine front end: read verbs report, lifecycle verbs mutate.",
       allow_unknown_args: false,
       parse_double_dash: true,
+      # The global help flag: Optimus merges a `global` flag into EVERY
+      # subcommand (hidden from their help), so `-h/--help` parses on any
+      # invocation and the dispatch gate answers it before the verb runs —
+      # without it, the flag landed in unknown-args (a usage error where it
+      # was silently ignored on releases pre fail-closed: the aurora
+      # `bootstrap --help` execution) or was swallowed by a positional
+      # (the daemon ACTION).
+      flags: [
+        help: [
+          short: "-h",
+          long: "--help",
+          help: "print the invoking command's usage and exit",
+          global: true
+        ]
+      ],
       # Bare-verb (TUI shell) options: the boot dashboard layout pin.
       options: shell_options(),
       subcommands: [
@@ -288,6 +322,31 @@ defmodule Workstation.CLI.Router do
           "engine checkout for bootstrap/update (default: $WORKSTATION_ENGINE_REPO, else detection)"
       ]
     ]
+  end
+
+  ## help contract
+
+  # The dispatch gate: `-h/--help` on ANY invocation prints the invoking
+  # command's usage and exits 0. The gate runs before EVERY side effect —
+  # home resolution, the terminal gate, the pre-replace daemon stop, the
+  # foreground daemon boot — so a help request can never provision, apply,
+  # update, or park a daemon.
+  defp help_requested?(result), do: result.flags[:help] == true
+
+  defp print_help([]), do: {:ok, IO.puts(Optimus.help(parser()))}
+
+  defp print_help(subcommand_path) do
+    lines = Optimus.Help.help(parser(), subcommand_path, help_columns())
+    {:ok, IO.puts(Enum.join(lines, "\n"))}
+  end
+
+  # Optimus's own width probe (parse!/3 uses the same 80-column fallback);
+  # piped/non-tty stdout renders at the fallback width.
+  defp help_columns do
+    case Optimus.Term.width() do
+      {:ok, width} -> width
+      _other -> 80
+    end
   end
 
   ## dispatch

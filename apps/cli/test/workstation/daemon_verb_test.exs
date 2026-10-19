@@ -253,6 +253,44 @@ defmodule Workstation.CLI.DaemonVerbTest do
     refute Process.whereis(Workstation.Daemon.Supervisor)
   end
 
+  # The help contract at the mutating bare verb: the ACTION positional used
+  # to swallow `-h/--help` and route the invocation into the boot arm (or,
+  # today, the unknown-action refusal). The dispatch gate must answer the
+  # help request with usage and exit 0 BEFORE any verb work — the refuted
+  # socket and supervisor below prove a leaked invocation would have been
+  # the one place a help request could park this process forever.
+  test "daemon --help, daemon -h, and daemon stop --help print usage, exit 0, and never boot",
+       %{home: home} do
+    for argv <- [["daemon", "--help"], ["daemon", "-h"], ["daemon", "stop", "--help"]] do
+      {result, stdout, stderr} = run_main_capturing_output(argv)
+
+      assert :ok = result, "expected #{inspect(argv)} to exit 0"
+      assert stdout =~ "USAGE:", "expected #{inspect(argv)} to print usage"
+      assert stdout =~ "workstation daemon"
+      assert stderr == "", "expected #{inspect(argv)} to execute nothing"
+
+      refute File.exists?(Listener.socket_path(home))
+      refute Process.whereis(Workstation.Daemon.Supervisor)
+    end
+  end
+
+  test "an unknown daemon flag is fail-closed (exit 2) and never boots", %{home: home} do
+    socket_path = Listener.socket_path(home)
+
+    # The ACTION positional swallows flag-shaped tokens (Optimus parses
+    # them as positionals when no flag matches), so the unknown-action
+    # refusal IS the usage error surface for the bare verb — exit 2, never
+    # a boot and never a silent ignore.
+    {result, _stdout, stderr} = run_main_capturing_output(["daemon", "--bogus"])
+
+    assert {:shutdown, 2} = result
+    assert stderr =~ "unknown daemon action"
+
+    Process.sleep(200)
+    refute File.exists?(socket_path)
+    refute Process.whereis(Workstation.Daemon.Supervisor)
+  end
+
   test "ensure wraps the spawner's plain refusal in the tagged daemon_unavailable tuple", %{home: home} do
     # The spawner's refusals are plain messages ("no release binary at ...",
     # "daemon spawn failed (exit N)"), but ensure's contract — and every

@@ -165,6 +165,86 @@ defmodule Workstation.CLITest do
     end
   end
 
+  describe "subcommand help contract" do
+    # Regression (2026-10-19 aurora): `workstation bootstrap --help` ran a
+    # REAL bootstrap — the deployed release silently ignored the unknown
+    # flag and executed the verb. Optimus intercepts a bare-argv --help
+    # only, so the Router owns the rest: the global -h/--help flag parses
+    # on every subcommand and the dispatch gate prints usage and exits 0
+    # before ANY verb work (no home resolution, no terminal gate, no
+    # pre-replace daemon stop). `daemon` is pinned in DaemonVerbTest,
+    # where the env fixture makes the never-boots refutation hermetic.
+
+    @help_verbs [
+      "status",
+      "plan",
+      "diff",
+      "capabilities",
+      # The mutating verbs — the incident class: a help request here used
+      # to be able to provision, apply, or update a real home.
+      "bootstrap",
+      "apply",
+      "update",
+      "sync",
+      "verify",
+      "pull"
+    ]
+
+    test "every subcommand answers --help and -h with usage, exit 0, and no execution" do
+      for verb <- @help_verbs, flag <- ["--help", "-h"] do
+        {_root, home} = temp_test_root()
+
+        {result, stdout, stderr} = capture_main_both([verb, flag, "--home", home])
+
+        assert :ok = result, "expected #{verb} #{flag} to exit 0"
+        assert stdout =~ "USAGE:", "expected #{verb} #{flag} to print usage"
+        assert stdout =~ "workstation #{verb}", "expected #{verb}-specific usage"
+
+        # No side effect observable: a verb that leaked past the gate
+        # cannot stay silent in this environment (no daemon, no terminal) —
+        # it would exit 1/2/4 with a refusal line on stderr.
+        assert stderr == "", "expected #{verb} #{flag} to execute nothing"
+      end
+    end
+
+    test "apply --help documents the verb's own flags" do
+      {_root, home} = temp_test_root()
+
+      {result, stdout, _stderr} = capture_main_both(["apply", "--help", "--home", home])
+
+      assert :ok = result
+      assert stdout =~ "--headless"
+      assert stdout =~ "--adopt"
+    end
+
+    test "help <verb> prints that verb's usage (not the top-level help)" do
+      {result, stdout, stderr} = capture_main_both(["help", "bootstrap"])
+
+      assert :ok = result
+      assert stdout =~ "USAGE:"
+      assert stdout =~ "workstation bootstrap"
+      assert stderr == ""
+    end
+
+    # The fail-closed half of the contract: an unknown flag on a mutating
+    # verb is a usage error (exit 2), never a silently ignored flag that
+    # lets the verb run.
+    test "an unknown flag on apply is a usage error and executes nothing" do
+      {_root, home} = temp_test_root()
+
+      {result, stderr} =
+        capture_main_with_stderr(["apply", "--bogus", "--headless", "--home", home])
+
+      assert {:shutdown, 2} = result
+      assert stderr =~ "unrecognized arguments"
+
+      # Executes nothing: no terminal refusal (exit 1), no daemon attempt
+      # (exit 4) — the usage error is the whole interaction.
+      refute stderr =~ "no usable terminal"
+      refute stderr =~ "daemon_unavailable"
+    end
+  end
+
   # The live-read slices of this suite (canonical-json wire shape, status/diff
   # live-catalog evaluation) moved to Workstation.CLI.LiveTest: live verbs
   # route through the daemon now, and those tests need a serialized in-process
@@ -375,6 +455,60 @@ defmodule Workstation.CLITest do
       end
 
     {result, output}
+  end
+
+  # Both streams at once: the help contract's no-execution proof reads
+  # stderr (a verb that leaked past the help gate would refuse loudly
+  # there) while the usage text must be on stdout.
+  defp capture_main_both(argv) do
+    me = self()
+
+    {pid, ref} =
+      spawn_monitor(fn ->
+        stderr =
+          ExUnit.CaptureIO.capture_io(:stderr, fn ->
+            stdout =
+              ExUnit.CaptureIO.capture_io(fn ->
+                result =
+                  try do
+                    Router.main(argv)
+                    :ok
+                  catch
+                    :exit, {:shutdown, code} -> {:shutdown, code}
+                  end
+
+                send(me, {:main_result, result})
+              end)
+
+            send(me, {:main_stdout, stdout})
+          end)
+
+        send(me, {:main_stderr, stderr})
+      end)
+
+    result =
+      receive do
+        {:main_result, result} -> result
+        {:DOWN, ^ref, :process, ^pid, reason} -> {:down, reason}
+      after
+        120_000 -> flunk("router main did not finish")
+      end
+
+    stdout =
+      receive do
+        {:main_stdout, stdout} -> stdout
+      after
+        5_000 -> ""
+      end
+
+    stderr =
+      receive do
+        {:main_stderr, stderr} -> stderr
+      after
+        5_000 -> ""
+      end
+
+    {result, stdout, stderr}
   end
 
   # Minimal canonical JSON mirror: compact separators,
