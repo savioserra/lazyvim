@@ -1,0 +1,38 @@
+# Managed by the workstation terminal/prompt capability. The config values
+# are byte-faithful to the operator's omarchy reference (basecamp/omarchy
+# config/starship.toml, ruling 2026-10-19): the lean cyan prompt — directory
+# (repo root bold), git branch/status, one character glyph. Plain colors, no
+# theme slots — this file is data, not a template. The git_status glyphs are
+# Nerd Font glyphs (the fonts package ships one).
+add_newline = true
+command_timeout = 200
+format = "[$directory$git_branch$git_status]($style)$character"
+
+[character]
+error_symbol = "[✗](bold cyan)"
+success_symbol = "[❯](bold cyan)"
+
+[directory]
+truncation_length = 2
+truncation_symbol = "…/"
+repo_root_style = "bold cyan"
+repo_root_format = "[$repo_root]($repo_root_style)[$path]($style)[$read_only]($read_only_style) "
+
+[git_branch]
+format = "[$branch]($style) "
+style = "italic cyan"
+
+[git_status]
+format     = '[$all_status]($style)'
+style      = "cyan"
+ahead      = "⇡${count} "
+diverged   = "⇕⇡${ahead_count}⇣${behind_count} "
+behind     = "⇣${count} "
+conflicted = " "
+up_to_date = " "
+untracked  = "? "
+modified   = " "
+stashed    = ""
+staged     = ""
+renamed    = ""
+deleted    = ""

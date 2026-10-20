@@ -19,7 +19,7 @@ defmodule Workstation.Core.CatalogNativeTest do
   alias Workstation.Core.Catalog.Packages
   alias Workstation.Core.EngineState
 
-  @native_count 13
+  @native_count 14
 
   @goldens_root Path.expand("../../../../../tests/goldens", __DIR__)
 
@@ -60,7 +60,8 @@ defmodule Workstation.Core.CatalogNativeTest do
 
     # Post-order DFS over the id-sorted specs: dependencies first, ties by
     # id sort — agent (no requires) leads, theme lands inside nunchux's
-    # requires closure, typescript (the last id) stays last.
+    # requires closure, prompt (foundation-only) sorts between nunchux and
+    # secrets, typescript (the last id) stays last.
     assert Enum.map(graph.ordered, & &1.id) == [
              "agent",
              "foundation",
@@ -72,6 +73,7 @@ defmodule Workstation.Core.CatalogNativeTest do
              "herdr",
              "theme",
              "nunchux",
+             "prompt",
              "secrets",
              "tmux",
              "typescript"

@@ -1,0 +1,117 @@
+{
+  "schema": 1,
+  "id": "prompt",
+  "foundation": "foundation/terminal",
+  "requires": ["foundation"],
+  "supported_hosts": {"darwin": false, "linux": true},
+  "contributes": [
+    {
+      "provider": "download",
+      "spec": {
+        "version": "0.23.5",
+        "archive": "tar.gz",
+        "target": ".local/opt/eza",
+        "probe": {
+          "member": "eza",
+          "sha256": "57861176680ae28c6fec813014050a70372b0c89359730be117de1561ba782b4"
+        },
+        "assets": {
+          "linux_x86_64": {
+            "sha256": "e06eebab74b73d6b7d51a796a353824b001bea82df077706382e100815d28904",
+            "url": "https://github.com/eza-community/eza/releases/download/v0.23.5/eza_x86_64-unknown-linux-musl.tar.gz"
+          }
+        }
+      }
+    },
+    {
+      "provider": "download",
+      "spec": {
+        "version": "1.27.0",
+        "archive": "tar.gz",
+        "target": ".local/opt/starship",
+        "probe": {
+          "argv": ["starship", "--version"],
+          "output": "starship {V}"
+        },
+        "assets": {
+          "darwin_arm64": {
+            "sha256": "5362da8cb2928f98f3ce0ffda697cf0f8de70081db000dae316d6d3a404f6cf0",
+            "url": "https://github.com/starship/starship/releases/download/v1.27.0/starship-aarch64-apple-darwin.tar.gz"
+          },
+          "linux_x86_64": {
+            "sha256": "10c8eb4cb3b761d9bf59ea828444c2dab36c900b7d69a69e08814b286969df89",
+            "url": "https://github.com/starship/starship/releases/download/v1.27.0/starship-x86_64-unknown-linux-musl.tar.gz"
+          }
+        }
+      }
+    },
+    {
+      "provider": "shell",
+      "spec": {
+        "fragment": {
+          "body": "command -v eza >/dev/null 2>&1 && alias ls='eza -lh --group-directories-first --icons=auto'",
+          "id": "managed-eza",
+          "marker": "# chezmoi: managed eza ls"
+        },
+        "target": ".bashrc"
+      }
+    },
+    {
+      "provider": "shell",
+      "spec": {
+        "fragment": {
+          "body": "command -v eza >/dev/null 2>&1 && alias ls='eza -lh --group-directories-first --icons=auto'",
+          "id": "managed-eza",
+          "marker": "# chezmoi: managed eza ls"
+        },
+        "target": ".zshrc"
+      }
+    },
+    {
+      "provider": "shell",
+      "spec": {
+        "fragment": {
+          "body": "command -v starship >/dev/null 2>&1 && eval \"$(starship init bash)\"",
+          "id": "managed-starship",
+          "marker": "# chezmoi: managed starship prompt"
+        },
+        "target": ".bashrc"
+      }
+    },
+    {
+      "provider": "shell",
+      "spec": {
+        "fragment": {
+          "body": "command -v starship >/dev/null 2>&1 && eval \"$(starship init zsh)\"",
+          "id": "managed-starship",
+          "marker": "# chezmoi: managed starship prompt"
+        },
+        "target": ".zshrc"
+      }
+    },
+    {
+      "provider": "chezmoi",
+      "spec": {
+        "asset": "files/.config/starship.toml",
+        "kind": "file",
+        "target": ".config/starship.toml"
+      }
+    },
+    {
+      "provider": "chezmoi",
+      "spec": {
+        "kind": "symlink",
+        "target": ".local/bin/eza",
+        "to": "../opt/eza/eza"
+      }
+    },
+    {
+      "provider": "chezmoi",
+      "spec": {
+        "kind": "symlink",
+        "target": ".local/bin/starship",
+        "to": "../opt/starship/starship"
+      }
+    }
+  ]
+}

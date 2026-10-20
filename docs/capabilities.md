@@ -147,7 +147,8 @@ foundation
 ├── secrets
 ├── nvim [requires foundation+node+go; owns base/standard/Go profile intents]
 ├── tmux [linux,darwin]
-└── nunchux [requires foundation+theme; linux — pinned checkout (git recipe) + platform marker + theme-slot config]
+├── nunchux [requires foundation+theme; linux — pinned checkout (git recipe) + platform marker + theme-slot config]
+└── prompt [requires foundation; linux — eza managed `ls` (content-probed linux-only pin: no darwin asset upstream) + starship prompt (both-platform pins): guarded rc fragments + the omarchy-lean starship config]
 
 nvim
 ├── typescript [requires node+nvim; owns its plugin module, profile intent, the pinned pnpm and verification]
@@ -169,6 +170,7 @@ nvim
 | `theme` | Single source-root `.chezmoidata.toml` token envelope via `provision.chezmoi_data`; deploys no home target | — | Envelope bytes against the tokens module; requires `foundation` | All |
 | `tmux` | Plugin checkout; tmux config/theme/link recipes | — | Commits, server, theme | Linux/macOS |
 | `nunchux` | Pinned plugin checkout via the git recipe (`.tmux/plugins/nunchux` at the v3.1.3 commit — carries the repo-tracked launcher binary) plus the `.platform` marker (upstream `ensure_binary` never fetches); theme-slot launcher config | — | `packages/nunchux/verify/nunchux.sh` (checkout HEAD + binary content pin + platform marker; read-only, never executes the binary) | Linux (darwin deferred — linux-only package; the darwin release pin stays recorded in `versions.json`) |
+| `prompt` | eza + starship via the download contract (eza 0.23.5 — lone-root-file tarball, content probe pins the binary bytes because `eza --version` leads with the tagline; starship 1.27.0 — lone-root-file tarball, exec probe `starship {V}`; both assets mirrored from `versions.json`, exact `.local/opt/<tool>` trees + `.local/bin/<tool>` link recipes); the omarchy-lean starship config at `.config/starship.toml`; marker-guarded rc fragments (`managed-eza` `ls` alias, `managed-starship` per-shell init) into `.bashrc`/`.zshrc` — `command -v` guards keep plain `ls` and no prompt where a tool is absent; `.profile` untouched | — | `packages/prompt/verify/prompt.sh` (pinned bytes + probes + rc wiring; read-only consumer smoke) | Linux (darwin: package off per the 2026-10-20 ruling — eza publishes no darwin_arm64 asset; starship's darwin pin stays recorded in `versions.json` as inventory) |
 
 ### Go toolchain acquisition
 
@@ -261,7 +263,7 @@ Domain order is lifecycle order; the mapping today:
 | `fonts` | `fonts` |
 | `runtime` | `elixir`, `go`, `node`, `typescript` |
 | `editor` | `nvim` |
-| `terminal` | `nunchux`, `tmux` |
+| `terminal` | `nunchux`, `prompt`, `tmux` |
 | `theme` | `theme` |
 | `agent` | `agent`, `herdr` |
 | `secrets` | `secrets` |
