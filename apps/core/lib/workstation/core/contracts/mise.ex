@@ -21,8 +21,13 @@ defmodule Workstation.Core.Contracts.Mise do
     the executable, and this contract refuses to run without exactly that
     one pin (composition fails when tools are declared without it);
   * `.local/bin/mise` is a contract-maintained symlink into the pinned
-    binary, so activated shells resolve the engine mise through PATH. The
-    installer's first-acquisition copy of the same pinned bytes is absorbed
+    binary — the interactive PATH convenience, never load-bearing for
+    activation: the managed shell fragment resolves the pinned binary by
+    absolute path (the launcher when it carries this exact link shape,
+    else the sole opt-root pin, else a silent no-op), so hosts with a
+    distro mise earlier on PATH can never bind a foreign mise to the
+    engine's managed data and config. The installer's first-acquisition
+    copy of the same pinned bytes is absorbed
     by content proof (its sha256 must equal the download pin's); anything
     else refuses instead of being replaced;
   * `.config/mise/config.toml` is the composed global managed set — one
