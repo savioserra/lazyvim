@@ -3,8 +3,18 @@ defmodule Workstation.Core.Update.Bootstrap do
   The `bootstrap` step: verified pinned runtime, backend and public
   launcher.
 
-  Integrity is the step's whole point, so the semantics are strict:
+  The integrity semantics are strict, and so is the host precheck:
 
+  * the distro prerequisite set is verified BEFORE anything is provisioned.
+    The set is read from the checkout's `docs/tools.md` — the
+    `workstation-distro-prereqs` block, the same source the installer cites
+    (never a second hand-copied list) — parsed strict (exactly one block,
+    `<distro package>:<PATH binary>` entries, no duplicates), each binary
+    probed on PATH, and the missing set refuses the bootstrap ONCE, naming
+    every missing tool plus the distro install command (the d43604df
+    aggregate shape: fix the whole set, re-run once — never one wasted
+    lifecycle cycle per tool). The apply-time extraction refusal stays as
+    the fail-closed backstop.
   * the runtime pins are DERIVED from the checkout's `versions.json` — the
     single source of truth (the retired `bootstrap.pins` manifest was fully
     derivable data whose hand regeneration rotted twice). The derivation is
@@ -91,13 +101,19 @@ defmodule Workstation.Core.Update.Bootstrap do
   Run the full bootstrap step against the target home: pinned runtime,
   pinned backend, public launcher. Returns
   `{:ok, %{"step" => "bootstrap", "status" => "ok", "runtime" => version,
-  "chezmoi" => version}}`; raises `ArgumentError` on any integrity,
-  download or activation failure.
+  "chezmoi" => version}}`; raises `ArgumentError` on any missing host
+  distro prerequisite, integrity, download or activation failure.
   """
   @spec run(keyword()) :: {:ok, map()}
   def run(opts \\ []) when is_list(opts) do
     root = Workstation.Core.Update.engine_root(opts)
     home = Keyword.get(opts, :home) || Workstation.Core.EngineState.home()
+
+    # Before ANY provisioning: a missing host tool must refuse before the
+    # first download, extraction or launcher write — the 2026-10-19 WSL2
+    # incident walked pull → bootstrap "ok" and died at apply.
+    verify_distro_tools!(root, opts)
+
     pin = pins!(root, platform())
 
     runtime_version = install_runtime(home, pin, opts)
@@ -111,6 +127,153 @@ defmodule Workstation.Core.Update.Bootstrap do
        "runtime" => runtime_version,
        "chezmoi" => chezmoi_version
      }}
+  end
+
+  ## Distro prerequisite precheck (docs/tools.md is the machine-readable source)
+
+  # The doc lives beside the payload: `<root>/docs/tools.md` for a
+  # self-contained checkout, `<root>/../docs/tools.md` for the repository
+  # layout (the payload partition is `workstation/`).
+  @doc_prereq_block "workstation-distro-prereqs"
+  @doc_prereq_entry ~r|\A([a-z0-9][a-z0-9+.-]*):([a-z0-9][a-z0-9._+-]*)\z|
+
+  # The `find_executable` opt is a 1-arity fun in the same fixture/test-only
+  # class as `rename` and `allow_file_urls`, never a production argument.
+  defp verify_distro_tools!(root, opts) do
+    find_executable = Keyword.get(opts, :find_executable, &System.find_executable/1)
+    tools = distro_tools!(doc_tools_path!(root))
+
+    missing =
+      Enum.filter(tools, fn {_package, binary} -> not is_binary(find_executable.(binary)) end)
+
+    case missing do
+      [] -> :ok
+      missing -> raise(ArgumentError, missing_tools_message(missing, tools))
+    end
+  end
+
+  defp doc_tools_path!(root) do
+    candidates = [
+      Path.join(root, "docs/tools.md"),
+      Path.expand(Path.join(root, "../docs/tools.md"))
+    ]
+
+    case Enum.find(candidates, &File.regular?/1) do
+      nil ->
+        raise ArgumentError,
+              "bootstrap: no docs/tools.md beside the engine checkout " <>
+                "(looked at #{Enum.join(candidates, ", ")}); " <>
+                "the distro prerequisite set cannot be verified"
+
+      path ->
+        path
+    end
+  end
+
+  # The doc is parsed with the derivation's own strictness: exactly one
+  # block, and inside it only comments, blank lines and `<package>:<binary>`
+  # entries — a doc edited into a shape the engine cannot trust refuses the
+  # bootstrap instead of provisioning from it.
+  defp distro_tools!(doc_path) do
+    {state, entries, blocks} =
+      doc_path
+      |> File.read!()
+      |> String.split("\n")
+      |> Enum.reduce({:out, [], 0}, &scan_prereq_line!/2)
+
+    case {state, blocks, entries} do
+      {:in, _, _} ->
+        raise ArgumentError,
+              "bootstrap: unterminated #{@doc_prereq_block} block in docs/tools.md"
+
+      {_, 0, _} ->
+        raise ArgumentError,
+              "bootstrap: docs/tools.md carries no #{@doc_prereq_block} block; " <>
+                "the distro prerequisite set cannot be verified"
+
+      {_, blocks, _} when blocks > 1 ->
+        raise ArgumentError,
+              "bootstrap: #{blocks} #{@doc_prereq_block} blocks in docs/tools.md; " <>
+                "exactly one is required"
+
+      {_, 1, []} ->
+        raise ArgumentError,
+              "bootstrap: the #{@doc_prereq_block} block in docs/tools.md is empty"
+
+      {_, 1, entries} ->
+        refuse_duplicates!(entries)
+        Enum.reverse(entries)
+    end
+  end
+
+  # Outside the block only the exact opening fence matters; inside, a bare
+  # closing fence ends it and every other line must parse — a stray fence
+  # with another info string is a malformed entry, never a nested block.
+  defp scan_prereq_line!(line, {:out, entries, blocks}) do
+    if String.trim_trailing(line) == "```#{@doc_prereq_block}",
+      do: {:in, entries, blocks},
+      else: {:out, entries, blocks}
+  end
+
+  defp scan_prereq_line!(line, {:in, entries, blocks}) do
+    condensed = String.trim(line)
+
+    cond do
+      condensed == "```" ->
+        {:out, entries, blocks + 1}
+
+      condensed == "" or String.starts_with?(condensed, "#") ->
+        {:in, entries, blocks}
+
+      true ->
+        case Regex.run(@doc_prereq_entry, condensed) do
+          [_, package, binary] ->
+            {:in, [{package, binary} | entries], blocks}
+
+          nil ->
+            raise ArgumentError,
+                  "bootstrap: malformed #{@doc_prereq_block} entry in docs/tools.md: #{condensed}"
+        end
+    end
+  end
+
+  defp refuse_duplicates!(entries) do
+    packages = Enum.map(entries, &elem(&1, 0))
+    binaries = Enum.map(entries, &elem(&1, 1))
+
+    case {packages -- Enum.uniq(packages), binaries -- Enum.uniq(binaries)} do
+      {[], []} ->
+        :ok
+
+      {[package | _], _} ->
+        raise ArgumentError, "bootstrap: duplicate distro prerequisite package: #{package}"
+
+      {_, [binary | _]} ->
+        raise ArgumentError, "bootstrap: duplicate distro prerequisite binary: #{binary}"
+    end
+  end
+
+  # One refusal, the full missing set, and the distro install command the
+  # docs record — derived from the parsed package list, never hand-copied
+  # here (the d43604df aggregate shape).
+  defp missing_tools_message(missing, tools) do
+    named =
+      missing
+      |> Enum.map(fn {_package, binary} -> "`#{binary}`" end)
+      |> Enum.join(", ")
+
+    base =
+      "bootstrap requires the host tool(s) #{named} " <>
+        "(the distro prerequisite set — docs/tools.md); " <>
+        "install the missing tool(s) and re-run"
+
+    case :os.type() do
+      {:unix, :linux} ->
+        base <> ": apt install " <> Enum.map_join(tools, " ", &elem(&1, 0))
+
+      _other ->
+        base <> "; see docs/tools.md for the platform prerequisites"
+    end
   end
 
   ## Pins derivation (versions.json is the single source of truth)

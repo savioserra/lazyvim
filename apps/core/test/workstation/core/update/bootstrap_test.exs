@@ -298,6 +298,113 @@ defmodule Workstation.Core.Update.BootstrapTest do
     assert Path.wildcard(Path.join([home, ".local", "opt", ".nvim-bootstrap-lock.stale-*"])) == []
   end
 
+  ## distro prerequisite precheck (docs/tools.md, probed before provisioning)
+
+  test "a host missing two tools refuses once, naming both and the install command, provisioning nothing",
+       %{base: base, home: home} do
+    fixture = engine_fixture(base)
+    seed_runtime_cache!(home, fixture)
+
+    stub = fn
+      "xz" -> nil
+      "unzip" -> nil
+      other -> System.find_executable(other)
+    end
+
+    error =
+      assert_raise ArgumentError, fn ->
+        Bootstrap.run(
+          engine_root: fixture.root,
+          home: home,
+          allow_file_urls: true,
+          find_executable: stub
+        )
+      end
+
+    message = Exception.message(error)
+    assert message =~ ~r/host tool\(s\) `xz`, `unzip`/
+    assert message =~ "apt install git curl xz-utils unzip"
+
+    # The refusal came BEFORE any provisioning: no runtime tree, no backend,
+    # no launcher, no lock debris — the lifecycle cycle is not wasted.
+    refute File.exists?(Path.join([home, ".local", "opt", "nvim"]))
+    refute File.exists?(Path.join([home, ".local", "opt", "chezmoi"]))
+    refute File.exists?(Path.join([home, ".local", "bin", "workstation"]))
+    refute File.exists?(Path.join([home, ".local", "opt", ".nvim-bootstrap-lock"]))
+  end
+
+  test "a single missing tool is named alone; the recorded install command stays the whole set",
+       %{base: base, home: home} do
+    fixture = engine_fixture(base)
+    seed_runtime_cache!(home, fixture)
+
+    stub = fn
+      "xz" -> nil
+      other -> System.find_executable(other)
+    end
+
+    error =
+      assert_raise ArgumentError, fn ->
+        Bootstrap.run(engine_root: fixture.root, home: home, find_executable: stub)
+      end
+
+    message = Exception.message(error)
+    assert message =~ "`xz`"
+    refute message =~ "`unzip`"
+    assert message =~ "apt install git curl xz-utils unzip"
+  end
+
+  test "the doc resolves through the repository layout (payload root, doc one level up)",
+       %{base: base, home: home} do
+    fixture = engine_fixture(base, docs: :parent)
+    seed_runtime_cache!(home, fixture)
+
+    assert {:ok, %{"status" => "ok"}} =
+             Bootstrap.run(engine_root: fixture.root, home: home, allow_file_urls: true)
+  end
+
+  test "a checkout without docs/tools.md anywhere refuses before provisioning",
+       %{base: base, home: home} do
+    fixture = engine_fixture(base, docs: :none)
+
+    assert_raise ArgumentError, ~r/no docs\/tools\.md beside the engine checkout/, fn ->
+      Bootstrap.run(engine_root: fixture.root, home: home)
+    end
+
+    refute File.exists?(Path.join([home, ".local", "opt", "nvim"]))
+  end
+
+  test "a malformed prereqs doc refuses the bootstrap with the specific defect",
+       %{base: base, home: home} do
+    cases = [
+      {"no workstation-distro-prereqs block", "Only prose here, never a block.\n"},
+      {"exactly one is required",
+       "```workstation-distro-prereqs\ngit:git\n```\n\n```workstation-distro-prereqs\ncurl:curl\n```\n"},
+      {"malformed workstation-distro-prereqs entry in docs/tools.md: git git",
+       "```workstation-distro-prereqs\ngit git\n```\n"},
+      {"the workstation-distro-prereqs block in docs/tools.md is empty",
+       "```workstation-distro-prereqs\n# only a comment\n```\n"},
+      {"duplicate distro prerequisite package: git",
+       "```workstation-distro-prereqs\ngit:git\ngit:git\n```\n"},
+      {"duplicate distro prerequisite binary: git",
+       "```workstation-distro-prereqs\ngit:git\ngit2:git\n```\n"},
+      {"unterminated workstation-distro-prereqs block",
+       "```workstation-distro-prereqs\ngit:git\n"}
+    ]
+
+    for {expected, doc} <- cases do
+      fixture = engine_fixture(base)
+      File.write!(Path.join(fixture.root, "docs/tools.md"), doc)
+
+      error =
+        assert_raise ArgumentError, ~r/#{Regex.escape(expected)}/, fn ->
+          Bootstrap.run(engine_root: fixture.root, home: home)
+        end
+
+      assert Exception.message(error) =~ "bootstrap:"
+    end
+  end
+
   ## the EXDEV fallback (stubbed activation renames)
 
   test "an EXDEV move-aside falls back to a copy and the install still proceeds", %{
@@ -440,12 +547,29 @@ defmodule Workstation.Core.Update.BootstrapTest do
 
   # An engine checkout fixture: payload markers and a versions.json carrying
   # BOTH the derived runtime pins (https/github-shaped URLs, never fetched —
-  # the cache is seeded) and the backend file:// fixture record.
+  # the cache is seeded) and the backend file:// fixture record. The
+  # distro-prerequisite doc ships beside the payload like the real layouts
+  # do: `docs: :root` (self-contained checkout, the default), `docs: :parent`
+  # (the repository layout — the doc one level above the payload root) or
+  # `docs: :none` (a stripped payload with no doc anywhere).
   defp engine_fixture(base, opts \\ []) do
     root = Path.join(base, "engine")
     fixture_dir = Path.join(base, "fixtures")
     File.mkdir_p!(Path.join(root, "bin"))
     File.mkdir_p!(fixture_dir)
+
+    case Keyword.get(opts, :docs, :root) do
+      :root ->
+        File.mkdir_p!(Path.join(root, "docs"))
+        File.write!(Path.join(root, "docs/tools.md"), distro_doc())
+
+      :parent ->
+        File.mkdir_p!(Path.join(base, "docs"))
+        File.write!(Path.join(base, "docs/tools.md"), distro_doc())
+
+      :none ->
+        :ok
+    end
 
     File.write!(Path.join(root, "bin/workstation"), "#!/bin/sh\necho launcher-fixture\n")
     File.chmod!(Path.join(root, "bin/workstation"), 0o755)
@@ -477,6 +601,24 @@ defmodule Workstation.Core.Update.BootstrapTest do
       runtime_digest: runtime_digest,
       chezmoi_archive: chezmoi_archive
     }
+  end
+
+  # The canonical docs/tools.md prereqs block (the source the engine
+  # parses); the malformed-doc cases rewrite this file in place.
+  defp distro_doc do
+    """
+    Tool inventory prose.
+
+    ```workstation-distro-prereqs
+    # <distro package>:<binary probed on PATH>
+    git:git
+    curl:curl
+    xz-utils:xz
+    unzip:unzip
+    ```
+
+    More prose.
+    """
   end
 
   # A minimal versions.json fixture for the derivation-refusal matrix: the

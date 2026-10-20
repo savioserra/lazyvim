@@ -20,8 +20,11 @@ manager:
   macOS), and ordinary Unix filesystem tools. The tar.xz archive pins (Node,
   the Nerd Font) extract through xz and the zip archive pins (op,
   tree-sitter) through unzip: the installer fail-closes on git and curl up
-  front, and a missing xz/unzip surfaces at the first `apply` as a named
-  extraction refusal.
+  front, and the engine's bootstrap then verifies the whole four-tool set
+  before provisioning — one refusal naming every missing tool with the
+  install command (the machine-readable set lives in
+  [`docs/tools.md`](docs/tools.md)); a missing tool at `apply` still
+  surfaces as a named extraction refusal, the fail-closed backstop.
 - tmux >=3.2 and btop: mise-contract-managed on Linux — the tools are declared
   with the `linux` platform scope, so a macOS apply omits them and they remain
   host prerequisites there (brew); the fresh-install sequence first-acquires
@@ -71,8 +74,10 @@ the fetched file, then run it.
 On a bare Debian/Ubuntu box, install the distro set first — `apt install git
 curl xz-utils unzip`; those four are the whole list (see
 [Prerequisites](#prerequisites)). The installer fail-closes on git and curl
-before touching anything; without `xz`/`unzip` the chain stays green through
-bootstrap and refuses at the first `apply`, naming the missing extractor.
+before touching anything; the engine's bootstrap then verifies the whole set
+before provisioning, so without `xz`/`unzip` the run refuses there — once,
+naming every missing tool with the install command — and the first `apply`
+extraction refusal stays only as the fail-closed backstop.
 
 Or manually:
 ```sh

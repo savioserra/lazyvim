@@ -113,11 +113,33 @@ Concurrent runtime installers serialize on `.local/opt/.nvim-bootstrap.lock`;
 after interrupted SIGKILL, inspect/recover that lock and any `previous` tree before
 retrying. Do not remove a lock while its installer is still running.
 
+## Distro prerequisites
+
+The four host tools every supported platform needs before any provisioning:
+`git`, `curl`, and the two extractors the archive pins decompress through —
+`xz-utils` for the tar.xz pins, `unzip` for the zip pins (the measured
+bare-box story is in the [README](../README.md#prerequisites)). The block
+below is the canonical machine-readable form: the engine's bootstrap parses
+it fail-closed before provisioning (exactly one `workstation-distro-prereqs`
+block in this file, one `<distro package>:<PATH binary>` entry per line,
+`#` comments and blank lines allowed, lowercase names, no duplicates), and a
+missing tool refuses the bootstrap once, naming the full missing set with
+the distro install command derived from the parsed package list. The apply
+extraction refusal stays as the fail-closed backstop.
+
+```workstation-distro-prereqs
+# <distro package>:<binary probed on PATH>
+git:git
+curl:curl
+xz-utils:xz
+unzip:unzip
+```
+
 ## Not managed here
 
 | Tool | Why | Where it's handled |
 | --- | --- | --- |
-| Git on Linux (distro) | One of the four distro prerequisites measured on a bare box (git, curl, xz-utils, unzip — see README prerequisites), deliberately unpinned: no first-party static git passes the acquisition audit (upstream git/git ships no release assets; `aqua:git` is not carried by the aqua registry), and the erlang/elixir mise backends clone through git, so it must exist before the toolchain install | `apt install git curl xz-utils unzip` on the fresh box (README prerequisites); `install.sh` verifies git and curl fail-closed and refuses without them, and a missing xz/unzip surfaces at the first `apply` as a named extraction refusal |
+| Git on Linux (distro) | One of the four distro prerequisites measured on a bare box (git, curl, xz-utils, unzip — see README prerequisites), deliberately unpinned: no first-party static git passes the acquisition audit (upstream git/git ships no release assets; `aqua:git` is not carried by the aqua registry), and the erlang/elixir mise backends clone through git, so it must exist before the toolchain install | `apt install git curl xz-utils unzip` on the fresh box (README prerequisites); `install.sh` verifies git and curl fail-closed, the engine bootstrap verifies the whole set before any provisioning (the machine-readable [block above](#distro-prerequisites) — one refusal naming every missing tool with the install command), and a missing tool at the first `apply` still surfaces as a named extraction refusal (the fail-closed backstop) |
 | tmux >=3.2 and btop on macOS; Bash >=5.2 | User/CI unmanaged prerequisites on macOS; no lifecycle OS installs | The tmux binary and btop are contract-managed through the engine mise contract on Linux only (linux-scoped managed tool set, table above); a darwin apply omits the scoped declarations, so the brew prerequisites stand there. darwin acceptance runs in CI. tmux plugin commits/setup are managed separately by the tmux package (`Workstation.Packages.Tmux`, payload `workstation/packages/terminal/tmux/`) |
 | C compiler/build tools, Linux fontconfig, macOS Command Line Tools | Parser/application builds and font verification prerequisites | User or CI image; see README |
 | ShellCheck | Validation tool supplied by Linux CI image; used wherever available | `.github/scripts/check.sh`; no unpinned lint downloads |

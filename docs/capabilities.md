@@ -294,7 +294,7 @@ The graph rejects duplicate IDs, unknown dependencies, dependency cycles, and en
 
 | Phase | Input state | Responsibility |
 | --- | --- | --- |
-| `bootstrap` | Whole source checkout, shell prerequisites | Install verified pinned runtime/backend, then the engine provisions and verifies the conflict-safe public launcher symlink |
+| `bootstrap` | Whole source checkout, shell prerequisites | Verify the host distro prerequisite set (the machine-readable block in docs/tools.md — one refusal, the full missing set, the install command), install verified pinned runtime/backend, then the engine provisions and verifies the conflict-safe public launcher symlink |
 | `plan` | Source declarations and journal | Validate and preview attributable change sets, generated-source patches, target preconditions and unsupported reversals; mutate nothing |
 | `diff` | Same desired-state generation as apply | Ensure backend, preview file changes only; no retirement/setup/sync/verify |
 | `apply` | Validated plan | Retire owned real-account legacy service (never scratch), retire recorded clones whose recipe the plan dropped (guarded: HEAD at the recorded pin on a clean tree — drift refuses with the divergence named), publish the immutable generation, apply through the backend, refresh Node pin/PATH, setup |
