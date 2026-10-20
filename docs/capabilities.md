@@ -321,7 +321,13 @@ structural divergence. The apply refusal reports the COMPLETE conflict
 set (the full un-owned target list, computed before any mutation) with a
 per-target probe verdict, and `workstation apply --adopt` is the
 operator-gated door that adopts probe-verified un-owned targets —
-content identity is the law (docs/chezmoi.md, guarded-apply recovery).
+content identity is the law. It is the FIRST recovery move for that
+class, before any removal: adoption is wholesale (the journal claim
+records the whole target as owned, so un-declared content inside a
+probe-verified tree survives), while templates, version-mismatched
+download trees and pending-attempt strays refuse regardless of
+`--adopt` and recover by explicit removal — the adopt-first decision
+ladder leads docs/chezmoi.md's guarded-apply recovery section.
 The stale pending-attempt guard reconciles against the plan's whole
 desired surface (bootstrap-provisioned targets included) and refuses
 once with the complete unreconciled set, each line naming its per-class

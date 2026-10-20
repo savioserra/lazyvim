@@ -160,17 +160,43 @@ package, every target — the full set is computed before anything is
 refused), each line carrying a read-only `probe:` verdict, and each has one
 documented recovery. Never disable preconditions to force an apply.
 
+The ladder is ordered: work it top down, `--adopt` before any removal.
+
+1. **Un-owned desired target, probe-verifiable** (the refusal's `probe:`
+   verdict says the on-disk state matches what the plan renders) →
+   `workstation apply --headless --adopt`. Adoption is wholesale: the
+   apply's journal claim records the WHOLE target as owned, so un-declared
+   content riding inside a probe-verified tree survives the cutover. This
+   is the first move, never the fallback — removing a probe-verified tree
+   destroys whatever un-declared content rides inside it. Cautionary case
+   (aurora, 2026-10-20): a hand-built node tree probed verified at the
+   pinned version; wholesale adoption would have preserved the
+   corepack/pnpm content inside it, and the remove path lost pnpm as
+   collateral.
+2. **Classes `--adopt` cannot reach — explicit removal, then re-apply**
+   (the engine refuses these regardless of `--adopt`): backend-rendered
+   template targets (`probe: not verifiable` — they render only inside the
+   backend), version-mismatched download trees (the download contract
+   refuses to overwrite a mismatched artifact), and pending-attempt strays
+   (the unresolved-partial-attempt lines). Back up anything unverified
+   before removing; the engine recreates the target and records ownership.
+3. **Hand-edited OWNED target** — compare the target's bytes first (row
+   below).
+4. **Journal/chezmoi state desync** — the boltdb split-brain row below.
+
 - **Un-owned declared target** ("exists without an owned record"): the
   `probe:` verdict tells whether the on-disk state matches what the plan
   renders. Matching → the operator-gated adoption door
-  (`workstation apply --adopt`) adopts probe-verified targets (the apply's
-  journal claim records their ownership) and proceeds green; the engine
+  (`workstation apply --adopt`) adopts probe-verified targets wholesale
+  (the apply's journal claim records ownership of the whole target, so
+  un-declared content inside it survives) and proceeds green; the engine
   state wins the cutover. Differing, or `not verifiable` (template entries
-  render only inside the backend): compare the target's bytes against the
-  payload/landed content it should carry. Identical or honestly superseded
-  → remove the target and re-apply; the engine recreates it and records
-  ownership. Verify content identity BEFORE handing the file to the
-  engine; the engine state, not the hand edit, wins the cutover.
+  render only inside the backend, so `--adopt` never opens them): compare
+  the target's bytes against the payload/landed content it should carry.
+  Identical or honestly superseded → remove the target and re-apply; the
+  engine recreates it and records ownership. Verify content identity
+  BEFORE handing the file to the engine; the engine state, not the hand
+  edit, wins the cutover.
 - **Hand-edited owned target** ("target changed since the last successful
   apply"): compare the target's bytes against the payload/landed content it
   should carry. Identical or honestly superseded → remove the target and
