@@ -150,7 +150,7 @@ foundation
 └── nunchux [requires foundation+theme; linux — pinned checkout (git recipe) + platform marker + theme-slot config]
 
 nvim
-├── typescript [requires node+nvim; owns its plugin module, profile intent and verification]
+├── typescript [requires node+nvim; owns its plugin module, profile intent, the pinned pnpm and verification]
 └── elixir [requires nvim; owns its plugin module, profile intent and verification]
 ```
 
@@ -165,7 +165,7 @@ nvim
 | `herdr` | Exact pinned binary via the download contract (`.local/opt/herdr/bin/herdr`, per-platform SHA-256); herdr link recipe | — | Applied-download fingerprint (binary bytes carry the pinned checksum) + the link record; never server/pane/session lifecycle | All |
 | `secrets` | Pinned op via the download contract (zip `flat` archive — the `op` + `op.sig` pair — exact tree at `.local/opt/op`, probe `op --version`); op env fragment; op link recipe (`.local/bin/op`) | — | `download-archive` record + the link record; verify only `--version`, never account or vault state | All supported hosts |
 | `nvim` | — | Locks and parsers | Startup, locks, mason coverage, base/standard/Go behavior | All |
-| `typescript` | — | — | Own Mason expectations, plugin module and behavior/formatter cases through nvim leaf helpers | All |
+| `typescript` | The pinned pnpm standalone tree via the download contract (tar.gz `flat` archive — the rootless `pnpm` + `dist/` tree at `.local/opt/pnpm`, probe `pnpm --version` = `{V}`, per-platform SHA-256 from `versions.json`) + the `.local/bin/pnpm` link recipe: the operator's JS package manager is a declared capability, so node-tree reconciliation restores it instead of dropping it as un-owned collateral | — | `download-archive` journal record (the probe re-runs on claim and on verify — version drift fails loudly) + the link record; plus own Mason expectations, plugin module and behavior/formatter cases through nvim leaf helpers | All |
 | `theme` | Single source-root `.chezmoidata.toml` token envelope via `provision.chezmoi_data`; deploys no home target | — | Envelope bytes against the tokens module; requires `foundation` | All |
 | `tmux` | Plugin checkout; tmux config/theme/link recipes | — | Commits, server, theme | Linux/macOS |
 | `nunchux` | Pinned plugin checkout via the git recipe (`.tmux/plugins/nunchux` at the v3.1.3 commit — carries the repo-tracked launcher binary) plus the `.platform` marker (upstream `ensure_binary` never fetches); theme-slot launcher config | — | `packages/nunchux/verify/nunchux.sh` (checkout HEAD + binary content pin + platform marker; read-only, never executes the binary) | Linux (darwin deferred — linux-only package; the darwin release pin stays recorded in `versions.json`) |
