@@ -35,8 +35,7 @@ defmodule Workstation.Daemon.GenerationTest do
   @installed_stamp "246a6cb631a0deadbeef00000000000000000000ffffffffffffffffffff"
 
   setup do
-    home =
-      Path.join(System.tmp_dir!(), "ws-generation-test-#{System.unique_integer([:positive])}")
+    home = unique_home("wsgen-home")
 
     File.mkdir_p!(home)
 
@@ -78,7 +77,7 @@ defmodule Workstation.Daemon.GenerationTest do
   end
 
   test "verdict: a readable installed stamp equal to the generation is fresh" do
-    home = unique_home()
+    home = unique_home("wsgen-unit")
 
     File.mkdir_p!(Path.dirname(Generation.stamp_path(home)))
     File.write!(Generation.stamp_path(home), @installed_stamp <> "\n")
@@ -87,7 +86,7 @@ defmodule Workstation.Daemon.GenerationTest do
   end
 
   test "verdict: a readable installed stamp that differs is stale, naming both" do
-    home = unique_home()
+    home = unique_home("wsgen-unit")
 
     File.mkdir_p!(Path.dirname(Generation.stamp_path(home)))
     File.write!(Generation.stamp_path(home), @installed_stamp)
@@ -96,7 +95,14 @@ defmodule Workstation.Daemon.GenerationTest do
   end
 
   test "verdict: an absent or unreadable installed stamp is undecided, never stale" do
-    home = unique_home()
+    home = unique_home("wsgen-unit")
+
+    # The precondition is PROVABLE, never assumed: the fixture swept any
+    # same-named leftover (unique_home), so the installed stamp is absent
+    # right now. Pinned here so a future tmpdir-history hazard fails HERE
+    # with the named precondition instead of a bewildering stale verdict.
+    refute File.exists?(Generation.stamp_path(home)),
+           "fixture precondition: the unit home must start without an installed stamp"
 
     assert Generation.verdict(home, "anything") == :undecided
 
@@ -233,8 +239,36 @@ defmodule Workstation.Daemon.GenerationTest do
 
   # --- raw protocol helpers (listener_test's harness, generation-scoped) -----
 
-  defp unique_home do
-    Path.join(System.tmp_dir!(), "ws-generation-unit-#{System.unique_integer([:positive])}")
+  # Fixture homes must be collision-proof ACROSS VM runs, not merely within
+  # one: System.unique_integer/1 restarts its sequence in every `mix test`
+  # instance, and a home that outlives its run (a killed run's leftovers —
+  # or, before this fixture owned cleanup, EVERY unit-test home, which never
+  # removed itself) is re-drawn verbatim by a later run. A leftover
+  # `.built-from` stamp then turns the "absent stamp is undecided" and
+  # "undecided home serves" preconditions false and the suite flakes on
+  # tmpdir HISTORY, not on code — the 2026-10-20 GenerationTest flake (seen
+  # under t_ec46e11e's gate load; diagnosed and reproduced by t_3512d566,
+  # where a poisoned tmpdir made the pristine tree red 9/10). The fixture
+  # therefore owns its homes end to end:
+  #
+  # * the name carries this VM's boot millisecond, base36 — cross-VM unique
+  #   for practical purposes, and SHORT, because the setup home binds an
+  #   AF_UNIX socket under `.local/state/workstation/daemon/` and the whole
+  #   path must stay under the 108-byte sockaddr budget on a deep tmpdir
+  #   (a long decimal suffix was tried first and every supervised boot died
+  #   `{:bind_failed, {:invalid, {:sockaddr, _}}}`);
+  # * any same-named leftover is swept BEFORE the test runs — the
+  #   precondition is made true, never assumed (this is also the guard for
+  #   the pathological same-millisecond second VM);
+  # * the home is removed on exit — the fixture stops littering the tmpdir
+  #   for the next run to inherit.
+  defp unique_home(prefix) do
+    token = Integer.to_string(:os.system_time(:millisecond), 36)
+    home = Path.join(System.tmp_dir!(), "#{prefix}-#{token}")
+
+    File.rm_rf!(home)
+    on_exit(fn -> File.rm_rf!(home) end)
+    home
   end
 
   defp hello_roundtrip(home) do
