@@ -364,29 +364,26 @@ defmodule Workstation.CLI.TUI.ShellTest do
     # Preset 1 (audit): plan+diff fill the top, engine+journal ride the
     # bottom band; capabilities and status hide.
     send_text(runtime, "p")
-    frame =
-      await_frame(fn f ->
-        text = body_text(f)
-        text =~ "⁴plan" and text =~ "⁵diff" and text =~ "¹engine" and text =~ "³journal" and
-          not (text =~ "²capabilities") and not (text =~ "⁶status")
-      end)
+    await_frame(fn f ->
+      text = body_text(f)
+      text =~ "⁴plan" and text =~ "⁵diff" and text =~ "¹engine" and text =~ "³journal" and
+        not (text =~ "²capabilities") and not (text =~ "⁶status")
+    end)
 
     # Preset 2 (minimal): engine+journal only.
     send_text(runtime, "p")
-    frame =
-      await_frame(fn f ->
-        text = body_text(f)
-        text =~ "¹engine" and text =~ "³journal" and not (text =~ "⁴plan") and
-          not (text =~ "⁶status")
-      end)
+    await_frame(fn f ->
+      text = body_text(f)
+      text =~ "¹engine" and text =~ "³journal" and not (text =~ "⁴plan") and
+        not (text =~ "⁶status")
+    end)
 
     # The third p wraps back to preset 0 (full mosaic).
     send_text(runtime, "p")
-    frame =
-      await_frame(fn f ->
-        text = body_text(f)
-        text =~ "²capabilities" and text =~ "⁶status"
-      end)
+    await_frame(fn f ->
+      text = body_text(f)
+      text =~ "²capabilities" and text =~ "⁶status"
+    end)
   end
 
   test "P cycles backwards and resize dissolves preset tracking" do
@@ -396,12 +393,11 @@ defmodule Workstation.CLI.TUI.ShellTest do
     # P from preset 0 wraps to preset 2 (minimal).
     send_text(runtime, "P")
 
-    frame =
-      await_frame(fn f ->
-        text = body_text(f)
-        text =~ "¹engine" and text =~ "³journal" and not (text =~ "⁴plan") and
-          not (text =~ "⁶status")
-      end)
+    await_frame(fn f ->
+      text = body_text(f)
+      text =~ "¹engine" and text =~ "³journal" and not (text =~ "⁴plan") and
+        not (text =~ "⁶status")
+    end)
 
     # Any resize dissolves the tracking: the preset bond breaks and the
     # generic tiler takes over the LAYOUT. Membership is kept — boxes
@@ -828,10 +824,9 @@ defmodule Workstation.CLI.TUI.ShellTest do
     assert settled_frame(runtime) |> body_text() =~ "apply · #{@destination}"
 
     send_event(runtime, Event.resize(80, 20))
-    frame =
-      await_frame(fn frame ->
-        frame.width == 80 and body_text(frame) =~ "apply · #{@destination}"
-      end)
+    await_frame(fn frame ->
+      frame.width == 80 and body_text(frame) =~ "apply · #{@destination}"
+    end)
 
     # a -> gate -> typed verb: at 80x20 the body is 80x18 — past the
     # float threshold, so the done panel (56x7, centered) floats and the
@@ -967,7 +962,7 @@ defmodule Workstation.CLI.TUI.ShellTest do
       loaded_frame(runtime)
 
       send_key(runtime, :enter)
-      frame = await_frame(fn f -> body_text(f) =~ " collapsed — right to drill" end)
+      await_frame(fn f -> body_text(f) =~ " collapsed — right to drill" end)
 
       # Click a band BELOW the grown caps box (it now owns rows ~10-23;
       # plan sits beneath): the drill stays.
@@ -999,7 +994,7 @@ defmodule Workstation.CLI.TUI.ShellTest do
 
       send_text(runtime, "2")
       send_key(runtime, :enter)
-      frame = await_frame(fn f -> Frame.row_text(f, 1) =~ "⁴plan" end)
+      await_frame(fn f -> Frame.row_text(f, 1) =~ "⁴plan" end)
 
       # Shrink the window until the read outgrows its pane: the second
       # canonical size (80×24) clipped further — the overlay re-renders
