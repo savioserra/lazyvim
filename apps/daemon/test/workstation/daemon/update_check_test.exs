@@ -1,6 +1,26 @@
 defmodule Workstation.Daemon.UpdateCheckTest do
   use ExUnit.Case, async: true
 
+  # Fixture homes are cross-VM collision-proof (the full note lives in
+  # apps/daemon/test/workstation/daemon/generation_test.exs): the boot
+  # millisecond in base36 never repeats across `mix test` VM instances the
+  # way the restarted `System.unique_integer/1` sequence does, and the
+  # within-VM base36 tail keeps concurrent async draws (or two calls inside
+  # one test) from sharing a millisecond. Any same-named leftover is swept
+  # before use and the home is removed on exit.
+  defp unique_home(prefix) do
+    token =
+      Integer.to_string(:os.system_time(:millisecond), 36) <>
+        Integer.to_string(System.unique_integer([:positive]), 36)
+
+    home = Path.join(System.tmp_dir!(), "#{prefix}-#{token}")
+
+    File.rm_rf!(home)
+    on_exit(fn -> File.rm_rf!(home) end)
+    home
+  end
+
+
   alias Workstation.Daemon.UpdateCheck
 
   # The fixture is a LOCAL git triangle — no network: a work repo whose
@@ -8,7 +28,7 @@ defmodule Workstation.Daemon.UpdateCheckTest do
   # contract's test seam prescribes). `git ls-remote origin` answers from
   # the bare repo exactly as it would from a real remote.
   setup do
-    tmp = Path.join([System.tmp_dir!(), "ws-update-check-#{System.unique_integer()}"])
+    tmp = unique_home("ws-update-check")
     File.mkdir_p!(tmp)
 
     work = Path.join(tmp, "work")
@@ -39,7 +59,6 @@ defmodule Workstation.Daemon.UpdateCheckTest do
     git.(tmp, ["clone", "--bare", "work", "origin.git"])
     git.(work, ["remote", "add", "origin", bare])
 
-    on_exit(fn -> File.rm_rf!(tmp) end)
 
     %{tmp: tmp, work: work, bare: bare, git: git}
   end

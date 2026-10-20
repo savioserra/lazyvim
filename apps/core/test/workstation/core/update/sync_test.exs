@@ -8,18 +8,33 @@ defmodule Workstation.Core.Update.SyncTest do
 
   use ExUnit.Case, async: false
 
+  # Fixture homes are cross-VM collision-proof: `System.unique_integer/1`
+  # restarts its sequence in every `mix test` VM, so a home that outlives its
+  # run (a killed run's leftovers) is re-drawn verbatim by a later one. The
+  # boot millisecond in base36 never repeats across VMs, any same-named
+  # leftover is swept before use, and the home is removed on exit (the full
+  # note lives in apps/daemon/test/workstation/daemon/generation_test.exs).
+  defp unique_home(prefix) do
+    token = Integer.to_string(:os.system_time(:millisecond), 36)
+    home = Path.join(System.tmp_dir!(), "#{prefix}-#{token}")
+
+    File.rm_rf!(home)
+    on_exit(fn -> File.rm_rf!(home) end)
+    home
+  end
+
+
   alias Workstation.Core.Update.Sync
   alias Workstation.Core.{Catalog, EngineState, Graph, Journal, Source}
 
   setup do
-    home = Path.join(System.tmp_dir!(), "c2-sync-#{System.unique_integer([:positive])}")
+    home = unique_home("c2-sync")
     File.mkdir_p!(home)
     previous = System.get_env("WORKSTATION_HOME")
     System.put_env("WORKSTATION_HOME", home)
 
     on_exit(fn ->
       if previous, do: System.put_env("WORKSTATION_HOME", previous), else: System.delete_env("WORKSTATION_HOME")
-      File.rm_rf!(home)
     end)
 
     %{home: home}

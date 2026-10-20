@@ -9,10 +9,26 @@ defmodule Workstation.Core.EngineStateTest do
 
   use ExUnit.Case, async: false
 
+  # Fixture homes are cross-VM collision-proof: `System.unique_integer/1`
+  # restarts its sequence in every `mix test` VM, so a home that outlives its
+  # run (a killed run's leftovers) is re-drawn verbatim by a later one. The
+  # boot millisecond in base36 never repeats across VMs, any same-named
+  # leftover is swept before use, and the home is removed on exit (the full
+  # note lives in apps/daemon/test/workstation/daemon/generation_test.exs).
+  defp unique_home(prefix) do
+    token = Integer.to_string(:os.system_time(:millisecond), 36)
+    home = Path.join(System.tmp_dir!(), "#{prefix}-#{token}")
+
+    File.rm_rf!(home)
+    on_exit(fn -> File.rm_rf!(home) end)
+    home
+  end
+
+
   alias Workstation.Core.EngineState
 
   setup do
-    home = Path.join(System.tmp_dir!(), "workstation-b4-engine-#{:os.getpid()}-#{System.unique_integer([:positive])}")
+    home = unique_home("workstation-b4-engine")
     File.mkdir_p!(home)
     previous = System.get_env("WORKSTATION_HOME")
     System.put_env("WORKSTATION_HOME", home)
@@ -24,9 +40,8 @@ defmodule Workstation.Core.EngineStateTest do
     %{home: home}
   end
 
-  defp restore(previous, home) do
+  defp restore(previous, _home) do
     if previous, do: System.put_env("WORKSTATION_HOME", previous), else: System.delete_env("WORKSTATION_HOME")
-    File.rm_rf!(home)
   end
 
   defp make_state_root(home) do
@@ -191,11 +206,9 @@ defmodule Workstation.Core.EngineStateTest do
 
   test "fingerprint never follows a symlinked target" do
     home = EngineState.home()
-    outside = Path.join(System.tmp_dir!(), "workstation-b4-outside-#{System.unique_integer([:positive])}")
+    outside = unique_home("workstation-b4-outside")
     File.write!(outside, "secret")
     File.ln_s!(outside, Path.join(home, "door"))
-
-    on_exit(fn -> File.rm_rf!(outside) end)
 
     assert EngineState.target_fingerprint(home, "door")["type"] == "link"
   end

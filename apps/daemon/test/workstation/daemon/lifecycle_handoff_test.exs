@@ -13,17 +13,32 @@ defmodule Workstation.Daemon.LifecycleHandoffTest do
 
   use ExUnit.Case, async: false
 
+  # Fixture homes are cross-VM collision-proof: `System.unique_integer/1`
+  # restarts its sequence in every `mix test` VM, so a home that outlives its
+  # run (a killed run's leftovers) is re-drawn verbatim by a later one. The
+  # boot millisecond in base36 never repeats across VMs, any same-named
+  # leftover is swept before use, and the home is removed on exit (the full
+  # note lives in apps/daemon/test/workstation/daemon/generation_test.exs).
+  defp unique_home(prefix) do
+    token = Integer.to_string(:os.system_time(:millisecond), 36)
+    home = Path.join(System.tmp_dir!(), "#{prefix}-#{token}")
+
+    File.rm_rf!(home)
+    on_exit(fn -> File.rm_rf!(home) end)
+    home
+  end
+
+
   alias Workstation.Daemon.{Lifecycle, Listener}
 
   setup do
-    home = Path.join(System.tmp_dir!(), "c2-daemon-handoff-#{System.unique_integer([:positive])}")
+    home = unique_home("c2-daemon-handoff")
     File.mkdir_p!(home)
     previous = System.get_env("WORKSTATION_HOME")
     System.put_env("WORKSTATION_HOME", home)
 
     on_exit(fn ->
       if previous, do: System.put_env("WORKSTATION_HOME", previous), else: System.delete_env("WORKSTATION_HOME")
-      File.rm_rf!(home)
     end)
 
     # The bootstrap step locks through the orchestrator, so the daemon
@@ -41,14 +56,12 @@ defmodule Workstation.Daemon.LifecycleHandoffTest do
     # <tmp>/workstation so the engine's anchor resolution evaluates this tree
     # and finds no release source: engine_root accepts it, and the honest
     # answer is a skip.
-    parent = Path.join(System.tmp_dir!(), "ws-anchorless-#{System.unique_integer([:positive])}")
+    parent = unique_home("ws-anchorless")
     anchorless = Path.join(parent, "workstation")
     File.mkdir_p!(Path.join([anchorless, "bin"]))
 
     File.cp!(Path.join([repo_root(), "workstation", "versions.json"]), Path.join([anchorless, "versions.json"]))
     File.cp!(Path.join([repo_root(), "workstation", "bin", "workstation"]), Path.join([anchorless, "bin", "workstation"]))
-
-    on_exit(fn -> File.rm_rf!(parent) end)
 
     {spy, installer} = spy_install()
 
@@ -110,9 +123,8 @@ defmodule Workstation.Daemon.LifecycleHandoffTest do
 
     # Missing: no source-built release installed — it manages its own
     # acquisition and cannot be provably stale.
-    empty = Path.join(System.tmp_dir!(), "ws-toolchainless-#{System.unique_integer([:positive])}")
+    empty = unique_home("ws-toolchainless")
     File.mkdir_p!(empty)
-    on_exit(fn -> File.rm_rf!(empty) end)
 
     assert {:ok, false} =
              Lifecycle.release_refresh(engine_root: repo_root(), home: empty, toolchain: nil,
@@ -158,11 +170,10 @@ defmodule Workstation.Daemon.LifecycleHandoffTest do
     # records the NEOVIM_* env it received, proving the refresh rides the
     # engine's derivation of versions.json ({V} substituted) instead of a
     # second shell-side parse.
-    parent = Path.join(System.tmp_dir!(), "ws-installer-env-#{System.unique_integer([:positive])}")
+    parent = unique_home("ws-installer-env")
     root = Path.join(parent, "workstation")
     File.mkdir_p!(Path.join(root, "bootstrap"))
     File.mkdir_p!(Path.join(root, "bin"))
-    on_exit(fn -> File.rm_rf!(parent) end)
 
     # The checkout probe needs the payload markers, the buildable-anchor
     # gate needs the umbrella marker; the stub installer is the script under
@@ -378,14 +389,12 @@ defmodule Workstation.Daemon.LifecycleHandoffTest do
     # that ships no buildable umbrella anchors no HEAD, so even a stale-looking
     # stamp is not provable skew — the surfaces that applied before keep
     # applying.
-    parent = Path.join(System.tmp_dir!(), "ws-anchorless-#{System.unique_integer([:positive])}")
+    parent = unique_home("ws-anchorless")
     anchorless = Path.join(parent, "workstation")
     File.mkdir_p!(Path.join([anchorless, "bin"]))
 
     File.cp!(Path.join([repo_root(), "workstation", "versions.json"]), Path.join([anchorless, "versions.json"]))
     File.cp!(Path.join([repo_root(), "workstation", "bin", "workstation"]), Path.join([anchorless, "bin", "workstation"]))
-
-    on_exit(fn -> File.rm_rf!(parent) end)
 
     File.mkdir_p!(Path.dirname(stamp_path(home)))
     File.write!(stamp_path(home), "0000000000000000000000000000000000000000\n")
@@ -394,9 +403,8 @@ defmodule Workstation.Daemon.LifecycleHandoffTest do
   end
 
   test "release identity prefers the installer stamp over the path" do
-    scratch = Path.join(System.tmp_dir!(), "ws-identity-#{System.unique_integer([:positive])}")
+    scratch = unique_home("ws-identity")
     File.mkdir_p!(scratch)
-    on_exit(fn -> File.rm_rf!(scratch) end)
 
     stamped = Path.join(scratch, "stamped-release")
     File.mkdir_p!(stamped)

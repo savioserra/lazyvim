@@ -61,7 +61,14 @@ defmodule Workstation.Core.ChangesetsTest do
   end
 
   defp baseline_dir(tmp, files) do
-    directory = Path.join(tmp, "generation-#{System.unique_integer([:positive])}")
+    # Cross-VM collision-proof name (the unique_integer sequence restarts in
+    # every mix-test VM; see daemon/generation_test) and swept before use —
+    # the precondition is made true, never assumed. Callers remove the tree
+    # on exit.
+    directory =
+      Path.join(tmp, "generation-" <> Integer.to_string(:os.system_time(:millisecond), 36))
+
+    File.rm_rf!(directory)
     File.mkdir_p!(directory)
 
     Enum.each(files, fn

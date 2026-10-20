@@ -7,20 +7,35 @@ defmodule Workstation.Core.Update.PullTest do
 
   use ExUnit.Case, async: false
 
+  # Fixture homes are cross-VM collision-proof: `System.unique_integer/1`
+  # restarts its sequence in every `mix test` VM, so a home that outlives its
+  # run (a killed run's leftovers) is re-drawn verbatim by a later one. The
+  # boot millisecond in base36 never repeats across VMs, any same-named
+  # leftover is swept before use, and the home is removed on exit (the full
+  # note lives in apps/daemon/test/workstation/daemon/generation_test.exs).
+  defp unique_home(prefix) do
+    token = Integer.to_string(:os.system_time(:millisecond), 36)
+    home = Path.join(System.tmp_dir!(), "#{prefix}-#{token}")
+
+    File.rm_rf!(home)
+    on_exit(fn -> File.rm_rf!(home) end)
+    home
+  end
+
+
   alias Workstation.Core.Update.Pull
 
   # git is the fixture transport; without it the fixtures cannot exist.
   @git_present System.find_executable("git") != nil
 
   setup do
-    base = Path.join(System.tmp_dir!(), "c2-pull-#{System.unique_integer([:positive])}")
+    base = unique_home("c2-pull")
     File.mkdir_p!(base)
     previous = System.get_env("WORKSTATION_HOME")
     System.put_env("WORKSTATION_HOME", base)
 
     on_exit(fn ->
       if previous, do: System.put_env("WORKSTATION_HOME", previous), else: System.delete_env("WORKSTATION_HOME")
-      File.rm_rf!(base)
     end)
 
     %{base: base}
@@ -82,9 +97,8 @@ defmodule Workstation.Core.Update.PullTest do
   end
 
   test "a payload-shaped checkout that is not a git repository refuses before any fetch" do
-    dir = Path.join(System.tmp_dir!(), "c2-pull-nogit-#{System.unique_integer([:positive])}")
+    dir = unique_home("c2-pull-nogit")
     File.mkdir_p!(dir)
-    on_exit(fn -> File.rm_rf!(dir) end)
     materialize_engine_payload!(dir)
 
     assert_raise ArgumentError, ~r/not a git repository/, fn ->

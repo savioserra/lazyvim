@@ -9,6 +9,22 @@ defmodule Workstation.Core.WorkstationGoldensTaskTest do
 
   use ExUnit.Case, async: false
 
+  # Fixture homes are cross-VM collision-proof: `System.unique_integer/1`
+  # restarts its sequence in every `mix test` VM, so a home that outlives its
+  # run (a killed run's leftovers) is re-drawn verbatim by a later one. The
+  # boot millisecond in base36 never repeats across VMs, any same-named
+  # leftover is swept before use, and the home is removed on exit (the full
+  # note lives in apps/daemon/test/workstation/daemon/generation_test.exs).
+  defp unique_home(prefix) do
+    token = Integer.to_string(:os.system_time(:millisecond), 36)
+    home = Path.join(System.tmp_dir!(), "#{prefix}-#{token}")
+
+    File.rm_rf!(home)
+    on_exit(fn -> File.rm_rf!(home) end)
+    home
+  end
+
+
   # apps/core/test/mix/tasks -> repo root is five levels up.
   @repo_root Path.expand("../../../../..", __DIR__)
   @goldens_root Path.join(@repo_root, "tests/goldens")
@@ -19,10 +35,8 @@ defmodule Workstation.Core.WorkstationGoldensTaskTest do
   @profiles ["conflicts", "context", "download", "full-home", "git", "minimal", "mise", "nvim-profile", "shell-order", "theme"]
 
   test "recording into an explicit root reproduces the committed goldens byte for byte" do
-    tmp_root = Path.join(System.tmp_dir!(), "ws-goldens-task-#{System.unique_integer([:positive])}")
+    tmp_root = unique_home("ws-goldens-task")
     File.mkdir_p!(tmp_root)
-
-    on_exit(fn -> File.rm_rf!(tmp_root) end)
 
     Mix.Task.rerun("workstation.goldens", [tmp_root])
 

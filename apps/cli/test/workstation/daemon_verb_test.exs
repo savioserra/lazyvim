@@ -25,6 +25,22 @@ defmodule Workstation.CLI.DaemonVerbTest do
 
   use ExUnit.Case, async: false
 
+  # Fixture homes are cross-VM collision-proof: `System.unique_integer/1`
+  # restarts its sequence in every `mix test` VM, so a home that outlives its
+  # run (a killed run's leftovers) is re-drawn verbatim by a later one. The
+  # boot millisecond in base36 never repeats across VMs, any same-named
+  # leftover is swept before use, and the home is removed on exit (the full
+  # note lives in apps/daemon/test/workstation/daemon/generation_test.exs).
+  defp unique_home(prefix) do
+    token = Integer.to_string(:os.system_time(:millisecond), 36)
+    home = Path.join(System.tmp_dir!(), "#{prefix}-#{token}")
+
+    File.rm_rf!(home)
+    on_exit(fn -> File.rm_rf!(home) end)
+    home
+  end
+
+
   alias Workstation.CLI.{Control, DaemonClient, Router}
   alias Workstation.Daemon.{Boot, Generation, Listener, Shutdown}
 
@@ -33,7 +49,7 @@ defmodule Workstation.CLI.DaemonVerbTest do
   @spawn_wait_ms 10_000
 
   setup do
-    home = Path.join(System.tmp_dir!(), "ws-daemon-verb-#{System.unique_integer([:positive])}")
+    home = unique_home("ws-daemon-verb")
     File.mkdir_p!(home)
 
     # Hermetic update check: Boot.run opts the resident daemon in, so pin
@@ -55,8 +71,6 @@ defmodule Workstation.CLI.DaemonVerbTest do
         {key, nil} -> System.delete_env(key)
         {key, value} -> System.put_env(key, value)
       end)
-
-      File.rm_rf!(home)
     end)
 
     %{home: home}
@@ -452,7 +466,6 @@ defmodule Workstation.CLI.DaemonVerbTest do
     test "a stale advertisement is refused with both generations named" do
       home = fresh_home()
 
-      on_exit(fn -> File.rm_rf!(home) end)
       File.mkdir_p!(Path.dirname(Generation.stamp_path(home)))
       File.write!(Generation.stamp_path(home), "installed-gen")
 
@@ -467,7 +480,6 @@ defmodule Workstation.CLI.DaemonVerbTest do
     test "a fresh advertisement, an undecided home and an aged daemon skip" do
       home = fresh_home()
 
-      on_exit(fn -> File.rm_rf!(home) end)
       # No installed stamp — undecided, never a guess.
       assert DaemonClient.verify_generation(%{"release" => "anything"}, home) == :ok
 
@@ -480,7 +492,7 @@ defmodule Workstation.CLI.DaemonVerbTest do
     end
 
     defp fresh_home do
-      Path.join(System.tmp_dir!(), "ws-verify-generation-#{System.unique_integer([:positive])}")
+      unique_home("ws-verify-generation")
     end
   end
 

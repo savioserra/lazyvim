@@ -1,6 +1,26 @@
 defmodule Workstation.CLITest do
   use ExUnit.Case, async: true
 
+  # Fixture homes are cross-VM collision-proof (the full note lives in
+  # apps/daemon/test/workstation/daemon/generation_test.exs): the boot
+  # millisecond in base36 never repeats across `mix test` VM instances the
+  # way the restarted `System.unique_integer/1` sequence does, and the
+  # within-VM base36 tail keeps concurrent async draws (or two calls inside
+  # one test) from sharing a millisecond. Any same-named leftover is swept
+  # before use and the home is removed on exit.
+  defp unique_home(prefix) do
+    token =
+      Integer.to_string(:os.system_time(:millisecond), 36) <>
+        Integer.to_string(System.unique_integer([:positive]), 36)
+
+    home = Path.join(System.tmp_dir!(), "#{prefix}-#{token}")
+
+    File.rm_rf!(home)
+    on_exit(fn -> File.rm_rf!(home) end)
+    home
+  end
+
+
   alias Workstation.CLI.Router
 
   defp repo_root do
@@ -14,13 +34,10 @@ defmodule Workstation.CLITest do
   # screen and the explicit --headless flag are the mutation gates), so the
   # graduation-era test-root-marker refusal no longer exists.
   defp temp_test_root do
-    root =
-      Path.join(System.tmp_dir!(), "ws-cli-test-#{System.unique_integer([:positive])}")
+    root = unique_home("ws-cli-test")
 
     home = Path.join(root, "home")
     File.mkdir_p!(home)
-
-    on_exit(fn -> File.rm_rf!(root) end)
     {root, home}
   end
 
@@ -381,12 +398,10 @@ defmodule Workstation.CLITest do
 
     test "a core evaluation conflict or precondition exits 3" do
       {_root, home} = temp_test_root()
-      envelope = Path.join(System.tmp_dir!(), "ws-core-input-#{System.unique_integer([:positive])}.json")
+      envelope = unique_home("ws-core-input") <> ".json"
 
       File.write!(envelope, ~s({"profile": "exit3", "host": "linux", "home": "/home/golden",
         "packages": [{"id": "a", "requires": ["ghost"], "contributes": []}], "assets": {}}))
-
-      on_exit(fn -> File.rm(envelope) end)
 
       assert {:shutdown, 3} = run_main(core_argv("plan", home, ["--input", envelope]))
     end
@@ -545,13 +560,28 @@ defmodule Workstation.CLITest.EnvContract do
 
   use ExUnit.Case, async: false
 
+  # Fixture homes are cross-VM collision-proof: `System.unique_integer/1`
+  # restarts its sequence in every `mix test` VM, so a home that outlives its
+  # run (a killed run's leftovers) is re-drawn verbatim by a later one. The
+  # boot millisecond in base36 never repeats across VMs, any same-named
+  # leftover is swept before use, and the home is removed on exit (the full
+  # note lives in apps/daemon/test/workstation/daemon/generation_test.exs).
+  defp unique_home(prefix) do
+    token = Integer.to_string(:os.system_time(:millisecond), 36)
+    home = Path.join(System.tmp_dir!(), "#{prefix}-#{token}")
+
+    File.rm_rf!(home)
+    on_exit(fn -> File.rm_rf!(home) end)
+    home
+  end
+
+
   alias Workstation.CLI.Router
 
   defp temp_test_root do
-    root = Path.join(System.tmp_dir!(), "ws-cli-test-#{System.unique_integer([:positive])}")
+    root = unique_home("ws-cli-test")
     home = Path.join(root, "home")
     File.mkdir_p!(home)
-    on_exit(fn -> File.rm_rf!(root) end)
     {root, home}
   end
 
@@ -736,12 +766,11 @@ defmodule Workstation.CLITest.EnvContract do
   # NOT any sandbox home: resolution precedence must send the wire's
   # destination to the resolved home, never the envelope's.
   defp offline_envelope do
-    path = Path.join(System.tmp_dir!(), "ws-env-envelope-#{System.unique_integer([:positive])}.json")
+    path = unique_home("ws-env-envelope") <> ".json"
 
     File.write!(path, ~s({"profile": "env-resolution", "host": "linux", "home": "/home/golden",
       "packages": [], "assets": {}}))
 
-    on_exit(fn -> File.rm(path) end)
     path
   end
 end

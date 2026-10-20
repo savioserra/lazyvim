@@ -13,6 +13,26 @@ defmodule Workstation.Core.DownloadTest do
 
   use ExUnit.Case, async: false
 
+  # Fixture homes are cross-VM collision-proof (the full note lives in
+  # apps/daemon/test/workstation/daemon/generation_test.exs): the boot
+  # millisecond in base36 never repeats across `mix test` VM instances the
+  # way the restarted `System.unique_integer/1` sequence does, and the
+  # within-VM base36 tail keeps concurrent async draws (or two calls inside
+  # one test) from sharing a millisecond. Any same-named leftover is swept
+  # before use and the home is removed on exit.
+  defp unique_home(prefix) do
+    token =
+      Integer.to_string(:os.system_time(:millisecond), 36) <>
+        Integer.to_string(System.unique_integer([:positive]), 36)
+
+    home = Path.join(System.tmp_dir!(), "#{prefix}-#{token}")
+
+    File.rm_rf!(home)
+    on_exit(fn -> File.rm_rf!(home) end)
+    home
+  end
+
+
   require Record
   import Bitwise
 
@@ -27,12 +47,10 @@ defmodule Workstation.Core.DownloadTest do
   @download_test_hosts [~c"redirect.download.test", ~c"asset.download.test"]
 
   setup do
-    home = Path.join(System.tmp_dir!(), "workstation-download-#{:os.getpid()}-#{System.unique_integer([:positive])}")
-    File.rm_rf!(home)
+    home = unique_home("workstation-download")
     File.mkdir_p!(home)
     System.put_env("WORKSTATION_HOME", home)
 
-    on_exit(fn -> File.rm_rf!(home) end)
     %{home: home}
   end
 
@@ -362,9 +380,8 @@ defmodule Workstation.Core.DownloadTest do
           "linux_x86_64" => %{url: "https://example.invalid/tool-linux", sha256: sha_a()}
         })
 
-      home = Path.join(System.tmp_dir!(), "workstation-dispatch-#{System.unique_integer([:positive])}")
+      home = unique_home("workstation-dispatch")
       File.mkdir_p!(home)
-      on_exit(fn -> File.rm_rf!(home) end)
 
       assert {:ok, :installed} = Download.install(spec, home, fetch: fn url ->
                assert url == "https://example.invalid/tool-linux"
@@ -1220,7 +1237,7 @@ defmodule Workstation.Core.DownloadTest do
       |> Enum.map(fn {name, body} -> ustar(name, body) end)
       |> IO.iodata_to_binary()
 
-    dir = Path.join(System.tmp_dir!(), "workstation-fixture-#{:os.getpid()}-#{System.unique_integer([:positive])}")
+    dir = unique_home("workstation-fixture")
     File.mkdir_p!(dir)
     tar_path = Path.join(dir, "fixture.tar")
     xz_path = tar_path <> ".xz"
@@ -1427,13 +1444,7 @@ defmodule Workstation.Core.DownloadTest do
   end
 
   defp fresh_home do
-    home =
-      Path.join(
-        System.tmp_dir!(),
-        "workstation-download-unit-#{:os.getpid()}-#{System.unique_integer([:positive])}"
-      )
-
-    File.rm_rf!(home)
+    home = unique_home("workstation-download-unit")
     File.mkdir_p!(home)
     home
   end
@@ -1466,8 +1477,7 @@ exit 0
     # The fetch trusts what public_key has loaded, so this test's root
     # becomes the VM trust store for the test (setup_all clears it again
     # after the module).
-    root_pem =
-      Path.join(System.tmp_dir!(), "workstation-test-root-#{System.unique_integer([:positive])}.pem")
+    root_pem = unique_home("workstation-test-root") <> ".pem"
 
     File.write!(root_pem, :public_key.pem_encode([{:Certificate, root_der, :not_encrypted}]))
     :ok = :public_key.cacerts_load(root_pem)

@@ -9,6 +9,26 @@ defmodule Workstation.Core.ShellContractTest do
 
   use ExUnit.Case, async: true
 
+  # Fixture homes are cross-VM collision-proof (the full note lives in
+  # apps/daemon/test/workstation/daemon/generation_test.exs): the boot
+  # millisecond in base36 never repeats across `mix test` VM instances the
+  # way the restarted `System.unique_integer/1` sequence does, and the
+  # within-VM base36 tail keeps concurrent async draws (or two calls inside
+  # one test) from sharing a millisecond. Any same-named leftover is swept
+  # before use and the home is removed on exit.
+  defp unique_home(prefix) do
+    token =
+      Integer.to_string(:os.system_time(:millisecond), 36) <>
+        Integer.to_string(System.unique_integer([:positive]), 36)
+
+    home = Path.join(System.tmp_dir!(), "#{prefix}-#{token}")
+
+    File.rm_rf!(home)
+    on_exit(fn -> File.rm_rf!(home) end)
+    home
+  end
+
+
   alias Workstation.Core.Contracts.Shell
   alias Workstation.Core.Platform
 
@@ -94,9 +114,8 @@ defmodule Workstation.Core.ShellContractTest do
         System.cmd("/bin/sh", ["-c", "/bin/sh '#{script}' < input"], cd: dir)
       end
 
-      dir = Path.join(System.tmp_dir!(), "workstation-shell-awk-#{System.unique_integer([:positive])}")
+      dir = unique_home("workstation-shell-awk")
       File.mkdir_p!(dir)
-      on_exit(fn -> File.rm_rf!(dir) end)
 
       {out, 0} = run_program.("keep\n\n# workstation: app-a\nexport A=1\n", dir)
       assert out == "keep\n\n# workstation: app-a\nexport A=1\n"

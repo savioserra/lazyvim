@@ -4,6 +4,22 @@ defmodule Workstation.Core.ProvisionerTest do
   # afterwards; the real HOME is never touched.
   use ExUnit.Case, async: false
 
+  # Fixture homes are cross-VM collision-proof: `System.unique_integer/1`
+  # restarts its sequence in every `mix test` VM, so a home that outlives its
+  # run (a killed run's leftovers) is re-drawn verbatim by a later one. The
+  # boot millisecond in base36 never repeats across VMs, any same-named
+  # leftover is swept before use, and the home is removed on exit (the full
+  # note lives in apps/daemon/test/workstation/daemon/generation_test.exs).
+  defp unique_home(prefix) do
+    token = Integer.to_string(:os.system_time(:millisecond), 36)
+    home = Path.join(System.tmp_dir!(), "#{prefix}-#{token}")
+
+    File.rm_rf!(home)
+    on_exit(fn -> File.rm_rf!(home) end)
+    home
+  end
+
+
   alias Workstation.Core.EngineState
   alias Workstation.Core.Journal
   alias Workstation.Backends.Chezmoi
@@ -248,12 +264,9 @@ defmodule Workstation.Core.ProvisionerTest do
   end
 
   defp generation_root do
-    root = Path.join(System.tmp_dir!(), "workstation-generation-#{:os.getpid()}-#{System.unique_integer([:positive])}")
-    File.rm_rf!(root)
+    root = unique_home("workstation-generation")
     File.mkdir_p!(Path.join(root, ".config"))
     File.write!(Path.join(root, ".config/rc"), "export A=1\n")
-
-    on_exit(fn -> File.rm_rf!(root) end)
 
     root
   end

@@ -17,6 +17,26 @@ defmodule Workstation.Core.Packages.FoundationTest do
 
   use ExUnit.Case, async: true
 
+  # Fixture homes are cross-VM collision-proof (the full note lives in
+  # apps/daemon/test/workstation/daemon/generation_test.exs): the boot
+  # millisecond in base36 never repeats across `mix test` VM instances the
+  # way the restarted `System.unique_integer/1` sequence does, and the
+  # within-VM base36 tail keeps concurrent async draws (or two calls inside
+  # one test) from sharing a millisecond. Any same-named leftover is swept
+  # before use and the home is removed on exit.
+  defp unique_home(prefix) do
+    token =
+      Integer.to_string(:os.system_time(:millisecond), 36) <>
+        Integer.to_string(System.unique_integer([:positive]), 36)
+
+    home = Path.join(System.tmp_dir!(), "#{prefix}-#{token}")
+
+    File.rm_rf!(home)
+    on_exit(fn -> File.rm_rf!(home) end)
+    home
+  end
+
+
   alias Workstation.Core.Catalog
   alias Workstation.Core.Catalog.Discover
   alias Workstation.Core.Source
@@ -44,9 +64,8 @@ defmodule Workstation.Core.Packages.FoundationTest do
     assert System.find_executable("awk")
     assert System.find_executable("mktemp")
 
-    home = Path.join(System.tmp_dir!(), "workstation-bash-login-#{System.unique_integer([:positive])}")
+    home = unique_home("workstation-bash-login")
     File.mkdir_p!(Path.join(home, ".local/bin"))
-    on_exit(fn -> File.rm_rf!(home) end)
 
     # The engine's shims, as bootstrap provisions them before the first
     # public apply (the installer's own contract).
@@ -95,9 +114,8 @@ defmodule Workstation.Core.Packages.FoundationTest do
   test "the include is idempotent on hosts whose hand file already sources .profile" do
     assert System.find_executable("bash")
 
-    home = Path.join(System.tmp_dir!(), "workstation-bash-include-#{System.unique_integer([:positive])}")
+    home = unique_home("workstation-bash-include")
     File.mkdir_p!(home)
-    on_exit(fn -> File.rm_rf!(home) end)
 
     hand = "[ -r \"$HOME/.profile\" ] && . \"$HOME/.profile\"\n"
     File.write!(Path.join(home, ".bash_profile"), hand)

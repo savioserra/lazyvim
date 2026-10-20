@@ -1,6 +1,22 @@
 defmodule Workstation.Daemon.LifecycleTest do
   use ExUnit.Case, async: false
 
+  # Fixture homes are cross-VM collision-proof: `System.unique_integer/1`
+  # restarts its sequence in every `mix test` VM, so a home that outlives its
+  # run (a killed run's leftovers) is re-drawn verbatim by a later one. The
+  # boot millisecond in base36 never repeats across VMs, any same-named
+  # leftover is swept before use, and the home is removed on exit (the full
+  # note lives in apps/daemon/test/workstation/daemon/generation_test.exs).
+  defp unique_home(prefix) do
+    token = Integer.to_string(:os.system_time(:millisecond), 36)
+    home = Path.join(System.tmp_dir!(), "#{prefix}-#{token}")
+
+    File.rm_rf!(home)
+    on_exit(fn -> File.rm_rf!(home) end)
+    home
+  end
+
+
   # End-to-end lifecycle-op coverage over a real socket (b8 graduation
   # wiring): the orchestrator lock is taken and released around the op, and
   # the refusal is the honest `not_graduated` gate — never a fake success.
@@ -10,7 +26,7 @@ defmodule Workstation.Daemon.LifecycleTest do
   alias Workstation.Daemon.{ApplyOrchestrator, Listener, Protocol}
 
   setup do
-    home = Path.join(System.tmp_dir!(), "b8-lifecycle-#{System.unique_integer([:positive])}")
+    home = unique_home("b8-lifecycle")
     File.mkdir_p!(home)
     previous = System.get_env("WORKSTATION_HOME")
     System.put_env("WORKSTATION_HOME", home)
@@ -23,7 +39,6 @@ defmodule Workstation.Daemon.LifecycleTest do
     on_exit(fn ->
       if previous, do: System.put_env("WORKSTATION_HOME", previous), else: System.delete_env("WORKSTATION_HOME")
       Application.delete_env(:daemon, :engine_apply)
-      File.rm_rf!(home)
     end)
 
     start_supervised!(Workstation.Daemon.Application.supervisor_spec())

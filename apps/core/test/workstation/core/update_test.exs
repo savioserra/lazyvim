@@ -11,6 +11,22 @@ defmodule Workstation.Core.UpdateTest do
 
   use ExUnit.Case, async: false
 
+  # Fixture homes are cross-VM collision-proof: `System.unique_integer/1`
+  # restarts its sequence in every `mix test` VM, so a home that outlives its
+  # run (a killed run's leftovers) is re-drawn verbatim by a later one. The
+  # boot millisecond in base36 never repeats across VMs, any same-named
+  # leftover is swept before use, and the home is removed on exit (the full
+  # note lives in apps/daemon/test/workstation/daemon/generation_test.exs).
+  defp unique_home(prefix) do
+    token = Integer.to_string(:os.system_time(:millisecond), 36)
+    home = Path.join(System.tmp_dir!(), "#{prefix}-#{token}")
+
+    File.rm_rf!(home)
+    on_exit(fn -> File.rm_rf!(home) end)
+    home
+  end
+
+
   alias Workstation.Core.Update
 
   setup do
@@ -38,8 +54,8 @@ defmodule Workstation.Core.UpdateTest do
   end
 
   test "an explicit :engine_root wins over the environment" do
-    payload = engine_fixture(Path.join(System.tmp_dir!(), "ws-update-root-#{System.unique_integer([:positive])}"))
-    decoy = engine_fixture(Path.join(System.tmp_dir!(), "ws-update-decoy-#{System.unique_integer([:positive])}"))
+    payload = engine_fixture(unique_home("ws-update-root"))
+    decoy = engine_fixture(unique_home("ws-update-decoy"))
 
     System.put_env("WORKSTATION_ENGINE_REPO", decoy)
 
@@ -49,10 +65,7 @@ defmodule Workstation.Core.UpdateTest do
   test "WORKSTATION_ENGINE_REPO resolves in both spellings" do
     # The payload lives at <tmp>/checkout/workstation so the parent spelling
     # has a real `workstation/` child to adopt.
-    payload =
-      engine_fixture(
-        Path.join([System.tmp_dir!(), "ws-update-env-#{System.unique_integer([:positive])}", "workstation"])
-      )
+    payload = engine_fixture(Path.join(unique_home("ws-update-env"), "workstation"))
 
     # Spelling 1: the env var names the payload directory itself.
     System.put_env("WORKSTATION_ENGINE_REPO", payload)
@@ -65,7 +78,7 @@ defmodule Workstation.Core.UpdateTest do
   end
 
   test "a tree without the engine payload is never adopted (fail-closed)" do
-    empty = Path.join(System.tmp_dir!(), "ws-update-empty-#{System.unique_integer([:positive])}")
+    empty = unique_home("ws-update-empty")
     File.mkdir_p!(empty)
     System.delete_env("WORKSTATION_ENGINE_REPO")
 
@@ -83,7 +96,7 @@ defmodule Workstation.Core.UpdateTest do
   end
 
   test "realpath/1 splices symlink components onto the real target" do
-    base = Path.join(System.tmp_dir!(), "ws-update-real-#{System.unique_integer([:positive])}")
+    base = unique_home("ws-update-real")
     real = Path.join(base, "real")
     File.mkdir_p!(Path.join(real, "dir"))
 
@@ -96,7 +109,7 @@ defmodule Workstation.Core.UpdateTest do
   end
 
   test "a symlink loop raises instead of looping" do
-    base = Path.join(System.tmp_dir!(), "ws-update-loop-#{System.unique_integer([:positive])}")
+    base = unique_home("ws-update-loop")
     File.mkdir_p!(base)
 
     loop = Path.join(base, "loop")

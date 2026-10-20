@@ -1,6 +1,22 @@
 defmodule Workstation.DaemonTest do
   use ExUnit.Case, async: false
 
+  # Fixture homes are cross-VM collision-proof: `System.unique_integer/1`
+  # restarts its sequence in every `mix test` VM, so a home that outlives its
+  # run (a killed run's leftovers) is re-drawn verbatim by a later one. The
+  # boot millisecond in base36 never repeats across VMs, any same-named
+  # leftover is swept before use, and the home is removed on exit (the full
+  # note lives in apps/daemon/test/workstation/daemon/generation_test.exs).
+  defp unique_home(prefix) do
+    token = Integer.to_string(:os.system_time(:millisecond), 36)
+    home = Path.join(System.tmp_dir!(), "#{prefix}-#{token}")
+
+    File.rm_rf!(home)
+    on_exit(fn -> File.rm_rf!(home) end)
+    home
+  end
+
+
   # The daemon tree binds a real unix socket, so it is only ever booted under
   # a per-test home (WORKSTATION_HOME is the engine's own override contract);
   # the real HOME is never touched by the suite.
@@ -19,14 +35,13 @@ defmodule Workstation.DaemonTest do
   ]
 
   setup do
-    home = Path.join(System.tmp_dir!(), "b6-daemon-tree-#{System.unique_integer([:positive])}")
+    home = unique_home("b6-daemon-tree")
     File.mkdir_p!(home)
     previous = System.get_env("WORKSTATION_HOME")
     System.put_env("WORKSTATION_HOME", home)
 
     on_exit(fn ->
       if previous, do: System.put_env("WORKSTATION_HOME", previous), else: System.delete_env("WORKSTATION_HOME")
-      File.rm_rf!(home)
     end)
 
     %{home: home}

@@ -19,13 +19,29 @@ defmodule Workstation.Core.Update.BootstrapTest do
 
   use ExUnit.Case, async: false
 
+  # Fixture homes are cross-VM collision-proof: `System.unique_integer/1`
+  # restarts its sequence in every `mix test` VM, so a home that outlives its
+  # run (a killed run's leftovers) is re-drawn verbatim by a later one. The
+  # boot millisecond in base36 never repeats across VMs, any same-named
+  # leftover is swept before use, and the home is removed on exit (the full
+  # note lives in apps/daemon/test/workstation/daemon/generation_test.exs).
+  defp unique_home(prefix) do
+    token = Integer.to_string(:os.system_time(:millisecond), 36)
+    home = Path.join(System.tmp_dir!(), "#{prefix}-#{token}")
+
+    File.rm_rf!(home)
+    on_exit(fn -> File.rm_rf!(home) end)
+    home
+  end
+
+
   alias Workstation.Core.Update.Bootstrap
 
   @fixture_version "0.0.0"
   @nvim_banner "NVIM v#{@fixture_version}"
 
   setup do
-    base = Path.join(System.tmp_dir!(), "c2-bootstrap-#{System.unique_integer([:positive])}")
+    base = unique_home("c2-bootstrap")
     home = Path.join(base, "home")
     File.mkdir_p!(home)
     previous = System.get_env("WORKSTATION_HOME")
@@ -35,8 +51,6 @@ defmodule Workstation.Core.Update.BootstrapTest do
       if previous,
         do: System.put_env("WORKSTATION_HOME", previous),
         else: System.delete_env("WORKSTATION_HOME")
-
-      File.rm_rf!(base)
     end)
 
     %{base: base, home: home}
@@ -685,9 +699,19 @@ defmodule Workstation.Core.Update.BootstrapTest do
 
     unless is_binary(dir), do: raise(ArgumentError, "tar fixture needs a directory")
 
-    File.mkdir_p!(dir)
-    path = Path.join(dir, "fixture-#{System.unique_integer([:positive])}.tar.gz")
+    # The archive name carries the same cross-VM token (tar fixtures called
+    # without :dir/:base land in the tmpdir ROOT, where the restarted
+    # unique_integer sequence re-draws leaked names verbatim); swept before
+    # the write and removed on exit.
+    token =
+      Integer.to_string(:os.system_time(:millisecond), 36) <>
+        Integer.to_string(System.unique_integer([:positive]), 36)
+
+    path = Path.join(dir, "fixture-" <> token <> ".tar.gz")
+
+    File.rm_rf!(path)
     File.write!(path, archive)
+    on_exit(fn -> File.rm_rf!(path) end)
     %{archive: path, digest: Workstation.Core.EngineState.sha256(archive)}
   end
 

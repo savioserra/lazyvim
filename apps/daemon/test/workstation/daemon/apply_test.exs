@@ -14,12 +14,28 @@ defmodule Workstation.Daemon.ApplyTest do
 
   use ExUnit.Case, async: false
 
+  # Fixture homes are cross-VM collision-proof: `System.unique_integer/1`
+  # restarts its sequence in every `mix test` VM, so a home that outlives its
+  # run (a killed run's leftovers) is re-drawn verbatim by a later one. The
+  # boot millisecond in base36 never repeats across VMs, any same-named
+  # leftover is swept before use, and the home is removed on exit (the full
+  # note lives in apps/daemon/test/workstation/daemon/generation_test.exs).
+  defp unique_home(prefix) do
+    token = Integer.to_string(:os.system_time(:millisecond), 36)
+    home = Path.join(System.tmp_dir!(), "#{prefix}-#{token}")
+
+    File.rm_rf!(home)
+    on_exit(fn -> File.rm_rf!(home) end)
+    home
+  end
+
+
   alias Workstation.Core.{Catalog, Digest, EngineState, Graph, Source}
   alias Workstation.Daemon.{Apply, Listener, Protocol}
   alias Workstation.Pipeline
 
   setup do
-    home = Path.join(System.tmp_dir!(), "c1-daemon-apply-#{System.unique_integer([:positive])}")
+    home = unique_home("c1-daemon-apply")
     File.mkdir_p!(home)
     previous = System.get_env("WORKSTATION_HOME")
     System.put_env("WORKSTATION_HOME", home)
@@ -31,7 +47,6 @@ defmodule Workstation.Daemon.ApplyTest do
     on_exit(fn ->
       if previous, do: System.put_env("WORKSTATION_HOME", previous), else: System.delete_env("WORKSTATION_HOME")
       Application.delete_env(:daemon, :engine_apply)
-      File.rm_rf!(home)
     end)
 
     %{home: home}

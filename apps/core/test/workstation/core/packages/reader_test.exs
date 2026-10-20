@@ -7,6 +7,26 @@ defmodule Workstation.Core.Packages.ReaderTest do
 
   use ExUnit.Case, async: true
 
+  # Fixture homes are cross-VM collision-proof (the full note lives in
+  # apps/daemon/test/workstation/daemon/generation_test.exs): the boot
+  # millisecond in base36 never repeats across `mix test` VM instances the
+  # way the restarted `System.unique_integer/1` sequence does, and the
+  # within-VM base36 tail keeps concurrent async draws (or two calls inside
+  # one test) from sharing a millisecond. Any same-named leftover is swept
+  # before use and the home is removed on exit.
+  defp unique_home(prefix) do
+    token =
+      Integer.to_string(:os.system_time(:millisecond), 36) <>
+        Integer.to_string(System.unique_integer([:positive]), 36)
+
+    home = Path.join(System.tmp_dir!(), "#{prefix}-#{token}")
+
+    File.rm_rf!(home)
+    on_exit(fn -> File.rm_rf!(home) end)
+    home
+  end
+
+
   alias Workstation.Core.Packages.Reader
 
   # The tree law checks the id against the manifest's directory name, so
@@ -26,17 +46,25 @@ defmodule Workstation.Core.Packages.ReaderTest do
   # runs async-safe, and the `nvim` leaf satisfies the tree law. No fixture
   # files are written; the real package payloads serve as the bodies.
   defp read_nvim_spec(manifest) do
+    # File.rm/1 can never remove a DIRECTORY: the old per-test child was
+    # leaked verbatim by every run and re-drawn (integer restart) by the
+    # next VM. The helper token keeps the child cross-VM unique; sweep and
+    # rm_rf! own it end to end. (The shared parent stays: concurrent async
+    # tests nest under it, and it holds only empty dirs between runs.)
+    embed = Path.basename(unique_home("nvim-embed"))
+
     dir =
       Path.join([
         System.tmp_dir!(),
         "workstation-reader-test",
-        "nvim-embed-" <> Integer.to_string(System.unique_integer([:positive])),
+        embed,
         "nvim"
       ])
 
     path = Path.join(dir, "manifest.json")
+    File.rm_rf!(Path.dirname(dir))
     File.mkdir_p!(dir)
-    on_exit(fn -> File.rm(Path.dirname(dir)) end)
+    on_exit(fn -> File.rm_rf!(Path.dirname(dir)) end)
     Reader.spec!(path, manifest)
   end
 

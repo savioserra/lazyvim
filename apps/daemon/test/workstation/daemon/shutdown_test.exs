@@ -19,11 +19,27 @@ defmodule Workstation.Daemon.ShutdownTest do
 
   use ExUnit.Case, async: false
 
+  # Fixture homes are cross-VM collision-proof: `System.unique_integer/1`
+  # restarts its sequence in every `mix test` VM, so a home that outlives its
+  # run (a killed run's leftovers) is re-drawn verbatim by a later one. The
+  # boot millisecond in base36 never repeats across VMs, any same-named
+  # leftover is swept before use, and the home is removed on exit (the full
+  # note lives in apps/daemon/test/workstation/daemon/generation_test.exs).
+  defp unique_home(prefix) do
+    token = Integer.to_string(:os.system_time(:millisecond), 36)
+    home = Path.join(System.tmp_dir!(), "#{prefix}-#{token}")
+
+    File.rm_rf!(home)
+    on_exit(fn -> File.rm_rf!(home) end)
+    home
+  end
+
+
   alias Workstation.Core.EngineState
   alias Workstation.Daemon.{Listener, Protocol, Shutdown, TaskSupervisor}
 
   setup do
-    home = Path.join(System.tmp_dir!(), "ws-shutdown-test-#{System.unique_integer([:positive])}")
+    home = unique_home("ws-shutdown-test")
     File.mkdir_p!(home)
     previous = System.get_env("WORKSTATION_HOME")
     System.put_env("WORKSTATION_HOME", home)
@@ -35,7 +51,6 @@ defmodule Workstation.Daemon.ShutdownTest do
       Application.delete_env(:daemon, :drain_timeout_ms)
       Application.delete_env(:daemon, :reply_flush_ms)
       Application.delete_env(:daemon, :flush_wait_ms)
-      File.rm_rf!(home)
     end)
 
     %{home: home, socket_path: Listener.socket_path(home)}
@@ -343,10 +358,10 @@ defmodule Workstation.Daemon.ShutdownTest do
 
     # The NEXT generation boots under the same global name, in its own home.
     # (Short name on purpose: the socket path must stay under sun_path's
-    # 108-byte cap for EVERY unique_integer width — a 5-digit roll on the
-    # longer spelling pushed the path to exactly 108 chars and the bind
-    # answered :invalid, failing the pin on path length, not on merit.)
-    next_home = Path.join(System.tmp_dir!(), "ws-shut-next-#{System.unique_integer([:positive])}")
+    # 108-byte cap for EVERY suffix width — a 5-digit roll on the old
+    # unique_integer spelling once pushed the path to exactly 108 chars
+    # and the bind answered :invalid, failing the pin on length, not merit.)
+    next_home = unique_home("ws-shut-next")
     File.mkdir_p!(next_home)
     previous_home = System.get_env("WORKSTATION_HOME")
     System.put_env("WORKSTATION_HOME", next_home)
