@@ -423,9 +423,10 @@ defmodule Workstation.Pipeline do
 
   # The plan's whole desired target surface, in the anchor's order: the
   # backend entries plus the bootstrap-provisioned surface the fold
-  # re-produces (download pins, the git retirements the plan activated,
-  # contract-owned targets such as the managed-tool config, its PATH link
-  # and its state directory). The pending anchor records exactly this list,
+  # re-produces (download pins, the copied payloads, the git retirements the
+  # plan activated, contract-owned targets such as the managed-tool config,
+  # its PATH link and its state directory). The pending anchor records
+  # exactly this list,
   # and the preconditions' unresolved-attempt guard consults it as
   # `"desired"` — one surface shared by the writer and the guard, so a
   # stale attempt's targets reconcile against precisely what the fold will
@@ -439,6 +440,7 @@ defmodule Workstation.Pipeline do
           target -> [target]
         end
       end) ++
+      Enum.map(plan.copies, & &1.target) ++
       Enum.map(plan.git_retirements, & &1.target) ++
       Mise.owned_targets_for(plan.mise)
   end

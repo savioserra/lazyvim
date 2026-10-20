@@ -67,6 +67,10 @@ defmodule Workstation.Core.Source.Entries do
       # entries carried by the policy body.
       {{:removal, spec.target, record.owner}, []}
     else
+      # Engine law (the hot-dir ruling): chezmoi never emits source entries
+      # under the agent home — no file, no directory, no ancestor table row.
+      :ok = Paths.assert_not_hermes_home!(spec.target)
+
       # Every generated regular source file must carry real bytes: a nil body
       # must never silently publish an empty program or payload.
       bytes =

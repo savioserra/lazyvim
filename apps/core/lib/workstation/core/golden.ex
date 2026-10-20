@@ -202,6 +202,7 @@ defmodule Workstation.Core.Golden do
             "sha256" => effect[:sha256],
             "archive" => effect[:archive],
             "layout" => effect[:layout],
+            "asset" => effect[:asset],
             "commit" => effect[:commit],
             "fingerprint" => effect[:fingerprint],
             "attribution" => effect[:attribution],
@@ -361,6 +362,9 @@ defmodule Workstation.Core.Golden do
       provider == Workstation.Core.Contracts.Download.provider_id() ->
         {%{"provider" => provider, "spec" => normalize_download_spec(spec)}, assets}
 
+      provider == Workstation.Core.Contracts.Copy.provider_id() ->
+        {%{"provider" => provider, "spec" => normalize_copy_spec(spec)}, assets}
+
       provider == Workstation.Core.Contracts.Mise.provider_id() ->
         {%{"provider" => provider, "spec" => stringify(spec)}, assets}
 
@@ -436,6 +440,19 @@ defmodule Workstation.Core.Golden do
   # the content claim (member + sha256).
   defp stringify_probe(%{argv: argv, output: output}), do: %{"argv" => argv, "output" => output}
   defp stringify_probe(%{member: member, sha256: sha256}), do: %{"member" => member, "sha256" => sha256}
+
+  # The copy spec records verbatim (declared fields, nil-dropped): the asset
+  # stays a package-relative REFERENCE — a copy never inlines bytes, so the
+  # recorded plan is machine-independent and the apply boundary serves the
+  # owning package's declared payload.
+  defp normalize_copy_spec(spec) do
+    %{
+      "asset" => spec.asset,
+      "target" => spec.target,
+      "executable" => spec.executable
+    }
+    |> drop_nil_fields()
+  end
 
   defp normalize_shell_spec(spec) do
     %{

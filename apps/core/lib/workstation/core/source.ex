@@ -17,6 +17,7 @@ defmodule Workstation.Core.Source do
   """
 
   alias Workstation.Backends.Chezmoi
+  alias Workstation.Core.Contracts.Copy
   alias Workstation.Core.Contracts.Download
   alias Workstation.Core.Contracts.Mise
   alias Workstation.Core.Digest
@@ -42,6 +43,7 @@ defmodule Workstation.Core.Source do
           baseline_generation: nil,
           data: nil,
           downloads: [],
+          copies: [],
           mise: nil,
           manifest: [],
           generation: nil
@@ -88,6 +90,7 @@ defmodule Workstation.Core.Source do
           baseline_generation: String.t() | nil,
           data: %{required(:owner) => String.t(), required(:bytes) => String.t()} | nil,
           downloads: [map()],
+          copies: [map()],
           mise: map() | nil,
           manifest: [map()],
           generation: String.t() | nil
@@ -109,6 +112,10 @@ defmodule Workstation.Core.Source do
     collected = collected ++ Enum.map(capability, &elem(&1, 0))
     profile = capability_profiles(capability)
     downloads = Downloads.compose(collected)
+    # The copied-payload surface composes beside the downloads: hot-state
+    # payload targets (the agent home) served by byte-compare copy, never by
+    # backend source entries.
+    copies = compose_copies(collected)
     # The managed mise tool set composes against the download pins and the
     # graph's resolved host: a catalog that declares tools without the engine
     # mise pin fails here, and platform-scoped tools outside the host are
@@ -158,6 +165,10 @@ defmodule Workstation.Core.Source do
     # The mise contract's owned surfaces carry the same exclusivity law.
     Mise.check_conflicts(mise, entries, declared_removals, downloads)
 
+    # Copied payloads own their targets exclusively too — the same law as the
+    # download pins, checked before the plan exists so replay fails loudly.
+    check_copy_conflicts(copies, entries, declared_removals, downloads, Mise.owned_targets_for(mise))
+
     plan = %__MODULE__{
       entries: entries,
       removals: removals,
@@ -171,6 +182,7 @@ defmodule Workstation.Core.Source do
       baseline_generation: nil,
       data: data,
       downloads: downloads,
+      copies: copies,
       mise: mise
     }
 
@@ -325,6 +337,86 @@ defmodule Workstation.Core.Source do
     download_pins = Enum.map(plan.downloads, fn download -> {download.source_name, Download.pin_bytes(download)} end)
 
     base ++ download_pins ++ Mise.pinned_files(plan.mise)
+  end
+
+  # --- copies ---
+
+  # The copied-payload share of the collection: every copy recipe becomes a
+  # validated record whose ASSET REFERENCE travels (bytes resolve only at
+  # the apply boundary through the catalog's asset seam) with a
+  # content-addressed declared-field fingerprint. Pure — no package I/O.
+  defp compose_copies(collected) do
+    collected
+    |> Enum.filter(&(&1.provider == Copy.provider_id()))
+    |> Enum.map(fn record ->
+      spec = record.spec
+      :ok = Copy.validate_spec(spec)
+
+      %{
+        owner: record.owner,
+        target: spec.target,
+        asset: spec.asset,
+        executable: spec.executable,
+        fingerprint: Copy.fingerprint(spec)
+      }
+    end)
+    |> Enum.reduce({[], MapSet.new()}, fn copy, {copies, seen} ->
+      MapSet.member?(seen, copy.target) &&
+        Paths.invalid!("duplicate copy target #{copy.target}: one copied target may have only one owner")
+
+      {copies ++ [copy], MapSet.put(seen, copy.target)}
+    end)
+    |> elem(0)
+  end
+
+  # The same exclusivity law as the download pins: a copied target may not
+  # overlap any owned entry, declared removal, download pin or mise-owned
+  # surface, in either direction, so replay fails loudly before a plan
+  # exists.
+  defp check_copy_conflicts(copies, entries, removals, downloads, mise_targets) do
+    Enum.each(copies, fn copy ->
+      Enum.each(entries, fn entry ->
+        overlapping =
+          copy.target == entry.target or Paths.encompasses?(copy.target, entry.target) or
+            Paths.encompasses?(entry.target, copy.target)
+
+        overlapping &&
+          Paths.invalid!(
+            "copy target #{copy.target} overlaps owned target #{entry.target} " <>
+              "(#{Enum.join(entry.attribution, ",")})"
+          )
+      end)
+
+      Enum.each(removals, fn removal ->
+        Paths.encompasses?(removal.target, copy.target) &&
+          Paths.invalid!("declared removal #{removal.target} overlaps copy target #{copy.target}")
+      end)
+
+      Enum.each(downloads, fn download ->
+        declared =
+          case Map.get(download, :targets) do
+            nil -> [download.target]
+            targets -> Map.values(targets)
+          end
+
+        Enum.each(declared, fn download_target ->
+          overlapping =
+            copy.target == download_target or Paths.encompasses?(copy.target, download_target) or
+              Paths.encompasses?(download_target, copy.target)
+
+          overlapping &&
+            Paths.invalid!("copy target #{copy.target} overlaps download target #{download_target}")
+        end)
+      end)
+
+      Enum.each(mise_targets, fn mise_target ->
+        overlapping =
+          copy.target == mise_target or Paths.encompasses?(copy.target, mise_target) or
+            Paths.encompasses?(mise_target, copy.target)
+
+        overlapping && Paths.invalid!("copy target #{copy.target} overlaps mise target #{mise_target}")
+      end)
+    end)
   end
 
   @doc """

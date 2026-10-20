@@ -32,6 +32,19 @@ Repository `AGENTS.md` files are instructions, not payload: no recipe can
 declare them, so no ignore policy is needed and a test proves they cannot
 deploy.
 
+## Backend scope law
+
+The backend never derives source state under a hot home — a directory a
+running program mutates between applies (`.hermes`, the agent home). Any
+tracked state there (source entries, derived ancestor directories,
+recorded mtimes) fights the program's writes and fails every apply on an
+agent-active host, so the composition refuses any backend recipe whose
+target lives under it (`Workstation.Core.Source.Paths.assert_not_hermes_home!/1`,
+removals exempt: a tombstone has no source name and no ancestors, so it
+dir-tracks nothing). Mutable payloads under a hot home are served by the
+copy contract instead: an idempotent byte-compare serve with no derived
+source state (see [capabilities](capabilities.md#hermes-resources)).
+
 Generation ids and target fingerprints are content addresses over canonical
 JSON: compact bytes with object keys sorted ascending bytewise
 (`vim.json.encode(_, { sort_keys = true })`). Per-process key-order seeding

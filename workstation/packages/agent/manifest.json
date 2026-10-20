@@ -48,10 +48,9 @@
       }
     },
     {
-      "provider": "chezmoi",
+      "provider": "copy",
       "spec": {
         "asset": "files/.hermes/skills/secrets/SKILL.md",
-        "kind": "file",
         "target": ".hermes/skills/secrets/SKILL.md"
       }
     },
