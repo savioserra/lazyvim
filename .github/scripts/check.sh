@@ -29,6 +29,9 @@ else
 	fail=1
 fi
 
+step 'nix eval-goldens (walker drift guard at HEAD — skips where nix/docker is unavailable)'
+sh .github/scripts/eval-goldens.sh || fail=1
+
 step 'engine suite (mix test)'
 mise exec -- mix test || fail=1
 

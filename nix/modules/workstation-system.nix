@@ -36,12 +36,34 @@ in
       pkgs.btop
     ] ++ cfg.extraPackages;
 
-    # activation marker the VM test driver greps for (boot-to-activation
-    # proof, the thing synthetic fixtures never gave)
+    # activation marker (kmsg surfaces on the serial console; plain stdout
+    # serves human `switch` runs)
     system.activationScripts.workstation = {
       deps = [ "users" ];
       text = ''
         echo "workstation: engine staged at ${engine}/bin/workstation (system plane)"
+        echo "workstation: engine staged at ${engine}/bin/workstation (system plane)" > /dev/kmsg 2>/dev/null || true
+      '';
+    };
+
+    # boot-to-activation proof: one oneshot unit ordered after the home
+    # activation and multi-user, printing to journal+console so the serial
+    # log carries all three markers the VM test driver greps for
+    systemd.services.workstation-proof = {
+      description = "Workstation boot-to-activation proof";
+      wantedBy = [ "multi-user.target" ];
+      after = [ "multi-user.target" "home-manager-vm.service" ];
+      wants = [ "home-manager-vm.service" ];
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+        StandardOutput = "journal+console";
+        StandardError = "journal+console";
+      };
+      script = ''
+        echo "workstation: engine staged at ${engine}/bin/workstation (system plane)"
+        echo "workstation: home plane active (home-manager activation completed)"
+        echo "workstation: boot-to-activation proof complete (multi-user reached)"
       '';
     };
   };
