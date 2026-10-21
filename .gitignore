@@ -27,3 +27,6 @@ node_modules/
 .nvim-data/
 .nvim-state/
 .nvim-cache/
+
+# The nix VM test's build link (tests/nix/run-vm.sh).
+/tests/nix/vm-result
