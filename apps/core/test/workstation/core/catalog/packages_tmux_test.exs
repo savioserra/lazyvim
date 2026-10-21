@@ -10,9 +10,11 @@ defmodule Workstation.Core.Catalog.PackagesTmuxTest do
   tmux2k's onedark defaults are canonical. The nunchux launcher grew into
   its own package (the nunchux data manifest — config target, pinned
   binary pre-seed, platform marker); this suite keeps the tmux-side
-  contracts: the ACTIVE `@plugin` pin and root `C-Space` chord in
+  contracts: the ACTIVE `@plugin` pin and root `C-g` chord in
   `.tmux.conf` (live with the engine-provisioned checkout,
-  r2.nunchux-wiring) and the tmux2k status-bar pins. See docs/tmux.md.
+  r2.nunchux-wiring; rebound off upstream's default C-Space on 2026-10-21 —
+  nvim's blink.cmp claims insert-mode <C-space> for completion) and the
+  tmux2k status-bar pins. See docs/tmux.md.
   """
 
   use ExUnit.Case, async: true
@@ -51,7 +53,7 @@ defmodule Workstation.Core.Catalog.PackagesTmuxTest do
   test "the nunchux key is declared ahead of TPM init so activation needs no reorder" do
     lines = String.split(conf_source(), "\n")
 
-    key_line = Enum.find_index(lines, &(&1 == "set -g @nunchux-key 'C-Space'"))
+    key_line = Enum.find_index(lines, &(&1 == "set -g @nunchux-key 'C-g'"))
 
     tpm_line =
       Enum.find_index(lines, &String.starts_with?(&1, "run-shell '~/.tmux/plugins/tpm/tpm'"))
@@ -59,25 +61,36 @@ defmodule Workstation.Core.Catalog.PackagesTmuxTest do
     assert key_line && tpm_line && key_line < tpm_line
   end
 
-  test "the root C-Space popup binding is live beside the plugin pin" do
+  test "the root C-g popup binding is live beside the plugin pin, C-Space fully retired" do
     lines = String.split(conf_source(), "\n")
+    conf = conf_source()
 
     # Exactly the popup command nunchux.tmux builds (60%/50% are upstream's
     # menu_width/menu_height defaults; NUNCHUX_BIN resolves to the
     # engine-provisioned checkout's bin/nunchux).
     binding =
-      ~S(bind -n C-Space display-popup -E -B -d '#{pane_current_path}' -w '60%' -h '50%' '~/.tmux/plugins/nunchux/bin/nunchux')
+      ~S(bind -n C-g display-popup -E -B -d '#{pane_current_path}' -w '60%' -h '50%' '~/.tmux/plugins/nunchux/bin/nunchux')
 
     binding_line = Enum.find_index(lines, &(&1 == binding))
     plugin_line = Enum.find_index(lines, &(&1 == "set -g @plugin 'datamadsen/nunchux'"))
-    key_line = Enum.find_index(lines, &(&1 == "set -g @nunchux-key 'C-Space'"))
+    key_line = Enum.find_index(lines, &(&1 == "set -g @nunchux-key 'C-g'"))
 
     assert binding_line && plugin_line && key_line
     # One activation region: pin, then key, then the chord it drives.
     assert plugin_line < binding_line and key_line < binding_line
 
     # No commented remnants of the dormant era may survive beside the live chord.
-    refute Enum.any?(lines, &String.starts_with?(&1, "#bind -n C-Space"))
+    refute Enum.any?(lines, &String.starts_with?(&1, "#bind -n C-g"))
+
+    # The 2026-10-21 rebind: upstream's default root C-Space intercepted the
+    # chord ahead of nvim and shadowed blink.cmp's insert-mode completion
+    # trigger (the LazyVim blink extra binds <C-space> to show completion).
+    # No live C-Space claim may survive — neither the @nunchux-key option nor
+    # a bind line (commented remnants included). The rationale comment naming
+    # the old chord is deliberate provenance and is not a claim.
+    refute conf =~ "@nunchux-key 'C-Space'"
+    refute conf =~ "C-Space display-popup"
+    refute conf =~ "#bind -n C-Space"
   end
 
   test "the tmux2k pin, theme and right-side plugins are active ahead of TPM init" do

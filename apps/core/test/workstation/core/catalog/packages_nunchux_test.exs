@@ -10,8 +10,9 @@ defmodule Workstation.Core.Catalog.PackagesNunchuxTest do
   unchecksummed. The release-asset pins stay recorded as distribution
   inventory. The theme-slot launcher config renders byte-equal to
   upstream's default config; the tmux-side activation surface (plugin pin
-  + root C-Space chord) went live with the checkout (r2.nunchux-wiring).
-  See docs/tmux.md.
+  + root chord — C-g since the 2026-10-21 rebind off C-Space, which nvim's
+  blink.cmp needs for insert-mode completion) went live with the checkout
+  (r2.nunchux-wiring). See docs/tmux.md.
   """
 
   use ExUnit.Case, async: true

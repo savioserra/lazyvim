@@ -89,7 +89,7 @@ TPM `user/repo#ref` supports branches/tags, not exact raw commits.
 | `datamadsen/nunchux` | `1546eaa980d834c331496ea9d51942be07ea9fdd` (Release 3.1.3) | `versions.json`: `nunchux_git_*` (clone pin), `nunchux_repo_linux_amd64_sha256` (the repo-tracked `bin/nunchux` build), `nunchux_*` release-asset SHA-256s (distribution inventory) |
 
 Nunchux (fzf popup launcher for apps, files and task runners) is ACTIVE:
-the `@plugin` pin and the root `C-Space` chord in `.tmux.conf` are live,
+the `@plugin` pin and the root `C-g` chord in `.tmux.conf` are live,
 and the checkout itself is the first package-wired pinned-clone recipe
 (`Workstation.Packages.Nunchux`): `workstation apply` clones
 `datamadsen/nunchux` to `~/.tmux/plugins/nunchux` at the exact v3.1.3
@@ -113,15 +113,22 @@ runs the commit-pinned repo binary and never fetches. Host-side pin
 assertion: `packages/nunchux/verify/nunchux.sh` (checkout HEAD, binary
 content pin, marker; read-only, never executes the binary).
 
-The launch chord is **C-Space, root** (no prefix): `@nunchux-key` is set to
-`C-Space` — upstream's own default — and the activation block binds
-`bind -n C-Space display-popup …` (exact nunchux.tmux popup command). TPM
-sources the plugin through the active `@plugin` pin, so the chord goes
-live together with the checkout. Tradeoff: root `C-Space` shadows the
-chord for applications inside tmux (e.g. insert-mode completion). Revert
-is one line: comment the bind line in `.tmux.conf` and re-apply (fully
-retiring the plugin means commenting the `@plugin` pin and removing the
-recipe with it).
+The launch chord is **C-g, root** (no prefix): `@nunchux-key` is set to
+`C-g`, and the activation block binds `bind -n C-g display-popup …` (exact
+nunchux.tmux popup command). TPM sources the plugin through the active
+`@plugin` pin, so the chord goes live together with the checkout.
+
+The chord moved off upstream's default **C-Space** on 2026-10-21: tmux's
+root C-Space claim intercepted the key ahead of nvim, shadowing blink.cmp's
+insert-mode completion trigger (the LazyVim blink extra binds `<C-space>`
+to show completion). C-g keeps the no-prefix single-chord shape — upstream
+itself names C-g as the canonical root "-" key beside C-Space — is claimed
+by no tmux plugin in the managed set, and collides in nvim only with
+obscure builtins (`:file` info; a rare insert cursor-motion prefix).
+Tradeoff, unchanged in kind: any root chord shadows the key for
+applications inside tmux. Revert is one line: comment the bind line in
+`.tmux.conf` and re-apply (fully retiring the plugin means commenting the
+`@plugin` pin and removing the recipe with it).
 
 Never run TPM's `prefix + I` for nunchux: the engine owns the checkout,
 and a TPM clone/pull would fight the pin — `workstation apply` re-asserts
