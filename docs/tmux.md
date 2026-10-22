@@ -26,6 +26,7 @@
 | `@tmux2k-window-list-colors` | `blue dark_blue` — active window = onedark blue text, no background |
 | `@tmux2k-window-list-left-sep` / `-right-sep` | empty — the window separator spans style zero characters, so they paint nothing (module segments keep upstream powerline pills) |
 | `@tmux2k-right-plugins` | `cpu ram time` — clicking cpu opens btop; ram's popup is pinned to btop too |
+| `@tmux2k-git-popup-cmd` | `lazygit branch` — clicking the git segment opens lazygit branch-focused (see [Status-line clicks](#status-line-clicks)) |
 | `@tmux2k-time-format` | `%a %H:%M` — no seconds: a seconds clock pins the status bar to a 1Hz re-render, which limited mobile clients render as stacked lines (aurora mobile-client mitigation) |
 | Window cycling | root `S-Left` / `S-Right` — `previous-window` / `next-window`, no prefix |
 
@@ -233,6 +234,37 @@ releases without the option never see it at parse time), and the tmux2k
 separator set is single-width (`|`) rather than PUA powerline arrows, which
 clients without a nerd font render double-width. Re-enabling seconds or
 powerline arrows is a deliberate local choice.
+
+### Status-line clicks
+
+The pinned tmux2k owns the whole status-line click dispatch. It marks every
+module segment (`#[range=user|git]` and siblings — tmux's
+`mouse_status_range` format carries the range name on click), binds the
+status mouse events itself, and routes a click by range: window-list
+entries switch windows, marked segments resolve through the plugin's
+`lib/popup_handler.sh` (which reads `@tmux2k-<plugin>-popup-cmd` at click
+time), and unmarked areas exit 0 silently. `.tmux.conf` registers the git
+segment through that sanctioned hook, so the live behavior is:
+
+- git segment → lazygit, branch panel focused (`@tmux2k-git-popup-cmd
+  'lazygit branch'` — lazygit's positional git-arg; operator live test,
+  2026-10-22);
+- window-list entry → window switch (upstream binding);
+- cpu/ram segments → btop popup (the `@tmux2k-ram-popup-cmd` pin and
+  popup_handler's first-available chain);
+- cwd/folder segment → upstream's cwd popup chain (ranger/yazi/nnn/lf/mc —
+  none is fleet-installed, so the popup closes itself instantly: no error
+  surfaces, the dispatch runs backgrounded, and tmux state is unchanged);
+- unmarked areas (separators, padding) → silent no-op, exit 0.
+
+The payload deliberately does NOT rebind the status mouse events: TPM
+sources plugins in the background, so a `.tmux.conf` bind races the theme's
+own binding, and winning the race would strand the cpu/ram btop popups. An
+earlier hand-applied experiment (retired 2026-10-22) bound
+`MouseDown1Status` with a `select-window -t=` fallback for every non-git
+click — an unmarked segment has no window under the cursor, so those clicks
+exited 1 ("can't find window"); the shipped dispatch never runs
+select-window from the status line.
 
 ## Omarchy interactions
 

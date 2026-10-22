@@ -13,8 +13,10 @@ defmodule Workstation.Core.Catalog.PackagesTmuxTest do
   contracts: the ACTIVE `@plugin` pin and root `C-g` chord in
   `.tmux.conf` (live with the engine-provisioned checkout,
   r2.nunchux-wiring; rebound off upstream's default C-Space on 2026-10-21 —
-  nvim's blink.cmp claims insert-mode <C-space> for completion) and the
-  tmux2k status-bar pins. See docs/tmux.md.
+  nvim's blink.cmp claims insert-mode <C-space> for completion), the
+  status-line click contract (git segment → branch-focused lazygit popup
+  through tmux2k's `@tmux2k-git-popup-cmd` hook; the click dispatch itself
+  stays tmux2k-owned) and the tmux2k status-bar pins. See docs/tmux.md.
   """
 
   use ExUnit.Case, async: true
@@ -111,6 +113,41 @@ defmodule Workstation.Core.Catalog.PackagesTmuxTest do
     assert plugin_line && theme_line && plugins_line && popup_line && tpm_line
     # Every option must precede TPM init or the plugin loads without them.
     assert plugin_line < tpm_line and theme_line < tpm_line and plugins_line < tpm_line
+  end
+
+  test "the git segment click contract: lazygit popup via the tmux2k hook, no payload rebind" do
+    lines = String.split(conf_source(), "\n")
+    conf = conf_source()
+
+    # The popup command rides tmux2k's sanctioned per-plugin hook: the pinned
+    # theme marks every module segment (#[range=user|git] et al. — tmux's
+    # mouse_status_range carries the range name) and binds the status mouse
+    # events itself, dispatching marked segments to its popup_handler.sh,
+    # which reads @tmux2k-<plugin>-popup-cmd at click time. lazygit's
+    # positional git-arg focuses the branch panel (operator live test,
+    # 2026-10-22).
+    cmd_line = Enum.find_index(lines, &(&1 == "set -g @tmux2k-git-popup-cmd 'lazygit branch'"))
+
+    ram_popup_line = Enum.find_index(lines, &(&1 == "set -g @tmux2k-ram-popup-cmd 'btop'"))
+
+    tpm_line =
+      Enum.find_index(lines, &String.starts_with?(&1, "run-shell '~/.tmux/plugins/tpm/tpm'"))
+
+    assert cmd_line && ram_popup_line && tpm_line
+    # Both popup pins live in one tmux2k region, ahead of TPM init.
+    assert ram_popup_line < cmd_line and cmd_line < tpm_line
+
+    # The click dispatch itself stays tmux2k-owned: TPM sources plugins in
+    # the background, so a payload-side status-mouse bind would race the
+    # theme's own binding, and winning the race would strand the cpu/ram
+    # btop popups. No live or commented bind of the status mouse events and
+    # no select-window fallback may survive in the payload — the operator's
+    # hand-applied experiment fell back to `select-window -t=` for every
+    # non-git click, and an unmarked segment has no window under the cursor,
+    # so those clicks exited 1 ("can't find window"). The rationale comment
+    # naming the machinery is deliberate provenance and is not a claim.
+    refute Enum.any?(lines, &String.contains?(&1, "bind -n MouseDown1Status"))
+    refute conf =~ "select-window -t="
   end
 
   test "the versions manifest records the tmux2k commit and URL" do
