@@ -23,10 +23,10 @@ engine_root=$(CDPATH='' cd -P "$script_dir/.." && pwd -P)
 # shim lives at <repo>/workstation/bin/workstation, so the anchor is
 # engine_root itself for a self-contained engine tree, or its parent for the
 # checkout layout. A bare host matches neither and exports nothing — the
-# release keeps its own fail-closed detection. Exporting for EVERY verb (not
-# only bootstrap) is what makes a checkout-launched release anchor-aware:
-# non-bootstrap verbs resolve the engine checkout (package assets, update
-# steps) through WORKSTATION_ENGINE_REPO and fail closed without it.
+# release keeps its own fail-closed detection. Exporting for EVERY verb is
+# what makes a checkout-launched release anchor-aware: the read verbs resolve
+# the engine checkout (package assets, the recorded envelopes) through
+# WORKSTATION_ENGINE_REPO and fail closed without it.
 repo_anchor=""
 if [ -f "$engine_root/mix.exs" ]; then
 	repo_anchor=$engine_root
@@ -67,17 +67,18 @@ TMPDIR=$XDG_RUNTIME_DIR/tmp
 export WORKSTATION_HOME USERPROFILE XDG_CONFIG_HOME XDG_DATA_HOME XDG_STATE_HOME XDG_CACHE_HOME XDG_RUNTIME_DIR WORKSTATION_CACHE TMPDIR
 
 case "$(uname -s)/$(uname -m)" in
-	Linux/x86_64) platform=linux_x86_64 ;;
-	Darwin/arm64) platform=darwin_arm64 ;;
+	Linux/x86_64) ;;
+	Darwin/arm64) ;;
 	*) echo 'workstation: supported hosts are Linux x86_64 (including WSL) and Darwin arm64' >&2; exit 1 ;;
 esac
 umask 077
 mkdir -p "$TMPDIR"
 chmod 700 "$XDG_RUNTIME_DIR"
 
-# The installed engine release: built from the checkout by the installer
-# (same acquisition path the engine's own release refresh drives), staged
-# under the private opt root. Nothing else is ever executed.
+# The installed engine release: on the nix substrate the switch drivers
+# place it (the daemon user unit runs the store path directly); on a
+# checkout host it is the mix release built at the repo root and staged
+# here. Nothing else is ever executed.
 release=$HOME/.local/opt/workstation/bin/workstation
 
 # UTF-8 locale guard: Elixir expects a UTF-8 native name encoding, and a
@@ -91,9 +92,7 @@ release=$HOME/.local/opt/workstation/bin/workstation
 #   - any other non-UTF-8 environment: prefix ELIXIR_ERL_OPTIONS with +fnu
 #     (unicode filename mode) so name handling stays UTF-8-safe, and advise
 #     a real UTF-8 locale on stderr.
-# The decision body is mirrored verbatim in install.sh (which runs before
-# any checkout file exists); keep the two in lockstep. Behavioral gate:
-# .github/scripts/shim-locale-guard.sh.
+# Behavioral gate: .github/scripts/shim-locale-guard.sh.
 ws_utf8_locale_guard() {
 	[ "${ws_guard_done:-0}" -eq 0 ] || return 0
 	ws_guard_done=1
@@ -126,33 +125,11 @@ ws_utf8_locale_guard() {
 	fi
 }
 
-if [ "${1:-}" = bootstrap ]; then
-	# A checkout drives its own acquisition: the installer is pointed at the
-	# repo anchor resolved above (it re-validates the umbrella before
-	# building); a bare host keeps the runtime-only contract.
-	# The installer is shell, not downloaded code; it installs the pinned
-	# editor runtime and — when invoked from an engine checkout with a mise
-	# toolchain — builds and installs the engine release. The handoff to the
-	# engine's own bootstrap (backend capability, public launcher, refresh)
-	# happens here, after acquisition committed.
-	ws_utf8_locale_guard
-	sh "$engine_root/bootstrap/install-runtime.sh" "$engine_root" "$platform"
-	if [ ! -x "$release" ]; then
-		echo 'workstation: bootstrap installed the runtime but no engine release; build it at the repo root (mise exec -- env MIX_ENV=prod mix release workstation --overwrite) and re-run workstation bootstrap' >&2
-		exit 1
-	fi
-	# Runtime roots above stay private. Ordinary files must use the same default
-	# modes as their native chezmoi recipes; private state sets explicit 0700/0600.
-	umask 022
-	exec "$release" bootstrap
-fi
-
 if [ ! -x "$release" ]; then
-	echo 'workstation: engine release missing; run workstation bootstrap' >&2
+	echo 'workstation: engine release missing at ~/.local/opt/workstation/bin/workstation' >&2
+	echo 'workstation: on the nix substrate the switch drivers place it; on a checkout host build it at the repo root (mise exec -- env MIX_ENV=prod mix release workstation --overwrite) and stage the release tree there' >&2
 	exit 1
 fi
-# Runtime roots above stay private. Ordinary files must use the same default
-# modes as their native chezmoi recipes; private state sets explicit 0700/0600.
 ws_utf8_locale_guard
 umask 022
 exec "$release" "$@"

@@ -1,10 +1,10 @@
 #!/bin/sh
 # Shim engine-repo anchor gate. The public launcher shim must anchor the
-# engine checkout for EVERY verb, not only bootstrap: a checkout-launched
-# release resolves the engine checkout (package assets, update steps)
-# through WORKSTATION_ENGINE_REPO, and before the anchor hoist every
-# non-bootstrap verb failed closed (exit 4, "no engine checkout found")
-# unless the caller preset the variable by hand. Each step runs inside its
+# engine checkout for EVERY verb: a checkout-launched
+# release resolves the engine checkout (package assets, the recorded
+# envelopes) through WORKSTATION_ENGINE_REPO, and before the anchor hoist
+# every checkout-launched verb failed closed (exit 4, "no engine checkout
+# found") unless the caller preset the variable by hand. Each step runs inside its
 # own test-home.sh process boundary (env -i: no ambient
 # WORKSTATION_ENGINE_REPO survives) against the shipped release tarball, so
 # the anchor can only come from the shim itself.

@@ -11,8 +11,7 @@
 # PATH pins the effective charmap; a minimal PATH without locale(1) covers
 # hosts that lack the binary entirely.
 #
-# Contract asserted (the decision body is mirrored verbatim in install.sh;
-# keep the copies in lockstep):
+# Contract asserted (the launcher's locale-guard decision body):
 #   1. charmap UTF-8 -> nothing exported, no banner.
 #   2. non-UTF-8 charmap, nothing set, no C.utf8 on the host -> the engine
 #      gains a leading +fnu (existing ELIXIR_ERL_OPTIONS preserved after the

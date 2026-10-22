@@ -19,7 +19,7 @@ jobs:
           - ubuntu-24.04
           - macos-15
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -41,10 +41,35 @@ jobs:
             brew install bash tmux
           fi
 
-      - name: Bootstrap and validate isolated engine lifecycle
+      # The toolchain manager is a CI prerequisite, pinned by the repo's own
+      # versions.json entry; mise resolves the repo's .tool-versions
+      # elixir/erlang pins for the check matrix.
+      - name: Install the pinned mise toolchain manager
         shell: bash
         run: |
           set -euo pipefail
-          # Outside runner HOME/source; retained for inspection, never rm caller input.
-          scratch_parent="$(mktemp -d /tmp/workstation-ci.XXXXXX)"
-          ./.github/scripts/test-apply.sh "$scratch_parent/home"
+          mise_version="$(sed -n 's/^[[:space:]]*"mise":[[:space:]]*"\([^"]*\)".*/\1/p' workstation/versions.json)"
+          [[ -n "$mise_version" ]] || { echo "ci: no mise pin in workstation/versions.json" >&2; exit 1; }
+          mkdir -p "$HOME/.local/bin"
+          case "$RUNNER_OS" in
+            Linux) asset="mise-v${mise_version}-linux-x64" ;;
+            macOS) asset="mise-v${mise_version}-macos-arm64" ;;
+            *) echo "ci: unsupported runner OS $RUNNER_OS" >&2; exit 1 ;;
+          esac
+          curl --fail --silent --show-error --location \
+            "https://github.com/jdx/mise/releases/download/v${mise_version}/${asset}" \
+            -o "$HOME/.local/bin/mise"
+          chmod +x "$HOME/.local/bin/mise"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      # The canonical gate: golden contract, nix eval-goldens (docker on
+      # Linux; skipped where nix/docker is unavailable), the identity gate,
+      # the engine suite, doclint and the shell checks.
+      - name: Run the check matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+          mise exec -- mix local.hex --force
+          mise exec -- mix local.rebar --force
+          mise exec -- mix deps.get
+          mise exec -- sh .github/scripts/check.sh
