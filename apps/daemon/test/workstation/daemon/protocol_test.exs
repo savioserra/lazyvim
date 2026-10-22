@@ -70,6 +70,7 @@ defmodule Workstation.Daemon.ProtocolTest do
                "pull.run",
                "status.run",
                "sync.run",
+               "system.applied",
                "theme.resolve",
                "update.check",
                "update.run",

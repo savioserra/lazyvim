@@ -7,7 +7,8 @@
 # carries the two decisions that are NOT renderable data:
 #   - .local/bin/nvim -> the nixpkgs neovim (nvim-profile lane replaces
 #     the bootstrap pin; the payload's own link is removed loudly)
-#   - the daemon unit binds the REAL engine derivation (P0's mixRelease)
+#   - the daemon unit binds the REAL engine derivation (the build gate's
+#     mixRelease)
 # The report passthrough exists so `nix eval` can read the derived
 # surface without building anything.
 {

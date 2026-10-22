@@ -11,14 +11,18 @@
       url = "github:nix-community/NixOS-WSL/main";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    nix-darwin = {
+      url = "github:LnL7/nix-darwin/nix-darwin-25.05";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
-    { self, nixpkgs, home-manager, nixos-wsl }:
+    { self, nixpkgs, home-manager, nixos-wsl, nix-darwin }:
     let
-      # the engine builds where its NIF vendoring is proven (P0):
-      # x86_64-linux built + smoked; aarch64-darwin evals clean, its
-      # per-target NIF artifacts are the named gap
+      # the engine builds where its NIF vendoring is proven (the build
+      # gate): x86_64-linux built + smoked; aarch64-darwin evals clean,
+      # its per-target NIF artifacts are the named gap
       buildSystems = [ "x86_64-linux" "aarch64-darwin" ];
       hostSystem = "x86_64-linux";
 
@@ -34,6 +38,14 @@
       # in check.sh enforces it)
       wslHost = import ./hosts/wsl/default.nix {
         inherit self nixpkgs home-manager nixos-wsl;
+      };
+
+      omarchyHost = import ./hosts/omarchy/default.nix {
+        inherit self nixpkgs home-manager;
+      };
+
+      macHost = import ./hosts/mac/default.nix {
+        inherit self nixpkgs home-manager nix-darwin;
       };
     in
     {
@@ -71,11 +83,47 @@
             {
               home.username = wslHost.user;
               home.homeDirectory = wslHost.homeDir;
+              # the switch driver's default targets: derived from the host
+              # identity (never hand-typed)
+              workstation.switch.homeAttr = wslHost.homeKey;
+              workstation.switch.systemAttr = "wsl";
             }
           )
           ./nix/modules/workstation-home.nix
         ];
       };
+
+      # the omarchy leg: the SAME standalone-HM shape on Arch (no NixOS
+      # flip — deferred by operator ruling 2026-10-21). Nix itself stages
+      # the substrate; omarchy's systemd runs the daemon user unit.
+      homeConfigurations.${omarchyHost.homeKey} = omarchyHost.homeConfig;
+
+      # the VM's standalone home: the exact shape the WSL and omarchy legs
+      # apply — and the E2E's apply target inside the offline VM
+      homeConfigurations."vm@vm" = home-manager.lib.homeManagerConfiguration {
+        pkgs = nixpkgs.legacyPackages.${hostSystem};
+        extraSpecialArgs = {
+          inherit self;
+          engine = self.packages.${hostSystem}.workstation;
+        };
+        modules = [
+          (
+            { ... }:
+            {
+              home.username = "vm";
+              home.homeDirectory = "/home/vm";
+              workstation.switch.homeAttr = "vm@vm";
+              workstation.switch.systemAttr = "vm-test";
+            }
+          )
+          ./nix/modules/workstation-home.nix
+        ];
+      };
+
+      # the mac leg: nix-darwin + the substrate. Brew keeps ONLY casks
+      # (GUI apps); every retired-from-brew formula must exist in the nix
+      # set or the eval fails.
+      darwinConfigurations.${macHost.hostKey} = macHost.darwinConfig;
 
       nixosConfigurations.wsl = wslHost.nixosConfig;
 

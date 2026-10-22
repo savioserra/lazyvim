@@ -166,8 +166,10 @@ let
 
   toolRecs = lib.concatMap (e:
     if e.provider != "download" then [ ] else
-    let asset = assetOf e;
-    in [{
+    if refuseReason e != null then [ ]
+    else
+      let asset = assetOf e;
+      in [{
       id = identOf e;
       name = lib.last (lib.splitString "/" (targetOf e));
       target = targetOf e;

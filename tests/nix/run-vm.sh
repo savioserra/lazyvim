@@ -21,8 +21,11 @@ nix build --print-build-logs \
   --out-link tests/nix/vm-result
 run_script=$(ls tests/nix/vm-result/bin/run-*-vm)
 
-echo "== booting $run_script to activation =="
-timeout 420 "$run_script" -nographic </dev/null >"$log" 2>&1 || {
+echo "== booting $run_script to activation + live E2E =="
+# 1200s: tcg (no KVM) boots slow, and the live E2E runs after multi-user
+# (daemon user unit + wire handshake + an apply-driven switch + the
+# journal receipt). The VM never exits; the timeout IS the boot bound.
+timeout 1200 "$run_script" -nographic </dev/null >"$log" 2>&1 || {
   status=$?
   [ "$status" -eq 124 ] || { cat "$log"; exit $status; }
 }
@@ -35,7 +38,16 @@ grep -q 'workstation: home plane active' "$log" \
 grep -q 'workstation: boot-to-activation proof complete' "$log" \
   || { echo 'FAIL: VM never reached multi-user' >&2; exit 1; }
 
-# The daemon USER unit starts inside the user manager (journal, not the
-# serial console); its live startup proof belongs to the P2 real-host leg.
+# The live proof: daemon user unit up, wire handshake, apply-driven
+# switch, the `system` domain receipt in the daemon's journal, consumer
+# smoke — all inside the VM, asserted by tests/nix/vm-e2e.nix's driver.
+if grep -q 'workstation-e2e: .* FAIL' "$log"; then
+  grep 'workstation-e2e:' "$log" >&2
+  echo 'FAIL: the workstation E2E failed inside the VM' >&2
+  exit 1
+fi
+grep -q 'workstation-e2e: OK' "$log" \
+  || { echo 'FAIL: the workstation E2E never completed (no OK marker)' >&2; exit 1; }
+grep 'workstation-e2e:' "$log"
 
-echo 'VM boot-to-activation: OK'
+echo 'VM boot-to-activation + live E2E: OK'
