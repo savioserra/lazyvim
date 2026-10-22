@@ -8,9 +8,14 @@
 # `rustler` as an OPTIONAL dep, so the lock has no rustler). In the nix
 # sandbox there is no network at compile time (HEX_OFFLINE=1), so the
 # exact artifact is vendored via RUSTLER_PRECOMPILED_GLOBAL_CACHE_PATH
-# (read VERBATIM, flat) plus the checksum map the compiler expects in the
-# dep's cwd. Integrity stays enforced: the checksum exs pins sha256 of
-# the artifact and rustler_precompiled verifies the tarball against it.
+# (read VERBATIM, flat). Integrity stays enforced — with NO checksum
+# map: on a global-cache hit rustler_precompiled TRUSTS the artifact and
+# skips its own checksum verification entirely (gate-proven on
+# t_ec445584 — a checksum exs pinned to a lying digest still built and
+# ran, so the old checksum-MDExNative.Native.exs was decorative and is
+# gone). Enforcement is two real layers: nix's fetchurl sha256 pin
+# (nifHex) and the explicit preConfigure digest check against
+# nifSha256Pinned below, which fails the build before mix deps.compile.
 # The aarch64-darwin target EVALS but its NIF vendoring is still
 # x86_64-linux-gated (per-target artifacts: named P0 gap).
 {
@@ -18,7 +23,6 @@
   stdenv,
   runCommand,
   fetchurl,
-  writeText,
   beamPackages,
   src,
 }:
@@ -27,6 +31,12 @@ let
   # --- mdex_native 0.2.10 precompiled NIF (x86_64-linux-gnu, nif 2.15) ---
   nifFile = "libmdex_native_nif-v0.2.10-nif-2.15-x86_64-unknown-linux-gnu.so.tar.gz";
   nifHex = "55c9b7abfbb6ddc8971fcd438fb792eb87aebaede8056591b6373130827ee448";
+  # The integrity pin. A SEPARATE literal from the fetchurl pin ON
+  # PURPOSE: a single-point edit of either value — or a swapped URL with
+  # only the fetch pin updated — fails the build in preConfigure instead
+  # of passing silently. Update BOTH digests together on a deliberate
+  # artifact bump.
+  nifSha256Pinned = "55c9b7abfbb6ddc8971fcd438fb792eb87aebaede8056591b6373130827ee448";
   nifArtifact = fetchurl {
     url = "https://github.com/leandrocp/mdex_native/releases/download/v0.2.10/${nifFile}";
     sha256 = nifHex;
@@ -36,13 +46,6 @@ let
   nifCache = runCommand "mdex-native-nif-cache" { } ''
     mkdir -p $out
     cp ${nifArtifact} $out/${nifFile}
-  '';
-  # The checksum map rustler_precompiled reads from File.cwd!() during
-  # compile of MDExNative.Native (i.e. $MIX_DEPS_PATH/mdex_native).
-  checksumExs = writeText "checksum-MDExNative.Native.exs" ''
-    %{
-      "${nifFile}" => "sha256:${nifHex}",
-    }
   '';
   isX86_64Linux = stdenv.hostPlatform.isx86_64 && stdenv.hostPlatform.isLinux;
 
@@ -66,10 +69,21 @@ beamPackages.mixRelease {
   # the cookie stays (it is baked into the derivation by `mix release`).
   removeCookie = false;
 
-  # Vendor the NIF cache + checksum map before `mix deps.compile` runs
-  # (the mdex_native compile happens in configurePhase).
+  # Integrity gate before `mix deps.compile` (the mdex_native compile
+  # happens in configurePhase): rustler_precompiled copies the artifact
+  # out of the global cache WITHOUT any checksum check on a cache hit,
+  # so the vendored bytes are verified here — a mismatch fails the build
+  # before the NIF can reach the release (tamper probe: t_ec445584).
   preConfigure = lib.optionalString isX86_64Linux ''
-    cp ${checksumExs} "$MIX_DEPS_PATH/mdex_native/checksum-MDExNative.Native.exs"
+    nifArtifactPath="${nifCache}/${nifFile}"
+    actualSha256="$(sha256sum "$nifArtifactPath" | cut -d' ' -f1)"
+    if [ "$actualSha256" != "${nifSha256Pinned}" ]; then
+      echo "integrity: vendored mdex_native NIF digest mismatch — refusing to build" >&2
+      echo "  file:   $nifArtifactPath" >&2
+      echo "  pinned: ${nifSha256Pinned}" >&2
+      echo "  actual: $actualSha256" >&2
+      exit 1
+    fi
   '';
 
   env = lib.optionalAttrs isX86_64Linux {
