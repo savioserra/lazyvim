@@ -25,6 +25,10 @@ defmodule Workstation.Daemon.LifecycleTest do
   alias Workstation.Core.EngineState
   alias Workstation.Daemon.{ApplyOrchestrator, Listener, Protocol}
 
+  # git is the sandbox fixture transport; without it the pull fixtures
+  # cannot exist (the same guard the core PullTest suite pins).
+  @git_present System.find_executable("git") != nil
+
   setup do
     home = unique_home("b8-lifecycle")
     File.mkdir_p!(home)
@@ -123,14 +127,67 @@ defmodule Workstation.Daemon.LifecycleTest do
     refute File.exists?(ApplyOrchestrator.lock_path(EngineState.state_root()))
   end
 
+  # The "for real" lifecycle step runs git against a SANDBOX checkout — a
+  # throwaway origin + clone carrying the engine payload markers, pinned
+  # through the daemon's sanctioned resolution seam (WORKSTATION_ENGINE_REPO,
+  # first in the Workstation.Core.Update resolution order). Serving the live
+  # checkout made the assertion a function of git topology (a diverged
+  # developer branch ⇢ the honest ff-only refusal) instead of tree content —
+  # an environment-coupled red of the same class the fixture-home work
+  # collision-proofed. The engine's checked pull --ff-only refusal is
+  # CORRECT and is pinned here positively and negatively over the wire; the
+  # plumbing mirrors apps/core/test/workstation/core/update/pull_test.exs,
+  # which pins the refusal at the core layer (suites don't share test
+  # support across apps).
+
+  @tag skip: if(@git_present, do: false, else: "git not available")
   test "update.run executes the cheap lifecycle step for real (the chain is never graduation-gated)" do
     # pull is the cheapest chain step and is read-only for the home: its
-    # honest ok over the wire is the proof the lifecycle chain runs
-    # regardless of the apply-pipeline flag.
-    reply = request("update.run", %{"step" => "pull"})
+    # honest ok over the wire — with the fetched head actually landed on the
+    # sandbox checkout — is the proof the lifecycle chain runs regardless of
+    # the apply-pipeline flag.
+    {checkout, origin, base} = sandbox_checkout()
+    second = push_upstream!(base, origin, "second\n")
 
-    assert %{"ok" => true, "result" => %{"step" => "pull", "status" => "ok"}} = reply
+    with_engine_repo(checkout, fn ->
+      reply = request("update.run", %{"step" => "pull"})
 
+      assert %{"ok" => true, "result" => %{"step" => "pull", "status" => "ok", "head" => ^second}} = reply
+      assert git_out!(checkout, ["rev-parse", "HEAD"]) == second
+    end)
+
+    refute File.exists?(ApplyOrchestrator.lock_path(EngineState.state_root()))
+  end
+
+  @tag skip: if(@git_present, do: false, else: "git not available")
+  test "a diverged engine checkout refuses the pull step on the wire and is never reset" do
+    # The engine's half of the contract over the real socket: the checked
+    # ff-only refusal (a diverged upstream aborts the update, never resets
+    # owner work) rides the wire verbatim as update_failed, and the checkout
+    # still owns its local head afterwards.
+    {checkout, origin, base} = sandbox_checkout()
+
+    File.write!(Path.join(checkout, "local.txt"), "local work\n")
+    git_out!(checkout, ["add", "."])
+    git_out!(checkout, ["commit", "-q", "-m", "local"])
+    local_head = git_out!(checkout, ["rev-parse", "HEAD"])
+
+    sideways = clone!(base, origin, Path.join(base, "sideways"))
+    File.write!(Path.join(sideways, "sideways.txt"), "sideways\n")
+    git_out!(sideways, ["add", "."])
+    git_out!(sideways, ["commit", "-q", "-m", "sideways"])
+    git_out!(sideways, ["push", "-q", "--force", "origin", "HEAD:refs/heads/main"])
+    refute git_out!(sideways, ["rev-parse", "HEAD"]) == local_head
+
+    with_engine_repo(checkout, fn ->
+      reply = request("update.run", %{"step" => "pull"})
+
+      assert %{"ok" => false, "error" => %{"code" => "update_failed", "message" => message}} = reply
+      assert message =~ "upstream is not a fast-forward"
+      assert message =~ "refusing to reset"
+    end)
+
+    assert git_out!(checkout, ["rev-parse", "HEAD"]) == local_head
     refute File.exists?(ApplyOrchestrator.lock_path(EngineState.state_root()))
   end
 
@@ -160,5 +217,89 @@ defmodule Workstation.Daemon.LifecycleTest do
     end
 
     refute File.exists?(ApplyOrchestrator.lock_path(EngineState.state_root()))
+  end
+
+  ## sandbox git plumbing (all git operations are filesystem-local)
+
+  # A complete engine checkout (versions.json + bin/workstation) cloned from
+  # a throwaway bare origin, its payload materialized as owner WIP: the
+  # markers are what Workstation.Core.Update adopts, and their absence would
+  # let resolution fall through to the live repository checkout.
+  defp sandbox_checkout do
+    base = unique_home("b8-pull")
+    File.mkdir_p!(base)
+
+    origin = Path.join(base, "origin.git")
+    File.mkdir_p!(origin)
+    git_out!(origin, ["init", "--bare"])
+    git_out!(origin, ["symbolic-ref", "HEAD", "refs/heads/main"])
+
+    seed = Path.join(base, "seed")
+    File.mkdir_p!(seed)
+    git_out!(seed, ["init", "-b", "main"])
+    File.write!(Path.join(seed, "first.txt"), "first\n")
+    git_out!(seed, ["add", "."])
+    git_out!(seed, ["commit", "-q", "-m", "first"])
+    git_out!(seed, ["push", "-q", origin, "HEAD:refs/heads/main"])
+
+    checkout = clone!(base, origin, Path.join(base, "checkout"))
+    File.mkdir_p!(Path.join(checkout, "bin"))
+    File.write!(Path.join(checkout, "versions.json"), "{}")
+    File.write!(Path.join(checkout, "bin/workstation"), "#!/bin/sh\n")
+
+    {checkout, origin, base}
+  end
+
+  defp clone!(base, origin, path) do
+    git_out!(base, ["clone", "-q", origin, path])
+    path
+  end
+
+  # Move the upstream forward from a THIRD clone: the sandbox checkout may
+  # carry owner WIP, so upstream commits come from elsewhere, never from it.
+  defp push_upstream!(base, origin, contents) do
+    work = clone!(base, origin, Path.join(base, "push-#{System.unique_integer([:positive])}"))
+    File.write!(Path.join(work, "second.txt"), contents)
+    git_out!(work, ["add", "."])
+    git_out!(work, ["commit", "-q", "-m", "second"])
+    git_out!(work, ["push", "-q", "origin", "HEAD:refs/heads/main"])
+    git_out!(work, ["rev-parse", "HEAD"])
+  end
+
+  defp git_out!(dir, args) do
+    {out, 0} = System.cmd("git", ["-C", dir | args], env: git_env(), stderr_to_stdout: true)
+    String.trim_trailing(out)
+  end
+
+  # The fixtures are independent of the operator's git configuration,
+  # exactly like the production step's pinned environment.
+  defp git_env,
+    do: [
+      {"GIT_CONFIG_NOSYSTEM", "1"},
+      {"GIT_CONFIG_GLOBAL", "/dev/null"},
+      {"GIT_CONFIG_SYSTEM", "/dev/null"},
+      {"GIT_TERMINAL_PROMPT", "0"},
+      {"GIT_AUTHOR_NAME", "fixture"},
+      {"GIT_AUTHOR_EMAIL", "fixture@test"},
+      {"GIT_COMMITTER_NAME", "fixture"},
+      {"GIT_COMMITTER_EMAIL", "fixture@test"}
+    ]
+
+  # WORKSTATION_ENGINE_REPO is the daemon's sanctioned engine-checkout seam
+  # (Workstation.Core.Update resolution order, before the dev-anchor walk),
+  # and this suite is serialized (async: false), so the pin is invisible to
+  # every other test. The bracket restores the caller's value even when an
+  # assertion raises.
+  defp with_engine_repo(checkout, fun) do
+    previous = System.get_env("WORKSTATION_ENGINE_REPO")
+    System.put_env("WORKSTATION_ENGINE_REPO", checkout)
+
+    try do
+      fun.()
+    after
+      if previous,
+        do: System.put_env("WORKSTATION_ENGINE_REPO", previous),
+        else: System.delete_env("WORKSTATION_ENGINE_REPO")
+    end
   end
 end

@@ -1,5 +1,9 @@
 defmodule Workstation.CLI.PlainTest do
-  use ExUnit.Case, async: true
+  # Serialized (async: false) like Workstation.CLITest (see there for the
+  # full note): these runs assert on the VM-global :stderr capture, and the
+  # failure test's `refute output =~ "Applied generation"` can only be
+  # trusted when no concurrent test's stderr can land in the window.
+  use ExUnit.Case, async: false
 
   alias Workstation.CLI.Plain
   alias Workstation.CLI.TUI.Apply

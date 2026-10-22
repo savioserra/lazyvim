@@ -1,5 +1,16 @@
 defmodule Workstation.CLITest do
-  use ExUnit.Case, async: true
+  # Serialized (async: false) for the same one-VM-wide-fact reason as the
+  # EnvContract module below — here the fact is :stderr. The suite asserts
+  # on CAPTURED STDERR: the help contract's no-execution proof pins it
+  # empty, and the refusal tests refute sibling phrases on it. :stderr is
+  # one VM-wide named device, so concurrent capture windows interleave
+  # whatever any test writes while the device is swapped (ExUnit.CaptureIO:
+  # "captured output may include output from a different test") — a sibling
+  # suite's refusal lines ("error: update failed at sync: ...") leaked into
+  # this suite's `assert stderr == ""` (2026-10-22). Non-async modules run
+  # exclusively, so a capture window can never overlap another test's
+  # writes and the strict assertions stay strict.
+  use ExUnit.Case, async: false
 
   # Fixture homes are cross-VM collision-proof (the full note lives in
   # apps/daemon/test/workstation/daemon/generation_test.exs): the boot
