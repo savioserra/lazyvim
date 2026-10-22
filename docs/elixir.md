@@ -8,6 +8,12 @@ hard-cut; retired paths are deleted in the lane that retires them.
 
 ## Status
 
+This section is the historical graduation trail of the Elixir migration
+(lane records, evidence paths); the current surface is the read-only engine
+described by the reference sections below. Retired verbs and machinery
+named here (`apply`, `update`, `diff`, the journal, the baseline stamp)
+are history, not instructions.
+
 - Scaffold (lane b1): umbrella compiles, `mix test` green, placeholder tests
   per app. Superseded by the command graduations below.
 - Graduation order (policy): status → plan/diff → apply → update. A command
@@ -173,18 +179,18 @@ source-scan suite) and must never regrow:
    exclusively through that module's API and constants (`provider_id/0`,
    `data_provider_id/0`, `remove_filename/0`, `data_filename/0`); the exempt
    backend family is `backends/chezmoi.ex`, `shell_program.ex`,
-   `update/bootstrap.ex`, `policy.ex`, `golden.ex`.
+   `policy.ex`, `golden.ex`.
 
 ## Architecture: the client/daemon split (THE design)
 
-The daemon is the ONLY mutation engine and the only source of live state.
-The CLI — and the TUI screens, which are views over the same protocol — are
+The daemon is the resident read server and the only pubsub hub; the nix
+substrate's switch drivers are the only mutation engine. The CLI — and the
+TUI dashboard, which is a view over the same protocol — are
 thin protocol clients; the CLI relates to the daemon exactly like `iex`
-relates to a running node, and the TUI is a LiveView over daemon state.
-There is no in-process mutation path: every verb — reads (`status`, `plan`,
-`diff`), lifecycle mutations (`bootstrap`, `apply`, `update`, `sync`,
-`verify`) and control (`daemon stop`, `op.abort`) — rides the socket
-protocol below. The lock has exactly one owner, so a daemon that cannot be
+relates to a running node. There is no in-process fallback path: every
+verb — reads (`status`, `plan`, `capabilities`, `json <command>`) and
+control (`daemon stop`) — rides the socket
+protocol below, and a daemon that cannot be
 reached or spawned is a clear operator error (`daemon_unavailable`, exit
 4), never a silent fallback. The one deliberate offline exception is
 `--input <envelope.json>` read replay, which evaluates a RECORDED envelope
@@ -273,7 +279,7 @@ sha256sum workstation-0.1.0-linux-x64.tar.gz > workstation-0.1.0-linux-x64.tar.g
   the release core is the same engine the goldens pin. It never touches the
   real `$HOME`.
 
-## Launcher (workstation/bin/workstation) and host acquisition
+## Launcher (workstation/bin/workstation) and the placed release
 
 The public launcher is plain POSIX sh with exactly three jobs, then it is out
 of the way:
@@ -281,30 +287,26 @@ of the way:
 1. **Sandbox**: symlink-loop resolution (≤40 hops), original rendezvous
    capture (`WORKSTATION_SESSION_*`), `DBUS_SESSION_BUS_ADDRESS` unset,
    `HOME`/`WORKSTATION_HOME`/`USERPROFILE`/XDG rebase to the destination.
-2. **Acquisition** (bootstrap only): `workstation/bootstrap/install-runtime.sh`
-   installs the pinned editor runtime and, when driven from an engine checkout
-   with a `mise` toolchain, builds the engine release at the repo root and stages
-   it under `$HOME/.local/opt/workstation` (private, engine-owned). The
-   download pins derive from the checkout's `versions.json` (the single
-   source of truth): a fresh machine parses it inline with the same
-   fail-closed record validations, while the daemon-driven refresh receives
-   the engine's derivation as `NEOVIM_*` env.
-3. **Anchor**: launched from an engine checkout (a `mix.exs` at the script's
+2. **Anchor**: launched from an engine checkout (a `mix.exs` at the script's
    `engine_root`, or at its parent when the checkout is nested under
    `workstation/`), the launcher exports
-   `WORKSTATION_ENGINE_REPO` so EVERY verb — not only bootstrap — collects
+   `WORKSTATION_ENGINE_REPO` so EVERY verb collects
    the checkout catalog; on a bare host no anchor exists and nothing is
    exported (installed-release behavior is unchanged). Gate:
-   `.github/scripts/shim-anchor.sh` drives a non-bootstrap verb through the
+   `.github/scripts/shim-anchor.sh` drives a verb through the
    shim in a test-home fixture with the env unset.
-4. **Handoff**: `exec` of the installed release binary — the Elixir engine IS
-   the engine runtime; the launcher never interprets lifecycle verbs.
+3. **Handoff**: UTF-8 locale guard, then `exec` of the placed release
+   binary (`$HOME/.local/opt/workstation/bin/workstation`) — the Elixir
+   engine IS the engine runtime; the launcher never interprets verbs. The
+   release is placed by the nix switch drivers (the daemon user unit runs
+   the store path) or staged from a repo-root mix release on checkout
+   hosts; the launcher acquires nothing.
 
-The `~/.local/bin/workstation` symlink is provisioned and verified by the
-ENGINE (`Update.Bootstrap` — refusing to replace conflicting user files), not
-by shell. After `pull`, `bootstrap`/`update` refresh the installed release
-from the checkout through the same installer (`Workstation.CLI.Engine
-release_refresh`), so the launcher never outlives its engine.
+The `~/.local/bin/workstation` symlink on the substrate is the nix
+generation's link to the launcher; on a checkout host the operator points
+it at the checkout shim. The historical engine-provisioned launcher
+(`Update.Bootstrap`) and the installer-driven release refresh retired with
+the write plane.
 
 ## Catalog taxonomy
 
@@ -363,8 +365,8 @@ The canonical gate (`sh .github/scripts/check.sh`) is Elixir-native: the full
 `mix test` umbrella suite, the byte-identical golden replay
 (`mix workstation.goldens` into a scratch root, `diff -r` against
 `tests/goldens`), `sh -n` + ShellCheck over the remaining shell scripts
-(`workstation/bin/workstation`, `workstation/bootstrap/install-runtime.sh`,
-`.github/scripts/*.sh`), the release boot smoke when a local tarball is
+(`workstation/bin/workstation`, `.github/scripts/*.sh`), the nix
+eval-goldens walker drift guard, the release boot smoke when a local tarball is
 built, and `git diff --check`.
 
 ## Goldens (Elixir replay contract)
@@ -435,11 +437,14 @@ report.
 ## Daemon (apps/daemon, lane b6)
 
 `Workstation.Daemon.Application` boots one `:rest_for_one` tree — Listener →
-Sessions → EventBus → CapabilityRegistry → ApplyOrchestrator, then the
+Sessions → EventBus → CapabilityRegistry → OpRegistry → TaskSupervisor →
+Overlay, then the
 flattened `Workstation.Daemon.Capabilities.children/0` after them — so every
 runtime dependency flows strictly forward and any crash rebuilds the whole
 serving generation in dependency order (capability children start after the
-registry and never outlive it). The listener binds
+registry and never outlive it). The historical write capabilities and their
+supervised orchestrator child retired with the write plane; the tree serves
+reads and pubsub. The listener binds
 `<home>/.local/state/workstation/daemon/<uid>.sock` (dir `0700`, socket
 `0600`, no-follow owner/type guards over every state component — 0700,
 current uid, no symlinks) and never touches `:gen_tcp`; the `:socket` API is used
@@ -550,10 +555,15 @@ Linux client ignores in favor of its `SO_PEERCRED` read (pid is the first
 ucred field) and a darwin/dir-owner client uses because xucred has no pid
 to offer.
 
-## Update lifecycle (apps/core `Workstation.Core.Update.*`, apps/daemon `Workstation.Daemon.Lifecycle`)
+## Update lifecycle (RETIRED — historical record)
 
-The UPDATE lifecycle is ported one step per module, semantics anchored to
-the lifecycle phases of `docs/capabilities.md`:
+The UPDATE lifecycle (`Workstation.Core.Update.*`, the daemon's
+`Workstation.Daemon.Lifecycle`) retired with the engine's write plane: nix
+owns updates (`nix flake update` in the anchor repo + a switch). The step
+modules (`pull`, `bootstrap`, `apply`, `sync`, `verify`), the daemon
+Lifecycle capability and the generation rendezvous are deleted; this
+section remains only as the historical record of the semantics the nix
+drivers superseded.
 
 * `pull` — checked fast-forward of the engine-owned checkout (fetch +
   `merge --ff-only`, never a destructive reset; git config pinned to
@@ -648,45 +658,19 @@ the output-wire schema below.
 ## CLI (apps/cli, `workstation` on the release PATH)
 
 Every verb is a daemon client (`Workstation.CLI.DaemonClient`): reads send
-`status.run`/`plan.run`/`diff.run` (the daemon assembles the hard-cut wire
-daemon-side — the CLI renders it unchanged), lifecycle verbs send
-`bootstrap.run`/`apply.run`/`update.run`/`sync.run`/`verify.run`, control
-surfaces send `daemon.stop`/`op.abort` over a short-lived connection that
-never spawns anything. The `apply` verb confirms against `apply.plan` —
-the daemon's mutation-bound composition, not `plan.run`'s read-mode
-projection — so the confirmed generation and the executed generation are
-the same composition function (see the architecture section).
-`workstation json <status|plan|diff>` prints the raw
+`status.run`/`plan.run` (the daemon assembles the hard-cut wire
+daemon-side — the CLI renders it unchanged), the switch receipt reads the
+`system` overlay domain, and control sends `daemon.stop` over a
+short-lived connection that never spawns anything.
+`workstation json <status|plan>` prints the raw
 wire for boundary debugging. Ensure-daemon runs before every verb (see the
 architecture section); there is NO in-process fallback — a daemon that
 cannot be reached or spawned is the verb's error.
 `--input <envelope.json>` is the offline replay exception: a recorded
 envelope evaluated in-process, no daemon involved, same wire.
-
-Headless lifecycle runs are CLIENT-driven RENDERINGS of ONE daemon op: the
-plain runner (`Workstation.CLI.Plain`) sends the op, renders the live
-event stream as lines, and folds the op's eventual result into the chain
-verdict — the daemon owns the locks, the step sequencing and the refresh
-handoff; the client never drives steps itself. Exit codes are unchanged
-(0 ok, first failure stops the chain and reports it, `locked` answers 3,
-everything else 4).
-
-`apply` and `update` are interactive-first: on a usable terminal they run
-the TUI screens (which speak the identical op surface through
-`Workstation.CLI.TUI.Executor`); there is no silent degradation.
-
-The release-refresh handoff lives ENTIRELY daemon-side since the client/
-server refactor: the chained `update.run` captures the writer identity
-BEFORE its installer runs, writes the handoff note
-(`<state_root>/update/handoff.json`), stops itself, and the CLIENT
-re-spawns the daemon from the refreshed release and resumes the remaining
-steps under the same lock — one banner, one chain, exit 0, note cleared on
-success (the update-lifecycle section below carries the full contract,
-including the aged-stamp discriminator and the stranded-note self-heal).
-The child binary is derived from the release ROOT
-(`<root>/bin/workstation`, guarded to be an existing executable), never
-from the identity token. `bootstrap_run`/`installer`/`handoff_release_root`
-remain the engine's test seams.
+On a usable terminal the bare verb opens the TUI dashboard; without a TTY
+it prints the verb help (exit 0) — scripts pass `--headless` to the read
+verbs, and a non-interactive run without the flag hard-errors.
 
 ## TTY contract (interactive-first, no fallback)
 
@@ -754,13 +738,9 @@ and resizes — §1.6 the run/done panel floats over the living dashboard,
 whose wires keep landing in the cache underneath), keeping their
 daemon-event-driven behavior — the screens never drive steps, `x` aborts
 at the next boundary, `q` detaches and a running op keeps running
-daemon-side. Both mutating screens arm behind the typed-confirm gate
-(spec §2.3): the op fires only after the operator types the verb
-(`apply`/`update`) and Enter — never from a bare keystroke. The
-standalone entry points (`workstation
-apply`, `workstation update` from a shell) are unchanged and keep their
-text-first flows for scripts; the shell only adds the in-app route to the
-same components. The TTY contract above governs the bare verb too: a
+daemon-side. The dashboard is read-only by design — the write plane lives
+in the nix substrate's `workstation-switch` drivers, so there is nothing
+to confirm in-app. The TTY contract above governs the bare verb too: a
 non-TTY bare `workstation` prints the verb help and exits 0, never a
 hang. Tests drive the shell through `TermUI.Runtime` with fake wires and
 recorded event streams, so every state is replayable.
@@ -865,24 +845,19 @@ wire exists and none is emitted as a CLI contract:
 
 - `workstation.status.v1` — `{schema, engine{name, version, mode "elixir"},
   destination, platform, packages[{id, requires, supported_hosts}],
-  graph_order, taxonomy, journal{generation, revision, at}|null}` where
+  graph_order, taxonomy}` where
   `taxonomy` is the catalog's package -> foundation declaration
   (`foundation/<layer>`; descriptive metadata — it never enters envelopes
-  or plan bytes). Since the client/daemon refactor the daemon MAY add an
-  optional `update` object when its TTL-cached availability check
-  resolved: `{available: true, local, remote, remote_ref}` when the
-  branch is behind, `{available: false}` when up to date, and ABSENT when
-  unknown — offline looks like no-news, and the absence keeps the wire
-  byte-stable for the golden and offline-replay contracts (the human
-  render gains one `update:` line; `--json` passes the object through).
-- `workstation.plan.v1` — `{schema, generation, plan, manifest, patches,
+  or plan bytes). The historical `journal` rider and the optional
+  `update` availability object retired with the write plane.
+- `workstation.plan.v1` — `{schema, generation, plan, manifest,
   target_states}`. The `plan` body and `manifest` are the recorded golden
   artifacts verbatim (byte-identical to
   `tests/goldens/<profile>/expected/*.json`; nothing is added inside them —
-  content-addressed parity bodies stay closed), while `patches` and
-  `target_states` are the b5 additions at envelope level;
-- `workstation.diff.v1` — `{schema, generation, backend_diff verbatim}`
-  (the structured changeset records).
+  content-addressed parity bodies stay closed), while `target_states` is
+  the per-target declared-vs-live probe. The historical `patches` wire
+  (the changeset records) retired with the Changesets view; the
+  declared-vs-applied diff story is the nix generation diff.
 
 JSON emission is canonical (`Workstation.Core.CanonicalJSON`: sorted keys,
 compact, empty maps as `[]`, explicit `:null` tokens), so identical state
@@ -895,8 +870,8 @@ yields byte-identical stdout.
 | 0 | ok |
 | 1 | no usable terminal for an interactive verb (pass `--headless`) |
 | 2 | usage (unknown command/arguments, missing mandatory options) |
-| 3 | conflict-or-precondition (core evaluation failed: bad envelope, graph or plan conflict, invariant; apply-lock contention) |
-| 4 | engine failure (native collection error, lifecycle step failure, TUI failure) |
+| 3 | core evaluation failure (bad envelope, graph or plan conflict, invariant) |
+| 4 | engine failure (native collection error, TUI failure) |
 
 Human TTY text for the core plan keeps the canonical sections-and-layout;
 the documented deviations keep the wire the single source of truth:

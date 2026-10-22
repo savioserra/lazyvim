@@ -9,7 +9,7 @@ capability-keyed — never direct references.
 ## Layers and the law of each
 
 1. **Kernel** — generic machinery: manifest discovery, dependency resolution,
-   plan composition, precondition checks, apply, journal, verify. Speaks only
+   plan composition, the declared-effects view. Speaks only
    contracts and shapes. Forbidden: the name of any package, backend, or
    consumer. The kernel cannot answer "is nvim installed"; it can answer "is
    the capability provided by package X satisfied".
@@ -56,37 +56,35 @@ self-serves every platform through contracts alone.
 The engine is ONE named stage list reduced over a `%Workstation.Pipeline.Run{}`
 accumulator (`Workstation.Pipeline`):
 
-    discover -> resolve -> compose -> check -> stage -> anchor ->
-      interpret -> claim -> verify
+    discover -> resolve -> compose
 
 Kernel modules implement stages — catalog discovery, dependency resolution,
-plan composition, preconditions, staged publish, journal anchoring,
-generation verification — and nothing else threads mutation state by
-parameter. The execution itself is a FOLD: the plan's typed mutation program
-(`Workstation.Pipeline.effects/1`: per-target effects first, the single
-staged-generation apply effect last) is dispatched through DISCOVERED
-`Workstation.Core.Contracts.Contract` implementations. The kernel names no
+plan composition — and nothing else threads evaluation state by
+parameter. The pipeline is the READ fold: the plan's declared mutation
+program (`Workstation.Pipeline.effects/1`: per-target effects first, the
+single generation-apply effect last) is collected from DISCOVERED
+`Workstation.Core.Contracts.Contract` implementations and carried on the
+plan wire as declared data. The kernel names no
 effect contract; a new mutation kind plugs in by implementing the behaviour
-(id, validate_spec, plan_effect, run_effect, fingerprint) and is found by
-conformance, never by registration.
+(id, validate_spec, plan_effect) and is found by
+conformance, never by registration. Nothing executes the program: mutation
+is the nix substrate's `workstation-switch` drivers (atomic generations,
+rollback, publish); the engine's apply-time faces retired with the write
+plane.
 
-Ordering is the invariant, not a preference, and the stage order IS the
-ordering: preconditions run before any write; the pending attempt record
-anchors before any effect runs; the applied provenance record lands only
-after every effect succeeded; the generation directory is re-verified after
-the fold. Effects declare their phase, and the fold runs per-target effects
-before the apply-phase effect — a pinned artifact installs before the staged
-generation applies.
+Effects declare their phase, and the declared order runs per-target effects
+before the apply-phase effect — the ordering the nix program carries.
 
-A CLI verb is a prefix of this list: `status` runs to `resolve`, `plan` and
-`diff` run to `compose`, `apply` runs to `verify` (`Pipeline.verb_depth/1`).
-Read depths stay pure (no journal, no filesystem probing), so golden replay
+A CLI verb is a prefix of this list: `status` runs to `resolve`, `plan` to
+`compose` (`Pipeline.verb_depth/1`). Read depths stay pure (no filesystem
+probing beyond the per-target state report), so golden replay
 is a function of its input bytes; the recorded plan body DECLARES its typed
 effects (the deliberate golden re-record that pinned this shape is the
 typed-effects plan change, rationale in its commit).
 
-The journal anchors ownership and baseline; goldens pin byte-identity of
-plan outputs across refactors; the apply lock serializes mutators.
+Goldens pin byte-identity of plan outputs across refactors; the nix
+generation is the ownership and baseline story (eval-goldens guards the
+walker's drift against the same recorded tree).
 
 ## Package self-containment (the law)
 
@@ -112,8 +110,8 @@ enforced in code, not prose.
 The module tree mirrors the layers, and every module's moduledoc is the
 architecture's documentation surface:
 
-1. **Kernel — `Workstation.Core`** (graph, plan, journal, apply,
-   preconditions, digest, engine_state, json/canonical_json): pure
+1. **Kernel — `Workstation.Core`** (graph, plan, digest, engine_state,
+   json/canonical_json): pure
    machinery. Each kernel moduledoc states the kernel law: it names no
    package, backend, or consumer — it speaks only contracts and shapes.
 2. **Contracts — `Workstation.Core.Contracts`** (the capability

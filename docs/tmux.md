@@ -60,15 +60,17 @@ Pinning rules:
 
 - Keep `@plugin` values as bare `user/repo` for TPM.
 - Store exact commits in this table. All six checkouts are
-  engine-provisioned pinned clones, never placed by hand: the tmux package
+  substrate-provisioned pinned clones, never placed by hand: the tmux package
   manifest declares tpm, tmux2k, tmux-yank, tmux-resurrect and
   vim-tmux-navigator as pinned git recipes (url + commit + target under
   `~/.tmux/plugins/`, tpm first — it must exist before the first tmux start,
   which sources it via the `run-shell` at the end of `.tmux.conf`), and
-  nunchux rides its own package's pinned-clone recipe (below). TPM sees the
+  nunchux rides its own package's pinned-clone recipe (below). The walker
+  freezes each pin as a store checkout (`builtins.fetchGit` at the recorded
+  commit) and the generation links it at the target, so TPM sees the
   pre-installed checkouts and sources them without cloning. Never run TPM's
-  `prefix + I`: a TPM clone/pull would fight the pins — `workstation apply`
-  re-asserts them.
+  `prefix + I`: a TPM clone/pull would fight the pins — the next generation
+  switch re-asserts them.
 - tmux2k's commit + URL are additionally pinned in
   `workstation/versions.json` (`tmux2k*` keys) and asserted by the
   package tests.
@@ -76,9 +78,10 @@ Pinning rules:
   default path logic alone would select the unmanaged XDG plugin root.
 - Update this table with implementation pins, and the package manifest's
   recipes with it. Dropping a recipe from the manifest retires its recorded
-  checkout on the next apply: the engine removes it only when HEAD still
-  sits at the recorded pin on a clean tree — a moved HEAD or local changes
-  refuse the apply with the divergence named, never deleted silently.
+  checkout at the next switch: the generation simply stops linking it (the
+  old guarded-apply removal gates — clean-tree, HEAD-at-pin — retired with
+  the engine's write plane; atomic generations + rollback own convergence
+  now).
 
 TPM `user/repo#ref` supports branches/tags, not exact raw commits.
 
@@ -90,11 +93,11 @@ TPM `user/repo#ref` supports branches/tags, not exact raw commits.
 
 Nunchux (fzf popup launcher for apps, files and task runners) is ACTIVE:
 the `@plugin` pin and the root `C-Space` chord in `.tmux.conf` are live,
-and the checkout itself is the first package-wired pinned-clone recipe
-(`Workstation.Packages.Nunchux`): `workstation apply` clones
-`datamadsen/nunchux` to `~/.tmux/plugins/nunchux` at the exact v3.1.3
-commit — detached HEAD verified against the pin, idempotent re-apply
-neither fetches nor moves a checkout already at the pin. The recipe made
+and the checkout itself is the first package-wired pinned-clone recipe:
+a generation switch provisions `datamadsen/nunchux` at
+`~/.tmux/plugins/nunchux` at the exact v3.1.3
+commit — a store checkout linked at the target, so re-switching neither
+fetches nor moves a checkout already at the pin. The recipe made
 the interim download-contract pre-seed obsolete: upstream tracks
 `bin/nunchux` in the repo (a linux-amd64 build of the same 3.1.3 release,
 `nunchux-go 3.1.3`, content-pinned by `nunchux_repo_linux_amd64_sha256`),
@@ -119,16 +122,16 @@ The launch chord is **C-Space, root** (no prefix): `@nunchux-key` is set to
 sources the plugin through the active `@plugin` pin, so the chord goes
 live together with the checkout. Tradeoff: root `C-Space` shadows the
 chord for applications inside tmux (e.g. insert-mode completion). Revert
-is one line: comment the bind line in `.tmux.conf` and re-apply (fully
+is one line: comment the bind line in `.tmux.conf` and switch (fully
 retiring the plugin means commenting the `@plugin` pin and removing the
 recipe with it).
 
-Never run TPM's `prefix + I` for nunchux: the engine owns the checkout,
-and a TPM clone/pull would fight the pin — `workstation apply` re-asserts
-it. Migration note for homes carrying the old pre-seed (a `bin/nunchux`
-+ `bin/.platform` directory with no checkout): apply fails closed on the
-non-checkout directory — remove `~/.tmux/plugins/nunchux` once and
-re-apply; fresh homes clone directly.
+Never run TPM's `prefix + I` for nunchux: the substrate owns the checkout,
+and a TPM clone/pull would fight the pin — the next generation switch
+re-asserts it. Homes carrying the old pre-seed (a `bin/nunchux`
++ `bin/.platform` directory with no checkout): remove
+`~/.tmux/plugins/nunchux` once and switch; fresh homes link the store
+checkout directly.
 
 Compliance flag: upstream ships NO LICENSE file, so the code is
 all-rights-reserved by default — running it is a user-owned choice; the
@@ -172,15 +175,15 @@ an early return on an empty plugin name in `get_plugin_colors` (`55e597e`,
 lookahead), and the pin moved to upstream HEAD `d8c5c292` — proven on a bash
 5.2.21 host: `source-file` + `2k.tmux` twice, status-left/right non-empty both
 times. Interim recovery on a home still carrying the old pin is the `2k.tmux`
-re-run; the real fix is `workstation apply` at the new pin.
+re-run; the real fix is a switch at the new pin.
 
-Pin-move migration (apply refuses to move a checkout): the git contract never
-moves an existing checkout to a different commit (fail-closed — a checkout is
-never overwritten in place), so a home carrying the tmux2k checkout at the
-retired `07b3228b` pin gets `refusing to move it to d8c5c292…; remove it
-explicitly` on the first apply after this bump. Recovery: remove
-`~/.tmux/plugins/tmux2k` once and re-apply; fresh homes clone directly at the
-new pin. Same pattern as the nunchux pre-seed migration note above.
+Pin-move migration: a pinned clone never moves to a different commit in
+place (the pin is the checkout's identity — the walker freezes each commit
+as its own store path), so a home carrying the tmux2k checkout at the
+retired `07b3228b` pin is re-linked at `d8c5c292` by the next switch; the
+old checkout stays on disk only if something outside the generation put it
+there — remove it explicitly. Same pattern as the nunchux pre-seed
+migration note above.
 
 Live re-theming (experimenting with `@tmux2k-*` options on a running
 server): the server keeps every `@<plugin>-*` option ever set — a config
@@ -234,8 +237,8 @@ and `omarchy-refresh-tmux` copies it onto `~/.config/tmux/tmux.conf` with
 `cp -f`. On a managed host that copy follows the XDG symlink and would
 overwrite `~/.tmux.conf`. Never run `omarchy-refresh-tmux` or
 `omarchy-refresh-config tmux/tmux.conf` here; if Omarchy ever replaces the
-file, restore with `workstation apply` and remove any `tmux.conf.bak.*` it left in
-`~/.config/tmux/`.
+file, restore it by switching (the generation re-links the managed config)
+and remove any `tmux.conf.bak.*` left in `~/.config/tmux/`.
 
 ## Verification
 

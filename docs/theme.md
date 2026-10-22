@@ -37,10 +37,10 @@ all reusing existing palette hues:
 | --- | --- | --- |
 | `border_engine` | engine panel | blue — engine-core forward view (`accent` = `@thm_primary #5badff` family) |
 | `border_plan` | plan panel (home + tab) | blue — the planned mutation surface |
-| `border_journal` | journal panel | green — health-log semantics (`ok` = `@thm_green #7fcf78` family) |
+| `border_journal` | reserved (declared; the journal box retired with the write plane) | green — health-log semantics (`ok` = `@thm_green #7fcf78` family) |
 | `border_status` | status panel (home + tab) | green — health verdicts |
 | `border_capabilities` | capabilities panel + browser | yellow — pending-apply caution (`warn` = `@thm_yellow #f0e68c`, doubles as the theme's active-pane border hue) |
-| `border_diff` | diff panel (home + tab) | red — the mutation surface (`err` = `@thm_red #ff7979` family) |
+| `border_diff` | reserved (declared; the diff box retired with the write plane) | red — the mutation surface (`err` = `@thm_red #ff7979` family) |
 
 They live in both layers (slots + per-appearance palette) and are
 overlay-settable like every other palette role; `Tokens.border_roles/0` is
@@ -83,7 +83,7 @@ the domain set = `chrome`; buttonbar keycaps = `shortcut`, bold, with their
 enabled labels = `text` (disabled = `inactive`); active tab and label
 highlights = `accent`; selection = the `selected_bg`/`selected_fg` pair
 (never color-alone); de-emphasis = `inactive`; value severity/age = the
-`ramp_start`/`ramp_mid`/`ramp_end` trio (journal freshness, drift age).
+`ramp_start`/`ramp_mid`/`ramp_end` trio (severity/age ramps).
 The plain-digit keycap form exists only as an explicit narrow-TTY opt-in,
 never the default. No box painter hardcodes a color, so re-branding stays
 a two-carrier edit: `tokens.lua` and `Workstation.Core.Theme.Tokens`.

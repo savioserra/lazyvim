@@ -6,8 +6,8 @@ release executes every verb in-process (`docs/elixir.md`). This page only
 records the boundary decisions that survive the deletion:
 
 - The engine is Elixir-only: zero `nvim -l` and zero `vim.system` in the
-  engine path; nvim exists on hosts only as a managed capability installed
-  at bootstrap.
+  engine path; nvim exists on hosts only as a managed capability the
+  substrate provisions.
 - `packages/theme/tokens.lua` and other package payload Lua files are DATA
   consumed as bytes (chezmoi token envelopes), never executed.
 - `workstation/packages/editor/nvim/**` is editor runtime payload; the profile

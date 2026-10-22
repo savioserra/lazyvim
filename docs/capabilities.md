@@ -3,67 +3,70 @@
 ## Dependency direction
 
 ```text
-workstation/bin/workstation (POSIX sh: sandbox + runtime/release acquisition)
-  -> exec elixir release binary
-      -> Workstation.CLI.Router (verbs, TTY contract)
-          -> Workstation.CLI.Core (read side) / Workstation.CLI.Engine (lifecycle)
-      -> Workstation.Core.Plan (shared composition)
-          -> Workstation.Core.Catalog.Packages (native catalog data modules)
+flake.nix
+  -> nix/manifest-lib.nix (the walker: workstation/packages/**/manifest.json
+     -> HM/NixOS declarations; fetchurl/download, git-checkout, nvim-profile
+     lanes) -> nix/modules (workstation-home, workstation-system)
+  -> nix/engine.nix (mixRelease of the umbrella -> the engine release)
+  -> nix/workstation-switch.nix (the write plane: switch / rollback / publish)
+      -> publish receipt -> the daemon's `system` overlay domain
+  -> hosts/<host> (wsl / omarchy / mac; identity only in hosts/<host>/default.nix)
+
+workstation/bin/workstation (POSIX sh: sandbox, checkout anchor, locale guard)
+  -> exec the placed elixir release binary
+      -> Workstation.CLI.Router (read verbs, TTY contract)
+          -> Workstation.Daemon.Read (status.run / plan.run)
+      -> Workstation.Pipeline (discover -> resolve -> compose)
+          -> Workstation.Core.Catalog.Packages (the tree, discovered)
           -> Workstation.Core.Graph (host selection, requires, topological order)
           -> discovered recipe providers (chezmoi, shared shell,
-             nvim-profile) -> deterministic source plan
-      -> Workstation.Pipeline (under Core.ApplyLock) / Update.* steps
-          -> Workstation.Core.Provisioner (chezmoi backend, exact generation)
-          -> Workstation.Core.Journal + EngineState (generations, lock, journal)
+             nvim-profile) -> deterministic source plan + declared effects
 
 core -X-> catalog/packages/providers/chezmoi/Neovim
 ```
 
 The engine is Elixir-only: the release binary executes every verb in-process,
 there is no Lua execution and no nvim invocation anywhere in the engine path,
-and `Workstation.Core.Plan.composed_plan/2` is the single plan composition the
-daemon applier and the one-shot CLI driver share. `bin/workstation` is the
-sole public entry point; nvim is a managed host capability installed at
-bootstrap, never an engine dependency.
+and `Workstation.Pipeline` is the one read fold the verbs share. Mutation is
+the nix substrate's (`workstation-switch`); `bin/workstation` is the
+sole public entry point; nvim is a managed host capability the substrate
+provisions, never an engine dependency.
 
 ## Module boundaries
 
 | Module | Contract |
 | --- | --- |
 | `Workstation.CLI.Router` | Verb parsing, TTY-default contract (`--headless`), exit codes |
-| `Workstation.CLI.Core` | Read-side evaluation (`status`, `plan`, `diff`, `json`) with state-root bracketing |
-| `Workstation.CLI.Engine` | One-shot lifecycle driver (`bootstrap`, `apply`, `update`, `sync`, `verify`, `pull`) under the apply lock |
-| `Workstation.CLI.TUI.*` | Interactive apply/update screens (optimus CLI + term_ui) |
-| `Workstation.Core.Plan` | The shared collect -> graph -> plan -> baseline composition |
-| `Workstation.Core.Catalog.Packages` | Native catalog: one pure-data contribution module per package, DISCOVERED at runtime (no registration list) |
-| `Workstation.Core.Catalog.Spec` | The package-spec provider behaviour + spec shape validation (including the banned integer-ordering fields) |
-| `Workstation.Core.Catalog.Discover` | Runtime provider discovery (`:code.all_available/0` + behaviour conformance, test-tree exclusion, duplicate-id rejection) |
-| `Workstation.Core.Graph` | Host selection, `requires` (necessity + ordering) and `after` (ordering-only) edges, topological ordering with id-sort ties |
-| `Workstation.Core.Source` | Source plan and manifest over the recipe provider contracts (chezmoi dialect via `Workstation.Backends.Chezmoi`, shared shell and pinned downloads — single artifacts and probe-gated archive trees — via `Workstation.Core.Contracts.Shell`/`Download`, managed mise tools via `Workstation.Core.Contracts.Mise`) |
-| `Workstation.Pipeline` | The one stage-list fold: preconditions, publish, backend apply, journal record, post-apply verify |
-| `Workstation.Core.Provisioner` | Chezmoi backend with an exact generation |
-| `Workstation.Core.Policy` | Engine-owned legacy tombstones |
-| `Workstation.Core.{Journal,EngineState,ApplyLock}` | Immutable generations, fail-closed private state tree, exclusive apply lock |
+| `Workstation.CLI.DaemonClient` | Thin protocol client over the per-user Unix socket (no in-process fallback) |
+| `Workstation.CLI.TUI.*` | The one dashboard (engine/capabilities/plan/status boxes, browser, help) |
+| `Workstation.CLI.Capabilities` | The capability-domain grouped envelope over the status+plan wires |
+| `Workstation.Daemon.Read` | The read engine behind `status.run`/`plan.run` |
+| `Workstation.Daemon.*` | The resident daemon: reads, pubsub (`EventBus`), the `system` overlay domain, `Overlay` claim/release |
+| `Workstation.Pipeline` | The one read fold: discover -> resolve -> compose; `effects/1` projects the declared mutation program |
+| `Workstation.Core.Policy` | Engine-owned legacy tombstones (pure data feeding the plan digest) |
+| `Workstation.Core.EngineState` | Fail-closed private state root + canonical JSON |
+| `Workstation.Core.Contracts.*` | The declared-program handshake (id/validate_spec/plan_effect; download/git/mise/copy/shell) |
+| `Workstation.Backends.Chezmoi` | The recorded-source grammar (validation, `from_recorded`, source names, the declared `:apply` effect) |
 | `packages/<name>/` | Package payload assets (`files/`, `dot-*` targets) and data files |
 | `packages/theme/tokens.lua` | Canonical theme tokens (DATA: slot/palette layers, per-appearance palettes, consumer choices) — read as bytes, never executed |
 
 ## Contribution contract
 
-A package contributes its catalog identity through a **pure-data Elixir
-module** under `apps/core/lib/workstation/core/catalog/packages/`
-(one module per package) that declares `@behaviour
-Workstation.Core.Catalog.Spec` and implements `spec/0`. There is no
-registration list: discovery (`Workstation.Core.Catalog.Discover`) scans
-the loaded code namespace for `Workstation.Core.Catalog.Packages.*`
-providers via `:code.all_available/0`, keeps behaviour-conforming modules
+A package contributes its catalog identity as a **self-contained package
+dir** under `workstation/packages/<id>/` — manifest beside payloads (a data
+`manifest.json` and/or a manifest module implementing
+`Workstation.Core.Catalog.Spec`). There is no
+registration list: discovery (`Workstation.Core.Catalog.Discover`) walks
+the tree, loads whatever manifest sources it carries, keeps
+behaviour-conforming providers
 (test-tree sources are excluded deterministically by the beam's recorded
 compile path), validates every spec shape, rejects duplicate ids and
 orders providers by module name. Adding a package means dropping in a
-conforming module — zero engine edits.
+self-contained dir — zero engine edits.
 
 The spec map declares the package identity, host support, dependencies,
-provisioning recipes (`Workstation.Core.Source` constructors), lifecycle
-steps (`Workstation.Core.Update` step atoms) and the descriptive
+provisioning recipes (`Workstation.Core.Source` constructors) and the
+descriptive
 `foundation: "foundation/<layer>"` taxonomy entry; payload lives under
 `packages/<name>/` and is referenced by relative path. Ordering between
 packages comes exclusively from `requires` (necessity + ordering) and the
@@ -85,7 +88,7 @@ validates its own specs and rejects unknown options. Kinds: `file`,
 asset - structured fragments are the `Workstation.Core.Contracts.Shell` compositor's input
 alone and are rejected here) and `remove`. Packages may declare whole-body
 `modify` programs for engine-seeded, runtime-extended mutable targets: the
-recipe embeds its baseline, apply never byte-compares the target, and a
+recipe embeds its baseline, the substrate never byte-compares the target, and a
 package-owned merge reconciles runtime drift. `lazy-lock.json` under the
 nvim package is the reference implementation; see [nvim](nvim.md). Such
 recipes inherit the documented whole-body retirement semantics (unsupported
@@ -175,55 +178,48 @@ nvim
 ### Go toolchain acquisition
 
 Decision recorded 2026-10-15 (card t_1d7be74b): the Go toolchain is a
-download-contract ARCHIVE pin, not a host prerequisite. The documented
+declared ARCHIVE pin, not a host prerequisite. The documented
 layout (`.local/opt/go` exact tree + the `.local/bin/go` link) and the
 `versions.json` go pins predate the engine's data-manifest cutover but had
-no provisioning path — the link dangled on every fresh host. Extending the
-download contract keeps one pinned-artifact seam (https-only fetch, 64-hex
-SHA-256 gate, per-platform asset dispatch, staged install, exclusive
-target ownership) instead of a second acquisition lane, and honors the
+no provisioning path — the link dangled on every fresh host. The pin keeps
+one pinned-artifact seam (https-only URL, 64-hex
+SHA-256 gate, per-platform asset dispatch, exclusive
+target ownership) instead of a second lane, and honors the
 operating-contract law: a package that names a tool ships the tool.
 
 The archive form is domain-neutral data on the pin: `archive` names the
 format, `probe` (argv + first-line output template with `{V}`) is the
-honesty gate — the tree must prove it is the pinned tool before it
-activates, on already-converged hosts the probe skips the fetch entirely,
-and the applied record (`type: download-archive`) re-probes on every
-verify. Extraction is the bootstrap's discipline: traversal-checked
-single-root members, exactly one root stripped, private sibling staging,
-one rename into place — serialized by the apply lock the pipeline's caller
-already holds, so no second installer lock exists. A tree that does not
-carry the pinned version is never overwritten: inspect and remove it
-explicitly to re-install (pin bumps included). The pins stay byte-identical
-to `versions.json` (`go`, `go_<plat>_url`/`_sha256`); a bump re-records the
-generation because the pin descriptor is content-addressed.
+honesty gate — the tree must prove it is the pinned tool. Execution is the
+walker's: each pin renders as a checksummed `fetchurl` derivation, the
+store verifies the bytes, and the generation links the extracted tree at
+the target. A pin bump moves the derivation, the generation and the
+recorded mirror row together (`go`, `go_<plat>_url`/`_sha256`).
 
 ### Fresh-host archive provisioning: foundation tools, fonts, op, nvm/Node
 
 Decision recorded 2026-10-15 (card t_cf14f71b, after the audit t_bf0c0acc
 found the docs claiming provisioning no source implemented): every tool
-class above is a download-contract ARCHIVE pin — none stays a documented
+class above is a declared ARCHIVE pin — none stays a documented
 host prerequisite, per the operating-contract law. The seam is the same
 one contract the go decision grew; the audit's forbidden outcome (docs
-claim, source silent) is closed on all four rows. What the contract
-gained, each fail-closed and tested:
+claim, source silent) is closed on all four rows. The declared vocabulary,
+each shape validated fail-closed and tested:
 
-* formats `tar.xz` and `zip` join `tar.gz` (the apply-time host tools
-  `xz`/`unzip` are named prerequisites — a missing tool is a loud,
-  named failure, never a silent fallback);
+* formats `tar.xz` and `zip` join `tar.gz` (the store-side extraction has
+  no host-tool dependency — a declared format the walker cannot render is
+  a loud, named failure, never a silent fallback);
 * the declared `layout` names the root discipline — `release` (default:
   exactly one root; a root directory strips one component, a lone root
   file IS the tree — the fzf/tree-sitter shape) and `flat` (rootless
-  top-level members — lazygit, the op pair, the font set — safe because
-  the staging directory is always fresh);
+  top-level members — lazygit, the op pair, the font set);
 * the probe has a second shape, the content probe
   (`{member, sha256}`), for trees that carry no executable at all —
   nvm's checkout and the font directory prove their identity by pinned
   member bytes instead of faking a version line;
 * the destination may dispatch per platform (`targets`, the mirror of
   `assets`) — the font lands in `.local/share/fonts` on linux and
-  `Library/Fonts` on darwin, and the resolution happens only at the
-  apply boundary so a recorded plan stays machine-independent.
+  `Library/Fonts` on darwin; the declared shape travels verbatim, so a
+  recorded plan stays machine-independent.
 
 Per-tool seams: ripgrep, fd, fzf, tree-sitter, rainfrog at
 `.local/opt/<tool>` + a `.local/bin` link (release layout; lazygit
@@ -294,173 +290,40 @@ The graph rejects duplicate IDs, unknown dependencies, dependency cycles, and en
 
 ## Lifecycle phases
 
-| Phase | Input state | Responsibility |
+| Phase | Owner | Responsibility |
 | --- | --- | --- |
-| `bootstrap` | Whole source checkout, shell prerequisites | Verify the host distro prerequisite set (the machine-readable block in docs/tools.md — one refusal, the full missing set, the install command), install verified pinned runtime/backend, then the engine provisions and verifies the conflict-safe public launcher symlink |
-| `plan` | Source declarations and journal | Validate and preview attributable change sets, generated-source patches, target preconditions and unsupported reversals; mutate nothing |
-| `diff` | Same desired-state generation as apply | Ensure backend, preview file changes only; no retirement/setup/sync/verify |
-| `apply` | Validated plan | Retire owned real-account legacy service (never scratch), retire recorded clones whose recipe the plan dropped (guarded: HEAD at the recorded pin on a clean tree — drift refuses with the divergence named), publish the immutable generation, apply through the backend, refresh Node pin/PATH, setup |
-| `setup` | Applied target home | Provision package archives and configure host state |
-| `sync` | Configured applications | Restore mutable application state |
-| `verify` | Complete target home | Assert versions and observable behavior |
-| `update` | Git clone | Checked pull --ff-only, release refresh, bootstrap, apply, sync, verify; stop at first failure |
+| switch / rollback | `workstation-switch` (nix) | Build the generation from the flake, activate atomically, publish the receipt to the daemon's `system` domain |
+| `plan` | the engine | Validate and preview the attributable desired state (owner, provider, operation, target); mutate nothing |
+| `status` / `capabilities` | the engine | Report paths, the resolved graph, the catalog taxonomy and the capability-domain rollups |
+| `system applied` | the engine | Read the nix switch receipt (current generation, rollback pointer) |
+| verify lane | package `verify/*.sh` | Consumer smokes: deployed versions and observable behavior against the recorded pins |
 
-Every lifecycle verb is served by the workstation DAEMON (`apps/daemon`) —
-the only mutation engine and the only source of live state. The CLI and
+Every engine verb speaks to the workstation DAEMON (`apps/daemon`) —
+the resident read server and the only pubsub hub. The CLI and
 TUI are thin protocol clients over the per-user Unix socket: reads map to
-`status.run`/`plan.run`/`diff.run`, lifecycle verbs to
-`bootstrap.run`/`apply.run`/`update.run`/`sync.run`/`verify.run`, and
-`update` carries the whole chain in ONE op (a `steps` sub-chain). The
-`apply` verb sources its confirmation plan from the read-shaped
-`apply.plan` — the daemon's own mutation-bound composition (journal
-baseline, removal activation, retirements), NOT `plan.run`'s pure
-read-mode projection, whose generation is structurally different exactly
-when a declared removal activates (first convergence after a state
-change). Confirming against the composition the daemon executes keeps the
-stale-plan guard a true freshness comparison: it refuses a world that
-changed between the confirmation and the locked run, never that
-structural divergence. The apply refusal reports the COMPLETE conflict
-set (the full un-owned target list, computed before any mutation) with a
-per-target probe verdict, and `workstation apply --adopt` is the
-operator-gated door that adopts probe-verified un-owned targets —
-content identity is the law. It is the FIRST recovery move for that
-class, before any removal: adoption is wholesale (the journal claim
-records the whole target as owned, so un-declared content inside a
-probe-verified tree survives), while templates, version-mismatched
-download trees and pending-attempt strays refuse regardless of
-`--adopt` and recover by explicit removal — the adopt-first decision
-ladder leads docs/chezmoi.md's guarded-apply recovery section.
-The stale pending-attempt guard reconciles against the plan's whole
-desired surface (bootstrap-provisioned targets included) and refuses
-once with the complete unreconciled set, each line naming its per-class
-recovery door; a completed apply retires the pending anchor under
-`journal/retired/`, renamed and preserved.
-The
+`status.run`/`plan.run`. The
 client's ensure-daemon spawns a daemon detached from the installed release
 when the socket is absent or dead (bounded handshake; `workstation daemon
 stop` retires it manually); there is no in-process fallback — a missing
-daemon is an operator error, because the apply lock must have exactly one
-owner.
+daemon is an operator error. On NixOS the daemon runs as the
+`workstation-daemon` user unit; the VM boot test (`tests/nix`) pins that
+unit and the switch seam.
 
-The verbs that may replace the installed release (`apply`, `update`,
-`bootstrap`) first ask a LIVE daemon to exit gracefully
-(`Workstation.CLI.PreReplace`): the daemon runs the installed release in
-memory, so a replacement under a surviving beam would keep serving stale
-code. The daemon's `daemon.stop` is the graceful contract — the reply's
-flush ACKs the stop deterministically (the session marks the op's reply
-frame as flushed the moment it reaches the socket, and the stop proceeds
-past that handshake, bounded even when a client vanished mid-op) — after
-which it DRAINS its in-flight op tasks (bounded; each settling op
-releases its own apply lock), removes the socket node (no-follow
-owned-socket proof), then halts 0 — and the client waits, bounded (~10s),
-for BOTH the socket node's removal and the beam's actual exit before
-proceeding (the daemon's OS pid comes from the client's `SO_PEERCRED` read
-where the platform provides one — Linux — and otherwise from the
-`daemon.stop` wire result, which carries the daemon's own pid since
-darwin's `xucred` has no pid field and a dir-owner-proof generation no
-kernel read at all; a pid from neither source refuses fail-closed); the
-verb's own first call then spawns the fresh daemon on
-demand from the current release. A refusal (including a daemon too old to
-know `daemon.stop`) or a wedged exit FAILS CLOSED with an explicit error —
-the verb never replaces the release under a surviving stale daemon and
-never signals the process; killing is only ever the MANUAL stop verb's
-escalation ladder. The pre-replace stop composes with the release-refresh
-handoff: both share the daemon's pending-stop marker, so a second request
-while a stop is pending is a daemon-side no-op.
-
-Long ops stream structured events (`run.started`/`step.started`/
-`step.done`/`run.log`/`run.finished`, stamped with an `op_ref`) that both
-the headless lines and the TUI rows render; `op.abort` cancels the running
-op at its NEXT STEP BOUNDARY (never mid-step — a boundary is the only
-honest cancellation point for a lock-holding chain) and reports `aborted`;
-detaching (`q`) lets the daemon finish without a viewer. Recorded TUI
-deferrals: the abort key forwards `op.abort` with the stream's `op_ref`,
-which the screens learn from the `run.started` frame — an abort pressed
-before that first frame is a recorded no-op (the key is inert, the run
-continues) — and the TUI renders run/step boundaries only, so
-`apply.run`'s entry-level progress and `run.log` tails stay deferred
-until core applier hooks exist (core/ is frozen by contract). The daemon also
-serves the read-only `update.check` — `git ls-remote origin` vs local HEAD
-on the install repo the update verb pulls, 5 s bound, 10-minute TTL cache —
-answering `up_to_date`, `behind{local,remote,remote_ref}` or
-`unknown{reason}`; `status` merges it as an additive optional `update`
-object (absent when unknown), and the TUI shows the passive accent
-indicator `↑ update available (abc1234 → def5678) — [u] update` only when
-behind, with `[u]` launching the standard update flow. See the engine
-architecture in [docs/elixir.md](elixir.md).
-
-Bootstrap's engine step owns the `~/.local/bin/workstation` launcher symlink:
-identical canonical target, conflicting user files refused, no completion
-after a backend failure. Update refreshes the installed release from the
-freshly pulled checkout before the lifecycle steps so pin and engine changes
-take effect: when the engine checkout carries a buildable mix umbrella
-(the anchor resolution matches the launcher shim's), the platform is
-supported and the `mise` toolchain is present, the bootstrap step runs the
-same `bootstrap/install-runtime.sh` acquisition a fresh machine takes. The
-installer stamps every activated release with the source HEAD it built
-(`.built-from` beside the release); a stamp equal to the current checkout
-HEAD makes the refresh a no-op, so the update handoff terminates, and a
-failed build aborts the chain instead of continuing under stale code. A
-refresh that cannot happen is a failure, never a skip: a release whose
-stamp provably differs from the pulled HEAD on a host without the `mise`
-toolchain aborts the bootstrap naming the skew (the 2026-10-19 incident —
-bootstrap "ok", then apply under a stale release dying on a misleading
-payload-contract error), and an installer that exits 0 without stamping
-the pulled HEAD is refused the same way — trust the stamp, never the exit
-status. The apply surfaces enforce the same rule at their own door: the
-update chain's apply step, `apply.run`, and the `apply.plan` confirmation
-refuse a provable stamp-vs-HEAD skew ("stale engine release, refresh the
-release") BEFORE evaluating, because a stale generation evaluating fresh
-manifests reads its failures as payload-contract errors; without a
-buildable checkout or a stamp there is nothing provable and nothing
-changes. A bare
-host (no checkout) keeps the runtime-only bootstrap contract — the update
-chain refreshes nothing engine-side there, and the designed engine-upgrade
-path is re-running the acquisition from a checkout (`workstation bootstrap`).
-
-Because a refresh changes the release ON DISK while the running process
-keeps its OLD loaded code, the chain hands off — ENTIRELY daemon-side
-since the client/daemon refactor: the daemon's chained `update.run`
-captures the WRITER's identity as of before the installer re-stamps the
-release (`.built-from` stamp; an in-place refresh reuses the same release
-root, so identity can never be the path), writes the handoff note under
-the destination state root (writer stamp + the REMAINING steps), answers
-the op with the `handoff` outcome, and stops itself — the GRACEFUL stop
-(drain, socket-node removal, exit 0; see the verb table narrative above),
-which the client's pre-replace gate composes with instead of fighting. The
-CLIENT observes
-the disconnect, re-spawns the daemon from the REFRESHED release
-(ensure-daemon, bounded handshake), and re-sends the remaining sub-chain —
-the fresh daemon consumes the note, resumes the remaining steps under the
-same lock, clears the note after the resumed chain exits 0, and the
-operator sees one banner, one chain, one exit code. Identity is compared,
-never assumed: the refreshed code consuming a note of its OWN stamp is the
-resume target; an AGED stamp (the note predates the operator's newer
-checkout) means the note is stale — it is consumed with no resume (the
-designed engine-upgrade path is re-running `workstation bootstrap`, which
-also self-heals a stranded note), so the chain never resurrects steps an
-operator already superseded. The note names identity only; the client's
-re-spawn derives its daemon binary from the release ROOT
-(`<root>/bin/workstation`, guarded to be an existing executable), never
-from the identity token — spawning the stamp as a path is the 2026-10-05
-P0. A handoff decision after the final step is a no-op (never an empty
-resume), and a failing resumed chain is echoed once, never retried. The
-TUI does not survive a rebuild: interactive operators re-run
-`workstation update`, which the refresh stamp makes a fast no-op rebuild
-path. Because the refresh rewrites the release ON DISK while daemon nodes
-may be spawning or surviving against the same tree, the rendezvous gate
-(`Workstation.Daemon.Generation`, docs/elixir.md) backs the handoff:
-every daemon node pins its own generation at boot, refuses to serve when
-the installed `.built-from` stamp proves it stale (`stale_generation` on
-the wire, then a graceful self-stop so the next client respawns the
-installed generation), and the `--resume-from` child health-checks its
-fresh daemon with one real read op through DaemonClient before the
-resumed chain — apply included — proceeds. See [installation and daily use](../README.md).
+The daemon publishes generation events: every successful switch ends with
+the driver's receipt publish on the `system` overlay domain (the
+`system applied` wire op), and subscribed
+clients hear the generation change live. The `Overlay` domain claim/release
+is unchanged. The historical write plane's op surface —
+`bootstrap.run`/`apply.run`/`update.run`/`sync.run`/`verify.run`,
+the confirmation-plan flow, the adoption ladder, the stale-pending guard,
+the pre-replace daemon drain, the release-refresh handoff and its
+rendezvous gate — retired with the engine's write plane (the nix
+generation is atomic; rollback replaces every recovery ladder).
 
 The launcher shim (`workstation/bin/workstation`) resolves the checkout repo
 anchor — the mix umbrella root — for EVERY verb and
 exports `WORKSTATION_ENGINE_REPO` when one exists, so a checkout-launched
-release resolves package assets and update steps without a preset
+release resolves package assets without a preset
 environment (the anchor gate is `.github/scripts/shim-anchor.sh`, run by
 `check.sh` when a release tarball is built). A bare host matches neither
 anchor shape and exports nothing: the release keeps its own fail-closed
@@ -539,10 +402,10 @@ dependency closure, tool store (`~/.hermes/tools/...`) and gateway are
 runtime-extended state the package never freezes — the engine provisions
 the interpreter and the entry point exactly as it provisions mise and nvim,
 and upstream's own machinery fills its store from its own locks on demand.
-Runtime updates go through the engine: bump `hermes_agent_git_commit`, move
+Runtime updates go through the pins: bump `hermes_agent_git_commit`, move
 the `hermes_python` pins to the release the new commit's `pm/lock.json`
-names, remove the checkout explicitly (the git contract never moves a
-pinned checkout), re-apply.
+names, and switch — the new generation provisions the fresh checkout and
+interpreter.
 
 Kanban boards and profiles are runtime state the package never owns: the
 package ships the pins, the launcher, the skills and the verify only.
@@ -559,11 +422,13 @@ packages/languages/node/files/
 packages/agent/verify/
 ```
 
-Everything the engine must know about a package is declared in its native
-catalog module (`apps/core/lib/workstation/core/catalog/packages/`);
-anything requiring host execution is expressed as a provisioning recipe the
-backend executes, a verify assertion the engine evaluates, or package-owned
-payload the host tool consumes.
+Everything the engine must know about a package is declared in its
+self-contained manifest beside its payloads
+(`workstation/packages/<id>/manifest.json` and/or the manifest module the
+loader compiles);
+anything requiring host execution is expressed as a declared recipe the
+walker renders, a verify assertion the verify lane evaluates, or
+package-owned payload the host tool consumes.
 
 ## Verification requirements
 

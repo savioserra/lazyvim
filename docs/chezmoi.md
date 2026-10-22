@@ -1,14 +1,20 @@
-# Chezmoi file backend
+# Chezmoi recorded-source grammar
 
-Home state is **generated source state**, not a checked-in payload tree. The
-public interface is the repo-native `workstation/bin/workstation`, never
-chezmoi commands. `workstation/versions.json` owns the backend pin; no
-`.chezmoiversion` policy, source-root marker, archive externals or lifecycle
-run-after scripts exist. Capabilities declare recipes through
+The engine's file backend is nix: home-manager links every declared target
+from store paths, and `workstation-switch` owns activation and rollback.
+Chezmoi survives in this repo as a RECORDED-SOURCE GRAMMAR — the one-way
+source-name encoding and envelope shapes the committed goldens carry —
+decoded by the engine's read face (`Workstation.Backends.Chezmoi` validation,
+`from_recorded`, source-name/entry-mode derivation) and rendered by the
+walker into HM declarations. No chezmoi binary is provisioned, and nothing
+executes `chezmoi apply`: the backend's apply face retired with the
+engine's write plane. The public interface is the repo-native
+`workstation/bin/workstation`, never chezmoi commands.
+
+Capabilities declare recipes through
 [`provision.chezmoi`/`provision.shell`](capabilities.md#contribution-contract);
-the engine validates, composes and renders them to an immutable generation that
-chezmoi applies with explicit `--source` and `--destination`.
-
+the engine validates, composes and reports them (the plan wire's declared
+program), and the walker turns the same manifests into `home.file` targets.
 See [lifecycle phases](capabilities.md#lifecycle-phases) for ordering and
 [README](../README.md) for public commands. Authentication, sessions and
 provider state remain user-owned.
@@ -17,13 +23,12 @@ provider state remain user-owned.
 
 | Step | Owner | Contract |
 | --- | --- | --- |
-| Recipe declaration | Owning package | Pure `provision.*` calls; no I/O or target writes |
+| Recipe declaration | Owning package | Pure `provision.*` data; no I/O or target writes |
 | Envelope validation | Core | Dense array of `{ provider, spec }`; nonempty provider IDs only |
 | Domain validation | Registered provider | Options, kinds, attributes, target safety, asset confinement |
 | Composition | `workstation.source` + compositors | Explicit ordering, one attributed output per shared target |
 | Conflict detection | `workstation.source` | Duplicate exclusive targets, ancestor/attribute conflicts, removal overlap, engine-state overlap |
-| Publication | `workstation.provisioner` | Immutable content-addressed generation under target-private state |
-| Rendering | chezmoi backend | Templates and modify programs; the engine never renders template syntax |
+| Deployment | nix substrate | The walker renders the envelopes into `home.file` targets; the generation links them |
 
 Source names are encoded one-way from the logical target and attributes
 (`dot_`, `private_`, `executable_`, `exact_`, `symlink_`, `modify_`, `.tmpl`).
@@ -32,27 +37,24 @@ Repository `AGENTS.md` files are instructions, not payload: no recipe can
 declare them, so no ignore policy is needed and a test proves they cannot
 deploy.
 
-## Backend scope law
+## Hot-home scope law
 
-The backend never derives source state under a hot home — a directory a
-running program mutates between applies (`.hermes`, the agent home). Any
+Composition never derives source state under a hot home — a directory a
+running program mutates between switches (`.hermes`, the agent home). Any
 tracked state there (source entries, derived ancestor directories,
-recorded mtimes) fights the program's writes and fails every apply on an
-agent-active host, so the composition refuses any backend recipe whose
+recorded mtimes) fights the program's writes, so the composition refuses
+any recipe whose
 target lives under it (`Workstation.Core.Source.Paths.assert_not_hermes_home!/1`,
 removals exempt: a tombstone has no source name and no ancestors, so it
 dir-tracks nothing). Mutable payloads under a hot home are served by the
-copy contract instead: an idempotent byte-compare serve with no derived
+copy contract instead: declared copy payloads with no derived
 source state (see [capabilities](capabilities.md#hermes-resources)).
 
-Generation ids and target fingerprints are content addresses over canonical
-JSON: compact bytes with object keys sorted ascending bytewise
-(`vim.json.encode(_, { sort_keys = true })`). Per-process key-order seeding
+Generation ids are content addresses over canonical
+JSON: compact bytes with object keys sorted ascending bytewise.
+Per-process key-order seeding
 never reaches them, so identical content yields identical ids in every
 process; the golden suite asserts this across two separate engine processes.
-Ids recorded before this canonical encoding are opaque and may all shift
-once; journal and staleness logic compare ids only against values produced
-by the same engine, so recorded ownership is unaffected.
 
 Shared shell startup files (`.profile`, `.bashrc`, `.bash_profile`, `.zshrc`) compose from
 individually owned fragments (`marker` + single-line literal `body`, explicit
@@ -66,260 +68,79 @@ mutable targets (the nvim lockfile merge program) deploy through it precisely
 because modify targets are never byte-compared; see [nvim](nvim.md).
 Leftover managed shell lines are not inert.
 
-## Engine state, lock and journal
+## Engine state (historical)
 
-All engine state lives under the destination home's
+The engine state root (the destination home's
 `.local/state/workstation` tree, never in ambient XDG roots, the source
-checkout or Git:
+checkout or Git) now carries only read-side state. The guarded-apply
+machinery's files —
+`generations/<sha256>` staged source generations, `apply.lock`,
+`apply.lock.audit`, `journal/applied.json`,
+`journal/pending|failed|retired` —
+retired with the write plane; a legacy home may still carry them and the
+substrate never reads them. Operator-owned cleanup of those leftovers is
+optional and manual; nothing recreates them.
 
-| Path | Purpose |
-| --- | --- |
-| `generations/<sha256>` | Immutable published source generations; reused only after byte/type/mode reverification |
-| `apply.lock` | Fail-closed per-target operation lock (0600, owner metadata + parseable holder pid) |
-| `apply.lock.audit` | Append-only JSONL record of stale-lock takeovers |
-| `journal/applied.json` | Last successful generation, owned target fingerprints, fragment records |
-| `journal/pending/`, `journal/failed/`, `journal/retired/` | Attempt evidence; no automatic garbage collection (a completed apply retires the pending anchor into `retired/` — renamed, never deleted) |
-
-Read-only commands (`status`, `plan`, `diff`) may create the private
-engine-state root and journal directory on first use; that incidental creation
-is confined by the same no-follow/ownership/mode guards and stores nothing
-beyond engine metadata. `apply` and `diff` hold the lock through publication,
-backend execution and journal completion. A contending command refuses with the recorded owner
-metadata. The lock records its holder's OS pid, so contention is judged, never
-guessed: a LIVE holder is never interrupted; a holder provably dead on this
-host (a killed beam's debris — no `/proc` entry on Linux/WSL, `kill -0`
-elsewhere) is taken over after a fresh no-follow check that the path is still
-an owned regular file, and the takeover is recorded in `apply.lock.audit`, so
-a bootstrap-after-kill recovers on the next run without a manual rm. A lock
-without a parseable pid (pre-pid release or hand-written) is unknowable and
-is never stolen — inspect the recorded owner and remove the lock file only as
-a deliberate operator action. The exact generation path
-is passed to the backend, never a mutable pointer. Last-applied metadata is
-updated only after backend success; a failed attempt preserves pending/failed
-evidence and requires conflict-aware recovery. Retrying the same desired
-generation converges idempotently: a pending record whose generation equals
-the plan's excuses exactly its touched targets from the owned-fingerprint
-check, because their on-disk state is that interrupted attempt's own writes.
-Pending records of any other generation still guard — but the guard
-reconciles against the plan's WHOLE desired surface, never just backend
-entries: bootstrap-provisioned targets (pinned downloads, the managed-tool
-config, its PATH link, the engine state directory) that the next generation
-still desires reconcile through that apply's own fold instead of wedging it
-forever — the guard must never demand recovery that only a successful apply
-can perform. What remains unreconciled is refused ONCE, every stale target
-in one report, each line naming its recovery door per class
-(bootstrap-provisioned surface vs payload target). No recovery step deletes
-the pending/failed evidence — the next successful apply retires it under
-`journal/retired/`, renamed and preserved.
-
-Preconditions stop before backend mutation:
-
-- an owned target that changed since the last successful apply is a conflict,
-  unless the plan's own same-generation pending attempt record proves the
-  change is that interrupted fold's write;
-- first adoption of an existing, unrecorded, differing whole file or link is a
-  conflict rather than a silent takeover (identical or absent targets are safe);
-- backend-rendered (template) targets never adopt unrecorded existing state;
-- writes never traverse symlinked ancestors;
-- retiring an exclusive leaf requires its recorded type/content/link to still
-  match; shared transformed files and containers are never deleted.
-
-`workstation diff` previews **target-home** changes through the backend and can
-reveal your own file contents on your terminal; that explicit human preview is
-the intended surface, nothing is redacted automatically, and the engine never
-persists or forwards home diffs into the journal, Git or model logs.
-
-`workstation plan` previews the attributable change sets: owner, provider,
-operation, normalized target, source entry, type/mode/link metadata,
-generated-source Git-style patches against the last applied generation, target
-preconditions and unsupported reversals. **Patches describe generated chezmoi
-source, not arbitrary HOME content.** They are an inspectable review surface,
-not mutation authority: home effects are always the backend's, and archive,
-npm or setup side effects are explicitly outside source-patch reversibility.
-Journal files hold only generated-source data, fingerprints and ownership
-metadata (0700 directories, 0600 files) — never home-file bodies or secrets.
+`workstation plan` previews the attributable composition: owner, provider,
+operation, normalized target, source entry and type/mode/link metadata, and
+unsupported reversals. The per-target state report (`target_states`) is the
+engine's declared-vs-live review surface; the declared-vs-applied diff story
+is the nix generation diff (`nix store diff-closures` /
+`home-manager generations`). Plan reads never persist or forward home
+contents into logs.
 
 ## Removal policy
 
-`.chezmoiremove` is generated per plan from the engine policy module's exact
-seventeen legacy tombstones plus explicitly declared and reconciled removals.
+`.chezmoiremove` is composed per plan from the engine policy module's exact
+legacy tombstones plus explicitly declared and reconciled removals.
 Every final removal literal is revalidated against active ownership and
 engine-private state - static policy aggregation gets no bypass - and removal
 literals with glob metacharacters or control bytes are rejected so one owned
-target can never expand into several removals.
+target can never expand into several removals. The tombstone travels as
+declared data (Policy feeds the plan digest); ACTIVATING a removal is the
+substrate's convergence, not an engine act.
 
 The generation carries one more engine-owned source-root file: a single
 optional `.chezmoidata.toml` envelope contributed through
 `provision.chezmoi_data`. It is staged, hashed in the manifest and
-byte-verified like every source file, but it is never a home target: chezmoi
-merges it into template data, and the theme capability owns it (see
-[theme](theme.md)). At most one package may declare it.
+byte-verified like every source file, but it is never a home target: the
+template data merge is a recorded envelope story, and the theme capability
+owns it (see [theme](theme.md)). At most one package may declare it.
 
-Package `kind = "remove"` recipes operate on **recorded ownership**: a target
-that exists but was never journaled conflicts instead of being destructively
-adopted, and a declared removal of an absent, never-owned target is a no-op
-that never becomes a future tombstone. Matching owned leaves are removed
-idempotently; changed type/mode/content/link conflicts. The reviewed
+Package `kind = "remove"` recipes declare tombstones against **recorded
+ownership**: a declared removal of an absent, never-owned target is a no-op
+that never becomes a future tombstone. The reviewed
 legacy-policy tombstones are a separate narrow migration mechanism, not a
-general removal API. The guarded real-account service retirement runs before
-any file deletion; scratch targets never contact the live user manager (see
-[capabilities](capabilities.md#lifecycle-phases)).
-
-## Guarded-apply recovery
-
-Apply refusals on hosts with hand-made or out-of-band changes are the guarded
-cutover doing its job: one refusal names the COMPLETE conflict set (every
-package, every target — the full set is computed before anything is
-refused), each line carrying a read-only `probe:` verdict, and each has one
-documented recovery. Never disable preconditions to force an apply.
-
-The ladder is ordered: work it top down, `--adopt` before any removal.
-
-1. **Un-owned desired target, probe-verifiable** (the refusal's `probe:`
-   verdict says the on-disk state matches what the plan renders) →
-   `workstation apply --headless --adopt`. Adoption is wholesale: the
-   apply's journal claim records the WHOLE target as owned, so un-declared
-   content riding inside a probe-verified tree survives the cutover. This
-   is the first move, never the fallback — removing a probe-verified tree
-   destroys whatever un-declared content rides inside it. Cautionary case
-   (aurora, 2026-10-20): a hand-built node tree probed verified at the
-   pinned version; wholesale adoption would have preserved the
-   corepack/pnpm content inside it, and the remove path lost pnpm as
-   collateral.
-2. **Classes `--adopt` cannot reach — explicit removal, then re-apply**
-   (the engine refuses these regardless of `--adopt`): backend-rendered
-   template targets (`probe: not verifiable` — they render only inside the
-   backend), version-mismatched download trees (the download contract
-   refuses to overwrite a mismatched artifact), and pending-attempt strays
-   (the unresolved-partial-attempt lines). Back up anything unverified
-   before removing; the engine recreates the target and records ownership.
-3. **Hand-edited OWNED target** — compare the target's bytes first (row
-   below).
-4. **Journal/chezmoi state desync** — the boltdb split-brain row below.
-
-- **Un-owned declared target** ("exists without an owned record"): the
-  `probe:` verdict tells whether the on-disk state matches what the plan
-  renders. Matching → the operator-gated adoption door
-  (`workstation apply --adopt`) adopts probe-verified targets wholesale
-  (the apply's journal claim records ownership of the whole target, so
-  un-declared content inside it survives) and proceeds green; the engine
-  state wins the cutover. Differing, or `not verifiable` (template entries
-  render only inside the backend, so `--adopt` never opens them): compare
-  the target's bytes against the payload/landed content it should carry.
-  Identical or honestly superseded → remove the target and re-apply; the
-  engine recreates it and records ownership. Verify content identity
-  BEFORE handing the file to the engine; the engine state, not the hand
-  edit, wins the cutover.
-- **Hand-edited owned target** ("target changed since the last successful
-  apply"): compare the target's bytes against the payload/landed content it
-  should carry. Identical or honestly superseded → remove the target and
-  re-apply; the engine recreates it and records ownership. Verify content
-  identity BEFORE handing the file to the engine; the engine state, not the
-  hand edit, wins the cutover.
-- **Journal vs chezmoi boltdb split-brain** (chezmoi refuses "changed since
-  chezmoi last wrote it" after targets were removed or rewritten out of
-  band): move `~/.config/chezmoi/chezmoistate.boltdb` aside (keep the
-  `.bak-*` copy) and re-apply — a fresh boltdb re-applies the full source
-  state, and converged targets are rewritten byte-identical.
-- **Partial apply without a stamp**: an apply that wrote targets and then
-  failed leaves them written-but-unowned. One rerun surfaces the full
-  remaining set with probe verdicts: adopt the verified copies with
-  `--adopt` or remove them, and rerun until the apply completes; the
-  successful run records everything.
-- **Partial apply with a pending anchor** ("unresolved partial attempt for
-  generation …"): the anchor names every target the interrupted fold may
-  touch. The next apply reconciles everything its own desired surface still
-  covers — bootstrap-provisioned surface included — and refuses once, all
-  remaining targets together, each with its class door: under the engine's
-  provisioned surface (the state root or the opt root), remove the stale
-  artifact explicitly; a payload target, remove or back it up and re-apply.
-  The successful apply retires the anchor into `journal/retired/`.
-
-An error that reads like code you cannot find in the source names a **stale
-speaker**, not a source bug: `grep -rn "<exact error string>" elixir/` — an
-absent string identifies the layer serving old code. The **installed
-release** predating a source change is rebuilt by running bootstrap from the
-checkout; the **resident daemon** serving old code in memory is retired with
-`workstation daemon stop` (a graceful drain — release-replacing verbs ask it
-to stop first) and auto-respawns from the installed release on the next
-verb; verify the restart by the process start time.
+general removal API.
 
 ## Isolated validation
 
-Public preview: `workstation plan` and `workstation diff`. A file-only
-structural probe may invoke the backend directly with an explicit generation,
-destination, config, persistent state and cache in isolated roots. Generations
-are target-specific (private state and any inlined link destinations derive
-from that home), so build the plan in the same environment you render:
+`workstation plan` is the public preview (mutates nothing). The offline
+replay path substitutes a recorded golden envelope for the live catalog:
 
 ```sh
-scratch=$(mktemp -d)
-mkdir "$scratch/home" "$scratch/config" "$scratch/cache" "$scratch/state" "$scratch/tmp"
-printf '{}\n' > "$scratch/config/chezmoi.json"
-env -i PATH=/usr/bin:/bin HOME="$scratch/home" WORKSTATION_HOME="$scratch/home" \
-  TMPDIR="$scratch/tmp" \
-  XDG_CONFIG_HOME="$scratch/config" XDG_DATA_HOME="$scratch/state" \
-  XDG_STATE_HOME="$scratch/state" XDG_CACHE_HOME="$scratch/cache" \
-  "$HOME/.local/opt/chezmoi/bin/chezmoi" \
-  --source "$scratch/home/.local/state/workstation/generations/<id>" \
-  --destination "$scratch/home" \
-  --config "$scratch/config/chezmoi.json" --config-format json \
-  --cache "$scratch/cache/chezmoi" --persistent-state "$scratch/state/chezmoi.boltdb" \
-  --no-pager --no-tty apply --dry-run
+workstation plan --input tests/goldens/<profile>/input.json --home <scratch>
 ```
 
-Audit the full generated source (recipes, modify programs, templates) before
-executing a probe; dry-run or `--exclude` alone is not a sandbox. Add the
-network denial, deadline and byte-equivalent file-size guard from
-[testing](testing.md#offline-source-checks) for bounded Linux checks. Record
-the actual backend version: the automated suites render with the trusted
-installed backend (2.72.0 at the time of writing), which is evidence for file
-semantics only and **not** pinned 2.72.1 lifecycle acceptance. File rendering
-is never full lifecycle acceptance. See [real integration](testing.md#real-integration)
-for the authorized scratch harness; historical probe/debug receipts remain in
-TASK-34 notes and Git.
+Generations are target-specific (private state and any inlined link
+destinations derive from that home), so replay against a scratch home stays
+deterministic. The read-depth goldens are byte-compared on every
+`sh .github/scripts/check.sh` run; see [real integration](testing.md#real-integration)
+for the authorized substrate harness. Historical backend-render probe/debug
+receipts (the direct `chezmoi apply --dry-run` probes against isolated
+roots) remain in Git history.
 
-## Breaking cutover
+## Breaking cutover (historical)
 
-This is an **operator/parent procedure**, not an automatic migration script.
-Do not execute it while agents are working in `/root/lazyvim` or any active
-source checkout. Publication and live cutover require separate approval and
-platform gates.
-
-1. Inspect `~/.local/share/workstation` and `~/.local/bin/workstation` without
-   following unknown links. Determine whether the former is the old deployed
-   `apps/`, `lua/`, `packages/`, `versions.json` payload, a real Git clone, or
-   user-owned data. Record exact paths, Git HEAD/status if applicable,
-   launcher target, ownership and rollback location. Stop on ambiguity; do
-   not clone into an existing directory or delete it.
-2. After workers stop, back up approved legacy payload/files to a **new, absent,
-   operator-chosen sibling path** using a guarded rename. Back up the old
-   launcher separately if conflicting. Never recursively remove an engine
-   directory, overwrite a backup, or move the active `/root/lazyvim` checkout
-   as part of this procedure. User files, secrets and session state are not
-   engine cleanup targets.
-3. Clone the whole repository into the now-absent destination, or choose
-   another absent checkout path. Inspect the clone and pins before running its
-   launcher bootstrap. Bootstrap refuses a link to another checkout;
-   explicitly back up and remove/repoint only the inspected old link before
-   retrying. A matching managed link is left unchanged. Runtime/backend
-   bootstrap must succeed first.
-4. Review `workstation plan` (change sets, patches, preconditions) and
-   `workstation diff`, then approve real apply, sync and verify separately.
-   First apply onto a home with existing differing unrecorded whole files
-   intentionally conflicts instead of overwriting: inspect and explicitly back
-   back up or remove such files. Only real-account apply may retire the identified
-   owned legacy service before file removal.
-5. On failure stop. Preserve logs, checkouts/backups and the engine journal
-   (`~/.local/state/workstation`), including pending/failed/retired evidence. To roll
-   back the launcher, inspect its current target and replace **only that
-   approved link** with the recorded previous target. Restore approved legacy
-   paths from their backups only into absent destinations after checking for
-   new state; never erase the new clone to make room. Restoring a
-   launcher/source does not undo already changed home files, installed tools
-   or retired service state: those need reviewed backups and explicit operator
-   recovery. No automatic rollback may touch authentication or resume a
-   service.
+The guarded cutover procedure was written for the retired apply plane; the
+record of how the old deployed payload was replaced by a Git clone stays in
+Git history. On the substrate, a fresh host switches from the
+flake (see [README](../README.md#hosts)); an old
+`~/.local/share/workstation` deployed payload is operator-owned cleanup —
+inspect it, back it up to a new absent sibling path, never clone into or
+delete an ambiguous directory, and stop on ambiguity. User files, secrets
+and session state are not engine cleanup targets, and no automatic rollback
+may touch authentication.
 
 The generated tombstones remove the old temporary bridge only at
 `.local/share/workstation/versions.json`, **not** the clone root or its
