@@ -36,8 +36,17 @@ defmodule Workstation.CLI.TUI.ExecutorTest do
     previous = System.get_env("WORKSTATION_HOME")
     System.put_env("WORKSTATION_HOME", home)
 
+    # The supervisor-spec tree never opts in to the update check, but the
+    # app env is node-global and a real `Boot.run` in an earlier serial test
+    # leaves it enabled — pin it off here so this seam is order-independent
+    # (the enabled path would walk the live checkout for a git repo).
+    previous_check = Application.get_env(:daemon, :update_check)
+    Application.put_env(:daemon, :update_check, false)
+
     on_exit(fn ->
       if previous, do: System.put_env("WORKSTATION_HOME", previous), else: System.delete_env("WORKSTATION_HOME")
+
+      if previous_check == nil, do: Application.delete_env(:daemon, :update_check), else: Application.put_env(:daemon, :update_check, previous_check)
     end)
 
     start_supervised!(Workstation.Daemon.Application.supervisor_spec())
