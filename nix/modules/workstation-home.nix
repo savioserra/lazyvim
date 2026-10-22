@@ -19,6 +19,8 @@
   ...
 }:
 let
+  cfg = config.workstation;
+
   ws = import ../manifest-lib.nix {
     inherit lib pkgs;
     # the host's home — HM's own option, set by the per-host config
@@ -74,6 +76,25 @@ in
     daemonUnit = lib.mkOption { type = lib.types.str; readOnly = true; };
   };
 
+  options.workstation.switch = {
+    homeAttr = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      description = ''
+        The flake attr of this host's homeConfiguration (e.g. "shyylol@wsl")
+        — the workstation-switch driver's default home-plane target.
+      '';
+    };
+    systemAttr = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      description = ''
+        The flake attr of this host's nixosConfiguration (e.g. "wsl") —
+        the workstation-switch driver's default --system target.
+      '';
+    };
+  };
+
   config = {
     # --- the file plane: real manifests -> home.file -----------------------
     # intra-home link sources come back as absolute strings; HM store
@@ -99,8 +120,32 @@ in
     # ~/.local/share/fonts; keep the cache fresh)
     fonts.fontconfig.enable = true;
 
+    # --- the write plane: workstation-switch, the nix-switch driver -------
+    # Thin wrappers around home-manager switch / nixos-rebuild switch whose
+    # publish step is how the daemon hears a generation switch (the
+    # `system` overlay domain). Baked: this generation's engine and flake
+    # snapshot, plus the host's two flake attrs; every value is overridable
+    # by env (the driver's header documents the seams).
+    home.packages = [
+      (import ../workstation-switch.nix {
+        inherit pkgs engine;
+        flake = self;
+        homeAttr =
+          if cfg.switch.homeAttr != null then cfg.switch.homeAttr else "UNCONFIGURED-workstation.switch.homeAttr";
+        systemAttr =
+          if cfg.switch.systemAttr != null then
+            cfg.switch.systemAttr
+          else
+            "UNCONFIGURED-workstation.switch.systemAttr";
+      })
+    ];
+
     # --- the daemon: pubsub/overlay/theme as a user service ---------------
-    systemd.user.services.workstation-daemon = {
+    # A systemd USER unit — the Linux shape (NixOS-WSL, the VM). The darwin
+    # leg has no systemd (launchd is the user-manager there); HM's
+    # systemd.user surface is Linux-only, so the unit is gated, not the
+    # whole substrate.
+    systemd.user.services.workstation-daemon = lib.mkIf pkgs.stdenv.isLinux {
       Unit = {
         Description = "Workstation daemon (pubsub, overlay domains, theme, reads)";
       };
@@ -120,7 +165,8 @@ in
       packageOrder = ws.report.packageOrder;
       accounting = ws.accounting;
       daemonUnit =
-        config.systemd.user.services.workstation-daemon.Service.ExecStart;
+        config.systemd.user.services.workstation-daemon.Service.ExecStart
+        or "linux-only (the darwin leg runs launchd)";
     };
 
     home.stateVersion = "25.05";

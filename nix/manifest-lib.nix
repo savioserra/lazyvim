@@ -4,9 +4,10 @@
 #   rendered lanes: file, symlink, fragment, tool-binlink, download-tree,
 #                   git-checkout, nvim-profile, nvim-bin-nixpkgs
 #   refused lanes:  template/private/exact, modify/remove (engine contract
-#                   until P2/P3), copy + .hermes git (hot-home law: HM must
-#                   never manage ~/.hermes), chezmoi-data (engine runtime
-#                   data), mise (deleted: toolchains come from nixpkgs)
+#                   until the nix write plane retires it), copy + .hermes git
+#                   (hot-home law: HM must never manage ~/.hermes),
+#                   chezmoi-data (engine runtime data), mise (deleted:
+#                   toolchains come from nixpkgs), platform-missing downloads
 # A refused envelope that a render lane is ever ASKED to render throws a
 # clear eval error naming the kind — refusal is never silent.
 #
@@ -86,9 +87,27 @@ let
   # --- refusal registry -----------------------------------------------------
   # Every lane here is a decision the program has NOT made yet; the reason
   # strings are load-bearing (the eval golden pins them verbatim).
+  #
+  # Platform condition: a download envelope whose manifest pins no asset
+  # for THIS platform is refused (never a hard error — the eval golden is
+  # the x86_64-linux report, whose downloads all pin linux_x86_64; on
+  # darwin the refused tool's nixpkgs equivalent must join the host's nix
+  # set). The refusal PROPAGATES to the opt-tree link envelope that would
+  # dangle without its download (a .local/bin link to ../opt/<tool> whose
+  # tool never materializes would shadow the nix-set binary).
+  refusedToolNames = lib.unique (lib.concatMap (e:
+    if e.provider == "download" && refuseReason e != null then
+      [ lib.last (lib.splitString "/" (e.spec.target
+        or ((e.spec.targets or { }).${platform'} or (identOf e)))) ]
+    else [ ]) envelopes);
+
   refuseReason = e:
-    if e.provider == "download" || e.provider == "shell"
-      || e.provider == "nvim-profile" then null
+    if e.provider == "download" then
+      (if (e.spec.assets or { }) ? ${platform'}
+        then null
+        else "no ${platform'} asset: the nix set must own ${e.spec.target
+          or (identOf e)}")
+    else if e.provider == "shell" || e.provider == "nvim-profile" then null
     else if e.provider == "git" then
       (if lib.hasPrefix ".hermes/" e.spec.target then
         "engine-owned hot-home: HM must never manage ~/.hermes" else null)
@@ -102,16 +121,21 @@ let
       let
         s = e.spec;
         k = s.kind or "file";
+        parts = lib.splitString "/" (s.to or "");
+        toolName = lib.elemAt parts 2;
       in
-      if k == "file" || k == "symlink" then
+      if k == "symlink" && lib.take 2 parts == [ ".." "opt" ]
+        && lib.elem toolName refusedToolNames then
+        "tool '${toolName}' has no ${platform'} download: the link would dangle — the nix set owns it"
+      else if k == "file" || k == "symlink" then
         (if s.template or false then
-          "backend-rendered template: engine contract until P2/P3"
+          "backend-rendered template: engine contract until the nix write plane retires it"
         else if s.private or false then
-          "backend-rendered private: engine contract until P2/P3"
+          "backend-rendered private: engine contract until the nix write plane retires it"
         else if s.exact or false then
-          "backend-rendered exact: engine contract until P2/P3"
+          "backend-rendered exact: engine contract until the nix write plane retires it"
         else null)
-      else "mutable kind '${k}': engine contract until P2/P3"
+      else "mutable kind '${k}': engine contract until the nix write plane retires it"
     else throw "workstation-nix: envelope provider '${e.provider}' is not part of the known contract";
 
   # A render lane asked to touch a refused envelope must die loudly.

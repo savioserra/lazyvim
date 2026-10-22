@@ -50,7 +50,12 @@
         # report itself pins no home paths (the golden stays byte-stable),
         # but the argument stays required so no caller can inherit a name.
         homeDir = wslHost.homeDir;
-      }).report;
+      }).report
+      // {
+        # the `system` overlay domain's publish contract (the nix side of
+        # the two-reader drift guard — see nix/system-domain.nix)
+        systemDomain = import ./nix/system-domain.nix;
+      };
 
       # the rebuild key is DERIVED from the host identity (${user}@<host>),
       # never hand-typed

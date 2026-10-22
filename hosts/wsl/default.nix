@@ -18,15 +18,16 @@ let
   system = "x86_64-linux";
 
   # --- host identity (the single source) ------------------------------------
-  # The live WSL operator user (operator report 2026-10-21). The P2 cutover
-  # owns proving these values against the real host before first switch.
+  # The live WSL operator user (operator report 2026-10-21). The real-host
+  # cutover owns proving these values against the live host before first
+  # switch.
   user = "shyylol";
   homeDir = "/home/${user}";
+  homeKey = "${user}@wsl";
 in
 {
   # identity surface the flake consumes — derive, never hand-type
-  inherit system user homeDir;
-  homeKey = "${user}@wsl";
+  inherit system user homeDir homeKey;
 
   nixosConfig = nixpkgs.lib.nixosSystem {
     inherit system;
@@ -55,7 +56,18 @@ in
             extraSpecialArgs = {
               inherit self engine;
             };
-            users.${user} = import ../../nix/modules/workstation-home.nix;
+            users.${user}.imports = [
+              (
+                { ... }:
+                {
+                  # the switch driver's default targets: this host's flake
+                  # attrs, derived from the identity block (never hand-typed)
+                  workstation.switch.homeAttr = homeKey;
+                  workstation.switch.systemAttr = "wsl";
+                }
+              )
+              ../../nix/modules/workstation-home.nix
+            ];
           };
 
           system.stateVersion = "25.05";
