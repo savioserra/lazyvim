@@ -12,7 +12,6 @@ defmodule Workstation.Core.Contracts.MiseTest do
 
   use ExUnit.Case, async: false
 
-  alias Workstation.Core.{Catalog, Digest, Graph, Source}
   alias Workstation.Core.Contracts.Mise
 
   @mise_version "2026.10.8"
@@ -23,12 +22,6 @@ defmodule Workstation.Core.Contracts.MiseTest do
     %{name: "tmux", version: "3.7c", backend: "aqua:tmux/tmux-builds"},
     %{name: "btop", version: "1.4.7", backend: "github:aristocratos/btop"}
   ]
-
-  # The stand-in pinned bytes; the injected fetch serves them, the download
-  # contract verifies them against this sha, and the link absorption proof
-  # recognizes the installer copy by the same digest.
-  @fake_mise "#!/bin/sh\n# goldens fake mise\n"
-  @mise_sha Digest.sha256(@fake_mise)
 
   setup context do
     home = Path.join(System.tmp_dir!(), "workstation-mise-#{context.test}-#{:os.getpid()}")

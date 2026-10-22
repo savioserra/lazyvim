@@ -76,9 +76,7 @@ defmodule Workstation.Core.Contracts.Mise do
   @behaviour Workstation.Core.Contracts.Contract
 
   alias Workstation.Core.CanonicalJSON
-  alias Workstation.Core.Contracts.Download
   alias Workstation.Core.Digest
-  alias Workstation.Core.EngineState
   alias Workstation.Core.Source.Paths
 
   @engine_state_target ".local/state/workstation"
@@ -86,7 +84,6 @@ defmodule Workstation.Core.Contracts.Mise do
   @config_target ".config/mise/config.toml"
   @config_source_name "mise/config.toml"
   @path_link_target ".local/bin/mise"
-  @absorbed_conf_d ".config/mise/conf.d/workstation-bootstrap.toml"
   @mise_pin_regex ~r{\A\.local/opt/mise/([^/]+)/bin/mise\z}
   @tool_name_regex ~r/\A[a-z0-9][a-z0-9._-]*\z/
   @tool_version_regex ~r/\A[0-9A-Za-z][0-9A-Za-z._+-]*\z/
@@ -235,6 +232,12 @@ defmodule Workstation.Core.Contracts.Mise do
     Digest.sha256(CanonicalJSON.encode(%{"tools" => Enum.map(tools, &tool_fields/1)}))
   end
 
+  defp tool_fields(tool) do
+    fields = %{"name" => Map.fetch!(tool, :name), "version" => Map.fetch!(tool, :version)}
+    backend = Map.get(tool, :backend)
+    (backend && Map.put(fields, "backend", backend)) || fields
+  end
+
   @doc """
   The composed managed-config bytes: one deterministic document, header
   attribution first, then the `[tools]` table in the composed (sorted) order.
@@ -351,332 +354,6 @@ defmodule Workstation.Core.Contracts.Mise do
           }
         ]
     end
-  end
-
-  @doc """
-  Execute one effect at the apply boundary. `ctx` carries `:home`, `:plan`
-  and the optional `:mise` runner (a `(executable, args, env) -> {output,
-  exit_code}` injection for tests; production runs the pinned binary).
-  """
-  @impl Workstation.Core.Contracts.Contract
-  @spec run_effect(map(), map()) :: :ok
-  def run_effect(effect, ctx) do
-    home = ctx.home
-
-    case effect.kind do
-      :configure -> configure(home, effect)
-      :link -> ensure_path_link(home, effect, ctx)
-      :install -> install(home, effect, ctx)
-      other -> raise(ArgumentError, "unknown mise effect kind #{inspect(other)}")
-    end
-
-    :ok
-  end
-
-  @doc """
-  The applied-target ownership claims, computed from the ACTUAL home after
-  the fold: the config must carry exactly the composed bytes, the link must
-  point exactly at the pinned binary, and the tool state must resolve every
-  declared pin through mise — an effect that did not produce exactly its
-  declared outcome raises instead of recording.
-  """
-  @impl Workstation.Core.Contracts.Contract
-  @spec fingerprint(map(), map()) :: map()
-  def fingerprint(%{kind: :configure} = effect, ctx) do
-    bytes = config_bytes(%{tools: effect.tools, owners: effect.owners})
-    live = claim_file!(ctx.home, @config_target, Digest.sha256(bytes))
-
-    %{@config_target =>
-        Map.merge(live, %{
-          "owner" => "mise",
-          "operation" => "configure",
-          "source_fingerprint" => effect.fingerprint
-        })}
-  end
-
-  def fingerprint(%{kind: :link} = effect, ctx) do
-    desired = link_value(effect.mise_version)
-    live = EngineState.target_fingerprint(ctx.home, @path_link_target)
-
-    unless is_map(live) and live["type"] == "link" and live["link"] == desired do
-      raise ArgumentError,
-            "apply did not produce the mise PATH link #{@path_link_target} -> #{desired}"
-    end
-
-    %{@path_link_target =>
-        Map.merge(live, %{
-          "owner" => "mise",
-          "operation" => "link",
-          "source_fingerprint" => effect.fingerprint
-        })}
-  end
-
-  def fingerprint(%{kind: :install} = effect, ctx) do
-    mise = Path.join(ctx.home, effect.mise_target)
-
-    case EngineState.lstat(mise) do
-      %{type: "file"} -> :ok
-      nil -> raise(ArgumentError, "apply did not produce the pinned mise binary #{effect.mise_target}")
-      %{type: other} -> raise(ArgumentError, "the pinned mise binary #{effect.mise_target} exists as #{other}")
-    end
-
-    Enum.each(effect.tools, fn tool -> probe_tool!(tool, mise, ctx.home) end)
-
-    live = EngineState.target_fingerprint(ctx.home, @data_dir_target)
-
-    unless is_map(live) and live["type"] == "directory" do
-      raise(ArgumentError, "apply did not produce the mise tool state #{@data_dir_target}")
-    end
-
-    %{@data_dir_target =>
-       %{
-         "type" => "mise",
-         "mise" => effect.mise_target,
-         "mise_version" => effect.mise_version,
-         "tools" => Enum.map(effect.tools, &tool_fields/1),
-         "owner" => "mise",
-         "operation" => "install",
-         "source_fingerprint" => effect.fingerprint
-       }}
-  end
-
-  @doc """
-  The verify seam: a `mise`-typed journal record re-checks, through mise
-  itself, that every recorded tool still resolves at its pinned version on
-  the ACTUAL home; anything else is :unclaimed (the default file-fingerprint
-  verification takes it). A missing pinned binary or a version that no
-  longer resolves fails closed — a changed version under an unchanged record
-  is drift, never silently accepted. Tests inject a runner through
-  `ctx["mise_runner"]`.
-  """
-  @impl Workstation.Core.Contracts.Contract
-  @spec verify_record(map(), map()) :: :ok | :unclaimed
-  def verify_record(%{"type" => "mise", "mise" => mise_target, "tools" => tools} = _record, ctx)
-      when is_binary(mise_target) and is_list(tools) do
-    home = fetch_string(ctx, "home")
-
-    mise = Path.join(home, mise_target)
-
-    case EngineState.lstat(mise) do
-      %{type: "file"} -> :ok
-      nil -> raise(ArgumentError, "verify: the pinned mise binary #{mise_target} is gone")
-      %{type: other} -> raise(ArgumentError, "verify: the pinned mise binary #{mise_target} exists as #{other}")
-    end
-
-    Enum.each(tools, fn tool ->
-      record_tool = %{
-        name: fetch_string(tool, "name"),
-        version: fetch_string(tool, "version"),
-        backend: Map.get(tool, "backend")
-      }
-
-      runner = ctx["mise_runner"] || (&default_runner/3)
-      probe_tool!(record_tool, mise, home, runner)
-    end)
-
-    :ok
-  end
-
-  def verify_record(%{"type" => "mise"}, _ctx) do
-    raise(ArgumentError, "verify: mise record without its binary path and tools; the record is corruption")
-  end
-
-  def verify_record(_record, _ctx), do: :unclaimed
-
-  # --- effect mechanics ---
-
-  # The composed managed config: written atomically, idempotent on identical
-  # bytes, and the installer's first-acquisition conf.d fragment is absorbed
-  # here — the exact namespaced path only, and only as a regular file;
-  # anything else refuses instead of being deleted blind.
-  defp configure(home, effect) do
-    bytes = config_bytes(%{tools: effect.tools, owners: effect.owners})
-    path = Path.join(home, @config_target)
-
-    case File.read(path) do
-      {:ok, ^bytes} ->
-        :ok
-
-      {:ok, _other} ->
-        write_atomic!(path, bytes)
-
-      {:error, :enoent} ->
-        write_atomic!(path, bytes)
-
-      {:error, reason} ->
-        raise(ArgumentError, "mise config target #{@config_target} is unreadable: #{inspect(reason)}")
-    end
-
-    absorbed = Path.join(home, @absorbed_conf_d)
-
-    case EngineState.lstat(absorbed) do
-      nil -> :ok
-      %{type: "file"} -> File.rm!(absorbed)
-
-      %{type: other} ->
-        raise(ArgumentError,
-          "the installer activation fragment #{@absorbed_conf_d} exists as #{other}; " <>
-            "inspect it and resolve it explicitly"
-        )
-    end
-
-    :ok
-  end
-
-  # The PATH entry: a symlink into the pinned binary, converged on every
-  # apply. A regular file already at the target is the installer's
-  # first-acquisition copy exactly when its bytes match the download pin —
-  # proven ownership is absorbed; anything else refuses.
-  defp ensure_path_link(home, effect, ctx) do
-    desired = link_value(effect.mise_version)
-    path = Path.join(home, @path_link_target)
-
-    case EngineState.lstat(path) do
-      nil ->
-        make_link!(path, desired)
-
-      %{type: "link"} ->
-        File.read_link(path) == {:ok, desired} || make_link!(path, desired)
-
-      %{type: "file"} ->
-        pinned_sha = pinned_sha256!(effect, ctx)
-
-        Digest.sha256(File.read!(path)) == pinned_sha ||
-          raise(ArgumentError,
-            "#{@path_link_target} exists and is not the first-acquisition copy of the pinned mise " <>
-              "(sha256 mismatch with #{effect.mise_target}); inspect it and remove it explicitly"
-          )
-
-        File.rm!(path)
-        make_link!(path, desired)
-
-      %{type: other} ->
-        raise(ArgumentError, "#{@path_link_target} exists as #{other}; refusing to replace it")
-    end
-
-    :ok
-  end
-
-  # The pinned install: one `mise install` invocation carrying every
-  # declared pin (mise resolves backend dependencies itself), then a
-  # resolution probe per tool — the effect's own proof that the exact pins
-  # landed, through mise, never through directory layout.
-  defp install(home, effect, ctx) do
-    mise = pinned_mise!(home, effect.mise_target)
-    runner = ctx[:mise] || (&default_runner/3)
-
-    args = ["install"] ++ Enum.map(effect.tools, &tool_spec/1)
-    {out, code} = runner.(mise, args, mise_env(home))
-
-    code == 0 ||
-      raise(ArgumentError, "mise install failed (exit #{code}): #{String.trim_trailing(out)}")
-
-    Enum.each(effect.tools, fn tool -> probe_tool!(tool, mise, home, runner) end)
-
-    :ok
-  end
-
-  defp probe_tool!(tool, mise, home, runner \\ &default_runner/3) do
-    {out, code} = runner.(mise, ["where", tool_spec(tool)], mise_env(home))
-
-    code == 0 ||
-      raise(ArgumentError,
-        "mise tool #{Map.fetch!(tool, :name)} does not resolve at the pinned version " <>
-          "#{Map.fetch!(tool, :version)} (exit #{code}): #{String.trim_trailing(out)}"
-      )
-
-    :ok
-  end
-
-  defp pinned_mise!(home, mise_target) do
-    mise = Path.join(home, mise_target)
-
-    case EngineState.lstat(mise) do
-      %{type: "file"} ->
-        mise
-
-      nil ->
-        raise(ArgumentError,
-          "the pinned mise binary #{mise_target} is absent; the pinned download must apply first"
-        )
-
-      %{type: other} ->
-        raise(ArgumentError, "the pinned mise binary #{mise_target} exists as #{other}")
-    end
-  end
-
-  # The absorption proof: the executing host's pinned sha256, resolved
-  # through the download contract from the plan's pin (the plan is on the
-  # effect context; replay never runs effects).
-  defp pinned_sha256!(effect, ctx) do
-    plan = Map.get(ctx || %{}, :plan)
-    downloads = (plan && Map.get(plan, :downloads)) || []
-
-    download =
-      Enum.find(downloads, &(&1.target == effect.mise_target)) ||
-        raise(ArgumentError, "the plan carries no download pin for #{effect.mise_target}")
-
-    Download.resolve(download).sha256
-  end
-
-  defp make_link!(path, desired) do
-    File.mkdir_p!(Path.dirname(path))
-    File.rm(path)
-    File.ln_s!(desired, path)
-    :ok
-  end
-
-  defp link_value(mise_version), do: "../opt/mise/#{mise_version}/bin/mise"
-
-  defp write_atomic!(path, bytes) do
-    File.mkdir_p!(Path.dirname(path))
-    staged = Path.join(Path.dirname(path), ".mise-config-#{:os.getpid()}-#{System.system_time(:native)}")
-    File.write!(staged, bytes)
-    File.chmod!(staged, 0o644)
-
-    case File.rename(staged, path) do
-      :ok -> :ok
-      {:error, reason} -> raise(ArgumentError, "mise config write failed for #{path}: #{inspect(reason)}")
-    end
-  end
-
-  # The mise subprocess environment: the target home is HOME, tool state is
-  # pinned under the engine state root, and the managed config dir is the
-  # composed document's directory. Non-interactive: prompts are failures.
-  defp mise_env(home) do
-    %{
-      "HOME" => home,
-      "WORKSTATION_HOME" => home,
-      "MISE_DATA_DIR" => Path.join(home, @data_dir_target),
-      "MISE_CONFIG_DIR" => Path.join(home, Path.dirname(@config_target)),
-      "MISE_YES" => "1"
-    }
-  end
-
-  defp default_runner(exe, args, env) do
-    System.cmd(exe, args, env: env, stderr_to_stdout: true)
-  rescue
-    reason -> raise(ArgumentError, "mise execution failed: #{inspect(reason)}")
-  end
-
-  # The mise CLI names a backend tool by its backend identity alone (the
-  # installer's own invocation shape): `aqua:tmux/tmux-builds@3.7c`. The
-  # short name is the display alias, never part of the tool argument.
-  defp tool_spec(tool) do
-    backend = Map.get(tool, :backend)
-    version = Map.fetch!(tool, :version)
-
-    if backend do
-      "#{backend}@#{version}"
-    else
-      "#{Map.fetch!(tool, :name)}@#{version}"
-    end
-  end
-
-  defp tool_fields(tool) do
-    fields = %{"name" => Map.fetch!(tool, :name), "version" => Map.fetch!(tool, :version)}
-    backend = Map.get(tool, :backend)
-    (backend && Map.put(fields, "backend", backend)) || fields
   end
 
   # --- composition helpers ---
@@ -808,22 +485,6 @@ defmodule Workstation.Core.Contracts.Mise do
     value = Map.get(map, key)
     is_binary(value) and value != "" || raise(ArgumentError, "mise tool requires #{key}")
     value
-  end
-
-  defp fetch_string(map, key) when is_map(map) do
-    value = Map.get(map, key)
-    is_binary(value) and value != "" || raise(ArgumentError, "mise record field #{inspect(key)} is missing")
-    value
-  end
-
-  defp claim_file!(home, target, sha256) do
-    live = EngineState.target_fingerprint(home, target)
-
-    unless is_map(live) and live["type"] == "file" and live["sha256"] == sha256 do
-      raise(ArgumentError, "apply did not produce the managed mise config #{target} with the composed bytes")
-    end
-
-    live
   end
 
   defp overlaps?(target, other) do

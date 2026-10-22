@@ -454,11 +454,12 @@ defmodule Workstation.Backends.Chezmoi do
 
   # --- the effect contract ---
 
-  # The backend is a discovered member of the effect-contract family: the
-  # pipeline's interpret fold runs this module's apply effect through the
-  # argv contract below, and the claim reads the ACTUAL home. The kernel
-  # discovers this implementation by behaviour conformance; nothing outside
-  # this module names it as a contract member.
+  # The backend is a discovered member of the effect-contract family: its
+  # share of the plan's declared mutation program is the single
+  # apply-phase effect (the staged generation, applied once). Nothing
+  # executes it here — mutation is the nix substrate's workstation-switch
+  # drivers; the kernel discovers this implementation by behaviour
+  # conformance and reads only the declared view.
   @behaviour Workstation.Core.Contracts.Contract
 
   @doc "The wire contract id of the staged-generation apply."
@@ -468,78 +469,6 @@ defmodule Workstation.Backends.Chezmoi do
   def plan_effect(plan, _ctx) do
     [%{contract: id(), kind: :apply, phase: :apply, generation: plan.generation}]
   end
-
-  # The backend runs once per apply with the exact published generation as
-  # `--source`; lifecycle scripts are excluded by the argv contract. The
-  # backend's private state is pinned inside the target home (its own
-  # boltdb lives under `<home>/.config/chezmoi`), never the operator's
-  # ambient home. A missing or non-executable backend is a BACKEND FAILURE
-  # (the documented ArgumentError contract), not a crash: it surfaces
-  # through orchestrators that run the pipeline under a lock, where a raw
-  # File.Error would kill the orchestrator process instead of failing the
-  # operation.
-  def run_effect(_effect, ctx) do
-    home = ctx.home
-    directory = ctx.directory
-
-    [executable | args] = argv("apply", %{"source" => directory, "destination" => home})
-
-    unless regular_executable?(executable) do
-      raise ArgumentError,
-            "chezmoi apply failed: backend missing or not executable at #{executable}; run bootstrap"
-    end
-
-    case System.cmd(executable, args, env: %{"HOME" => home, "WORKSTATION_HOME" => home}, stderr_to_stdout: false) do
-      {_out, 0} ->
-        :ok
-
-      {out, code} ->
-        raise ArgumentError, "chezmoi apply failed (exit #{code}): #{String.trim_trailing(out)}"
-    end
-  rescue
-    error in [File.Error] ->
-      raise ArgumentError, "chezmoi apply failed: #{Exception.message(error)}"
-  end
-
-  # The applied record is the ownership claim every later check trusts, so
-  # the fingerprints are taken from the ACTUAL home after the fold: an entry
-  # the backend did not produce is a hard failure, never recorded. The
-  # fingerprint fields and the provenance fields merge into ONE flat record
-  # per target: readers compare the journal's target record directly
-  # against a recomputed fingerprint, so nesting the fingerprint under a
-  # key would make every re-apply look like an intervening edit. A nil
-  # fingerprint DROPS the `source_fingerprint` key — fragment-composed
-  # modify entries have no source fingerprint, and a stored nil would both
-  # corrupt canonical JSON and diverge from the recorded journal bytes.
-  def fingerprint(_effect, ctx) do
-    home = ctx.home
-
-    Map.new(ctx.plan.entries, fn entry ->
-      fingerprint = Workstation.Core.EngineState.target_fingerprint(home, entry.target)
-
-      unless fingerprint,
-        do: raise(ArgumentError, "apply did not produce target #{entry.target}")
-
-      record =
-        fingerprint
-        |> Map.put("owner", entry.owner)
-        |> Map.put("operation", entry.operation)
-        |> maybe_put("source_fingerprint", Map.get(entry, :fingerprint))
-        |> maybe_put("shared", Map.get(entry, :shared))
-
-      {entry.target, record}
-    end)
-  end
-
-  defp regular_executable?(path) do
-    case File.lstat(path) do
-      {:ok, %{type: :regular, mode: mode}} -> Bitwise.band(mode, 0o111) != 0
-      _other -> false
-    end
-  end
-
-  defp maybe_put(map, _key, nil), do: map
-  defp maybe_put(map, key, value), do: Map.put(map, key, value)
 
   @doc """
   Native chezmoi source path for a validated spec, e.g. `.profile` + modify +
@@ -645,50 +574,6 @@ defmodule Workstation.Backends.Chezmoi do
     normalized == spec.target || raise_arg("chezmoi target is not normalized: #{inspect(spec.target)}")
     components == spec.components || raise_arg("chezmoi target components changed")
     :ok
-  end
-
-  @doc """
-  The backend argv contract: build the full chezmoi argv for an action
-  against one exact immutable generation directory, never a mutable current
-  pointer. `opts` carries the string keys `"source"` (required generation
-  path), `"destination"` (defaults to the target home), `"dry_run"` and
-  `"exclude"` (defaults to `["scripts"]`, because engine-owned lifecycle
-  scripts must never run inside a preview). Lives on the backend module by
-  law: the argv is the backend's own dialect, and the pipeline's interpret
-  fold consumes it through this module API.
-  """
-  @spec argv(String.t(), map()) :: [String.t()]
-  def argv(action, opts) when is_binary(action) and is_map(opts) do
-    source = opts["source"]
-    unless is_binary(source) and source != "", do: raise(ArgumentError, "chezmoi argv requires an explicit source generation")
-
-    destination = opts["destination"] || Workstation.Core.EngineState.home()
-
-    prefix = [
-      executable(),
-      "--source",
-      source,
-      "--destination",
-      destination,
-      action
-    ]
-
-    prefix =
-      if opts["dry_run"] do
-        prefix ++ ["--dry-run"]
-      else
-        prefix
-      end
-
-    Enum.reduce(opts["exclude"] || ["scripts"], prefix, fn exclude, acc ->
-      acc ++ ["--exclude", exclude]
-    end)
-  end
-
-  @doc "The backend executable path pinned inside the target home."
-  @spec executable() :: String.t()
-  def executable do
-    Path.join([Workstation.Core.EngineState.home(), ".local", "opt", "chezmoi", "bin", "chezmoi"])
   end
 
   defp nonempty_string?(value), do: is_binary(value) and value != ""

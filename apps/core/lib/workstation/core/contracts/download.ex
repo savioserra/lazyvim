@@ -1,50 +1,41 @@
 defmodule Workstation.Core.Contracts.Download do
   @moduledoc """
-  The pinned-artifact source contract: a thing that fetches a pinned
+  The pinned-artifact source contract: a thing that declares a pinned
   artifact (url + version + sha256 + target) into the home.
 
-  Layer: contract. The contract law: a pin installs exactly its pinned
+  Layer: contract. The contract law: a pin declares exactly its pinned
   bytes, or exactly the tree a checksum-gated archive carries — nothing
-  else is ever written (implementor policy: implementations are the
+  else is ever declared (implementor policy: implementations are the
   engine's own contract modules; discovery finds them by behaviour
   conformance).
 
   The plan stays pure: a download recipe contributes a validated pin whose
   descriptor is content-addressed into the plan manifest, so the generation
   id changes whenever a pin changes and the generation directory carries the
-  machine-readable pin provenance. Installation happens only at the apply
-  boundary and is fail-closed both ways: the downloaded bytes must match the
-  pinned sha256 (nothing is written otherwise) and an existing target with
-  different content is never overwritten. A target already carrying the
-  pinned content is an idempotent no-op — the fetch is skipped entirely.
-
-  The fetch function is injected at the apply boundary (`:fetch` option);
-  the default performs a real HTTPS GET. Recipe constructors raise
-  `ArgumentError` with anchored messages, exactly like the other source
-  contracts.
+  machine-readable pin provenance. Execution retired with the engine's
+  write plane — the nix substrate's workstation-switch drivers own the
+  fetch and the install. This module's face is the declared program:
+  validation, per-platform resolution, the pin fingerprint/descriptor, and
+  the plan's typed effects. Recipe constructors raise `ArgumentError` with
+  anchored messages, exactly like the other source contracts.
 
   Per-platform dispatch is resolved THROUGH the contract, never by ad-hoc
   conditionals in consumers: a spec either pins ONE artifact directly
   (`url` + `sha256`) or declares `assets` keyed by platform tag —
   `%{"linux_x86_64" => %{url: ..., sha256: ...}, "darwin_arm64" => %{...}}` —
-  and the contract resolves the executing host's tag at the apply boundary
-  (`resolve/2`, `platform/0`; the tag vocabulary is the bootstrap pins
-  manifest's). The declared assets travel verbatim through the plan, the
-  fingerprint and the recorded envelope — a pin change on ANY platform
-  changes the generation, and a recorded plan stays machine-independent.
+  and `resolve/2` resolves the asking host's tag (`platform/0`; the tag
+  vocabulary is the bootstrap pins manifest's). The declared assets travel
+  verbatim through the plan, the fingerprint and the recorded envelope — a
+  pin change on ANY platform changes the generation, and a recorded plan
+  stays machine-independent.
 
   ## The archive form
 
   A pin may declare `archive: "tar.gz"`, `"tar.xz"` or `"zip"`: the pinned
-  artifact is then a release ARCHIVE installed as an exact tree — the sha256
-  gate applies to the archive bytes, the archive's members are
-  traversal-checked, extraction lands in a private staging directory beside
-  the target, and the staged tree is activated by rename only after a
-  declared probe proves it is the pinned tool. An archive target is a
-  directory inside the home; the pipeline's caller-held apply lock is the
-  install's serialization, and the staging discipline is the bootstrap's:
-  debris staging siblings are swept at install start, and the tree is never
-  partially visible at the target path.
+  artifact is then a release ARCHIVE installed as an exact tree — the
+  checksum gate applies to the archive bytes, and the declared `probe`
+  (data, below) is what proves an activated tree is the pinned tool. An
+  archive target is a directory inside the home.
 
   The declared `layout` names the archive's root discipline — the closed
   vocabulary:
@@ -57,14 +48,7 @@ defmodule Workstation.Core.Contracts.Download do
       members into one target is never a silent act.
     * `flat`: the members live at the archive's top level with no owning
       root (upstream ships bare: lazygit's `LICENSE`/`README.md`/`lazygit`,
-      the 1Password `op`/`op.sig` pair, the Nerd Font ttf set). Every
-      member extracts into the staging root, none stripped, still
-      traversal-checked — the freshness of the staging directory is what
-      makes a rootless tree safe to activate.
-
-  Formats ride the host's extraction tools (`tar` for tar.gz/tar.xz,
-  `unzip` for zip); a missing tool is a named apply-time prerequisite
-  error, never a silent fallback.
+      the 1Password `op`/`op.sig` pair, the Nerd Font ttf set).
 
   The probe is the archive pin's honesty gate, declared as data so the
   contract stays domain-neutral. Two shapes — a tree proves it is the
@@ -86,22 +70,14 @@ defmodule Workstation.Core.Contracts.Download do
   A version line remains the probe of choice wherever the tool can speak;
   the content probe exists so data trees do not have to fake an executable.
 
-  The probe drives all three lifecycle gates: an existing directory that
-  does not carry the pinned tool refuses to be overwritten, the
-  applied-target claim re-probes the actual tree before recording, and the
-  verify seam (`verify_record/2`) re-probes the recorded tree on every
-  verify.
-
   ## Per-platform targets
 
   A pin installs at ONE target path; like its assets, that path may be
   platform-specific: a spec declares either `target` (one literal) or
   `targets` keyed by the platform tag vocabulary (`%{"linux_x86_64" =>
   ".local/share/fonts/...", "darwin_arm64" => "Library/Fonts/..."}`). The
-  declared targets travel verbatim through the plan — the executing host
-  resolves its own at the apply boundary (`resolve/2`), so a recorded plan
-  stays machine-independent and the journal claims the path that actually
-  exists in the home.
+  declared targets travel verbatim through the plan — `resolve/2` resolves
+  the asking host's own — so a recorded plan stays machine-independent.
   """
 
   alias Workstation.Core.{CanonicalJSON, Digest}
@@ -149,27 +125,6 @@ defmodule Workstation.Core.Contracts.Download do
         }
 
   @platform_tags ~w(linux_x86_64 darwin_arm64)
-
-  # The redirect chain the default fetch follows itself, one TLS session per
-  # hop: inets' autoredirect reuses a single flat ssl option set across hops,
-  # which is exactly how a GitHub release fetch ends up TLS-ing to
-  # release-assets.githubusercontent.com with github.com's identity.
-  @max_redirects 5
-  @redirect_statuses [301, 302, 303, 307, 308]
-
-  # Transport-level errors one idempotent hop may absorb with a bounded
-  # retry. :closed/:econnreset/:timeout are the classic async-close and
-  # timeout shapes; :einval is the loaded-scheduler shape pinned by the
-  # t_79669ce0 suite battery — the peer answers and closes cleanly, the
-  # client still loses the response at the inet/ssl driver.
-  @transient_connect_errors [:closed, :timeout, :econnreset, :einval]
-
-  # Retries settle before each re-attempt so a scheduler/fd spike can drain;
-  # the schedule is exponential (25ms before attempt 2, doubling to 200ms)
-  # because the battery pinned back-to-back losses: bursts outlive any
-  # single fixed gap. Bounded per hop and never counted as redirect hops.
-  @max_hop_attempts 5
-  @hop_retry_settle_ms [25, 50, 100, 200]
 
   @doc "The wire provider id for pinned-artifact contributions."
   @spec provider_id() :: String.t()
@@ -632,206 +587,6 @@ defmodule Workstation.Core.Contracts.Download do
     end)
   end
 
-  # The fetch function is injected through ctx (`:fetch`); production
-  # fetches HTTPS.
-  def run_effect(effect, ctx) do
-    install(effect, ctx.home, fetch: ctx[:fetch])
-    :ok
-  end
-
-  # Downloaded artifacts join the applied record as first-class owned
-  # targets: the fingerprint is recomputed from the ACTUAL home and must
-  # carry the pinned checksum -- an install that did not produce exactly the
-  # pinned bytes is a hard failure, never recorded. (`fingerprint/1` above
-  # is the pin's content address; this is the applied-target claim.)
-  #
-  # The archive form claims through the declared probe (the bootstrap's
-  # runtime-verify semantic): the target directory must exist, the probe
-  # member must be a regular executable, and the probe output must carry
-  # the pinned version — the archive's own sha256 rides the record as
-  # provenance, never as a claim about tree bytes. The record type routes
-  # verify to `verify_record/2` instead of the default file fingerprint.
-  def fingerprint(%{archive: archive} = effect, ctx) when archive != nil do
-    target = resolve_target(effect, platform())
-    tree = Path.join(ctx.home, target)
-
-    case Workstation.Core.EngineState.lstat(tree) do
-      %{type: "directory", mode: mode} ->
-        run_probe!(tree, target, effect[:probe], effect.version)
-        resolved = resolve(effect)
-
-        %{target =>
-           %{
-             "type" => "download-archive",
-             "target" => target,
-             "mode" => mode,
-             "version" => effect.version,
-             "archive" => archive,
-             "archive_sha256" => resolved.sha256,
-             "probe" => string_probe(effect),
-             "owner" => effect.owner,
-             "operation" => "download",
-             "source_fingerprint" => effect.fingerprint
-           }}
-
-      _other ->
-        raise ArgumentError, "apply did not produce download target " <> target
-    end
-  end
-
-  def fingerprint(effect, ctx) do
-    target = resolve_target(effect, platform())
-    fingerprint = Workstation.Core.EngineState.target_fingerprint(ctx.home, target)
-    resolved = resolve(effect)
-
-    unless fingerprint,
-      do: raise(ArgumentError, "apply did not produce download target " <> target)
-
-    unless fingerprint["sha256"] == resolved.sha256 do
-      raise ArgumentError,
-            "applied download " <> target <> " does not carry the pinned checksum " <>
-              "(" <> fingerprint["sha256"] <> " != " <> resolved.sha256 <> ")"
-    end
-
-    %{target =>
-       Map.merge(fingerprint, %{
-         "owner" => effect.owner,
-         "operation" => "download",
-         "source_fingerprint" => effect.fingerprint
-       })}
-  end
-
-  @doc """
-  The verify seam: a `download-archive` journal record re-probes the actual
-  tree through its own declared probe — the probe member must still be a
-  regular executable and the output must still carry the recorded pinned
-  version; anything else is :unclaimed (the default file-fingerprint
-  verification takes it) or a failed verify, never silently accepted.
-  """
-  @spec verify_record(map(), map()) :: :ok | :unclaimed
-  def verify_record(%{"type" => "download-archive", "probe" => probe, "version" => version} = record, ctx) do
-    target = Map.fetch!(record, "target")
-    tree = Path.join(ctx["home"], target)
-
-    case Workstation.Core.EngineState.lstat(tree) do
-      %{type: "directory"} ->
-        run_probe!(tree, target, probe, version)
-        :ok
-
-      _other ->
-        raise ArgumentError, "verify: download target #{target} is gone"
-    end
-  end
-
-  def verify_record(%{"type" => "download-archive"}, _ctx) do
-    raise ArgumentError, "verify: download-archive record is missing its probe or version"
-  end
-
-  def verify_record(_record, _ctx), do: :unclaimed
-
-  # --- the archive probe ---
-
-  # The probe dispatches on its declared shape: the exec probe runs the
-  # declared argv against the tree — never a shell, the executable is a
-  # resolved member path — and holds the recorded version against the first
-  # output line at a token boundary; the content probe holds the declared
-  # member's extracted bytes against the pinned digest.
-  defp run_probe!(tree, target, probe, version) do
-    fields = probe_fields(probe)
-
-    case fields do
-      %{argv: [executable | args], output: template} ->
-        run_exec_probe!(tree, target, executable, args, template, version)
-
-      %{member: member, sha256: sha256} ->
-        run_content_probe!(tree, target, member, sha256)
-    end
-  end
-
-  defp run_exec_probe!(tree, target, executable, args, template, version) do
-    binary = Path.join(tree, executable)
-
-    mode = probed_file_mode!(tree, binary, target, executable)
-
-    Bitwise.band(mode, 0o111) != 0 ||
-      raise ArgumentError, "download probe member #{executable} is not executable in tree #{target}"
-
-    case System.cmd(binary, args, stderr_to_stdout: true) do
-      {out, 0} ->
-        first = out |> String.split("\n", trim: true) |> List.first("")
-
-        probe_carries_version?(first, template, version) ||
-          raise ArgumentError,
-                "download tree #{target} does not carry the pinned tool " <>
-                  "(#{executable} reported `#{first}`, expected the pinned version #{version})"
-
-        :ok
-
-      {out, code} ->
-        raise ArgumentError,
-              "download probe for #{target} failed (exit #{code}): #{String.trim_trailing(out)}"
-    end
-  end
-
-  defp run_content_probe!(tree, target, member, sha256) do
-    path = Path.join(tree, member)
-
-    probed_file_mode!(tree, path, target, member)
-    actual = path |> File.read!() |> Digest.sha256()
-
-    actual == sha256 ||
-      raise ArgumentError,
-            "download tree #{target} does not carry the pinned member " <>
-              "(#{member} hashes to #{actual}, expected #{sha256})"
-
-    :ok
-  end
-
-  # The probe member may be a symlink to a regular file (python-build-
-  # standalone ships bin/python3 -> python3.14): lstat sees the link, the
-  # probe must judge the file it resolves to. A dangling link, a link out
-  # of the tree, or a non-file is a loud "lacks the probe member", never a
-  # silent pass. Link chains resolve hop by hop, bounded.
-  @max_link_depth 8
-
-  defp probed_file_mode!(tree, path, target, member) do
-    probed_file_mode!(tree, path, target, member, @max_link_depth)
-  end
-
-  defp probed_file_mode!(_tree, _path, target, member, 0) do
-    missing_probe_member!(target, member)
-  end
-
-  defp probed_file_mode!(tree, path, target, member, depth) do
-    case Workstation.Core.EngineState.lstat(path) do
-      %{type: "link"} ->
-        case File.read_link(path) do
-          {:ok, link} ->
-            resolved = Path.expand(link, Path.dirname(path))
-            in_tree? = String.starts_with?(resolved, tree <> "/") or resolved == tree
-
-            case Workstation.Core.EngineState.lstat(resolved) do
-              %{type: "file", mode: mode} when in_tree? -> mode
-              _other when in_tree? -> probed_file_mode!(tree, resolved, target, member, depth - 1)
-              _other -> missing_probe_member!(target, member)
-            end
-
-          {:error, _reason} ->
-            missing_probe_member!(target, member)
-        end
-
-      %{type: "file", mode: mode} ->
-        mode
-
-      _other ->
-        missing_probe_member!(target, member)
-    end
-  end
-
-  defp missing_probe_member!(target, member) do
-    raise ArgumentError, "download tree #{target} lacks the probe member #{member}"
-  end
-
   # The probe field map travels atom-keyed (recipes, effects) and
   # string-keyed (journal records); both resolve here.
   defp probe_fields(probe) when is_map(probe) do
@@ -854,19 +609,6 @@ defmodule Workstation.Core.Contracts.Download do
 
       true ->
         raise ArgumentError, "download probe must declare argv and output, or member and sha256"
-    end
-  end
-
-  # Template match with a token boundary: `1.27.1` must never satisfy a
-  # probe of a `1.27.10` tree.
-  defp probe_carries_version?(line, template, version) do
-    prefix = String.replace(template, "{V}", version)
-
-    if String.starts_with?(line, prefix) do
-      rest = String.slice(line, byte_size(prefix), byte_size(line))
-      rest == "" or String.starts_with?(rest, " ")
-    else
-      false
     end
   end
 
@@ -907,416 +649,6 @@ defmodule Workstation.Core.Contracts.Download do
       nil -> "download/" <> String.slice(field(spec, :sha256), 0, 16) <> ".pin.json"
       _assets -> "download/" <> String.slice(fingerprint(spec), 0, 16) <> ".pin.json"
     end
-  end
-
-  @doc """
-  Install the pinned artifact into `home` at the recipe target.
-
-  File form: idempotent (a target already carrying the pinned content
-  answers `{:ok, :already_installed}` without fetching), fail-closed
-  (downloaded bytes that do not match the pinned sha256 raise and install
-  nothing; an existing target with different content is never overwritten),
-  staged (the file is written under a temporary name in the target
-  directory and renamed into place, so an interrupted install can never
-  leave a half-written artifact).
-
-  Archive form (`archive:` pin): the pinned archive's bytes are
-  checksum-gated before anything is extracted, the archive is
-  traversal-checked, extracted per its declared layout into a private
-  staging directory beside the target, the staged tree is proven by the
-  declared probe, and one rename places the exact tree at the target. An
-  existing directory answers `{:ok, :already_installed}` only when the
-  probe carries the pinned version (no fetch); otherwise it is refused,
-  never overwritten — inspect and remove it explicitly to re-install.
-  Serialization is the pipeline's caller-held apply lock.
-  """
-  @spec install(t() | map(), String.t(), keyword()) :: {:ok, :installed} | {:ok, :already_installed}
-  def install(spec, home, opts \\ []) when is_binary(home) and home != "" do
-    # Per-platform dispatch (asset and target) resolves HERE — the apply
-    # boundary — through the contract, never in the caller.
-    resolved = resolve(spec)
-    fetch = Keyword.get(opts, :fetch) || (&http_fetch/1)
-    path = Path.join(home, resolved.target)
-
-    case field(spec, :archive) do
-      nil -> install_file(spec, resolved, fetch, path)
-      archive -> install_archive(spec, archive, resolved, fetch, path)
-    end
-  end
-
-  # The file form: byte equality at the target path.
-  defp install_file(spec, resolved, fetch, path) do
-    case File.read(path) do
-      {:ok, content} ->
-        if Digest.sha256(content) == resolved.sha256 do
-          {:ok, :already_installed}
-        else
-          raise ArgumentError,
-                "download target #{field(spec, :target)} exists with different content " <>
-                  "(sha256 #{Digest.sha256(content)}, expected #{resolved.sha256}); " <>
-                  "refusing to overwrite a mismatched artifact"
-        end
-
-      {:error, :enoent} ->
-        install_verified(field(spec, :target), resolved, path, fetch.(resolved.url))
-
-      {:error, reason} ->
-        raise ArgumentError, "download target #{field(spec, :target)} is unreadable: #{inspect(reason)}"
-    end
-  end
-
-  # The archive form: an exact tree at a directory target, gated by the
-  # declared probe.
-  defp install_archive(spec, archive, resolved, fetch, path) do
-    case Workstation.Core.EngineState.lstat(path) do
-      nil ->
-        extract_and_activate(spec, archive, resolved, fetch, path)
-
-      %{type: "directory"} ->
-        try do
-          run_probe!(path, resolved.target, field(spec, :probe), field(spec, :version))
-          {:ok, :already_installed}
-        rescue
-          error in [ArgumentError] ->
-            raise ArgumentError,
-                  Exception.message(error) <>
-                    "; refusing to overwrite — inspect and remove the tree explicitly to re-install"
-        end
-
-      %{type: other} ->
-        raise ArgumentError, "download target #{resolved.target} exists as #{other}; refusing to replace it"
-    end
-  end
-
-  # The bootstrap's staging discipline, minus the lock: debris staging
-  # siblings swept, the archive bytes checksum-gated before anything is
-  # extracted, the staged tree probe-verified, then one rename places the
-  # exact tree at the never-before-present target. The pipeline's caller
-  # holds the apply lock across the whole fold, so no second installer can
-  # race the rename.
-  defp extract_and_activate(spec, archive, resolved, fetch, path) do
-    parent = Path.dirname(path)
-    File.mkdir_p!(parent)
-    basename = Path.basename(path)
-    sweep_staging_debris!(parent, basename)
-
-    staging =
-      Path.join(parent, "." <> basename <> ".download-#{:os.getpid()}-#{System.system_time(:native)}")
-
-    try do
-      File.mkdir!(staging)
-      archive_file = Path.join(staging, "download." <> archive)
-      bytes = fetch.(resolved.url)
-      verify_pinned_bytes!(resolved, bytes)
-      File.write!(archive_file, bytes)
-      extract_tree!(archive_file, staging, archive, field(spec, :layout))
-      File.rm(archive_file)
-      run_probe!(staging, resolved.target, field(spec, :probe), field(spec, :version))
-
-      case File.rename(staging, path) do
-        :ok -> {:ok, :installed}
-        {:error, reason} -> raise ArgumentError, "download install failed for #{resolved.target}: #{inspect(reason)}"
-      end
-    after
-      File.rm_rf!(staging)
-    end
-  end
-
-  defp verify_pinned_bytes!(resolved, bytes) when is_binary(bytes) do
-    actual = Digest.sha256(bytes)
-
-    unless actual == resolved.sha256 do
-      raise ArgumentError,
-            "downloaded artifact #{resolved.url} failed the pinned checksum: " <>
-              "expected #{resolved.sha256}, got #{actual}; nothing was installed"
-    end
-
-    :ok
-  end
-
-  defp verify_pinned_bytes!(_resolved, other) do
-    raise ArgumentError, "download fetch returned non-binary: #{inspect(other)}"
-  end
-
-  defp install_verified(target, resolved, path, bytes) when is_binary(bytes) do
-    verify_pinned_bytes!(resolved, bytes)
-
-    directory = Path.dirname(path)
-    File.mkdir_p!(directory)
-    staged = Path.join(directory, ".download-#{:os.getpid()}-#{System.system_time(:native)}")
-    File.write!(staged, bytes)
-    File.chmod!(staged, 0o755)
-
-    case File.rename(staged, path) do
-      :ok -> {:ok, :installed}
-      {:error, reason} -> raise ArgumentError, "download install failed for #{target}: #{inspect(reason)}"
-    end
-  end
-
-  defp install_verified(target, _resolved, _path, other) do
-    raise ArgumentError, "download fetch for #{target} returned non-binary: #{inspect(other)}"
-  end
-
-  @doc """
-  The default fetch: one HTTPS GET returning the response body, with the
-  redirect chain followed hop by hop.
-
-  Every hop gets its own TLS session options: `server_name_indication` and
-  the hostname-check reference id must name the host the connection actually
-  talks to (a GitHub release pin redirects to a different host, e.g.
-  `release-assets.githubusercontent.com`), and the peer cert is verified
-  with `public_key.pkix_verify_hostname_match_fun(:https)` so single-label
-  wildcard certs (`*.githubusercontent.com`) match per RFC 6125 — ssl's
-  default hostname check is exact-match and fails such chains with
-  `hostname_check_failed`. inets' own autoredirect carries one flat ssl
-  option set across hops, so the fetch owns the chain: at most
-  #{@max_redirects} redirects, never downgrading to plain http. A hop's GET
-  is idempotent, so a transport-level loss is retried on a fresh connection
-  (bounded #{@max_hop_attempts} attempts, short settle — retries never count
-  as hops). The pinned sha256 of the FINAL body is verified by `install/3`
-  exactly as before.
-  """
-  @spec http_fetch(String.t()) :: binary()
-  def http_fetch(url) do
-    {:ok, _} = Application.ensure_all_started(:inets)
-    {:ok, _} = Application.ensure_all_started(:ssl)
-
-    fetch_hop(url, cacerts(), 0)
-  end
-
-  defp fetch_hop(url, cacerts, hop, attempts_left \\ @max_hop_attempts)
-
-  defp fetch_hop(url, cacerts, hop, attempts_left) when hop <= @max_redirects do
-    request = {String.to_charlist(url), []}
-
-    http_options = [
-      ssl: [
-        verify: :verify_peer,
-        cacerts: cacerts,
-        depth: 3,
-        server_name_indication: connected_host(url),
-        customize_hostname_check: [match_fun: hostname_match_fun()]
-      ],
-      autoredirect: false
-    ]
-
-    case :httpc.request(:get, request, http_options, body_format: :binary) do
-      {:ok, {{_version, 200, _reason}, _headers, body}} ->
-        body
-
-      {:ok, {{_version, status, _reason}, headers, _body}} when status in @redirect_statuses ->
-        fetch_hop(redirect_location(headers, url), cacerts, hop + 1)
-
-      {:ok, {{_version, status, reason}, _headers, _body}} ->
-        raise ArgumentError, "download fetch for #{url} failed: HTTP #{status} #{reason}"
-
-      {:error, reason} when reason in @transient_connect_errors and attempts_left > 1 ->
-        # A hop's GET is idempotent, so a transport-level loss is retried on
-        # a fresh connection (RFC 7230 6.3.1: a client must recover from an
-        # asynchronous close). Pinned under the loaded-suite battery: the
-        # server answers and closes cleanly, the client still reads
-        # :einval/:closed off the wire (inet/ssl driver race under scheduler
-        # pressure) — ~5% of requests under load, in bursts: back-to-back
-        # losses on one hop are common, so each retry settles exponentially
-        # instead of racing the spike. Retries never count as redirect
-        # hops; the pinned sha256 of the FINAL body stays the real gate.
-        index = @max_hop_attempts - attempts_left
-        Process.sleep(Enum.at(@hop_retry_settle_ms, index))
-        fetch_hop(url, cacerts, hop, attempts_left - 1)
-
-      {:error, reason} ->
-        raise ArgumentError, "download fetch for #{url} failed: #{inspect(reason)}"
-    end
-  end
-
-  defp fetch_hop(url, _cacerts, _hop, _attempts_left),
-    do: raise(ArgumentError, "download fetch for #{url} failed: exceeded #{@max_redirects} redirects")
-
-  # The SNI value and the hostname reference id are the CONNECTED host's
-  # name — never a pre-resolved address or a previous hop's identity.
-  defp connected_host(url) do
-    case URI.parse(url).host do
-      host when is_binary(host) and host != "" -> String.to_charlist(host)
-      _ -> raise ArgumentError, "download fetch for #{url} failed: url has no hostname"
-    end
-  end
-
-  defp redirect_location(headers, url) do
-    location =
-      Enum.find_value(headers, fn {name, value} ->
-        String.downcase(to_string(name)) == "location" && to_string(value)
-      end)
-
-    location || raise ArgumentError, "download fetch for #{url} failed: redirect without a location"
-
-    target = url |> URI.parse() |> URI.merge(location) |> URI.to_string()
-
-    String.starts_with?(target, "https://") ||
-      raise ArgumentError, "download fetch for #{url} refuses non-https redirect: #{target}"
-
-    target
-  end
-
-  # Resolved at runtime through apply/3: the compiler has no compile-time
-  # view of the Erlang distribution's public_key app, and the call stays
-  # fail-closed -- a missing trust store raises, it never disables checks.
-  defp cacerts, do: apply(:public_key, :cacerts_get, [])
-  defp hostname_match_fun, do: apply(:public_key, :pkix_verify_hostname_match_fun, [:https])
-
-  # --- archive extraction ---
-
-  # Member-checked extraction under the declared layout: traversal is
-  # rejected before anything extracts; `release` demands exactly one root —
-  # a root directory strips one component (the release-archive layout), a
-  # lone root file is the tree itself; `flat` takes the top-level members
-  # as they are (the staging directory is always fresh, so a rootless tree
-  # cannot merge into anything).
-  defp extract_tree!(archive_file, staging, archive, layout) do
-    names = list_members!(archive_file, archive)
-    names != [] || raise(ArgumentError, "download archive carries no members")
-    Enum.each(names, &safe_member!/1)
-
-    case layout || "release" do
-      "release" -> extract_release!(archive_file, staging, archive, names)
-      "flat" -> extract_members!(archive_file, staging, archive, [])
-      other -> raise(ArgumentError, "download layout must be one of #{Enum.join(@layouts, ", ")}, got: #{other}")
-    end
-  end
-
-  # The release discipline: exactly one root. A root DIRECTORY extracts with
-  # one component stripped; a lone root FILE is the tree itself. A
-  # multi-root archive is a loud failure — merging unrelated top-level
-  # members into one target is never a silent act.
-  defp extract_release!(archive_file, staging, archive, names) do
-    roots = MapSet.new(names, &root_of/1)
-
-    MapSet.size(roots) == 1 ||
-      raise(ArgumentError, "download archive must carry exactly one root directory (got: #{Enum.join(roots, ", ")})")
-
-    # Directory members either end in the tar/zip listing's trailing slash or
-    # carry a nested path — a member with neither is a lone root file, and
-    # the tree is that file.
-    if Enum.any?(names, &String.contains?(&1, "/")) do
-      validate_layout_root!(root_of(hd(names)), names)
-      extract_members!(archive_file, staging, archive, strip: 1)
-    else
-      extract_members!(archive_file, staging, archive, [])
-    end
-  end
-
-  # Every member hangs under the one root: a stray top-level sibling would
-  # survive the strip and pollute the target.
-  defp validate_layout_root!(root, names) do
-    Enum.each(names, fn name ->
-      member = String.trim_trailing(name, "/")
-
-      member == root or String.starts_with?(member, root <> "/") ||
-        raise(ArgumentError, "download archive must carry exactly one root directory (got: #{root}, #{member})")
-    end)
-
-    :ok
-  end
-
-  # The extraction itself, per format: tar for the tarballs (with the
-  # optional strip), unzip for zip archives (whose pins are always flat or
-  # single-file — a zip with a root directory has no release layout until a
-  # real pin needs one).
-  defp extract_members!(archive_file, staging, archive, opts) do
-    case archive do
-      "tar.gz" -> tool_cmd!("tar", ["-xzf", archive_file, "-C", staging] ++ strip_args(opts), archive_file)
-      "tar.xz" -> tool_cmd!("tar", ["-xJf", archive_file, "-C", staging] ++ strip_args(opts), archive_file)
-      "zip" -> zip_extract!(archive_file, staging, opts)
-      other -> raise(ArgumentError, "download archive must be one of #{Enum.join(@archive_formats, ", ")}, got: #{other}")
-    end
-
-    :ok
-  end
-
-  defp strip_args(opts) do
-    case Keyword.get(opts, :strip) do
-      nil -> []
-      1 -> ["--strip-components=1"]
-      other -> raise(ArgumentError, "download archive strip must be 1, got: #{inspect(other)}")
-    end
-  end
-
-  defp zip_extract!(archive_file, staging, opts) do
-    if Keyword.get(opts, :strip) do
-      raise ArgumentError, "download zip archives carry no root directory to strip — declare the flat layout"
-    end
-
-    tool_cmd!("unzip", ["-q", "-o", archive_file, "-d", staging], archive_file)
-  end
-
-  # The member listing, per format — one name per line, directories with a
-  # trailing slash (tar -t and unzip -Z1 both keep it).
-  defp list_members!(archive_file, archive) do
-    out =
-      case archive do
-        "tar.gz" -> tool_cmd!("tar", ["-tzf", archive_file], archive_file)
-        "tar.xz" -> tool_cmd!("tar", ["-tJf", archive_file], archive_file)
-        "zip" -> tool_cmd!("unzip", ["-Z1", archive_file], archive_file)
-        other -> raise(ArgumentError, "download archive must be one of #{Enum.join(@archive_formats, ", ")}, got: #{other}")
-      end
-
-    String.split(out, "\n", trim: true)
-  end
-
-  # The apply-time extraction tools are named host prerequisites: tar for
-  # the tarballs, unzip for zip. A missing tool is a loud, named failure —
-  # never a silent fallback — and a failing extraction carries the tool's
-  # own stderr.
-  defp tool_cmd!(tool, args, archive_file) do
-    case System.cmd(tool, args, stderr_to_stdout: true) do
-      {out, 0} ->
-        out
-
-      {out, code} ->
-        raise ArgumentError,
-              "download archive extraction failed (exit #{code}): #{String.trim_trailing(out)}"
-    end
-  rescue
-    e in [ErlangError] ->
-      if match?(%ErlangError{original: :enoent}, e),
-        do: missing_tool!(tool, archive_file),
-        else: reraise(e, __STACKTRACE__)
-
-    e in [File.Error] ->
-      if match?(%File.Error{reason: :enoent}, e),
-        do: missing_tool!(tool, archive_file),
-        else: reraise(e, __STACKTRACE__)
-  end
-
-  defp missing_tool!(tool, archive_file) do
-    raise ArgumentError,
-          "download apply requires the host tool `#{tool}` (archive #{Path.basename(archive_file)}); " <>
-            "install it and re-apply"
-  end
-
-  defp safe_member!(name) do
-    traversal? =
-      name == "" or String.starts_with?(name, "/") or name == ".." or String.starts_with?(name, "../") or
-        String.contains?(name, "/../") or String.ends_with?(name, "/..")
-
-    traversal? && raise(ArgumentError, "download: unsafe archive member")
-
-    String.match?(name, ~r/[\x00]/) && raise(ArgumentError, "download: unsafe archive member")
-    :ok
-  end
-
-  defp root_of(name), do: hd(String.split(name, "/", parts: 2))
-
-  # Debris from an interrupted install: the caller holds the apply lock, so
-  # no other installer can be mid-flight and any sibling matching this
-  # target's staging prefix is removable (the bootstrap's lock-dir cleanup,
-  # minus the lock).
-  defp sweep_staging_debris!(parent, basename) do
-    parent
-    |> Path.join("." <> basename <> ".download-*")
-    |> Path.wildcard()
-    |> Enum.each(&File.rm_rf/1)
-
-    :ok
   end
 
   # --- validation ---

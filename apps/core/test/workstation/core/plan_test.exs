@@ -11,11 +11,6 @@ defmodule Workstation.Core.PlanTest do
 
   use ExUnit.Case, async: false
 
-  alias Workstation.Core.{Graph, Policy, Source}
-  alias Workstation.Pipeline
-  alias Workstation.Core.Catalog
-  alias Workstation.Core.Catalog.Packages
-
   setup context do
     home = Path.join(System.tmp_dir!(), "workstation-plan-#{context.test}-#{:os.getpid()}")
     File.rm_rf!(home)

@@ -119,38 +119,4 @@ defmodule Workstation.Core.EngineStateTest do
     assert EngineState.sha256("abc") ==
              "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
   end
-
-  test "target fingerprint covers file, directory, link and absent targets" do
-    home = EngineState.home()
-    File.write!(Path.join(home, "file.txt"), "payload")
-    File.chmod!(Path.join(home, "file.txt"), 0o644)
-    File.mkdir!(Path.join(home, "directory"))
-    File.chmod!(Path.join(home, "directory"), 0o755)
-    File.ln_s!("file.txt", Path.join(home, "link"))
-
-    assert EngineState.target_fingerprint(home, "file.txt") == %{
-             "type" => "file",
-             "mode" => 0o644,
-             "sha256" => EngineState.sha256("payload")
-           }
-
-    assert EngineState.target_fingerprint(home, "directory") == %{"type" => "directory", "mode" => 0o755}
-
-    assert EngineState.target_fingerprint(home, "link") == %{
-             "type" => "link",
-             "mode" => 0o777,
-             "link" => "file.txt"
-           }
-
-    assert EngineState.target_fingerprint(home, "absent") == nil
-  end
-
-  test "fingerprint never follows a symlinked target" do
-    home = EngineState.home()
-    outside = unique_home("workstation-b4-outside")
-    File.write!(outside, "secret")
-    File.ln_s!(outside, Path.join(home, "door"))
-
-    assert EngineState.target_fingerprint(home, "door")["type"] == "link"
-  end
 end

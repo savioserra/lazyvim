@@ -1,13 +1,13 @@
 defmodule Workstation.Core.Contracts.Copy do
   @moduledoc """
-  The copied-payload contract: a package serves a payload file into the home
-  by idempotent byte-compare copy — no backend source state is ever derived
-  from it.
+  The copied-payload contract: a package declares a payload file copied
+  into the home by byte-compare copy — no backend source state is ever
+  derived from it.
 
-  Layer: contract. The contract law: a copy installs exactly its declared
-  asset bytes at exactly its declared target — nothing else is ever written
-  (implementor policy: implementations are the engine's own contract
-  modules; discovery finds them by behaviour conformance).
+  Layer: contract. The contract law: a copy declares exactly its declared
+  asset bytes at exactly its declared target — nothing else is ever
+  declared (implementor policy: implementations are the engine's own
+  contract modules; discovery finds them by behaviour conformance).
 
   The contract exists for HOT state: directories a running program mutates
   between applies (the Hermes agent home) must never carry backend source
@@ -15,30 +15,23 @@ defmodule Workstation.Core.Contracts.Copy do
   fails every apply on an agent-active host (the 2026-10-15 hot-dir ruling:
   "stop dir tracking"). A copy carries no source name, no ancestors and no
   directory modes — the plan derives nothing from it but one target-phase
-  effect, and the apply byte-compares the target against the served asset
-  instead of asking a backend to defend it.
+  effect.
 
   The plan stays pure: a copy recipe contributes a validated spec whose
   ASSET REFERENCE travels (declared manifest, recorded envelope, plan,
-  effect) — bytes resolve only at the apply boundary through the catalog's
-  one auditable asset seam (`Workstation.Core.Catalog.package_asset!/2`),
-  exactly like the download fetch resolves at apply. The declared-field
+  effect) — the reference stays a reference through every read face; the
+  catalog's one auditable asset seam (`Workstation.Core.Catalog.package_asset!/2`)
+  is where bytes resolve. The declared-field
   fingerprint (the `Workstation.Core.Source.Entries` fingerprint pattern,
   bytes dropped) is content-addressed, so two recipes differing in any
-  declared field never share a source fingerprint.
-
-  The serve is fail-closed and idempotent: a target already carrying the
-  served bytes is a no-op (never rewritten — the inode stays stable), a
-  target with different bytes is re-served through a staged write + rename
-  (an interrupted serve can never leave a half-written payload), and
-  intermediate directories are created with DEFAULT modes and never
-  enforced or tracked afterward — directory state under the copy target is
-  the running program's business, never the engine's claim.
+  declared field never share a source fingerprint. Execution retired with
+  the engine's write plane (the nix substrate's workstation-switch drivers
+  own the copy).
   """
 
   @behaviour Workstation.Core.Contracts.Contract
 
-  alias Workstation.Core.{CanonicalJSON, Digest, EngineState}
+  alias Workstation.Core.{CanonicalJSON, Digest}
 
   @enforce_keys [:asset, :target]
   defstruct [:asset, :target, :executable]
@@ -104,7 +97,7 @@ defmodule Workstation.Core.Contracts.Copy do
   recipe struct, so replay compares equal to native declarations. The asset
   stays a package-relative REFERENCE in both brackets — the copy contract
   never inlines bytes, so a recorded plan is machine-independent and the
-  apply boundary serves whatever the owning package declares. Raises
+  owning package always supplies the bytes. Raises
   `ArgumentError` on an invalid shape.
   """
   @impl Workstation.Core.Contracts.Contract
@@ -158,58 +151,6 @@ defmodule Workstation.Core.Contracts.Copy do
   end
 
   @doc """
-  Execute one effect at the apply boundary: serve the owning package's
-  declared asset bytes at the target. Idempotent (a target already carrying
-  the served bytes is a no-op), fail-closed (an unreadable or non-file
-  target refuses instead of being replaced), staged (the file is written
-  under a temporary name in the target directory and renamed into place).
-  Intermediate directories are created with default modes and never
-  enforced or tracked.
-  """
-  @impl Workstation.Core.Contracts.Contract
-  @spec run_effect(map(), map()) :: :ok
-  def run_effect(effect, ctx) do
-    bytes = Workstation.Core.Catalog.package_asset!(effect.owner, effect.asset)
-    serve(bytes, Path.join(ctx.home, effect.target), effect)
-    :ok
-  end
-
-  @doc """
-  The applied-target ownership claim, computed from the ACTUAL home after
-  the fold: the target must be a regular file carrying exactly the served
-  bytes — an effect that did not produce exactly its declared outcome
-  raises instead of recording. The record keeps the actual mode (the mode
-  is converged only when the executable flag declares it) and rides the
-  default file-fingerprint verification on every later verify.
-  """
-  @impl Workstation.Core.Contracts.Contract
-  @spec fingerprint(map(), map()) :: map()
-  def fingerprint(effect, ctx) do
-    target = effect.target
-    served = Workstation.Core.Catalog.package_asset!(effect.owner, effect.asset)
-    live = EngineState.target_fingerprint(ctx.home, target)
-
-    unless is_map(live) and live["type"] == "file" do
-      raise ArgumentError, "apply did not produce copy target " <> target
-    end
-
-    unless live["sha256"] == Digest.sha256(served) do
-      raise ArgumentError,
-            "applied copy " <> target <> " does not carry the served asset bytes " <>
-              "(" <> live["sha256"] <> " != " <> Digest.sha256(served) <> ")"
-    end
-
-    %{
-      target =>
-        Map.merge(live, %{
-          "owner" => effect.owner,
-          "operation" => "copy",
-          "source_fingerprint" => effect.fingerprint
-        })
-    }
-  end
-
-  @doc """
   The declared fingerprint: content address over the exact declared fields
   (the entries.ex fingerprint pattern, asset bytes dropped — the reference
   travels, bytes resolve at apply). Two recipes differing in any declared
@@ -223,56 +164,6 @@ defmodule Workstation.Core.Contracts.Copy do
 
     Digest.sha256(CanonicalJSON.encode(fields))
   end
-
-  # --- the serve ---
-
-  defp serve(bytes, path, effect) do
-    mode = if effect.executable == true, do: 0o755, else: 0o644
-    digest = Digest.sha256(bytes)
-
-    case File.read(path) do
-      {:ok, content} ->
-        if Digest.sha256(content) == digest do
-          # Idempotent no-op: the inode stays stable — never rewrite bytes
-          # the target already carries. Only a declared executable flag
-          # converges the mode, and a chmod never replaces the file.
-          if effect.executable == true, do: File.chmod!(path, mode)
-
-          {:ok, :already_served}
-        else
-          staged_write!(path, bytes, mode)
-        end
-
-      {:error, :enoent} ->
-        staged_write!(path, bytes, mode)
-
-      {:error, reason} ->
-        raise ArgumentError,
-              "copy target #{effect.target} is unreadable (#{inspect(reason)}); refusing to replace it"
-    end
-  end
-
-  # The staged serve: intermediate directories with default modes, a
-  # temporary sibling written and renamed into place — an interrupted serve
-  # never leaves a half-written payload at the target.
-  defp staged_write!(path, bytes, mode) do
-    File.mkdir_p!(Path.dirname(path))
-    staged = Path.join(Path.dirname(path), "." <> Path.basename(path) <> ".copy-#{:os.getpid()}-#{System.system_time(:native)}")
-
-    try do
-      File.write!(staged, bytes)
-      File.chmod!(staged, mode)
-
-      case File.rename(staged, path) do
-        :ok -> {:ok, :served}
-        {:error, reason} -> raise ArgumentError, "copy serve failed for #{path}: #{inspect(reason)}"
-      end
-    after
-      File.rm(staged)
-    end
-  end
-
-  # --- validation ---
 
   defp validate_asset(asset) do
     outside? =

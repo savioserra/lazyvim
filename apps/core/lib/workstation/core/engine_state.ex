@@ -177,38 +177,6 @@ defmodule Workstation.Core.EngineState do
     Base.encode16(:crypto.hash(:sha256, contents), case: :lower)
   end
 
-  @doc """
-  Fingerprint actual owned target state: type, permission bits, content
-  digest or link value. Reads only metadata, link values and content digests;
-  home-file bodies are never copied into engine state. Unsupported target
-  types (sockets, devices) resolve to `nil`, so callers treat them as
-  "changed", never as something to overwrite.
-  """
-  @spec target_fingerprint(String.t(), String.t()) :: map() | nil
-  def target_fingerprint(home, target) do
-    path = join_home(home, target)
-
-    case lstat(path) do
-      nil ->
-        nil
-
-      %{type: "file", mode: mode} ->
-        # The guarded lstat above already excluded symlinks, so this open
-        # cannot be redirected between check and read.
-        %{"type" => "file", "mode" => mode, "sha256" => sha256(File.read!(path))}
-
-      %{type: "link", mode: mode} ->
-        {:ok, link} = File.read_link(path)
-        %{"type" => "link", "mode" => mode, "link" => link}
-
-      %{type: "directory", mode: mode} ->
-        %{"type" => "directory", "mode" => mode}
-
-      _other ->
-        nil
-    end
-  end
-
   # --- Minimal strict JSON decoding -----------------------------------------
   #
   # The journal is written through CanonicalJSON.encode_record/1; the

@@ -11,13 +11,11 @@ defmodule Workstation.Core.Contracts.GitTest do
 
   use ExUnit.Case, async: false
 
-  alias Workstation.Core.{Digest, EngineState, Journal, Policy, Source}
+  alias Workstation.Core.{Digest, Source}
   alias Workstation.Pipeline
-  alias Workstation.Core.Source.Manifest
   alias Workstation.Core.Contracts.Git
 
   @commit "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
-  @dropped_commit "b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3"
 
   setup context do
     home = Path.join(System.tmp_dir!(), "workstation-git-#{context.test}-#{:os.getpid()}")
@@ -132,7 +130,6 @@ defmodule Workstation.Core.Contracts.GitTest do
       removals: [],
       declared_removals: [],
       unsupported_reversals: [],
-      git_retirements: [],
       profile: pins,
       fragments_journal: %{},
       remove_file: remove_file,

@@ -12,10 +12,8 @@ defmodule Workstation.Core.Contracts.CopyTest do
   use ExUnit.Case, async: false
 
   alias Workstation.Backends.Chezmoi
-  alias Workstation.Core.Catalog
   alias Workstation.Core.Contracts.{Copy, Git}
-  alias Workstation.Core.{Digest, Graph, Journal, Source}
-  alias Workstation.Pipeline
+  alias Workstation.Core.{Graph, Source}
 
   # The real agent payload the tests serve: resolution goes through the
   # catalog's one auditable asset seam against the engine checkout.

@@ -1,9 +1,5 @@
 defmodule Workstation.Core.Catalog do
 
-  # Backend wire ids as compile-time constants: guards cannot call remote
-  # functions, and generic core must reference the backend only through its
-  # module API (ArchitectureDepsTest enforces the isolation).
-  @chezmoi Workstation.Backends.Chezmoi.provider_id()
   alias Workstation.Core.EngineState
 
   @moduledoc """
@@ -455,15 +451,6 @@ defmodule Workstation.Core.Catalog do
     |> case do
       nil -> Path.join(root, package_id)
       dir -> dir
-    end
-  end
-
-  defp read_at(dir, package_id, relative) do
-    path = Path.join(dir, relative)
-
-    case File.read(path) do
-      {:ok, bytes} when bytes != "" -> {:ok, bytes}
-      _other -> :error
     end
   end
 

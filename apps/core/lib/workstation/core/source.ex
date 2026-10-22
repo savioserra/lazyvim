@@ -31,22 +31,21 @@ defmodule Workstation.Core.Source do
   # provider plugs in with zero edits to the assembler.
 
   defstruct entries: [],
-          removals: [],
-          declared_removals: [],
-          unsupported_reversals: [],
-          git_retirements: [],
-          profile: nil,
-          context: %{},
-          fragments_journal: %{},
-          remove_file: nil,
-          journal_revision: 0,
-          baseline_generation: nil,
-          data: nil,
-          downloads: [],
-          copies: [],
-          mise: nil,
-          manifest: [],
-          generation: nil
+            removals: [],
+            declared_removals: [],
+            unsupported_reversals: [],
+            profile: nil,
+            context: %{},
+            fragments_journal: %{},
+            remove_file: nil,
+            journal_revision: 0,
+            baseline_generation: nil,
+            data: nil,
+            downloads: [],
+            copies: [],
+            mise: nil,
+            manifest: [],
+            generation: nil
 
   @type entry :: %{
           optional(:owner) => String.t(),
@@ -81,7 +80,6 @@ defmodule Workstation.Core.Source do
           removals: [removal()],
           declared_removals: [removal()],
           unsupported_reversals: [removal()],
-          git_retirements: [map()],
           profile: [map()] | nil,
           context: %{optional(String.t()) => context_view()},
           fragments_journal: %{optional(String.t()) => [map()]},
@@ -200,9 +198,9 @@ defmodule Workstation.Core.Source do
   # each consumed key's schema range must cover the exported schema.
   # Exports are declared pure data (Catalog.Spec validates the purity at the
   # declaration), so the fold is a pure function of (manifests, order):
-  # same manifests + same graph => byte-identical context. Effect results
-  # (the dynamic layer) flow only through the interpret fold's run_effect
-  # returns and can never reach this fold — different stage, different
+  # same manifests + same graph => byte-identical context. The declared
+  # effects (the dynamic layer) flow only through the read wire's effects
+  # view and can never reach this fold — different stage, different
   # channel, no shared state.
   defp resolve_context(ordered) do
     {views, _world} =

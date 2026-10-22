@@ -15,12 +15,6 @@ defmodule Workstation.Core.ContextTest do
   alias Workstation.Core.Catalog.Spec
   alias Workstation.Core.{Graph, Source}
 
-  @theme_export %{
-    key: "goldens-theme",
-    schema: 1,
-    value: %{"appearance" => "dark", "roles" => ["base", "accent"]}
-  }
-
   describe "declaration validation (fail-closed at the declaration)" do
     test "an export key must be the package's own capability namespace" do
       assert_raise ArgumentError, ~r/must be the package's own capability namespace/, fn ->

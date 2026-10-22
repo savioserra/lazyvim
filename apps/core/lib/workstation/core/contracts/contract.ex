@@ -1,16 +1,20 @@
 defmodule Workstation.Core.Contracts.Contract do
   @moduledoc """
-  The effect contract: a thing that mutates the home through typed effects.
+  The effect contract: a thing that declares its share of the home's
+  mutation program as typed effects.
 
-  Where `Workstation.Core.Contracts.Provider` is the PLAN-time composition
-  handshake (specs -> source records), this is the APPLY-time handshake: a
-  contract declares how its share of a built plan becomes a list of typed,
-  ordered effects, how one effect executes at the apply boundary, and how its
-  applied targets are claimed into the journal. The pipeline's interpret
-  stage folds a plan's effects through discovered contracts — the kernel
-  never names an implementation (implementor policy: implementations live in
-  the backend and contract modules of the engine, and `Contract.Discover`
-  finds them by behaviour conformance).
+  Where `Workstation.Core.Contracts.Provider` is the composition
+  handshake (specs -> source records), this is the declared-program
+  handshake: a contract declares how its share of a built plan reads as a
+  list of typed, ordered effects. The pipeline's `effects/1` folds a
+  plan's declared share through the discovered contracts into the read
+  wire — the kernel never names an implementation (implementor policy:
+  implementations live in the backend and contract modules of the engine,
+  and `Contract.Discover` finds them by behaviour conformance). Nothing
+  executes the program: mutation is the nix substrate's
+  `workstation-switch` drivers; the engine's apply-time face (effect
+  execution, applied-target claims, journal verification) retired with
+  the write plane.
 
   Effect shape (atom-keyed internal view; the wire projection stringifies):
 
@@ -37,31 +41,6 @@ defmodule Workstation.Core.Contracts.Contract do
   @callback plan_effect(term(), map()) :: [map()]
 
   @doc """
-  Execute one effect at the apply boundary. `ctx` carries `:home`, `:plan`,
-  `:directory` (the staged generation) and `:fetch` (injected fetch, tests).
-  Raises on failure; the pipeline anchors the failure in the journal.
-  """
-  @callback run_effect(map(), map()) :: :ok
-
-  @doc """
-  The applied-target ownership claim for one effect: `%{target => record}`
-  computed from the ACTUAL home after the effect ran. An effect that did not
-  produce exactly its declared outcome raises instead of recording.
-  """
-  @callback fingerprint(map(), map()) :: map()
-
-  @doc """
-  The verify seam (OPTIONAL — effect kinds whose ownership claim is not a
-  file fingerprint report their own verification). Given one applied-target
-  journal record, verify it against the ACTUAL home: `:ok` when the record
-  still holds, `:unclaimed` when the record is not this contract's shape
-  (the next discovered contract — or the default file-fingerprint
-  verification — takes it), raising when the record FAILED verification.
-  `ctx` carries `"home"` and `"target"`.
-  """
-  @callback verify_record(record :: map(), ctx :: map()) :: :ok | :unclaimed
-
-  @doc """
   Every wire id this implementation owns — `[id/0]` unless the contract
   carries a second composition shape (chezmoi's data envelope is a second
   id of the same backend). Discovery publishes the full owned set, so the
@@ -84,7 +63,7 @@ defmodule Workstation.Core.Contracts.Contract do
   provider.
   """
   @callback from_recorded(spec :: map(), ctx :: map()) :: term()
-  @optional_callbacks [verify_record: 2, ids: 0, from_recorded: 2]
+  @optional_callbacks [ids: 0, from_recorded: 2]
 end
 
 
@@ -106,7 +85,7 @@ defmodule Workstation.Core.Contracts.Contract.Discover do
   only the effect-contract parameterization.
   """
 
-  @callbacks [id: 0, validate_spec: 1, plan_effect: 2, run_effect: 2, fingerprint: 2]
+  @callbacks [id: 0, validate_spec: 1, plan_effect: 2]
 
   @doc "The discovered effect-contract modules, sorted by module name."
   @spec contracts() :: [module()]

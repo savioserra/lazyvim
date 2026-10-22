@@ -18,11 +18,8 @@ defmodule Workstation.Core.Contracts.Shell do
 
   # A discovered member of the effect-contract family. The shell contract
   # has NO standalone runtime: its effects are the composed modify programs,
-  # materialized into the staged generation and executed by the backend
-  # apply effect that follows in the fold. `run_effect/2` therefore answers
-  # `:ok` — the effect's mutation is carried by the backend apply — and
-  # `fingerprint/2` claims nothing: the shared targets ride the backend's
-  # ownership claim like every other generated target.
+  # declared into the plan and carried by the plan's declared program —
+  # mutation itself is the nix substrate's workstation-switch drivers.
   @behaviour Workstation.Core.Contracts.Contract
 
   @doc "The wire contract id of shared-shell fragment composition."
@@ -43,12 +40,6 @@ defmodule Workstation.Core.Contracts.Shell do
       }
     end)
   end
-
-  @doc "Shared-shell programs execute inside the backend apply; there is no standalone shell runtime."
-  def run_effect(_effect, _ctx), do: :ok
-
-  @doc "Shared targets are claimed by the backend contract; the shell contract adds no separate claim."
-  def fingerprint(_effect, _ctx), do: %{}
 
   defstruct [:target, :components, :fragment]
 
