@@ -294,10 +294,95 @@ defmodule Workstation.Core.Catalog do
   @spec canonical_home() :: String.t()
   def canonical_home, do: @canonical_home
 
+  @doc """
+  The engine checkout: the tree carrying the package payload. Resolution is
+  `WORKSTATION_ENGINE_REPO` (itself or its `workstation` child) when it
+  carries `packages/`, else the dev checkout walked upwards from the working
+  directory. Raises when no candidate carries the payload — a tree without
+  a manifest-bearing `packages/` directory is not an engine checkout, and
+  reading assets from one anyway would resolve against an unrelated
+  directory.
+  """
+  @spec engine_root() :: String.t()
+  def engine_root do
+    candidates =
+      env_candidates()
+      |> Enum.uniq()
+
+    case Enum.find(candidates, &engine_payload?/1) do
+      nil ->
+        case walk_up(File.cwd!(), 8) do
+          nil ->
+            raise ArgumentError,
+                  "no engine checkout found (a manifest-bearing packages/ directory is required); " <>
+                    "looked at #{inspect(candidates)} and above #{inspect(File.cwd!())}"
+
+          root ->
+            root
+        end
+
+      root ->
+        root
+    end
+  end
+
+  defp env_candidates do
+    case System.get_env("WORKSTATION_ENGINE_REPO") do
+      dir when is_binary(dir) and dir != "" -> [dir, Path.join(dir, "workstation")]
+      _other -> []
+    end
+  end
+
+  # A directory carries the engine payload when its `packages/` child
+  # holds at least one package manifest (domain-shaped
+  # packages/<domain>/<id>/manifest.json beside top-level packages/<id>).
+  defp engine_payload?(dir) when is_binary(dir) do
+    packages = Path.join(dir, "packages")
+    File.dir?(packages) and matching_manifest?(packages)
+  end
+
+  defp engine_payload?(_other), do: false
+
+  defp matching_manifest?(packages) do
+    depth_two = Path.wildcard(Path.join(packages, "*/*/manifest.json"))
+    depth_one = Path.wildcard(Path.join(packages, "*/manifest.json"))
+    matching = depth_two ++ depth_one
+    matching != [] and Enum.any?(matching, &File.regular?/1)
+  end
+
+  # The payload root is the dev anchor's own directory or an ancestor of
+  # it; the bound keeps a stray deep anchor from walking outside the tree,
+  # and covers the deepest legitimate working directory
+  # (apps/core/test/workstation/core/theme, six levels under the umbrella
+  # root) with margin.
+  defp walk_up(dir, 0), do: adopt(dir)
+
+  defp walk_up(dir, remaining) do
+    case adopt(dir) do
+      nil -> walk_up(Path.dirname(dir), remaining - 1)
+      root -> root
+    end
+  end
+
+  # A directory is adoptable as the engine checkout when it carries the
+  # payload itself (self-contained checkout) or when its `workstation/`
+  # child carries it (the repository layout).
+  defp adopt(dir) do
+    cond do
+      engine_payload?(dir) -> dir
+      true -> payload_child(dir)
+    end
+  end
+
+  defp payload_child(dir) do
+    child = Path.join(dir, "workstation")
+    if engine_payload?(child), do: child, else: nil
+  end
+
   # Resolve one package's declared assets against the engine checkout. The
-  # engine root is the update checkout anchor (versions.json + bin/workstation):
-  # without a checkout there is no honest asset source,
-  # so resolution fails closed instead of guessing a sibling tree.
+  # engine root is the checkout anchor above: without a checkout there is
+  # no honest asset source, so resolution fails closed instead of guessing
+  # a sibling tree.
   defp inline_assets(packages, assets) do
     Enum.map_reduce(packages, assets, fn package, acc ->
       {contributes, acc} =
@@ -335,7 +420,7 @@ defmodule Workstation.Core.Catalog do
   """
   @spec package_asset!(String.t(), String.t()) :: String.t()
   def package_asset!(package_id, relative) do
-    path = Path.join([Workstation.Core.Update.engine_root([]), "packages", package_id, relative])
+    path = Path.join([engine_root(), "packages", package_id, relative])
 
     dirs = [package_source_dir(package_id), Path.dirname(path)]
 
@@ -362,7 +447,7 @@ defmodule Workstation.Core.Catalog do
   # a pure filesystem lookup — NOT live discovery, because specs may read
   # assets while they build, and discovery itself calls every spec.
   defp package_source_dir(package_id) do
-    root = Path.join([Workstation.Core.Update.engine_root([]), "packages"])
+    root = Path.join([engine_root(), "packages"])
 
     [Path.join(root, package_id), Path.join([root, "*", package_id])]
     |> Enum.flat_map(&Path.wildcard/1)

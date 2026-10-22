@@ -40,6 +40,6 @@ defmodule Mix.Tasks.Workstation.Goldens do
   # is the recorded tree itself: regeneration must be a byte no-op on a
   # consistent tree, which is exactly what the drift anchors assert.
   defp default_root do
-    Path.join([Path.dirname(Workstation.Core.Update.engine_root([])), "tests", "goldens"])
+    Path.join([Path.dirname(Workstation.Core.Catalog.engine_root()), "tests", "goldens"])
   end
 end

@@ -68,9 +68,9 @@ defmodule Workstation.Core.Packages.Loader do
 
   @doc "The package tree root: `<engine checkout>/packages`."
   @spec root() :: String.t()
-  def root, do: Path.join([Workstation.Core.Update.engine_root([]), "packages"])
+  def root, do: Path.join([Workstation.Core.Catalog.engine_root(), "packages"])
 
-  # The anchored-checkout probe behind the soft arm: `engine_root/1` raises
+  # The anchored-checkout probe behind the soft arm: `engine_root/0` raises
   # when nothing is anchored; here that absence is `:error`, not a crash.
   defp safe_root do
     root()

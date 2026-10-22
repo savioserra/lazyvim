@@ -449,15 +449,9 @@ defmodule Workstation.CLI.DaemonClient do
   end
 
   # The spawn environment: the inherited env with WORKSTATION_HOME pinned
-  # to the destination, plus WORKSTATION_ENGINE_REPO when the operator
-  # passed --engine-root (the same override the one-shot engine honored).
-  defp spawn_env(home, opts) do
-    env = Map.put(System.get_env(), "WORKSTATION_HOME", home)
-
-    case opts[:engine_root] do
-      nil -> env
-      root -> Map.put(env, "WORKSTATION_ENGINE_REPO", Path.expand(root))
-    end
+  # to the destination.
+  defp spawn_env(home, _opts) do
+    Map.put(System.get_env(), "WORKSTATION_HOME", home)
   end
 
   # Spawn detached from the SAME release binary the client itself runs from:
