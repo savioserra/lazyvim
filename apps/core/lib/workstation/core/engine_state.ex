@@ -6,7 +6,7 @@ defmodule Workstation.Core.EngineState do
   Guarded read access to the target-private engine state tree
   (`<home>/.local/state/workstation`) and to owned home targets.
 
-  Every path the providers touch MUST go through these primitives, because
+  Every path the read plane touches MUST go through these primitives, because
   the engine guarantees the invariants here and nowhere else:
 
   * engine-state paths are resolved without following symlinks (`lstat`,
@@ -14,19 +14,13 @@ defmodule Workstation.Core.EngineState do
     instead of silently reading through a link into unrelated state;
   * every engine-state component must be a real directory owned by the
     current account, and the state root must hold exactly mode 0700
-    (journal records carry fingerprints of private home state);
-  * journal-derived generation identifiers are validated before any path is
-    built from them (a hash-shaped string alone is never trusted);
-  * the write-side primitives (`ensure_tree!/4`) create directory chains
-    per-component, no-follow, owned, with the final component repaired to
-    the exact private mode — the state root may legitimately exist at 0755
-    (runtime-root creation) and is repaired on first engine write, never
-    read through a foreign owner.
+    (private state is never read through a foreign owner or a widened
+    chain).
 
   The read primitives stay side-effect free: an absent tree resolves to
-  "absent" results (an earlier engine would create it), never to a mutation.
-  Mutations happen only inside `ensure_tree!/4` and behind the callers that
-  gate every write on it (journal records, generation staging, apply lock).
+  "absent" results, never to a mutation. The engine writes nothing — the
+  nix substrate owns the write plane (its own state tree lives under the
+  nix store and the profile generations).
   """
 
   require Record
@@ -34,9 +28,6 @@ defmodule Workstation.Core.EngineState do
 
   @state_components [".local", "state", "workstation"]
   @state_mode 0o700
-  # Intermediates of a created state chain are world-traversable like the
-  # anchor's 493; the private mode belongs to the final component only.
-  @intermediate_mode 0o755
 
   @doc """
   Target home: `WORKSTATION_HOME` wins over `HOME`
@@ -57,23 +48,9 @@ defmodule Workstation.Core.EngineState do
   @spec state_root() :: String.t()
   def state_root, do: Path.join([home(), ".local", "state", "workstation"])
 
-  @doc "State tree components below `home`, for `verify_tree!/4` callers."
+  @doc "State tree components below `home`."
   @spec state_components() :: [String.t()]
   def state_components, do: @state_components
-
-  @doc """
-  Guard all engine roots below `home` before any engine write or record:
-  the state root, `generations/` and `journal/`, each final at 0700. This is
-  the write-side root contract: every mutation and every
-  journal record assumes the private guarded tree exists, and letting each
-  writer improvise its own creation order is how a journal lands at 0755.
-  """
-  @spec ensure_roots!(String.t()) :: :ok
-  def ensure_roots!(home) do
-    :ok = ensure_tree!(home, @state_components, "state root")
-    :ok = ensure_tree!(home, @state_components ++ ["generations"], "generations root")
-    :ok = ensure_tree!(home, @state_components ++ ["journal"], "journal root")
-  end
 
   @doc """
   Join a validated relative target to the destination home, mirroring
@@ -95,47 +72,12 @@ defmodule Workstation.Core.EngineState do
   end
 
   @doc """
-  Valid content-addressed generation identifier: exactly 64 lowercase hex
-  characters. Checked before it ever becomes a path component.
-  """
-  @spec valid_generation_id(term()) :: boolean()
-  def valid_generation_id(id) do
-    is_binary(id) and byte_size(id) == 64 and Regex.match?(~r/\A[0-9a-f]{64}\z/, id)
-  end
-
-  @doc """
-  Generation directory for a journal-derived identifier, verified no-follow
-  when it exists: a symlink or non-directory under the generations root is a
-  corruption signal, never something to read through.
-  """
-  @spec generation_directory(String.t(), term()) :: String.t()
-  def generation_directory(root, id) do
-    unless valid_generation_id(id), do: raise(ArgumentError, "journal records an invalid generation identifier")
-
-    directory = Path.join([root, "generations", id])
-
-    case lstat(directory) do
-      nil ->
-        directory
-
-      %{type: "directory", uid: owner} ->
-        unless owner == uid(),
-          do: raise(ArgumentError, "recorded generation is not owned by the current account: #{directory}")
-
-        directory
-
-      _other ->
-        raise ArgumentError, "recorded generation is not a directory: #{directory}"
-    end
-  end
-
-  @doc """
   Verify the engine state tree below `home` no-follow and owned, with the
   final component holding exactly `final_mode`. Returns `:absent` when the
   walk stops at the first missing component (the read path treats that as an
-  absent journal), `:ok` when everything checks out, and raises on any
-  existing component that violates the invariants. Creation and repair live
-  on the write path; this read path never mutates.
+  absent state root), `:ok` when everything checks out, and raises on any
+  existing component that violates the invariants. This read path never
+  mutates.
   """
   @spec verify_tree!(String.t(), [String.t()], String.t(), non_neg_integer()) :: :ok | :absent
   def verify_tree!(home, components, label, final_mode \\ @state_mode)
@@ -178,84 +120,6 @@ defmodule Workstation.Core.EngineState do
     |> case do
       :missing -> :missing
       _final_path -> :ok
-    end
-  end
-
-  @doc """
-  Create-or-verify a guarded directory chain below `home`, the write-side
-  twin of `verify_tree!/4`: intermediates are created at 0755 when absent (an
-  existing one is only checked no-follow for type and current-account
-  ownership — never re-chmodded, so a 0700 journal root
-  walked through by a deeper chain keeps its private mode) and the final
-  component is created at `final_mode` or, when it already exists, checked
-  and repaired to `final_mode`, because the repair is how a legitimately
-  0755 state root reaches the exact private mode. Anything else (a symlinked
-  component, a foreign owner, a file where a directory belongs) raises
-  instead of being written through.
-  """
-  @spec ensure_tree!(String.t(), [String.t()], String.t(), non_neg_integer()) :: :ok
-  def ensure_tree!(home, components, label, final_mode \\ @state_mode)
-
-  def ensure_tree!(_home, [], _label, _final_mode), do: :ok
-
-  def ensure_tree!(home, components, label, final_mode) do
-    final = Path.join([home | components])
-    final_index = length(components)
-
-    {_current, _index} =
-      Enum.reduce(components, {home, 0}, fn component, {current, index} ->
-        next = Path.join(current, component)
-        index = index + 1
-        wanted_mode = if index == final_index, do: final_mode, else: @intermediate_mode
-
-        case lstat(next) do
-          nil ->
-            File.mkdir!(next)
-            File.chmod!(next, wanted_mode)
-
-          %{type: "directory", mode: mode, uid: owner} ->
-            unless owner == uid(),
-              do: raise(ArgumentError, "#{label} component is not owned by the current account: #{next}")
-
-            # The repair is deliberate (the existing final component is
-            # chmod'ed on every write-path access) and applies to the final
-            # component only: an existing intermediate keeps its mode, so a
-            # 0700 journal root passed through by a deeper chain is never
-            # widened to 0755.
-            if index == final_index and mode != wanted_mode, do: File.chmod!(next, wanted_mode)
-
-          _other ->
-            raise ArgumentError, "#{label} component is not a directory: #{next}"
-        end
-
-        {next, index}
-      end)
-
-    stat = lstat(final)
-    stat.mode == final_mode || raise(ArgumentError, "#{label} has mode #{octal(stat.mode)}, expected #{octal(final_mode)}: #{final}")
-
-    :ok
-  end
-
-  @doc """
-  Guard one journal file before reading: must exist as a regular file owned
-  by the current account, or be absent. Returns `:absent` or `:ok`, raises on
-  a violated invariant.
-  """
-  @spec guard_file!(String.t()) :: :ok | :absent
-  def guard_file!(path) do
-    case lstat(path) do
-      nil ->
-        :absent
-
-      %{type: "file", uid: owner} ->
-        unless owner == uid(),
-          do: raise(ArgumentError, "engine journal entry is not owned by the current account: #{path}")
-
-        :ok
-
-      _other ->
-        raise ArgumentError, "engine journal entry is not a regular file: #{path}"
     end
   end
 
@@ -307,29 +171,7 @@ defmodule Workstation.Core.EngineState do
     end
   end
 
-  @doc "Read a guarded file's bytes: `{:ok, binary}`, `:absent`, or raises on guard failure."
-  @spec read_file(String.t()) :: {:ok, binary()} | :absent
-  def read_file(path) do
-    case guard_file!(path) do
-      :absent -> :absent
-      :ok -> {:ok, File.read!(path)}
-    end
-  end
-
-  @doc """
-  Read a private journal JSON file without following symlinks. Absent entries
-  decode as `:absent`; malformed content is `{:error, :malformed}` — never a
-  raw body and never a crash.
-  """
-  @spec read_json(String.t()) :: {:ok, term()} | :absent | {:error, :malformed}
-  def read_json(path) do
-    case read_file(path) do
-      :absent -> :absent
-      {:ok, contents} -> decode_json(contents)
-    end
-  end
-
-  @doc "Lowercase hex SHA-256, the journal's content-address function."
+  @doc "Lowercase hex SHA-256, the engine's content-address function."
   @spec sha256(binary()) :: String.t()
   def sha256(contents) when is_binary(contents) do
     Base.encode16(:crypto.hash(:sha256, contents), case: :lower)

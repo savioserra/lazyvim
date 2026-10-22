@@ -61,7 +61,6 @@ defmodule Workstation.Daemon.ProtocolTest do
       # hardcoded here; hello is the handshake op, the rest are capabilities.
       assert caps["ops"] == [
                "daemon.stop",
-               "diff.run",
                "hello",
                "plan.run",
                "status.run",

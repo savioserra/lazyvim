@@ -1,9 +1,11 @@
 defmodule Workstation.CLI.CapabilitiesTest do
   # Feeds hand-built wire fragments with the REAL wire shapes (the same
   # shapes apps/daemon/lib/workstation/daemon/read.ex emits): the status
-  # wire carries a package -> foundation `taxonomy` map and the `journal`;
-  # the plan wire carries `plan.entries` (with `attribution` owner lists)
-  # and changeset `patches`. Deterministic replay, no engine involved.
+  # wire carries a package -> foundation `taxonomy` map; the plan wire
+  # carries `plan.entries` (with `attribution` owner lists) and recorded
+  # changeset `patches` (retired from the live wire with the write plane —
+  # the view keeps folding them when a recorded replay carries them).
+  # Deterministic replay, no engine involved.
   use ExUnit.Case, async: true
 
   alias Workstation.CLI.Capabilities
@@ -15,8 +17,7 @@ defmodule Workstation.CLI.CapabilitiesTest do
         "nvim" => "foundation/editor",
         "helix" => "foundation/editor",
         "tmux" => "foundation/terminal"
-      },
-      "journal" => %{"generation" => "2", "revision" => 5, "at" => "2026-01-01T00:00:00Z"}
+      }
     }
   end
 
@@ -137,7 +138,6 @@ defmodule Workstation.CLI.CapabilitiesTest do
 
     assert env["schema"] == "workstation.capabilities.v1"
     assert env["generation"] == 4
-    assert env["applied_generation"] == "2"
   end
 
   test "group: domains keyed by taxonomy foundation, lifecycle order" do

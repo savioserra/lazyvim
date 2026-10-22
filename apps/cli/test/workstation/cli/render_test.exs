@@ -15,43 +15,17 @@ defmodule Workstation.CLI.RenderTest do
 
   # --- status -----------------------------------------------------------------
 
-  test "core_status renders the packages line and both journal shapes" do
-    empty = Render.core_status(%{"platform" => "linux-x64", "packages" => [], "journal" => nil})
+  test "core_status renders the packages line" do
+    empty = Render.core_status(%{"platform" => "linux-x64", "packages" => []})
     assert "packages: none" in lines(empty)
-    assert "journal: none" in lines(empty)
 
     two =
       Render.core_status(%{
         "platform" => "linux-x64",
-        "packages" => [%{"id" => "a"}, %{"id" => "b"}],
-        "journal" => nil
+        "packages" => [%{"id" => "a"}, %{"id" => "b"}]
       })
 
     assert "packages: a, b" in lines(two)
-
-    journaled =
-      Render.core_status(%{
-        "platform" => "linux-x64",
-        "packages" => [],
-        "journal" => %{"generation" => "g1", "revision" => 2, "at" => 1_700_000_000}
-      })
-
-    assert "journal: generation=g1 revision=2 at=1700000000" in lines(journaled)
-  end
-
-  test "core_status folds the wire's null journal (canonical-JSON :null) to none" do
-    # Regression (2026-10-06 smoke): a fresh home's status wire carries
-    # "journal": null, and the CLI's canonical-JSON decode surfaces it as
-    # the :null atom — the renderer must answer "journal: none", not crash
-    # Access on it (plain `workstation status` on a fresh home).
-    wire = %{
-      "schema" => "workstation.status.v1",
-      "platform" => "linux-x64",
-      "packages" => [],
-      "journal" => :null
-    }
-
-    assert "journal: none" in lines(Render.core_status(wire))
   end
 
   # --- plan ---------------------------------------------------------------------
@@ -74,14 +48,6 @@ defmodule Workstation.CLI.RenderTest do
         "unsupported_reversals" => [%{"target" => ".config/site", "owner" => "admin"}],
         "baseline_generation" => "abc123"
       },
-      "patches" => [
-        %{
-          "kind" => "change",
-          "source" => "dot_config/rc",
-          "diff" => "--- a/dot_config/rc\n+++ b/dot_config/rc\n@@ -1 +1 @@\n-old\n+new\n"
-        },
-        %{"kind" => "delete", "source" => "dot_config/gone", "owner" => "legacy"}
-      ],
       "target_states" => %{}
     }
   end
@@ -95,24 +61,11 @@ defmodule Workstation.CLI.RenderTest do
     assert "    .config/site (was owned by admin)" in rendered
   end
 
-  test "core_plan marks removal targets and prints patch bodies verbatim" do
+  test "core_plan marks removal targets" do
     rendered = lines(Render.core_plan(plan_wire()))
 
     # Removal targets carry the suffix; state column is "?" for unprobed targets.
     assert "  target #{String.pad_trailing(".config/old", 45)} ? (removal)" in rendered
-
-    # A raw diff is the verbatim body (trimmed of its trailing newline only);
-    # a patch without a diff prints its attributed header instead.
-    assert "--- a/dot_config/rc" in rendered
-    assert "+new" in rendered
-    assert "# delete dot_config/gone (, owner legacy)" in rendered
   end
 
-  # --- diff ---------------------------------------------------------------------
-
-  test "core_diff reports no differences for an empty record list" do
-    rendered = lines(Render.core_diff(%{"generation" => "gen-1", "backend_diff" => []}))
-
-    assert "no differences" in rendered
-  end
 end

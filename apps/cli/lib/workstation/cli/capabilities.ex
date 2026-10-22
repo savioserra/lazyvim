@@ -9,12 +9,13 @@ defmodule Workstation.CLI.Capabilities do
   no new daemon op):
 
     * `workstation.status.v1` — supplies `taxonomy` (package id → declared
-      `foundation/<domain>` layer, `Workstation.Core.Catalog.Packages`)
-      and `journal` (the last applied generation, for the header).
+      `foundation/<domain>` layer, `Workstation.Core.Catalog.Packages`);
     * `workstation.plan.v1` — supplies the full file inventory: `plan`
       entries are every planned target with their `attribution` (the owning
-      package ids), and `patches` are the subset that WOULD CHANGE against
-      the current state (kind add/change) plus retired-target deletions.
+      package ids), and recorded `patches` (retired from the live wire with
+      the engine's write plane — the nix substrate owns would-change) are
+      the would-change subset plus retired-target deletions; a live wire
+      carries none, so every live row reads `planned: false`.
 
   Grain contract (the owner's directive): domains (L1) and packages (L2)
   are the rollup levels, files (L3) the drill-down leaves — never a raw
@@ -54,7 +55,6 @@ defmodule Workstation.CLI.Capabilities do
       %{
         "schema" => #{@schema},
         "generation" => plan generation,
-        "applied_generation" => journal generation | nil,
         "domains" => [
           %{"name" => "editor", "foundation" => "foundation/editor",
             "targets" => 1, "files" => 21, "planned" => 2,
@@ -126,7 +126,6 @@ defmodule Workstation.CLI.Capabilities do
     %{
       "schema" => @schema,
       "generation" => plan["generation"],
-      "applied_generation" => journal_generation(status["journal"]),
       "domains" => domains,
       "unattributed" => Enum.sort_by(unattributed || [], & &1["target"]),
       "unattributed_files" => length(unattributed || []),
@@ -260,11 +259,6 @@ defmodule Workstation.CLI.Capabilities do
   end
 
   defp count_planned(rows), do: Enum.count(rows, & &1["planned"])
-
-  defp journal_generation(%{"generation" => generation}) when is_binary(generation),
-    do: generation
-
-  defp journal_generation(_none), do: nil
 
   defp foundation_name("foundation/" <> name), do: name
   defp foundation_name(name) when is_binary(name), do: name

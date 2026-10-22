@@ -26,10 +26,10 @@ defmodule Workstation.CLI.TUI.Shell.DashboardTest do
 
     test "toggling a hidden box back on restores it" do
       dash = Dashboard.new()
-      {:ok, dash} = Dashboard.toggle_box(dash, :diff, 200)
-      {:ok, dash} = Dashboard.toggle_box(dash, :diff, 200)
+      {:ok, dash} = Dashboard.toggle_box(dash, :plan, 200)
+      {:ok, dash} = Dashboard.toggle_box(dash, :plan, 200)
 
-      assert Dashboard.visible?(dash, :diff)
+      assert Dashboard.visible?(dash, :plan)
     end
 
     test "turning capabilities on below its minimum refuses with the minimum" do
@@ -58,18 +58,16 @@ defmodule Workstation.CLI.TUI.Shell.DashboardTest do
   end
 
   describe "box_for_key/1" do
-    test "digits 1-6 map to the strip-order boxes" do
+    test "digits 1-4 map to the strip-order boxes" do
       assert Dashboard.box_for_key("1") == :engine
       assert Dashboard.box_for_key("2") == :capabilities
-      assert Dashboard.box_for_key("3") == :journal
-      assert Dashboard.box_for_key("4") == :plan
-      assert Dashboard.box_for_key("5") == :diff
-      assert Dashboard.box_for_key("6") == :status
+      assert Dashboard.box_for_key("3") == :plan
+      assert Dashboard.box_for_key("4") == :status
     end
 
-    test "0 and 7+ are inert" do
+    test "0 and 5+ are inert" do
       assert Dashboard.box_for_key("0") == nil
-      assert Dashboard.box_for_key("7") == nil
+      assert Dashboard.box_for_key("5") == nil
       assert Dashboard.box_for_key("9") == nil
     end
   end
@@ -91,9 +89,9 @@ defmodule Workstation.CLI.TUI.Shell.DashboardTest do
     end
 
     test "presets carry their documented membership" do
-      assert Dashboard.presets()[0] == ~w(engine capabilities journal plan diff status)a
-      assert Dashboard.presets()[1] == ~w(engine journal plan diff)a
-      assert Dashboard.presets()[2] == ~w(engine journal)a
+      assert Dashboard.presets()[0] == ~w(engine capabilities plan status)a
+      assert Dashboard.presets()[1] == ~w(engine plan)a
+      assert Dashboard.presets()[2] == ~w(engine)a
     end
 
     test "each preset's visible set matches its membership" do
@@ -122,11 +120,10 @@ defmodule Workstation.CLI.TUI.Shell.DashboardTest do
 
     test "preset 0 at mosaic width lays out the slot mosaic" do
       boxes = Dashboard.layout(Dashboard.new(), {@width_mosaic, 83})
-      # Row-major: the engine|journal row, the plan|diff row, then the
-      # two full-width bands.
+      # Row-major: the engine|plan row, then the two full-width bands.
       laid_out = Enum.map(boxes, fn {box, _rect} -> box end)
 
-      assert laid_out == ~w(engine journal plan diff capabilities status)a
+      assert laid_out == ~w(engine plan capabilities status)a
 
       {_box, {_x, y, _w, _h}} = Enum.find(boxes, fn {box, _} -> box == :engine end)
       {_box, {_x, y_caps, _w, _h}} = Enum.find(boxes, fn {box, _} -> box == :capabilities end)
@@ -138,16 +135,16 @@ defmodule Workstation.CLI.TUI.Shell.DashboardTest do
       rects = Enum.map(boxes, fn {_box, {_x, _y, w, _h}} -> w end)
 
       assert Enum.map(boxes, fn {box, _} -> box end) ==
-               ~w(engine journal capabilities plan diff status)a
+               ~w(engine capabilities plan status)a
 
       assert Enum.all?(rects, &(&1 == @width_stack))
     end
 
-    test "preset 1 audits plan+diff over an engine+journal band" do
+    test "preset 1 audits plan over an engine band" do
       dash = Dashboard.new() |> Dashboard.cycle(:next)
       boxes = Dashboard.layout(dash, {@width_mosaic, 83})
 
-      assert Enum.map(boxes, fn {box, _} -> box end) == ~w(plan diff engine journal)a
+      assert Enum.map(boxes, fn {box, _} -> box end) == ~w(plan engine)a
 
       {_box, {_x, _y, _w, h_plan}} = Enum.find(boxes, fn {box, _} -> box == :plan end)
       {_box, {_x, _y, _w, h_engine}} = Enum.find(boxes, fn {box, _} -> box == :engine end)
@@ -155,11 +152,11 @@ defmodule Workstation.CLI.TUI.Shell.DashboardTest do
       assert h_plan > h_engine
     end
 
-    test "preset 2 is engine+journal only" do
+    test "preset 2 is engine only" do
       dash = Dashboard.new() |> Dashboard.cycle(:next) |> Dashboard.cycle(:next)
       boxes = Dashboard.layout(dash, {@width_mosaic, 83})
 
-      assert Enum.map(boxes, fn {box, _} -> box end) == ~w(engine journal)a
+      assert Enum.map(boxes, fn {box, _} -> box end) == ~w(engine)a
     end
 
     test "a dissolved set tiles its visible boxes in the dashboard shape" do
@@ -169,20 +166,20 @@ defmodule Workstation.CLI.TUI.Shell.DashboardTest do
       boxes = Dashboard.layout(dash, {@width_mosaic, 83})
 
       # Row-major over the slot rows with plan and status dropped: the
-      # engine|journal row, the diff slot (its pair hidden), the caps band.
-      assert Enum.map(boxes, fn {box, _} -> box end) == ~w(engine journal diff capabilities)a
+      # engine slot (its pair hidden), the caps band.
+      assert Enum.map(boxes, fn {box, _} -> box end) == ~w(engine capabilities)a
     end
 
     test "boxes split their row: the pair takes half width each, a band takes it all" do
       boxes = Dashboard.layout(Dashboard.new(), {@width_mosaic, 83})
 
       {_box, {x_engine, _y, w_engine, _h}} = Enum.find(boxes, fn {box, _} -> box == :engine end)
-      {_box, {x_journal, _y, w_journal, _h}} = Enum.find(boxes, fn {box, _} -> box == :journal end)
+      {_box, {x_plan, _y, w_plan, _h}} = Enum.find(boxes, fn {box, _} -> box == :plan end)
       {_box, {x_caps, _y, w_caps, _h}} = Enum.find(boxes, fn {box, _} -> box == :capabilities end)
 
       assert x_engine == 0
-      assert x_journal == w_engine
-      assert w_engine + w_journal == @width_mosaic
+      assert x_plan == w_engine
+      assert w_engine + w_plan == @width_mosaic
       assert {x_caps, w_caps} == {0, @width_mosaic}
     end
 
@@ -203,11 +200,11 @@ defmodule Workstation.CLI.TUI.Shell.DashboardTest do
       engine = Enum.find(islands, &(&1.key == "1"))
       assert engine.segs == [keycap: "¹", accent: "engine"]
 
-      plan = Enum.find(islands, &(&1.key == "4"))
-      assert plan.segs == [inactive: "[4] plan"]
+      plan = Enum.find(islands, &(&1.key == "3"))
+      assert plan.segs == [inactive: "[3] plan"]
 
       keys = Enum.map(islands, & &1.key)
-      assert keys == ~w(1 2 3 4 5 6 p P)
+      assert keys == ~w(1 2 3 4 p P)
     end
 
     test "the p/P islands are always present" do
@@ -224,7 +221,7 @@ defmodule Workstation.CLI.TUI.Shell.DashboardTest do
     end
 
     test "expand/2 marks the box; contract/1 re-tiles; the shell maps enter/Esc onto it" do
-      for box <- ~w(capabilities plan diff)a do
+      for box <- ~w(capabilities plan)a do
         {:ok, expanded} = Dashboard.expand(Dashboard.new(), box)
         assert Dashboard.expansion(expanded) == box
 
@@ -241,13 +238,11 @@ defmodule Workstation.CLI.TUI.Shell.DashboardTest do
       assert Dashboard.expansion(dash) == nil
     end
 
-    test "zoomable?/1 covers exactly the drillable tree box and the read boxes" do
+    test "zoomable?/1 covers exactly the drillable tree box and the read box" do
       assert Dashboard.zoomable?(:capabilities)
       assert Dashboard.zoomable?(:plan)
-      assert Dashboard.zoomable?(:diff)
 
       refute Dashboard.zoomable?(:engine)
-      refute Dashboard.zoomable?(:journal)
       refute Dashboard.zoomable?(:status)
     end
 
@@ -258,8 +253,8 @@ defmodule Workstation.CLI.TUI.Shell.DashboardTest do
     end
 
     test "toggling the expanded box off dissolves the expansion" do
-      {:ok, expanded} = Dashboard.expand(Dashboard.new(), :diff)
-      {:ok, dash} = Dashboard.toggle_box(expanded, :diff, 200)
+      {:ok, expanded} = Dashboard.expand(Dashboard.new(), :plan)
+      {:ok, dash} = Dashboard.toggle_box(expanded, :plan, 200)
 
       assert Dashboard.expansion(dash) == nil
     end
@@ -279,11 +274,6 @@ defmodule Workstation.CLI.TUI.Shell.DashboardTest do
       layout = Dashboard.layout(expanded, {175, 83})
 
       assert layout == [{:plan, {0, 0, 175, 83}}]
-    end
-
-    test "an expanded diff box takes over the whole dashboard rect at any width" do
-      {:ok, expanded} = Dashboard.expand(Dashboard.new(), :diff)
-      assert Dashboard.layout(expanded, {80, 24}) == [{:diff, {0, 0, 80, 24}}]
     end
 
     test "an expanded capabilities box grows its own cell in place (neighbors untouched)" do
@@ -314,8 +304,8 @@ defmodule Workstation.CLI.TUI.Shell.DashboardTest do
       {:ok, expanded} = Dashboard.expand(Dashboard.new(), :capabilities)
       layout = Dashboard.layout(expanded, {100, 30})
 
-      assert Enum.find(layout, fn {box, {_x, _y, _w, h}} -> box == :capabilities and h == 14 end)
-      assert length(layout) == 6
+      assert Enum.find(layout, fn {box, {_x, _y, _w, h}} -> box == :capabilities and h == 16 end)
+      assert length(layout) == 4
     end
   end
 end

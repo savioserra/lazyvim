@@ -1,6 +1,6 @@
 defmodule Workstation.Daemon.Capabilities.Read do
   @moduledoc """
-  Wire surface of the read engine: `status.run`, `plan.run`, `diff.run`.
+  Wire surface of the read engine: `status.run`, `plan.run`.
 
   Params are empty by design — the daemon serves its own pinned home (the
   home it booted with), and a client that needs a different destination
@@ -19,12 +19,11 @@ defmodule Workstation.Daemon.Capabilities.Read do
   @empty_schema Zoi.object(%{}, unrecognized_keys: :error)
 
   @impl true
-  def ops, do: ["diff.run", "plan.run", "status.run"]
+  def ops, do: ["plan.run", "status.run"]
 
   @impl true
   def schema("status.run"), do: @empty_schema
   def schema("plan.run"), do: @empty_schema
-  def schema("diff.run"), do: @empty_schema
 
   @impl true
   def handle(op, _params, _ctx) do
@@ -32,7 +31,6 @@ defmodule Workstation.Daemon.Capabilities.Read do
       case op do
         "status.run" -> :status
         "plan.run" -> :plan
-        "diff.run" -> :diff
       end
 
     case Read.evaluate(command, EngineState.home(), input: nil) do

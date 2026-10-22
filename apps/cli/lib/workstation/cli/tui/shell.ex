@@ -2,12 +2,12 @@ defmodule Workstation.CLI.TUI.Shell do
   @moduledoc """
   The workstation TUI application shell — the one dashboard. One Elm root
   (the same `TermUI.Elm` contract as the retired apply/update screens)
-  owning the global chrome: the six-box dashboard as the entire app — the
+  owning the global chrome: the four-box dashboard as the entire app — the
   boxes' own superscript titles advertise their toggle digits — and a
   footer with the global keys (btop-ia-spec §2). The mosaic IS the app —
   there are no tabs:
 
-    * digits 1-6 toggle the boxes (`Shell.Dashboard.toggle_box`:
+    * digits 1-4 toggle the boxes (`Shell.Dashboard.toggle_box`:
       flip membership, min-size gate, re-tile);
     * p/P cycle the presets (full mosaic / audit / minimal, wrap-around);
     * `?` toggles the help reference (a boxed scrollable pane — the
@@ -39,7 +39,7 @@ defmodule Workstation.CLI.TUI.Shell do
 
   # The dashboard's wires: every box subscribes to the same reads the old
   # tabs did — the placement changed, the data seams did not (§2.5).
-  @wires [:status, :plan, :diff]
+  @wires [:status, :plan]
 
   ## production entry
 
@@ -97,14 +97,10 @@ defmodule Workstation.CLI.TUI.Shell do
           help: boolean()
         }
 
-  @doc """
-  Default loader: the exact read path of the verbs — one daemon op per
-  wire (`status.run` / `plan.run` / `diff.run`), daemon transport failures
-  folded to the flat `"<tag>: <message>"` string the shell classifies.
-  """
+  @doc "The read wires behind the dashboard's boxes."
   @spec daemon_load(atom(), String.t()) :: {:ok, map()} | {:error, String.t()}
   def daemon_load(command, destination) do
-    op = Map.fetch!(%{status: "status.run", plan: "plan.run", diff: "diff.run"}, command)
+    op = Map.fetch!(%{status: "status.run", plan: "plan.run"}, command)
 
     case DaemonClient.call(op, %{}, home: destination, timeout_ms: @read_timeout_ms) do
       {:ok, wire} ->
@@ -173,7 +169,7 @@ defmodule Workstation.CLI.TUI.Shell do
   def event_to_msg(%Event.Mouse{action: :press, button: :left, x: x, y: y} = event, state)
       when y >= 0 do
     case box_at(state, x, y) do
-      box when box in [:capabilities, :plan, :diff] -> {:msg, {:box_click, box}}
+      box when box in [:capabilities, :plan] -> {:msg, {:box_click, box}}
       _other -> {:msg, event}
     end
   end
@@ -211,11 +207,11 @@ defmodule Workstation.CLI.TUI.Shell do
 
   ## -- dashboard keys -----------------------------------------------------
 
-  # Digits 1-6 toggle dashboard boxes (Config::toggle_box semantics:
-  # flip membership, min-size gate, re-tile); 0 and 7+ are inert (btop
+  # Digits 1-4 toggle dashboard boxes (Config::toggle_box semantics:
+  # flip membership, min-size gate, re-tile); 0 and 5+ are inert (btop
   # refuses out-of-range digits the same way — they fall through to the
   # catch-all). A min-size refusal surfaces as the footer's inline flash.
-  def update({:text, digit}, state) when digit in ~w(1 2 3 4 5 6) do
+  def update({:text, digit}, state) when digit in ~w(1 2 3 4) do
     box = Dashboard.box_for_key(digit)
 
     case Dashboard.toggle_box(state.dashboard, box, elem(state.dimensions, 0)) do
@@ -248,13 +244,13 @@ defmodule Workstation.CLI.TUI.Shell do
   ## -- in-box deep views (§1.6: drill/zoom never leave the dashboard) -----
 
   # Enter = the btop proc-detail key: expand the first visible zoomable
-  # box in place (capabilities tree drill, plan/diff read zoom); Enter
+  # box in place (capabilities tree drill, plan read zoom); Enter
   # again restores the tiler (btop_input.cpp:462-484 — Enter toggles
   # show_detailed).
   def update({:key, :enter}, %{help: false} = state) do
     case Dashboard.expansion(state.dashboard) do
       nil ->
-        box = Enum.find(~w(capabilities plan diff)a, &Dashboard.visible?(state.dashboard, &1))
+        box = Enum.find(~w(capabilities plan)a, &Dashboard.visible?(state.dashboard, &1))
 
         if box do
           {:ok, dashboard} = Dashboard.expand(state.dashboard, box)
@@ -393,7 +389,7 @@ defmodule Workstation.CLI.TUI.Shell do
 
   # Derived views refresh as their wires land: the grouped capabilities
   # envelope (status+plan) that boxes 2-6 fold into their rows.
-  defp refresh_derived(state, command, {:ok, _wire}) when command in [:status, :plan, :diff] do
+  defp refresh_derived(state, command, {:ok, _wire}) when command in [:status, :plan] do
     if command in [:status, :plan], do: refresh_caps(state), else: state
   end
 
@@ -418,7 +414,7 @@ defmodule Workstation.CLI.TUI.Shell do
   # capabilities browser's cursor when box 2 is on the dashboard.
   defp scroll_target(%{dashboard: dash} = state) do
     case Dashboard.expansion(dash) do
-      expansion when expansion in [:plan, :diff] ->
+      expansion when expansion in [:plan] ->
         {:zoom, :"#{expansion}_zoom"}
 
       _expansion ->
@@ -496,12 +492,12 @@ defmodule Workstation.CLI.TUI.Shell do
   end
 
   # A drilled box swaps its pane for the deep view (§1.6): the
-  # capabilities browser in its grown box, plan/diff as full-dashboard
-  # read zooms. Every other box renders its summary.
+  # capabilities browser in its grown box, plan as the full-dashboard
+  # read zoom. Every other box renders its summary.
   defp deep_box_frame(state, styles, box, dims) do
     case {Dashboard.expansion(state.dashboard), box} do
       {:capabilities, :capabilities} -> capabilities_drill(state, styles, dims)
-      {zoom, pane} when zoom in [:plan, :diff] and zoom == pane -> zoom_pane(state, styles, box, dims)
+      {zoom, pane} when zoom in [:plan] and zoom == pane -> zoom_pane(state, styles, box, dims)
       _summary -> box_frame(state, styles, box, dims)
     end
   end
@@ -522,7 +518,7 @@ defmodule Workstation.CLI.TUI.Shell do
   defp zoom_pane(state, styles, box, dims) do
     case Map.get(state.cache, box) do
       {:ok, envelope} ->
-        renderer = if box == :plan, do: &Render.core_plan/1, else: &Render.core_diff/1
+        renderer = &Render.core_plan/1
         view = Map.get(state.text_views, :"#{box}_zoom") || TextView.init(renderer.(envelope))
 
         TextView.bordered_view(view, dims, %{
@@ -541,16 +537,10 @@ defmodule Workstation.CLI.TUI.Shell do
     end
   end
 
-  defp zoom_text_view(state, id) do
-    box = if id == :plan_zoom, do: :plan, else: :diff
-
-    case Map.get(state.cache, box) do
-      {:ok, envelope} ->
-        renderer = if box == :plan, do: &Render.core_plan/1, else: &Render.core_diff/1
-        TextView.init(renderer.(envelope))
-
-      _no_read ->
-        TextView.init("")
+  defp zoom_text_view(state, :plan_zoom) do
+    case Map.get(state.cache, :plan) do
+      {:ok, envelope} -> TextView.init(Render.core_plan(envelope))
+      _no_read -> TextView.init("")
     end
   end
 
@@ -571,9 +561,7 @@ defmodule Workstation.CLI.TUI.Shell do
 
   defp box_frame(state, styles, :engine, dims), do: engine_box(state, styles, dims)
   defp box_frame(state, styles, :capabilities, dims), do: caps_box(state, styles, dims)
-  defp box_frame(state, styles, :journal, dims), do: journal_box(state, styles, dims)
   defp box_frame(state, styles, :plan, dims), do: plan_box(state, styles, dims)
-  defp box_frame(state, styles, :diff, dims), do: diff_box(state, styles, dims)
   defp box_frame(state, styles, :status, dims), do: status_box(state, styles, dims)
 
   @doc """
@@ -608,119 +596,28 @@ defmodule Workstation.CLI.TUI.Shell do
     )
   end
 
-  defp journal_box(state, styles, dims) do
-    Box.frame(journal_rows(state, styles), dims,
-      border_style: styles.border_journal,
-      title: [{keycap(3), styles.keycap}, {"journal", styles.text}],
-      right: journal_counter(state, styles)
-    )
-  end
-
-  # The journal box's title-side right island: the journal revision —
-  # the same fact the old status read pane showed (§2.1 box 3).
-  defp journal_counter(%{cache: %{status: {:ok, status}}}, styles) do
-    case status["journal"] do
-      journal when is_map(journal) ->
-        [{"rev #{Map.get(journal, "revision", "?")}", styles.chrome}]
-
-      _other ->
-        []
-    end
-  end
-
-  defp journal_counter(_state, _styles), do: []
-
   defp plan_box(state, styles, dims) do
     Box.frame(plan_rows(state, styles), dims,
       border_style: styles.border_plan,
-      title: [{keycap(4), styles.keycap}, {"plan", styles.text}],
+      title: [{keycap(3), styles.keycap}, {"plan", styles.text}],
       right: pending_badge(state, :plan, styles)
     )
   end
 
-  defp diff_box(state, styles, dims) do
-    Box.frame(diff_rows(state, styles), dims,
-      border_style: styles.border_diff,
-      title: [{keycap(5), styles.keycap}, {"diff", styles.text}],
-      right: pending_badge(state, :diff, styles)
-    )
-  end
-
-  # The status probe's deep rows (§2.1 box 6): the host facts the daemon
-  # tab carried (destination, platform, graph order) plus the journal's
-  # generation/revision pair; the border read badge keeps the sync
-  # verdict from the diff wire.
+  # The status probe's deep rows (§2.1 box 4): the host facts the daemon
+  # tab carried (destination, platform, graph order).
   defp status_box(state, styles, dims) do
     Box.frame(status_rows(state, styles), dims,
       border_style: styles.border_status,
-      title: [{keycap(6), styles.keycap}, {"status", styles.text}],
-      right: status_badge(state, styles)
+      title: [{keycap(4), styles.keycap}, {"status", styles.text}]
     )
   end
 
-  defp status_journal(%{cache: %{status: {:ok, status}}}), do: status["journal"]
-  defp status_journal(_state), do: nil
-
-  # The status box's border badge: journal generation plus the sync
-  # verdict from the diff wire (the old status read pane's badge).
-  # A journal-less home carries the daemon's canonical `:null` token
-  # (CanonicalJSON round-trips JSON null as the atom `:null`), so the
-  # badge clause must map-match like the sibling journal readers —
-  # anything but a journal map means no badge.
-  defp status_badge(state, styles) do
-    case status_journal(state) do
-      journal when is_map(journal) ->
-        gen = [{"gen #{journal["generation"]}", styles.chrome}]
-
-        verdict =
-          case Map.get(state.cache, :diff) do
-            {:ok, diff} ->
-              pending = length(diff["backend_diff"] || [])
-
-              if pending > 0 do
-                [{" · #{pending} pending", styles.warn}]
-              else
-                [{" · in-sync", styles.ok}]
-              end
-
-            _other ->
-              []
-          end
-
-        gen ++ verdict
-
-      _journalless ->
-        []
-    end
-  end
-
-  defp status_rows(%{cache: %{status: {:ok, wire}}} = _state, styles) do
-    journal = wire["journal"]
-
-    generation_row =
-      case journal do
-        j when is_map(j) ->
-          label_row("generation", "#{j["generation"]}", styles)
-
-        _other ->
-          label_row("generation", "none — nothing applied yet", styles)
-      end
-
-    revision_row =
-      case journal do
-        j when is_map(j) ->
-          label_row("revision", "rev #{Map.get(j, "revision", "?")}", styles)
-
-        _other ->
-          []
-      end
-
+  defp status_rows(%{cache: %{status: {:ok, wire}}}, styles) do
     [
       label_row("destination", Map.get(wire, "destination", "?"), styles),
       label_row("platform", Map.get(wire, "platform", "?"), styles),
-      label_row("graph order", "#{length(wire["graph_order"] || [])} resolved", styles),
-      generation_row,
-      revision_row
+      label_row("graph order", "#{length(wire["graph_order"] || [])} resolved", styles)
     ]
   end
 
@@ -797,87 +694,6 @@ defmodule Workstation.CLI.TUI.Shell do
 
   defp engine_rows(_state, styles), do: [label_row("engine", "loading…", styles)]
 
-  # Journal box: generation, applied stamp and the age meter. The meter
-  # rides the ramp trio by applied-at age: fresh ok, aging warn, stale err.
-  defp journal_rows(%{cache: %{status: {:ok, status}}} = state, styles) do
-    case status["journal"] do
-      journal when is_map(journal) ->
-        style = ramp_style(state, journal["applied_at"])
-
-        [
-          # The removed header facts line's gen/rev pair lives here now:
-          # the journal box's first row reads "generation … · rev …".
-          label_row(
-            "generation",
-            "#{journal["generation"]} · rev #{Map.get(journal, "revision", "?")}",
-            styles
-          ),
-          label_row("applied", {applied_at(journal), style}, styles)
-          | journal_age_row(state, journal["applied_at"], style, styles)
-        ]
-
-      _other ->
-        [label_row("journal", "none — nothing applied yet", styles)]
-    end
-  end
-
-  defp journal_rows(_state, styles), do: [label_row("journal", "loading…", styles)]
-
-  # The journal's third row: the applied-at age meter. An EMPTY journal
-  # (no applied-at stamp at all — nothing has ever been applied) must
-  # not draw a flat all-down meter pretending to be data: it renders the
-  # honest phrase in the chrome role instead. A present stamp keeps the
-  # meter (fresh ok / aging warn / stale err ramp unchanged).
-  defp journal_age_row(state, stamp, style, styles) do
-    if stamp_age_seconds(state, stamp) == nil do
-      [label_row("age", {"no applied entries yet", styles.chrome}, styles)]
-    else
-      [[{" " <> age_bar(state, stamp), style}]]
-    end
-  end
-
-  # Applied-at age as a block meter: 0 cells (fresh) to full (stale).
-  # Ramp thresholds: fresh <24h ok · aging <7d warn · stale ≥7d err; an
-  # absent or unparseable stamp renders plain.
-  @age_bar_cells 10
-  @fresh_after_seconds 86_400
-  @aging_after_seconds 604_800
-
-  defp age_bar(state, applied_at) do
-    filled =
-      case stamp_age_seconds(state, applied_at) do
-        nil -> 0
-        age -> age |> Kernel.*(@age_bar_cells) |> div(@aging_after_seconds) |> max(0) |> min(@age_bar_cells)
-      end
-
-    String.duplicate("▇", filled) <> String.duplicate("▁", @age_bar_cells - filled)
-  end
-
-  defp ramp_style(state, applied_at) do
-    styles = theme_styles(state)
-
-    case stamp_age_seconds(state, applied_at) do
-      nil -> Style.new()
-      age when age < @fresh_after_seconds -> styles.ramp_start
-      age when age < @aging_after_seconds -> styles.ramp_mid
-      _age -> styles.ramp_end
-    end
-  end
-
-  defp stamp_age_seconds(state, applied_at) when is_binary(applied_at) do
-    case DateTime.from_iso8601(applied_at) do
-      {:ok, stamp, _offset} -> max(DateTime.diff(state.now, stamp, :second), 0)
-      {:error, _reason} -> nil
-    end
-  end
-
-  defp stamp_age_seconds(_state, _applied_at), do: nil
-
-  # Per-wire rows fold each cached load state into one honest phrase —
-  # loading, the data, or the failure verbatim.
-  defp applied_at(%{"applied_at" => at}) when is_binary(at), do: " #{at}"
-  defp applied_at(_journal), do: ""
-
   defp plan_rows(%{cache: %{plan: {:ok, plan}}}, styles) do
     body = plan["plan"] || %{}
     entries = length(body["entries"] || [])
@@ -897,30 +713,6 @@ defmodule Workstation.CLI.TUI.Shell do
 
   defp plan_rows(_state, styles), do: [label_row("plan", "loading…", styles)]
 
-  defp diff_rows(%{cache: %{diff: {:ok, diff}}}, styles) do
-    records = diff["backend_diff"] || []
-    count = length(records)
-    style = if count > 0, do: styles.warn, else: styles.ok
-
-    note =
-      if records == [] do
-        [{" no differences — the destination matches the desired state", styles.ok}]
-      else
-        []
-      end
-
-    [
-      label_row("pending", {"#{count} pending change(s)", style}, styles),
-      note
-    ]
-  end
-
-  defp diff_rows(%{cache: %{diff: {:error, message}}}, styles) do
-    [label_row("diff", {message_text(message), styles.err}, styles)]
-  end
-
-  defp diff_rows(_state, styles), do: [label_row("diff", "loading…", styles)]
-
   defp caps_rows(%{caps_env: %{} = envelope}, styles) do
     domains = envelope["domains"] || []
     max_files = domains |> Enum.map(&(&1["files"] || 0)) |> Enum.max(fn -> 0 end)
@@ -929,8 +721,7 @@ defmodule Workstation.CLI.TUI.Shell do
       label_row(
         "rollup",
         "#{length(domains)} domains · #{Capabilities.total_files(envelope)} files · " <>
-          "#{Capabilities.total_planned(envelope)} would change · " <>
-          "applied #{envelope["applied_generation"] || "none"}",
+          "#{Capabilities.total_planned(envelope)} would change",
         styles
       )
     ] ++
@@ -975,17 +766,6 @@ defmodule Workstation.CLI.TUI.Shell do
     end
   end
 
-  defp pending_badge(state, :diff, styles) do
-    case Map.get(state.cache, :diff) do
-      {:ok, diff} ->
-        pending = length(diff["backend_diff"] || [])
-        if pending > 0, do: [{"#{pending} pending", styles.warn}], else: [{"in-sync", styles.ok}]
-
-      _other ->
-        []
-    end
-  end
-
   defp footer_frame(state, {width, height}) do
     # Global footer keeps the frame keys only (btop grammar: island bar,
     # glowing caps): the digit toggles, the preset cycle, help, quit.
@@ -994,7 +774,7 @@ defmodule Workstation.CLI.TUI.Shell do
     styles = theme_styles(state)
 
     buttons = [
-      {"1-6", " toggle"},
+      {"1-4", " toggle"},
       {"p/P", " layout"},
       {"?", " help"},
       {"q", " quit"}
@@ -1013,8 +793,8 @@ defmodule Workstation.CLI.TUI.Shell do
   # claim routes through the theme envelope roles (never literals).
   # Titles read the near-white text role, bold (btop's title treatment);
   # keycaps ride the shortcut role, bold. Border roles are per-domain
-  # (docs/theme.md): engine/plan blue, journal/status green,
-  # capabilities yellow, diff red.
+  # (docs/theme.md): engine/plan blue, status green,
+  # capabilities yellow.
   defp theme_styles(state) do
     %{
       accent: role_style(state, :accent, fallback: Style.new(attrs: [:bold]), attrs: [:bold]),
@@ -1030,10 +810,8 @@ defmodule Workstation.CLI.TUI.Shell do
       ramp_mid: role_style(state, :ramp_mid, fallback: :yellow),
       ramp_end: role_style(state, :ramp_end, fallback: :red),
       border_engine: role_style(state, :border_engine, fallback: :blue),
-      border_journal: role_style(state, :border_journal, fallback: :green),
       border_capabilities: role_style(state, :border_capabilities, fallback: :yellow),
       border_plan: role_style(state, :border_plan, fallback: :blue),
-      border_diff: role_style(state, :border_diff, fallback: :red),
       border_status: role_style(state, :border_status, fallback: :green),
       selected: selected_style(state),
       plain: Style.new()

@@ -1,36 +1,29 @@
 defmodule Workstation.CLI.OutputTest do
   @moduledoc """
-  The status wire builder's journal shape: `nil` journal emits the explicit
-  `:null` token the status schema reserves for "never applied", while an
-  applied journal carries `at` only when present — the canonical-JSON rule
-  says optional fields are OMITTED, never emitted as nulls.
+  The status wire builder's shape: the schema token pins the hard-cut
+  status envelope's identity and the taxonomy travels verbatim.
   """
 
   use ExUnit.Case, async: true
 
   alias Workstation.CLI.Output
 
-  defp status(journal) do
-    Output.status("workstation", "elixir", "~", "linux-x64", [], [], journal, %{})
-  end
-
-  test "an absent journal is the explicit null token, never a dropped key" do
-    wire = status(nil)
+  test "the status wire carries the schema token and the taxonomy verbatim" do
+    wire =
+      Output.status("workstation", "elixir", "~", "linux-x64", [], [:a, :b], %{"agent" => "agent"})
 
     assert wire["schema"] == Output.status_schema()
-    assert wire["journal"] == :null
+    assert wire["taxonomy"] == %{"agent" => "agent"}
+    assert wire["graph_order"] == [:a, :b]
   end
 
-  test "a journal with an at stamp carries it on the wire" do
-    wire = status(%{"generation" => "g1", "revision" => 2, "at" => 1_700_000_000})
+  test "the plan wire carries the generation, body, manifest and target states" do
+    wire = Output.plan("gen-1", %{"entries" => []}, [%{"name" => ".chezmoiremove"}], %{})
 
-    assert wire["journal"] == %{"generation" => "g1", "revision" => 2, "at" => 1_700_000_000}
-  end
-
-  test "a journal without an at stamp omits the field instead of emitting null" do
-    wire = status(%{"generation" => "g1", "revision" => 2, "at" => nil})
-
-    assert wire["journal"] == %{"generation" => "g1", "revision" => 2}
-    refute Map.has_key?(wire["journal"], "at")
+    assert wire["schema"] == Output.plan_schema()
+    assert wire["generation"] == "gen-1"
+    assert wire["plan"] == %{"entries" => []}
+    assert wire["manifest"] == [%{"name" => ".chezmoiremove"}]
+    assert wire["target_states"] == %{}
   end
 end

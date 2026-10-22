@@ -16,16 +16,10 @@ defmodule Workstation.CLI.Output do
   @doc "Schema identifier of the hard-cut plan wire."
   def plan_schema, do: @delegee.plan_schema()
 
-  @doc "Schema identifier of the hard-cut diff wire."
-  def diff_schema, do: @delegee.diff_schema()
-
-  @doc "Build the status wire. See `Workstation.Daemon.Read.status/8`."
-  defdelegate status(engine_name, mode, destination, platform, packages, graph_order, journal, taxonomy),
+  @doc "Build the status wire. See `Workstation.Daemon.Read.status/7`."
+  defdelegate status(engine_name, mode, destination, platform, packages, graph_order, taxonomy),
     to: @delegee
 
-  @doc "Build the plan wire. See `Workstation.Daemon.Read.plan/5`."
-  defdelegate plan(generation, plan_body, manifest, patches, target_states), to: @delegee
-
-  @doc "Build the diff wire. See `Workstation.Daemon.Read.diff/2`."
-  defdelegate diff(generation, backend_diff), to: @delegee
+  @doc "Build the plan wire. See `Workstation.Daemon.Read.plan/4`."
+  defdelegate plan(generation, plan_body, manifest, target_states), to: @delegee
 end

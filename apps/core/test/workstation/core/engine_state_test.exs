@@ -71,37 +71,6 @@ defmodule Workstation.Core.EngineStateTest do
     assert_raise ArgumentError, ~r/invalid target characters/, fn -> EngineState.join_home(home, "a\nb") end
   end
 
-  test "valid generation identifiers are exactly 64 lowercase hex characters" do
-    assert EngineState.valid_generation_id(String.duplicate("a", 64))
-    refute EngineState.valid_generation_id(String.upcase(String.duplicate("a", 64)))
-    refute EngineState.valid_generation_id(String.duplicate("a", 63))
-    refute EngineState.valid_generation_id(123)
-  end
-
-  test "generation directory is returned unverified when absent" do
-    id = String.duplicate("ab", 32)
-    directory = EngineState.generation_directory(EngineState.state_root(), id)
-    assert directory == Path.join([EngineState.state_root(), "generations", id])
-  end
-
-  test "generation directory refuses symlinked or foreign-owned records" do
-    root = make_state_root(EngineState.home())
-    generations = Path.join(root, "generations")
-    File.mkdir_p!(generations)
-    id = String.duplicate("cd", 32)
-
-    File.ln_s!("/nonexistent", Path.join(generations, id))
-
-    assert_raise ArgumentError, ~r/recorded generation is not a directory/, fn ->
-      EngineState.generation_directory(root, id)
-    end
-
-    File.rm!(Path.join(generations, id))
-    File.mkdir!(Path.join(generations, id))
-    File.chmod!(Path.join(generations, id), 0o700)
-    assert EngineState.generation_directory(root, id) == Path.join(generations, id)
-  end
-
   test "verify_tree! accepts a guarded 0700 state tree" do
     make_state_root(EngineState.home())
 
@@ -129,34 +98,6 @@ defmodule Workstation.Core.EngineStateTest do
 
     assert_raise ArgumentError, ~r/engine state root component is not a directory/, fn ->
       EngineState.verify_tree!(home, EngineState.state_components(), "engine state root")
-    end
-  end
-
-  test "read_json decodes journal payloads and resolves absent entries" do
-    root = make_state_root(EngineState.home())
-    journal = Path.join(root, "journal")
-    File.mkdir_p!(journal)
-    path = Path.join(journal, "applied.json")
-
-    assert EngineState.read_json(path) == :absent
-
-    File.write!(path, ~s({"generation": "abc", "revision": 2, "targets": {"a": {"mode": 420}}}))
-
-    assert {:ok, decoded} = EngineState.read_json(path)
-    assert decoded["generation"] == "abc"
-    assert decoded["targets"]["a"]["mode"] == 420
-
-    File.write!(path, "{\"generation\": ")
-    assert EngineState.read_json(path) == {:error, :malformed}
-  end
-
-  test "read_json refuses journal entries that are not regular files" do
-    root = make_state_root(EngineState.home())
-    journal = Path.join(root, "journal")
-    File.mkdir_p!(Path.join(journal, "applied.json"))
-
-    assert_raise ArgumentError, ~r/engine journal entry is not a regular file/, fn ->
-      EngineState.read_json(Path.join(journal, "applied.json"))
     end
   end
 

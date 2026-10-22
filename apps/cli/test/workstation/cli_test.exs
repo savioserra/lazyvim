@@ -151,7 +151,6 @@ defmodule Workstation.CLITest do
     @help_verbs [
       "status",
       "plan",
-      "diff",
       "capabilities"
     ]
 
@@ -224,7 +223,6 @@ defmodule Workstation.CLITest do
                "generation" => generation,
                "plan" => _plan,
                "manifest" => _manifest,
-               "patches" => patches,
                "target_states" => states
              } = wire
 
@@ -240,7 +238,6 @@ defmodule Workstation.CLITest do
 
       assert generation == String.trim_trailing(File.read!(Path.join([golden, "expected", "generation.txt"])))
 
-      assert is_list(patches)
       assert is_map(states)
       # The CLI wire is itself canonical JSON (compact, keys sorted).
       assert String.trim_trailing(first, "\n") == canonical_json(wire)
@@ -261,18 +258,16 @@ defmodule Workstation.CLITest do
                "engine" => %{"name" => "workstation", "mode" => "elixir"},
                "destination" => destination,
                "packages" => packages,
-               "graph_order" => graph_order,
-               "journal" => nil
+               "graph_order" => graph_order
              } = wire
 
       assert destination == Path.expand(home)
       assert is_list(packages) and packages != []
       assert Enum.all?(packages, &is_map_key(&1, "id"))
       assert is_list(graph_order)
-      # A fresh test home has no applied generation.
     end
 
-    test "plan text mirrors the changesets.print_report layout" do
+    test "plan text renders the attributed entry lines and the target column" do
       generation = String.duplicate("a", 64)
 
       wire = %{
@@ -320,7 +315,6 @@ defmodule Workstation.CLITest do
       assert text =~ "  entries    : 1  removals: 0"
       assert text =~ "  baseline   : none (initial plan; every source entry is an addition)"
       assert text =~ "  add bashrc -> .bashrc [file mode 755] owner foundation"
-      assert text =~ "# add bashrc (file mode 755, owner foundation)"
       # The anchor's %-45s padded target column.
       assert text =~ ~r/^  target \.bashrc +absent$/m
       assert text =~ "plan complete."

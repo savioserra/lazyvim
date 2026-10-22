@@ -2,23 +2,17 @@ defmodule Workstation.Pipeline.Run do
   @moduledoc """
   The pipeline accumulator: one %Run{} flows through the named stages and
   every stage contributes its field — `discover` the catalog, `resolve` the
-  graph, `compose` the plan (stamping the journal baseline in apply mode),
-  `check` the preconditions, `stage` the published generation directory,
-  `anchor` the pending journal record, `interpret` the typed effects, `claim`
-  the applied-target ownership and `verify` the generation. Nothing else in
-  the engine threads mutation state by parameter.
+  graph, `compose` the plan. The read pipeline is the whole pipeline: the
+  write stages retired with the engine's write plane (nix owns mutation).
+  Nothing else in the engine threads evaluation state by parameter.
   """
 
   defstruct input: nil,
-            mode: :read,
             home: nil,
             opts: %{},
             catalog: nil,
             graph: nil,
-            journal: nil,
-            plan: nil,
-            directory: nil,
-            effects: []
+            plan: nil
 
   @type t :: %__MODULE__{
           input:
@@ -26,23 +20,18 @@ defmodule Workstation.Pipeline.Run do
             | {:native, Workstation.Core.Catalog.t()}
             | {:file, map()}
             | {:collector, (-> {:ok, Workstation.Core.Catalog.t()} | {:error, term()}) | nil},
-          mode: :read | :apply,
           home: String.t() | nil,
           opts: map(),
           catalog: Workstation.Core.Catalog.t() | nil,
           graph: Workstation.Core.Graph.t() | nil,
-          journal: map() | nil,
-          plan: Workstation.Core.Source.t() | nil,
-          directory: String.t() | nil,
-          effects: [map()]
+          plan: Workstation.Core.Source.t() | nil
         }
 end
 
 defmodule Workstation.Pipeline.CollectFailed do
   @moduledoc """
-  Raised when a catalog collector refuses: `Workstation.Pipeline.composed_plan/2`
-  surfaces it as `{:error, {:collect_failed, reason}}` so every mutation
-  surface keeps its own wire coding distinct from engine errors.
+  Raised when a catalog collector refuses; the caller surfaces it with its
+  own wire coding distinct from engine errors.
   """
 
   defexception [:reason]
@@ -60,57 +49,26 @@ defmodule Workstation.Pipeline do
   The pipeline law: the engine is ONE named stage list reduced over a
   `%Workstation.Pipeline.Run{}` accumulator —
 
-      discover -> resolve -> compose -> check -> stage -> anchor ->
-        interpret -> claim -> verify
+      discover -> resolve -> compose
 
-  Kernel modules implement stages (discovery, resolution, composition,
-  preconditions, staging, the journal anchor, generation verification); the
-  effect execution itself is a FOLD over the plan's typed effects, dispatched
-  through discovered `Workstation.Core.Contracts.Contract` implementations —
-  never named here. A CLI verb is a prefix of this list: `status` runs to
-  `resolve`, `plan`/`diff` to `compose`, `apply` to `verify`
-  (`verb_depth/1`).
-
-  Ordering is the invariant, not a preference, and the stage order IS the
-  ordering: preconditions run BEFORE any write (a stale plan or an intervening
-  home edit must never reach the fold), the pending attempt record anchors
-  BEFORE any effect runs (a crashed apply must leave a recoverable anchor,
-  and an unresolved attempt is surfaced by the next generation's
-  preconditions), the applied provenance record lands only AFTER every effect
-  succeeded, and the generation directory is re-verified after the fold — the
-  effects mutate the home, never the generation, and a damaged generation
-  after an apply is a corruption signal, not something to accept silently.
-
-  The effects fold (`interpret`) preserves the execution order the contracts
-  declare: per-target effects first (a pinned artifact installs before the
-  staged generation is applied), the single generation-apply effect last. A
-  failed effect records `journal/failed/` and the pending record stays —
-  recovery is conflict-aware through the journal, never a blind replay.
-
-  Re-applying the identical desired generation is an idempotent no-op by
-  preconditions (the journal's current generation matches, so the plan is not
-  stale): the effects re-run, the applied record advances its revision, and
-  the per-target fingerprints stay byte-identical because the targets already
-  matched the generation.
-
-  Every write is serialized by the caller (the daemon's apply orchestrator
-  holds the same `<state_root>/apply.lock` the one-shot apply always took);
-  this module is lock-free by design so any future driver inherits the same
-  serialization contract. Composition (`composed_plan/2`) happens OUTSIDE the
-  lock on every surface; `execute/2` is the locked continuation from `check`.
+  Kernel modules implement the stages (discovery, resolution, composition).
+  A CLI verb is a prefix of this list: `status` runs to `resolve`, `plan`
+  to `compose` (`verb_depth/1`). The write stages (check, stage, anchor,
+  interpret, claim, verify) retired with the engine's write plane: mutation
+  is the nix substrate's `workstation-switch` drivers. The typed effects
+  view (`effects/1`) remains as the read-side projection of the declared
+  mutation program the manifests carry — nothing executes it here.
   """
 
-  alias Workstation.Core.{Catalog, EngineState, Graph, Journal, Preconditions, Provisioner, Source}
-  alias Workstation.Core.Contracts.{Contract, Git, Mise}
+  alias Workstation.Core.{Catalog, Graph, Source}
+  alias Workstation.Core.Contracts.Contract
   alias Workstation.Pipeline.CollectFailed
 
-  @stage_order [:discover, :resolve, :compose, :check, :stage, :anchor, :interpret, :claim, :verify]
+  @stage_order [:discover, :resolve, :compose]
 
   # CLI verbs are pipeline prefixes: a verb's depth is the last stage its
-  # evaluation runs. `apply` is the full list (through the composition and
-  # locked-continuation split every mutation surface already follows).
-  @verb_depths %{status: :resolve, plan: :compose, diff: :compose, apply: :verify}
-
+  # evaluation runs.
+  @verb_depths %{status: :resolve, plan: :compose}
 
   @doc "The named stage list, in reduction order — the engine's invariant ordering."
   @spec stages() :: [atom()]
@@ -124,7 +82,7 @@ defmodule Workstation.Pipeline do
     Enum.take(@stage_order, index + 1)
   end
 
-  @doc "The pipeline depth of one evaluation verb (status/plan/diff/apply)."
+  @doc "The pipeline depth of one evaluation verb (status/plan)."
   @spec verb_depth(atom()) :: atom()
   def verb_depth(verb) when is_atom(verb) do
     Map.fetch!(@verb_depths, verb)
@@ -136,86 +94,21 @@ defmodule Workstation.Pipeline do
 
   @doc """
   Reduce the stage prefix ending at `to` (default: the full list) over `run`.
-  Read verbs (`mode: :read`) stay pure — no journal, no filesystem probing —
-  so golden replay is a function of its input bytes.
+  The evaluation stays pure — no journal, no filesystem probing — so golden
+  replay is a function of its input bytes.
   """
   @spec run(Workstation.Pipeline.Run.t(), atom()) :: Workstation.Pipeline.Run.t()
-  def run(%Workstation.Pipeline.Run{} = run, to \\ :verify) do
+  def run(%Workstation.Pipeline.Run{} = run, to \\ :compose) do
     stages_upto(to) |> Enum.reduce(run, &apply_stage/2)
   end
 
   @doc """
-  The composition boundary's full run — the one every mutation surface
-  shares: the live native catalog (or a sandbox `collect` — a zero-arity
-  callable returning `{:ok, %Catalog{}}`), the ordered graph, the
-  journal-stamped baseline and the removal activation. Keeps the whole
-  `%Workstation.Pipeline.Run{}` so a read-side projection can render the
-  composed plan with its catalog identity. Runs the pipeline to `compose` in
-  apply mode.
-  Errors keep their cause explicit so each surface can apply its own wire
-  coding: `{:error, {:collect_failed, reason}}` for catalog collection
-  failures, `{:error, message}` for engine preconditions' verbatim
-  `ArgumentError` text.
-  """
-  @spec composed_run(String.t(), (-> {:ok, Catalog.t()} | {:error, term()}) | nil) ::
-          {:ok, Workstation.Pipeline.Run.t()}
-          | {:error, {:collect_failed, term()}}
-          | {:error, String.t()}
-  def composed_run(home, collect \\ nil) do
-    {:ok, run(%Workstation.Pipeline.Run{input: {:collector, collect}, mode: :apply, home: home}, :compose)}
-  rescue
-    error in [CollectFailed] -> {:error, {:collect_failed, error.reason}}
-    error in [ArgumentError] -> {:error, Exception.message(error)}
-  end
-
-  @doc """
-  The composed plan of the composition boundary: `composed_run/2`'s plan —
-  the plan every mutating surface executes.
-  """
-  @spec composed_plan(String.t(), (-> {:ok, Catalog.t()} | {:error, term()}) | nil) ::
-          {:ok, Source.t()} | {:error, {:collect_failed, term()}} | {:error, String.t()}
-  def composed_plan(home, collect \\ nil) do
-    case composed_run(home, collect) do
-      {:ok, %{plan: plan}} -> {:ok, plan}
-      error -> error
-    end
-  end
-
-  @doc """
-  Execute one plan's mutation against the target home and return its
-  generation identifier — the locked continuation from `check` through
-  `verify` (the caller composed the plan outside the lock and holds the apply
-  lock). `opts` carry `"home"` (defaults to the target home), the optional
-  `"requested_generation"` (when present it must equal the plan's generation,
-  turning a client that asks for a different generation than the built plan
-  into the same stale-plan refusal as any other divergence), the optional
-  `"fetch"` (injected download fetch, tests) and the optional `"mise"`
-  (injected mise runner, tests). The optional `"adopt"` opens the
-  operator-gated adoption door: un-owned targets whose on-disk state the
-  probe verifies byte-identical to the rendered plan are adopted (the
-  apply's claim step records their ownership), everything else still
-  conflicts. Raises `ArgumentError` on stale
-  plans, conflicts, effect failures and invariant violations.
-  """
-  @spec execute(Source.t(), map()) :: String.t()
-  def execute(%Source{} = plan, opts \\ %{}) do
-    run = %Workstation.Pipeline.Run{
-      mode: :apply,
-      plan: plan,
-      home: opts["home"] || EngineState.home(),
-      opts: opts
-    }
-
-    %{plan: plan} = Enum.reduce(stages_from(:check), run, &apply_stage/2)
-    plan.generation
-  end
-
-  @doc """
-  The plan's typed mutation program: every discovered contract's declared
-  share of the plan, validated and ordered `{phase, contract, target}` —
-  per-target effects first, the single generation-apply effect last. Pure;
-  shared by the interpret fold and the wire projections (the recorded plan
-  shape declares its effects).
+  The plan's typed mutation program as DECLARED data: every discovered
+  contract's share of the plan, validated and ordered
+  `{phase, contract, target}` — per-target effects first, the single
+  generation-apply effect last. Pure; this is the read-side projection the
+  wire carries (the recorded plan shape declares its effects). Nothing
+  executes it — the nix substrate's switch drivers own the mutation.
   """
   @spec effects(Source.t()) :: [map()]
   def effects(%Source{} = plan) do
@@ -227,7 +120,7 @@ defmodule Workstation.Pipeline do
 
     # The apply phase is the staged generation applied exactly once, after
     # every per-target effect — more than one declarer is an invariant break,
-    # not a fold order question.
+    # not an ordering question.
     apply_effects = Enum.filter(effects, &(&1.phase == :apply))
     length(apply_effects) <= 1 || raise(ArgumentError, "more than one apply-phase effect declared")
 
@@ -241,18 +134,10 @@ defmodule Workstation.Pipeline do
   defp stage(:discover), do: &discover/1
   defp stage(:resolve), do: &resolve/1
   defp stage(:compose), do: &compose/1
-  defp stage(:check), do: &check/1
-  defp stage(:stage), do: &stage_generation/1
-  defp stage(:anchor), do: &anchor/1
-  defp stage(:interpret), do: &interpret/1
-  defp stage(:claim), do: &claim/1
-  defp stage(:verify), do: &verify/1
-
-  defp stages_from(from), do: Enum.drop_while(@stage_order, &(&1 != from))
 
   # The catalog: the native live envelope, a recorded golden envelope, or a
   # sandbox collector (tests). Collection failure is a distinct exception so
-  # `composed_plan/2` can keep its surface coding; engine errors raise raw.
+  # callers can keep their surface coding; engine errors raise raw.
   defp discover(%Workstation.Pipeline.Run{input: input} = run) do
     catalog =
       case input do
@@ -274,137 +159,18 @@ defmodule Workstation.Pipeline do
     %{run | graph: Graph.order(%{host: catalog.host, specifications: catalog.packages})}
   end
 
-  # Read mode stays pure (replay purity: no journal, no filesystem); apply
-  # mode is the production composition boundary — the plan records the
-  # journal state it was composed against and declared removals activate
-  # exactly here, where journal and destination home are both readable.
-  defp compose(%Workstation.Pipeline.Run{mode: :read, graph: graph} = run) do
+  # The composition stays pure (replay purity: no journal, no filesystem
+  # probing) — the declared desired state, nothing else.
+  defp compose(%Workstation.Pipeline.Run{graph: graph} = run) do
     %{run | plan: Source.plan(%{graph: graph})}
-  end
-
-  defp compose(%Workstation.Pipeline.Run{mode: :apply, home: home, graph: graph} = run) do
-    journal = Journal.applied(Path.join([home | EngineState.state_components()]))
-
-    plan =
-      %{graph: graph}
-      |> Source.plan()
-      |> Source.with_baseline(journal)
-      |> Source.activate_removals(journal, home)
-      |> Git.activate_retirements(journal)
-
-    %{run | journal: journal, plan: plan}
-  end
-
-  # Preconditions run inside the caller's lock BEFORE any write. The anchor's
-  # apply path guards all engine roots up front, so the guarded tree exists
-  # before any precondition or record runs.
-  defp check(%Workstation.Pipeline.Run{} = run) do
-    :ok = EngineState.ensure_roots!(run.home)
-
-    case run.opts["requested_generation"] do
-      nil -> :ok
-      requested when requested == run.plan.generation -> :ok
-
-      requested ->
-        raise ArgumentError,
-              "stale plan: requested generation #{inspect(requested)} does not match the built plan generation " <>
-                "#{inspect(run.plan.generation)}; rebuild the plan"
-    end
-
-    Preconditions.check(
-      precondition_plan(run.plan),
-      %{"home" => run.home, "adopt" => run.opts["adopt"] == true}
-    )
-
-    run
-  end
-
-  # The staged generation: content-addressed, written privately, verified
-  # into place before anything anchors or runs.
-  defp stage_generation(%Workstation.Pipeline.Run{} = run) do
-    %{run | directory: Provisioner.publish(run.plan, %{"home" => run.home})}
-  end
-
-  # The pending attempt record lands BEFORE the effects fold: a crashed apply
-  # must leave a recoverable anchor, and the record already carries every
-  # target the fold may touch — the plan's whole desired surface (the same
-  # list the preconditions' unresolved-attempt guard reconciles stale
-  # pending records against).
-  defp anchor(%Workstation.Pipeline.Run{} = run) do
-    plan = run.plan
-
-    Journal.write_pending(run.home, %{
-      "generation" => plan.generation,
-      "at" => System.system_time(:second),
-      "pid" => :os.getpid(),
-      "entries" => length(plan.entries),
-      "targets" => desired_targets(plan)
-    })
-
-    run
-  end
-
-  # The effects fold: the plan's typed program run through its discovered
-  # contracts. A failed effect records journal/failed and the pending record
-  # stays — recovery is conflict-aware through the journal, never a blind
-  # replay. The fetch is injectable for tests; production fetches HTTPS.
-  defp interpret(%Workstation.Pipeline.Run{} = run) do
-    effects = effects(run.plan)
-    ctx = effect_ctx(run)
-
-    try do
-      Enum.each(effects, fn effect ->
-        contract = Contract.Discover.lookup!(effect.contract)
-        :ok = contract.run_effect(effect, ctx)
-      end)
-    rescue
-      error ->
-        Journal.write_failed(run.home, run.plan.generation, error)
-        reraise error, __STACKTRACE__
-    end
-
-    %{run | effects: effects}
-  end
-
-  # The applied record is the ownership claim every later check trusts, so
-  # the fingerprints are taken from the ACTUAL home after the fold: an effect
-  # that did not produce its target is a hard failure, never recorded.
-  defp claim(%Workstation.Pipeline.Run{} = run) do
-    plan = run.plan
-    ctx = effect_ctx(run)
-
-    targets =
-      Enum.reduce(run.effects, %{}, fn effect, acc ->
-        contract = Contract.Discover.lookup!(effect.contract)
-        Map.merge(acc, contract.fingerprint(effect, ctx))
-      end)
-
-    Journal.record_applied(run.home, plan.generation, targets, plan.fragments_journal, plan.manifest, source_index(plan))
-    # The completed apply retires the pending anchor: renamed under
-    # journal/retired/ (the evidence convention), never deleted — the
-    # evidence of what the interrupted fold touched is provenance.
-    :ok = Journal.retire_pending(run.home)
-    run
-  end
-
-  # The generation directory is re-verified after the fold: the effects
-  # mutate the home, never the generation, and damage after an apply is a
-  # corruption signal.
-  defp verify(%Workstation.Pipeline.Run{} = run) do
-    true = Provisioner.verify_generation(run.directory, run.plan.manifest)
-    run
   end
 
   # --- effect helpers ---
 
-  defp effect_ctx(%Workstation.Pipeline.Run{} = run) do
-    %{home: run.home, plan: run.plan, directory: run.directory, fetch: run.opts["fetch"], mise: run.opts["mise"]}
-  end
-
   defp declared_effect(effect, contract) do
     Map.get(effect, :contract) == contract.id() ||
       raise(ArgumentError,
-            "effect names contract #{inspect(Map.get(effect, :contract))} but was declared by #{inspect(contract.id())}")
+        "effect names contract #{inspect(Map.get(effect, :contract))} but was declared by #{inspect(contract.id())}")
 
     effect[:phase] in [:target, :apply] ||
       raise(ArgumentError, "effect for contract #{contract.id()} has invalid phase #{inspect(effect[:phase])}")
@@ -417,103 +183,4 @@ defmodule Workstation.Pipeline do
 
   defp phase_rank(:target), do: 0
   defp phase_rank(:apply), do: 1
-
-  # --- shape projections (string-keyed views the checks and the journal
-  # read; the anchor's schema, verbatim) ---
-
-  # The plan's whole desired target surface, in the anchor's order: the
-  # backend entries plus the bootstrap-provisioned surface the fold
-  # re-produces (download pins, the copied payloads, the git retirements the
-  # plan activated, contract-owned targets such as the managed-tool config,
-  # its PATH link and its state directory). The pending anchor records
-  # exactly this list,
-  # and the preconditions' unresolved-attempt guard consults it as
-  # `"desired"` — one surface shared by the writer and the guard, so a
-  # stale attempt's targets reconcile against precisely what the fold will
-  # produce (the 2026-10-19 convergence catch-22: a stale anchor listing
-  # only bootstrap-provisioned targets must never wedge every later apply).
-  defp desired_targets(%Source{} = plan) do
-    Enum.map(plan.entries, & &1.target) ++
-      Enum.flat_map(plan.downloads, fn download ->
-        case download.target do
-          nil -> Map.values(download.targets || %{})
-          target -> [target]
-        end
-      end) ++
-      Enum.map(plan.copies, & &1.target) ++
-      Enum.map(plan.git_retirements, & &1.target) ++
-      Mise.owned_targets_for(plan.mise)
-  end
-
-  # Preconditions bind to the string-keyed plan shape; this projection is the
-  # executor's view of the in-process plan (the same fields the read side
-  # projects to the wire, restricted to what the checks read). Shell
-  # fragments are projected id/marker/body because the precondition checks
-  # (and the shared-target validator) read exactly those string keys. The
-  # rendered-identity fields (bytes/link/mode/template) feed the un-owned
-  # target probe: bytes travel only for entries the backend does not
-  # template-render, whose on-disk state a probe can verify verbatim.
-  defp precondition_plan(plan) do
-    %{
-      "generation" => plan.generation,
-      "journal_revision" => plan.journal_revision,
-      "baseline_generation" => plan.baseline_generation,
-      "desired" => desired_targets(plan),
-      "entries" =>
-        Enum.map(plan.entries, fn entry ->
-          %{
-            "target" => entry.target,
-            "operation" => entry.operation,
-            "type" => entry.type,
-            "attribution" => Map.get(entry, :attribution) || [entry.owner],
-            "exact" => Map.get(entry, :exact),
-            "fragments" => fragments_view(Map.get(entry, :fragments)),
-            "mode" => Map.get(entry, :mode),
-            "link" => Map.get(entry, :link),
-            "bytes" => probe_bytes(entry),
-            "template" => if(Map.get(entry, :template) == true, do: true)
-          }
-          |> Enum.reject(fn {_key, value} -> is_nil(value) end)
-          |> Map.new()
-        end),
-      "removals" =>
-        Enum.map(plan.removals, fn removal ->
-          %{"target" => removal.target, "owner" => removal.owner}
-        end)
-    }
-  end
-
-  # Template source bytes are not the rendered target: a template entry is
-  # probe-unverifiable by construction, so its source never rides the
-  # precondition view as if it were identity.
-  defp probe_bytes(%{template: true}), do: nil
-  defp probe_bytes(entry), do: Map.get(entry, :bytes)
-
-  # The reverse-lookup index: which generated source name owns which target,
-  # with the attribution and attributes a recovery decision needs.
-  defp source_index(plan) do
-    Map.new(plan.entries, fn entry ->
-      record =
-        %{
-          "target" => entry.target,
-          "owner" => entry.owner,
-          "attribution" => Map.get(entry, :attribution),
-          "type" => entry.type,
-          "mode" => Map.get(entry, :mode),
-          "link" => Map.get(entry, :link)
-        }
-        |> Enum.reject(fn {_key, value} -> is_nil(value) end)
-        |> Map.new()
-
-      {entry.source_name, record}
-    end)
-  end
-
-  defp fragments_view(nil), do: nil
-
-  defp fragments_view(fragments) do
-    Enum.map(fragments, fn fragment ->
-      %{"id" => fragment.id, "marker" => fragment.marker, "body" => fragment.body}
-    end)
-  end
 end

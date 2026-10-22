@@ -5,19 +5,19 @@ defmodule Workstation.CLI.TUI.ShellHomeFrameTest do
   no async (the same pure-test split pure_drill_test.exs uses for the
   browser).
 
-  The dashboard IS the app — one six-box surface:
+  The dashboard IS the app — one four-box surface:
 
     * preset 0 (full) at widths >= 110 columns owns the slot mosaic:
-      engine/journal and plan/diff quadrant rows, the full-width
-      capabilities band, the full-width status band;
+      the engine|plan quadrant row, the full-width capabilities band,
+      the full-width status band;
     * below 110 columns (and whenever preset tracking is dissolved) the
-      visible boxes stack vertically in fixed priority (engine, journal,
-      capabilities, plan, diff, status), each full width on bounded-fill
+      visible boxes stack vertically in fixed priority (engine,
+      capabilities, plan, status), each full width on bounded-fill
       tracks that keep the boxes' minimum heights and shrink them
       proportionally when the body runs short;
     * presets 1 (audit) and 2 (minimal) re-tile their own membership —
-      audit: plan|diff on top, engine|journal as a bottom band at any
-      width; minimal: engine|journal filling the body;
+      audit: plan on top, engine as a bottom band at any width; minimal:
+      engine filling the body;
     * no border row ever breaks at any size: every top/bottom border
       closes its far corner, and `Shell.Box` border islands elide
       (ellipsis-trimmed, then dropped, right-to-left) before a corner
@@ -41,19 +41,16 @@ defmodule Workstation.CLI.TUI.ShellHomeFrameTest do
   @mosaic_width 110
 
   describe "home mosaic (width >= #{@mosaic_width})" do
-    test "175x83: engine/journal and plan/diff quadrant rows plus the two full-width bands" do
+    test "175x83: the engine/plan quadrant row plus the two full-width bands" do
       frame = home_frame(175, 83)
       assert_closed_borders(frame)
 
-      assert [engine_row, plan_row, caps_row, status_row] = box_top_rows(frame)
+      assert [engine_row, caps_row, status_row] = box_top_rows(frame)
 
-      # Quadrant pair one on a single border row: engine left, journal right.
+      # The quadrant row on a single border row: engine left, plan right
+      # (with its would-change badge).
       assert Frame.row_text(frame, engine_row) =~ "╭─┐¹engine"
-      assert right_half(frame, engine_row) =~ "┐³journal┌"
-
-      # Quadrant pair two: plan left (with its would-change badge), diff right.
-      assert Frame.row_text(frame, plan_row) =~ "╭─┐⁴plan"
-      assert right_half(frame, plan_row) =~ "┐⁵diff┌"
+      assert right_half(frame, engine_row) =~ "┐³plan┌"
 
       # The capabilities band spans the whole frame: corners on the edges.
       caps_text = Frame.row_text(frame, caps_row)
@@ -61,52 +58,49 @@ defmodule Workstation.CLI.TUI.ShellHomeFrameTest do
       assert String.starts_with?(caps_text, "╭")
       assert String.ends_with?(String.trim_trailing(caps_text), "╮")
 
-      # The status band too — the deep-rows box that absorbed the old
-      # daemon tab (destination, platform, graph order, generation,
-      # revision).
+      # The status band — the deep-rows box (destination, platform,
+      # graph order).
       status_text = Frame.row_text(frame, status_row)
-      assert status_text =~ "╭─┐⁶status"
+      assert status_text =~ "╭─┐⁴status"
       assert String.starts_with?(status_text, "╭")
       assert String.ends_with?(String.trim_trailing(status_text), "╮")
 
       body = full_text(frame)
       assert body =~ "destination:"
       assert body =~ "graph order:"
-      assert body =~ "generation:  2"
-      # The status band is a fixed 5 rows, so its tail rows (generation,
-      # revision) elide at this height — the deep rows are pinned by the
-      # runtime suite's status-box tests instead.
+      assert body =~ "generation:  gen-3"
+      # The status band is a fixed 5 rows, so any tail rows elide at
+      # this height — the deep rows are pinned by the runtime suite's
+      # status-box tests instead.
     end
 
     test "#{@mosaic_width} columns is still the mosaic (the inclusive boundary)" do
       frame = home_frame(@mosaic_width, 40)
       assert_closed_borders(frame)
 
-      assert [engine_row, plan_row, _caps_row, _status_row] = box_top_rows(frame)
+      assert [engine_row, caps_row, status_row] = box_top_rows(frame)
       assert Frame.row_text(frame, engine_row) =~ "╭─┐¹engine"
-      assert right_half(frame, engine_row) =~ "┐³journal┌"
-      assert Frame.row_text(frame, plan_row) =~ "╭─┐⁴plan"
-      assert right_half(frame, plan_row) =~ "┐⁵diff┌"
+      assert right_half(frame, engine_row) =~ "┐³plan┌"
+      assert Frame.row_text(frame, caps_row) =~ "╭─┐²capabilities"
+      assert Frame.row_text(frame, status_row) =~ "╭─┐⁴status"
     end
 
-    test "a journal-less home (the daemon's :null token) renders every box, badge absent" do
-      # The daemon's CanonicalJSON round-trips a fresh home's JSON null
-      # journal as the ATOM :null (read.ex folds `(journal && wire) ||
-      # :null`), so the shell must badge-map-match like the sibling
-      # journal readers — a full frame render, no crash, and the same
-      # journal-less wording the nil shape shows.
-      frame = home_frame(188, 53, journal: :null)
+    test "a journal-less status wire renders every box, badge absent" do
+      # The status wire no longer carries a journal (the applied-generation
+      # story lives in the nix profile generations), so the shell's box
+      # readers must tolerate its absence — a full frame render, no
+      # crash, no pending badge.
+      frame = home_frame(188, 53)
       assert_closed_borders(frame)
 
       text = full_text(frame)
-      assert text =~ "none — nothing applied yet"
       refute text =~ "· in-sync"
       refute text =~ "· pending"
     end
   end
 
   describe "presets" do
-    test "audit (preset 1): plan/diff on top, engine/journal band, at any width" do
+    test "audit (preset 1): plan on top, engine band, at any width" do
       for {width, height} <- [{175, 83}, {@mosaic_width, 40}, {80, 24}] do
         frame = home_frame(width, height, dashboard: preset(1))
         assert_closed_borders(frame)
@@ -114,13 +108,10 @@ defmodule Workstation.CLI.TUI.ShellHomeFrameTest do
         rows = box_top_rows(frame)
         titles = Enum.map(rows, &box_title(frame, &1))
 
-        # Two quadrant rows: plan|diff fill the top, engine|journal ride
-        # the fixed bottom band (each pair's right half named in its row).
-        assert titles == ["⁴plan", "¹engine"]
-        assert right_half(frame, hd(rows)) =~ "┐⁵diff┌"
-        assert right_half(frame, List.last(rows)) =~ "┐³journal┌"
+        # plan fills the top; engine rides the fixed bottom band.
+        assert titles == ["³plan", "¹engine"]
         refute full_text(frame) =~ "²capabilities"
-        refute full_text(frame) =~ "⁶status"
+        refute full_text(frame) =~ "⁴status"
 
         # Hidden boxes render NOWHERE — there is no dimmed strip island
         # anymore; the boxes' superscript titles are the only toggle
@@ -137,11 +128,10 @@ defmodule Workstation.CLI.TUI.ShellHomeFrameTest do
         rows = box_top_rows(frame)
         assert Enum.map(rows, &box_title(frame, &1)) == ["¹engine"]
 
-        # One quadrant row: engine left, journal right, both filling.
+        # One full-width row: engine, both edges closed.
         [only_r] = rows
         assert String.starts_with?(Frame.row_text(frame, only_r), "╭")
         assert String.ends_with?(String.trim_trailing(Frame.row_text(frame, only_r)), "╮")
-        assert right_half(frame, only_r) =~ "┐³journal┌"
       end
     end
 
@@ -161,34 +151,32 @@ defmodule Workstation.CLI.TUI.ShellHomeFrameTest do
       rows = box_top_rows(frame)
       titles = Enum.map(rows, &box_title(frame, &1))
 
-      # Slot priority with plan and status gone: engine|journal, then the
-      # lone diff box full width, then the capabilities band.
-      assert titles == ["¹engine", "⁵diff", "²capabilities"]
+      # Slot priority with plan and status gone: the engine slot, then
+      # the capabilities band.
+      assert titles == ["¹engine", "²capabilities"]
 
       # Hidden boxes render nowhere (no dimmed strip islands — the
       # superscript titles are the only toggle advertising).
-      refute full_text(frame) =~ "⁴plan"
-      refute full_text(frame) =~ "⁶status"
+      refute full_text(frame) =~ "³plan"
+      refute full_text(frame) =~ "⁴status"
     end
   end
 
   describe "home vertical stack (width < #{@mosaic_width})" do
-    test "80x24: six full-width boxes in priority order, borders closed" do
+    test "80x24: the full-width boxes in priority order, borders closed" do
       frame = home_frame(80, 24)
       assert_closed_borders(frame)
 
       rows = box_top_rows(frame)
       titles = Enum.map(rows, &box_title(frame, &1))
 
-      # Fixed stack priority: engine > journal > capabilities > plan >
-      # diff > status — every box glowing its keycap.
+      # Fixed stack priority: engine > capabilities > plan > status —
+      # every box glowing its keycap.
       assert titles == [
                "¹engine",
-               "³journal",
                "²capabilities",
-               "⁴plan",
-               "⁵diff",
-               "⁶status"
+               "³plan",
+               "⁴status"
              ]
 
       # Every stacked box owns the full width: its border opens on the
@@ -202,17 +190,15 @@ defmodule Workstation.CLI.TUI.ShellHomeFrameTest do
 
     test "stacked boxes carry their per-domain border role (F1-full)" do
       frame = home_frame(80, 24)
-      [engine_r, journal_r, caps_r, plan_r, diff_r, status_r] = box_top_rows(frame)
+      [engine_r, caps_r, plan_r, status_r] = box_top_rows(frame)
 
       # Dark-base token hues from the docs/theme.md border role table:
-      # engine/plan blue, journal/status green, capabilities yellow,
-      # diff red — all resolved through the theme, never hardcoded in
-      # the box painter. Starlight brand values (v4).
+      # engine/plan blue, status green, capabilities yellow — all
+      # resolved through the theme, never hardcoded in the box painter.
+      # Starlight brand values (v4).
       assert Frame.cell(frame, engine_r, 1).fg == {91, 173, 255}
-      assert Frame.cell(frame, journal_r, 1).fg == {127, 207, 120}
       assert Frame.cell(frame, caps_r, 1).fg == {240, 230, 140}
       assert Frame.cell(frame, plan_r, 1).fg == {91, 173, 255}
-      assert Frame.cell(frame, diff_r, 1).fg == {255, 121, 121}
       assert Frame.cell(frame, status_r, 1).fg == {127, 207, 120}
 
       # The enabled buttonbar label reads text (dark base #f5f5dc); the
@@ -240,10 +226,17 @@ defmodule Workstation.CLI.TUI.ShellHomeFrameTest do
     test "one column below the boundary falls back to the stack" do
       narrow = home_frame(@mosaic_width - 1, 24)
 
-      assert [engine_row, journal_row | _rest] = box_top_rows(narrow)
+      rows = box_top_rows(narrow)
+      assert Enum.map(rows, &box_title(narrow, &1)) == [
+               "¹engine",
+               "²capabilities",
+               "³plan",
+               "⁴status"
+             ]
+
       # Stacked boxes title on separate rows (no side-by-side halves).
-      refute Frame.row_text(narrow, engine_row) =~ "journal"
-      assert box_title(narrow, journal_row) == "³journal"
+      [engine_row | _rest] = rows
+      refute Frame.row_text(narrow, engine_row) =~ "³plan"
     end
   end
 
@@ -468,7 +461,7 @@ defmodule Workstation.CLI.TUI.ShellHomeFrameTest do
       destination: "/tmp/workstation-home-frame-test-home",
       theme: Theme.base_colors(:dark),
       dashboard: Keyword.get(opts, :dashboard, Dashboard.new()),
-      cache: %{status: {:ok, status_wire(Keyword.get(opts, :journal))}, plan: {:ok, plan_wire()}, diff: {:ok, diff_wire()}},
+      cache: %{status: {:ok, status_wire()}, plan: {:ok, plan_wire()}},
       caps: caps_browser(),
       caps_env: caps_envelope(),
       text_views: %{},
@@ -615,13 +608,9 @@ defmodule Workstation.CLI.TUI.ShellHomeFrameTest do
 
   defp caps_browser, do: CapabilitiesBrowser.init(caps_envelope())
 
-  defp caps_envelope, do: Capabilities.group(%{"status" => status_wire(nil), "plan" => plan_wire()})
+  defp caps_envelope, do: Capabilities.group(%{"status" => status_wire(), "plan" => plan_wire()})
 
-  defp status_wire(nil), do: status_wire(%{"generation" => 2, "revision" => 7, "applied_at" => "2026-02-13T10:00:00Z"})
-
-  # A non-nil override replaces the journal field verbatim — the :null
-  # atom is the daemon's canonical encoding of a JSON null journal.
-  defp status_wire(journal) when is_map(journal) or journal == :null do
+  defp status_wire do
     %{
       "destination" => "/tmp/workstation-home-frame-test-home",
       "platform" => "linux-test",
@@ -636,8 +625,7 @@ defmodule Workstation.CLI.TUI.ShellHomeFrameTest do
         %{"id" => "helix", "name" => "helix", "targets" => [".config/helix"]},
         %{"id" => "tmux", "name" => "tmux", "targets" => [".config/tmux"]}
       ],
-      "graph_order" => ["tmux", "helix", "nvim"],
-      "journal" => journal
+      "graph_order" => ["tmux", "helix", "nvim"]
     }
   end
 
@@ -665,15 +653,6 @@ defmodule Workstation.CLI.TUI.ShellHomeFrameTest do
         "removals" => []
       },
       "patches" => []
-    }
-  end
-
-  defp diff_wire do
-    %{
-      "destination" => "/tmp/workstation-home-frame-test-home",
-      "backend_diff" => [
-        %{"kind" => "write", "target" => ".config/nvim/init.lua", "source" => "nvim/init.lua"}
-      ]
     }
   end
 end

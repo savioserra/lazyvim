@@ -55,7 +55,7 @@ defmodule Workstation.CLI.RenderCapabilitiesTest do
   test "default listing: domain+package rollups, no raw file dump" do
     text = Render.capabilities(envelope())
 
-    assert text =~ "workstation capabilities  generation 9  applied 7"
+    assert text =~ "workstation capabilities  generation 9"
     assert text =~ "2 domains · 2 files · 1 would change"
     assert text =~ "editor       targets 1   files 1   planned 1"
     assert text =~ "nvim         files 1   planned 1"
@@ -98,17 +98,17 @@ defmodule Workstation.CLI.RenderCapabilitiesTest do
     assert [%{"name" => "editor"}, %{"name" => "terminal"}] = decoded["domains"]
   end
 
-  test "empty catalog renders the bootstrap hint, not an error" do
+  test "empty catalog renders the empty-tree note, not an error" do
     empty =
       Capabilities.group(%{
-        "status" => %{"generation" => 0, "taxonomy" => %{}, "journal" => :null},
+        "status" => %{"generation" => 0, "taxonomy" => %{}},
         "plan" => %{"generation" => 0, "plan" => %{"entries" => []}, "patches" => []}
       })
 
     text = Render.capabilities(empty)
 
     assert text =~ "no catalog entries"
-    assert text =~ "bootstrap"
+    assert text =~ "the package tree is empty on this checkout"
   end
 
   test "domain scope hides the unattributed section" do

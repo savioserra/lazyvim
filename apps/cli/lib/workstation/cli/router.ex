@@ -6,8 +6,8 @@ defmodule Workstation.CLI.Router do
   the CLI is a thin protocol client (`Workstation.CLI.DaemonClient`). Every
   verb dispatch reduces to: ensure the daemon is up (spawn it detached from
   the same release when absent), send one op, render the result. Read verbs
-  (`status`, `plan`, `diff`, `json <command>`) send `status.run` /
-  `plan.run` / `diff.run`. There is NO in-process fallback: a daemon that
+  (`status`, `plan`, `json <command>`) send `status.run` / `plan.run`.
+  There is NO in-process fallback: a daemon that
   cannot be reached or spawned is a clear operator error. The one
   in-process path is `--input <file>` golden replay, which is offline by
   definition (`Workstation.CLI.Core` over a recorded envelope, no daemon
@@ -136,11 +136,6 @@ defmodule Workstation.CLI.Router do
           about: "engine plan report",
           options: read_options()
         ],
-        diff: [
-          name: "diff",
-          about: "engine diff report",
-          options: read_options()
-        ],
         capabilities: [
           name: "capabilities",
           about:
@@ -160,11 +155,6 @@ defmodule Workstation.CLI.Router do
             plan: [
               name: "plan",
               about: "raw plan JSON",
-              options: read_options()
-            ],
-            diff: [
-              name: "diff",
-              about: "raw diff JSON",
               options: read_options()
             ]
           ]
@@ -333,7 +323,7 @@ defmodule Workstation.CLI.Router do
     end
   end
 
-  defp dispatch(command, result, mode) when command in [:status, :plan, :diff] do
+  defp dispatch(command, result, mode) when command in [:status, :plan] do
     home = resolve_home(result)
 
     with {:ok, wire} <- evaluate(command, home, result),
@@ -571,7 +561,6 @@ defmodule Workstation.CLI.Router do
 
   defp read_op(:status), do: "status.run"
   defp read_op(:plan), do: "plan.run"
-  defp read_op(:diff), do: "diff.run"
 
   # Client-call options: the resolved home the daemon must serve.
   defp client_opts(result, timeout_ms), do: [home: resolve_home(result), timeout_ms: timeout_ms]
@@ -594,7 +583,6 @@ defmodule Workstation.CLI.Router do
     do: Render.core_status(wire)
 
   defp render(:plan, %{"schema" => "workstation.plan.v1"} = wire), do: Render.core_plan(wire)
-  defp render(:diff, %{"schema" => "workstation.diff.v1"} = wire), do: Render.core_diff(wire)
 
   ## plumbing
 

@@ -22,9 +22,8 @@ defmodule Workstation.Core.CanonicalJSON do
     `null`: that is how `baseline_generation` stays an explicit null on a
     fresh journal while absent `link`/`exact`/`template` keys disappear;
     a raw `nil` that does reach the encoder also emits `null` (never a
-    dropped key), so nil-able envelope fields such as `applied_generation`
-    (fresh home, no journal) and a file row's `mode` encode deterministically
-    instead of crashing;
+    dropped key), so nil-able envelope fields such as a file row's
+    `mode` encode deterministically instead of crashing;
   * control bytes (< 0x20 and DEL 0x7f) escape as `\\u00xx` lowercase four-digit
     hex, with the named shortcuts `\\b \\t \\n \\f \\r`; slash is never escaped;
     non-ASCII UTF-8 passes through raw;
@@ -66,8 +65,8 @@ defmodule Workstation.Core.CanonicalJSON do
 
   # A raw nil encodes as the JSON literal null, never a dropped key. Callers
   # drop nil map values when building plan shapes, but nil-able
-  # envelope fields (applied_generation with no journal, a file row's mode)
-  # pass straight through, and dropping keys there would destabilize the
+  # envelope fields (a file row's mode) pass straight through, and
+  # dropping keys there would destabilize the
   # output shape. No input that previously encoded successfully contained a
   # nil, so this cannot change any pre-existing byte output.
   defp enc(nil, mode), do: enc(:null, mode)

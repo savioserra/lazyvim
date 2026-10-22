@@ -1,7 +1,7 @@
 defmodule Workstation.CLI.Render do
   @moduledoc """
   Plain-text rendering of the hard-cut core wire schemas
-  (`workstation.status.v1`, `workstation.plan.v1`, `workstation.diff.v1`).
+  (`workstation.status.v1`, `workstation.plan.v1`).
 
   Non-TTY output is always plain text; this module is deliberately
   terminal-free so output is stable under redirection and in tests. Input
@@ -11,7 +11,7 @@ defmodule Workstation.CLI.Render do
   by the committed goldens.
   """
 
-  ## core wire views (workstation.{status,plan,diff}.v1, lane b5)
+  ## core wire views (workstation.{status,plan}.v1, lane b5)
 
   # The hard-cut v1 wires carry the fields below, so they render through
   # their own views. The plan view keeps the canonical sections and layout
@@ -20,8 +20,7 @@ defmodule Workstation.CLI.Render do
   # front end instead of the destination (the plan.v1 envelope deliberately
   # does not carry the home path — destination is a status-wire field), and
   # modes print as the wire's canonical octal strings rather than being
-  # re-derived. Patches without a text diff print their typed header without
-  # a duplicated `link` suffix.
+  # re-derived.
   @doc "Render the hard-cut core status wire (`workstation.status.v1`)."
   def core_status(wire) do
     packages =
@@ -30,25 +29,12 @@ defmodule Workstation.CLI.Render do
         ids -> Enum.join(ids, ", ")
       end
 
-    journal_line =
-      case Map.get(wire, "journal") do
-        # A fresh home's journal is null on the wire (canonical-JSON null
-        # decodes to the :null atom here) — anything but a map is "none".
-        journal when is_map(journal) ->
-          "journal: generation=#{journal["generation"]} revision=#{render_value(journal["revision"])}" <>
-            maybe_at(journal)
-
-        _ ->
-          "journal: none"
-      end
-
     join([
       "workstation status (core)",
       "platform: #{Map.get(wire, "platform", "?")}",
       "packages: #{packages}",
       "graph_order: #{render_value(Map.get(wire, "graph_order", []))}",
-      "destination: #{Map.get(wire, "destination", "?")}",
-      journal_line
+      "destination: #{Map.get(wire, "destination", "?")}"
     ])
   end
 
@@ -60,13 +46,6 @@ defmodule Workstation.CLI.Render do
     |> List.flatten()
     |> Enum.reject(&is_nil/1)
     |> Enum.join("\n")
-  end
-
-  defp maybe_at(journal) do
-    case Map.get(journal, "at") do
-      nil -> ""
-      at -> " at=#{render_value(at)}"
-    end
   end
 
   @doc """
@@ -103,8 +82,6 @@ defmodule Workstation.CLI.Render do
       Enum.map(entries, &target_line(&1["target"], states, "")) ++
         Enum.map(removals, &target_line(&1["target"], states, " (removal)"))
 
-    patch_lines = Enum.map(Map.get(wire, "patches", []), &render_patch/1)
-
     join([
       "workstation plan (core)",
       "  generation : #{Map.get(wire, "generation", "?")}",
@@ -113,7 +90,6 @@ defmodule Workstation.CLI.Render do
       Enum.map(entries, &changeset_line/1),
       unsupported_lines,
       target_lines,
-      patch_lines,
       "plan complete."
     ])
   end
@@ -155,45 +131,6 @@ defmodule Workstation.CLI.Render do
     "  target #{String.pad_trailing(target, 45)} #{Map.get(states, target, "?")}#{suffix}"
   end
 
-  # Patch bodies print verbatim (raw diff bytes, like the anchor's io.write);
-  # typed metadata prints its attributed header line.
-  defp render_patch(patch) do
-    case Map.get(patch, "diff") do
-      diff when is_binary(diff) and diff != "" ->
-        String.trim_trailing(diff, "\n")
-
-      _ ->
-        attributes =
-          Enum.reject(
-            [
-              patch["type"],
-              patch["mode"] && "mode #{patch["mode"]}",
-              patch["link"] && "link #{patch["link"]}"
-            ],
-            &is_nil/1
-          )
-
-        owners =
-          case Map.get(patch, "attribution") do
-            owners when is_list(owners) and owners != [] -> Enum.join(owners, ",")
-            _ -> patch["owner"] || "?"
-          end
-
-        "# #{patch["kind"]} #{patch["source"]} (#{Enum.join(attributes, " ")}, owner #{owners})"
-    end
-  end
-
-  @doc "Render the hard-cut core diff wire (`workstation.diff.v1`)."
-  def core_diff(wire) do
-    records = Map.get(wire, "backend_diff", [])
-
-    join([
-      "workstation diff (core)",
-      if(records == [], do: "no differences", else: nil),
-      Enum.map(records, &changeset_line/1)
-    ])
-  end
-
   ## capability-domain grouped view (workstation.capabilities.v1)
 
   alias Workstation.CLI.Capabilities
@@ -212,8 +149,7 @@ defmodule Workstation.CLI.Render do
     domains = Map.get(envelope, "domains", [])
 
     header = [
-      "workstation capabilities  generation #{Map.get(envelope, "generation", "?")}  " <>
-        "applied #{Map.get(envelope, "applied_generation") || "none"}",
+      "workstation capabilities  generation #{Map.get(envelope, "generation", "?")}",
       "#{length(domains)} domains · #{Capabilities.total_files(envelope)} files · " <>
         "#{Capabilities.total_planned(envelope)} would change",
       scope_line(opts)
@@ -221,7 +157,7 @@ defmodule Workstation.CLI.Render do
 
     body =
       if(domains == [] and (envelope["unattributed_files"] || 0) == 0,
-        do: ["no catalog entries — run `workstation bootstrap`"],
+        do: ["no catalog entries — the package tree is empty on this checkout"],
         else: Enum.map(domains, &domain_lines(&1, opts))
       )
 

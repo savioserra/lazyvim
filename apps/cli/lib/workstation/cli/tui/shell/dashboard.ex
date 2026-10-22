@@ -1,26 +1,26 @@
 defmodule Workstation.CLI.TUI.Shell.Dashboard do
   @moduledoc """
-  The one dashboard — the mosaic IS the app (btop-ia-spec §2.1). Six
+  The one dashboard — the mosaic IS the app (btop-ia-spec §2.1). Four
   engine-owned boxes re-tiled by toggles and presets exactly like btop's
   `shown_boxes`:
 
     * `1 engine` — engine identity + liveness (the engine box's rows and
       `●` badge live here);
-    * `2 capabilities` — domain rollup + block meters + the a/u/r
-      buttonbar;
-    * `3 journal` — generation/revision/applied-at (the journal read);
-    * `4 plan` — the plan summary rows;
-    * `5 diff` — the diff summary rows;
-    * `6 status` — the status probe's deep rows (destination, platform,
-      graph order, generation/revision).
+    * `2 capabilities` — domain rollup + block meters + the r buttonbar;
+    * `3 plan` — the plan summary rows;
+    * `4 status` — the status probe's deep rows (destination, platform,
+      graph order).
 
-  Digits **1-6 toggle** box visibility (`Config::toggle_box` semantics:
+  Digits **1-4 toggle** box visibility (`Config::toggle_box` semantics:
   flip membership, min-size gate refuses with an error, re-tile) and any
   toggle dissolves preset tracking (`current_preset.reset()`); `0` and
-  `7+` are inert. Presets cycle with p/P (next/previous, wrap-around) and
+  `5+` are inert. Presets cycle with p/P (next/previous, wrap-around) and
   preset 0 — the full mosaic — is engine-seeded, never user data
   (§2.2). Below the mosaic width the boxes render through the stacked
   priority-fill tiler (the responsive renderer a preset's intent keeps).
+  The journal and diff boxes retired with the engine's write plane (their
+  wires are gone); the applied-generation story lives in the nix
+  substrate's profile generations.
 
   The module is pure state + geometry: it knows nothing about styles or
   frames. The strip's island tokens (`islands/1`) carry role-tagged
@@ -32,7 +32,7 @@ defmodule Workstation.CLI.TUI.Shell.Dashboard do
   `expanded` at a time. The capabilities box's in-box drill grows its
   OWN mosaic cell over its neighbors (btop's proc-expanded z-order:
   every other box keeps position and size under the overlay) and a
-  zoomed plan/diff box takes over the whole dashboard rect — the
+  zoomed plan box takes over the whole dashboard rect — the
   dashboard gains views no more than btop's does, only proportions.
   """
 
@@ -41,9 +41,9 @@ defmodule Workstation.CLI.TUI.Shell.Dashboard do
   @enforce_keys [:visible, :preset]
   defstruct [:visible, :preset, :expanded]
 
-  @type box :: :engine | :capabilities | :journal | :plan | :diff | :status
+  @type box :: :engine | :capabilities | :plan | :status
   @type preset_id :: 0 | 1 | 2
-  @type zoomable :: :capabilities | :plan | :diff
+  @type zoomable :: :capabilities | :plan
   @type t :: %__MODULE__{
           visible: MapSet.t(box()),
           preset: preset_id() | nil,
@@ -51,25 +51,22 @@ defmodule Workstation.CLI.TUI.Shell.Dashboard do
         }
 
   # Box order is the strip order; the digit keys address it 1-based.
-  @boxes [:engine, :capabilities, :journal, :plan, :diff, :status]
+  @boxes [:engine, :capabilities, :plan, :status]
 
   @box_keys %{
     "1" => :engine,
     "2" => :capabilities,
-    "3" => :journal,
-    "4" => :plan,
-    "5" => :diff,
-    "6" => :status
+    "3" => :plan,
+    "4" => :status
   }
 
   # Preset strings in the btop format (§2.2), engine-seeded preset 0
-  # always first: 0 the full mosaic, 1 the audit focus (plan+diff tall
-  # top, engine+journal compressed to a bottom band), 2 minimal
-  # (health + what-changed-when).
+  # always first: 0 the full mosaic, 1 the audit focus (plan tall top,
+  # engine compressed beneath), 2 minimal (health only).
   @presets %{
-    0 => [:engine, :capabilities, :journal, :plan, :diff, :status],
-    1 => [:engine, :journal, :plan, :diff],
-    2 => [:engine, :journal]
+    0 => [:engine, :capabilities, :plan, :status],
+    1 => [:engine, :plan],
+    2 => [:engine]
   }
 
   # The one hard minimum (btop's Term::get_min_size gate): the
@@ -173,9 +170,9 @@ defmodule Workstation.CLI.TUI.Shell.Dashboard do
   @spec expansion(t()) :: zoomable() | nil
   def expansion(%__MODULE__{expanded: expanded}), do: expanded
 
-  @doc "The zoomable boxes: the drillable tree box and the two read boxes."
+  @doc "The zoomable boxes: the drillable tree box and the read box."
   @spec zoomable?(box()) :: boolean()
-  def zoomable?(box), do: box in [:capabilities, :plan, :diff]
+  def zoomable?(box), do: box in [:capabilities, :plan]
 
   @doc """
   Expand a box in place (btop `show_detailed = true`): refused while the
@@ -227,43 +224,38 @@ defmodule Workstation.CLI.TUI.Shell.Dashboard do
 
   @type rect :: {x :: non_neg_integer(), y :: non_neg_integer(), width :: pos_integer(), height :: pos_integer()}
 
-  # Slot mosaic (§2.2 preset 0 at width >= @mosaic_min_width): the 2x2
-  # quadrants (engine|journal, plan|diff) plus the two full-width bottom
-  # bands (capabilities, status). Each row lists its boxes left to
-  # right; `:fill` rows take the surplus height, fixed rows claim their
-  # band height.
+  # Slot mosaic (§2.2 preset 0 at width >= @mosaic_min_width): the top
+  # pair (engine|plan) plus the two full-width bottom bands (capabilities,
+  # status). Each row lists its boxes left to right; `:fill` rows take the
+  # surplus height, fixed rows claim their band height.
   @slot_rows [
-    {[:engine, :journal], :fill},
-    {[:plan, :diff], :fill},
+    {[:engine, :plan], :fill},
     {[:capabilities], 6},
     {[:status], 5}
   ]
 
-  # Preset 1 audit: plan+diff take the tall top rows; engine+journal
-  # compress into the bottom band (both boxes carry 3 body rows).
+  # Preset 1 audit: plan takes the tall top rows; engine compresses into
+  # the bottom band (the box carries 3 body rows).
   @audit_rows [
-    {[:plan, :diff], :fill},
-    {[:engine, :journal], 5}
+    {[:plan], :fill},
+    {[:engine], 5}
   ]
 
-  # Preset 2 minimal: health + what-changed-when only.
+  # Preset 2 minimal: health only.
   @minimal_rows [
-    {[:engine, :journal], :fill}
+    {[:engine], :fill}
   ]
 
   # Below the mosaic width the visible boxes stack full-width in
-  # priority order (engine > journal > domains > plan/diff > status) on
-  # bounded-fill tracks — the responsive renderer a preset's intent
-  # keeps (§2.2).
+  # priority order (engine > domains > plan > status) on bounded-fill
+  # tracks — the responsive renderer a preset's intent keeps (§2.2).
   @mosaic_min_width 110
 
-  @stack_order [:engine, :journal, :capabilities, :plan, :diff, :status]
+  @stack_order [:engine, :capabilities, :plan, :status]
   @stack_min_heights %{
     engine: 3,
-    journal: 3,
     capabilities: 4,
     plan: 3,
-    diff: 3,
     status: 4
   }
 
@@ -287,7 +279,7 @@ defmodule Workstation.CLI.TUI.Shell.Dashboard do
     {width, height} = dims
 
     cond do
-      expanded in [:plan, :diff] and MapSet.member?(visible, expanded) ->
+      expanded in [:plan] and MapSet.member?(visible, expanded) ->
         [{expanded, {0, 0, width, height}}]
 
       preset == 1 ->
