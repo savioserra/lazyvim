@@ -85,6 +85,13 @@ defmodule Workstation.CLI.Router do
           dispatch(command, result, json: true)
         end
 
+      {:ok, [:system, :applied], result} ->
+        if help_requested?(result) do
+          print_help([:system, :applied])
+        else
+          dispatch_system_applied(result)
+        end
+
       {:ok, [command], result} ->
         if help_requested?(result) do
           print_help([command])
@@ -228,6 +235,33 @@ defmodule Workstation.CLI.Router do
           name: "pull",
           about: "fast-forward the engine checkout (never resets a diverged tree)",
           options: lifecycle_options()
+        ],
+        system: [
+          name: "system",
+          about: "nix substrate surface: the generation-switch publish seam",
+          subcommands: [
+            applied: [
+              name: "applied",
+              about:
+                "publish the applied nix generation on the daemon's system domain " <>
+                  "(the workstation-switch drivers' receipt)",
+              options: [
+                generation: [
+                  value_name: "N",
+                  long: "--generation",
+                  required: true,
+                  parser: fn s -> parse_positive_integer(s) end,
+                  help: "the applied nix profile generation (positive integer)"
+                ],
+                rollback_generation: [
+                  value_name: "M",
+                  long: "--rollback-generation",
+                  parser: fn s -> parse_positive_integer(s) end,
+                  help: "the generation the switch replaced (absent on a first-ever switch)"
+                ]
+              ]
+            ]
+          ]
         ],
         daemon: [
           name: "daemon",
@@ -581,6 +615,50 @@ defmodule Workstation.CLI.Router do
 
   defp dispatch(other, _result, _mode) do
     fail(2, "error: unknown command #{inspect(other)}")
+  end
+
+  # `workstation system applied` — the nix switch drivers' receipt. The
+  # driver speaks THIS verb, not the wire protocol: ensure-daemon (spawn on
+  # demand), the pinned-home check and the frame codec stay the CLI's one
+  # transport contract, and the daemon fans the event out on the `system`
+  # overlay domain (Workstation.Daemon.Capabilities.System). Headless by
+  # nature — a script-facing receipt, never a TUI surface.
+  defp dispatch_system_applied(result) do
+    params =
+      %{"generation" => result.options[:generation]}
+      |> maybe_rollback_generation(result.options[:rollback_generation])
+
+    case DaemonClient.call("system.applied", params, client_opts(result, @read_timeout_ms)) do
+      {:ok, record} ->
+        {:ok, IO.puts(record["message"])}
+
+      # ensure-daemon's spawn refusal rides as a bare message — engine exit,
+      # never a CaseClause crash (same mapping as the lifecycle verbs).
+      {:error, message} when is_binary(message) ->
+        fail(4, "error: #{message}")
+
+      # The tagged daemon_unavailable tuple (no release binary to spawn, a
+      # spawn failure): the daemon_unavailable class is engine exit 4.
+      {:error, {tag, message}} when is_atom(tag) ->
+        fail(4, "error: #{tag}: #{message}")
+
+      {:error, {code, message}} when is_binary(code) and is_binary(message) ->
+        fail(4, "error: #{code}: #{message}")
+    end
+  end
+
+  defp maybe_rollback_generation(params, nil), do: params
+
+  defp maybe_rollback_generation(params, rollback), do: Map.put(params, "rollback_generation", rollback)
+
+  # Optimus option parser: a strict positive integer (the wire schema's
+  # `Zoi.integer(gte: 1)` mirrored at the parse boundary — a usage error
+  # here, never a daemon round-trip).
+  defp parse_positive_integer(raw) when is_binary(raw) do
+    case Integer.parse(raw) do
+      {n, ""} when n >= 1 -> {:ok, n}
+      _other -> {:error, "expected a positive integer"}
+    end
   end
 
   ## interactive contract

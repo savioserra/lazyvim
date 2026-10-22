@@ -80,7 +80,7 @@ defmodule Workstation.Daemon.ProtocolTest do
       assert is_binary(caps["home"])
 
       # Domains come from the capabilities that register them.
-      assert caps["domains"] == ["theme"]
+      assert caps["domains"] == ["system", "theme"]
       # The socket-auth proof marker rides every handshake (audit trail:
       # "peercred" | "dir-owner" — which proof this generation runs).
       assert caps["proof"] == "peercred"
