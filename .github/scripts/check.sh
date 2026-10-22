@@ -32,6 +32,12 @@ fi
 step 'nix eval-goldens (walker drift guard at HEAD — skips where nix/docker is unavailable)'
 sh .github/scripts/eval-goldens.sh || fail=1
 
+step 'nix identity gate (per-host identity lives only in hosts/<host>/default.nix)'
+if git grep -i savio -- nix hosts flake.nix; then
+	fail=1
+	printf 'identity gate: hardcoded personal identity under nix/ hosts/ flake.nix — parameterize: hosts/<host>/default.nix is the only identity surface (derive keys, pass homeDir explicitly)\n' >&2
+fi
+
 step 'engine suite (mix test)'
 mise exec -- mix test || fail=1
 

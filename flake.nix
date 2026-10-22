@@ -27,6 +27,14 @@
           beamPackages = nixpkgs.legacyPackages.${system}.beam.packages.erlang_28;
           src = self;
         };
+
+      # per-host identity lives ONLY in hosts/<host>/default.nix: the flake
+      # derives the rebuild key and every username/home path from the host
+      # module — this body carries zero personal strings (the identity gate
+      # in check.sh enforces it)
+      wslHost = import ./hosts/wsl/default.nix {
+        inherit self nixpkgs home-manager nixos-wsl;
+      };
     in
     {
       packages = nixpkgs.lib.genAttrs buildSystems
@@ -38,9 +46,15 @@
         lib = nixpkgs.lib;
         pkgs = nixpkgs.legacyPackages.${hostSystem};
         treeRoot = self;
+        # the walker takes no default: identity must arrive per host. The
+        # report itself pins no home paths (the golden stays byte-stable),
+        # but the argument stays required so no caller can inherit a name.
+        homeDir = wslHost.homeDir;
       }).report;
 
-      homeConfigurations."savio@wsl" = home-manager.lib.homeManagerConfiguration {
+      # the rebuild key is DERIVED from the host identity (${user}@<host>),
+      # never hand-typed
+      homeConfigurations.${wslHost.homeKey} = home-manager.lib.homeManagerConfiguration {
         pkgs = nixpkgs.legacyPackages.${hostSystem};
         extraSpecialArgs = {
           inherit self;
@@ -50,17 +64,15 @@
           (
             { ... }:
             {
-              home.username = "savio";
-              home.homeDirectory = "/home/savio";
+              home.username = wslHost.user;
+              home.homeDirectory = wslHost.homeDir;
             }
           )
           ./nix/modules/workstation-home.nix
         ];
       };
 
-      nixosConfigurations.wsl = import ./hosts/wsl/default.nix {
-        inherit self nixpkgs home-manager nixos-wsl;
-      };
+      nixosConfigurations.wsl = wslHost.nixosConfig;
 
       nixosConfigurations.vm-test = nixpkgs.lib.nixosSystem {
         system = hostSystem;

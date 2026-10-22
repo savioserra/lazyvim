@@ -20,7 +20,11 @@
   pkgs,
   treeRoot,
   platform ? null,
-  homeDir ? "/home/savio",
+  # REQUIRED — no default may bake an identity (t_40cf3088). Callers pass
+  # the host's home.homeDirectory; hosts/<host>/default.nix is the single
+  # identity surface. Omitting it fails eval here instead of silently
+  # rendering a stranger's home paths.
+  homeDir,
 }:
 let
   platform' =

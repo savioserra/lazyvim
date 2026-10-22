@@ -21,6 +21,10 @@
 let
   ws = import ../manifest-lib.nix {
     inherit lib pkgs;
+    # the host's home — HM's own option, set by the per-host config
+    # (hosts/<host>/default.nix or the standalone module). The walker
+    # accepts no baked default: identity flows from the host or eval dies.
+    homeDir = config.home.homeDirectory;
     treeRoot = self;
   };
 
