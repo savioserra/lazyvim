@@ -46,15 +46,9 @@ defmodule Workstation.Daemon.Shutdown do
        #{@drain_timeout_ms |> div(1_000)}s), for every in-flight op task
        under `Workstation.Daemon.TaskSupervisor` to settle. The flush ack
        already proves the scheduling task done (the session answered it),
-       so the drain waits for genuinely OTHER ops only. A settling op
-       releases its own apply lock (`Workstation.Core.ApplyLock` — the
-       holder removes the file itself inside the op's lock scope), so a
-       drained stop never leaves the "apply lock not released cleanly"
-       debris a kill leaves. A drain that outlives its budget logs and
-       proceeds — the stop is never unbounded, and a lock left behind by an
-       interrupted op is fail-closed recovery: a holder provably dead on
-       this host is taken over (with an audit record) on the next run, a
-       live or pid-less lock still requires deliberate operator removal.
+       so the drain waits for genuinely OTHER ops only. A drain that
+       outlives its budget logs and proceeds — the stop is never
+       unbounded.
     2. REMOVE THE SOCKET — unlink the socket node after the no-follow
        owned-socket proof (`Workstation.Daemon.Listener.owned_socket?/1`).
        Existing sessions keep their established connections; new connects

@@ -56,13 +56,6 @@ defmodule Workstation.CLI.DaemonClient do
     home = Keyword.get(opts, :home) || EngineState.home()
     sock_path = Listener.socket_path(home)
 
-    # The ensure path verifies the daemon's advertised release generation
-    # against the installed release's stamp (the rendezvous contract,
-    # `Workstation.Daemon.Generation`); liveness probes and control paths
-    # deliberately do not — a stop must REACH a stale generation, and the
-    # pre-replace wait must SEE it to wait for it.
-    opts = Keyword.put(opts, :verify_generation, true)
-
     case handshake(sock_path, home, opts) do
       {:ok, sock} ->
         {:ok, sock}
@@ -96,12 +89,10 @@ defmodule Workstation.CLI.DaemonClient do
     * `{:error, {:daemon_unavailable, message}}` — no daemon and none could
       be spawned (missing release, spawn failure, handshake timeout).
     * `{:error, {:daemon_died, message}}` — the daemon died mid-op. There
-      is no in-process fallback; the only legal resume path is the update
-      handoff contract, which lives with the update verb.
+      is no in-process fallback; the caller surfaces the operator error.
 
-  Options: `:home`, `:timeout_ms` (op budget, default #{@default_timeout_ms};
-  lifecycle ops pass a longer budget since lock queues and engine steps can
-  take minutes), `:spawner`, `:connect_timeout_ms`, `:handshake_timeout_ms`.
+  Options: `:home`, `:timeout_ms` (op budget, default #{@default_timeout_ms}),
+  `:spawner`, `:connect_timeout_ms`, `:handshake_timeout_ms`.
   """
   @spec call(String.t(), map(), keyword()) :: {:ok, map()} | error()
   def call(op, params, opts \\ []) when is_binary(op) and is_map(params) and is_list(opts) do
@@ -358,11 +349,10 @@ defmodule Workstation.CLI.DaemonClient do
 
   ## handshake
 
-  # Connect + versioned hello + pinned-home check + release-generation
-  # check. Wire failures fold to :unavailable (the caller decides between
-  # spawning and reporting); the pinned-home mismatch and the release-
-  # generation mismatch are distinct, actionable daemon_unavailable tuples
-  # — ensure returns them without spawning on top of a serving daemon.
+  # Connect + versioned hello + pinned-home check. Wire failures fold to
+  # :unavailable (the caller decides between spawning and reporting); the
+  # pinned-home mismatch is a distinct, actionable daemon_unavailable tuple
+  # — ensure returns it without spawning on top of a serving daemon.
   defp handshake(sock_path, home, opts) do
     connect_timeout = Keyword.get(opts, :connect_timeout_ms, @connect_timeout_ms)
     hello_timeout = Keyword.get(opts, :handshake_timeout_ms, @handshake_timeout_ms)
@@ -373,8 +363,7 @@ defmodule Workstation.CLI.DaemonClient do
           with :ok <-
                  :socket.connect(sock, %{family: :local, path: String.to_charlist(sock_path)}, connect_timeout),
                {:ok, capabilities} <- hello(sock, hello_timeout),
-               :ok <- home_matches?(capabilities, home, sock_path),
-               :ok <- generation_matches?(capabilities, home, opts) do
+               :ok <- home_matches?(capabilities, home, sock_path) do
             {:ok, sock}
           else
             # The post-hello refusals carry their actionable daemon_unavailable
@@ -449,40 +438,6 @@ defmodule Workstation.CLI.DaemonClient do
      {:daemon_unavailable,
       "daemon at #{sock_path} does not advertise its home (protocol too old); " <>
         "stop it and let the client spawn a current daemon"}}
-  end
-
-  # The rendezvous half of the installed-release proof: the daemon
-  # advertises its pinned generation (`release`) and the client checks it
-  # against its OWN read of the installed release's stamp — an independent
-  # second reader of the same two facts, so a degraded daemon-side read or
-  # a half-served generation still fails closed. Only the ensure path opts
-  # in (`opts[:verify_generation]`): liveness and control must reach a
-  # stale generation, never refuse it. A daemon without the advertisement
-  # (protocol too old) and an unreadable/absent installed stamp are the
-  # undecided cases — the check skips, exactly like the daemon's own
-  # rendezvous verdict. Public for the unit pin (`daemon_pid/2` precedent).
-  @doc false
-  @spec verify_generation(map(), String.t()) ::
-          :ok | {:error, {:daemon_unavailable, String.t()}}
-  def verify_generation(%{"release" => daemon_release} = _capabilities, home)
-      when is_binary(daemon_release) and is_binary(home) do
-    case Workstation.Daemon.Generation.installed(home) do
-      {:ok, installed} when installed != daemon_release ->
-        {:error,
-         {:daemon_unavailable,
-          "daemon is serving generation #{inspect(daemon_release)} but the installed release is " <>
-            "#{inspect(installed)}; stop it with `workstation daemon stop` so the client spawns " <>
-            "the installed generation"}}
-
-      _other ->
-        :ok
-    end
-  end
-
-  def verify_generation(_capabilities, _home), do: :ok
-
-  defp generation_matches?(capabilities, home, opts) do
-    if opts[:verify_generation], do: verify_generation(capabilities, home), else: :ok
   end
 
   ## spawn

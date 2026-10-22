@@ -78,15 +78,12 @@ defmodule Workstation.Daemon.Protocol do
 
   @doc """
   The hello handshake payload: protocol identity, version, served ops,
-  registered domains, transport caps, the socket-auth proof marker and the
-  pinned release generation. Ops are the handshake op plus every capability
-  op (sorted); domains derive from the capability registry. `proof_marker`
-  is the listener's resolved socket-owner proof (`"peercred"` |
-  `"dir-owner"`) — the audit trail states which proof this generation runs,
-  so a platform degraded to the dir-owner boundary is visible in every
-  handshake, never silent. `"release"` is the generation this node loaded
-  (`Workstation.Daemon.Generation`) — the rendezvous half of the
-  installed-release proof.
+  registered domains, transport caps and the socket-auth proof marker. Ops
+  are the handshake op plus every capability op (sorted); domains derive
+  from the capability registry. `proof_marker` is the listener's resolved
+  socket-owner proof (`"peercred"` | `"dir-owner"`) — the audit trail
+  states which proof this generation runs, so a platform degraded to the
+  dir-owner boundary is visible in every handshake, never silent.
   """
   @spec capabilities(String.t()) :: map()
   def capabilities(proof_marker) when is_binary(proof_marker) do
@@ -105,13 +102,6 @@ defmodule Workstation.Daemon.Protocol do
       # The resolved socket-owner proof of this daemon generation (see
       # `Workstation.Daemon.Listener.resolve_proof/2`).
       "proof" => proof_marker,
-      # The pinned release generation this node LOADED (`Workstation.Daemon.
-      # Generation.own/0` — the `.built-from` stamp beside its release root,
-      # path fallback when unstamped). The client's ensure path verifies it
-      # against the installed release's stamp; the daemon's per-hello
-      # rendezvous check refuses the handshake itself when the installed
-      # stamp disagrees (the 2026-10-19 mid-replacement incident gate).
-      "release" => Workstation.Daemon.Generation.own(),
       "caps" => %{
         "max_request_bytes" => @max_request_bytes,
         "max_response_bytes" => @max_response_bytes,

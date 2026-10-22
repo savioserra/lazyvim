@@ -60,21 +60,13 @@ defmodule Workstation.Daemon.ProtocolTest do
       # The served op set is derived from the capability registry, not
       # hardcoded here; hello is the handshake op, the rest are capabilities.
       assert caps["ops"] == [
-               "apply.plan",
-               "apply.run",
-               "bootstrap.run",
                "daemon.stop",
                "diff.run",
                "hello",
                "plan.run",
-               "pull.run",
                "status.run",
-               "sync.run",
                "system.applied",
-               "theme.resolve",
-               "update.check",
-               "update.run",
-               "verify.run"
+               "theme.resolve"
              ]
       # The pinned-home advertisement: the client's --home honesty check
       # compares its resolved destination against exactly this field.
@@ -183,22 +175,6 @@ defmodule Workstation.Daemon.ProtocolTest do
       assert message =~ "requires params"
 
       assert {:error, {"unknown_op", _}} = Protocol.decode_params("apply.everything", %{})
-    end
-
-    test "lifecycle schemas stay strict through the capability registry" do
-      assert {:ok, %{"step" => "verify"}} = Protocol.decode_params("update.run", %{"step" => "verify"})
-      assert {:error, {"invalid_params", _}} = Protocol.decode_params("update.run", %{"step" => "deploy"})
-
-      assert {:ok, %{"generation" => "g1"}} =
-               Protocol.decode_params("apply.run", %{"generation" => "g1", "entries" => []})
-
-      assert {:ok, %{"generation" => "g1", "adopt" => true}} =
-               Protocol.decode_params("apply.run", %{"generation" => "g1", "entries" => [], "adopt" => true})
-
-      assert {:error, {"invalid_params", _}} =
-               Protocol.decode_params("apply.run", %{"generation" => "g1", "adopt" => "yes"})
-
-      assert {:error, {"invalid_params", _}} = Protocol.decode_params("apply.run", %{"generation" => ""})
     end
   end
 end

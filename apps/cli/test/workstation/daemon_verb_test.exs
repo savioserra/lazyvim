@@ -42,7 +42,7 @@ defmodule Workstation.CLI.DaemonVerbTest do
 
 
   alias Workstation.CLI.{Control, DaemonClient, Router}
-  alias Workstation.Daemon.{Boot, Generation, Listener, Shutdown}
+  alias Workstation.Daemon.{Boot, Listener, Shutdown}
 
   # The client's spawn handshake budget: a daemon that binds later than
   # this makes every ensure-spawn fail with daemon_unavailable.
@@ -52,19 +52,12 @@ defmodule Workstation.CLI.DaemonVerbTest do
     home = unique_home("ws-daemon-verb")
     File.mkdir_p!(home)
 
-    # Hermetic update check: Boot.run opts the resident daemon in, so pin
-    # the engine repo at a non-repository (the check answers the disabled
-    # "unknown" without any git execution — never the real checkout).
-    no_repo = Path.join(home, "not-a-repo")
-    File.mkdir_p!(no_repo)
-
     previous = %{
       "WORKSTATION_HOME" => System.get_env("WORKSTATION_HOME"),
       "WORKSTATION_ENGINE_REPO" => System.get_env("WORKSTATION_ENGINE_REPO")
     }
 
     System.put_env("WORKSTATION_HOME", home)
-    System.put_env("WORKSTATION_ENGINE_REPO", no_repo)
 
     on_exit(fn ->
       Enum.each(previous, fn
@@ -151,10 +144,6 @@ defmodule Workstation.CLI.DaemonVerbTest do
     try do
       assert :ok = Control.stop()
     after
-      # Boot.run opts the resident daemon into the update check (VM-global
-      # application env) — a supervisor-spec tree elsewhere must stay opted
-      # OUT, so undo the opt-in with the shutdown hook.
-      Elixir.Application.delete_env(:daemon, :update_check)
       Elixir.Application.delete_env(:daemon, :shutdown_hook)
       Elixir.Application.delete_env(:cli, :beam_alive)
       Process.exit(parker, :kill)
@@ -241,7 +230,6 @@ defmodule Workstation.CLI.DaemonVerbTest do
       wait_for(fn -> Process.whereis(Workstation.Daemon.Supervisor) == nil end, 5_000)
       assert {:error, "no daemon is running for home " <> _} = Control.stop()
     after
-      Elixir.Application.delete_env(:daemon, :update_check)
       Elixir.Application.delete_env(:daemon, :shutdown_hook)
       Elixir.Application.delete_env(:cli, :beam_alive)
       Process.exit(parker, :kill)
@@ -336,9 +324,7 @@ defmodule Workstation.CLI.DaemonVerbTest do
       assert {:shutdown, 4} = result
       assert stderr =~ "error: daemon boot failed"
     after
-      # Boot.run opts the (never-started) daemon into the update check —
-      # undo the VM-global env for the other tests.
-      Elixir.Application.delete_env(:daemon, :update_check)
+      :ok
     end
   end
 
@@ -362,7 +348,6 @@ defmodule Workstation.CLI.DaemonVerbTest do
       Process.exit(peer, :kill)
       _ = :socket.close(peer_sock)
       File.rm(socket_path)
-      Elixir.Application.delete_env(:daemon, :update_check)
     end
   end
 
@@ -451,48 +436,6 @@ defmodule Workstation.CLI.DaemonVerbTest do
       assert DaemonClient.daemon_pid(nil, %{"stopping" => true}) == nil
       assert DaemonClient.daemon_pid(nil, %{"pid" => 0}) == nil
       assert DaemonClient.daemon_pid(nil, %{"pid" => -3}) == nil
-    end
-  end
-
-  describe "DaemonClient.verify_generation/2 (the ensure path's rendezvous check)" do
-    # The client's independent second read of the installed-release proof
-    # (`Workstation.Daemon.Generation`): a daemon advertising a generation
-    # the installed stamp disagrees with is refused with an actionable
-    # daemon_unavailable; an undecided home or a protocol-aged daemon
-    # (no `release` advertisement) skips. Pure pins — the wire half rides
-    # the daemon-side gate (Daemon.GenerationTest) and the resume child's
-    # health-check gate (Workstation.CLITest).
-
-    test "a stale advertisement is refused with both generations named" do
-      home = fresh_home()
-
-      File.mkdir_p!(Path.dirname(Generation.stamp_path(home)))
-      File.write!(Generation.stamp_path(home), "installed-gen")
-
-      assert {:error, {:daemon_unavailable, message}} =
-               DaemonClient.verify_generation(%{"release" => "booted-gen"}, home)
-
-      assert message =~ "booted-gen"
-      assert message =~ "installed-gen"
-      assert message =~ "workstation daemon stop"
-    end
-
-    test "a fresh advertisement, an undecided home and an aged daemon skip" do
-      home = fresh_home()
-
-      # No installed stamp — undecided, never a guess.
-      assert DaemonClient.verify_generation(%{"release" => "anything"}, home) == :ok
-
-      File.mkdir_p!(Path.dirname(Generation.stamp_path(home)))
-      File.write!(Generation.stamp_path(home), "installed-gen\n")
-      assert DaemonClient.verify_generation(%{"release" => "installed-gen"}, home) == :ok
-
-      # Protocol too old to advertise the generation: the check skips.
-      assert DaemonClient.verify_generation(%{}, home) == :ok
-    end
-
-    defp fresh_home do
-      unique_home("ws-verify-generation")
     end
   end
 

@@ -65,11 +65,8 @@ defmodule Workstation.Daemon.Capabilities do
   @registry [
     Workstation.Daemon.Capabilities.Overlay,
     Workstation.Daemon.Capabilities.Theme,
-    Workstation.Daemon.Capabilities.Apply,
-    Workstation.Daemon.Capabilities.Lifecycle,
     Workstation.Daemon.Capabilities.Read,
     Workstation.Daemon.Capabilities.Control,
-    Workstation.Daemon.Capabilities.UpdateCheck,
     Workstation.Daemon.Capabilities.System
   ]
 

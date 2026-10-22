@@ -48,7 +48,7 @@ defmodule Workstation.Daemon.Listener do
   require Logger
 
   alias Workstation.Core.EngineState
-  alias Workstation.Daemon.{Generation, Protocol, Sessions}
+  alias Workstation.Daemon.{Protocol, Sessions}
 
   @daemon_dir "daemon"
   # Linux SOL_SOCKET(1)/SO_PEERCRED(17); 12 bytes = struct ucred.
@@ -240,23 +240,6 @@ defmodule Workstation.Daemon.Listener do
     # The registry (rest_for_one: strictly after this listener) snapshots
     # the proof marker into the hello handshake from here.
     :persistent_term.put({__MODULE__, :proof}, proof)
-
-    # Boot-time generation self-check, BEFORE anything is served: pin this
-    # node's generation, and when the node PROVABLY is not the installed
-    # release (its own root's stamp and the installed release's stamp are
-    # both readable and differ) refuse to become a daemon at all — a
-    # known-stale node never binds the state socket (the
-    # `Workstation.Daemon.Generation` contract; ensure-daemon respawns from
-    # the installed release instead).
-    own = Generation.pin(opts)
-
-    case Generation.boot_verdict(home, Generation.own_root(opts)) do
-      {:stale, ^own, installed} ->
-        exit({:stale_generation, own, installed})
-
-      _other ->
-        :ok
-    end
 
     sock = bind_or_takeover!(path)
     Logger.info("daemon listening on #{path} pid=#{inspect(self())} proof=#{proof_marker(proof)}")

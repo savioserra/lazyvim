@@ -62,7 +62,7 @@ defmodule Workstation.Daemon.Session do
   require Logger
 
   alias Workstation.Core.EngineState
-  alias Workstation.Daemon.{Capabilities, CapabilityRegistry, EventBus, Events, Generation, Protocol, Shutdown, TaskSupervisor}
+  alias Workstation.Daemon.{Capabilities, CapabilityRegistry, EventBus, Events, Protocol, Shutdown, TaskSupervisor}
 
   @enforce_keys [:sock, :sock_path, :peer_uid]
   defstruct [:sock, :sock_path, :peer_uid, :reader, inflight: nil, events: 0]
@@ -407,32 +407,15 @@ defmodule Workstation.Daemon.Session do
     end
   end
 
-  # The rendezvous gate (`Workstation.Daemon.Generation`): a hello from a
-  # client is the moment this node must prove it serves the INSTALLED
-  # release. A readable installed stamp that differs from this node's
-  # pinned generation means the release changed (or landed) under the
-  # running code — the 2026-10-19 incident's corrupt-speaker state. The
-  # hello is refused with `stale_generation` (the reply flushes before the
-  # teardown: the stop's delay floor orders that) and the daemon schedules
-  # its graceful self-stop, so the client's ensure-daemon respawns a clean
-  # node from the fully staged installed release instead of every later
-  # verb failing until someone TERMs the beam. Undecided (no readable
-  # installed stamp — dev homes, fresh machines) serves normally.
+  # The hello handshake: the client learns the served surface and this
+  # daemon's pinned home. The stale-release rendezvous gate retired with
+  # the update chain — nothing rewrites the installed release under a
+  # running node any more (nix generations switch atomically; the release
+  # identity is the store path).
   defp rendezvous(id, state) do
-    case Generation.verdict() do
-      {:stale, own, installed} ->
-        message = Generation.refusal_message(own, installed)
-        Logger.error("daemon generation mismatch: serving #{inspect(own)}, installed #{inspect(installed)}; stopping")
-        reply(state, id, {"stale_generation", message})
-        EventBus.publish(:op, {:op_rejected, "stale_generation"})
-        :ok = Shutdown.stop_after("stale generation: serving #{inspect(own)}, installed #{inspect(installed)}")
-        state
-
-      _other ->
-        reply(state, id, CapabilityRegistry.capabilities())
-        EventBus.publish(:op, {:op_served, "hello"})
-        state
-    end
+    reply(state, id, CapabilityRegistry.capabilities())
+    EventBus.publish(:op, {:op_served, "hello"})
+    state
   end
 
   # Async dispatch: subscribe BEFORE the task exists (no event can be lost),

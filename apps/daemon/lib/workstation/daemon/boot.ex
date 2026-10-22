@@ -38,14 +38,6 @@ defmodule Workstation.Daemon.Boot do
     # returns below can ever be used. The flag is sticky; park/0 relies on
     # it being set.
     Process.flag(:trap_exit, true)
-    # The resident daemon opts IN to the update-availability check (the
-    # status wire's `update` field and the `update.check` op resolve the
-    # engine repo for real). Tests boot the supervisor spec directly and
-    # never opt in, so a test tree cannot fire an unplanned network query.
-    # (Elixir.Application spelled out: this module aliases the daemon's own
-    # Application tree module.)
-    Elixir.Application.put_env(:daemon, :update_check, true)
-
     # The same tree the OTP callback and the tests boot: supervisor_spec/0
     # is the single source of the rest_for_one wiring (same name, same
     # order) — started here directly because this tree outlives no

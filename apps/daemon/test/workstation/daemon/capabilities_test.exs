@@ -10,7 +10,6 @@ defmodule Workstation.Daemon.CapabilitiesTest do
     Workstation.Daemon.EventBus,
     Workstation.Daemon.OpRegistry,
     Workstation.Daemon.CapabilityRegistry,
-    Workstation.Daemon.ApplyOrchestrator,
     Workstation.Daemon.TaskSupervisor
   ]
 
@@ -45,8 +44,7 @@ defmodule Workstation.Daemon.CapabilitiesTest do
       end
 
       assert {:ok, Workstation.Daemon.Capabilities.Theme} = Capabilities.owner("theme.resolve")
-      assert {:ok, Workstation.Daemon.Capabilities.Apply} = Capabilities.owner("apply.run")
-      assert {:ok, Workstation.Daemon.Capabilities.Lifecycle} = Capabilities.owner("update.run")
+      assert {:ok, Workstation.Daemon.Capabilities.System} = Capabilities.owner("system.applied")
     end
   end
 

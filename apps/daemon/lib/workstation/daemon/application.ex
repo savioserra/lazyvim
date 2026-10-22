@@ -3,7 +3,7 @@ defmodule Workstation.Daemon.Application do
   Daemon supervision tree.
 
   `:rest_for_one` and the fixed child order (Listener → Sessions → EventBus →
-  CapabilityRegistry → ApplyOrchestrator → capability children) encode the
+  CapabilityRegistry → capability children) encode the
   daemon's failure-mode contract: every runtime dependency flows strictly
   forward (a Session talks to EventBus, CapabilityRegistry and the
   capabilities; the Listener hands sockets to Sessions), so any crash rolls
@@ -33,7 +33,6 @@ defmodule Workstation.Daemon.Application do
     Workstation.Daemon.EventBus,
     Workstation.Daemon.OpRegistry,
     Workstation.Daemon.CapabilityRegistry,
-    Workstation.Daemon.ApplyOrchestrator,
     Workstation.Daemon.TaskSupervisor
   ]
 

@@ -25,9 +25,8 @@ defmodule Workstation.Daemon.Capabilities.System do
       cannot drift silently.
 
   The event speaks the nix profile generation ("generation N applied
-  (rollback available at N-1)"), NOT the engine release generation —
-  that rendezvous identity is `Workstation.Daemon.Generation` and stays
-  a different axis.
+  (rollback available at N-1)"), NOT any engine release identity — the
+  engine's identity is the store path nix built it into.
 
   This module owns the domain name but does not CLAIM it (same posture as
   the theme capability): publishing is best-effort fanout; a second
