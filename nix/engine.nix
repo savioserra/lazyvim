@@ -1,8 +1,8 @@
-# The workstation engine as ONE nix mixRelease — P0's known-good answer
-# (t_42783d30), landed verbatim per the P1 card.
+# The workstation engine as ONE nix mixRelease — the build gate's
+# known-good answer (t_42783d30), landed verbatim (t_f8b0684a).
 #
 # Shape: beam28 (Erlang/OTP 28.1 + Elixir 1.18.4 from nixpkgs 25.05 — the
-# host mise pin runs 1.18.5/OTP 28.5; match-vs-skew is a P2+ substrate
+# host mise pin runs 1.18.5/OTP 28.5; match-vs-skew is an open substrate
 # decision). The mdex_native NIF needs NO source change: today's build
 # shape is the rustler_precompiled DOWNLOAD path (mdex_native ships
 # `rustler` as an OPTIONAL dep, so the lock has no rustler). In the nix
@@ -17,7 +17,7 @@
 # (nifHex) and the explicit preConfigure digest check against
 # nifSha256Pinned below, which fails the build before mix deps.compile.
 # The aarch64-darwin target EVALS but its NIF vendoring is still
-# x86_64-linux-gated (per-target artifacts: named P0 gap).
+# x86_64-linux-gated (per-target artifacts remain an open gap).
 {
   lib,
   stdenv,
@@ -92,5 +92,5 @@ beamPackages.mixRelease {
 
   # NOTE: the default postFixup strips ${erlang} references and wraps
   # $out/bin with a PATH of coreutils/gnused/gnugrep/gawk. Kept as-is —
-  # the P0 consumer smoke passed against this exact shape.
+  # the build gate's consumer smoke passed against this exact shape.
 }
