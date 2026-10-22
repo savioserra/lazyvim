@@ -20,8 +20,8 @@
 
 | Document | Scope |
 | --- | --- |
-| [`capabilities.md`](capabilities.md) | Dependency direction, contracts, lifecycle phases |
-| [`chezmoi.md`](chezmoi.md) | Subordinate file backend, isolation, removals and guarded cutover |
+| [`capabilities.md`](capabilities.md) | Dependency direction, declaration contract, lifecycle phases |
+| [`chezmoi.md`](chezmoi.md) | Home state law: native declarations, hot-home scope, legacy cutover |
 | [`tools.md`](tools.md) | Managed tool inventory and platform coverage |
 | [`testing.md`](testing.md) | Offline checks and isolated Linux container E2E recipe |
 | [`secrets.md`](secrets.md) | 1Password boundary, vault scope, Pi skill policy |
