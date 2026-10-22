@@ -89,20 +89,6 @@ defmodule Workstation.CLI.TUI.ShellHomeFrameTest do
       assert right_half(frame, plan_row) =~ "┐⁵diff┌"
     end
 
-    test "the update hint rides the capabilities band when the band has room" do
-      for {width, height} <- [{175, 83}, {@mosaic_width, 40}] do
-        frame = home_frame(width, height, update_hint: %{"local" => "v1", "remote" => "v2"})
-        assert_closed_borders(frame)
-        assert full_text(frame) =~ "↑ update available (v1 → v2) — [u] update"
-      end
-    end
-
-    test "a stacked home keeps advertising the update through the buttonbar" do
-      frame = home_frame(80, 24, update_hint: %{"local" => "v1", "remote" => "v2"})
-      assert_closed_borders(frame)
-      assert full_text(frame) =~ "┘u update└"
-    end
-
     test "a journal-less home (the daemon's :null token) renders every box, badge absent" do
       # The daemon's CanonicalJSON round-trips a fresh home's JSON null
       # journal as the ATOM :null (read.ex folds `(journal && wire) ||
@@ -229,12 +215,12 @@ defmodule Workstation.CLI.TUI.ShellHomeFrameTest do
       assert Frame.cell(frame, diff_r, 1).fg == {255, 121, 121}
       assert Frame.cell(frame, status_r, 1).fg == {127, 207, 120}
 
-      # Enabled buttonbar labels read text (dark base #f5f5dc); the
+      # The enabled buttonbar label reads text (dark base #f5f5dc); the
       # keycap stays shortcut. Find the caps band's buttonbar row — the
       # box body may spend any number of rows above it.
       buttonbar_row =
         Enum.find(caps_r..frame.height, fn row ->
-          Frame.row_text(frame, row) =~ "a apply"
+          Frame.row_text(frame, row) =~ "r refresh"
         end)
 
       assert buttonbar_row != nil
@@ -243,7 +229,7 @@ defmodule Workstation.CLI.TUI.ShellHomeFrameTest do
       # Column of the label's first glyph (codepoint count of the prefix).
       label_col =
         caps_bottom
-        |> String.split("apply", parts: 2)
+        |> String.split("refresh", parts: 2)
         |> List.first()
         |> String.length()
         |> Kernel.+(1)
@@ -486,12 +472,7 @@ defmodule Workstation.CLI.TUI.ShellHomeFrameTest do
       caps: caps_browser(),
       caps_env: caps_envelope(),
       text_views: %{},
-      op: nil,
       load: fn _wire -> {:ok, %{}} end,
-      executor: fn _plan -> :ok end,
-      update_executor: fn _flow -> :ok end,
-      check: fn -> {:ok, %{"status" => "up_to_date"}} end,
-      update_hint: Keyword.get(opts, :update_hint),
       toast_ms: 60_000,
       now: ~U[2026-02-13T12:00:00Z],
       dimensions: {width, height}

@@ -1,20 +1,16 @@
 defmodule Workstation.CLI.TUI do
   @moduledoc """
-  Front door of the apply/update TUI screens (brief §3 b7).
+  Front door of the TUI (brief §3 b7).
 
-  Scope is deliberately narrow: only `apply` and `update` ever run as a TUI —
-  every other CLI surface stays plain. A screen receives an already-computed
-  plan wire (the `Workstation.CLI.Core.evaluate/3` shape) and an `:executor`
-  callback; production runs wire `Workstation.CLI.TUI.Executor` (the daemon-
-  orchestrated path, b8), while an unconfigured screen still renders and
-  confirms on the pure dry-run stand-in with no mutation path at all. That
-  strangler seam keeps the interactive shell honest: the screens' contract
-  does not churn when the engine applier graduates.
+  Scope is deliberately narrow: the bare-verb application shell
+  (`Workstation.CLI.TUI.Shell`) is the one screen host — the standalone
+  apply/update screens retired with the engine's write plane, and mutation
+  lives in the nix substrate's workstation-switch drivers.
 
   Theme resolution is `Workstation.CLI.TUI.Theme.resolve/1` (daemon overlay
   when the destination has a live daemon, else the base token palette); the
-  screens themselves only ever see resolved `#rrggbb` colors, because
-  term_ui is a palette-layer consumer that cannot follow live OSC 4 retints
+  shell only ever sees resolved `#rrggbb` colors, because term_ui is a
+  palette-layer consumer that cannot follow live OSC 4 retints
   (docs/theme.md).
   """
 

@@ -21,8 +21,7 @@ defmodule Workstation.CLI.Control do
   # `:drain_timeout_ms`, default 30s) after the ~250ms reply flush, removes
   # the socket node, then halts — so the halt-confirmation budget covers the
   # drain plus ordinary exit jitter. SIGTERM then SIGKILL remain the
-  # escalation for a WEDGED exit, never for a legitimate drain — the
-  # pre-replace path (`Workstation.CLI.PreReplace`) has no escalation at all.
+  # escalation for a WEDGED exit, never for a legitimate drain.
   @halt_confirm_ms 35_000
   @term_confirm_ms 3_000
   @kill_confirm_ms 2_000

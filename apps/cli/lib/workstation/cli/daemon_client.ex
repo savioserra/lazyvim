@@ -11,9 +11,8 @@ defmodule Workstation.CLI.DaemonClient do
   absent or dead it spawns a daemon DETACHED from the same release binary
   (`<release>/bin/workstation daemon`) with `WORKSTATION_HOME` pinned to the
   destination, then waits — bounded — for the versioned hello handshake.
-  Stopping the daemon stays manual (`workstation daemon stop`) or
-  lifecycle-driven (`Workstation.CLI.PreReplace` — the graceful pre-replace
-  stop, which probes liveness through `live?/1` here).
+  Stopping the daemon stays manual (`workstation daemon stop`); liveness
+  probes ride `live?/1` here.
 
   Wire: the daemon's own `Workstation.Daemon.Protocol` frames (4-byte
   big-endian length + JSON), reused verbatim so the client cannot drift
@@ -119,8 +118,8 @@ defmodule Workstation.CLI.DaemonClient do
 
   @doc """
   Whether a live daemon answers the versioned handshake for `home` — the
-  no-spawn liveness probe. The pre-replace gate (`Workstation.CLI.PreReplace`)
-  and any caller that must distinguish "nothing to stop" from "stop it"
+  no-spawn liveness probe. Any caller that must distinguish "nothing to
+  stop" from "stop it"
   without ever starting a daemon rides this: a dead or absent socket is
   `false`, never a spawn. The pinned-home mismatch still reads as live —
   a daemon IS serving that socket (the mismatch surfaces later, from the

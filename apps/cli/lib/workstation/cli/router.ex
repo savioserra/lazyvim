@@ -2,26 +2,18 @@ defmodule Workstation.CLI.Router do
   @moduledoc """
   `workstation` command line — the fused front door of the engine.
 
-  The engine is CLIENT/SERVER: the daemon is the only mutation engine and
-  the only source of live state; the CLI is a thin protocol client
-  (`Workstation.CLI.DaemonClient`). Every verb dispatch reduces to: ensure
-  the daemon is up (spawn it detached from the same release when absent),
-  send one op, render the result. Read verbs (`status`, `plan`, `diff`,
-  `json <command>`) send `status.run` / `plan.run` / `diff.run`; lifecycle
-  verbs send `bootstrap.run` / `sync.run` / `verify.run` / `pull.run` and
-  the per-step `update.run`; `apply` confirms through `apply.run` via the
-  plain runner or TUI screen. There is NO in-process fallback: a daemon
-  that cannot be reached or spawned is a clear operator error. The one
+  The engine is CLIENT/SERVER: the daemon is the only source of live state;
+  the CLI is a thin protocol client (`Workstation.CLI.DaemonClient`). Every
+  verb dispatch reduces to: ensure the daemon is up (spawn it detached from
+  the same release when absent), send one op, render the result. Read verbs
+  (`status`, `plan`, `diff`, `json <command>`) send `status.run` /
+  `plan.run` / `diff.run`. There is NO in-process fallback: a daemon that
+  cannot be reached or spawned is a clear operator error. The one
   in-process path is `--input <file>` golden replay, which is offline by
   definition (`Workstation.CLI.Core` over a recorded envelope, no daemon
-  involved).
-
-  `apply` and `update` are interactive-first — the TUI is the DEFAULT for
-  verbs with a screen, and there is no silent degradation: on a usable
-  terminal they run the TUI screens; `--headless` forces the plain runner;
-  a non-terminal stdout WITHOUT `--headless` is a hard error, never a
-  plain fallback. The other lifecycle verbs are plain runs by nature (no
-  screen exists).
+  involved). The write plane lives in the nix substrate: mutation is the
+  `workstation-switch` drivers (apply/rollback/update/sync), and the
+  engine's receipt verb `system applied` publishes the generation event.
 
   `workstation daemon` runs the resident daemon in the foreground;
   `workstation daemon stop` stops a running daemon (the manual stop path —
@@ -32,42 +24,32 @@ defmodule Workstation.CLI.Router do
   checks a terminal, stops a daemon, or runs the verb (the 2026-10-19
   aurora incident: `bootstrap --help` ran a real provisioning pass on a
   release that silently ignored the flag). Unknown flags are a usage error
-  (exit 2) — never silently ignored on a mutating verb.
+  (exit 2) — never silently ignored.
 
   `--home` selects the destination home (default: `$WORKSTATION_HOME`, else
   `$HOME` — the launcher shim rebases both to the same destination, so verbs
   address the intended home either way). The daemon serves exactly the home
   it booted with; ensure-daemon spawns it with the resolved `--home`, and a
   client that resolves a DIFFERENT home than a running daemon refuses to
-  speak to it. `--engine-root` selects the engine checkout for the
-  bootstrap/update steps (default: `$WORKSTATION_ENGINE_REPO`, else
-  checkout-walk detection) and rides to the daemon through the spawn
-  environment.
+  speak to it.
 
   Exit codes (docs/elixir.md carries the table): 0 ok; 1 no usable terminal
   for an interactive verb; 2 usage; 3 conflict-or-precondition (evaluation
   failure or apply-lock contention); 4 engine failure (native collection
-  error, lifecycle step failure, daemon unavailable).
+  error, daemon unavailable).
   """
 
   alias Workstation.CLI.Core
   alias Workstation.CLI.Capabilities
   alias Workstation.CLI.DaemonClient
-  alias Workstation.CLI.Plain
   alias Workstation.CLI.Render
   alias Workstation.CLI.TUI
-  alias Workstation.CLI.TUI.{Apply, Update}
   alias Workstation.CLI.Control
-  alias Workstation.CLI.PreReplace
   alias Workstation.Core.CanonicalJSON
   alias Workstation.Daemon.Boot
 
-  @no_terminal "workstation: no usable terminal; pass --headless for non-interactive runs"
-
-  # Op budget for the read ops; lifecycle calls use the executors' longer
-  # budget (lock queues and engine steps take minutes).
+  # Op budget for the read ops.
   @read_timeout_ms 120_000
-  @lifecycle_timeout_ms 600_000
 
   def main(argv) do
     case Optimus.parse(parser(), argv) do
@@ -123,7 +105,7 @@ defmodule Workstation.CLI.Router do
   def parser do
     Optimus.new!(
       name: "workstation",
-      description: "workstation engine front end: read verbs report, lifecycle verbs mutate.",
+      description: "workstation engine front end: reads report, the nix substrate mutates.",
       allow_unknown_args: false,
       parse_double_dash: true,
       # The global help flag: Optimus merges a `global` flag into EVERY
@@ -186,55 +168,6 @@ defmodule Workstation.CLI.Router do
               options: read_options()
             ]
           ]
-        ],
-        bootstrap: [
-          name: "bootstrap",
-          about: "provision a home: managed tool pins, chezmoi backend, launcher",
-          options: lifecycle_options()
-        ],
-        apply: [
-          name: "apply",
-          about: "apply the current desired state (TUI by default; --headless for plain)",
-          options: lifecycle_options(),
-          flags: [
-            headless: [long: "--headless", help: "force the non-interactive plain runner"],
-            adopt: [
-              long: "--adopt",
-              help:
-                "operator-gated adoption: the refusal reports the full un-owned set with probe verdicts; " <>
-                  "probe-verified targets are adopted (content-identity law: engine state wins the cutover)"
-            ]
-          ]
-        ],
-        update: [
-          name: "update",
-          about: "pull, bootstrap, apply, sync, verify — abort on first failure (TUI by default)",
-          options:
-            lifecycle_options() ++
-              [
-                resume_from: [
-                  long: "--resume-from",
-                  help:
-                    "internal: resume the update chain at these comma-separated steps (set by the release handoff)",
-                  value_name: "STEPS"
-                ]
-              ],
-          flags: [headless: [long: "--headless", help: "force the non-interactive plain runner"]]
-        ],
-        sync: [
-          name: "sync",
-          about: "reconcile the journal's generation with the freshly collected desired state",
-          options: lifecycle_options()
-        ],
-        verify: [
-          name: "verify",
-          about: "verify the launcher and every applied target fingerprint",
-          options: lifecycle_options()
-        ],
-        pull: [
-          name: "pull",
-          about: "fast-forward the engine checkout (never resets a diverged tree)",
-          options: lifecycle_options()
         ],
         system: [
           name: "system",
@@ -342,29 +275,12 @@ defmodule Workstation.CLI.Router do
     ]
   end
 
-  defp lifecycle_options do
-    [
-      home: [
-        value_name: "DIR",
-        long: "--home",
-        help: "destination home (default: $WORKSTATION_HOME, else $HOME)"
-      ],
-      engine_root: [
-        value_name: "DIR",
-        long: "--engine-root",
-        help:
-          "engine checkout for bootstrap/update (default: $WORKSTATION_ENGINE_REPO, else detection)"
-      ]
-    ]
-  end
-
   ## help contract
 
   # The dispatch gate: `-h/--help` on ANY invocation prints the invoking
   # command's usage and exits 0. The gate runs before EVERY side effect —
-  # home resolution, the terminal gate, the pre-replace daemon stop, the
-  # foreground daemon boot — so a help request can never provision, apply,
-  # update, or park a daemon.
+  # home resolution, the terminal check, the foreground daemon boot — so a
+  # help request can never resolve state or park a daemon.
   defp help_requested?(result), do: result.flags[:help] == true
 
   defp print_help([]), do: {:ok, IO.puts(Optimus.help(parser()))}
@@ -456,76 +372,18 @@ defmodule Workstation.CLI.Router do
     end
   end
 
-  # `bootstrap` (and every verb that may replace the installed release —
-  # `apply`, `update` below) asks a LIVE daemon to exit gracefully BEFORE
-  # any work is dispatched: the daemon runs the installed release in memory,
-  # and a replacement under a surviving beam would leave stale code serving.
-  # The refusal is fail-closed (never killed); the verb's own first call
-  # re-spawns a fresh daemon on demand from the current release.
-  defp dispatch(:bootstrap, result, _mode) do
-    home = resolve_home(result)
-    pre_replace_stop(home)
-
-    case DaemonClient.call("bootstrap.run", %{}, client_opts(result, @lifecycle_timeout_ms)) do
-      {:ok, record} ->
-        emit_record(record)
-
-      {:error, {tag, message}} when is_atom(tag) ->
-        fail(4, "error: #{tag}: #{message}")
-
-      # ensure-daemon's spawn refusal rides as a bare message (no release
-      # binary, spawn failure) — engine exit, never a CaseClause crash.
-      {:error, message} when is_binary(message) ->
-        fail(4, "error: #{message}")
-
-      # The daemon-side refusal classes arrive over the wire as STRING codes
-      # (JSON) — the aurora bootstrap handoff crashed right here with a
-      # CaseClauseError on a `locked` refusal whose holder pid was dead
-      # (2026-10-14). Same mapping as the read verbs: the code keeps the
-      # client exit table (`locked` is precondition, everything else engine).
-      {:error, {code, message}} when is_binary(code) and is_binary(message) ->
-        fail(lifecycle_exit(code), "error: #{code}: #{message}")
-
-      {:error, code, message} ->
-        fail(lifecycle_exit(code), "error: #{code}: #{message}")
-    end
-  end
-
-  defp dispatch(command, result, _mode) when command in [:sync, :verify, :pull] do
-    case DaemonClient.call(lifecycle_op(command), %{}, client_opts(result, @lifecycle_timeout_ms)) do
-      {:ok, record} ->
-        emit_record(record)
-
-      {:error, {tag, message}} when is_atom(tag) ->
-        fail(4, "error: #{tag}: #{message}")
-
-      # ensure-daemon's spawn refusal rides as a bare message — engine exit,
-      # never a CaseClause crash.
-      {:error, message} when is_binary(message) ->
-        fail(4, "error: #{message}")
-
-      # Wire refusals are STRING-coded pairs (JSON) — same mapping as the
-      # bootstrap arm above and the read verbs' client contract.
-      {:error, {code, message}} when is_binary(code) and is_binary(message) ->
-        fail(lifecycle_exit(code), "error: #{code}: #{message}")
-
-      {:error, code, message} ->
-        fail(lifecycle_exit(code), "error: #{code}: #{message}")
-    end
-  end
-
   # `workstation daemon` (no action) is the FOREGROUND boot: `Boot.run`
   # starts the tree and parks the caller, keeping this VM alive serving the
   # state socket — ensure-daemon spawns exactly this verb, detached, with
   # stdio into the daemon state dir's log. `daemon stop` is the MANUAL stop
   # path — nothing stops a running daemon behind the operator's back.
   # Failure to boot or stop a daemon is an operator-facing error (exit 4).
+  # Optimus FLATTENS the matched subcommand's positionals into result.args:
+  # for argv ["daemon", "stop"] the result is %{action: "stop"} — there is
+  # no :daemon nesting. (Reading result.args[:daemon][:action] was always
+  # nil and routed every daemon verb into the boot arm; the parse shape is
+  # pinned by DaemonVerbTest against the real parser below.)
   defp dispatch(:daemon, result, _mode) do
-    # Optimus FLATTENS the matched subcommand's positionals into result.args:
-    # for argv ["daemon", "stop"] the result is %{action: "stop"} — there is
-    # no :daemon nesting. (Reading result.args[:daemon][:action] was always
-    # nil and routed every daemon verb into the boot arm; the parse shape is
-    # pinned by DaemonVerbTest against the real parser below.)
     case result.args[:action] do
       nil ->
         case Boot.run() do
@@ -553,63 +411,6 @@ defmodule Workstation.CLI.Router do
 
       other ->
         fail(2, "error: unknown daemon action #{inspect(other)} (expected: stop)")
-    end
-  end
-
-  defp dispatch(:apply, result, _mode) do
-    home = resolve_home(result)
-    adopt = result.flags[:adopt] == true
-
-    # The terminal gate precedes any engine work: a run that cannot proceed
-    # interactively must fail with the terminal contract error, not an
-    # unrelated engine error discovered while planning.
-    cond do
-      result.flags[:headless] ->
-        pre_replace_stop(home)
-
-        with {:ok, plan} <- apply_plan(result) do
-          Plain.run(:apply, destination: home, plan: plan, adopt: adopt)
-        end
-
-      usable_terminal?() ->
-        pre_replace_stop(home)
-
-        with {:ok, plan} <- apply_plan(result) do
-          run_tui(Apply, destination: home, plan: plan, adopt: adopt)
-        end
-
-      true ->
-        fail(1, @no_terminal)
-    end
-  end
-
-  defp dispatch(:update, result, _mode) do
-    home = resolve_home(result)
-
-    cond do
-      # The handoff flag is internal to the release-refresh flow, which
-      # always re-execs with --headless; refuse the ambiguous combination
-      # instead of silently ignoring the resume list in the TUI.
-      result.options[:resume_from] != nil and not result.flags[:headless] ->
-        fail(2, "error: --resume-from is an internal handoff flag and requires --headless")
-
-      result.flags[:headless] ->
-        # A --resume-from child re-execing after a refresh handoff composes
-        # with the daemon's own self-stop: the stop is idempotent daemon-side
-        # (the pending-stop marker), so a second request is a no-op and the
-        # bounded wait simply observes the same shutdown.
-        pre_replace_stop(home)
-
-        with :ok <- fresh_daemon_health_check(result.options[:resume_from], result, home) do
-          Plain.run(:update, destination: home, resume_from: result.options[:resume_from])
-        end
-
-      usable_terminal?() ->
-        pre_replace_stop(home)
-        run_tui(Update, destination: home)
-
-      true ->
-        fail(1, @no_terminal)
     end
   end
 
@@ -700,33 +501,9 @@ defmodule Workstation.CLI.Router do
     end
   end
 
-  # One TUI session, with one documented handoff: a screen that ran the
-  # update-availability indicator may ask for the standard update flow
-  # (`[u] update`) by sending `{:tui_request, {:run_update, destination}}`
-  # to this process (injected as `:tui_caller`) and shutting down. The
-  # update screen itself never asks, so the handoff cannot loop.
-  defp run_tui(screen, opts) do
-    caller = self()
-
-    case TUI.run(screen, Keyword.put_new(opts, :tui_caller, caller)) do
-      :ok ->
-        case tui_request() do
-          {:run_update, destination} -> run_tui(Update, destination: destination)
-          nil -> :ok
-        end
-
-      {:error, reason} ->
-        fail(4, "error: #{screen} failed: #{inspect(reason)}")
-    end
-  end
-
-  defp tui_request do
-    receive do
-      {:tui_request, request} -> request
-    after
-      0 -> nil
-    end
-  end
+  # One TUI session. The bare-verb shell is the only remaining screen host;
+  # the standalone apply/update screens retired with the engine's write
+  # plane (mutation is the `workstation-switch` drivers now).
 
   ## read verbs
 
@@ -796,95 +573,8 @@ defmodule Workstation.CLI.Router do
   defp read_op(:plan), do: "plan.run"
   defp read_op(:diff), do: "diff.run"
 
-  # The apply verb's confirmation plan: the daemon's `apply.plan` op — the
-  # SAME composition `apply.run` executes (apply-mode: journal baseline,
-  # removal activation, retirements), not the read-mode projection `plan.run`
-  # serves. On a home where a declared removal activates (first convergence
-  # after a state change) the two generations structurally differ, so a
-  # read-mode confirmation would refuse as stale a plan the daemon can build
-  # and apply — confirming against `apply.plan` makes the guard's comparison
-  # like for like. Error mapping mirrors the read verbs' client contract.
-  defp apply_plan(result) do
-    case DaemonClient.call("apply.plan", %{}, client_opts(result, @read_timeout_ms)) do
-      {:ok, wire} ->
-        {:ok, wire}
-
-      {:error, {tag, message}} when is_atom(tag) ->
-        # Daemon transport failure: unavailable, died mid-op, or
-        # timed out — engine-exit operator error, message verbatim.
-        fail(4, "error: #{tag}: #{message}")
-
-      # ensure-daemon's spawn refusal rides as a bare message (no release
-      # binary, spawn failure) — an engine-exit operator error, never a crash.
-      {:error, message} when is_binary(message) ->
-        fail(4, "error: #{message}")
-
-      {:error, {"core", message}} when is_binary(message) ->
-        fail(3, "error: core evaluation failed: #{message}")
-
-      {:error, {"engine", message}} when is_binary(message) ->
-        fail(4, "error: #{format_engine_error(message)}")
-
-      {:error, {code, message}} when is_binary(code) and is_binary(message) ->
-        fail(client_exit(code), "error: #{code}: #{message}")
-
-      {:error, code, message} ->
-        fail(client_exit(code), "error: #{code}: #{message}")
-    end
-  end
-
-  defp lifecycle_op(command), do: "#{command}.run"
-
-  # The release-handoff child's gate: a `--resume-from` run starts AFTER the
-  # daemon-side chain refreshed the installed release and the previous
-  # daemon stopped itself, so its first ensure-daemon spawn is the
-  # replacement generation's node — spawning only once the new release is
-  # fully staged (the installer's exit 0 gates the handoff). Before the
-  # chain dispatches — before apply proceeds — the lifecycle HEALTH-CHECKS
-  # that fresh daemon with one real read op through DaemonClient
-  # (`status.run`): the 2026-10-19 aurora incident was a node booted
-  # against mid-replacement release files that went on serving corrupt
-  # evaluations for every verb, apply included. A normal (non-resume)
-  # update skips the extra op — its daemon is proven by its own first op.
-  defp fresh_daemon_health_check(nil, _result, _home), do: :ok
-
-  defp fresh_daemon_health_check(_steps, result, _home) do
-    case DaemonClient.call("status.run", %{}, client_opts(result, @read_timeout_ms)) do
-      {:ok, _wire} ->
-        :ok
-
-      {:error, {tag, message}} when is_atom(tag) ->
-        fail(4, "error: update health check failed: #{tag}: #{message}")
-
-      {:error, message} when is_binary(message) ->
-        fail(4, "error: update health check failed: #{message}")
-
-      {:error, {"core", message}} when is_binary(message) ->
-        fail(3, "error: update health check failed: core evaluation failed: #{message}")
-
-      {:error, {"engine", message}} when is_binary(message) ->
-        fail(4, "error: update health check failed: #{format_engine_error(message)}")
-
-      {:error, {code, message}} when is_binary(code) and is_binary(message) ->
-        fail(client_exit(code), "error: update health check failed: #{code}: #{message}")
-
-      {:error, code, message} ->
-        fail(client_exit(code), "error: update health check failed: #{code}: #{message}")
-    end
-  end
-
-  # The graceful pre-replace stop for the verbs that may replace the
-  # installed release (bootstrap/apply/update): a live daemon drains, removes
-  # its socket and halts; a refusal or a wedged exit FAILS CLOSED here (exit
-  # 4, the engine-failure code) — the verb never proceeds to replace the
-  # release under a surviving stale daemon, and never signals the process.
-  @spec pre_replace_stop(String.t()) :: :ok
-  defp pre_replace_stop(home) do
-    case PreReplace.stop_daemon(home: home) do
-      :ok -> :ok
-      {:error, message} -> fail(4, "error: pre-replace daemon stop failed: #{message}")
-    end
-  end
+  # Client-call options: the resolved home the daemon must serve.
+  defp client_opts(result, timeout_ms), do: [home: resolve_home(result), timeout_ms: timeout_ms]
 
   # Client-side daemon failures use the operator vocabulary directly
   # ("daemon_unavailable", "daemon_died", …); `locked` keeps its
@@ -905,39 +595,6 @@ defmodule Workstation.CLI.Router do
 
   defp render(:plan, %{"schema" => "workstation.plan.v1"} = wire), do: Render.core_plan(wire)
   defp render(:diff, %{"schema" => "workstation.diff.v1"} = wire), do: Render.core_diff(wire)
-
-  ## lifecycle plumbing
-
-  # Client-call options: the resolved home the daemon must serve, plus the
-  # engine root override riding to the spawn environment (a daemon booted
-  # earlier keeps its own environment — documented in the moduledoc).
-  defp client_opts(result, timeout_ms) do
-    [home: resolve_home(result), timeout_ms: timeout_ms]
-    |> put_engine_root(result)
-  end
-
-  defp put_engine_root(opts, result) do
-    case result.options[:engine_root] do
-      nil -> opts
-      root -> Keyword.put(opts, :engine_root, Path.expand(root))
-    end
-  end
-
-  defp emit_record(%{"step" => step, "status" => "ok"} = record) do
-    details =
-      record
-      |> Map.drop(["step", "status"])
-      |> Enum.map_join(", ", fn
-        {"packages", packages} when is_list(packages) -> "packages=#{length(packages)}"
-        {key, value} -> "#{key}=#{value}"
-      end)
-
-    {:ok, IO.puts("#{step}: ok" <> if(details == "", do: "", else: " (#{details})"))}
-  end
-
-  defp lifecycle_exit("locked"), do: 3
-
-  defp lifecycle_exit(_other), do: 4
 
   ## plumbing
 

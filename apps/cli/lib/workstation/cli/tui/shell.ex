@@ -1,29 +1,24 @@
 defmodule Workstation.CLI.TUI.Shell do
   @moduledoc """
   The workstation TUI application shell — the one dashboard. One Elm root
-  (the same `TermUI.Elm` contract as the apply/update screens) owning the
-  global chrome: the six-box dashboard as the entire app — the boxes'
-  own superscript titles advertise their toggle digits — and a footer
-  with the global keys (btop-ia-spec §2). The mosaic IS the app — there
-  are no tabs:
+  (the same `TermUI.Elm` contract as the retired apply/update screens)
+  owning the global chrome: the six-box dashboard as the entire app — the
+  boxes' own superscript titles advertise their toggle digits — and a
+  footer with the global keys (btop-ia-spec §2). The mosaic IS the app —
+  there are no tabs:
 
     * digits 1-6 toggle the boxes (`Shell.Dashboard.toggle_box`:
       flip membership, min-size gate, re-tile);
     * p/P cycle the presets (full mosaic / audit / minimal, wrap-around);
     * `?` toggles the help reference (a boxed scrollable pane — the
-      floating-paged variant is a recorded deviation);
-    * `a` / `u` open the apply/update screens INSIDE the app: the shell
-      embeds `Workstation.CLI.TUI.Apply` / `.Update` over the body,
-      reserving only `q` (leave the screen — a running op keeps running
-      daemon-side, the detach semantics of the standalone screen) and the
-      apply screen's `[u]` handoff, which swaps to the update screen.
+      floating-paged variant is a recorded deviation).
 
   All reads go through the client (one `DaemonClient.call` per wire, the
-  same ops the verbs send); the daemon is the only mutation engine — the
-  shell never mutates anything itself, and the embedded screens speak the
-  identical executor contract as standalone. The `:load`, `:executor`,
-  `:update_executor` and `:check` seams are injected funs, so tests replay
-  fixed wire/event streams with no daemon involved (deterministic replay).
+  same ops the verbs send); the shell never mutates anything — the write
+  plane lives in the nix substrate (`workstation-switch`), and this
+  dashboard is the resident read surface. The `:load` seam is an injected
+  fun, so tests replay fixed wire streams with no daemon involved
+  (deterministic replay).
 
   Data states are explicit per box: loading (probe in flight), data,
   error, and the daemon-disconnected shape (transport failure wording
@@ -37,7 +32,7 @@ defmodule Workstation.CLI.TUI.Shell do
 
   alias Workstation.CLI.{Capabilities, Render}
   alias Workstation.CLI.DaemonClient
-  alias Workstation.CLI.TUI.{Apply, Executor, Theme, Update, UpdateHint}
+  alias Workstation.CLI.TUI.Theme
   alias Workstation.CLI.TUI.Shell.{Box, CapabilitiesBrowser, Dashboard, Help, TextView}
 
   @read_timeout_ms 120_000
@@ -65,7 +60,6 @@ defmodule Workstation.CLI.TUI.Shell do
   end
 
   @type load_state :: nil | :loading | {:ok, map()} | {:error, String.t()}
-  @type op_screen :: {:apply, Apply.t()} | {:update, Update.t()}
 
   defstruct [
     :destination,
@@ -76,11 +70,6 @@ defmodule Workstation.CLI.TUI.Shell do
     :caps,
     :caps_env,
     :text_views,
-    :op,
-    :executor,
-    :update_executor,
-    :check,
-    :update_hint,
     :toast_ms,
     :now,
     # The six-box dashboard state: visible set + preset tracking.
@@ -102,11 +91,6 @@ defmodule Workstation.CLI.TUI.Shell do
           caps: CapabilitiesBrowser.t(),
           caps_env: map() | nil,
           text_views: %{atom() => TextView.t()},
-          op: op_screen() | nil,
-          executor: (map() -> :ok | {:error, term()}),
-          update_executor: (map() -> :ok | {:error, term()}),
-          check: (() -> {:ok, map()} | {:error, term()}),
-          update_hint: UpdateHint.hint() | nil,
           toast_ms: pos_integer(),
           dashboard: Dashboard.t(),
           flash: String.t() | nil,
@@ -148,11 +132,6 @@ defmodule Workstation.CLI.TUI.Shell do
       caps: CapabilitiesBrowser.init(nil),
       caps_env: nil,
       text_views: %{},
-      op: nil,
-      executor: Keyword.get(opts, :executor, &Executor.apply_executor/1),
-      update_executor: Keyword.get(opts, :update_executor, &Executor.update_executor/1),
-      check: Keyword.get(opts, :check, &Executor.update_check_executor/0),
-      update_hint: nil,
       toast_ms: Keyword.get(opts, :toast_ms, 5_000),
       # Render clock: injected so ramp (staleness) renders are deterministic
       # under replay; production takes the boot time exactly once.
@@ -162,14 +141,13 @@ defmodule Workstation.CLI.TUI.Shell do
       dashboard: Dashboard.new(Keyword.get(opts, :preset, 0))
     }
 
-    # Boot effects: the dashboard's three reads and the passive
-    # availability probe — all asynchronous; the first frame paints
-    # immediately in the loading state.
-    {state, wire_commands} = load_commands(state, @wires, false)
-    {state, wire_commands ++ check_commands(state)}
+    # Boot effects: the dashboard's three reads — all asynchronous; the
+    # first frame paints immediately in the loading state.
+    {state, commands} = load_commands(state, @wires, false)
+    {state, commands}
   end
 
-  @doc "Same event normalization contract as the apply/update screens."
+  @doc "Same event normalization contract as the read screens."
   @spec event_to_msg(Event.t(), t()) :: {:msg, term()} | :ignore
   @impl TermUI.Elm
   def event_to_msg(%Event.Text{text: "↑"}, _state), do: {:msg, {:key, :up}}
@@ -192,7 +170,7 @@ defmodule Workstation.CLI.TUI.Shell do
   # click inside a zoomable box = zoom); the point is addressed in body
   # coordinates (the dashboard starts at row 0; the footer rides the
   # last row).
-  def event_to_msg(%Event.Mouse{action: :press, button: :left, x: x, y: y} = event, %{op: nil} = state)
+  def event_to_msg(%Event.Mouse{action: :press, button: :left, x: x, y: y} = event, state)
       when y >= 0 do
     case box_at(state, x, y) do
       box when box in [:capabilities, :plan, :diff] -> {:msg, {:box_click, box}}
@@ -205,43 +183,15 @@ defmodule Workstation.CLI.TUI.Shell do
   def event_to_msg(_event, _state), do: :ignore
 
   @impl TermUI.Elm
-  ## -- op mode: the embedded screen owns the keyboard --------------------
+  ## -- dashboard mode ---------------------------------------------------
 
-  # `q` leaves the screen (the standalone screen's quit semantics): a
-  # running op keeps running daemon-side — the daemon owns the lock and
-  # the journal records the outcome; the shell returns to the dashboard
-  # and re-reads. op is a {kind, sub} tuple; the nil case falls to the
-  # quit clause — a bare `op` pattern would also bind nil and make q
-  # unquit-able.
-  def update({:text, "q"}, %{op: op} = state) when not is_nil(op) do
-    close_op(state)
-  end
-
-  # q on the dashboard quits the app (the footer's documented quit key).
+  # q quits the app (the footer's documented quit key).
   def update({:text, "q"}, state), do: {state, [Command.shutdown()]}
-
-  # The apply screen's `[u]` handoff, kept INSIDE the app: the same guard
-  # as the screen's own clause (idle + indicator showing), but instead of
-  # handing off to the CLI process it swaps to the update screen.
-  def update({:text, "u"}, %{op: {:apply, %Apply{phase: phase, update_hint: hint}}} = state)
-      when phase in [:ready, :done] and hint != nil do
-    open_update(state)
-  end
-
-  # Resize updates the shell AND the embedded screen (cropped to the body
-  # rect — the screens lay themselves out purely from dimensions).
-  def update({:resize, width, height}, %{op: {kind, sub}} = state) do
-    state = %{state | dimensions: {width, height}}
-    {body_width, body_height} = body_dims(state)
-
-    {sub, _commands} = forward(op_module(kind), {:resize, body_width, body_height}, sub)
-    %{state | op: {kind, sub}}
-  end
 
   # Resize re-tiles the dashboard from the visible set and clears preset
   # tracking (§1.2 — a box resize breaks the preset bond exactly like a
   # manual toggle). No view routing: the boxes re-clip at render time.
-  def update({:resize, width, height}, %{op: nil} = state) do
+  def update({:resize, width, height}, state) do
     %{
       state
       | dimensions: {width, height},
@@ -250,12 +200,7 @@ defmodule Workstation.CLI.TUI.Shell do
     }
   end
 
-  # Wire results land in the cache and refresh the derived views — ALSO
-  # while an op is open (§1.6: the dashboard under the floating panel
-  # keeps living). The clause sits above the op-forwarding catch-all
-  # because the op screens have no {:wire_loaded, _, _} contract: below
-  # it, these messages would be swallowed and the mirror would freeze on
-  # stale reads (badges never flipping) for the whole op.
+  # Wire results land in the cache and refresh the derived views.
   def update({:wire_loaded, command, result}, state) do
     state =
       %{state | cache: Map.put(state.cache, command, result)}
@@ -264,18 +209,13 @@ defmodule Workstation.CLI.TUI.Shell do
     {state, []}
   end
 
-  def update(message, %{op: {kind, sub}} = state) do
-    {sub, commands} = forward(op_module(kind), message, sub)
-    {%{state | op: {kind, sub}}, commands}
-  end
-
-  ## -- dashboard mode -----------------------------------------------------
+  ## -- dashboard keys -----------------------------------------------------
 
   # Digits 1-6 toggle dashboard boxes (Config::toggle_box semantics:
   # flip membership, min-size gate, re-tile); 0 and 7+ are inert (btop
   # refuses out-of-range digits the same way — they fall through to the
   # catch-all). A min-size refusal surfaces as the footer's inline flash.
-  def update({:text, digit}, %{op: nil} = state) when digit in ~w(1 2 3 4 5 6) do
+  def update({:text, digit}, state) when digit in ~w(1 2 3 4 5 6) do
     box = Dashboard.box_for_key(digit)
 
     case Dashboard.toggle_box(state.dashboard, box, elem(state.dimensions, 0)) do
@@ -288,32 +228,21 @@ defmodule Workstation.CLI.TUI.Shell do
   end
 
   # p/P cycle the presets (next/previous, wrap-around; §2.2).
-  def update({:text, "p"}, %{op: nil} = state),
+  def update({:text, "p"}, state),
     do: %{state | dashboard: Dashboard.cycle(state.dashboard, :next), flash: nil}
 
-  def update({:text, "P"}, %{op: nil} = state),
+  def update({:text, "P"}, state),
     do: %{state | dashboard: Dashboard.cycle(state.dashboard, :prev), flash: nil}
 
   # ? toggles the help reference (a boxed scrollable view — the
   # floating-paged variant is a recorded deviation; §2.4 keeps the
   # symmetric open/close key).
-  def update({:text, "?"}, %{op: nil} = state), do: %{state | help: not state.help, flash: nil}
+  def update({:text, "?"}, state), do: %{state | help: not state.help, flash: nil}
 
   # r refreshes the dashboard's reads — force reload even when cached.
-  def update({:text, "r"}, %{op: nil} = state) do
+  def update({:text, "r"}, state) do
     {state, commands} = load_commands(state, @wires, true)
     {%{state | flash: nil}, commands}
-  end
-
-  # a applies the current plan — the plan the shell already loaded; the
-  # embedded screen applies exactly what was rendered.
-  def update({:text, "a"}, %{op: nil, cache: %{plan: {:ok, plan}}} = state) do
-    open_apply(plan, state)
-  end
-
-  # u runs the update flow when the availability probe found one.
-  def update({:text, "u"}, %{op: nil, update_hint: hint} = state) when hint != nil do
-    open_update(state)
   end
 
   ## -- in-box deep views (§1.6: drill/zoom never leave the dashboard) -----
@@ -322,7 +251,7 @@ defmodule Workstation.CLI.TUI.Shell do
   # box in place (capabilities tree drill, plan/diff read zoom); Enter
   # again restores the tiler (btop_input.cpp:462-484 — Enter toggles
   # show_detailed).
-  def update({:key, :enter}, %{op: nil, help: false} = state) do
+  def update({:key, :enter}, %{help: false} = state) do
     case Dashboard.expansion(state.dashboard) do
       nil ->
         box = Enum.find(~w(capabilities plan diff)a, &Dashboard.visible?(state.dashboard, &1))
@@ -341,10 +270,10 @@ defmodule Workstation.CLI.TUI.Shell do
 
   # Esc closes overlays outside-in: the help reference first, then the
   # box deep view (§2.4 — Esc-family keys are symmetric open/close).
-  def update({:key, :escape}, %{op: nil, help: true} = state),
+  def update({:key, :escape}, %{help: true} = state),
     do: %{state | help: false, flash: nil}
 
-  def update({:key, :escape}, %{op: nil} = state) do
+  def update({:key, :escape}, state) do
     if Dashboard.expansion(state.dashboard) != nil do
       %{state | dashboard: Dashboard.contract(state.dashboard), flash: nil}
     else
@@ -355,7 +284,7 @@ defmodule Workstation.CLI.TUI.Shell do
   # A click inside a zoomable box toggles ITS deep view (§2.5: click
   # inside a zoomable box = zoom, the proc-detail analog); clicks do not
   # steal the deep view from the box that owns it.
-  def update({:box_click, box}, %{op: nil, dashboard: dash} = state) do
+  def update({:box_click, box}, %{dashboard: dash} = state) do
     case Dashboard.expansion(dash) do
       ^box ->
         %{state | dashboard: Dashboard.contract(dash), flash: nil}
@@ -376,7 +305,7 @@ defmodule Workstation.CLI.TUI.Shell do
   # node drill is right/left (Enter is the box drill's toggle).
   @nav_keys [:up, :down, :left, :right, :page_up, :page_down, :home, :end, :backspace]
 
-  def update({:key, key}, %{op: nil, help: false} = state) when key in @nav_keys do
+  def update({:key, key}, %{help: false} = state) when key in @nav_keys do
     case scroll_target(state) do
       {:zoom, id} ->
         zoom_scroll(state, id, key)
@@ -392,24 +321,15 @@ defmodule Workstation.CLI.TUI.Shell do
   # Scroll keys ride the help reference while it is open; every other
   # message is ignored (the boxes are static summaries until the overlay
   # lane adds their scrollable deep views).
-  # Scroll keys ride the help reference while it is open; every other
-  # message is ignored (the boxes are static summaries until the overlay
-  # lane adds their scrollable deep views).
-  def update(message, %{op: nil, help: true, text_views: views} = state) do
+  def update(message, %{help: true, text_views: views} = state) do
     view = Map.get(views, :help) || TextView.init(Enum.join(Help.lines(), "\n"))
     %{state | text_views: Map.put(views, :help, TextView.update(message, view))}
   end
 
-  # The shell's OWN availability probe (the embedded screens run theirs
-  # against the same executor; the message shapes do not collide because
-  # the shell prefixes its token).
-  def update({:shell_check_done, verdict}, state),
-    do: %{state | update_hint: UpdateHint.fold(verdict)}
-
   # Any unhandled key clears the footer flash: the inline error's
   # lifetime is exactly one keypress — the layout did not change under
   # it. Re-dispatch on the cleared state; every real clause sits above.
-  def update(message, %{op: nil, flash: flash} = state) when flash != nil,
+  def update(message, %{flash: flash} = state) when flash != nil,
     do: update(message, %{state | flash: nil})
 
   def update(_message, state), do: state
@@ -428,18 +348,7 @@ defmodule Workstation.CLI.TUI.Shell do
   def do_view(state) do
     {width, height} = state.dimensions
 
-    heights =
-      if state.op do
-        # In op mode the embedded screen renders its own footer; the shell
-        # owns only the body (the boxes' own superscript titles advertise
-        # their toggle digits — there is no separate top strip).
-        [:fill]
-      else
-        [:fill, 1]
-      end
-
-    [body | rest] = Layout.column(Layout.new({width, height}), heights)
-    footer = List.first(rest)
+    [body, footer] = Layout.column(Layout.new({width, height}), [:fill, 1])
 
     frame = Helpers.frame([], {width, height})
 
@@ -448,12 +357,8 @@ defmodule Workstation.CLI.TUI.Shell do
     |> compose_footer(footer, state)
   end
 
-  # op-nil first: a bare %{op: _op} pattern would bind nil and swallow
-  # the normal footer.
-  defp compose_footer(frame, footer, %{op: nil} = state),
+  defp compose_footer(frame, footer, state),
     do: Helpers.compose(frame, footer, &footer_frame(state, &1))
-
-  defp compose_footer(frame, _footer, %{op: _op}), do: frame
 
   ## data loading
 
@@ -526,75 +431,6 @@ defmodule Workstation.CLI.TUI.Shell do
     %{state | text_views: Map.put(views, id, TextView.update({:key, key}, view))}
   end
 
-  defp check_commands(state) do
-    [
-      Command.async(state.check, fn
-        {:ok, result} -> {:shell_check_done, result}
-        {:error, reason} -> {:shell_check_done, {:error, inspect(reason, pretty: false)}}
-      end)
-    ]
-  end
-
-  ## op screens (embedded apply/update)
-
-  defp op_module(:apply), do: Apply
-  defp op_module(:update), do: Update
-
-  defp forward(module, message, sub) do
-    case module.update(message, sub) do
-      {sub, commands} -> {sub, commands}
-      sub -> {sub, []}
-    end
-  end
-
-  # `a` embeds the apply screen: the plan the dashboard rendered is the
-  # plan the screen applies (help pane closed — the op covers the pane);
-  # `q` leaves without applying, `u` hands off to the update screen.
-  defp open_apply(plan, state) do
-    {sub, commands} =
-      Apply.init(
-        destination: state.destination,
-        plan: plan,
-        theme: state.theme,
-        dimensions: body_dims(state),
-        executor: state.executor,
-        check: state.check,
-        toast_ms: state.toast_ms
-      )
-
-    {%{state | op: {:apply, sub}, help: false}, commands}
-  end
-
-  # `u` embeds the update screen; same body ownership contract as apply.
-  defp open_update(state) do
-    {sub, commands} =
-      Update.init(
-        destination: state.destination,
-        theme: state.theme,
-        dimensions: body_dims(state),
-        executor: state.update_executor,
-        check: state.check,
-        toast_ms: state.toast_ms
-      )
-
-    {%{state | op: {:update, sub}, help: false}, commands}
-  end
-
-  # Leaving an op screen returns to the dashboard and re-reads: an apply
-  # may have changed the world (or the daemon may still hold the lock —
-  # the reads report that honestly).
-  defp close_op(state) do
-    state = %{state | op: nil}
-    {state, commands} = load_commands(state, @wires, true)
-    {state, commands}
-  end
-
-  # The op screens own the whole terminal (do_view heights [:fill] in op
-  # mode): their layout rect is the full dimensions.
-  defp body_dims(%{dimensions: dims}), do: dims
-
-  ## rendering
-
   ## rendering
 
   # One full-width chrome bar: keycap ISLANDS (each a span group — the
@@ -629,16 +465,10 @@ defmodule Workstation.CLI.TUI.Shell do
     visible ++ flash_span ++ [{String.duplicate("─", max(width - used - flash_width, 0)), styles.chrome}]
   end
 
-  # Ops render as overlay workflows (§1.6): preview phases keep the full
-  # review surface, run/done float their panel over the mirror of the
-  # living dashboard — events keep streaming underneath.
-  defp body_frame(%{op: {kind, sub}} = state, dims),
-     do: op_module(kind).view(sub, dashboard_frame(state, dims))
-
   # The help reference renders as a boxed scrollable text view (↑↓ /
   # pgup/pgdn + the border block scrollbar) so nothing clips; the paged
   # overlay lands with the overlay lane.
-  defp body_frame(%{op: nil, help: true} = state, dims) do
+  defp body_frame(%{help: true} = state, dims) do
     styles = theme_styles(state)
     view = Map.get(state.text_views, :help) || TextView.init(Enum.join(Help.lines(), "\n"))
 
@@ -653,7 +483,7 @@ defmodule Workstation.CLI.TUI.Shell do
 
   # The one dashboard: whatever the layout answers for the visible set is
   # composed straight onto the body frame — boxes, not tabs.
-  defp body_frame(%{op: nil} = state, dims), do: dashboard_frame(state, dims)
+  defp body_frame(state, dims), do: dashboard_frame(state, dims)
 
   defp dashboard_frame(state, dims) do
     styles = theme_styles(state)
@@ -916,26 +746,14 @@ defmodule Workstation.CLI.TUI.Shell do
   defp status_rows(_state, styles), do: [label_row("status", "loading…", styles)]
 
   # The actions box: per-domain block meters over the collected desired
-  # state; the bottom border doubles as the home buttonbar (apply/update
-  # appear exactly when their key works)."""
+  # state; the bottom border doubles as the refresh buttonbar.
   defp caps_box(state, styles, dims) do
     Box.frame(caps_rows(state, styles), dims,
       border_style: styles.border_capabilities,
       title: [{keycap(2), styles.keycap}, {"capabilities", styles.text}],
-      buttons: [[{"a", styles.shortcut}, {" apply", styles.text}]] ++
-                 u_button(state, styles) ++
-                 [[{"r", styles.shortcut}, {" refresh", styles.text}]]
+      buttons: [[{"r", styles.shortcut}, {" refresh", styles.text}]]
     )
   end
-
-  # `u update` rides the buttonbar only while the update is available —
-  # the same honesty rule as the old keys line (a key that does nothing
-  # must not be advertised).
-  defp u_button(%{update_hint: hint}, styles) when hint != nil do
-    [[{"u", styles.shortcut}, {" update", styles.text}]]
-  end
-
-  defp u_button(_state, _styles), do: []
 
   # `label      value` body row: the label reads inactive (dimmed
   # chrome), the value carries its own role span (or plain text). The
@@ -1103,7 +921,7 @@ defmodule Workstation.CLI.TUI.Shell do
 
   defp diff_rows(_state, styles), do: [label_row("diff", "loading…", styles)]
 
-  defp caps_rows(%{caps_env: %{} = envelope} = state, styles) do
+  defp caps_rows(%{caps_env: %{} = envelope}, styles) do
     domains = envelope["domains"] || []
     max_files = domains |> Enum.map(&(&1["files"] || 0)) |> Enum.max(fn -> 0 end)
 
@@ -1116,8 +934,7 @@ defmodule Workstation.CLI.TUI.Shell do
         styles
       )
     ] ++
-      Enum.map(domains, &domain_meter_row(&1, max_files, styles)) ++
-      hint_rows(state, styles)
+      Enum.map(domains, &domain_meter_row(&1, max_files, styles))
   end
 
   defp caps_rows(%{cache: %{status: {:error, message}}}, styles) do
@@ -1143,16 +960,6 @@ defmodule Workstation.CLI.TUI.Shell do
       {"#{planned} would change", if(planned > 0, do: styles.warn, else: styles.inactive)}
     ]
   end
-
-  # The update hint rides the capabilities box body (and its border
-  # button); no hint means no row.
-  # A single body row (a list of spans) — the caller appends rows, so the
-  # row itself carries one nesting level.
-  defp hint_rows(%{update_hint: hint}, styles) when hint != nil do
-    [[{" " <> UpdateHint.text(hint), styles.warn}]]
-  end
-
-  defp hint_rows(_state, _styles), do: []
 
   # Right-island would-change badges: saturated (warn) only when the
   # surface actually has pending work, quiet otherwise.

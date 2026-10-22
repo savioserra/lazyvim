@@ -136,61 +136,6 @@ defmodule Workstation.CLITest do
 
       assert {:shutdown, 2} = run_main(["bogus", "--home", home])
     end
-
-    # Regression (the same 2026-10-14 defect class as the locked-refusal
-    # crash): ensure-daemon's spawn refusal rides out of DaemonClient.call
-    # as a BARE message (no release binary in a mix env), and the bootstrap
-    # arm's case clauses matched neither it nor the wire's string-coded
-    # refusals — a CaseClauseError instead of the clean exit-4 operator
-    # error. No daemon is running here, so the verb reaches the spawn path.
-    test "bootstrap without an installable daemon fails closed with the spawn refusal" do
-      {_root, home} = temp_test_root()
-
-      {result, stderr} = capture_main_with_stderr(["bootstrap", "--home", home])
-
-      assert {:shutdown, 4} = result
-      # The spawn refusal is transport-tagged (daemon_unavailable) since
-      # ensure honors its own contract; the operator message is the truth.
-      assert stderr =~ "error: daemon_unavailable: no release binary at"
-      assert stderr =~ "workstation bootstrap"
-    end
-
-    # The release-handoff child's gate (the 2026-10-19 aurora fix): a
-    # --resume-from run health-checks the fresh daemon — one real read op
-    # through DaemonClient (`status.run`) — BEFORE the chain dispatches, so
-    # the apply step can never proceed on a node that is not serving. No
-    # daemon (and no installable release) exists in a mix env, so the gate
-    # fails closed with its own lead-in naming the transport refusal —
-    # never the chain's own error shape, and never a silent proceed.
-    test "update --resume-from health-checks the fresh daemon before the chain" do
-      {_root, home} = temp_test_root()
-
-      {result, stderr} =
-        capture_main_with_stderr([
-          "update",
-          "--headless",
-          "--resume-from",
-          "apply,sync,verify",
-          "--home",
-          home
-        ])
-
-      assert {:shutdown, 4} = result
-      assert stderr =~ "error: update health check failed"
-      assert stderr =~ "no release binary at"
-    end
-
-    # A normal (non-resume) update takes no health-check op: its daemon is
-    # proven by its own first op, and the failure surface stays the plain
-    # runner's.
-    test "a non-resume update runs no health-check op" do
-      {_root, home} = temp_test_root()
-
-      {result, stderr} = capture_main_with_stderr(["update", "--headless", "--home", home])
-
-      assert {:shutdown, 4} = result
-      refute stderr =~ "update health check failed"
-    end
   end
 
   describe "subcommand help contract" do
@@ -199,23 +144,15 @@ defmodule Workstation.CLITest do
     # flag and executed the verb. Optimus intercepts a bare-argv --help
     # only, so the Router owns the rest: the global -h/--help flag parses
     # on every subcommand and the dispatch gate prints usage and exits 0
-    # before ANY verb work (no home resolution, no terminal gate, no
-    # pre-replace daemon stop). `daemon` is pinned in DaemonVerbTest,
-    # where the env fixture makes the never-boots refutation hermetic.
+    # before ANY verb work (no home resolution, no terminal gate).
+    # `daemon` is pinned in DaemonVerbTest, where the env fixture makes the
+    # never-boots refutation hermetic.
 
     @help_verbs [
       "status",
       "plan",
       "diff",
-      "capabilities",
-      # The mutating verbs — the incident class: a help request here used
-      # to be able to provision, apply, or update a real home.
-      "bootstrap",
-      "apply",
-      "update",
-      "sync",
-      "verify",
-      "pull"
+      "capabilities"
     ]
 
     test "every subcommand answers --help and -h with usage, exit 0, and no execution" do
@@ -235,41 +172,23 @@ defmodule Workstation.CLITest do
       end
     end
 
-    test "apply --help documents the verb's own flags" do
+    test "status --help documents the verb's own flags" do
       {_root, home} = temp_test_root()
 
-      {result, stdout, _stderr} = capture_main_both(["apply", "--help", "--home", home])
+      {result, stdout, _stderr} = capture_main_both(["status", "--help", "--home", home])
 
       assert :ok = result
-      assert stdout =~ "--headless"
-      assert stdout =~ "--adopt"
+      assert stdout =~ "--home"
+      assert stdout =~ "--input"
     end
 
     test "help <verb> prints that verb's usage (not the top-level help)" do
-      {result, stdout, stderr} = capture_main_both(["help", "bootstrap"])
+      {result, stdout, stderr} = capture_main_both(["help", "plan"])
 
       assert :ok = result
       assert stdout =~ "USAGE:"
-      assert stdout =~ "workstation bootstrap"
+      assert stdout =~ "workstation plan"
       assert stderr == ""
-    end
-
-    # The fail-closed half of the contract: an unknown flag on a mutating
-    # verb is a usage error (exit 2), never a silently ignored flag that
-    # lets the verb run.
-    test "an unknown flag on apply is a usage error and executes nothing" do
-      {_root, home} = temp_test_root()
-
-      {result, stderr} =
-        capture_main_with_stderr(["apply", "--bogus", "--headless", "--home", home])
-
-      assert {:shutdown, 2} = result
-      assert stderr =~ "unrecognized arguments"
-
-      # Executes nothing: no terminal refusal (exit 1), no daemon attempt
-      # (exit 4) — the usage error is the whole interaction.
-      refute stderr =~ "no usable terminal"
-      refute stderr =~ "daemon_unavailable"
     end
   end
 
@@ -415,29 +334,6 @@ defmodule Workstation.CLITest do
         "packages": [{"id": "a", "requires": ["ghost"], "contributes": []}], "assets": {}}))
 
       assert {:shutdown, 3} = run_main(core_argv("plan", home, ["--input", envelope]))
-    end
-  end
-
-  describe "TUI-default contract (apply/update)" do
-    # ExUnit runs with piped stdio, so the gate is exercised exactly as a
-    # non-interactive caller hits it: no flag and no terminal is exit 1 with
-    # the no-terminal message, before any executor can run.
-    test "apply without --headless on a non-terminal refuses with exit 1" do
-      {_root, home} = temp_test_root()
-
-      {result, output} = capture_main_with_stderr(["apply", "--home", home])
-
-      assert {:shutdown, 1} = result
-      assert output =~ "workstation: no usable terminal; pass --headless for non-interactive runs"
-    end
-
-    test "update without --headless on a non-terminal refuses with exit 1" do
-      {_root, home} = temp_test_root()
-
-      {result, output} = capture_main_with_stderr(["update", "--home", home])
-
-      assert {:shutdown, 1} = result
-      assert output =~ "workstation: no usable terminal; pass --headless for non-interactive runs"
     end
   end
 
@@ -741,28 +637,6 @@ defmodule Workstation.CLITest.EnvContract do
 
         System.delete_env("TERM")
         refute Router.usable_terminal?()
-      after
-        if original, do: System.put_env("TERM", original), else: System.delete_env("TERM")
-      end
-    end
-
-    # TERM=dumb refuses apply even before plan evaluation — and the refusal
-    # happens before any state-root read, but the run still brackets the
-    # engine state root to the sandbox: a mutating verb must never resolve
-    # engine state from the real $HOME inside the suite (the 17:37 incident
-    # shape).
-    test "TERM=dumb refuses apply" do
-      {root, home} = temp_test_root()
-      original = System.get_env("TERM")
-
-      try do
-        System.put_env("TERM", "dumb")
-        System.put_env("WORKSTATION_HOME", root)
-
-        {result, _stdout, stderr} = run_main_with_env(["apply", "--home", home], "TERM", "dumb")
-
-        assert {:shutdown, 1} = result
-        assert stderr =~ "no usable terminal"
       after
         if original, do: System.put_env("TERM", original), else: System.delete_env("TERM")
       end

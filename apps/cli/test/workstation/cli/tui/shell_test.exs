@@ -120,18 +120,7 @@ defmodule Workstation.CLI.TUI.ShellTest do
         destination: @destination,
         theme: Theme.base_colors(:dark),
         toast_ms: 60_000,
-        load: loader(),
-        # The shell's own availability probe: pinned to the real
-        # "behind" verdict unless a test pins its own.
-        check: fn -> {:ok, %{"status" => "behind", "local" => "v1", "remote" => "v2"}} end,
-        executor: fn _plan ->
-          Process.sleep(10)
-          :ok
-        end,
-        update_executor: fn _flow ->
-          Process.sleep(10)
-          :ok
-        end
+        load: loader()
       ],
       extra
     )
@@ -287,12 +276,12 @@ defmodule Workstation.CLI.TUI.ShellTest do
   test "home lists every verb's surface once the reads land" do
     _runtime = start_shell_wide()
 
-    # Reads AND the availability probe land asynchronously — ride the
-    # draws until both are on screen, then assert the full surface.
+    # Reads land asynchronously — ride the draws until the surface is up,
+    # then assert it.
     frame =
       await_frame(fn frame ->
         text = full_text(frame)
-        text =~ "9.9.9-test" and text =~ "update available"
+        text =~ "9.9.9-test"
       end)
 
     text = body_text(frame)
@@ -304,12 +293,7 @@ defmodule Workstation.CLI.TUI.ShellTest do
     # editor (nvim+helix: 2 files) + terminal (tmux: 1 file) = 2 domains.
     assert text =~ "2 domains · 3 files · 2 would change"
     assert text =~ "● reachable"
-    assert text =~ "a apply"
-    # The probe says an update exists → the affordances show: the hint
-    # rides the capabilities band body; the button rides the home
-    # buttonbar.
-    assert full_text(frame) =~ "update available"
-    assert text =~ "u update"
+    assert text =~ "r refresh"
   end
 
   # -- digits toggle boxes; p/P cycles presets -------------------------------
@@ -449,10 +433,10 @@ defmodule Workstation.CLI.TUI.ShellTest do
     text = settled_frame(runtime) |> body_text()
 
     assert text =~ "standalone entry points"
-    assert text =~ "--headless"
+    assert text =~ "system applied"
     assert text =~ "bare `workstation` opens this app on a terminal"
     assert text =~ "without a TTY"
-    assert text =~ "keeps running daemon-side"
+    assert text =~ "the workstation-switch drivers"
 
     # ? closes the overlay and returns to the living dashboard.
     send_text(runtime, "?")
@@ -465,96 +449,6 @@ defmodule Workstation.CLI.TUI.ShellTest do
     assert body_text(frame) =~ "9.9.9-test"
   end
 
-  # -- embedded apply / update screens ---------------------------------------
-
-  test "a opens the apply screen INSIDE the app (chrome unchanged, body swaps)" do
-    runtime = start_shell()
-    # Settle first: `a` needs the plan wire loaded (the key would race
-    # the initial async loads otherwise).
-    loaded_frame(runtime)
-    send_text(runtime, "a")
-    frame = await_frame(fn f -> body_text(f) =~ "apply · #{@destination}" end)
-
-    # The op screen owns the whole body — ops are workflows over the
-    # dashboard, not new tabs; no dashboard chrome survives above it.
-    refute body_text(frame) =~ "¹engine"
-    text = body_text(frame)
-    assert text =~ "apply · #{@destination}"
-    assert text =~ "gen gen-3"
-    assert text =~ "3 changes"
-    # op mode — the shell keeps only the strip above the screen, so the
-    # screen's own footer is the last body row.
-    assert Frame.row_text(frame, 30) =~ "a confirm"
-  end
-
-  test "embedded apply run completes, then [u] swaps to the update screen" do
-    runtime = start_shell()
-    loaded_frame(runtime)
-    send_text(runtime, "a")
-    assert settled_frame(runtime) |> body_text() =~ "apply · #{@destination}"
-
-    # a opens the typed-confirm gate; the typed verb arms, Enter fires
-    # (spec §2.3). The gate documents its keys on the screen's own border
-    # buttonbar. The key events ride the screen's async loop — wait for
-    # the dialog instead of trusting one drain.
-    send_text(runtime, "a")
-    frame =
-      await_frame(fn frame ->
-        body_text(frame) =~ "Confirm apply"
-      end)
-    assert Frame.row_text(frame, 30) =~ "enter confirm apply"
-    assert Frame.row_text(frame, 30) =~ "n cancel"
-    "apply" |> String.graphemes() |> Enum.each(&send_text(runtime, &1))
-    send_key(runtime, :enter)
-
-    # The run is an async executor round-trip: a single quiet window can
-    # close before its answer lands (the one shell_test flake read the
-    # in-flight frame as settled), so ride the draws until the applied
-    # frame arrives — bounded, never a hang. The done phase floats its
-    # panel over the mirror of the living dashboard (§1.6) and the
-    # toast lands bottom-right.
-    frame =
-      await_frame(fn frame ->
-        body_text(frame) =~ "Applied generation gen-3"
-      end)
-
-    assert body_text(frame) =~ "¹engine"
-    assert body_text(frame) =~ "applied — the dashboard below is live again"
-
-    # The screen's own [u] handoff — now it swaps screens, not processes.
-    send_text(runtime, "u")
-    frame = settled_frame(runtime)
-    # The update screen owns the whole body — the dashboard is gone.
-    refute body_text(frame) =~ "¹engine"
-    assert body_text(frame) =~ "update · #{@destination}"
-  end
-
-  test "q inside an op screen returns to the dashboard and re-reads (daemon keeps running)" do
-    runtime = start_shell()
-    loaded_frame(runtime)
-    send_text(runtime, "a")
-    assert await_frame(fn f -> body_text(f) =~ "apply · #{@destination}" end) |> body_text() =~
-             "apply · #{@destination}"
-
-    send_text(runtime, "q")
-    frame = await_frame(fn f -> body_text(f) =~ "9.9.9-test" end)
-    assert Frame.row_text(frame, 1) =~ "╭"
-    assert body_text(frame) =~ "9.9.9-test"
-    refute body_text(frame) =~ "apply · "
-  end
-
-  test "u on home opens the update screen when the probe found updates" do
-    runtime = start_shell_wide()
-    # `u` needs the shell's availability probe verdict — await the hint
-    # (it rides the capabilities band body, not the home body).
-    await_frame(fn frame -> full_text(frame) =~ "update available" end)
-    send_text(runtime, "u")
-    frame = settled_frame(runtime)
-
-    refute body_text(frame) =~ "¹engine"
-    assert body_text(frame) =~ "update · #{@destination}"
-  end
-
   test "q on the dashboard quits the app (the footer's documented quit key)" do
     runtime = start_shell()
     loaded_frame(runtime)
@@ -562,17 +456,6 @@ defmodule Workstation.CLI.TUI.ShellTest do
     send_text(runtime, "q")
     snapshot = shutdown_snapshot()
     assert snapshot.shutdown_reason == :normal
-  end
-
-  test "up-to-date probe: no hint row and u on home is a no-op" do
-    runtime = start_shell_wide(check: fn -> {:ok, %{"status" => "up_to_date"}} end)
-    frame = settled_frame(runtime)
-
-    refute body_text(frame) =~ "update available"
-
-    send_text(runtime, "u")
-    frame = await_frame(fn f -> body_text(f) =~ "9.9.9-test" end)
-    refute body_text(frame) =~ "update available"
   end
 
   # -- status box ------------------------------------------------------------
@@ -612,6 +495,63 @@ defmodule Workstation.CLI.TUI.ShellTest do
   end
 
   # -- btop grammar: borders, ramps, per-domain accents ----------------------
+
+  # The journal box's applied row sits wherever the responsive home puts
+  # the box, so the row is located by its label instead of a pinned row
+  # number.
+  defp applied_row(frame) do
+    row = Enum.find(1..(frame.height - 1), &String.contains?(Frame.row_text(frame, &1), "applied:"))
+    assert row, "journal applied row not found on the home frame"
+    row
+  end
+
+  # -- helpers -----------------------------------------------------------------
+
+  defp body_text(frame) do
+    # The body spans rows 1..(height-1) — the dashboard owns the whole
+    # terminal but the footer row.
+    1..(frame.height - 1)
+    |> Enum.map(&Frame.row_text(frame, &1))
+    |> Enum.join("\n")
+  end
+
+  # The full frame — footer included; body_text already covers the
+  # loaded home's data rows, so this only differs by the footer row.
+  defp full_text(frame) do
+    1..frame.height
+    |> Enum.map(&Frame.row_text(frame, &1))
+    |> Enum.join("\n")
+  end
+
+  # 1-based row of the first BODY row containing `needle`. The footer
+  # (last row) is chrome — every box title, data row and badge lives in
+  # the body — so the search skips it; a needle that exists only on the
+  # chrome row (keycap islands) is not found.
+  defp find_row(frame, needle) do
+    1..(frame.height - 1)
+    |> Enum.find(&(Frame.row_text(frame, &1) =~ needle))
+  end
+
+  defp fg_in_row?(frame, row, rgb) do
+    1..frame.width
+    |> Enum.any?(fn col -> Frame.cell(frame, row, col).fg == rgb end)
+  end
+
+  # 1-based column of the first non-space cell after `label:` in a row.
+  # :binary.match byte offsets == cell columns for ASCII labels.
+  defp value_col(frame, row, label) do
+    text = Frame.row_text(frame, row)
+    {pos, _len} = :binary.match(text, label <> ":")
+    first_nonspace(text, pos + String.length(label <> ":"))
+  end
+
+  defp first_nonspace(text, pos) do
+    case String.at(text, pos) do
+      nil -> pos + 1
+      " " -> first_nonspace(text, pos + 1)
+      _char -> pos + 1
+    end
+  end
 
   test "journal line rides the magnitude ramp by applied-at age (fresh/aging/stale)" do
     # The journal box's applied row sits wherever the responsive home puts
@@ -793,115 +733,6 @@ defmodule Workstation.CLI.TUI.ShellTest do
   end
 
   # -- resize ----------------------------------------------------------------
-
-  test "resize reflows the chrome and the embedded screen" do
-    runtime = start_shell()
-    loaded_frame(runtime)
-    send_text(runtime, "a")
-    frame = settled_frame(runtime)
-    refute body_text(frame) =~ "¹engine"
-    assert Frame.row_text(frame, 1) =~ "apply · #{@destination}"
-
-    send_event(runtime, Event.resize(120, 40))
-
-    # The resize event rides the screen's async event loop — wait for
-    # the reflowed frame instead of trusting one drain.
-    frame =
-      await_frame(fn frame ->
-        frame.width == 120
-      end)
-
-    assert frame.width == 120
-    # The op survives the resize; the embedded screen re-laid itself out
-    # to the body rect of the new size.
-    assert Frame.row_text(frame, 1) =~ "apply · #{@destination}"
-  end
-
-  test "the run panel floats over the mirror at the second canonical size (80x20)" do
-    runtime = start_shell()
-    loaded_frame(runtime)
-    send_text(runtime, "a")
-    assert settled_frame(runtime) |> body_text() =~ "apply · #{@destination}"
-
-    send_event(runtime, Event.resize(80, 20))
-    await_frame(fn frame ->
-      frame.width == 80 and body_text(frame) =~ "apply · #{@destination}"
-    end)
-
-    # a -> gate -> typed verb: at 80x20 the body is 80x18 — past the
-    # float threshold, so the done panel (56x7, centered) floats and the
-    # dashboard mirror shows above it.
-    send_text(runtime, "a")
-    await_frame(fn f -> body_text(f) =~ "Confirm apply" end)
-    "apply" |> String.graphemes() |> Enum.each(&send_text(runtime, &1))
-    send_key(runtime, :enter)
-
-    frame =
-      await_frame(fn f ->
-        body_text(f) =~ "Applied generation gen-3"
-      end)
-
-    assert body_text(frame) =~ "¹engine"
-    assert body_text(frame) =~ "applied — the dashboard below is live again"
-  end
-
-  # -- helpers -----------------------------------------------------------------
-
-  defp body_text(frame) do
-    # The body spans rows 1..(height-1) — the dashboard owns the whole
-    # terminal but the footer row — and the shell footer is the last row
-    # (op mode's own footer included).
-    1..(frame.height - 1)
-    |> Enum.map(&Frame.row_text(frame, &1))
-    |> Enum.join("\n")
-  end
-
-  # The full frame — footer included; body_text already covers the
-  # loaded home's data rows, so this only differs by the footer row.
-  defp full_text(frame) do
-    1..frame.height
-    |> Enum.map(&Frame.row_text(frame, &1))
-    |> Enum.join("\n")
-  end
-
-  # 1-based row of the first BODY row containing `needle`. The footer
-  # (last row) is chrome — every box title, data row and badge lives in
-  # the body — so the search skips it; a needle that exists only on the
-  # chrome row (keycap islands) is not found.
-  defp find_row(frame, needle) do
-    1..(frame.height - 1)
-    |> Enum.find(&(Frame.row_text(frame, &1) =~ needle))
-  end
-
-  defp fg_in_row?(frame, row, rgb) do
-    1..frame.width
-    |> Enum.any?(fn col -> Frame.cell(frame, row, col).fg == rgb end)
-  end
-
-  # 1-based column of the first non-space cell after `label:` in a row.
-  # :binary.match byte offsets == cell columns for ASCII labels.
-  defp value_col(frame, row, label) do
-    text = Frame.row_text(frame, row)
-    {pos, _len} = :binary.match(text, label <> ":")
-    first_nonspace(text, pos + String.length(label <> ":"))
-  end
-
-  defp first_nonspace(text, pos) do
-    case String.at(text, pos) do
-      nil -> pos + 1
-      " " -> first_nonspace(text, pos + 1)
-      _char -> pos + 1
-    end
-  end
-
-  # The journal box's applied-at stamp row, found by its label (the only
-  # "applied:" on the home body — the rollup line reads "applied gen-2"
-  # without a colon).
-  defp applied_row(frame) do
-    row = Enum.find(1..(frame.height - 1), &String.contains?(Frame.row_text(frame, &1), "applied:"))
-    assert row, "journal applied row not found on the home frame"
-    row
-  end
 
   ## -- in-box deep views (§1.6: drill/zoom never leave the dashboard) -----
 
