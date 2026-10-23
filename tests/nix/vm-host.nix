@@ -14,7 +14,7 @@
 #
 # `tests/nix/run-vm.sh` builds system.build.vm, boots it, and greps the
 # serial console for the OK marker and any FAIL line.
-{ self, qemuVmModule, engine, ... }:
+{ self, config, qemuVmModule, engine, ... }:
 let
   # x86_64-linux is this VM's system (the host leg that runs it).
   pkgs = import self.inputs.nixpkgs { system = "x86_64-linux"; };
@@ -24,6 +24,13 @@ in
   imports = [ qemuVmModule ];
 
   workstation.enable = true;
+
+  # host identity: the proof host's facts (consumers derive; the flake's
+  # "vm-test" configuration key matches this name)
+  workstation.host.name = "vm-test";
+  # the canonical declaration derives from the identity option — never a
+  # second literal
+  networking.hostName = config.workstation.host.name;
 
   users.users.vm = {
     isNormalUser = true;

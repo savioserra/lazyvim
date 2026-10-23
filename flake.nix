@@ -36,12 +36,11 @@
       # derives the rebuild key and every username/home path from the host
       # module — this body carries zero personal strings (the identity gate
       # in check.sh enforces it)
-      wslHost = import ./hosts/wsl/default.nix {
+      # the two legs the flake targets: the linux leg (WSL counted under
+      # it) and the mac leg — operator ruling 2026-10-22 (platform-two;
+      # no distro-named legs anywhere)
+      linuxHost = import ./hosts/wsl/default.nix {
         inherit self nixpkgs home-manager nixos-wsl;
-      };
-
-      omarchyHost = import ./hosts/omarchy/default.nix {
-        inherit self nixpkgs home-manager;
       };
 
       macHost = import ./hosts/mac/default.nix {
@@ -61,7 +60,7 @@
         # the walker takes no default: identity must arrive per host. The
         # report itself pins no home paths (the golden stays byte-stable),
         # but the argument stays required so no caller can inherit a name.
-        homeDir = wslHost.homeDir;
+        homeDir = linuxHost.homeDir;
       }).report
       // {
         # the `system` overlay domain's publish contract (the nix side of
@@ -71,7 +70,7 @@
 
       # the rebuild key is DERIVED from the host identity (${user}@<host>),
       # never hand-typed
-      homeConfigurations.${wslHost.homeKey} = home-manager.lib.homeManagerConfiguration {
+      homeConfigurations.${linuxHost.homeKey} = home-manager.lib.homeManagerConfiguration {
         pkgs = nixpkgs.legacyPackages.${hostSystem};
         extraSpecialArgs = {
           inherit self;
@@ -81,11 +80,11 @@
           (
             { ... }:
             {
-              home.username = wslHost.user;
-              home.homeDirectory = wslHost.homeDir;
+              home.username = linuxHost.user;
+              home.homeDirectory = linuxHost.homeDir;
               # the switch driver's default targets: derived from the host
               # identity (never hand-typed)
-              workstation.switch.homeAttr = wslHost.homeKey;
+              workstation.switch.homeAttr = linuxHost.homeKey;
               workstation.switch.systemAttr = "wsl";
             }
           )
@@ -93,13 +92,8 @@
         ];
       };
 
-      # the omarchy leg: the SAME standalone-HM shape on Arch (no NixOS
-      # flip — deferred by operator ruling 2026-10-21). Nix itself stages
-      # the substrate; omarchy's systemd runs the daemon user unit.
-      homeConfigurations.${omarchyHost.homeKey} = omarchyHost.homeConfig;
-
-      # the VM's standalone home: the exact shape the WSL and omarchy legs
-      # apply — and the E2E's apply target inside the offline VM
+      # the VM's standalone home: the exact shape the linux leg applies —
+      # and the E2E's apply target inside the offline VM
       homeConfigurations."vm@vm" = home-manager.lib.homeManagerConfiguration {
         pkgs = nixpkgs.legacyPackages.${hostSystem};
         extraSpecialArgs = {
@@ -125,7 +119,7 @@
       # set or the eval fails.
       darwinConfigurations.${macHost.hostKey} = macHost.darwinConfig;
 
-      nixosConfigurations.wsl = wslHost.nixosConfig;
+      nixosConfigurations.wsl = linuxHost.nixosConfig;
 
       nixosConfigurations.vm-test = nixpkgs.lib.nixosSystem {
         system = hostSystem;
@@ -138,6 +132,7 @@
         };
         modules = [
           ./nix/modules/workstation-system.nix
+          ./nix/modules/host.nix
           home-manager.nixosModules.home-manager
           ./tests/nix/vm-host.nix
         ];

@@ -81,13 +81,25 @@ in
       engine = self.packages.${system}.workstation;
     };
     modules = [
+      ../../nix/modules/host.nix
       home-manager.darwinModules.home-manager
       (
         { config, ... }:
         {
           nixpkgs.hostPlatform = system;
 
-          networking.hostName = hostName;
+          # host identity: the ONLY place this host's facts are written
+          # (the options are declared in the substrate; consumers derive)
+          workstation.host = {
+            name = hostName;
+            user = user;
+            homeDirectory = homeDir;
+            # tailscale.fqdn: the operator declares the host's MagicDNS
+            # name here at first real apply
+          };
+          # the canonical declaration derives from the identity option —
+          # never a second literal
+          networking.hostName = config.workstation.host.name;
           users.users.${user}.home = homeDir;
           # nix-darwin 25.05's multi-user migration gate
           system.primaryUser = user;

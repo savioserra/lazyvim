@@ -23,7 +23,7 @@ flake.nix
      baking the declared-state report into the release)
   -> nix/workstation-switch.nix (the write plane: switch / rollback / publish)
       -> publish receipt -> the daemon's `system` overlay domain
-  -> hosts/<host> (wsl / omarchy / mac; identity only in hosts/<host>/default.nix)
+  -> hosts/<host> (wsl / mac; identity only in hosts/<host>/default.nix)
 
 workstation/bin/workstation (POSIX sh: sandbox, checkout anchor, locale guard)
   -> exec the placed elixir release binary

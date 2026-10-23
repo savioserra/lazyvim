@@ -13,9 +13,10 @@ publishes generation-switch events.
   everything else: per-host identity lives only in
   `hosts/<host>/default.nix`, and the flake's package set builds the engine
   release and every pinned tool in the store.
-- The legs: `hosts/wsl` (NixOS-WSL), `hosts/omarchy` (standalone
-  home-manager on Arch, `homeConfigurations`), `hosts/mac` (nix-darwin,
-  `darwinConfigurations`; brew reduced to casks). A NixOS VM boot test
+- The legs: `hosts/wsl` (the linux leg; NixOS-WSL, `homeConfigurations` +
+  `nixosConfigurations`), `hosts/mac` (nix-darwin, `darwinConfigurations`;
+  brew reduced to casks). WSL counts as the linux leg (operator ruling
+  2026-10-22: the flake targets exactly mac and linux). A NixOS VM boot test
   (`tests/nix`) proves the daemon user unit and the switch seam.
 - Git for the checkout; on a checkout host (no nix), mise resolves the
   repo-pinned Erlang/Elixir toolchain (`.tool-versions`) to build the
@@ -28,8 +29,7 @@ Switch a host through the substrate — the leg-native rebuild, or the
 leg-native switch and publishes the receipt to the running daemon):
 
 ```sh
-home-manager switch --flake .#omarchy        # Arch leg (standalone HM)
-sudo nixos-rebuild switch --flake .#wsl      # NixOS-WSL leg
+sudo nixos-rebuild switch --flake .#wsl      # linux leg (NixOS-WSL)
 darwin-rebuild switch --flake .#mac          # macOS leg (nix-darwin)
 
 workstation-switch apply            # leg-native switch + the receipt publish

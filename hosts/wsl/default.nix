@@ -38,17 +38,30 @@ in
     modules = [
       nixos-wsl.nixosModules.default
       ../../nix/modules/workstation-system.nix
+      ../../nix/modules/host.nix
       home-manager.nixosModules.home-manager
       (
-        { engine, ... }:
+        { config, engine, ... }:
         {
           workstation.enable = true;
+
+          # host identity: the ONLY place this host's facts are written
+          # (the options are declared in the substrate; consumers derive)
+          workstation.host = {
+            name = "wsl";
+            user = user;
+            homeDirectory = homeDir;
+            # tailscale.fqdn: the operator declares the host's MagicDNS
+            # name here at first real apply
+          };
 
           wsl = {
             enable = true;
             defaultUser = user;
           };
-          networking.hostName = "wsl";
+          # the canonical declaration derives from the identity option —
+          # never a second literal
+          networking.hostName = config.workstation.host.name;
 
           home-manager = {
             useGlobalPkgs = true;
