@@ -76,7 +76,7 @@ defmodule Workstation.CLI.LiveTest do
     assert is_list(graph_order) and graph_order != []
   end
 
-  # Regression (final-gate P1): a fresh home's capabilities envelope can
+  # Regression (substrate final gate): a fresh home's capabilities envelope can
   # carry nil-able fields — a file row's `mode` — and the canonical-JSON
   # encoder crashed with "canonical JSON cannot encode nil" exactly on
   # this verb. The encoder now emits the JSON `null` literal for nil, so
