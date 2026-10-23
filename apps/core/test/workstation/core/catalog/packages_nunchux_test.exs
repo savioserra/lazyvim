@@ -1,68 +1,48 @@
 defmodule Workstation.Core.Catalog.PackagesNunchuxTest do
   @moduledoc """
-  The nunchux package's pin contracts. The checkout is the first
-  package-wired git contribution: the spec's pin must mirror
-  `workstation/versions.json` exactly (the tmux2k pin-mirror pattern),
-  target the TPM plugin checkout root, and own every checkout byte —
-  including the repo-tracked `bin/nunchux` the plugin runs. The `.platform`
-  marker is the pre-seed upstream's `nunchux.tmux` `ensure_binary` checks:
-  with it present, plugin load never fetches `releases/latest`
-  unchecksummed. The release-asset pins stay recorded as distribution
-  inventory. The theme-slot launcher config renders byte-equal to
-  upstream's default config; the tmux-side activation surface (plugin pin
-  + root C-Space chord) went live with the checkout (r2.nunchux-wiring).
-  See docs/tmux.md.
+  The nunchux surface's pin contracts. The checkout is the first
+  package-wired git contribution: the pin lives in
+  `workstation/versions.json` (`nunchux_git_commit`/`nunchux_git_url`) and
+  `modules/terminal/terminal.nix` fetchGit-freezes it, targeting the TPM
+  plugin checkout root and owning every checkout byte — including the
+  repo-tracked `bin/nunchux` the plugin runs. The `.platform` marker is
+  the pre-seed upstream's `nunchux.tmux` `ensure_binary` checks: with it
+  present, plugin load never fetches `releases/latest` unchecksummed. The
+  release-asset pins stay recorded as distribution inventory. The
+  theme-slot launcher config renders natively (slot substitution from
+  `tokens.lua` through the theme extraction); the tmux-side activation
+  surface (plugin pin + root C-Space chord) went live with the checkout
+  (r2.nunchux-wiring). The data manifest retired in the absorption chain's
+  first stage; the engine-side pins these tests enforce are the payload
+  bytes and the inventory rows. See docs/tmux.md.
   """
 
   use ExUnit.Case, async: true
 
-  alias Workstation.Core.Catalog.Discover
-  alias Workstation.Core.Contracts.Git
-  alias Workstation.Backends.Chezmoi
-
   @repo_root Path.expand("../../../../../../", __DIR__)
   @payload_root Path.join(@repo_root, "workstation/packages/terminal/nunchux")
 
-  test "the manifest is data in the package tree, not a compiled module" do
-    assert File.regular?(Path.join(@payload_root, "manifest.json"))
-    assert {:error, _reason} = Code.ensure_loaded(Workstation.Packages.Nunchux)
+  @nunchux_commit "1546eaa980d834c331496ea9d51942be07ea9fdd"
+  @nunchux_url "https://github.com/datamadsen/nunchux"
+
+  test "the checkout pin is a linux-only terminal-domain contribution" do
+    manifest = versions_manifest()
+
+    assert manifest["nunchux_git_commit"] == @nunchux_commit
+    assert manifest["nunchux_git_url"] == @nunchux_url
   end
 
-  test "the spec is a linux-only terminal-domain package requiring the theme envelope" do
-    spec = nunchux_spec()
-
-    assert spec.id == "nunchux"
-    assert spec.foundation == "foundation/terminal"
-    assert spec.requires == ["foundation", "theme"]
-    # The checkout carries the linux-amd64 repo build; the darwin-arm64
-    # release pin stays recorded in versions.json until per-platform
-    # dispatch exists.
-    assert spec.supported_hosts == %{"darwin" => false, "linux" => true}
-  end
-
-  test "the checkout is a pinned-clone contribution into the plugin root" do
-    entry = git_entry()
-
-    assert entry.provider == "git"
-    assert entry.spec.id == "git"
-    assert entry.spec.url == "https://github.com/datamadsen/nunchux"
-    assert entry.spec.commit == "1546eaa980d834c331496ea9d51942be07ea9fdd"
-    assert entry.spec.target == ".tmux/plugins/nunchux"
-
-    assert entry.spec.fingerprint ==
-             Git.pin_fingerprint(entry.spec.url, entry.spec.commit, entry.spec.target)
-
-    # Exactly one owner of the checkout root; the sibling targets live
-    # inside the cloned tree.
-    assert nunchux_spec().contributes |> Enum.count(&(&1.provider == "git")) == 1
+  test "the checkout supplies the binary; the marker is the declared pre-seed" do
+    # The pinned clone owns the checkout and its tracked bin/nunchux; the
+    # payload tree carries only the marker ensure_binary checks — it
+    # re-downloads unchecksummed whenever bin/.platform is missing or
+    # names another platform.
+    assert File.regular?(Path.join(@payload_root, "files/.tmux/plugins/nunchux/bin/.platform"))
+    refute File.regular?(Path.join(@payload_root, "files/.tmux/plugins/nunchux/bin/nunchux"))
   end
 
   test "the git pin mirrors the versions manifest" do
     manifest = versions_manifest()
-    pin = git_entry().spec
-
-    assert manifest["nunchux_git_commit"] == pin.commit
-    assert manifest["nunchux_git_url"] == pin.url
 
     # The checkout carries the upstream repo build of the same release; its
     # content pin rides versions.json and is asserted by the verify lane
@@ -88,39 +68,10 @@ defmodule Workstation.Core.Catalog.PackagesNunchuxTest do
   end
 
   test "the platform marker pre-seeds upstream's ensure_binary" do
-    entry =
-      Enum.find(nunchux_spec().contributes, &(&1.spec.target == ".tmux/plugins/nunchux/bin/.platform"))
-
-    assert entry.provider == "chezmoi"
-    assert entry.spec.kind == :file
-    assert entry.spec.template != true
-    assert entry.spec.asset == "files/.tmux/plugins/nunchux/bin/.platform"
-
     # Byte-for-byte what upstream's download_binary writes: the platform
     # string plus echo's newline; ensure_binary compares the stripped value.
-    body = File.read!(Path.join(@payload_root, entry.spec.asset))
+    body = File.read!(Path.join(@payload_root, "files/.tmux/plugins/nunchux/bin/.platform"))
     assert body == "linux-amd64\n"
-  end
-
-  test "the checkout supplies the binary; the marker is the declared pre-seed" do
-    targets = Enum.map(nunchux_spec().contributes, &(&1.spec.target))
-
-    # The pinned clone owns the checkout and its tracked bin/nunchux;
-    # the marker is what ensure_binary checks — it re-downloads
-    # unchecksummed whenever bin/.platform is missing or names another
-    # platform.
-    assert ".tmux/plugins/nunchux" in targets
-    assert ".tmux/plugins/nunchux/bin/.platform" in targets
-    refute ".tmux/plugins/nunchux/bin/nunchux" in targets
-  end
-
-  test "the launcher config is a theme-slot template" do
-    entry =
-      Enum.find(nunchux_spec().contributes, &(&1.spec.target == ".config/nunchux/config"))
-
-    assert entry.spec.kind == :file
-    assert entry.spec.template == true
-    assert entry.spec.asset == "files/.config/nunchux/config"
   end
 
   test "the config template renders to the upstream default binding" do
@@ -131,28 +82,24 @@ defmodule Workstation.Core.Catalog.PackagesNunchuxTest do
            # fzf color binding is byte-equal to nunchux's upstream default config, so
            # activation introduces zero visual drift; only the two slot references
            # (text = fg+ marker, ok = marker) carry the theme rebrand forward. Slot
-           # names resolve through the theme capability's .chezmoidata.toml envelope.
+           # names resolve through the theme capability's token layer.
            [settings]
            fzf_colors = fg+:{{ .theme.slots.text }}:bold,bg+:-1,hl:cyan,hl+:cyan:bold,pointer:cyan,marker:{{ .theme.slots.ok }},header:gray,border:gray
            """
 
-    # The slot references resolve through the theme envelope to ANSI slot
-    # names; upstream's default pins fg+ to white-ish and marker to green,
-    # which is exactly what the slots layer carries for text/ok.
+    # The slot references resolve through the theme tokens — the same
+    # canonical bytes the native nix extraction reads — to ANSI slot names;
+    # upstream's default pins fg+ to white-ish and marker to green, which
+    # is exactly what the slots layer carries for text/ok.
+    slots = Workstation.Core.Theme.Tokens.slots()
+
     rendered =
       body
-      |> String.replace("{{ .theme.slots.text }}", "white")
-      |> String.replace("{{ .theme.slots.ok }}", "green")
+      |> String.replace("{{ .theme.slots.text }}", Keyword.fetch!(slots, :text))
+      |> String.replace("{{ .theme.slots.ok }}", Keyword.fetch!(slots, :ok))
 
     assert rendered =~
              "fzf_colors = fg+:white:bold,bg+:-1,hl:cyan,hl+:cyan:bold,pointer:cyan,marker:green,header:gray,border:gray"
-  end
-
-  test "every template target names an existing payload asset" do
-    for %{spec: %Chezmoi{template: true}} = entry <- nunchux_spec().contributes do
-      assert File.regular?(Path.join(@payload_root, entry.spec.asset)),
-             "missing payload asset #{entry.spec.asset} for #{entry.spec.target}"
-    end
   end
 
   test "the host verify script asserts the pinned checkout" do
@@ -162,17 +109,6 @@ defmodule Workstation.Core.Catalog.PackagesNunchuxTest do
     assert File.stat!(script).mode >= 0o100755, "verify script must stay executable"
 
     assert {_, 0} = System.cmd("sh", ["-n", script])
-  end
-
-  defp git_entry do
-    Enum.find(nunchux_spec().contributes, &(&1.provider == "git"))
-  end
-
-  # The package's discovered spec: the data manifest read through the
-  # production seam (the kernel reader's denormalized output).
-  defp nunchux_spec do
-    Discover.specs() |> Enum.find(&(&1.id == "nunchux")) ||
-      raise("nunchux is not discovered — the data manifest must serve the package")
   end
 
   defp versions_manifest do

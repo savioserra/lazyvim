@@ -22,8 +22,8 @@ defmodule Workstation.Core.CatalogNativeTest do
   # the discovered catalog's size, pinned so an accidental discovery change
   # cannot pass silently. Shrinks with the absorption chain as each
   # capability's manifest leaves (agent + herdr, editor + go + typescript,
-  # then tmux: 8).
-  @native_count 8
+  # tmux, then nunchux + theme: 6).
+  @native_count 6
 
   @goldens_root Path.expand("../../../../../tests/goldens", __DIR__)
 
@@ -64,24 +64,21 @@ defmodule Workstation.Core.CatalogNativeTest do
 
     # Post-order DFS over the id-sorted specs: dependencies first, ties by
     # id sort — elixir (requires empty after the editor went native in
-    # stage one) leads, theme lands inside nunchux's requires closure,
-    # prompt (foundation-only) sorts between nunchux and secrets, secrets
-    # (the last id) stays last. The agent, editor and terminal domains'
-    # manifests left in the absorption chain's first stage (the native
-    # modules/{agent,editor,languages,terminal} modules own those surfaces
-    # now).
+    # stage one) leads, prompt (foundation-only) sorts between fonts and
+    # secrets, secrets (the last id) stays last. The agent, editor,
+    # languages and terminal domains' manifests left in the absorption
+    # chain's first stage (the native modules/{agent,editor,languages,
+    # terminal,theme} modules own those surfaces now).
     assert Enum.map(graph.ordered, & &1.id) == [
              "elixir",
              "foundation",
              "fonts",
              "node",
-             "theme",
-             "nunchux",
              "prompt",
              "secrets"
            ]
 
-    assert graph.enabled["theme"] and graph.enabled["nunchux"]
+    assert graph.enabled["prompt"] and graph.enabled["secrets"]
   end
 
   test "composition keeps graph rejection semantics through the catalog seam" do
@@ -220,14 +217,14 @@ defmodule Workstation.Core.CatalogNativeTest do
     test "the owner-declared anchors hold" do
       taxonomy = Packages.taxonomy()
 
-      assert taxonomy["theme"] == "foundation/theme"
       assert taxonomy["fonts"] == "foundation/fonts"
       assert taxonomy["secrets"] == "foundation/secrets"
       assert taxonomy["foundation"] == "foundation/base"
 
-      # the agent, editor and terminal domains' manifests retired in the
-      # absorption chain's first stage (modules/{agent,editor,languages,
-      # terminal} own those surfaces natively)
+      # the agent, editor, languages, terminal and theme domains' manifests
+      # retired in the absorption chain's first stage
+      # (modules/{agent,editor,languages,terminal,theme} own those surfaces
+      # natively)
 
       for runtime <- ~w(node elixir) do
         assert taxonomy[runtime] == "foundation/runtime"

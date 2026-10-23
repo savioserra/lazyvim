@@ -19,7 +19,7 @@ defmodule Workstation.Packages.HelixSynth do
     %{
       foundation: "foundation/editor",
       id: "helix-synth",
-      requires: ["foundation", "theme"],
+      requires: ["foundation"],
       supported_hosts: nil,
       contributes: [
         # Payload: a managed config file whose bytes are RENDERED from theme

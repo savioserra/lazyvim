@@ -125,6 +125,11 @@
       # 2026-10-22): the agent's managed skills and the theme tokens
       hermesSkills = import ./modules/agent/skills.nix { inherit self; };
 
+      workstationTheme.lib = import ./modules/theme/theme.nix {
+        lib = nixpkgs.lib;
+        inherit self;
+      };
+
       homeManagerModules.workstation = ./nix/modules/workstation-home.nix;
 
       # pin overrides ONLY: the substrate's pinned tools from the same

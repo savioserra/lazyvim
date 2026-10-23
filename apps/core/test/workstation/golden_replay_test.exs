@@ -79,8 +79,7 @@ defmodule Workstation.Core.GoldenReplayTest do
                "minimal",
                "mise",
                "nvim-profile",
-               "shell-order",
-               "theme"
+               "shell-order"
              ]
     end
   end

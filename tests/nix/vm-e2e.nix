@@ -170,6 +170,19 @@ writeShellScriptBin "workstation-e2e" ''
     || fail "tmux plane" "the tmux2k checkout did not deploy"
   pass "tmux plane"
 
+  step "nunchux plane (pinned checkout, platform marker, rendered config)"
+  [ -d "$home/.tmux/plugins/nunchux" ] \
+    || fail "nunchux plane" "the pinned checkout did not deploy"
+  grep -q 'linux-amd64' "$home/.tmux/plugins/nunchux/bin/.platform" 2>/dev/null \
+    || fail "nunchux plane" "the .platform marker did not compose into the checkout"
+  [ -r "$home/.config/nunchux/config" ] \
+    || fail "nunchux plane" "the rendered config did not deploy"
+  grep -q 'fzf_colors = fg+:white:bold' "$home/.config/nunchux/config" \
+    || fail "nunchux plane" "the theme slot substitution did not render (text=white missing)"
+  grep -q '{{ .theme.slots.' "$home/.config/nunchux/config" \
+    && fail "nunchux plane" "unresolved slot references survived the render"
+  pass "nunchux plane"
+
   # 3. the apply-driven nix switch: the driver wraps the offline
   #    activation + generation registration, reads the generation and
   #    publishes the receipt over the wire

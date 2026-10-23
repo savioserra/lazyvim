@@ -49,19 +49,7 @@ defmodule Workstation.Core.Catalog.DiscoverTest do
     # shrinks with the absorption chain (agent + herdr, editor + go +
     # typescript, then tmux left in stage one).
     assert Packages.packages() == Discover.specs()
-    assert length(Packages.packages()) == 8
-  end
-
-  test "the data-manifest arm serves nunchux without a compiled module" do
-    # The manifest is JSON data beside the payloads; no
-    # Workstation.Packages.Nunchux module exists, discovery still serves
-    # the package, and the denormalized spec shape is exactly a compiled
-    # provider's.
-    assert {:error, _reason} = Code.ensure_loaded(Workstation.Packages.Nunchux)
-
-    spec = Enum.find(Discover.specs(), &(&1.id == "nunchux"))
-    assert spec.foundation == "foundation/terminal"
-    assert Enum.map(spec.contributes, & &1.provider) == ["git", "chezmoi", "chezmoi"]
+    assert length(Packages.packages()) == 6
   end
 
   test "discovered specs are the native catalog, id-sorted with no duplicates" do

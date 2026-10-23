@@ -3,29 +3,6 @@ defmodule Workstation.Core.Theme.TokensTest do
 
   alias Workstation.Core.Theme.Tokens
 
-  # The anchor fixture lives in the repo's goldens tree: from __DIR__
-  # (apps/core/test/workstation/core/theme) it is six levels up to the
-  # repo root.
-  @goldens Path.expand("../../../../../../tests/goldens/theme/input.json", __DIR__)
-
-  defp fixture_theme_bytes do
-    assert File.exists?(@goldens), "theme goldens fixture missing at #{@goldens} — the parity anchor must run"
-
-    fixture = @goldens |> File.read!() |> Jason.decode!()
-
-    theme_package = Enum.find(fixture["packages"], &(&1["id"] == "theme")) || flunk("theme package missing from the goldens fixture")
-
-    contribution =
-      Enum.find(theme_package["contributes"], &(&1["provider"] == "chezmoi-data")) ||
-        flunk("chezmoi-data contribution missing from the theme goldens fixture")
-
-    contribution["spec"]["content"]
-  end
-
-  test "data_envelope/0 is byte-identical to the engine's rendered theme envelope" do
-    assert Tokens.data_envelope() == fixture_theme_bytes()
-  end
-
   test "the engine token set carries the same contract values as the theme payload" do
     # Cross-carrier consistency: packages/theme/tokens.lua (the managed-tree
     # payload) must carry identical values. The token set names no consumer
