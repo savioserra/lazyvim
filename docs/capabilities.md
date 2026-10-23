@@ -1,10 +1,10 @@
 # Workstation capability and lifecycle reference
 
 The declared state of the workstation is NATIVE nix/home-manager
-declarations: one module per capability under `nix/modules/capabilities/`,
-payload bytes beside them under `workstation/packages/**` (renamed
-`workstation/payload/` by the absorption chain — see
-[absorption](absorption.md)). The package-manifest format is retired by
+declarations: one module per capability domain under `modules/<domain>/`,
+the module and the payload bytes it deploys co-located in the domain
+directory (renamed directly from `workstation/packages/<domain>/<id>/` by
+the absorption chain — see [absorption](absorption.md)). The package-manifest format is retired by
 operator ruling 2026-10-21; until the deletion chain lands, the manifests
 under `workstation/packages/**` remain the walker's transitional input and
 the engine's catalog still reads them. Nothing in this reference describes
@@ -15,7 +15,7 @@ where it matters.
 
 ```text
 flake.nix
-  -> nix/modules/capabilities/* (the native declarations; during the
+  -> modules/* (the native declarations; during the
      transition the walker in nix/manifest-lib.nix renders the surviving
      manifests into the same home.file/claim surfaces)
   -> nix/modules (workstation-home, workstation-system)
@@ -53,10 +53,10 @@ provisions, never an engine dependency.
 | `Workstation.Daemon.*` | The resident daemon: reads, pubsub (`EventBus`), the `system` overlay domain, `Overlay` claim/release |
 | `Workstation.Pipeline` | The one read fold: the declared state in, the attributable preview out (transitional: discover -> resolve -> compose over the manifests) |
 | `Workstation.Core.EngineState` | Fail-closed private state root + canonical JSON |
-| `nix/modules/capabilities/<name>.nix` | The capability's native declaration: home.file surfaces, pins, fragments, activation scripts — payload referenced from `workstation/packages/<name>/` |
+| `modules/<domain>/<domain>.nix` | The domain's native declaration: home.file surfaces, pins, fragments, activation scripts — payload co-located in the domain directory (transitional source: `workstation/packages/<domain>/<id>/`) |
 | `nix/lib/pins.nix` | The pin machinery: checksummed `fetchurl`/`fetchGit` derivations, layout/extraction rules, claim composition, build-time probe gates |
-| `nix/modules/hermes.nix` | The hot-home surfaces: managed skill leaves (store-path `home.file`), the checkout ensure activation script |
-| `packages/<name>/` | Capability payload assets (`files/`, verify scripts) and data files |
+| `modules/agent/agent.nix` | The agent domain's hot-home surfaces: managed skill leaves (store-path `home.file`), the checkout ensure and version-matched skill provisions (activation scripts) |
+| `workstation/packages/<domain>/<id>/` | Capability payload assets (`files/`, verify scripts) and data files — renames into `modules/<domain>/` with the chain's final card |
 | `packages/theme/tokens.lua` | Canonical theme tokens (DATA: slot/palette layers, per-appearance palettes, consumer choices) — read as bytes, never executed |
 
 The manifest-era reader plane (`Workstation.Core.Catalog` data arm,
@@ -67,7 +67,7 @@ The manifest-era reader plane (`Workstation.Core.Catalog` data arm,
 ## The declaration contract
 
 A capability declares once, as a native nix module under
-`nix/modules/capabilities/<name>.nix`, imported by `workstation-home.nix`
+`modules/<domain>/`, imported by `workstation-home.nix`
 (the system plane's toolchains ride `workstation-system.nix`/`home.packages`).
 There is no registration list: the module import IS the registration, and
 nix's module system rejects duplicate options louder than any validator.
@@ -120,7 +120,7 @@ secrets    secrets
 | `foundation` | The CLI tools the editor surface consumes, each a checksum-gated pin at `.local/opt/<tool>` (ripgrep, fd, fzf, lazygit, tree-sitter, rainfrog — per-platform SHA-256 from `versions.json`; `release` layout for rg/fd/fzf/tree-sitter/rainfrog, `flat` for lazygit, `zip` for tree-sitter), probe-gated and surfaced on PATH by `.local/bin/<tool>` links; the PATH fragments and the bash-login include fragment (`~/.bash_profile` sources the managed `~/.profile`) | probes re-run as build gates; link records | All |
 | `fonts` | Exact pinned JetBrainsMono Nerd Font tree (tar.xz `flat`, SHA-256-gated; per-platform targets: linux `.local/share/fonts/JetBrainsMonoNerdFont`, darwin `Library/Fonts/JetBrainsMonoNerdFont`); content probe pins `JetBrainsMonoNerdFont-Regular.ttf` bytes; fontconfig enabled so `fc-cache` sees it | content probe (build gate) | All |
 | `node` | nvm (pinned v0.40.4, content probe pins `nvm.sh` bytes) then the pinned Node nested at `.local/opt/nvm/versions/node/v<version>` (probe `bin/node --version`), declared parent-first so the nested tree composes into the nvm tree; the rc loader (`.config/shell/nvm.sh`) and `.node-version` payload unchanged; the loader activates the pinned default fork-free | both probes (build gates) + NVM and Node version | All |
-| `agent` | Hermes Agent full-stack: the pinned checkout (`~/.hermes/hermes-agent` at the `hermes_agent_git_commit` pin, ensured by activation — never file-tracked), the pinned interpreter (`.local/opt/hermes/python`, checksum-gated python-build-standalone pin), the engine launcher (`.local/opt/hermes/bin/hermes` payload on PATH as `.local/bin/hermes`), managed skills at `~/.hermes/skills/secrets` (store-path leaves via `nix/modules/hermes.nix`); the retired `lazyvim` skill target retires through the declared retire list | `packages/agent/verify/hermes.sh` (checkout at pin, managed skill, interpreter, launcher `--version` consumer smoke; full-stack or exit 1) | All |
+| `agent` | Hermes Agent full-stack: the pinned checkout (`~/.hermes/hermes-agent` at the `hermes_agent_git_commit` pin, ensured by activation — never file-tracked), the pinned interpreter (`.local/opt/hermes/python`, checksum-gated python-build-standalone pin), the engine launcher (`.local/opt/hermes/bin/hermes` payload on PATH as `.local/bin/hermes`), managed skills at `~/.hermes/skills/secrets` (store-path leaves via `modules/agent/agent.nix`); the retired `lazyvim` skill target retires through the declared retire list | `packages/agent/verify/hermes.sh` (checkout at pin, managed skill, interpreter, launcher `--version` consumer smoke; full-stack or exit 1) | All |
 | `go` | Exact pinned toolchain tree at `.local/opt/go` (per-platform SHA-256, single-root tarball, probe `bin/go version`) + `.local/bin/go` | probe (build gate) + link record | Linux/WSL/macOS |
 | `elixir` | nixpkgs toolchains via `home.packages` (erlang 28 + elixir 1.18; the mise lane retired — toolchains come from nixpkgs) | Own Mason expectations, plugin module and behavior cases through nvim leaf helpers | All |
 | `herdr` | Exact pinned binary at `.local/opt/herdr/bin/herdr` + link record; never server/pane/session lifecycle | fingerprint + link record | All |
@@ -318,7 +318,8 @@ step; recorded in AGENTS.md's operating-contract law). Four surfaces:
    isolated (`-I`, no inherited `PYTHON*` config, bytecode kept out of the
    engine-owned checkout) and fails closed with a named message when either
    pin is missing.
-4. **The managed skills** — `nix/modules/hermes.nix` maps skill names to
+4. **The managed skills** — `modules/agent/agent.nix`
+   (`workstation.agent.skills`) maps skill names to
    payload dirs and renders each skill leaf as a store-path `home.file`
    (`~/.hermes/skills/secrets` first). The hot-dir law, scoped precisely:
    HM manages declared skill LEAVES — the agent consumes them read-only,
@@ -357,7 +358,7 @@ Everything the substrate must know about a capability is declared in its
 native module; payload bytes are referenced by relative path and copied
 into the store at eval. Anything requiring host execution is a pin
 derivation, an activation script, or a verify assertion the verify lane
-evaluates. The payload home renames to `workstation/payload/` when the
+evaluates. The payload home co-locates into `modules/<domain>/` when the
 absorption chain's final card lands.
 
 ## Verification requirements

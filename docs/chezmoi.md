@@ -19,8 +19,8 @@ the post-absorption shape and the transition is marked where it matters.
 
 | Step | Owner | Contract |
 | --- | --- | --- |
-| Declaration | `nix/modules/capabilities/<name>.nix` | Native nix: home.file surfaces, pins, fragments, activation scripts |
-| Payload | `workstation/packages/<name>/` (→ `payload/`) | Referenced bytes, copied into the store at eval |
+| Declaration | `modules/<domain>/<domain>.nix` | Native nix: home.file surfaces, pins, fragments, activation scripts |
+| Payload | `workstation/packages/<domain>/<id>/` (→ co-located in `modules/<domain>/`) | Referenced bytes, copied into the store at eval |
 | Pin derivation | `nix/lib/pins.nix` | Checksummed fetch, layout/extraction rules, build-time probe gate |
 | Claim composition | `nix/lib/pins.nix` | Overlapping dir claims compose into one derivation |
 | Deployment | the generation | `home-manager switch` links every target atomically |
@@ -36,7 +36,7 @@ mutates between switches (`.hermes`, the agent home). Tracked state there
 fights the program's writes. The law is scoped to the program's MUTATED
 state; it has two precise carve-outs, both declarative:
 
-- **skill leaves** — `nix/modules/hermes.nix` renders managed skill files
+- **skill leaves** — `modules/agent/agent.nix` renders managed skill files
   as store-path `home.file` entries. The agent consumes them read-only; an
   in-place edit is replaced at the next switch (declared truth wins).
 - **activation scripts** — the checkout ensure and the retire list mutate

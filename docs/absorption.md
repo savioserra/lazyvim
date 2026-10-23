@@ -46,7 +46,7 @@ deliberately as envelopes leave.
 | `modify` (1: nvim `lazy-lock.json`) | REFUSED | the ONE semantic `home.file` cannot express (targets never byte-compared; runtime-extended). Successor: pinned baseline payload + a `home.activation` merge script that seeds the live lock once per generation and never resets runtime drift — the payload's merge script promoted from engine contract to module implementation |
 | `remove` (2) | REFUSED | two native shapes: entries HM owned leave through the generation diff (HM removes dropped `home.file` entries); legacy/foreign paths (both tombstones here predate the substrate) go through a declared retire list — an idempotent activation `rm -f` with a named receipt, dropped after the fleet has switched past it |
 | `mise` (2) | REFUSED — deleted in nix land | nixpkgs: elixir/erlang from the beam set, tmux/btop from nixpkgs, carried by `home.packages`. The mise binary pin, its activation fragment and `.config/mise` composition retire; the `versions.json` mise-only rows retire with the lane |
-| `copy` (1: agent skills) | REFUSED — hot home | the hermes skills module (`nix/modules/hermes.nix`): `workstation.hermes.skills` maps skill names to payload dirs; each skill leaf renders as a store-path `home.file`. The hot-dir law is thereby scoped precisely: HM manages declared skill LEAVES (the agent consumes them read-only; in-place edits are replaced at the next switch — declared truth wins), while the agent's runtime-mutated state stays untracked forever |
+| `copy` (1: agent skills) | REFUSED — hot home | the agent domain module (`modules/agent/agent.nix`): `workstation.agent.skills` maps skill names to payload dirs; each skill leaf renders as a store-path `home.file`. The hot-dir law is thereby scoped precisely: HM manages declared skill LEAVES (the agent consumes them read-only; in-place edits are replaced at the next switch — declared truth wins), while the agent's runtime-mutated state stays untracked forever |
 | `git` into `.hermes` (1: the agent checkout) | REFUSED — hot home | `home.activation.ensure-hermes-checkout`: idempotent clone/fetch to the `hermes_agent_git_commit` pin ONLY when the checkout is absent or clean-and-behind — never touching a dirty or runtime-advanced tree. Activation scripts mutate hot state; the file plane never tracks it |
 | `chezmoi-data` (1) | REFUSED — engine runtime data | retired: `tokens.lua` is already the canonical byte source; the envelope was its chezmoi-side projection. Nix reads `tokens.lua` directly (extraction, asserted by the eval golden) |
 
@@ -64,18 +64,54 @@ and the E2E grows an assertion for the deployed profile. The behavior cases
 (`language_cases`/`formatter_cases`) stay payload data — they feed the verify
 lane, not the deployed file.
 
+### The foundation module's sourcing mix (operator ruling 2026-10-22)
+
+Rainfrog leaves the pin set; harlequin and hsql arrive natively —
+`python3Packages.harlequin` from nixpkgs via `home.packages` (the
+toolchain pattern: no pin, no probe gate), hsql packaged in the same
+derivation. The hsql agent skill is provisioned by an activation script
+into the hermes skills dir, version-matched to the harlequin
+derivation: the skill is runtime-coupled hot state, so it is
+activation-managed (the checkout-ensure pattern), not a declared
+store-path leaf. Starship and eza move the same way (operator ruling):
+the prompt capability dissolves into foundation — `home.packages +=
+[pkgs.eza pkgs.starship]`, the eza ls alias, and the starship
+init/config rendering alongside the rc fragments; both are already
+nixpkgs-native, no fetchurl derivations. The foundation module's final
+inventory is the shell rc lane plus fd, fzf, rg, lazygit, tree-sitter,
+eza, starship, harlequin + hsql (op lives in secrets; rainfrog
+retired) — three shapes: checksummed pins (ripgrep, fd, fzf, lazygit,
+tree-sitter via `nix/lib/pins.nix`), nixpkgs packages (harlequin, hsql,
+eza, starship), and one activation provision. The download accounting
+above loses rainfrog's, eza's and starship's envelopes at the chain's
+next golden re-record. Tailscale joins foundation as the fleet
+transport (operator ruling): on the system-module legs (NixOS/darwin)
+it is `services.tailscale` in the system module; on the standalone-HM
+legs the CLI rides `home.packages` and `tailscaled` stays a documented
+host-owned prerequisite. Options: `workstation.foundation.tailscale.*`.
+The dashboard unit's `After=tailscaled` dependency already exists in
+the systemd unit pattern.
+
 ## Decisions this design carries
 
-1. **Payload home: `workstation/payload/`** — the rename is decided. There
-   are no packages post-absorption; "packages" would name a ghost, and
-   "payload" is the word the operating contract already uses. The move is
-   mechanical and rides the deletion chain's LAST card (consumers: nix
-   modules, verify scripts, docs). Until then `workstation/packages/**`
-   holds payload bytes plus the dying manifests.
-2. **`workstation/versions.json` stays the pin inventory.** Nix reads it
-   (`builtins.fromJSON`); no pin is duplicated into module literals. The
-   change-rules law ("a pin bump moves versions.json + the consumer
-   together") survives unchanged; only the consumer list changes.
+1. **Payload home: co-location — `modules/<domain>/`** — decided, twice
+   superseded, final (operator research note 2026-10-22): the domain's
+   module file and the payload bytes it deploys live TOGETHER in one
+   self-contained directory (decision 6). The module file lands at
+   `modules/<domain>/` in chain stage 1 — its final address; the bytes
+   join it in the LAST card, renamed directly from
+   `workstation/packages/<domain>/<id>/`. No `payload/` folder — the
+   word is security/deployment vocabulary, not nix-community convention
+   — and no `workstation/` partition. Until then
+   `workstation/packages/**` holds payload bytes plus the dying
+   manifests.
+2. **`workstation/versions.json` is the interim pin inventory.** Through
+   the deletion chain nix reads it (`builtins.fromJSON`); no pin is
+   duplicated into module literals. At the endgame it retires with the
+   bootstrap (operator clarification 2026-10-22): pins move to the
+   owning domain's module and flake-input surface (decision 6). The
+   change-rules law ("a pin bump moves the pin + its consumer
+   together") survives; only the pin's address changes.
 3. **Ordering (the requires graph's replacement):**
    - fragment order: the explicit declared list per rc target (above);
    - activation scripts: `lib.hm.sequence` ordering (the retire list runs
@@ -94,10 +130,53 @@ lane, not the deployed file.
    construction. `packageOrder`/package vocabulary renames to
    capability/capabilityOrder at the swap; the dashboard and domains table
    keep working off the report.
-5. **The eval golden survives the walker.** It remains the byte guard over
-   the declared surface (and, after the swap, over the native fold); only its
-   producer changes. `tests/goldens` recorded-envelope suites retire with the
-   format they pin.
+5. **The eval golden is transition scaffolding, retired with the walker**
+   (operator decision 2026-10-22; binding spec: no byte-goldens). It
+   guards the two-reader equivalence through the chain — deliberate
+   re-records as envelopes leave, no sacred bytes — and then dies with
+   the format it pinned. Post-absorption verification is behavioral:
+   VM/activation runs, consumer smokes, HM idempotency/rollback;
+   structural assertions (counts/topo) may stay as assertions, never
+   byte contracts; deliberate output changes need no re-record ritual.
+   `tests/goldens` recorded-envelope suites retire with the format they
+   pin.
+6. **The endgame layout (operator frame, correction and research note,
+   2026-10-22): a domain-oriented, nixpkgs-native monorepo with
+   co-located domain modules.** Capabilities are the DOMAINS, not the
+   tools; the module tree mirrors `workstation/packages/<domain>/<id>/`
+   one-to-one, and the canonical shape (stylix, catppuccin/nix,
+   home-manager) is co-location: `modules/<domain>/` holds the domain's
+   module file AND the bytes it deploys — `modules/editor/{editor.nix,
+   nvim/}`, `modules/terminal/{terminal.nix, tmux/, nunchux/}`,
+   one directory per language capability under `modules/languages/`
+   (its `.nix` beside its bytes) — so adding a capability is adding one
+   directory. Options namespaces are domain-level; tools are entries
+   within: `workstation.editor.*` renders the nvim profile,
+   `workstation.terminal.*` wires tmux and nunchux,
+   `workstation.theme.*` the tokens/mesh surface, `workstation.agent.*`
+   hermes and herdr (the skills entry is `workstation.agent.skills`).
+   Identity rides the same surface: `workstation.host.{name, user,
+   homeDirectory, tailscale.fqdn}` — `hosts/<host>/default.nix` is the
+   only place identity is written, and tailscale, the dashboard unit
+   (its hardcoded `--host vps` becomes `--host ${fqdn}`) and the flake
+   keys derive from it.
+   Per-tool modules (`nvim.nix`, `tmux.nix`, `nunchux.nix`,
+   `hermes.nix`) are never created. The filesystem is the registry — no
+   central catalog; the report fold of decision 4 walks this tree.
+   Three layers over it: flake inputs framed per domain (each domain
+   owns its pin surface; `follows` dedupes the shared nixpkgs/
+   home-manager inputs; never traverse inputs), and outputs as the mesh
+   surface, locked (binding spec 2026-10-22):
+   `homeManagerModules.workstation`, `darwinConfigurations.mac`,
+   `homeConfigurations` (the linux leg), `overlays.default` (pin
+   overrides only), and the capability outputs consumer flakes take
+   (`workstationTheme.lib`, `hermesSkills`). The
+   endgame top level: `flake.nix`, `flake.lock`, `modules/`,
+   `hosts/{linux,mac}/`, `hermes/`, `tests/`, `docs/`. The
+   `workstation/` partition dissolves — the name survives only as the
+   flake/product identity; the launcher shim becomes a derivation
+   surfaced at `bin/workstation`; `versions.json` and the bootstrap
+   retire (decision 2 carries the interim).
 
 ## The death certificate
 
@@ -119,7 +198,11 @@ battery-green before the next starts):
   docs/chezmoi.md are rewritten to the native-declaration law in the design
   commit; docs/nvim.md, docs/tmux.md, docs/tools.md, docs/index.md and
   README.md follow their owning chain commits;
-- `workstation/packages/` → `workstation/payload/` (the final card).
+- `workstation/packages/**` → co-located `modules/<domain>/` (the final
+  card; the `workstation/` partition dissolves);
+- the eval-golden byte guard (`tests/nix/goldens/eval-report.json`,
+  `.github/scripts/eval-goldens.sh`) retires with the walker —
+  verification goes behavioral (decision 5).
 
 The engine's survivors: the CLI/TUI shell, the daemon (reads, pubsub, the
 `system` domain, `Overlay`, theme), `Core.EngineState`, and the report reader
@@ -132,21 +215,27 @@ full battery (`sh .github/scripts/check.sh` — golden replay, eval-goldens,
 doclint, identity gate, ShellCheck) and substrate-bearing commits add the VM
 E2E (`tests/nix`) with retained receipts:
 
-1. **Native substrate lands.** `nix/lib/pins.nix` + the per-capability
-   modules under `nix/modules/capabilities/` (agent via `hermes.nix`,
-   fonts, foundation, go, node, secrets, herdr, theme, nvim + languages,
-   tmux, nunchux, prompt, elixir, typescript). Capability by capability the
-   manifest dies in the same commit that lands its module — the walker
+1. **Native substrate lands.** `nix/lib/pins.nix` + the co-located domain
+   modules at their final addresses under `modules/` (editor, terminal,
+   theme, languages/{elixir,typescript,node,go}, agent, foundation,
+   fonts, secrets — decision 6; the payload bytes follow in the last
+   card). Capability by capability the manifest dies in the same
+   commit that lands its module — the walker
    shrinks under the walker's own feet, the golden re-record names exactly
    the envelopes that left. Closes the profile gap, the template, the
-   modify merge, the retire list and the hot-home surfaces on the way.
+   modify merge, the retire list, the hot-home surfaces, the foundation
+   sourcing mix (rainfrog out; harlequin + hsql + eza + starship in;
+   prompt dissolved) on the way.
 2. **The format retires.** With the last manifest gone: the walker, the
    JSON discovery, the evalReport producer swap + re-record, and the Elixir
    reader plane listed above are deleted; the engine reads the baked report
    only.
-3. **Payload home + doc final pass.** The `payload/` rename (all consumers),
-   the `versions.json` mise rows, the chezmoi.md → home-state rename with
-   link fixes, and the remaining manifest-citation sweep.
+3. **Co-location completes + doc final pass.** The payload bytes join
+   their modules — `workstation/packages/<domain>/<id>/` renames
+   directly into `modules/<domain>/` (all consumers; no `payload/`
+   stopping point) — the `versions.json` mise rows, the chezmoi.md →
+   home-state rename with link fixes, and the remaining
+   manifest-citation sweep.
 
 ## Transition truth
 
