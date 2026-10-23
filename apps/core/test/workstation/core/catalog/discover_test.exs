@@ -45,9 +45,10 @@ defmodule Workstation.Core.Catalog.DiscoverTest do
     # Production composition consumes the VALIDATED discovery seam — the
     # spec-shape and duplicate-id rejections apply to the real catalog,
     # not only to direct validate_specs calls. Every package — the editor
-    # capability included — is served by the data-manifest arm.
+    # capability included — is served by the data-manifest arm. The count
+    # shrinks with the absorption chain (agent + herdr left in stage one).
     assert Packages.packages() == Discover.specs()
-    assert length(Packages.packages()) == 14
+    assert length(Packages.packages()) == 12
   end
 
   test "the data-manifest arm serves nunchux without a compiled module" do

@@ -19,7 +19,10 @@ defmodule Workstation.Core.CatalogNativeTest do
   alias Workstation.Core.Catalog.Packages
   alias Workstation.Core.EngineState
 
-  @native_count 14
+  # the discovered catalog's size, pinned so an accidental discovery change
+  # cannot pass silently. Shrinks with the absorption chain as each
+  # capability's manifest leaves (agent + herdr in stage one: 12).
+  @native_count 12
 
   @goldens_root Path.expand("../../../../../tests/goldens", __DIR__)
 
@@ -59,18 +62,18 @@ defmodule Workstation.Core.CatalogNativeTest do
     graph = Catalog.compose(host: "linux")
 
     # Post-order DFS over the id-sorted specs: dependencies first, ties by
-    # id sort — agent (no requires) leads, theme lands inside nunchux's
+    # id sort — foundation (no requires) leads, theme lands inside nunchux's
     # requires closure, prompt (foundation-only) sorts between nunchux and
-    # secrets, typescript (the last id) stays last.
+    # secrets, typescript (the last id) stays last. The agent domain's
+    # manifests left in the absorption chain's first stage (the native
+    # modules/agent/ module owns the surface now).
     assert Enum.map(graph.ordered, & &1.id) == [
-             "agent",
              "foundation",
              "node",
              "go",
              "nvim",
              "elixir",
              "fonts",
-             "herdr",
              "theme",
              "nunchux",
              "prompt",
@@ -95,15 +98,13 @@ defmodule Workstation.Core.CatalogNativeTest do
 
     # On an unsupportable host the theme closure is excluded before its
     # dependents' requires are checked: theme, tmux and nunchux all gate
-    # themselves to linux/darwin, and agent (host-universal) no longer
-    # follows the theme — composition succeeds without the closure.
+    # themselves to linux/darwin — composition succeeds without the closure.
     windows = Catalog.compose(host: "windows")
 
     refute windows.enabled["theme"]
     refute windows.enabled["tmux"]
     refute windows.enabled["nunchux"]
     ordered_ids = Enum.map(windows.ordered, & &1.id)
-    assert "agent" in ordered_ids
     refute "theme" in ordered_ids
 
     # A supported dependent on an excluded capability still fails closed
@@ -238,9 +239,8 @@ defmodule Workstation.Core.CatalogNativeTest do
       assert taxonomy["secrets"] == "foundation/secrets"
       assert taxonomy["foundation"] == "foundation/base"
 
-      for agent <- ~w(agent herdr) do
-        assert taxonomy[agent] == "foundation/agent"
-      end
+      # the agent domain's manifests retired in the absorption chain's
+      # first stage (modules/agent/ owns the surface natively)
 
       for runtime <- ~w(node go elixir typescript) do
         assert taxonomy[runtime] == "foundation/runtime"

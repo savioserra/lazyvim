@@ -110,6 +110,34 @@ writeShellScriptBin "workstation-e2e" ''
     || fail "nvim profile link" "$home/.local/bin/nvim is not executable"
   pass "nvim profile link"
 
+  # 2b. the agent domain: the pinned runtime stack, the linked secrets
+  #     skill, and the retire-list receipt (the checkout itself is the one
+  #     network surface — its ensure activation defers offline with a named
+  #     receipt, and the hermes verify lane is the drift gate on real hosts)
+  step "agent runtime stack (launcher, interpreter, herdr)"
+  [ -x "$home/.local/bin/hermes" ] \
+    || fail "agent runtime stack" "$home/.local/bin/hermes is not executable"
+  [ -f "$home/.local/opt/hermes/bin/hermes" ] \
+    || fail "agent runtime stack" "$home/.local/opt/hermes/bin/hermes missing"
+  [ -x "$home/.local/opt/hermes/python/bin/python3" ] \
+    || fail "agent runtime stack" "the pinned interpreter did not deploy"
+  [ -x "$home/.local/bin/herdr" ] \
+    || fail "agent runtime stack" "$home/.local/bin/herdr is not executable"
+  pass "agent runtime stack"
+
+  step "agent secrets skill linked"
+  [ -r "$home/.hermes/skills/secrets/SKILL.md" ] \
+    || fail "agent secrets skill linked" "$home/.hermes/skills/secrets/SKILL.md missing"
+  pass "agent secrets skill linked"
+
+  step "retire-list receipt"
+  [ ! -e "$home/.hermes/skills/lazyvim/SKILL.md" ] \
+    || fail "retire-list receipt" "the lazyvim tombstone survived activation"
+  grep -q " .hermes/skills/lazyvim/SKILL.md$" \
+    "$home/.local/state/workstation/retire.log" 2>/dev/null \
+    || fail "retire-list receipt" "no lazyvim SKILL.md receipt in the retire log"
+  pass "retire-list receipt"
+
   # 3. the apply-driven nix switch: the driver wraps the offline
   #    activation + generation registration, reads the generation and
   #    publishes the receipt over the wire

@@ -121,6 +121,22 @@
 
       nixosConfigurations.wsl = linuxHost.nixosConfig;
 
+      # the capability outputs consumer flakes take (binding spec
+      # 2026-10-22): the agent's managed skills and the theme tokens
+      hermesSkills = import ./modules/agent/skills.nix { inherit self; };
+
+      homeManagerModules.workstation = ./nix/modules/workstation-home.nix;
+
+      # pin overrides ONLY: the substrate's pinned tools from the same
+      # inventory the modules consume. Nothing else may enter this
+      # overlay — a pin override lands here, never inside a domain module.
+      overlays.default = final: prev: {
+        workstationPins = import ./nix/lib/pins.nix {
+          lib = final.lib;
+          pkgs = final;
+        };
+      };
+
       nixosConfigurations.vm-test = nixpkgs.lib.nixosSystem {
         system = hostSystem;
         specialArgs = {

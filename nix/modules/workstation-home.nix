@@ -30,8 +30,7 @@ let
     homeDir = config.home.homeDirectory;
     treeRoot = self;
   };
-
-  # The nvim-profile lane overrides the payload's bootstrap pin with the
+  # the nvim-profile lane overrides the payload's bootstrap pin with the
   # nixpkgs neovim. The payload MUST still declare the link — if the
   # package tree stops declaring it, this override has to be revisited
   # (drift guard, loud on both sides). The guard lives INSIDE config: a
@@ -67,6 +66,13 @@ let
   homeFileSources = ws.fileTargets // fragmentFiles // rcFiles;
 in
 {
+  # --- the co-located domain modules ---------------------------------------
+  # the native substrate: each module declares its capability at its final
+  # address (modules/<domain>/). The manifest walker below shrinks as each
+  # capability's manifest dies in the same commit that lands its module —
+  # never double-rendered.
+  imports = [ ../../modules/agent/agent.nix ];
+
   options.workstation.report = {
     counts = lib.mkOption { type = lib.types.attrs; readOnly = true; };
     fileTargets = lib.mkOption { type = lib.types.listOf lib.types.str; readOnly = true; };
@@ -96,7 +102,34 @@ in
     };
   };
 
+  # the declared retire list: legacy/foreign tombstones the generation
+  # diff cannot remove (they predate the substrate or live in hot home).
+  # One idempotent activation rm -f for the whole list, once per
+  # generation, each removal leaving a named receipt in the host's
+  # workstation state log.
+  options.workstation.retire = lib.mkOption {
+    type = lib.types.listOf lib.types.str;
+    default = [ ];
+    description = ''
+      Home-relative paths to remove at activation (idempotent rm -f, a
+      named receipt per removal). Dropped once the fleet has switched
+      past the tombstone.
+    '';
+  };
+
   config = {
+    # --- the declared retire list (workstation.retire) ---------------------
+    home.activation.workstation-retire = lib.hm.dag.entryAfter [ "writeBoundary" ]
+      (lib.concatMapStrings (p: ''
+        if [ -e "$HOME/${p}" ] || [ -L "$HOME/${p}" ]; then
+          rm -f "$HOME/${p}"
+          echo "workstation: retired ${p}"
+        else
+          echo "workstation: retire no-op (${p} absent)"
+        fi
+        echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) ${p}" >> "$HOME/.local/state/workstation/retire.log"
+      '') cfg.retire);
+
     # --- the file plane: real manifests -> home.file -----------------------
     # intra-home link sources come back as absolute strings; HM store
     # sources must be paths, so they wrap in mkOutOfStoreSymlink (text
