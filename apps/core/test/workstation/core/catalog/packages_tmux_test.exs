@@ -1,6 +1,6 @@
 defmodule Workstation.Core.Catalog.PackagesTmuxTest do
   @moduledoc """
-  The tmux package's pin contracts, enforced *here* because plugin checkouts
+  The tmux surface's pin contracts, enforced *here* because plugin checkouts
   are never managed source state. The status bar is the pinned tmux2k
   plugin at the upstream `onedark` theme with tmux2k's own separators and
   plugin icons: `.tmux.conf` must carry the active `@plugin` pin, the
@@ -8,29 +8,42 @@ defmodule Workstation.Core.Catalog.PackagesTmuxTest do
   the clock format ahead of TPM init, `versions.json` must record the
   upstream commit + URL, and no `@oasis_*`/`@thm_*` options may be set —
   tmux2k's onedark defaults are canonical. The nunchux launcher grew into
-  its own package (the nunchux data manifest — config target, pinned
-  binary pre-seed, platform marker); this suite keeps the tmux-side
-  contracts: the ACTIVE `@plugin` pin and root `C-Space` chord in
-  `.tmux.conf` (live with the engine-provisioned checkout,
-  r2.nunchux-wiring) and the tmux2k status-bar pins. See docs/tmux.md.
+  its own package (its payload — config target, pinned binary pre-seed,
+  platform marker); this suite keeps the tmux-side contracts: the ACTIVE
+  `@plugin` pin and root `C-Space` chord in `.tmux.conf` (live with the
+  engine-provisioned checkout, r2.nunchux-wiring) and the tmux2k
+  status-bar pins. The tmux manifest retired in the absorption chain's
+  first stage — the plugin checkouts are fetchGit-pinned from the
+  inventory by `modules/terminal/terminal.nix`; the engine-side pins these
+  tests enforce are the payload bytes and the inventory rows. See
+  docs/tmux.md.
   """
 
   use ExUnit.Case, async: true
 
-  alias Workstation.Core.Catalog.Discover
-  alias Workstation.Backends.Chezmoi
-
   @repo_root Path.expand("../../../../../../", __DIR__)
   @payload_root Path.join(@repo_root, "workstation/packages/terminal/tmux")
 
-  test "the nunchux config target moved to the nunchux package" do
-    # Ownership moved with the payload (the nunchux manifest owns the
-    # theme-slot template now); tmux must not contribute the target anymore.
-    refute Enum.any?(
-             tmux_spec().contributes,
-             &(&1.provider == "chezmoi" and &1.spec.target == ".config/nunchux/config")
-           )
+  # The whole engine-provisioned set: tpm leads because it must exist
+  # before the first tmux start (the run-shell at the end of .tmux.conf
+  # sources it). nunchux is excluded on purpose — its checkout is owned by
+  # the nunchux package, never by this one.
+  @plugins [
+    {"tpm", "e261deb1b47614eed3400089ce7197dc68acc4eb",
+     "https://github.com/tmux-plugins/tpm"},
+    {"tmux2k", "d8c5c2924c557835f984dd44eb71315b897bc4f5",
+     "https://github.com/2KAbhishek/tmux2k"},
+    {"tmux-yank", "acfd36e4fcba99f8310a7dfb432111c242fe7392",
+     "https://github.com/tmux-plugins/tmux-yank"},
+    {"tmux-resurrect", "cff343cf9e81983d3da0c8562b01616f12e8d548",
+     "https://github.com/tmux-plugins/tmux-resurrect"},
+    {"vim-tmux-navigator", "e41c431a0c7b7388ae7ba341f01a0d217eb3a432",
+     "https://github.com/christoomey/vim-tmux-navigator"}
+  ]
 
+  test "the nunchux config target belongs to the nunchux payload" do
+    # Ownership moved with the payload (the nunchux package owns the
+    # theme-slot template now); tmux's payload tree must not carry it.
     refute File.exists?(Path.join(@payload_root, "files/.config/nunchux/config"))
   end
 
@@ -100,17 +113,6 @@ defmodule Workstation.Core.Catalog.PackagesTmuxTest do
     assert plugin_line < tpm_line and theme_line < tpm_line and plugins_line < tpm_line
   end
 
-  test "the versions manifest records the tmux2k commit and URL" do
-    manifest =
-      @repo_root
-      |> Path.join("workstation/versions.json")
-      |> File.read!()
-      |> Jason.decode!()
-
-    assert manifest["tmux2k"] == "d8c5c2924c557835f984dd44eb71315b897bc4f5"
-    assert manifest["tmux2k_url"] == "https://github.com/2KAbhishek/tmux2k"
-  end
-
   test "the bar stays tmux2k-truthed: no theme overrides, no oasis remnants" do
     conf = conf_source()
 
@@ -122,95 +124,28 @@ defmodule Workstation.Core.Catalog.PackagesTmuxTest do
     refute conf =~ "tmux-oasis"
     refute conf =~ "starlight_dark"
 
-    # The retired slot template is gone from the payload tree and its target
-    # carries a recorded-ownership removal tombstone (already-absent no-op).
+    # The retired slot template is gone from the payload tree; the live
+    # tombstone is the terminal module's declared retire list, exercised
+    # by the VM E2E's retire receipt.
     refute File.exists?(Path.join(@payload_root, "files/.config/tmux/themes/tmux2k.conf"))
-
-    removal =
-      Enum.find(
-        tmux_spec().contributes,
-        &(&1.provider == "chezmoi" and &1.spec.target == ".config/tmux/themes/tmux2k.conf")
-      )
-
-    assert removal && removal.spec.kind == :remove
-    assert is_nil(removal.spec.content) and is_nil(removal.spec.asset)
   end
 
-  test "every tmux template target names an existing payload asset" do
-    for %{spec: %Chezmoi{template: true}} = entry <- tmux_spec().contributes do
-      assert File.regular?(Path.join(@payload_root, entry.spec.asset)),
-             "missing payload asset #{entry.spec.asset} for #{entry.spec.target}"
+  test "the plugin set rides the pinned inventory" do
+    manifest =
+      @repo_root
+      |> Path.join("workstation/versions.json")
+      |> File.read!()
+      |> Jason.decode!()
+
+    for {name, commit, url} <- @plugins do
+      key = String.replace(name, "-", "_")
+
+      assert manifest["#{key}_git_commit"] == commit,
+             "the #{name} pin is missing from the inventory"
+
+      assert manifest["#{key}_git_url"] == url
+      assert commit =~ ~r/\A[0-9a-f]{40}\z/
     end
-  end
-
-  test "tmux payloads ride the chezmoi seam; the plugin set rides pinned git recipes" do
-    for entry <- tmux_spec().contributes do
-      case entry.provider do
-        "chezmoi" ->
-          assert entry.spec.kind in [:file, :symlink, :remove]
-
-        "git" ->
-          # The engine-provisioned plugin checkouts: https pins at exact
-          # commits under the managed plugin root (docs/tmux.md).
-          assert String.starts_with?(entry.spec.url, "https://github.com/")
-          assert entry.spec.commit =~ ~r/\A[0-9a-f]{40}\z/
-          assert String.starts_with?(entry.spec.target, ".tmux/plugins/")
-
-        "mise" ->
-          # The managed binary pins: the tmux binary and the btop popup
-          # resolve through the mise contract (exact versions, declared
-          # backends, the linux platform scope — on darwin they stay brew
-          # host prerequisites; docs/tools.md).
-          assert entry.spec.tools == [
-                   %{
-                     name: "tmux",
-                     version: "3.7c",
-                     backend: "aqua:tmux/tmux-builds",
-                     platforms: ["linux"]
-                   },
-                   %{
-                     name: "btop",
-                     version: "1.4.7",
-                     backend: "github:aristocratos/btop",
-                     platforms: ["linux"]
-                   }
-                 ]
-
-        other ->
-          flunk("unexpected tmux provider #{inspect(other)}")
-      end
-    end
-
-    # The whole engine-provisioned set, in manifest order: tpm leads because
-    # it must exist before the first tmux start (the run-shell at the end of
-    # .tmux.conf sources it). nunchux is excluded on purpose — its checkout
-    # is owned by the nunchux package, never by this one.
-    git_targets =
-      tmux_spec().contributes
-      |> Enum.filter(&(&1.provider == "git"))
-      |> Enum.map(& &1.spec.target)
-
-    assert git_targets == [
-             ".tmux/plugins/tpm",
-             ".tmux/plugins/tmux2k",
-             ".tmux/plugins/tmux-yank",
-             ".tmux/plugins/tmux-resurrect",
-             ".tmux/plugins/vim-tmux-navigator"
-           ]
-  end
-
-  test "the tmux2k template is no longer a contributed target" do
-    refute Enum.any?(tmux_spec().contributes, fn entry ->
-             entry.provider == "chezmoi" and entry.spec.kind == :file and
-               entry.spec.target == ".config/tmux/themes/tmux2k.conf"
-           end)
-  end
-
-  # The package's discovered spec: the data manifest read through the
-  # production seam (the kernel reader's denormalized output).
-  defp tmux_spec do
-    Discover.specs() |> Enum.find(&(&1.id == "tmux")) ||
-      raise("tmux is not discovered — the data manifest must serve the package")
   end
 
   defp conf_source, do: File.read!(Path.join(@payload_root, "files/.tmux.conf"))

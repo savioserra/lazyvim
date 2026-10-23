@@ -154,7 +154,21 @@ writeShellScriptBin "workstation-e2e" ''
   grep -q " .hermes/skills/lazyvim/SKILL.md$" \
     "$home/.local/state/workstation/retire.log" 2>/dev/null \
     || fail "retire-list receipt" "no lazyvim SKILL.md receipt in the retire log"
+  grep -q " .config/tmux/themes/tmux2k.conf$" \
+    "$home/.local/state/workstation/retire.log" 2>/dev/null \
+    || fail "retire-list receipt" "no tmux2k.conf receipt in the retire log"
   pass "retire-list receipt"
+
+  step "tmux plane (config, XDG link, pinned plugin checkouts)"
+  [ -r "$home/.tmux.conf" ] \
+    || fail "tmux plane" "$home/.tmux.conf missing"
+  [ -L "$home/.config/tmux/tmux.conf" ] \
+    || fail "tmux plane" "the XDG link did not deploy"
+  [ -d "$home/.tmux/plugins/tpm" ] \
+    || fail "tmux plane" "the tpm checkout did not deploy"
+  [ -d "$home/.tmux/plugins/tmux2k" ] \
+    || fail "tmux plane" "the tmux2k checkout did not deploy"
+  pass "tmux plane"
 
   # 3. the apply-driven nix switch: the driver wraps the offline
   #    activation + generation registration, reads the generation and

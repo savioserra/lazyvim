@@ -46,10 +46,10 @@ defmodule Workstation.Core.Catalog.DiscoverTest do
     # spec-shape and duplicate-id rejections apply to the real catalog,
     # not only to direct validate_specs calls. Every package — the editor
     # capability included — is served by the data-manifest arm. The count
-    # shrinks with the absorption chain (agent + herdr, then editor +
-    # go + typescript left in stage one).
+    # shrinks with the absorption chain (agent + herdr, editor + go +
+    # typescript, then tmux left in stage one).
     assert Packages.packages() == Discover.specs()
-    assert length(Packages.packages()) == 9
+    assert length(Packages.packages()) == 8
   end
 
   test "the data-manifest arm serves nunchux without a compiled module" do

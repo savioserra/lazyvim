@@ -70,6 +70,7 @@ in
     ../../modules/editor/editor.nix
     ../../modules/languages/go/go.nix
     ../../modules/languages/typescript/typescript.nix
+    ../../modules/terminal/terminal.nix
   ];
 
   options.workstation.report = {

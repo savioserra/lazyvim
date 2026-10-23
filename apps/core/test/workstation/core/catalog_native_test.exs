@@ -21,9 +21,9 @@ defmodule Workstation.Core.CatalogNativeTest do
 
   # the discovered catalog's size, pinned so an accidental discovery change
   # cannot pass silently. Shrinks with the absorption chain as each
-  # capability's manifest leaves (agent + herdr in stage one; editor +
-  # go + typescript next: 9).
-  @native_count 9
+  # capability's manifest leaves (agent + herdr, editor + go + typescript,
+  # then tmux: 8).
+  @native_count 8
 
   @goldens_root Path.expand("../../../../../tests/goldens", __DIR__)
 
@@ -65,10 +65,11 @@ defmodule Workstation.Core.CatalogNativeTest do
     # Post-order DFS over the id-sorted specs: dependencies first, ties by
     # id sort — elixir (requires empty after the editor went native in
     # stage one) leads, theme lands inside nunchux's requires closure,
-    # prompt (foundation-only) sorts between nunchux and secrets, tmux
-    # (the last id) stays last. The agent and editor domains' manifests
-    # left in the absorption chain's first stage (the native modules/
-    # {agent,editor,languages} modules own those surfaces now).
+    # prompt (foundation-only) sorts between nunchux and secrets, secrets
+    # (the last id) stays last. The agent, editor and terminal domains'
+    # manifests left in the absorption chain's first stage (the native
+    # modules/{agent,editor,languages,terminal} modules own those surfaces
+    # now).
     assert Enum.map(graph.ordered, & &1.id) == [
              "elixir",
              "foundation",
@@ -77,11 +78,10 @@ defmodule Workstation.Core.CatalogNativeTest do
              "theme",
              "nunchux",
              "prompt",
-             "secrets",
-             "tmux"
+             "secrets"
            ]
 
-    assert graph.enabled["theme"] and graph.enabled["tmux"]
+    assert graph.enabled["theme"] and graph.enabled["nunchux"]
   end
 
   test "composition keeps graph rejection semantics through the catalog seam" do
@@ -220,15 +220,14 @@ defmodule Workstation.Core.CatalogNativeTest do
     test "the owner-declared anchors hold" do
       taxonomy = Packages.taxonomy()
 
-      assert taxonomy["tmux"] == "foundation/terminal"
       assert taxonomy["theme"] == "foundation/theme"
       assert taxonomy["fonts"] == "foundation/fonts"
       assert taxonomy["secrets"] == "foundation/secrets"
       assert taxonomy["foundation"] == "foundation/base"
 
-      # the agent and editor domains' manifests retired in the absorption
-      # chain's first stage (modules/{agent,editor,languages} own those
-      # surfaces natively)
+      # the agent, editor and terminal domains' manifests retired in the
+      # absorption chain's first stage (modules/{agent,editor,languages,
+      # terminal} own those surfaces natively)
 
       for runtime <- ~w(node elixir) do
         assert taxonomy[runtime] == "foundation/runtime"

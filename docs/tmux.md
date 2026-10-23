@@ -60,28 +60,23 @@ Pinning rules:
 
 - Keep `@plugin` values as bare `user/repo` for TPM.
 - Store exact commits in this table. All six checkouts are
-  substrate-provisioned pinned clones, never placed by hand: the tmux package
-  manifest declares tpm, tmux2k, tmux-yank, tmux-resurrect and
-  vim-tmux-navigator as pinned git recipes (url + commit + target under
-  `~/.tmux/plugins/`, tpm first — it must exist before the first tmux start,
-  which sources it via the `run-shell` at the end of `.tmux.conf`), and
-  nunchux rides its own package's pinned-clone recipe (below). The walker
-  freezes each pin as a store checkout (`builtins.fetchGit` at the recorded
-  commit) and the generation links it at the target, so TPM sees the
-  pre-installed checkouts and sources them without cloning. Never run TPM's
-  `prefix + I`: a TPM clone/pull would fight the pins — the next generation
-  switch re-asserts them.
-- tmux2k's commit + URL are additionally pinned in
-  `workstation/versions.json` (`tmux2k*` keys) and asserted by the
-  package tests.
+  substrate-provisioned pinned clones, never placed by hand: the plugin
+  pins live in `workstation/versions.json` (the interim pin inventory —
+  `<plugin>_git_commit` / `<plugin>_git_url` rows) and
+  `modules/terminal/terminal.nix` fetchGit-freezes each at the recorded
+  commit, linking the store checkout under `~/.tmux/plugins/` (tpm first —
+  it must exist before the first tmux start, which sources it via the
+  `run-shell` at the end of `.tmux.conf`); nunchux rides the same
+  inventory (below). TPM sees the pre-installed checkouts and sources
+  them without cloning. Never run TPM's `prefix + I`: a TPM clone/pull
+  would fight the pins — the next generation switch re-asserts them.
+- The plugin rows are asserted by the package tests (the payload seam).
 - Keep the `TMUX_PLUGIN_MANAGER_PATH` pin ahead of the TPM `run-shell`; TPM's
   default path logic alone would select the unmanaged XDG plugin root.
-- Update this table with implementation pins, and the package manifest's
-  recipes with it. Dropping a recipe from the manifest retires its recorded
-  checkout at the next switch: the generation simply stops linking it (the
-  old guarded-apply removal gates — clean-tree, HEAD-at-pin — retired with
-  the engine's write plane; atomic generations + rollback own convergence
-  now).
+- Update this table with implementation pins, and the inventory rows with
+  it. Dropping a plugin from the terminal module retires its recorded
+  checkout at the next switch: the generation simply stops linking it
+  (atomic generations + rollback own convergence).
 
 TPM `user/repo#ref` supports branches/tags, not exact raw commits.
 
@@ -213,8 +208,9 @@ status re-render whose scroll-style repaints stacked on limited mobile
 clients (Termius/iOS), while tmux2k's `|` separators and HH:MM clock are
 narrow-phone-safe. The tokens slot layer stays in [theme](theme.md) for
 future consumers; the retired `~/.config/tmux/themes/tmux2k.conf` target
-carries a recorded-ownership removal tombstone in the package recipe
-(already-absent no-op on homes that never had it).
+is a declared retire-list tombstone in `modules/terminal/terminal.nix`
+(an idempotent activation `rm -f` with a named receipt — already-absent
+no-op on homes that never had it).
 
 Mobile-client redraw mitigation (aurora, 2026-10-13): the aurora
 investigation reproduced Termius/iOS stacking the powerline bar on re-render
@@ -246,9 +242,9 @@ config) and remove any `tmux.conf.bak.*` left in `~/.config/tmux/`.
 ## Verification
 
 - assert each engine-provisioned checkout at its pinned commit —
-  `packages/tmux/verify/tmux.sh` reads the manifest's git recipes and checks
-  every `~/.tmux/plugins/<name>` HEAD against its pin (read-only, fails
-  closed on the first mismatch);
+  `packages/tmux/verify/tmux.sh` reads the pin inventory's
+  `<plugin>_git_commit` rows and checks every `~/.tmux/plugins/<name>`
+  HEAD against its pin (read-only, fails closed on the first mismatch);
 - assert the XDG symlink target;
 - start an isolated tmux socket and server;
 - assert session name;

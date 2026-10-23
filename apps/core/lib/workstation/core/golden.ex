@@ -55,11 +55,11 @@ defmodule Workstation.Core.Golden do
   ]
 
   # Catalog profile seeds: minimal records the foundation package alone,
-  # theme the theme/tmux closure (their dependency closure adds foundation
-  # and node); any profile without seeds records the complete catalog.
+  # theme the theme closure (its dependency adds foundation and node); any
+  # profile without seeds records the complete catalog.
   @catalog_seeds %{
     "minimal" => ["foundation"],
-    "theme" => ["theme", "tmux"]
+    "theme" => ["theme"]
   }
 
   @doc "Recorded profiles, in recording order (also the directory names)."
