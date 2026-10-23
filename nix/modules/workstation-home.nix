@@ -30,14 +30,8 @@ let
     homeDir = config.home.homeDirectory;
     treeRoot = self;
   };
-  # the nvim-profile lane overrides the payload's bootstrap pin with the
-  # nixpkgs neovim. The payload MUST still declare the link — if the
-  # package tree stops declaring it, this override has to be revisited
-  # (drift guard, loud on both sides). The guard lives INSIDE config: a
-  # top-level assert would force `ws` (and with it the pkgs module arg)
-  # during module fixup, re-entering _module.args.pkgs — infinite
-  # recursion in the HM standalone module system.
-  nvimTarget = ".local/bin/nvim";
+  # the nvim-profile lane's bin target — retired with the lane itself (the
+  # editor module owns .local/bin/nvim now)
 
   fragmentFiles = builtins.foldl'
     (acc: x:
@@ -71,7 +65,12 @@ in
   # address (modules/<domain>/). The manifest walker below shrinks as each
   # capability's manifest dies in the same commit that lands its module —
   # never double-rendered.
-  imports = [ ../../modules/agent/agent.nix ];
+  imports = [
+    ../../modules/agent/agent.nix
+    ../../modules/editor/editor.nix
+    ../../modules/languages/go/go.nix
+    ../../modules/languages/typescript/typescript.nix
+  ];
 
   options.workstation.report = {
     counts = lib.mkOption { type = lib.types.attrs; readOnly = true; };
@@ -142,13 +141,10 @@ in
       // (builtins.listToAttrs (map (c: {
         name = c.target;
         value.source = c.source;
-      }) ws.claimsOut))
-      // (if ws.fileTargets ? ${nvimTarget}
-        then {
-          # nvim-profile lane: the nixpkgs neovim replaces the bootstrap pin
-          ${nvimTarget}.source = "${pkgs.neovim}/bin/nvim";
-        }
-        else throw "workstation-nix: the payload no longer declares '${nvimTarget}' — the nvim-profile lane override must be revisited");
+      }) ws.claimsOut));
+    # (.local/bin/nvim moved to modules/editor/editor.nix — the nvim
+    # manifest's death in the same commit retired the walker's override
+    # guard with it)
 
     # the walker's platform coverage for fonts (fc-cache picks up
     # ~/.local/share/fonts; keep the cache fresh)

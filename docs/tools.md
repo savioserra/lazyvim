@@ -11,12 +11,12 @@ Supported deployment policy is Linux, WSL-as-Linux, and macOS (arm64).
 
 | Tool | Version | Source | Target | Platforms |
 | --- | --- | --- | --- | --- |
-| Neovim | 0.12.4 (pin recorded as inventory) | nixpkgs (`nvim-profile` lane; the historical bootstrap archive pin is retired) | nixpkgs neovim surfaced at `.local/bin/nvim`; the profile renders through the `nvim-profile` lane | linux-x86_64, darwin-arm64 |
-| Go | 1.27.1 | go.dev | `.local/opt/go` (pinned archive tree) + `.local/bin/go` link | linux-x86_64, darwin-arm64 |
+| Neovim | 0.12.4 (pin recorded as inventory) | nixpkgs (`modules/editor/editor.nix`; the historical bootstrap archive pin is retired) | nixpkgs neovim surfaced at `.local/bin/nvim`; the language profile composes in the editor module (`lib.generators.toLua`) and deploys with the config tree | linux-x86_64, darwin-arm64 |
+| Go | 1.27.1 | go.dev | Pinned archive tree from `nix/lib/pins.nix` (probe `bin/go version`), `.local/bin/go` linked straight from the store tree | linux-x86_64, darwin-arm64 |
 | Herdr | 0.9.0 | github.com/herdrdev/herdr | Archive-less pin (the fetched bytes ARE the binary), linked straight from the store derivation at `.local/bin/herdr` | linux-x86_64, darwin-arm64 (WSL uses the Linux asset) |
 | nvm-sh | 0.40.4 | github.com/nvm-sh/nvm | `.local/opt/nvm` (pinned archive tree, content probe `nvm.sh`; `node` package) | linux-x86_64, darwin-arm64 |
 | Node.js | `workstation/packages/languages/node/files/.node-version` (currently 24.19.0) | nodejs.org | `.local/opt/nvm/versions/node/v<version>` (pinned archive tree, probe `bin/node --version`; nested in the provisioned nvm tree, declared parent-first) | linux-x86_64, darwin-arm64 |
-| pnpm | 12.14.0 | github.com/pnpm/pnpm | `.local/opt/pnpm` (pinned archive, `flat` layout — the rootless `pnpm` + `dist/` standalone tree, probe `pnpm --version`; `typescript` package) + `.local/bin/pnpm` link | linux-x86_64, darwin-arm64 |
+| pnpm | 12.14.0 | github.com/pnpm/pnpm | Pinned archive (`flat` layout — the rootless `pnpm` + `dist/` standalone tree, probe `pnpm --version`), `.local/bin/pnpm` linked straight from the store tree (`typescript` package) | linux-x86_64, darwin-arm64 |
 | ripgrep | 15.2.0 | github.com/BurntSushi/ripgrep | `.local/opt/ripgrep` (pinned archive, probe `rg --version`) + `.local/bin/rg` link | linux-x86_64, darwin-arm64 |
 | fd | 10.4.2 | github.com/sharkdp/fd | `.local/opt/fd` (pinned archive, probe `fd --version`) + `.local/bin/fd` link | linux-x86_64, darwin-arm64 |
 | eza | 0.23.5 | github.com/eza-community/eza | `.local/opt/eza` (pinned archive — the lone root file IS the tree, content probe pins the binary bytes: the version token is not on the first `--version` line) + `.local/bin/eza` link; the managed `ls` alias rides the `prompt` package's guarded rc fragments | linux-x86_64 (no darwin asset upstream — brew/conda-only; absent-and-fine on darwin) |

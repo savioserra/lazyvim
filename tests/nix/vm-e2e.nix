@@ -110,6 +110,24 @@ writeShellScriptBin "workstation-e2e" ''
     || fail "nvim profile link" "$home/.local/bin/nvim is not executable"
   pass "nvim profile link"
 
+  step "deployed language profile"
+  prof="$home/.config/nvim/lua/languages/profile.lua"
+  [ -r "$prof" ] \
+    || fail "deployed language profile" "$prof missing (the composition gap closed natively)"
+  grep -q 'id = "standard"' "$prof" \
+    || fail "deployed language profile" "the standard entry is missing from $prof"
+  grep -q 'lazyvim.plugins.extras.lang.go' "$prof" \
+    || fail "deployed language profile" "the go entry is missing from $prof"
+  pass "deployed language profile"
+
+  step "lazy-lock merge (seeded from the pinned baseline)"
+  lock="$home/.config/nvim/lazy-lock.json"
+  [ -s "$lock" ] \
+    || fail "lazy-lock merge" "$lock was not seeded by the merge activation"
+  grep -q 'oasis.nvim' "$lock" \
+    || fail "lazy-lock merge" "$lock does not carry the pinned baseline"
+  pass "lazy-lock merge"
+
   # 2b. the agent domain: the pinned runtime stack, the linked secrets
   #     skill, and the retire-list receipt (the checkout itself is the one
   #     network surface — its ensure activation defers offline with a named

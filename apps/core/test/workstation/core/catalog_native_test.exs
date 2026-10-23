@@ -21,8 +21,9 @@ defmodule Workstation.Core.CatalogNativeTest do
 
   # the discovered catalog's size, pinned so an accidental discovery change
   # cannot pass silently. Shrinks with the absorption chain as each
-  # capability's manifest leaves (agent + herdr in stage one: 12).
-  @native_count 12
+  # capability's manifest leaves (agent + herdr in stage one; editor +
+  # go + typescript next: 9).
+  @native_count 9
 
   @goldens_root Path.expand("../../../../../tests/goldens", __DIR__)
 
@@ -62,24 +63,22 @@ defmodule Workstation.Core.CatalogNativeTest do
     graph = Catalog.compose(host: "linux")
 
     # Post-order DFS over the id-sorted specs: dependencies first, ties by
-    # id sort — foundation (no requires) leads, theme lands inside nunchux's
-    # requires closure, prompt (foundation-only) sorts between nunchux and
-    # secrets, typescript (the last id) stays last. The agent domain's
-    # manifests left in the absorption chain's first stage (the native
-    # modules/agent/ module owns the surface now).
+    # id sort — elixir (requires empty after the editor went native in
+    # stage one) leads, theme lands inside nunchux's requires closure,
+    # prompt (foundation-only) sorts between nunchux and secrets, tmux
+    # (the last id) stays last. The agent and editor domains' manifests
+    # left in the absorption chain's first stage (the native modules/
+    # {agent,editor,languages} modules own those surfaces now).
     assert Enum.map(graph.ordered, & &1.id) == [
-             "foundation",
-             "node",
-             "go",
-             "nvim",
              "elixir",
+             "foundation",
              "fonts",
+             "node",
              "theme",
              "nunchux",
              "prompt",
              "secrets",
-             "tmux",
-             "typescript"
+             "tmux"
            ]
 
     assert graph.enabled["theme"] and graph.enabled["tmux"]
@@ -178,32 +177,21 @@ defmodule Workstation.Core.CatalogNativeTest do
     end
   end
 
-  test "the live envelope keeps the recorded recipes but re-roots home-anchored destinations" do
-    live_home = "/tmp/ws-native-live-home"
-    live = Catalog.live(live_home)
+  test "the live envelope carries no home-anchored destinations left to re-root" do
+    # The re-rooting law's one fixture — the nvim launcher's absolute
+    # /home/golden symlink — retired with the nvim manifest in the
+    # absorption chain's first stage. No manifest carries an absolute
+    # destination anymore; when one ever reappears, this is the seam that
+    # must re-root it to the evaluated home.
+    live = Catalog.live("/tmp/ws-native-live-home")
 
-    assert live.profile == "live"
-    assert live.host == Catalog.native_host()
-    assert length(live.packages) == @native_count
+    refute Enum.any?(Enum.flat_map(live.packages, & &1.contributes), fn
+           %{spec: %Workstation.Backends.Chezmoi{kind: :symlink, to: to}} when is_binary(to) ->
+             String.starts_with?(to, "/")
 
-    # The one home-anchored SYMLINK destination (the nvim launcher symlink)
-    # moved from the canonical recording home to the evaluated home;
-    # everything else is byte-identical to the native declarations. The
-    # finder keys on ABSOLUTE destinations: within-package links are
-    # relative by design and never re-root.
-    launcher =
-      Enum.flat_map(live.packages, & &1.contributes)
-      |> Enum.find(fn
-        %{spec: %Workstation.Backends.Chezmoi{kind: :symlink, to: to}} when is_binary(to) ->
-          String.starts_with?(to, "/")
-
-        _ ->
-          false
-      end)
-
-    assert %{spec: %Workstation.Backends.Chezmoi{to: to}} = launcher
-    assert to == Path.join(live_home, ".local/opt/nvim/bin/nvim")
-    refute String.starts_with?(to, Catalog.canonical_home())
+           _ ->
+             false
+         end)
   end
 
   describe "catalog taxonomy" do
@@ -232,17 +220,17 @@ defmodule Workstation.Core.CatalogNativeTest do
     test "the owner-declared anchors hold" do
       taxonomy = Packages.taxonomy()
 
-      assert taxonomy["nvim"] == "foundation/editor"
       assert taxonomy["tmux"] == "foundation/terminal"
       assert taxonomy["theme"] == "foundation/theme"
       assert taxonomy["fonts"] == "foundation/fonts"
       assert taxonomy["secrets"] == "foundation/secrets"
       assert taxonomy["foundation"] == "foundation/base"
 
-      # the agent domain's manifests retired in the absorption chain's
-      # first stage (modules/agent/ owns the surface natively)
+      # the agent and editor domains' manifests retired in the absorption
+      # chain's first stage (modules/{agent,editor,languages} own those
+      # surfaces natively)
 
-      for runtime <- ~w(node go elixir typescript) do
+      for runtime <- ~w(node elixir) do
         assert taxonomy[runtime] == "foundation/runtime"
       end
     end

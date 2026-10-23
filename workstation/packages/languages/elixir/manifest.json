@@ -60,8 +60,6 @@
   ],
   "foundation": "foundation/runtime",
   "id": "elixir",
-  "requires": [
-    "nvim"
-  ],
+  "requires": [],
   "schema": 1
 }
