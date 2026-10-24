@@ -28,7 +28,9 @@ let
       archive = "tar.gz";
       probe = {
         argv = [ "rg" "--version" ];
-        output = "ripgrep {V}";
+        # upstream prints the packaging rev beside the version (the release
+        # identity's own suffix — moves with the pin on a bump)
+        output = "ripgrep {V} (rev e89fff89ac)";
       };
     };
     fd = pins.tool "fd" {
@@ -42,7 +44,9 @@ let
       archive = "tar.gz";
       probe = {
         argv = [ "fzf" "--version" ];
-        output = "{V}";
+        # upstream prints the build commit beside the version (the release
+        # identity's own suffix — moves with the pin on a bump)
+        output = "{V} (3337be9d)";
       };
     };
     lazygit = pins.tool "lazygit" {

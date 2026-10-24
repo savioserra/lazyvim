@@ -96,9 +96,13 @@ let
     let
       # the exec probe runs the staged binary on the builder; a dynamic
       # glibc binary cannot reach /lib64 inside the sandbox, so the gate
-      # retries through the builder's own loader (bytes never mutated)
+      # retries through the builder's own loader with the builder's own
+      # runtime libs (libstdc++/libgcc for gnu builds) — bytes never
+      # mutated
       loader = if pkgs.stdenv.isLinux then
         "${pkgs.stdenv.cc.libc}/lib/ld-linux-x86-64.so.2" else "";
+      libPath = if pkgs.stdenv.isLinux then
+        lib.makeLibraryPath [ pkgs.stdenv.cc.libc pkgs.stdenv.cc.cc ] else "";
       probeCheck =
         if probe == null then ""
         else if probe ? argv then ''
@@ -106,7 +110,7 @@ let
           probe_out=$("$@" 2>/dev/null || true)
           first=$(printf '%s\n' "$probe_out" | head -n 1)
           if [ -z "$first" ] && [ -n "${loader}" ]; then
-            probe_out=$(${loader} "$@" 2>/dev/null || true)
+            probe_out=$(LD_LIBRARY_PATH=${lib.escapeShellArg libPath} ${loader} "$@" 2>/dev/null || true)
             first=$(printf '%s\n' "$probe_out" | head -n 1)
           fi
           if [ "$first" != "$expected" ]; then
@@ -123,7 +127,14 @@ let
         '';
       probeArgs =
         if probe == null || !(probe ? argv) then ""
-        else lib.concatMapStrings (a: " ${lib.escapeShellArg a}") probe.argv;
+        else
+          # argv[0] is a RELATIVE MEMBER of the staged tree (the contract):
+          # a slash-less head must resolve from the builder's cwd, not the
+          # PATH — prefix ./" so `set --` + "$@" executes the staged binary
+          lib.concatStrings (lib.imap0
+            (i: a:
+              " ${lib.escapeShellArg (if i == 0 && !lib.hasInfix "/" a then "./${a}" else a)}")
+            probe.argv);
     in
     assert probe != null -> ((probe ? argv) != (probe ? member))
       || throw "workstation-pins: probe of '${name}' must declare exactly one shape (argv+output, or member+sha256)";
@@ -144,7 +155,7 @@ let
         else ''
           set -euo pipefail
           mkdir -p staging "$out"
-          case "$archive" in
+          case ${lib.escapeShellArg archive} in
             tar.gz) tar -xf "$src" -C staging ;;
             tar.xz) tar -xf "$src" -C staging ;;
             zip) unzip -q "$src" -d staging ;;

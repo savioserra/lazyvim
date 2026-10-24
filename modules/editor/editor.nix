@@ -94,7 +94,7 @@ let
     rm -f "$out/lazy-lock.json"
     mkdir -p "$out/lua/languages/plugins"
     cp ${pkgs.writeText "languages-profile.lua" profileLua} "$out/lua/languages/profile.lua"
-    ${lib.concatStrings (map (p: ''cp -a "${p}" "$out/lua/languages/plugins/$(basename "${p}")"'') cfg.languagePlugins)}
+    ${lib.concatMapStringsSep "\n" (p: ''cp -a "${p}" "$out/lua/languages/plugins/$(basename "${p}")"'') cfg.languagePlugins}
   '';
 in
 {
