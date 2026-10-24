@@ -154,6 +154,9 @@ in
         else
           echo "workstation: retire no-op (${p} absent)"
         fi
+        # the receipt log's home (a fresh home has no state tree yet — the
+        # daemon creates it later, and the activation runs first)
+        mkdir -p "$HOME/.local/state/workstation"
         echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) ${p}" >> "$HOME/.local/state/workstation/retire.log"
       '') cfg.retire);
 
