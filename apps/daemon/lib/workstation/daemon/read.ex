@@ -161,7 +161,9 @@ defmodule Workstation.Daemon.Read do
       nil ->
         "absent"
 
-      %{type: "symlink"} ->
+      # EngineState.lstat names symlinks "link" (read_link_info, never
+      # dereferenced); the destination still resolves for the review line.
+      %{type: type} when type in ["link", "symlink"] ->
         case :file.read_link(path) do
           {:ok, dest} -> "link -> " <> to_string(dest)
           {:error, _reason} -> "link"

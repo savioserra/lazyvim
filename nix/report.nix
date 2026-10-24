@@ -83,8 +83,15 @@ let
   # capabilities never declared (subtracted below)
   baselineKeys = builtins.attrNames baselineEval.home.file;
 
+  # home-relative keys only: home-manager generates some entries with
+  # home-ABSOLUTE keys (the fontconfig conf.d files ride the evaluated
+  # home path) — machinery, not declared state, and exactly the identity
+  # leak the report must not carry (the report pins no home path)
+  homeRelative = lib.filterAttrs (k: _: !(lib.hasPrefix "/" k));
+
   declaredHomeFile = eval:
-    lib.filterAttrs (k: _: !(builtins.elem k baselineKeys)) eval.home.file;
+    homeRelative
+      (lib.filterAttrs (k: _: !(builtins.elem k baselineKeys)) eval.home.file);
 
   claimTargetsOf = eval: builtins.attrNames
     (lib.filterAttrs (_: v: v.recursive or false) (declaredHomeFile eval));
@@ -134,6 +141,13 @@ let
     && lib.length (lib.concatMap (r: r.fragments) rows) == lib.length fragments;
   retireOk = sorted (lib.concatMap (r: r.retire) rows) == sorted retire;
 
+  # the report pins no home path: every declared target is home-relative
+  # (an absolute key is home-manager machinery that rode the evaluated
+  # home — carrying it would bake an identity into the release)
+  relativeOk =
+    lib.all (t: !(lib.hasPrefix "/" t)) (fileTargetNames ++ claimTargets)
+    && lib.all (row: lib.all (t: !(lib.hasPrefix "/" t) && t != "") row.retire) rows;
+
   counts = {
     capabilities = builtins.length capabilityWalk.capabilities;
     fileTargets = builtins.length fileTargetNames;
@@ -145,6 +159,7 @@ in
 assert unionOk || throw "workstation-report: a capability's declared targets do not compose to the full eval's — a module file escaped the fold's classification";
 assert fragmentsOk || throw "workstation-report: the capability fragments do not compose to the full eval's declared lane";
 assert retireOk || throw "workstation-report: the capability tombstones do not compose to the full eval's retire list";
+assert relativeOk || throw "workstation-report: a declared target is not home-relative — home-manager machinery rode the evaluated home into the report";
 {
   inherit counts fileTargetNames claimTargets;
   capabilityOrder = capabilityWalk.ids;
