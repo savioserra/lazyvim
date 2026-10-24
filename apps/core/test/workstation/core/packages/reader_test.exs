@@ -350,8 +350,9 @@ defmodule Workstation.Core.Packages.ReaderTest do
   end
 
   test "the tree walk serves the checkout's data manifests" do
-    assert {path, spec} = Enum.find(Reader.specs(), fn {_path, spec} -> spec.id == "elixir" end)
-    assert path =~ "workstation/packages/languages/elixir/manifest.json"
-    assert spec.foundation == "foundation/runtime"
+    # the last manifest (elixir) died in the absorption chain's final
+    # commit — the walk serves the empty floor; the reader plane itself
+    # retires with the format (the chain's next card)
+    assert Reader.specs() == []
   end
 end

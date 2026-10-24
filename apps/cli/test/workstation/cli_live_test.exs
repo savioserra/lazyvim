@@ -69,11 +69,11 @@ defmodule Workstation.CLI.LiveTest do
              "graph_order" => graph_order
            } = status_wire
 
-    # An empty test home still composes the full native catalog: packages
-    # live in the engine checkout, the home is only the destination.
-    assert is_list(packages) and packages != []
-    assert Enum.all?(packages, &is_map_key(&1, "id"))
-    assert is_list(graph_order) and graph_order != []
+    # The absorption endgame: the native catalog composes empty (the last
+    # manifest died in the chain's final commit) — the envelope shape is
+    # the contract, not its size.
+    assert is_list(packages) and packages == []
+    assert is_list(graph_order)
   end
 
   # Regression (substrate final gate): a fresh home's capabilities envelope can
@@ -91,9 +91,10 @@ defmodule Workstation.CLI.LiveTest do
 
     assert %{"schema" => "workstation.capabilities.v1", "domains" => domains} = wire
 
-    # An empty test home still composes the full catalog, so the envelope
-    # carries real file rows (the other half of the nil field surface).
-    assert is_list(domains) and domains != []
+    # The absorption endgame: the native catalog composes empty — the
+    # envelope shape is the contract, not its size (the nil-field surface
+    # this regression pins is the encoder's, independent of row count).
+    assert is_list(domains)
 
     # The envelope is canonical JSON (compact, keys sorted) — the same
     # bytes-then-decode parity the other live verbs pin.

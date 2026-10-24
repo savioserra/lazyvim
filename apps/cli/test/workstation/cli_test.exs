@@ -238,7 +238,11 @@ defmodule Workstation.CLITest do
 
       assert generation == String.trim_trailing(File.read!(Path.join([golden, "expected", "generation.txt"])))
 
-      assert is_map(states)
+      assert is_list(states)
+      # The absorption endgame: the recorded catalog is empty, so the
+      # plan's target states encode as the empty list (CanonicalJSON's
+      # empty-map law) — the envelope shape is the contract, not its size.
+      assert states == []
       # The CLI wire is itself canonical JSON (compact, keys sorted).
       assert String.trim_trailing(first, "\n") == canonical_json(wire)
     end
@@ -262,8 +266,9 @@ defmodule Workstation.CLITest do
              } = wire
 
       assert destination == Path.expand(home)
-      assert is_list(packages) and packages != []
-      assert Enum.all?(packages, &is_map_key(&1, "id"))
+      # The absorption endgame: the replayed envelope's catalog is empty —
+      # the envelope shape is the contract, not its size.
+      assert is_list(packages) and packages == []
       assert is_list(graph_order)
     end
 

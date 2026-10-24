@@ -45,11 +45,12 @@ defmodule Workstation.Core.Catalog.DiscoverTest do
     # Production composition consumes the VALIDATED discovery seam — the
     # spec-shape and duplicate-id rejections apply to the real catalog,
     # not only to direct validate_specs calls. Every package — the editor
-    # capability included — is served by the data-manifest arm. The count
-    # shrinks with the absorption chain (agent + herdr, editor + go +
-    # typescript, then tmux left in stage one).
+    # capability included — was served by the data-manifest arm. The count
+    # shrank with the absorption chain to zero: the last manifest (elixir)
+    # died in the chain's final commit, and the native modules own every
+    # surface while the reader plane lives.
     assert Packages.packages() == Discover.specs()
-    assert length(Packages.packages()) == 1
+    assert length(Packages.packages()) == 0
   end
 
   test "discovered specs are the native catalog, id-sorted with no duplicates" do

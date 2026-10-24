@@ -294,10 +294,13 @@ defmodule Workstation.Core.Catalog do
   The engine checkout: the tree carrying the package payload. Resolution is
   `WORKSTATION_ENGINE_REPO` (itself or its `workstation` child) when it
   carries `packages/`, else the dev checkout walked upwards from the working
-  directory. Raises when no candidate carries the payload — a tree without
-  a manifest-bearing `packages/` directory is not an engine checkout, and
-  reading assets from one anyway would resolve against an unrelated
-  directory.
+  directory. Raises when no candidate carries the payload — a tree without a
+  `packages/` directory is not an engine checkout, and reading assets from
+  one anyway would resolve against an unrelated directory. The anchor is the
+  tree, never its manifests: the absorption endgame carries zero data
+  manifests (the native modules replaced them) and still anchors — a
+  manifest-gated anchor would silently adopt an unrelated checkout that
+  happens to carry older manifests.
   """
   @spec engine_root() :: String.t()
   def engine_root do
@@ -310,7 +313,7 @@ defmodule Workstation.Core.Catalog do
         case walk_up(File.cwd!(), 8) do
           nil ->
             raise ArgumentError,
-                  "no engine checkout found (a manifest-bearing packages/ directory is required); " <>
+                  "no engine checkout found (a packages/ tree is required); " <>
                     "looked at #{inspect(candidates)} and above #{inspect(File.cwd!())}"
 
           root ->
@@ -330,21 +333,14 @@ defmodule Workstation.Core.Catalog do
   end
 
   # A directory carries the engine payload when its `packages/` child
-  # holds at least one package manifest (domain-shaped
-  # packages/<domain>/<id>/manifest.json beside top-level packages/<id>).
+  # exists — the tree law's package root, manifest-bearing or empty (the
+  # absorption endgame: the native modules replaced the manifests, and the
+  # discovered catalog is empty while the reader plane lives).
   defp engine_payload?(dir) when is_binary(dir) do
-    packages = Path.join(dir, "packages")
-    File.dir?(packages) and matching_manifest?(packages)
+    File.dir?(Path.join(dir, "packages"))
   end
 
   defp engine_payload?(_other), do: false
-
-  defp matching_manifest?(packages) do
-    depth_two = Path.wildcard(Path.join(packages, "*/*/manifest.json"))
-    depth_one = Path.wildcard(Path.join(packages, "*/manifest.json"))
-    matching = depth_two ++ depth_one
-    matching != [] and Enum.any?(matching, &File.regular?/1)
-  end
 
   # The payload root is the dev anchor's own directory or an ancestor of
   # it; the bound keeps a stray deep anchor from walking outside the tree,

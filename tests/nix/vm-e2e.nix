@@ -118,6 +118,10 @@ writeShellScriptBin "workstation-e2e" ''
     || fail "deployed language profile" "the standard entry is missing from $prof"
   grep -q 'lazyvim.plugins.extras.lang.go' "$prof" \
     || fail "deployed language profile" "the go entry is missing from $prof"
+  grep -q 'lazyvim.plugins.extras.lang.elixir' "$prof" \
+    || fail "deployed language profile" "the elixir entry is missing from $prof"
+  [ -r "$home/.config/nvim/lua/languages/plugins/elixir.lua" ] \
+    || fail "deployed language profile" "the elixir plugin module did not deploy"
   pass "deployed language profile"
 
   step "lazy-lock merge (seeded from the pinned baseline)"

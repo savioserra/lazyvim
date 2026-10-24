@@ -70,6 +70,7 @@ in
     ../../modules/editor/editor.nix
     ../../modules/foundation/foundation.nix
     ../../modules/fonts/fonts.nix
+    ../../modules/languages/elixir/elixir.nix
     ../../modules/languages/go/go.nix
     ../../modules/languages/node/node.nix
     ../../modules/languages/typescript/typescript.nix

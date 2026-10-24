@@ -20,11 +20,10 @@ defmodule Workstation.Core.CatalogNativeTest do
   alias Workstation.Core.EngineState
 
   # the discovered catalog's size, pinned so an accidental discovery change
-  # cannot pass silently. Shrinks with the absorption chain as each
-  # capability's manifest leaves (agent + herdr, editor + go + typescript,
-  # tmux, nunchux + theme, then the foundation bundle: 1 — elixir, the
-  # chain's last manifest).
-  @native_count 1
+  # cannot pass silently. Shrunk to zero with the absorption chain's first
+  # stage: every capability manifest retired (elixir, the chain's last, died
+  # in its final commit) — the native modules own every surface.
+  @native_count 0
 
   @goldens_root Path.expand("../../../../../tests/goldens", __DIR__)
 
@@ -63,16 +62,14 @@ defmodule Workstation.Core.CatalogNativeTest do
   test "composition resolves the complete native graph without any stub" do
     graph = Catalog.compose(host: "linux")
 
-    # Post-order DFS over the id-sorted specs: the absorption chain's
-    # foundation bundle left the foundation bundle's manifests (foundation,
-    # prompt, fonts, node, secrets) — elixir is the last manifest standing
-    # (the native modules/{agent,editor,foundation,fonts,languages,secrets,
-    # terminal,theme} modules own every other surface now).
-    assert Enum.map(graph.ordered, & &1.id) == [
-             "elixir"
-           ]
+    # Post-order DFS over the id-sorted specs: the last manifest standing
+    # (elixir) died in the chain's final commit — the discovered catalog is
+    # empty, every surface natively owned by the
+    # modules/{agent,editor,foundation,fonts,languages,secrets,terminal,
+    # theme} modules.
+    assert Enum.map(graph.ordered, & &1.id) == []
 
-    assert graph.enabled["elixir"]
+    assert graph.enabled == %{}
   end
 
   test "composition keeps graph rejection semantics through the catalog seam" do
@@ -209,15 +206,11 @@ defmodule Workstation.Core.CatalogNativeTest do
     end
 
     test "the owner-declared anchors hold" do
-      taxonomy = Packages.taxonomy()
-
-      # every domain's manifest but elixir's retired in the absorption
-      # chain's first stage (modules/{agent,editor,foundation,fonts,
-      # languages,secrets,terminal,theme} own those surfaces natively)
-
-      for runtime <- ~w(elixir) do
-        assert taxonomy[runtime] == "foundation/runtime"
-      end
+      # every domain's manifest retired in the absorption chain's first
+      # stage (modules/{agent,editor,foundation,fonts,languages,secrets,
+      # terminal,theme} own those surfaces natively) — the taxonomy is
+      # empty with the catalog
+      assert Packages.taxonomy() == %{}
     end
   end
 end

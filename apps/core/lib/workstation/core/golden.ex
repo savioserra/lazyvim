@@ -42,9 +42,11 @@ defmodule Workstation.Core.Golden do
 
   # Recording order (also the on-disk directory names). The shape-named
   # profiles (theme, minimal, download, git, mise, shell-order) retired
-  # with the shapes they pinned — the absorption chain's first stage took
-  # every capability manifest but elixir's, whose remaining envelopes are
-  # one nvim-profile entry and one payload file.
+  # with the shapes they pinned, and the absorption chain's first stage
+  # took every capability manifest — the discovered catalog is empty, so
+  # full-home records the empty floor until the reader plane retires (the
+  # chain's second card deletes the format and these goldens with it).
+  # conflicts, nvim-profile and context stay synthetic literal envelopes.
   @profiles [
     "full-home",
     "conflicts",
