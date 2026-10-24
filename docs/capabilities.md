@@ -5,11 +5,12 @@ declarations: one module per capability domain under `modules/<domain>/`,
 the module and the payload bytes it deploys co-located in the domain
 directory (renamed directly from `workstation/packages/<domain>/<id>/` by
 the absorption chain — see [absorption](absorption.md)). The package-manifest format is retired by
-operator ruling 2026-10-21; until the deletion chain lands, the manifests
-under `workstation/packages/**` remain the walker's transitional input and
-the engine's catalog still reads them. Nothing in this reference describes
-a post-absorption surface as already existing — the transition is marked
-where it matters.
+operator ruling 2026-10-21; the walker and the engine's manifest-era
+reader plane are gone (the chain's stage 2): the declared state is the
+modules' fold, the engine reads the baked report, and the payload bytes
+under `workstation/packages/**` stay put until the chain's final card
+renames them. Nothing in this reference describes a surface before its
+owning commit lands it.
 
 ## Dependency direction
 
@@ -32,7 +33,7 @@ workstation/bin/workstation (POSIX sh: sandbox, checkout anchor, locale guard)
       -> the declared-state report (flake evalReport; the modules' fold,
          nix/report.nix)
 
-core -X-> catalog/packages/providers/chezmoi/Neovim
+core speaks shapes only — the report reader, engine state, the theme platform
 ```
 
 The engine is Elixir-only: the release binary executes every verb in-process,
@@ -51,18 +52,13 @@ provisions, never an engine dependency.
 | `Workstation.CLI.Capabilities` | The capability-domain grouped envelope over the status+plan wires |
 | `Workstation.Daemon.Read` | The read engine behind `status.run`/`plan.run` |
 | `Workstation.Daemon.*` | The resident daemon: reads, pubsub (`EventBus`), the `system` overlay domain, `Overlay` claim/release |
-| `Workstation.Pipeline` | The one read fold: the declared state in, the attributable preview out (transitional: discover -> resolve -> compose over the manifests) |
+| `Workstation.Core.Report` | The declared-state report reader: release-baked JSON (or `WORKSTATION_REPORT`), structurally validated, cached per node — the engine's only declared-state source |
 | `Workstation.Core.EngineState` | Fail-closed private state root + canonical JSON |
 | `modules/<domain>/<domain>.nix` | The domain's native declaration: home.file surfaces, pins, fragments, activation scripts — payload co-located in the domain directory (transitional source: `workstation/packages/<domain>/<id>/`) |
 | `nix/lib/pins.nix` | The pin machinery: checksummed `fetchurl`/`fetchGit` derivations, layout/extraction rules, claim composition, build-time probe gates |
 | `modules/agent/agent.nix` | The agent domain's hot-home surfaces: managed skill leaves (store-path `home.file`), the checkout ensure and version-matched skill provisions (activation scripts) |
 | `workstation/packages/<domain>/<id>/` | Capability payload assets (`files/`, verify scripts) and data files — renames into `modules/<domain>/` with the chain's final card |
 | `packages/theme/tokens.lua` | Canonical theme tokens (DATA: slot/palette layers, per-appearance palettes, consumer choices) — read as bytes, never executed |
-
-The manifest-era reader plane (`Workstation.Core.Catalog` data arm,
-`Core.Graph`, `Core.Contracts.*`, `Backends.Chezmoi`, `Core.Policy`,
-`Packages.Nvim.Profile`) is transitional and retires with the format
-([absorption](absorption.md) carries the list and the ordering).
 
 ## The declaration contract
 
@@ -226,9 +222,6 @@ Validation is nix eval, fail-closed at eval time:
   cannot lie);
 - the identity gate in `check.sh` holds per-host identity to
   `hosts/<host>/default.nix`.
-
-The manifest-era rejection contracts (catalog/graph/provider validations)
-are transitional and retire with the format they validate.
 
 ## Lifecycle phases
 

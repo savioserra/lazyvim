@@ -1,45 +1,86 @@
 defmodule Workstation.CLI.Render do
   @moduledoc """
   Plain-text rendering of the hard-cut core wire schemas
-  (`workstation.status.v1`, `workstation.plan.v1`).
+  (`workstation.status.v2`, `workstation.plan.v2`).
 
   Non-TTY output is always plain text; this module is deliberately
-  terminal-free so output is stable under redirection and in tests. Input
-  wires are produced by `Workstation.CLI.Core` (the only front end since the
-  b8 graduation flip). Field order is fixed or positional, so identical
-  evaluation state renders identical text; the plan view layout is pinned
-  by the committed goldens.
+  terminal-free so output is stable under redirection and in tests. The
+  wires are assembled once, daemon-side (`Workstation.Daemon.Read`) over
+  the baked declared-state report; field order is fixed, so identical
+  declared state renders identical text.
   """
 
-  ## core wire views (workstation.{status,plan}.v1, lane b5)
+  ## core wire views (workstation.{status,plan}.v2)
 
-  # The hard-cut v1 wires carry the fields below, so they render through
-  # their own views. The plan view keeps the canonical sections and layout
-  # (pinned by the committed goldens); the two documented
-  # deviations keep the wire the single source of truth: the header names the
-  # front end instead of the destination (the plan.v1 envelope deliberately
-  # does not carry the home path — destination is a status-wire field), and
-  # modes print as the wire's canonical octal strings rather than being
-  # re-derived.
-  @doc "Render the hard-cut core status wire (`workstation.status.v1`)."
+  @doc "Render the hard-cut core status wire (`workstation.status.v2`)."
   def core_status(wire) do
-    packages =
-      case Enum.map(Map.get(wire, "packages", []), &Map.get(&1, "id")) do
+    counts = Map.get(wire, "counts", %{})
+    capabilities = Map.get(wire, "capabilityOrder", [])
+
+    capability_list =
+      case capabilities do
         [] -> "none"
         ids -> Enum.join(ids, ", ")
       end
 
     join([
       "workstation status (core)",
-      "platform: #{Map.get(wire, "platform", "?")}",
-      "packages: #{packages}",
-      "graph_order: #{render_value(Map.get(wire, "graph_order", []))}",
-      "destination: #{Map.get(wire, "destination", "?")}"
+      "  engine     : #{wire["engine"]["name"]} #{wire["engine"]["version"]} " <>
+        "(mode: #{wire["engine"]["mode"]})",
+      "  destination: #{Map.get(wire, "destination", "?")}",
+      "  platform   : #{Map.get(wire, "platform", "?")}",
+      "  declared   : #{counts["fileTargets"] || 0} file targets · " <>
+        "#{counts["claimTargets"] || 0} tree claims · #{counts["fragments"] || 0} fragments · " <>
+        "#{counts["retire"] || 0} retire",
+      "  capabilities (#{length(capabilities)}): #{capability_list}"
     ])
   end
 
-  defp render_value(value) when is_binary(value), do: value
-  defp render_value(value), do: inspect(value, pretty: false, limit: 20)
+  @doc """
+  Render the hard-cut core plan wire (`workstation.plan.v2`) as the human
+  plan preview: the declared surface plus the probed per-target live states.
+  """
+  def core_plan(wire) do
+    declared = Map.get(wire, "declared", %{})
+    states = Map.get(wire, "target_states", %{})
+
+    file_targets = Map.get(declared, "fileTargets", [])
+    claim_targets = Map.get(declared, "claimTargets", [])
+    retire = Map.get(declared, "retire", [])
+    fragments = Map.get(declared, "fragmentOrder", [])
+    fragment_count = fragments |> Enum.map(&length(&1["fragments"] || [])) |> Enum.sum()
+
+    fragment_line =
+      case fragments do
+        [] -> "  fragments  : none"
+        _ -> "  fragments  : #{fragment_count} on #{length(fragments)} rc targets"
+      end
+
+    retire_line =
+      case retire do
+        [] -> []
+        tombstones -> ["  retire     : #{length(tombstones)} (#{Enum.join(tombstones, ", ")})"]
+      end
+
+    target_lines =
+      (file_targets ++ claim_targets)
+      |> Enum.map(&target_line(&1, states, ""))
+      |> Enum.concat(Enum.map(retire, &target_line(&1, states, " (retire)")))
+
+    join([
+      "workstation plan (core)",
+      "  generation : #{Map.get(wire, "generation", "?")}",
+      "  declared   : #{length(file_targets)} file targets · #{length(claim_targets)} tree claims",
+      fragment_line,
+      retire_line,
+      target_lines,
+      "plan complete."
+    ])
+  end
+
+  defp target_line(target, states, suffix) do
+    "  target #{String.pad_trailing(target, 45)} #{Map.get(states, target, "?")}#{suffix}"
+  end
 
   defp join(lines) do
     lines
@@ -48,100 +89,17 @@ defmodule Workstation.CLI.Render do
     |> Enum.join("\n")
   end
 
-  @doc """
-  Render the hard-cut core plan wire (`workstation.plan.v1`) as the human
-  plan preview.
-  """
-  def core_plan(wire) do
-    plan = Map.get(wire, "plan", %{})
-    entries = Map.get(plan, "entries", [])
-    removals = Map.get(plan, "removals", [])
-    unsupported = Map.get(plan, "unsupported_reversals", [])
-    states = Map.get(wire, "target_states", %{})
-
-    baseline_line =
-      case Map.get(plan, "baseline_generation") do
-        nil ->
-          "  baseline   : none (initial plan; every source entry is an addition)"
-
-        generation ->
-          "  baseline   : #{generation} (verified against the journaled manifest)"
-      end
-
-    unsupported_lines =
-      if unsupported == [] do
-        []
-      else
-        ["  unsupported reversals (arbitrary whole-body modifiers; clean up explicitly):"] ++
-          Enum.map(unsupported, fn reversal ->
-            "    #{reversal["target"]} (was owned by #{reversal["owner"]})"
-          end)
-      end
-
-    target_lines =
-      Enum.map(entries, &target_line(&1["target"], states, "")) ++
-        Enum.map(removals, &target_line(&1["target"], states, " (removal)"))
-
-    join([
-      "workstation plan (core)",
-      "  generation : #{Map.get(wire, "generation", "?")}",
-      "  entries    : #{length(entries)}  removals: #{length(removals)}",
-      baseline_line,
-      Enum.map(entries, &changeset_line/1),
-      unsupported_lines,
-      target_lines,
-      "plan complete."
-    ])
-  end
-
-  defp changeset_line(record) do
-    attributes =
-      Enum.reject(
-        [
-          record["type"],
-          record["mode"] && "mode #{unpadded_octal(record["mode"])}",
-          record["link"] && "link #{record["link"]}"
-        ],
-        &is_nil/1
-      )
-
-    owners =
-      case Map.get(record, "attribution") do
-        owners when is_list(owners) and owners != [] -> Enum.join(owners, ",")
-        _ -> record["owner"] || "?"
-      end
-
-    source = record["name"] || record["source"] || "-"
-
-    "  #{record["operation"]} #{source} -> #{record["target"]} " <>
-      "[#{Enum.join(attributes, " ")}] owner #{owners}" <>
-      if(record["shared"], do: " (shared)", else: "")
-  end
-
-  defp unpadded_octal(mode) when is_binary(mode) do
-    case Integer.parse(mode, 8) do
-      {value, ""} -> Integer.to_string(value, 8)
-      _ -> mode
-    end
-  end
-
-  defp unpadded_octal(mode), do: render_value(mode)
-
-  defp target_line(target, states, suffix) do
-    "  target #{String.pad_trailing(target, 45)} #{Map.get(states, target, "?")}#{suffix}"
-  end
-
   ## capability-domain grouped view (workstation.capabilities.v1)
 
   alias Workstation.CLI.Capabilities
 
   # The grouped capability listing (docs/capabilities.md domain order):
-  # domain rollups, then per-package rollups, then the file leaves. The
-  # planned counts describe the PLAN's would-change set (plan.run patches),
-  # never live drift — the wording says so. `files: true` (the --files flag)
-  # flattens to the old file-grained listing for scripts that wanted it.
+  # domain rollups, then per-capability rollups, then the declared target
+  # leaves. The planned counts are always zero — nothing queues: the read
+  # verbs declare, the nix switch drivers mutate. `files: true` (the --files
+  # flag) flattens to the file-grained listing for scripts that want it.
   @domain_pad 12
-  @package_pad 12
+  @capability_pad 12
 
   @doc "Render the grouped capabilities envelope (`Workstation.CLI.Capabilities.group/1`)."
   @spec capabilities(map(), keyword()) :: String.t()
@@ -157,7 +115,7 @@ defmodule Workstation.CLI.Render do
 
     body =
       if(domains == [] and (envelope["unattributed_files"] || 0) == 0,
-        do: ["no catalog entries — the package tree is empty on this checkout"],
+        do: ["no declared targets — the report carries no declared surface"],
         else: Enum.map(domains, &domain_lines(&1, opts))
       )
 
@@ -173,48 +131,48 @@ defmodule Workstation.CLI.Render do
 
   defp scope_line(opts) do
     domain = Keyword.get(opts, :domain)
-    package = Keyword.get(opts, :package)
+    capability = Keyword.get(opts, :capability)
 
-    case {domain, package} do
+    case {domain, capability} do
       {nil, nil} -> nil
       {domain, nil} -> "scope: domain #{domain}"
-      {nil, package} -> "scope: package #{package}"
-      {domain, package} -> "scope: domain #{domain} package #{package}"
+      {nil, capability} -> "scope: capability #{capability}"
+      {domain, capability} -> "scope: domain #{domain} capability #{capability}"
     end
   end
 
   defp domain_lines(domain, opts) do
-    packages = Map.get(domain, "packages", [])
+    capabilities = Map.get(domain, "capabilities", [])
 
     rollup =
       "#{pad(domain["name"], @domain_pad)} targets #{domain["targets"]}   " <>
         "files #{domain["files"]}   planned #{domain["planned"]}"
 
-    package_bodies =
+    capability_bodies =
       if Keyword.get(opts, :files) do
-        Enum.flat_map(packages, fn package ->
-          Enum.map(package["entries"] || [], &file_line(&1, "    "))
+        Enum.flat_map(capabilities, fn capability ->
+          Enum.map(capability["entries"] || [], &file_line(&1, "    "))
         end)
       else
-        Enum.flat_map(packages, fn package ->
-          package_lines(package, opts)
+        Enum.flat_map(capabilities, fn capability ->
+          capability_lines(capability, opts)
         end)
       end
 
-    [rollup, package_bodies]
+    [rollup, capability_bodies]
   end
 
-  defp package_lines(package, opts) do
+  defp capability_lines(capability, opts) do
     header =
-      "  #{pad(package["name"], @package_pad)} files #{package["files"]}   planned #{package["planned"]}"
+      "  #{pad(capability["name"], @capability_pad)} files #{capability["files"]}   planned #{capability["planned"]}"
 
     # The default listing keeps the top level rollup-only (the owner's
-    # no-raw-file-dump rule); file leaves surface only with explicit
-    # drill-down (--package scope, or the deprecated flat --files). The
-    # TUI browser drills down interactively.
+    # no-raw-file-dump rule); declared targets surface only with explicit
+    # drill-down (--capability scope, or the flat --files). The TUI browser
+    # drills down interactively.
     files =
-      if opts[:package] != nil or opts[:files] == true,
-        do: Enum.map(package["entries"] || [], &file_line(&1, "    ")),
+      if opts[:capability] != nil or opts[:files] == true,
+        do: Enum.map(capability["entries"] || [], &file_line(&1, "    ")),
         else: []
 
     [header, files]

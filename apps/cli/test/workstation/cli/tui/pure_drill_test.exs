@@ -23,7 +23,7 @@ defmodule Workstation.CLI.TUI.PureDrillTest do
 
     # enter expands the highlighted domain; its packages surface.
     b1 = CapabilitiesBrowser.update({:key, :enter}, b0)
-    assert Enum.any?(b1.rows, &match?(%{kind: :package, path: "editor/nvim"}, &1))
+    assert Enum.any?(b1.rows, &match?(%{kind: :capability, path: "editor/nvim"}, &1))
 
     # down down lands the cursor on the nvim package row; enter drills it.
     b2 = CapabilitiesBrowser.update({:key, :down}, b1)
@@ -44,7 +44,7 @@ defmodule Workstation.CLI.TUI.PureDrillTest do
     rendered = rendered_text(frame)
     assert rendered =~ ".config/nvim/init.lua"
     assert rendered =~ "helix — 1 files"
-    assert rendered =~ "nvim — 1 files"
+    assert rendered =~ "nvim — 2 files"
     # The drill pane is titled by the active domain as a border island.
     assert rendered =~ "editor"
   end
@@ -80,49 +80,63 @@ defmodule Workstation.CLI.TUI.PureDrillTest do
     %{
       "destination" => "/tmp/pure-drill-home",
       "platform" => "linux-test",
-      "engine" => %{"name" => "workstation", "version" => "9.9.9-test", "mode" => "test"},
-      "taxonomy" => %{
-        "nvim" => "foundation/editor",
-        "helix" => "foundation/editor",
-        "tmux" => "foundation/terminal"
+      "engine" => %{"name" => "workstation", "version" => "9.9.9-test", "mode" => "report"},
+      "counts" => %{
+        "capabilities" => 3,
+        "claimTargets" => 1,
+        "fileTargets" => 3,
+        "fragments" => 0,
+        "retire" => 0
       },
-      "packages" => [
-        %{"id" => "nvim", "name" => "nvim", "targets" => [".config/nvim"]},
-        %{"id" => "helix", "name" => "helix", "targets" => [".config/helix"]},
-        %{"id" => "tmux", "name" => "tmux", "targets" => [".config/tmux"]}
-      ],
-      "graph_order" => ["tmux", "helix", "nvim"],
-      "journal" => %{"generation" => 2, "revision" => 7, "applied_at" => "2026-02-13T10:00:00Z"}
+      "capabilityOrder" => ["nvim", "helix", "tmux"],
+      "capabilities" => [
+        %{
+          "id" => "nvim",
+          "foundation" => "editor",
+          "fileTargets" => [".config/nvim/init.lua"],
+          "claimTargets" => [".config/nvim"],
+          "fragments" => [],
+          "retire" => []
+        },
+        %{
+          "id" => "helix",
+          "foundation" => "editor",
+          "fileTargets" => [".config/helix/config.toml"],
+          "claimTargets" => [],
+          "fragments" => [],
+          "retire" => []
+        },
+        %{
+          "id" => "tmux",
+          "foundation" => "terminal",
+          "fileTargets" => [".config/tmux/tmux.conf"],
+          "claimTargets" => [],
+          "fragments" => [],
+          "retire" => []
+        }
+      ]
     }
   end
 
   defp plan_wire do
     %{
       "generation" => "gen-3",
-      "plan" => %{
-        "entries" => [
-          %{
-            "source_name" => "dot_config/nvim/init.lua",
-            "target" => ".config/nvim/init.lua",
-            "attribution" => ["nvim"]
-          },
-          %{
-            "source_name" => "dot_config/helix/config.toml",
-            "target" => ".config/helix/config.toml",
-            "attribution" => ["helix"]
-          },
-          %{
-            "source_name" => "dot_config/tmux/tmux.conf",
-            "target" => ".config/tmux/tmux.conf",
-            "attribution" => ["tmux"]
-          }
+      "declared" => %{
+        "fileTargets" => [
+          ".config/nvim/init.lua",
+          ".config/helix/config.toml",
+          ".config/tmux/tmux.conf"
         ],
-        "removals" => []
+        "claimTargets" => [".config/nvim"],
+        "retire" => [],
+        "fragmentOrder" => []
       },
-      "patches" => [
-        %{"target" => ".config/nvim/init.lua", "kind" => "write", "attribution" => ["nvim"]},
-        %{"target" => ".config/tmux/tmux.conf", "kind" => "write", "attribution" => ["tmux"]}
-      ]
+      "target_states" => %{
+        ".config/nvim/init.lua" => "absent",
+        ".config/helix/config.toml" => "absent",
+        ".config/tmux/tmux.conf" => "absent",
+        ".config/nvim" => "absent"
+      }
     }
   end
 end

@@ -156,30 +156,23 @@ are history, not instructions.
 
 ## Architecture: capability/contract isolation (dep-guarded)
 
-Three dependency rules are enforced by `ArchitectureDepsTest`
+Two dependency rules are enforced by `ArchitectureDepsTest`
 (`apps/core/test/workstation/core/architecture_deps_test.exs`, a
 source-scan suite) and must never regrow:
 
 1. **Theme engine is generic.** The theme engine (`Workstation.Core.Theme`,
    `Workstation.Core.Theme.Tokens`, the CLI/daemon theme resolvers) exposes
-   tokens + slots + palette + themes and derivation contracts
-   (`Theme.Tokens.contract/1`, `derive/2`). It must never name a consumer
-   package. Consumers (tmux2k, pi, herdr, nunchux, editor, agent, ...)
-   implement the derivation in their OWN catalog package modules
-   (`catalog/packages/**`), which the engine discovers through the
-   `Workstation.Core.Source.Provider` contract — never by name lists in
-   domain code. Dependency direction: consumer -> theme contract.
+   tokens + slots + palette + resolved themes. It must never name a
+   consumer package: consumers derive from the tokens natively, in their
+   own capability modules under `modules/` (nix-side) or their own view
+   code (CLI-side). Dependency direction: consumer -> theme platform.
 2. **Core names no consumer.** Generic domain modules must not reference
-   concrete consumer packages. Exempted: the consumer layer itself
-   (`catalog/**`), policy tombstones (deploy-path pins are policy data),
-   `golden.ex` fixture-oracle data.
-3. **Backend isolation.** The chezmoi target-name encoding (`dot_` mapping,
-   `_tmpl` suffixing, the reserved attribute prefix family) lives only in
-   `Workstation.Backends.Chezmoi`. Generic core references the backend
-   exclusively through that module's API and constants (`provider_id/0`,
-   `data_provider_id/0`, `remove_filename/0`, `data_filename/0`); the exempt
-   backend family is `backends/chezmoi.ex`, `shell_program.ex`,
-   `policy.ex`, `golden.ex`.
+   concrete consumer packages — the declared state is the capability
+   modules' report and the core speaks shapes.
+
+(The backend-isolation and encoding laws retired with the chezmoi backend
+in the absorption chain's stage 2 — the dialect they guarded has no
+speaker. The historical three-law text lives in Git history.)
 
 ## Architecture: the client/daemon split (THE design)
 
@@ -309,24 +302,21 @@ it at the checkout shim. The historical engine-provisioned launcher
 (`Update.Bootstrap`) and the installer-driven release refresh retired with
 the write plane.
 
-## Catalog taxonomy
+## Capability taxonomy
 
-Every package declares the foundation layer it belongs to (`foundation:
-"foundation/<layer>"` in its spec map; `Workstation.Core.Catalog.Packages.taxonomy/0`
-is the closed map, `CatalogNativeTest` pins it). Declared layers:
-`foundation/base` (the foundation package), `foundation/editor` (nvim),
-`foundation/runtime` (node, go, elixir, typescript), `foundation/terminal`
-(tmux), `foundation/agent` (agent, herdr), `foundation/theme`,
+The declared capabilities and their foundation layers are REPORT data now:
+the fold (nix/report.nix) maps each capability id to its foundation layer
+(`foundation/base` for the foundation domain, `foundation/runtime` for the
+languages, identity otherwise) and the status wire carries the rows
+verbatim. The layers: `foundation/base` (foundation), `foundation/editor`
+(editor), `foundation/runtime` (languages/*), `foundation/terminal`
+(terminal), `foundation/agent` (agent), `foundation/theme`,
 `foundation/fonts`, `foundation/secrets`. The declaration is status-wire
-metadata only — it never
-enters graph resolution, envelopes or plan bytes, so catalog order and golden
-bytes are unaffected.
+metadata only — it never enters the plan wire.
 
-Package ordering is edge-driven, never positional: `requires` edges carry
-necessity plus ordering; the optional `after` edge is ordering-only and
-applies only when the target is present and enabled; ties between
-dependency-equal packages resolve by id sort. Integer ordering fields are
-banned on package specs (`Workstation.Core.Catalog.Spec.validate!/2`).
+Capability order is the report's `capabilityOrder` (the walk's id sort —
+nix/lib/capabilities.nix). The manifest-era edge-driven graph and its
+ordering-field bans are history with the catalog arm.
 
 ## Layout
 
@@ -787,26 +777,20 @@ text-role or theme-role style
 from the caller; the builder hardcodes none (role inventory in
 docs/theme.md, including the per-domain `border_*` panel roles).
 
-## CLI output wires (lane b5 hard-cut schemas)
+## CLI output wires (the hard-cut read schemas)
 
 `Workstation.CLI.Output` defines exactly one schema per command; no second
 wire exists and none is emitted as a CLI contract:
 
-- `workstation.status.v1` — `{schema, engine{name, version, mode "elixir"},
-  destination, platform, packages[{id, requires, supported_hosts}],
-  graph_order, taxonomy}` where
-  `taxonomy` is the catalog's package -> foundation declaration
-  (`foundation/<layer>`; descriptive metadata — it never enters envelopes
-  or plan bytes). The historical `journal` rider and the optional
-  `update` availability object retired with the write plane.
-- `workstation.plan.v1` — `{schema, generation, plan, manifest,
-  target_states}`. The `plan` body and `manifest` are the recorded golden
-  artifacts verbatim (byte-identical to
-  `tests/goldens/<profile>/expected/*.json`; nothing is added inside them —
-  content-addressed parity bodies stay closed), while `target_states` is
-  the per-target declared-vs-live probe. The historical `patches` wire
-  (the changeset records) retired with the Changesets view; the
-  declared-vs-applied diff story is the nix generation diff.
+- `workstation.status.v2` — `{schema, engine{name, version, mode "report"},
+  destination, platform, counts, capabilityOrder, capabilities}` where
+  `capabilities` are the report's accounting rows verbatim (id, foundation,
+  the declared surfaces, retire) and `counts` is the report's counts object.
+- `workstation.plan.v2` — `{schema, generation, declared, target_states}`.
+  The `generation` is the report's content address (sha256 of the baked
+  bytes); `declared` is the report's surface (fileTargets, claimTargets,
+  retire, fragmentOrder); `target_states` is the per-target declared-vs-live
+  probe. The declared-vs-applied diff story is the nix generation diff.
 
 JSON emission is canonical (`Workstation.Core.CanonicalJSON`: sorted keys,
 compact, empty maps as `[]`, explicit `:null` tokens), so identical state

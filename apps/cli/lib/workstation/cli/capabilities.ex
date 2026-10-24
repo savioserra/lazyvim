@@ -1,6 +1,6 @@
 defmodule Workstation.CLI.Capabilities do
   @moduledoc """
-  The capability-domain grouping of the desired state — ONE source of truth
+  The capability-domain grouping of the declared state — ONE source of truth
   consumed by the `workstation capabilities` verb (text and `--json`) and by
   the TUI capabilities browser, so the CLI listing and the browser can never
   disagree about structure or counts.
@@ -8,33 +8,31 @@ defmodule Workstation.CLI.Capabilities do
   The module is a PURE VIEW over two existing read wires (no engine changes,
   no new daemon op):
 
-    * `workstation.status.v1` — supplies `taxonomy` (package id → declared
-      `foundation/<domain>` layer, `Workstation.Core.Catalog.Packages`);
-    * `workstation.plan.v1` — supplies the full file inventory: `plan`
-      entries are every planned target with their `attribution` (the owning
-      package ids), and recorded `patches` (retired from the live wire with
-      the engine's write plane — the nix substrate owns would-change) are
-      the would-change subset plus retired-target deletions; a live wire
-      carries none, so every live row reads `planned: false`.
+    * `workstation.status.v2` — supplies the per-capability accounting rows
+      (id, foundation, fileTargets, claimTargets, fragments, retire) and the
+      capability order, report-verbatim;
+    * `workstation.plan.v2` — supplies the probed live state per declared
+      target (`target_states`), the declared-vs-live review surface.
 
-  Grain contract (the owner's directive): domains (L1) and packages (L2)
-  are the rollup levels, files (L3) the drill-down leaves — never a raw
-  file dump at the top. Counts are recomputed from the file rows on every
-  fold (derived, never cached), so rollups cannot drift from the leaves.
+  Grain contract (the owner's directive): domains (L1) and capabilities (L2)
+  are the rollup levels, declared targets (L3) the drill-down leaves — never
+  a raw file dump at the top. Counts are recomputed from the target rows on
+  every fold (derived, never cached), so rollups cannot drift from the
+  leaves.
 
-  Attribution rule — every file is visible EXACTLY once: a plan entry's
-  `attribution` lists every package contributing to the target; the entry
-  files under its PRIMARY package (`hd(attribution)`), and the remaining
-  contributors ride the row as `"also"` (rendered as a note, never extra
-  rows). Entries with an empty or absent attribution land in the honest
-  `unattributed` bucket instead of being dropped. A patch record for a
-  target with no plan entry is a retired-target deletion and appears as an
-  `operation: "delete"` row under its own attribution.
+  Attribution rule — every declared target is visible EXACTLY once: the
+  report's accounting rows attribute each target to exactly one capability
+  (the fold's integrity assertions enforce the composition nix-side), and
+  the rows keep that attribution. A row without a foundation still renders
+  (appended, sorted) rather than vanishing — a wrong-grained taxonomy is
+  surfaced, not hidden.
 
-  Domain order is the lifecycle order pinned by docs/capabilities.md and
-  `Workstation.Core.Catalog.Packages.@known_foundations`; a foundation name
-  outside the pinned set still renders (appended, sorted) rather than
-  vanishing — a wrong-grained taxonomy is surfaced, not hidden.
+  Domain order is the lifecycle order pinned by docs/capabilities.md; a
+  foundation name outside the pinned set still renders (appended, sorted)
+  rather than vanishing.
+
+  Planned counts are always zero: the read verbs declare, the nix switch
+  drivers mutate — nothing queues on the wire.
   """
 
   @schema "workstation.capabilities.v1"
@@ -42,8 +40,8 @@ defmodule Workstation.CLI.Capabilities do
   # docs/capabilities.md lifecycle order (foundation/<name> suffixes).
   @domain_order ~w(base fonts runtime editor terminal theme agent secrets)
 
-  @typedoc "Scope options: `:domain` and `:package` narrow the envelope."
-  @type scope_opt :: {:domain, String.t() | nil} | {:package, String.t() | nil}
+  @typedoc "Scope options: `:domain` and `:capability` narrow the envelope."
+  @type scope_opt :: {:domain, String.t() | nil} | {:capability, String.t() | nil}
 
   @doc "Schema identifier of the grouped envelope."
   @spec schema() :: String.t()
@@ -54,71 +52,56 @@ defmodule Workstation.CLI.Capabilities do
 
       %{
         "schema" => #{@schema},
-        "generation" => plan generation,
+        "generation" => plan generation (the report digest),
         "domains" => [
           %{"name" => "editor", "foundation" => "foundation/editor",
-            "targets" => 1, "files" => 21, "planned" => 2,
-            "packages" => [
-              %{"name" => "nvim", "files" => 21, "planned" => 2,
-                "entries" => [entry_row()]}
+            "targets" => 1, "files" => 6, "planned" => 0,
+            "capabilities" => [
+              %{"name" => "editor", "files" => 6, "planned" => 0,
+                "entries" => [target_row()]}
             ]}
         ],
-        "unattributed" => [entry_row()],
-        "unattributed_files" => 3,
-        "unattributed_planned" => 1
+        "unattributed" => [target_row()],
+        "unattributed_files" => 0,
+        "unattributed_planned" => 0
       }
 
-  Entry rows: `%{"name" => source, "target" => path, "operation" => op,
-  "mode" => octal | nil, "planned" => boolean, "also" => [package]}`.
+  Target rows: `%{"name" => target, "target" => path, "operation" =>
+  "file" | "tree" | "retire", "mode" => nil, "planned" => false,
+  "also" => []}`.
   """
   @spec group(%{required(String.t()) => map()}) :: map()
   def group(%{"status" => status, "plan" => plan}) when is_map(status) and is_map(plan) do
-    # The status wire's taxonomy is a package -> foundation MAP (unlike the
-    # wire's list-shaped sections) — never pass it through wire_list.
-    taxonomy = (is_map(status["taxonomy"]) && status["taxonomy"]) || %{}
-    entries = wire_list(get_in(plan, ["plan", "entries"]))
-    patches = wire_list(plan["patches"])
-
-    planned_targets = MapSet.new(patches, & &1["target"])
-    deletions = Enum.filter(patches, &(&1["kind"] == "delete"))
-
-    grouped =
-      entries
-      |> Enum.map(&entry_row(&1, planned_targets))
-      |> Kernel.++(Enum.map(deletions, &deletion_row(&1)))
-      |> Enum.group_by(&primary_package/1)
-
-    # Map.pop/3 yields {popped_value, rest_map}: the unattributed list
-    # pops out, the rest map stays attributed.
-    {unattributed, attributed} = Map.pop(grouped, :unattributed, [])
+    rows = wire_list(status["capabilities"])
 
     domains =
-      attributed
-      |> Enum.map(fn {package, rows} -> {package, package_rows(rows)} end)
-      |> Enum.map(fn {package, {rows, planned}} ->
-        {Map.get(taxonomy, package), package, rows, planned}
-      end)
-      |> Enum.group_by(fn {foundation, _package, _rows, _planned} -> foundation end)
-      |> Enum.map(fn {foundation, packages} ->
-        packages = Enum.sort_by(packages, fn {_f, package, _rows, _planned} -> package end)
+      rows
+      |> Enum.group_by(& &1["foundation"])
+      |> Enum.map(fn {foundation, capability_rows} ->
+        capability_rows = Enum.sort_by(capability_rows, & &1["id"])
+
+        capabilities =
+          Enum.map(capability_rows, fn row ->
+            entries = capability_entries(row)
+            files = length(entries)
+
+            %{
+              "name" => row["id"],
+              "files" => files,
+              "planned" => 0,
+              "entries" => entries
+            }
+          end)
 
         %{
           "name" => foundation_name(foundation),
-          "foundation" => foundation || "foundation/unattributed-taxonomy",
-          "targets" => length(packages),
-          "files" =>
-            Enum.reduce(packages, 0, fn {_f, _p, rows, _planned}, acc -> length(rows) + acc end),
-          "planned" =>
-            Enum.reduce(packages, 0, fn {_f, _p, _rows, planned}, acc -> planned + acc end),
-          "packages" =>
-            Enum.map(packages, fn {_f, package, rows, planned} ->
-              %{
-                "name" => package,
-                "files" => length(rows),
-                "planned" => planned,
-                "entries" => Enum.sort_by(rows, & &1["target"])
-              }
-            end)
+          "foundation" =>
+            (is_binary(foundation) && "foundation/#{foundation}") ||
+              "foundation/unattributed-taxonomy",
+          "targets" => length(capabilities),
+          "files" => Enum.reduce(capabilities, 0, &(&1["files"] + &2)),
+          "planned" => 0,
+          "capabilities" => capabilities
         }
       end)
       |> Enum.sort_by(&domain_sort_key(&1["name"]))
@@ -127,9 +110,9 @@ defmodule Workstation.CLI.Capabilities do
       "schema" => @schema,
       "generation" => plan["generation"],
       "domains" => domains,
-      "unattributed" => Enum.sort_by(unattributed || [], & &1["target"]),
-      "unattributed_files" => length(unattributed || []),
-      "unattributed_planned" => count_planned(unattributed || [])
+      "unattributed" => [],
+      "unattributed_files" => 0,
+      "unattributed_planned" => 0
     }
   end
 
@@ -137,31 +120,31 @@ defmodule Workstation.CLI.Capabilities do
 
   @doc """
   Scope one grouped envelope: `domain: "editor"` keeps that domain block,
-  `package: "nvim"` keeps the package inside its domain block. Unknown
-  scopes keep an empty envelope (the render says so) — never an error,
-  matching the read verbs' informational contract.
+  `capability: "editor"` keeps the capability inside its domain block.
+  Unknown scopes keep an empty envelope (the render says so) — never an
+  error, matching the read verbs' informational contract.
   """
   @spec scope(map(), [scope_opt()]) :: map()
   def scope(envelope, opts) do
     domain = opt(opts, :domain)
-    package = opt(opts, :package)
+    capability = opt(opts, :capability)
 
     domains =
       envelope["domains"]
       |> wire_list()
       |> Enum.filter(fn d -> domain == nil or d["name"] == domain end)
       |> Enum.map(fn d ->
-        if package == nil do
+        if capability == nil do
           d
         else
-          packages = Enum.filter(d["packages"], &(&1["name"] == package))
+          capabilities = Enum.filter(d["capabilities"], &(&1["name"] == capability))
 
-          if packages == [] do
-            # A package lives in exactly one domain: domains without it are
-            # dropped, not zeroed (the scope implies its domain).
+          if capabilities == [] do
+            # A capability lives in exactly one domain: domains without it
+            # are dropped, not zeroed (the scope implies its domain).
             nil
           else
-            replan(d, packages)
+            replan(d, capabilities)
           end
         end
       end)
@@ -180,28 +163,29 @@ defmodule Workstation.CLI.Capabilities do
     }
   end
 
-  @doc "Total file rows of one envelope (the header count)."
+  @doc "Total declared-target rows of one envelope (the header count)."
   @spec total_files(map()) :: non_neg_integer()
   def total_files(envelope) do
     domains =
       wire_list(envelope["domains"])
       |> Enum.reduce(0, fn domain, acc ->
         acc +
-          (wire_list(domain["packages"]) |> Enum.reduce(0, fn p, n -> n + (p["files"] || 0) end))
+          (wire_list(domain["capabilities"])
+           |> Enum.reduce(0, fn c, n -> n + (c["files"] || 0) end))
       end)
 
     domains + (envelope["unattributed_files"] || 0)
   end
 
-  @doc "Total planned-change rows of one envelope (the header count)."
+  @doc "Total planned-change rows of one envelope (the header count) — always zero."
   @spec total_planned(map()) :: non_neg_integer()
   def total_planned(envelope) do
     planned =
       wire_list(envelope["domains"])
       |> Enum.reduce(0, fn domain, acc ->
         acc +
-          (wire_list(domain["packages"])
-           |> Enum.reduce(0, fn p, n -> n + (p["planned"] || 0) end))
+          (wire_list(domain["capabilities"])
+           |> Enum.reduce(0, fn c, n -> n + (c["planned"] || 0) end))
       end)
 
     planned + (envelope["unattributed_planned"] || 0)
@@ -209,56 +193,28 @@ defmodule Workstation.CLI.Capabilities do
 
   ## row folding
 
-  # One plan entry (or deletion patch) → one file row. Planned = the target
-  # carries a would-change patch (add/change) or the row IS a deletion.
-  # Entries key their source as "source_name" (the changeset view's
-  # post-decode shape); patches key it "source".
-  defp entry_row(entry, planned_targets) do
-    {primary, also} = split_attribution(entry["attribution"])
+  # One capability row → its declared target rows: file targets, tree
+  # claims, then the retire tombstones (the report's declared order inside
+  # each surface). The live state rides the plan wire's target_states.
+  defp capability_entries(row) do
+    Enum.concat([
+      Enum.map(row["fileTargets"] || [], &entry(&1, "file")),
+      Enum.map(row["claimTargets"] || [], &entry(&1, "tree")),
+      Enum.map(row["retire"] || [], &entry(&1, "retire"))
+    ])
+    |> Enum.sort_by(& &1["target"])
+  end
 
+  defp entry(target, operation) do
     %{
-      "name" => entry["source_name"],
-      "target" => entry["target"],
-      "operation" => entry["operation"],
-      "mode" => entry["mode"],
-      "planned" => MapSet.member?(planned_targets, entry["target"]),
-      "primary" => primary || :unattributed,
-      "also" => also
+      "name" => target,
+      "target" => target,
+      "operation" => operation,
+      "mode" => nil,
+      "planned" => false,
+      "also" => []
     }
   end
-
-  defp deletion_row(patch) do
-    {primary, also} = split_attribution(patch["attribution"])
-
-    %{
-      "name" => patch["source"],
-      "target" => patch["target"],
-      "operation" => "delete",
-      "mode" => patch["mode"],
-      "planned" => true,
-      "primary" => primary || :unattributed,
-      "also" => also
-    }
-  end
-
-  defp split_attribution(value) do
-    case wire_list(value) do
-      [] -> {nil, []}
-      [primary | also] -> {primary, also}
-    end
-  end
-
-  defp primary_package(%{"primary" => :unattributed}), do: :unattributed
-  defp primary_package(%{"primary" => package}) when is_binary(package), do: package
-  # A row without any attribution key at all is unattributed by definition.
-  defp primary_package(_row), do: :unattributed
-
-  defp package_rows(rows) do
-    rows = Enum.map(rows, &Map.delete(&1, "primary"))
-    {rows, count_planned(rows)}
-  end
-
-  defp count_planned(rows), do: Enum.count(rows, & &1["planned"])
 
   defp foundation_name("foundation/" <> name), do: name
   defp foundation_name(name) when is_binary(name), do: name
@@ -269,13 +225,13 @@ defmodule Workstation.CLI.Capabilities do
     {index || length(@domain_order), name}
   end
 
-  defp replan(domain, packages) do
+  defp replan(domain, capabilities) do
     %{
       domain
-      | "packages" => packages,
-        "targets" => length(packages),
-        "files" => Enum.reduce(packages, 0, &(&1["files"] + &2)),
-        "planned" => Enum.reduce(packages, 0, &(&1["planned"] + &2))
+      | "capabilities" => capabilities,
+        "targets" => length(capabilities),
+        "files" => Enum.reduce(capabilities, 0, &(&1["files"] + &2)),
+        "planned" => Enum.reduce(capabilities, 0, &(&1["planned"] + &2))
     }
   end
 

@@ -83,45 +83,6 @@ defmodule Workstation.CLITest do
     end
   end
 
-  defp capture_main(argv) do
-    me = self()
-
-    {pid, ref} =
-      spawn_monitor(fn ->
-        output =
-          ExUnit.CaptureIO.capture_io(fn ->
-            result =
-              try do
-                Router.main(argv)
-                :ok
-              catch
-                :exit, {:shutdown, code} -> {:shutdown, code}
-              end
-
-            send(me, {:main_result, result})
-          end)
-
-        send(me, {:main_output, output})
-      end)
-
-    result =
-      receive do
-        {:main_result, result} -> result
-        {:DOWN, ^ref, :process, ^pid, reason} -> {:down, reason}
-      after
-        120_000 -> flunk("router main did not finish")
-      end
-
-    output =
-      receive do
-        {:main_output, output} -> output
-      after
-        5_000 -> ""
-      end
-
-    {result, output}
-  end
-
   describe "safety guards" do
     # The b8 graduation flip removed --engine/--core; a stale caller must
     # get the usage error, not a silently ignored unknown flag.
@@ -196,100 +157,32 @@ defmodule Workstation.CLITest do
   # tree. The recorded-envelope replay slices retired with the goldens
   # they replayed; what stays here is the renderer's synthetic-wire contract.
   describe "plan wire text rendering" do
-    test "plan text renders the attributed entry lines and the target column" do
+    test "plan text renders the declared counts, the fragment lane and the target column" do
       generation = String.duplicate("a", 64)
 
       wire = %{
-        "schema" => "workstation.plan.v1",
+        "schema" => "workstation.plan.v2",
         "generation" => generation,
-        "plan" => %{
-          "profile" => "minimal",
-          "host" => "linux",
-          "journal_revision" => 0,
-          "baseline_generation" => nil,
-          "entries" => [
-            %{
-              "name" => "bashrc",
-              "target" => ".bashrc",
-              "operation" => "add",
-              "type" => "file",
-              "mode" => "0755",
-              "attribution" => ["foundation"],
-              "bytes_sha256" => "abc",
-              "fingerprint" => "fp1"
-            }
-          ],
-          "removals" => [],
-          "unsupported_reversals" => []
+        "declared" => %{
+          "fileTargets" => [".config/rc"],
+          "claimTargets" => [],
+          "retire" => [".config/old"],
+          "fragmentOrder" => [%{"target" => ".zshrc", "fragments" => ["a"]}]
         },
-        "manifest" => [],
-        "patches" => [
-          %{
-            "kind" => "add",
-            "source" => "bashrc",
-            "owner" => "foundation",
-            "attribution" => ["foundation"],
-            "target" => ".bashrc",
-            "type" => "file",
-            "mode" => "755"
-          }
-        ],
-        "target_states" => %{".bashrc" => "absent"}
+        "target_states" => %{".config/rc" => "absent", ".config/old" => "absent"}
       }
 
       text = Workstation.CLI.Render.core_plan(wire)
 
       assert text =~ ~r/^workstation plan \(core\)$/m
       assert text =~ "  generation : #{generation}"
-      assert text =~ "  entries    : 1  removals: 0"
-      assert text =~ "  baseline   : none (initial plan; every source entry is an addition)"
-      assert text =~ "  add bashrc -> .bashrc [file mode 755] owner foundation"
+      assert text =~ "  declared   : 1 file targets · 0 tree claims"
+      assert text =~ "  fragments  : 1 on 1 rc targets"
+      assert text =~ "  retire     : 1 (.config/old)"
       # The anchor's %-45s padded target column.
-      assert text =~ ~r/^  target \.bashrc +absent$/m
+      assert text =~ ~r/^  target \.config\/rc +absent$/m
       assert text =~ "plan complete."
     end
-  end
-
-  # Like capture_main but captures stderr (not stdout): the contract refusals
-  # print on stderr, and the plain runner prints progress on stdout — this
-  # helper is for the refusal shape, where the message is what matters.
-  defp capture_main_with_stderr(argv) do
-    me = self()
-
-    {pid, ref} =
-      spawn_monitor(fn ->
-        output =
-          ExUnit.CaptureIO.capture_io(:stderr, fn ->
-            result =
-              try do
-                Router.main(argv)
-                :ok
-              catch
-                :exit, {:shutdown, code} -> {:shutdown, code}
-              end
-
-            send(me, {:main_result, result})
-          end)
-
-        send(me, {:main_output, output})
-      end)
-
-    result =
-      receive do
-        {:main_result, result} -> result
-        {:DOWN, ^ref, :process, ^pid, reason} -> {:down, reason}
-      after
-        120_000 -> flunk("router main did not finish")
-      end
-
-    output =
-      receive do
-        {:main_output, output} -> output
-      after
-        5_000 -> ""
-      end
-
-    {result, output}
   end
 
   # Both streams at once: the help contract's no-execution proof reads
@@ -345,23 +238,6 @@ defmodule Workstation.CLITest do
 
     {result, stdout, stderr}
   end
-
-  # Minimal canonical JSON mirror: compact separators,
-  # object keys sorted ascending bytewise, arrays in order.
-  defp canonical_json(value) when is_map(value) do
-    entries =
-      value
-      |> Enum.sort_by(fn {key, _} -> key end)
-      |> Enum.map(fn {key, inner} -> Jason.encode!(key) <> ":" <> canonical_json(inner) end)
-
-    "{" <> Enum.join(entries, ",") <> "}"
-  end
-
-  defp canonical_json(value) when is_list(value) do
-    "[" <> Enum.map_join(value, ",", &canonical_json/1) <> "]"
-  end
-
-  defp canonical_json(value), do: Jason.encode!(value)
 end
 
 defmodule Workstation.CLITest.EnvContract do

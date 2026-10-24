@@ -52,6 +52,11 @@ defmodule Workstation.CLI.DaemonVerbTest do
     home = unique_home("ws-daemon-verb")
     File.mkdir_p!(home)
 
+    # the daemon's reads serve the baked report — pin the fixture through
+    # the reader's cache seam (same VM, same cache)
+    Workstation.Core.Report.put(report_fixture())
+    on_exit(&Workstation.Core.Report.clear/0)
+
     previous = %{
       "WORKSTATION_HOME" => System.get_env("WORKSTATION_HOME"),
       "WORKSTATION_ENGINE_REPO" => System.get_env("WORKSTATION_ENGINE_REPO")
@@ -67,6 +72,27 @@ defmodule Workstation.CLI.DaemonVerbTest do
     end)
 
     %{home: home}
+  end
+
+  # A minimal truthful report (the fold's shape, nix/report.nix).
+  defp report_fixture do
+    Jason.encode!(%{
+      "counts" => %{"capabilities" => 1, "claimTargets" => 0, "fileTargets" => 1, "fragments" => 0, "retire" => 0},
+      "fileTargetNames" => [".local/bin/nvim"],
+      "claimTargets" => [],
+      "capabilityOrder" => ["editor"],
+      "fragmentOrder" => [],
+      "accounting" => [
+        %{
+          "id" => "editor",
+          "foundation" => "editor",
+          "fileTargets" => [".local/bin/nvim"],
+          "claimTargets" => [],
+          "fragments" => [],
+          "retire" => []
+        }
+      ]
+    })
   end
 
   test "the bare daemon verb boots, serves the spawn-budget handshake, refuses a second boot, and stops", %{
@@ -95,7 +121,7 @@ defmodule Workstation.CLI.DaemonVerbTest do
 
     # The handshake is the liveness signal: the same versioned hello the
     # client's spawn wait re-tries must answer here.
-    assert {:ok, %{"schema" => "workstation.status.v1"}} =
+    assert {:ok, %{"schema" => "workstation.status.v2"}} =
              DaemonClient.call("status.run", %{}, home: home, timeout_ms: 5_000)
 
     # A second foreground boot must refuse LOUD (exit 4) — never hang and

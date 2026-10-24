@@ -59,7 +59,7 @@ defmodule Workstation.CLI.TUI.ShellHomeFrameTest do
       assert String.ends_with?(String.trim_trailing(caps_text), "╮")
 
       # The status band — the deep-rows box (destination, platform,
-      # graph order).
+      # declared inventory).
       status_text = Frame.row_text(frame, status_row)
       assert status_text =~ "╭─┐⁴status"
       assert String.starts_with?(status_text, "╭")
@@ -67,7 +67,7 @@ defmodule Workstation.CLI.TUI.ShellHomeFrameTest do
 
       body = full_text(frame)
       assert body =~ "destination:"
-      assert body =~ "graph order:"
+      assert body =~ "declared:"
       assert body =~ "generation:  gen-3"
       # The status band is a fixed 5 rows, so any tail rows elide at
       # this height — the deep rows are pinned by the runtime suite's
@@ -614,45 +614,58 @@ defmodule Workstation.CLI.TUI.ShellHomeFrameTest do
     %{
       "destination" => "/tmp/workstation-home-frame-test-home",
       "platform" => "linux-test",
-      "engine" => %{"name" => "workstation", "version" => "9.9.9-frame", "mode" => "frame"},
-      "taxonomy" => %{
-        "nvim" => "foundation/editor",
-        "helix" => "foundation/editor",
-        "tmux" => "foundation/terminal"
+      "engine" => %{"name" => "workstation", "version" => "9.9.9-frame", "mode" => "report"},
+      "counts" => %{
+        "capabilities" => 3,
+        "claimTargets" => 1,
+        "fileTargets" => 3,
+        "fragments" => 0,
+        "retire" => 0
       },
-      "packages" => [
-        %{"id" => "nvim", "name" => "nvim", "targets" => [".config/nvim"]},
-        %{"id" => "helix", "name" => "helix", "targets" => [".config/helix"]},
-        %{"id" => "tmux", "name" => "tmux", "targets" => [".config/tmux"]}
-      ],
-      "graph_order" => ["tmux", "helix", "nvim"]
+      "capabilityOrder" => ["nvim", "helix", "tmux"],
+      "capabilities" => [
+        %{
+          "id" => "nvim",
+          "foundation" => "editor",
+          "fileTargets" => [".config/nvim/init.lua"],
+          "claimTargets" => [".config/nvim"],
+          "fragments" => [],
+          "retire" => []
+        },
+        %{
+          "id" => "helix",
+          "foundation" => "editor",
+          "fileTargets" => [".config/helix/config.toml"],
+          "claimTargets" => [],
+          "fragments" => [],
+          "retire" => []
+        },
+        %{
+          "id" => "tmux",
+          "foundation" => "terminal",
+          "fileTargets" => [".config/tmux/tmux.conf"],
+          "claimTargets" => [],
+          "fragments" => [],
+          "retire" => []
+        }
+      ]
     }
   end
 
   defp plan_wire do
     %{
       "generation" => "gen-3",
-      "plan" => %{
-        "entries" => [
-          %{
-            "source_name" => "dot_config/nvim/init.lua",
-            "target" => ".config/nvim/init.lua",
-            "attribution" => ["nvim"]
-          },
-          %{
-            "source_name" => "dot_config/helix/config.toml",
-            "target" => ".config/helix/config.toml",
-            "attribution" => ["helix"]
-          },
-          %{
-            "source_name" => "dot_config/tmux/tmux.conf",
-            "target" => ".config/tmux/tmux.conf",
-            "attribution" => ["tmux"]
-          }
+      "declared" => %{
+        "fileTargets" => [
+          ".config/nvim/init.lua",
+          ".config/helix/config.toml",
+          ".config/tmux/tmux.conf"
         ],
-        "removals" => []
+        "claimTargets" => [".config/nvim"],
+        "retire" => [],
+        "fragmentOrder" => []
       },
-      "patches" => []
+      "target_states" => %{}
     }
   end
 end

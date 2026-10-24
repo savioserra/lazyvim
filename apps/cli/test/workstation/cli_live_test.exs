@@ -42,10 +42,48 @@ defmodule Workstation.CLI.LiveTest do
       if previous, do: System.put_env("WORKSTATION_HOME", previous), else: System.delete_env("WORKSTATION_HOME")
     end)
 
+    # The daemon reads the BAKED report; dev/test pins the fixture through
+    # the reader's cache seam (same VM, same cache). The fixture shape is
+    # the report fold's (nix/report.nix): counts, the target lists, the
+    # capability order and the per-capability accounting rows.
+    Workstation.Core.Report.put(report_fixture())
+
+    on_exit(&Workstation.Core.Report.clear/0)
+
     start_supervised!(Workstation.Daemon.Application.supervisor_spec())
     wait_for_file(Listener.socket_path())
 
     %{home: home}
+  end
+
+  # A minimal truthful report: two capabilities, one tree claim, one
+  # retire tombstone, one rc lane. The envelope shape is the contract.
+  defp report_fixture do
+    Jason.encode!(%{
+      "counts" => %{"capabilities" => 2, "claimTargets" => 1, "fileTargets" => 1, "fragments" => 1, "retire" => 1},
+      "fileTargetNames" => [".local/bin/nvim"],
+      "claimTargets" => [".config/nvim"],
+      "capabilityOrder" => ["editor", "terminal"],
+      "fragmentOrder" => [%{"target" => ".zshrc", "fragments" => ["managed-eza"]}],
+      "accounting" => [
+        %{
+          "id" => "editor",
+          "foundation" => "editor",
+          "fileTargets" => [".local/bin/nvim"],
+          "claimTargets" => [".config/nvim"],
+          "fragments" => [],
+          "retire" => []
+        },
+        %{
+          "id" => "terminal",
+          "foundation" => "terminal",
+          "fileTargets" => [],
+          "claimTargets" => [],
+          "fragments" => [%{"id" => "managed-eza", "target" => ".zshrc"}],
+          "retire" => [".config/tmux/themes/tmux2k.conf"]
+        }
+      ]
+    })
   end
 
   test "json output is canonical JSON (compact, keys sorted)", %{home: home} do
@@ -56,24 +94,54 @@ defmodule Workstation.CLI.LiveTest do
     assert String.trim_trailing(output, "\n") == canonical_json(wire)
   end
 
-  test "status evaluates the live home through the native catalog", %{home: home} do
+  test "status serves the baked report's declared inventory", %{home: home} do
     {status_result, status_output} = capture_main(["json", "status", "--home", home])
     assert status_result == :ok
 
     status_wire = Jason.decode!(status_output)
 
     assert %{
-             "schema" => "workstation.status.v1",
-             "engine" => %{"mode" => "elixir"},
-             "packages" => packages,
-             "graph_order" => graph_order
+             "schema" => "workstation.status.v2",
+             "engine" => %{"mode" => "report"},
+             "platform" => platform,
+             "counts" => %{"capabilities" => 2},
+             "capabilityOrder" => ["editor", "terminal"],
+             "capabilities" => capabilities
            } = status_wire
 
-    # The absorption endgame: the native catalog composes empty (the last
-    # manifest died in the chain's final commit) — the envelope shape is
-    # the contract, not its size.
-    assert is_list(packages) and packages == []
-    assert is_list(graph_order)
+    # The report is the only declared-state source: the accounting rows
+    # travel report-verbatim (id, foundation, the declared surfaces).
+    assert platform in ["linux", "darwin"]
+    assert length(capabilities) == 2
+    assert %{"id" => "editor", "foundation" => "editor"} = hd(capabilities)
+  end
+
+  test "plan serves the declared surface and probes the live targets", %{home: home} do
+    {plan_result, plan_output} = capture_main(["json", "plan", "--home", home])
+    assert plan_result == :ok
+
+    plan_wire = Jason.decode!(plan_output)
+
+    assert %{
+             "schema" => "workstation.plan.v2",
+             "generation" => generation,
+             "declared" => %{
+               "fileTargets" => [".local/bin/nvim"],
+               "claimTargets" => [".config/nvim"],
+               "retire" => [".config/tmux/themes/tmux2k.conf"],
+               "fragmentOrder" => [%{"target" => ".zshrc", "fragments" => ["managed-eza"]}]
+             },
+             "target_states" => states
+           } = plan_wire
+
+    # The generation is the report's content address (sha256 of the bytes).
+    assert String.length(generation) == 64
+
+    # The declared-vs-live review surface: every declared target probed,
+    # the fresh home answers "absent".
+    assert states[".local/bin/nvim"] == "absent"
+    assert states[".config/nvim"] == "absent"
+    assert states[".config/tmux/themes/tmux2k.conf"] == "absent"
   end
 
   # Home-resolution precedence: the flag/env beats chain is the Router's

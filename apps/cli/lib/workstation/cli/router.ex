@@ -229,8 +229,8 @@ defmodule Workstation.CLI.Router do
   end
 
   # Scope flags of the grouped `capabilities` listing: drill to one domain
-  # (docs/capabilities.md naming: editor, terminal, theme, ...) or one
-  # package inside its domain (nvim, tmux, ...).
+  # (docs/capabilities.md naming: base, fonts, runtime, editor, terminal,
+  # theme, agent, secrets) or one capability inside its domain.
   defp scope_options do
     [
       domain: [
@@ -238,10 +238,10 @@ defmodule Workstation.CLI.Router do
         long: "--domain",
         help: "scope the listing to one capability domain (e.g. editor)"
       ],
-      package: [
-        value_name: "PACKAGE",
-        long: "--package",
-        help: "scope the listing to one package (implies file drill-down)"
+      capability: [
+        value_name: "CAPABILITY",
+        long: "--capability",
+        help: "scope the listing to one capability (implies target drill-down)"
       ]
     ]
   end
@@ -318,27 +318,29 @@ defmodule Workstation.CLI.Router do
   end
 
   defp dispatch(command, result, mode) when command in [:status, :plan] do
-    home = resolve_home(result)
+    # resolve (and validate) the destination first: an unresolvable home is
+    # a usage error before any daemon contact
+    resolve_home(result)
 
-    with {:ok, wire} <- evaluate(command, home, result),
+    with {:ok, wire} <- evaluate(command, result),
          :ok <- emit(command, wire, mode) do
       :ok
     end
   end
 
   # The grouped capabilities verb: TWO read ops folded by
-  # `Workstation.CLI.Capabilities` (taxonomy from the status wire, file
-  # inventory from the plan wire). Informational output — planned changes
-  # stay exit 0, matching the read verbs' drift-free contract.
+  # `Workstation.CLI.Capabilities` (the accounting rows from the status
+  # wire, the target states from the plan wire). Informational output —
+  # stays exit 0, matching the read verbs' drift-free contract.
   defp dispatch(:capabilities, result, _mode) do
-    home = resolve_home(result)
+    resolve_home(result)
 
-    with {:ok, status} <- evaluate(:status, home, result),
-         {:ok, plan} <- evaluate(:plan, home, result) do
+    with {:ok, status} <- evaluate(:status, result),
+         {:ok, plan} <- evaluate(:plan, result) do
       envelope =
         %{"status" => status, "plan" => plan}
         |> Capabilities.group()
-        |> Capabilities.scope(domain: result.options[:domain], package: result.options[:package])
+        |> Capabilities.scope(domain: result.options[:domain], capability: result.options[:capability])
 
       if result.flags[:json] do
         {:ok, IO.puts(CanonicalJSON.encode(envelope))}
@@ -348,7 +350,7 @@ defmodule Workstation.CLI.Router do
            Render.capabilities(
              envelope,
              domain: result.options[:domain],
-             package: result.options[:package],
+             capability: result.options[:capability],
              files: result.flags[:files] == true
            )
          )}
@@ -497,7 +499,7 @@ defmodule Workstation.CLI.Router do
   # with the goldens it replayed.) Exit codes are unchanged: core
   # evaluation failures are precondition (3), daemon unavailability and
   # native collection failures are engine (4).
-  defp evaluate(command, home, result) do
+  defp evaluate(command, result) do
     case DaemonClient.call(read_op(command), %{}, client_opts(result, @read_timeout_ms)) do
       {:ok, wire} ->
         {:ok, wire}
@@ -552,14 +554,14 @@ defmodule Workstation.CLI.Router do
 
   defp emit(command, wire, json: false), do: {:ok, IO.puts(render(command, wire))}
 
-  # The hard-cut read wires are the daemon's .v1 schemas
+  # The hard-cut read wires are the daemon's .v2 schemas
   # (`Workstation.Daemon.Read.status_schema/0` et al) — plain-text rendering
   # must match the wire the daemon actually answers (the stale `status/1`
   # slash forms matched nothing and crashed every plain `status`).
-  defp render(:status, %{"schema" => "workstation.status.v1"} = wire),
+  defp render(:status, %{"schema" => "workstation.status.v2"} = wire),
     do: Render.core_status(wire)
 
-  defp render(:plan, %{"schema" => "workstation.plan.v1"} = wire), do: Render.core_plan(wire)
+  defp render(:plan, %{"schema" => "workstation.plan.v2"} = wire), do: Render.core_plan(wire)
 
   ## plumbing
 

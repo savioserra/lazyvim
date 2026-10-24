@@ -617,7 +617,12 @@ defmodule Workstation.CLI.TUI.Shell do
     [
       label_row("destination", Map.get(wire, "destination", "?"), styles),
       label_row("platform", Map.get(wire, "platform", "?"), styles),
-      label_row("graph order", "#{length(wire["graph_order"] || [])} resolved", styles)
+      label_row(
+        "declared",
+        "#{length(wire["capabilityOrder"] || [])} capabilities · " <>
+          "#{(wire["counts"] || %{})["fileTargets"] || 0} file targets",
+        styles
+      )
     ]
   end
 
@@ -684,7 +689,12 @@ defmodule Workstation.CLI.TUI.Shell do
         styles
       ),
       label_row("platform", Map.get(wire, "platform", "?"), styles),
-      label_row("packages", "#{length(wire["packages"] || [])} in the collected desired state", styles)
+      label_row(
+        "capabilities",
+        "#{length(wire["capabilityOrder"] || [])} declared " <>
+          "(#{(wire["counts"] || %{})["fileTargets"] || 0} file targets)",
+        styles
+      )
     ]
   end
 
@@ -695,15 +705,15 @@ defmodule Workstation.CLI.TUI.Shell do
   defp engine_rows(_state, styles), do: [label_row("engine", "loading…", styles)]
 
   defp plan_rows(%{cache: %{plan: {:ok, plan}}}, styles) do
-    body = plan["plan"] || %{}
-    entries = length(body["entries"] || [])
-    removals = length(body["removals"] || [])
-    warn = if entries > 0 or removals > 0, do: styles.warn, else: Style.new()
+    declared = plan["declared"] || %{}
+    files = length(declared["fileTargets"] || [])
+    claims = length(declared["claimTargets"] || [])
+    retire = length(declared["retire"] || [])
 
     [
       label_row("generation", Map.get(plan, "generation", "?"), styles),
-      label_row("entries", {"#{entries}", warn}, styles),
-      label_row("removals", {"#{removals}", warn}, styles)
+      label_row("declared", "#{files} file targets · #{claims} tree claims", styles),
+      label_row("retire", "#{retire}", styles)
     ]
   end
 

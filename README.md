@@ -57,7 +57,7 @@ history: `docs/absorption.md` carries the retirement.)
 ```sh
 workstation          # TUI dashboard: engine / capabilities / plan / status
 workstation plan     # the composed desired state; mutates nothing
-workstation status   # paths, the explicit package graph, the catalog taxonomy
+workstation status   # the declared inventory: counts, capabilities, the report's accounting rows
 workstation capabilities  # capability-domain rollups with per-package drill-down
 workstation json status | plan  # the raw wire reports
 ```

@@ -3,7 +3,7 @@ defmodule Workstation.CLI.TUI.Shell.CapabilitiesBrowser do
   The TUI capabilities browser: the grouped envelope
   (`Workstation.CLI.Capabilities.group/1` — the same fold the
   `workstation capabilities` verb renders) as a three-level outline with
-  drill-down. The top level is the rollup rows only (domain → package →
+  drill-down. The top level is the rollup rows only (domain → capability →
   file leaves stay collapsed until drilled), so the browser can never
   degrade into a raw file dump; unattributed entries surface under their
   own honest domain row instead of vanishing.
@@ -23,7 +23,7 @@ defmodule Workstation.CLI.TUI.Shell.CapabilitiesBrowser do
   defstruct [:envelope, :rows, :expanded, :selected, :offset]
 
   @type row :: %{
-          required(:kind) => :domain | :package | :file,
+          required(:kind) => :domain | :capability | :file,
           required(:path) => String.t(),
           required(:text) => String.t(),
           required(:depth) => non_neg_integer(),
@@ -134,7 +134,7 @@ defmodule Workstation.CLI.TUI.Shell.CapabilitiesBrowser do
   ## outline construction
 
   # Top level: rollup rows ONLY (the owner's no-raw-file-dump rule); the
-  # leaves appear under an explicitly expanded package. Domains start
+  # leaves appear under an explicitly expanded capability. Domains start
   # collapsed — the rollup IS the view until drilled.
   defp rows(nil, _expanded), do: []
 
@@ -160,38 +160,38 @@ defmodule Workstation.CLI.TUI.Shell.CapabilitiesBrowser do
       expandable: true,
       planned: domain["planned"] || 0,
       text:
-        "#{marker(expanded, path)} #{name} — #{length(domain["packages"] || [])} packages · " <>
+        "#{marker(expanded, path)} #{name} — #{length(domain["capabilities"] || [])} capabilities · " <>
           "#{domain["files"]} files · #{planned_note(domain["planned"])}"
     }
 
-    package_rows =
+    capability_rows =
       if MapSet.member?(expanded, path) do
-        Enum.flat_map(domain["packages"] || [], &package_rows(&1, expanded, path))
+        Enum.flat_map(domain["capabilities"] || [], &capability_rows(&1, expanded, path))
       else
         []
       end
 
-    [row] ++ package_rows
+    [row] ++ capability_rows
   end
 
-  defp package_rows(package, expanded, domain_path) do
-    name = package["name"]
+  defp capability_rows(capability, expanded, domain_path) do
+    name = capability["name"]
     path = "#{domain_path}/#{name}"
 
     row = %{
-      kind: :package,
+      kind: :capability,
       path: path,
       depth: 1,
       expandable: true,
-      planned: package["planned"] || 0,
+      planned: capability["planned"] || 0,
       text:
-        "#{marker(expanded, path)} #{name} — #{package["files"]} files · " <>
-          "#{planned_note(package["planned"])}"
+        "#{marker(expanded, path)} #{name} — #{capability["files"]} files · " <>
+          "#{planned_note(capability["planned"])}"
     }
 
     file_rows =
       if MapSet.member?(expanded, path) do
-        Enum.map(package["entries"] || [], &file_row(&1, path))
+        Enum.map(capability["entries"] || [], &file_row(&1, path))
       else
         []
       end
@@ -199,13 +199,13 @@ defmodule Workstation.CLI.TUI.Shell.CapabilitiesBrowser do
     [row] ++ file_rows
   end
 
-  defp file_row(entry, package_path) do
+  defp file_row(entry, capability_path) do
     planned = if entry["planned"], do: 1, else: 0
     also = also_note(entry["also"])
 
     %{
       kind: :file,
-      path: "#{package_path}##{entry["target"]}",
+      path: "#{capability_path}##{entry["target"]}",
       depth: 2,
       expandable: false,
       planned: planned,
@@ -341,7 +341,7 @@ defmodule Workstation.CLI.TUI.Shell.CapabilitiesBrowser do
     )
   end
 
-  # The drill pane: the active domain's subtree (its package/file rows),
+  # The drill pane: the active domain's subtree (its capability/file rows),
   # titled by the domain name; collapsed domains show the drill hint.
   defp drill_box(browser, styles, {width, height}) do
     {active, subtree} = active_subtree(browser)

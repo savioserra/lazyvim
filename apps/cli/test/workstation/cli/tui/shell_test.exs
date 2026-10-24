@@ -12,7 +12,8 @@ defmodule Workstation.CLI.TUI.ShellTest do
   # retired apply/update screen tests: a real TermUI runtime, fixed `:load`
   # seam (no daemon, deterministic replay), frames asserted row-by-row.
   # Wire fixtures use the production shapes — the status wire carries the
-  # package→foundation `taxonomy` map, plan entries carry `attribution`.
+  # report's counts, capability order and accounting rows; the plan wire
+  # carries the declared surface and the probed target states.
   #
   # The app is ONE four-box dashboard: digits 1-4 toggle boxes, p/P cycles
   # presets, ? is a paged help overlay. The default harness size (100
@@ -28,62 +29,69 @@ defmodule Workstation.CLI.TUI.ShellTest do
 
   @destination "/tmp/workstation-tui-shell-test-home"
 
-  # -- fixtures: canned wires in the production entry-view shapes ----------
+  # -- fixtures: canned wires in the production report shapes --------------
 
   defp status_wire do
     %{
       "destination" => @destination,
       "platform" => "linux-test",
-      "engine" => %{"name" => "workstation", "version" => "9.9.9-test", "mode" => "test"},
-      "taxonomy" => %{
-        "nvim" => "foundation/editor",
-        "helix" => "foundation/editor",
-        "tmux" => "foundation/terminal"
+      "engine" => %{"name" => "workstation", "version" => "9.9.9-test", "mode" => "report"},
+      "counts" => %{
+        "capabilities" => 3,
+        "claimTargets" => 1,
+        "fileTargets" => 3,
+        "fragments" => 0,
+        "retire" => 0
       },
-      "packages" => [
-        %{"id" => "nvim", "name" => "nvim", "targets" => [".config/nvim"]},
-        %{"id" => "helix", "name" => "helix", "targets" => [".config/helix"]},
-        %{"id" => "tmux", "name" => "tmux", "targets" => [".config/tmux"]}
-      ],
-      "graph_order" => ["tmux", "helix", "nvim"]
+      "capabilityOrder" => ["nvim", "helix", "tmux"],
+      "capabilities" => [
+        %{
+          "id" => "nvim",
+          "foundation" => "editor",
+          "fileTargets" => [".config/nvim/init.lua"],
+          "claimTargets" => [".config/nvim"],
+          "fragments" => [],
+          "retire" => []
+        },
+        %{
+          "id" => "helix",
+          "foundation" => "editor",
+          "fileTargets" => [".config/helix/config.toml"],
+          "claimTargets" => [],
+          "fragments" => [],
+          "retire" => []
+        },
+        %{
+          "id" => "tmux",
+          "foundation" => "terminal",
+          "fileTargets" => [".config/tmux/tmux.conf"],
+          "claimTargets" => [],
+          "fragments" => [],
+          "retire" => []
+        }
+      ]
     }
   end
 
   defp plan_wire do
     %{
       "generation" => "gen-3",
-      "plan" => %{
-        "entries" => [
-          %{
-            "source_name" => "dot_config/nvim/init.lua",
-            "target" => ".config/nvim/init.lua",
-            "attribution" => ["nvim"]
-          },
-          %{
-            "source_name" => "dot_config/helix/config.toml",
-            "target" => ".config/helix/config.toml",
-            "attribution" => ["helix"]
-          },
-          %{
-            "source_name" => "dot_config/tmux/tmux.conf",
-            "target" => ".config/tmux/tmux.conf",
-            "attribution" => ["tmux"]
-          }
+      "declared" => %{
+        "fileTargets" => [
+          ".config/nvim/init.lua",
+          ".config/helix/config.toml",
+          ".config/tmux/tmux.conf"
         ],
-        "removals" => []
+        "claimTargets" => [".config/nvim"],
+        "retire" => [],
+        "fragmentOrder" => []
       },
-      "patches" => [
-        %{
-          "target" => ".config/nvim/init.lua",
-          "kind" => "write",
-          "attribution" => ["nvim"]
-        },
-        %{
-          "target" => ".config/tmux/tmux.conf",
-          "kind" => "write",
-          "attribution" => ["tmux"]
-        }
-      ]
+      "target_states" => %{
+        ".config/nvim/init.lua" => "absent",
+        ".config/helix/config.toml" => "absent",
+        ".config/tmux/tmux.conf" => "absent",
+        ".config/nvim" => "absent"
+      }
     }
   end
 
@@ -273,8 +281,8 @@ defmodule Workstation.CLI.TUI.ShellTest do
 
     assert full_text(frame) =~ "9.9.9-test"
     assert text =~ "generation:  gen-3"
-    # editor (nvim+helix: 2 files) + terminal (tmux: 1 file) = 2 domains.
-    assert text =~ "2 domains · 3 files · 2 would change"
+    # editor (nvim+helix: 3 declared targets) + terminal (tmux: 1) = 2 domains.
+    assert text =~ "2 domains · 4 files · 0 would change"
     assert text =~ "● reachable"
     assert text =~ "r refresh"
     assert text =~ "destination:"
@@ -453,8 +461,8 @@ defmodule Workstation.CLI.TUI.ShellTest do
     frame = await_frame(fn frame -> body_text(frame) =~ "destination:" end)
     text = body_text(frame)
     assert text =~ "destination:  #{@destination}"
-    assert text =~ "graph order:"
-    assert text =~ "3 resolved"
+    assert text =~ "declared:"
+    assert text =~ "3 capabilities · 3 file targets"
   end
 
   test "status box shows the recovery shape when the daemon is unreachable" do
@@ -785,10 +793,10 @@ defmodule Workstation.CLI.TUI.ShellTest do
       send_key(runtime, :enter)
       await_frame(fn f -> Frame.row_text(f, 1) =~ "³plan" end)
 
-      # Shrink the window until the read outgrows its pane: the second
-      # canonical size (80×24) clipped further — the overlay re-renders
+      # Shrink the window until the read outgrows its pane: the third
+      # canonical size (80×8) clipped further — the overlay re-renders
       # from (state, dims) like every view.
-      send_event(runtime, %Event.Resize{width: 80, height: 12})
+      send_event(runtime, %Event.Resize{width: 80, height: 8})
       frame = await_frame(fn f -> f.width == 80 and Frame.row_text(f, 1) =~ "³plan" end)
       # The counter rides the title's right island on the top border.
       assert Frame.row_text(frame, 1) =~ ~r/1\/\d+/
@@ -823,7 +831,7 @@ defmodule Workstation.CLI.TUI.ShellTest do
       # boxes carry summary rows, not zoomed targets).
       assert text =~ "linux-test"
       assert text =~ "gen-3"
-      assert text =~ "entries:    3"
+      assert text =~ "declared:   3 file targets · 1 tree claims"
     end
   end
 end

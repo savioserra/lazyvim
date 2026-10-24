@@ -18,7 +18,7 @@ defmodule Workstation.CLI.SystemVerbTest do
   use ExUnit.Case, async: false
 
   alias Workstation.CLI.{Control, Router}
-  alias Workstation.Daemon.{Boot, Listener, Shutdown}
+  alias Workstation.Daemon.{Listener, Shutdown}
 
   # Fixture homes are cross-VM collision-proof (see the full note in
   # apps/daemon/test/workstation/daemon/generation_test.exs).
@@ -34,6 +34,11 @@ defmodule Workstation.CLI.SystemVerbTest do
   setup do
     home = unique_home("ws-system-verb")
     File.mkdir_p!(home)
+
+    # the daemon serves reads from the baked report — pin the fixture
+    # through the reader's cache seam (same VM, same cache)
+    Workstation.Core.Report.put(~s({"counts":{},"fileTargetNames":[],"claimTargets":[],"capabilityOrder":[],"fragmentOrder":[],"accounting":[]}))
+    on_exit(&Workstation.Core.Report.clear/0)
 
     previous = %{
       "WORKSTATION_HOME" => System.get_env("WORKSTATION_HOME"),

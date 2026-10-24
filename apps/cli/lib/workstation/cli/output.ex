@@ -1,6 +1,6 @@
 defmodule Workstation.CLI.Output do
   @moduledoc """
-  Hard-cut CLI output wire schemas (lane b5): exactly one schema per
+  Hard-cut CLI output wire schemas: exactly one schema per
   command, versioned, never reshaped by a caller. The builders moved to
   `Workstation.Daemon.Read` in the client/server refactor — the daemon is
   the single wire source (its read ops return these maps; the CLI renders
@@ -16,10 +16,9 @@ defmodule Workstation.CLI.Output do
   @doc "Schema identifier of the hard-cut plan wire."
   def plan_schema, do: @delegee.plan_schema()
 
-  @doc "Build the status wire. See `Workstation.Daemon.Read.status/7`."
-  defdelegate status(engine_name, mode, destination, platform, packages, graph_order, taxonomy),
-    to: @delegee
+  @doc "Build the status wire. See `Workstation.Daemon.Read.status/2`."
+  defdelegate status(destination, report), to: @delegee
 
-  @doc "Build the plan wire. See `Workstation.Daemon.Read.plan/4`."
-  defdelegate plan(generation, plan_body, manifest, target_states), to: @delegee
+  @doc "Build the plan wire. See `Workstation.Daemon.Read.plan/2`."
+  defdelegate plan(destination, report), to: @delegee
 end
