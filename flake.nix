@@ -56,22 +56,27 @@
       packages = nixpkgs.lib.genAttrs buildSystems
         (system: { workstation = engineFor system; });
 
-      # the walker's report at this tree — byte-compared against
-      # tests/nix/goldens/eval-report.json by .github/scripts/eval-goldens.sh
-      evalReport.${hostSystem} = (import ./nix/manifest-lib.nix {
-        lib = nixpkgs.lib;
-        pkgs = nixpkgs.legacyPackages.${hostSystem};
-        treeRoot = self;
-        # the walker takes no default: identity must arrive per host. The
-        # report itself pins no home paths (the golden stays byte-stable),
-        # but the argument stays required so no caller can inherit a name.
-        homeDir = linuxHost.homeDir;
-      }).report
-      // {
-        # the `system` overlay domain's publish contract (the nix side of
-        # the two-reader drift guard — see nix/system-domain.nix)
-        systemDomain = import ./nix/system-domain.nix;
-      };
+      # the declared-state report: the capability modules' fold
+      # (nix/report.nix) at this tree. The engine's release bakes the same
+      # JSON (nix/engine.nix), so release and declared state ship from the
+      # one flake snapshot.
+      evalReport.${hostSystem} =
+        (import ./nix/report.nix {
+          lib = nixpkgs.lib;
+          # the fold applies the substrate's pin-override overlay itself
+          # (the foundation capability's harlequin floor asserts it)
+          pkgs = nixpkgs.legacyPackages.${hostSystem}.extend self.overlays.default;
+          hm = home-manager.lib;
+          treeRoot = self;
+          # no default may bake an identity (t_40cf3088): the eval's
+          # home.homeDirectory arrives per host; the report pins no home
+          # paths.
+          homeDir = linuxHost.homeDir;
+        }) // {
+          # the `system` overlay domain's publish contract (the nix side of
+          # the two-reader drift guard — see nix/system-domain.nix)
+          systemDomain = import ./nix/system-domain.nix;
+        };
 
       # the rebuild key is DERIVED from the host identity (${user}@<host>),
       # never hand-typed

@@ -98,26 +98,9 @@ let
   '';
 in
 {
-  options.workstation.editor = {
-    languages = lib.mkOption {
-      type = lib.types.listOf (lib.types.attrsOf (lib.types.either lib.types.str (lib.types.listOf lib.types.str)));
-      default = [ ];
-      description = ''
-        The language profile entries the editor composes into
-        lua/languages/profile.lua: { id, requires?, lazyvim_extras?,
-        plugin_module?, mason_packages? }. Language modules contribute
-        theirs; entries compose in id order.
-      '';
-    };
-    languagePlugins = lib.mkOption {
-      type = lib.types.listOf lib.types.path;
-      default = [ ];
-      description = ''
-        Language plugin modules deployed to
-        .config/nvim/lua/languages/plugins/ (file names preserved).
-      '';
-    };
-  };
+  # the language surface is DECLARED in workstation-options.nix (the
+  # cross-capability contract: the language capabilities set it, this module
+  # composes it into the deployed profile)
 
   config = {
     home.file = {
