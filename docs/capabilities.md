@@ -283,8 +283,9 @@ composition is derivation-derived.
 | `.config/nvim/lazy-lock.json` | The pinned plugin lock: seeded by the activation merge script from the payload baseline, never byte-compared afterwards (runtime-extended) |
 
 The manifest-era compositor (`Workstation.Packages.Nvim.Profile`) is
-transitional; the VM E2E grows an assertion for the deployed profile as the
-composition lands natively (it is the absorption chain's named gap).
+retired: the composition is native (the editor capability's derivation —
+the absorption chain's named gap, closed), and the VM E2E asserts the
+deployed profile.
 
 ## Hermes resources
 

@@ -11,11 +11,12 @@ records the boundary decisions that survive the deletion:
 - `packages/theme/tokens.lua` and other package payload Lua files are DATA
   consumed as bytes (chezmoi token envelopes), never executed.
 - `workstation/packages/editor/nvim/**` is editor runtime payload; the profile
-  composition contract lives in `Workstation.Packages.Nvim.Profile`, the
-  package-owned provider discovered through the profile capability contract.
+  composition is native now (the editor capability's nix derivation,
+  `modules/editor/editor.nix`) — the manifest-era engine compositor
+  (`Workstation.Packages.Nvim.Profile`) retired with the format.
 - Parity-anchor retention of the Lua read path was explicitly OVERRULED by
-  the owner; the golden envelopes under `tests/goldens/` remain the
-  canonical cross-engine contract and are graded by `mix workstation.goldens`.
+  the owner; the recorded-envelope goldens retired with the manifest
+  format (docs/absorption.md) — verification is behavioral.
 
 Historical rationale for the original Lua core is preserved in git history
 (`docs/lua-migration.md` before the fusion-final lanes).

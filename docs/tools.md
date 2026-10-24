@@ -4,7 +4,7 @@ Supported deployment policy is Linux, WSL-as-Linux, and macOS (arm64).
 
 | Property | Value |
 | --- | --- |
-| Pin sourcing | The owning package manifest (`workstation/packages/**/manifest.json`) — the nix walker renders every download pin as a checksummed `fetchurl` derivation; the nixpkgs set owns toolchains (the `mise` provider lane is refused: toolchains come from nixpkgs) |
+| Pin sourcing | The owning capability module under `modules/<domain>/` (pins ride the module tree / `versions.json` until the final co-location card) — the substrate renders every download pin as a checksummed `fetchurl` derivation; the nixpkgs set owns toolchains |
 | Shared versions, URL templates and SHA-256 (the verify lane's mirror) | `workstation/versions.json` |
 | Node version | `workstation/packages/languages/node/files/.node-version` |
 | Update unit | Version, URL, SHA-256 checksum, verification, this table |
@@ -32,7 +32,7 @@ Supported deployment policy is Linux, WSL-as-Linux, and macOS (arm64).
 | nunchux (launcher package; plugin active) | 3.1.3 | github.com/datamadsen/nunchux | pinned checkout `.tmux/plugins/nunchux` (git pin at the v3.1.3 commit; carries the repo-tracked binary) + `bin/.platform` marker so upstream's `ensure_binary` never fetches ([tmux](tmux.md)) | linux-amd64 (repo build, content-pinned); package is linux-only, darwin release pin recorded as inventory |
 | tmux (binary) | 3.7c | nixpkgs (host configuration) | The host configuration's tmux package; the historical engine mise-contract declaration is retired (`mise` provider lane refused — toolchains come from nixpkgs); on darwin tmux stays a host prerequisite (brew) | linux-x86_64 |
 | btop | 1.4.7 | nixpkgs (host configuration) | Same host-configuration story as the tmux binary (btop ships no darwin release assets); on darwin it stays a host prerequisite (brew) | linux-x86_64 |
-| TPM plugin set (tpm, tmux2k, tmux-yank, tmux-resurrect, vim-tmux-navigator) | pinned commits ([tmux](tmux.md) Plugin pins) | github.com/tmux-plugins/tpm, github.com/2KAbhishek/tmux2k, github.com/tmux-plugins/tmux-yank, github.com/tmux-plugins/tmux-resurrect, github.com/christoomey/vim-tmux-navigator | substrate-provisioned pinned checkouts `~/.tmux/plugins/<name>` (git pins in the tmux package manifest, frozen as store checkouts; tpm leads — it must exist before the first tmux start); verified by `packages/tmux/verify/tmux.sh` | linux-x86_64, darwin-arm64 |
+| TPM plugin set (tpm, tmux2k, tmux-yank, tmux-resurrect, vim-tmux-navigator) | pinned commits ([tmux](tmux.md) Plugin pins) | github.com/tmux-plugins/tpm, github.com/2KAbhishek/tmux2k, github.com/tmux-plugins/tmux-yank, github.com/tmux-plugins/tmux-resurrect, github.com/christoomey/vim-tmux-navigator | substrate-provisioned pinned checkouts `~/.tmux/plugins/<name>` (git pins in the terminal capability's module, frozen as store checkouts; tpm leads — it must exist before the first tmux start); verified by `packages/tmux/verify/tmux.sh` | linux-x86_64, darwin-arm64 |
 
 ## Pin maintenance
 
@@ -70,7 +70,7 @@ Nix hosts need none of these: the store builds are self-contained.
 | Tool | Why | Where it's handled |
 | --- | --- | --- |
 | Git on Linux (distro) | One of the four checkout-host prerequisites (git, curl, xz-utils, unzip — see above), deliberately unpinned: no first-party static git passes the acquisition audit (upstream git/git ships no release assets; `aqua:git` is not carried by the aqua registry) | Distro install on checkout hosts; nix hosts carry git in the host configuration |
-| tmux >=3.2 and btop on macOS; Bash >=5.2 | User/CI unmanaged prerequisites on macOS; no lifecycle OS installs | Linux hosts get both through the host configurations (nixpkgs); the brew prerequisites stand on darwin. darwin acceptance runs in CI. tmux plugin commits/setup are managed by the tmux package's manifest (`workstation/packages/terminal/tmux/`) |
+| tmux >=3.2 and btop on macOS; Bash >=5.2 | User/CI unmanaged prerequisites on macOS; no lifecycle OS installs | Linux hosts get both through the host configurations (nixpkgs); the brew prerequisites stand on darwin. darwin acceptance runs in CI. tmux plugin commits/setup are managed by the terminal capability's module (`modules/terminal/`) |
 | C compiler/build tools, Linux fontconfig, macOS Command Line Tools | Parser/application builds and font verification prerequisites | User or CI image; see README |
 | ShellCheck | Validation tool supplied by Linux CI image; used wherever available | `.github/scripts/check.sh`; no unpinned lint downloads |
 | 1Password desktop app and account session | User application and interactive authentication are outside source state | Install the official app, enable CLI integration, and sign in interactively |

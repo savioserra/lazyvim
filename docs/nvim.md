@@ -31,27 +31,24 @@
 
 ## Profile fields
 
-The deployed `languages/profile.lua` is **generated**
-by the nvim-owned compositor (`Workstation.Packages.Nvim.Profile`) from declared
-`nvim-profile` recipes (base/standard/Go from the nvim package's
-`manifest.json`, language entries from their own packages' manifests such as
-`packages/languages/typescript/manifest.json`),
-ordered Go, TypeScript, standard. The engine compositor checks these fields:
+The deployed `languages/profile.lua` is **composed natively**: the editor
+capability's module (`modules/editor/editor.nix`) folds the language
+entries the language capabilities declare (`workstation.editor.languages`)
+through `lib.generators.toLua` in a build-time derivation — the engine is
+out of the loop entirely. Entries compose in id order (the base/standard
+entry is the editor module's own). The declared fields:
 
 | Field | Shape / use |
 | --- | --- |
 | `id` | Required unique non-empty string |
-| `requires` | Optional list of non-empty host capability IDs; added to `nvim` dependencies |
+| `requires` | Optional list of non-empty host capability IDs |
 | `lazyvim_extras` | Optional list of non-empty module names; imported before base custom specs |
 | `plugin_module` | Optional non-empty module name; imported after base custom specs |
 | `mason_packages` | Optional list of non-empty package names; verification requires entries in `mason-lock.json` |
-| `language_cases` | Optional list of tables with non-empty strings `language`, `filename`, `contents`, `client`; real parser/LSP checks |
-| `formatter_cases` | Optional list of tables with non-empty strings `language`, `filename`, `contents`, `expected`; on-disk output checks |
 
-Formatter cases also support `project_files`, a filename-to-contents map written
-by the verification consumer (the deployed editor runtime's leaf helpers) before
-the source file. The profile validator does not validate that map or reject unknown
-fields; list checks tolerate gaps rather than enforcing a strict dense-array schema.
+The behavior cases (`language_cases`/`formatter_cases`) stay payload data:
+they feed the verify lane's parser/LSP and formatter checks, not the
+deployed file.
 
 Put language-specific LazyVim imports here, include parser/LSP cases for supported
 languages and formatter cases wherever formatting is promised. See

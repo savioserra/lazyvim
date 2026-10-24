@@ -173,11 +173,11 @@ times. Interim recovery on a home still carrying the old pin is the `2k.tmux`
 re-run; the real fix is a switch at the new pin.
 
 Pin-move migration: a pinned clone never moves to a different commit in
-place (the pin is the checkout's identity — the walker freezes each commit
-as its own store path), so a home carrying the tmux2k checkout at the
-retired `07b3228b` pin is re-linked at `d8c5c292` by the next switch; the
-old checkout stays on disk only if something outside the generation put it
-there — remove it explicitly. Same pattern as the nunchux pre-seed
+place (the pin is the checkout's identity — the substrate freezes each
+commit as its own store path), so a home carrying the tmux2k checkout at
+the retired `07b3228b` pin is re-linked at `d8c5c292` by the next switch;
+the old checkout stays on disk only if something outside the generation
+put it there — remove it explicitly. Same pattern as the nunchux pre-seed
 migration note above.
 
 Live re-theming (experimenting with `@tmux2k-*` options on a running
