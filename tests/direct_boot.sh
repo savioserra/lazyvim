@@ -24,7 +24,7 @@ set -u
 
 REPO_ROOT=$(cd "$(dirname "$0")/.." && pwd)
 : "${WORKSTATION_B8_TARBALL:=$REPO_ROOT/workstation-0.1.0-linux-x64.tar.gz}"
-GOLDEN_DIR="$REPO_ROOT/tests/goldens/minimal"
+GOLDEN_DIR="$REPO_ROOT/tests/goldens/full-home"
 
 fail() {
 	printf 'direct_boot: FAIL: %s\n' "$1" >&2

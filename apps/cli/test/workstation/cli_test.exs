@@ -204,7 +204,7 @@ defmodule Workstation.CLITest do
     end
 
     test "plan --input reproduces the recorded golden envelope (offline byte parity)" do
-      golden = golden_dir("minimal")
+      golden = golden_dir("full-home")
       {_root, home} = temp_test_root()
 
       argv = core_argv("json plan", home, ["--input", Path.join([golden, "input.json"])])
@@ -244,7 +244,7 @@ defmodule Workstation.CLITest do
     end
 
     test "status --input derives identity from the replayed envelope" do
-      golden = golden_dir("minimal")
+      golden = golden_dir("full-home")
       {_root, home} = temp_test_root()
 
       {result, output} =

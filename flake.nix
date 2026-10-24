@@ -15,10 +15,15 @@
       url = "github:LnL7/nix-darwin/nix-darwin-25.05";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    # the foundation domain's pin surface (the input law: each domain owns
+    # its pins): harlequin + hsql ship as ONE upstream distribution, and
+    # the pinned nixpkgs (25.05) predates hsql — the foundation's tool
+    # rides this input through the pin-override overlay
+    nixpkgs-foundation.url = "github:NixOS/nixpkgs/nixos-unstable";
   };
 
   outputs =
-    { self, nixpkgs, home-manager, nixos-wsl, nix-darwin }:
+    { self, nixpkgs, home-manager, nixos-wsl, nix-darwin, nixpkgs-foundation }:
     let
       # the engine builds where its NIF vendoring is proven (the build
       # gate): x86_64-linux built + smoked; aarch64-darwin evals clean,
@@ -82,6 +87,8 @@
             {
               home.username = linuxHost.user;
               home.homeDirectory = linuxHost.homeDir;
+              # the foundation domain's pin surface (harlequin + hsql)
+              nixpkgs.overlays = [ self.overlays.default ];
               # the switch driver's default targets: derived from the host
               # identity (never hand-typed)
               workstation.switch.homeAttr = linuxHost.homeKey;
@@ -106,6 +113,9 @@
             {
               home.username = "vm";
               home.homeDirectory = "/home/vm";
+              # the foundation domain's pin surface (harlequin + hsql)
+              nixpkgs.overlays = [ self.overlays.default ];
+              # the switch driver's default targets inside the VM
               workstation.switch.homeAttr = "vm@vm";
               workstation.switch.systemAttr = "vm-test";
             }
@@ -140,6 +150,11 @@
           lib = final.lib;
           pkgs = final;
         };
+        # the foundation domain's pin: harlequin + hsql (one upstream
+        # distribution — the terminal SQL IDE and its headless agent CLI).
+        # The pinned nixpkgs (25.05) predates hsql; the foundation module
+        # asserts the floor so an unapplied overlay dies loudly.
+        harlequin = nixpkgs-foundation.legacyPackages.${prev.system}.harlequin;
       };
 
       nixosConfigurations.vm-test = nixpkgs.lib.nixosSystem {
@@ -152,6 +167,13 @@
           qemuVmModule = "${nixpkgs}/nixos/modules/virtualisation/qemu-vm.nix";
         };
         modules = [
+          (
+            { ... }:
+            {
+              # the foundation domain's pin surface (harlequin + hsql)
+              nixpkgs.overlays = [ self.overlays.default ];
+            }
+          )
           ./nix/modules/workstation-system.nix
           ./nix/modules/host.nix
           home-manager.nixosModules.home-manager

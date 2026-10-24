@@ -86,6 +86,29 @@ in
     self.homeConfigurations."vm@vm".activationPackage
   ];
 
+  # the boot-to-activation proof: one oneshot unit ordered after the home
+  # activation and multi-user, printing to journal+console so the serial
+  # log carries the three markers run-vm.sh greps for. This is the VM
+  # proof host's scaffolding — the substrate module carries no platform
+  # branches, so the proof lives here.
+  systemd.services.workstation-proof = {
+    description = "Workstation boot-to-activation proof";
+    wantedBy = [ "multi-user.target" ];
+    after = [ "multi-user.target" "home-manager-vm.service" ];
+    wants = [ "home-manager-vm.service" ];
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+      StandardOutput = "journal+console";
+      StandardError = "journal+console";
+    };
+    script = ''
+      echo "workstation: engine staged at ${engine}/bin/workstation (system plane)"
+      echo "workstation: home plane active (home-manager activation completed)"
+      echo "workstation: boot-to-activation proof complete (multi-user reached)"
+    '';
+  };
+
   # the live proof, run as the vm user. Ordering: wanted by multi-user
   # only — the proof unit's `after multi-user` makes any service-level
   # after/wants chain here an ordering cycle (systemd would delete this

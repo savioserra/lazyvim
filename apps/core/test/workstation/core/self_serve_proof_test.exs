@@ -31,10 +31,10 @@ defmodule Workstation.Core.SelfServeProofTest do
     graph = compose()
 
     ids = Enum.map(graph.ordered, & &1.id)
-    # the theme capability left the catalog in the absorption chain's first
-    # stage (the native theme module owns the token surface) — the
-    # synthetic package's foundation require still orders first
-    assert ids == ["foundation", "helix-synth"]
+    # the theme and foundation capabilities left the catalog in the
+    # absorption chain's first stage (the native modules own those token
+    # and rc surfaces) — the synthetic package stands alone
+    assert ids == ["helix-synth"]
   end
 
   test "the plan carries the rendered theme payload and the shell fragment" do

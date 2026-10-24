@@ -35,21 +35,6 @@
       }
     },
     {
-      "provider": "mise",
-      "spec": {
-        "tools": [
-          {
-            "name": "elixir",
-            "version": "1.18.5-otp-27"
-          },
-          {
-            "name": "erlang",
-            "version": "28.5"
-          }
-        ]
-      }
-    },
-    {
       "provider": "chezmoi",
       "spec": {
         "asset": "files/languages/plugins/elixir.lua",

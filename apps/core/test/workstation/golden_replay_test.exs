@@ -73,13 +73,8 @@ defmodule Workstation.Core.GoldenReplayTest do
       assert recorded == [
                "conflicts",
                "context",
-               "download",
                "full-home",
-               "git",
-               "minimal",
-               "mise",
-               "nvim-profile",
-               "shell-order"
+               "nvim-profile"
              ]
     end
   end

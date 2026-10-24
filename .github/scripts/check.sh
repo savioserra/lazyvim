@@ -46,7 +46,7 @@ sh .github/scripts/doclint.sh || fail=1
 
 step 'shell syntax (sh -n) and ShellCheck when available'
 {
-	find workstation .github/scripts -type f \( -name '*.sh' -o -name 'workstation' \) -print
+find workstation modules .github/scripts -type f \( -name '*.sh' -o -name 'workstation' \) -print
 } | while IFS= read -r file; do
 	sh -n "$file" || exit 1
 	if command -v shellcheck >/dev/null 2>&1; then

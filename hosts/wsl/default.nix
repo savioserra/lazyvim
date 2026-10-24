@@ -45,6 +45,9 @@ in
         {
           workstation.enable = true;
 
+          # the foundation domain's pin surface (harlequin + hsql)
+          nixpkgs.overlays = [ self.overlays.default ];
+
           # host identity: the ONLY place this host's facts are written
           # (the options are declared in the substrate; consumers derive)
           workstation.host = {
@@ -54,6 +57,8 @@ in
             # tailscale.fqdn: the operator declares the host's MagicDNS
             # name here at first real apply
           };
+          # the fleet transport (the shared system module owns the wiring)
+          workstation.foundation.tailscale.enable = true;
 
           wsl = {
             enable = true;

@@ -183,6 +183,34 @@ writeShellScriptBin "workstation-e2e" ''
     && fail "nunchux plane" "unresolved slot references survived the render"
   pass "nunchux plane"
 
+  step "foundation plane (rc lane, foundation pins, fonts, op)"
+  # the rc lane: .profile sources its fragments in the declared order
+  # (user-local-bin, managed-nvm, managed-op-env)
+  grep -q 'shell/user-local-bin.sh' "$home/.profile" \
+    || fail "foundation plane" ".profile does not source the PATH fragment"
+  grep -q 'shell/managed-nvm.sh' "$home/.profile" \
+    || fail "foundation plane" ".profile does not source the nvm fragment"
+  grep -q 'shell/managed-op-env.sh' "$home/.profile" \
+    || fail "foundation plane" ".profile does not source the op-env fragment"
+  [ -r "$home/.config/workstation/shell/managed-starship-zsh.sh" ] \
+    || fail "foundation plane" "the per-shell starship fragment did not deploy"
+  grep -q 'starship init zsh' "$home/.config/workstation/shell/managed-starship-zsh.sh" \
+    || fail "foundation plane" "the zsh fragment carries the wrong init body"
+  # the checksummed pins link straight from their store trees
+  [ -x "$home/.local/bin/rg" ] \
+    || fail "foundation plane" "rg is not linked"
+  # the op CLI + the font tree
+  [ -x "$home/.local/bin/op" ] \
+    || fail "foundation plane" "op is not linked"
+  [ -d "$home/.local/share/fonts/JetBrainsMonoNerdFont" ] \
+    || fail "foundation plane" "the nerd font tree did not deploy"
+  pass "foundation plane"
+
+  step "hsql agent skill provisioned (version-matched, offline)"
+  [ -r "$home/.hermes/skills/hsql/SKILL.md" ] \
+    || fail "hsql agent skill" "$home/.hermes/skills/hsql/SKILL.md missing"
+  pass "hsql agent skill"
+
   # 3. the apply-driven nix switch: the driver wraps the offline
   #    activation + generation registration, reads the generation and
   #    publishes the receipt over the wire

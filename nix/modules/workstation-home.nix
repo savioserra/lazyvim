@@ -33,27 +33,27 @@ let
   # the nvim-profile lane's bin target — retired with the lane itself (the
   # editor module owns .local/bin/nvim now)
 
+  # the native shell lane: the owning domain modules declare their
+  # fragments (id, target, marker, payload) on workstation.shell.fragments;
+  # the aggregate renders — a fragment file per id (marker + body) and one
+  # rc file per target sourcing them in the declared order (the explicit
+  # contract the walker's derived topo walk used to be)
   fragmentFiles = builtins.foldl'
-    (acc: x:
-      acc // builtins.listToAttrs (map
-        (id:
-          let f = ws.fragmentsById.${id};
-          in {
-            name = ".config/workstation/shell/${id}.sh";
-            value.text = "${f.marker}\n${f.body}\n";
-          })
-        x.frags))
-    { } ws.fragmentOrder;
+    (acc: f: acc // {
+      ".config/workstation/shell/${f.id}.sh".text =
+        "${f.marker}\n${builtins.readFile f.payload}";
+    })
+    { } cfg.shell.fragments;
 
-  # the one sourced rc lane: each rc target sources its fragment files in
-  # topo order (the manifests' order IS the shell contract)
-  rcFiles = builtins.listToAttrs (map (x: {
-    name = x.t;
-    value.text = lib.concatStrings (map (id:
-      let f = ws.fragmentsById.${id};
-      in "${f.marker}\n[ -r \"$HOME/.config/workstation/shell/${id}.sh\" ] && . \"$HOME/.config/workstation/shell/${id}.sh\"\n")
-      x.frags);
-  }) ws.fragmentOrder);
+  rcFiles = builtins.foldl'
+    (acc: f: acc // {
+      ${f.target}.text = (acc.${f.target}.text or "") + "${f.marker}\n" + ''
+        [ -r "$HOME/.config/workstation/shell/${f.id}.sh" ] && . "$HOME/.config/workstation/shell/${f.id}.sh"
+      '';
+    })
+    (builtins.listToAttrs (map (t: lib.nameValuePair t { text = ""; })
+      (lib.unique (map (f: f.target) cfg.shell.fragments))))
+    cfg.shell.fragments;
 
   # symlink entries whose source came back as a home-absolute string are
   # intra-home links; store-path sources pass straight through
@@ -68,8 +68,12 @@ in
   imports = [
     ../../modules/agent/agent.nix
     ../../modules/editor/editor.nix
+    ../../modules/foundation/foundation.nix
+    ../../modules/fonts/fonts.nix
     ../../modules/languages/go/go.nix
+    ../../modules/languages/node/node.nix
     ../../modules/languages/typescript/typescript.nix
+    ../../modules/secrets/secrets.nix
     ../../modules/terminal/terminal.nix
   ];
 
@@ -117,6 +121,28 @@ in
     '';
   };
 
+  # the shell fragment lane: the owning modules declare their fragments
+  # (id, target, marker, payload); THIS module renders — the single
+  # writer per fragment file and rc target. The order is the declared
+  # list (module import order, then each module's own list order) — the
+  # explicit contract the walker's derived topo walk used to be.
+  options.workstation.shell.fragments = lib.mkOption {
+    type = lib.types.listOf (lib.types.submodule {
+      options = {
+        id = lib.mkOption { type = lib.types.str; };
+        target = lib.mkOption { type = lib.types.str; };
+        marker = lib.mkOption { type = lib.types.str; };
+        payload = lib.mkOption { type = lib.types.path; };
+      };
+    });
+    default = [ ];
+    description = ''
+      The shell fragments: per-fragment files under
+      .config/workstation/shell/ and the one sourced rc lane per target.
+      Declared by the owning domain modules; ids must be unique.
+    '';
+  };
+
   config = {
     # --- the declared retire list (workstation.retire) ---------------------
     home.activation.workstation-retire = lib.hm.dag.entryAfter [ "writeBoundary" ]
@@ -135,6 +161,12 @@ in
     # sources must be paths, so they wrap in mkOutOfStoreSymlink (text
     # entries — fragments and the rc lane — carry no source and pass as-is)
     home.file =
+      assert
+        # the lane's integrity: one fragment per (id, target) pair — two
+        # owners of one pair would silently overwrite each other's body
+        lib.length (lib.unique (map (f: [ f.id f.target ]) cfg.shell.fragments))
+        == lib.length cfg.shell.fragments
+        || throw "workstation-shell: duplicate fragment id/target pairs in the declared lane";
       (builtins.mapAttrs (_: v:
         if v ? source && lib.isString v.source then {
           source = config.lib.file.mkOutOfStoreSymlink v.source;
@@ -142,14 +174,15 @@ in
       // (builtins.listToAttrs (map (c: {
         name = c.target;
         value.source = c.source;
-      }) ws.claimsOut));
+      }) ws.claimsOut))
+      // fragmentFiles
+      // rcFiles;
     # (.local/bin/nvim moved to modules/editor/editor.nix — the nvim
     # manifest's death in the same commit retired the walker's override
     # guard with it)
 
-    # the walker's platform coverage for fonts (fc-cache picks up
-    # ~/.local/share/fonts; keep the cache fresh)
-    fonts.fontconfig.enable = true;
+    # (the fontconfig discovery moved to modules/fonts/fonts.nix with the
+    # fonts manifest's death)
 
     # --- the write plane: workstation-switch, the nix-switch driver -------
     # Thin wrappers around home-manager switch / nixos-rebuild switch whose

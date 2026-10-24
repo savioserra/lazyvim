@@ -81,12 +81,15 @@ in
       engine = self.packages.${system}.workstation;
     };
     modules = [
+      ../../nix/modules/workstation-system.nix
       ../../nix/modules/host.nix
       home-manager.darwinModules.home-manager
       (
         { config, ... }:
         {
           nixpkgs.hostPlatform = system;
+          # the foundation domain's pin surface (harlequin + hsql)
+          nixpkgs.overlays = [ self.overlays.default ];
 
           # host identity: the ONLY place this host's facts are written
           # (the options are declared in the substrate; consumers derive)
@@ -97,6 +100,8 @@ in
             # tailscale.fqdn: the operator declares the host's MagicDNS
             # name here at first real apply
           };
+          # the fleet transport (the shared system module owns the wiring)
+          workstation.foundation.tailscale.enable = true;
           # the canonical declaration derives from the identity option —
           # never a second literal
           networking.hostName = config.workstation.host.name;

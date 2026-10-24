@@ -40,27 +40,21 @@ defmodule Workstation.Core.Golden do
   alias Workstation.Core.{CanonicalJSON, Catalog, Graph, Source}
   alias Workstation.Backends.Chezmoi
 
-  # Recording order (also the on-disk directory names). The theme profile
-  # retired with the theme manifest (the absorption chain's first stage:
-  # the theme domain deploys no home targets — tokens.lua is read directly
-  # by the native theme extraction).
+  # Recording order (also the on-disk directory names). The shape-named
+  # profiles (theme, minimal, download, git, mise, shell-order) retired
+  # with the shapes they pinned — the absorption chain's first stage took
+  # every capability manifest but elixir's, whose remaining envelopes are
+  # one nvim-profile entry and one payload file.
   @profiles [
-    "minimal",
     "full-home",
     "conflicts",
-    "shell-order",
     "nvim-profile",
-    "download",
-    "git",
-    "mise",
     "context"
   ]
 
-  # Catalog profile seeds: minimal records the foundation package alone;
-  # any profile without seeds records the complete catalog.
-  @catalog_seeds %{
-    "minimal" => ["foundation"]
-  }
+  # Catalog profile seeds: every remaining profile records the complete
+  # catalog (the seeded profiles retired with their seed packages).
+  @catalog_seeds %{}
 
   @doc "Recorded profiles, in recording order (also the directory names)."
   @spec profiles() :: [String.t()]

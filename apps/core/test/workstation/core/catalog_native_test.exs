@@ -22,8 +22,9 @@ defmodule Workstation.Core.CatalogNativeTest do
   # the discovered catalog's size, pinned so an accidental discovery change
   # cannot pass silently. Shrinks with the absorption chain as each
   # capability's manifest leaves (agent + herdr, editor + go + typescript,
-  # tmux, then nunchux + theme: 6).
-  @native_count 6
+  # tmux, nunchux + theme, then the foundation bundle: 1 — elixir, the
+  # chain's last manifest).
+  @native_count 1
 
   @goldens_root Path.expand("../../../../../tests/goldens", __DIR__)
 
@@ -62,23 +63,16 @@ defmodule Workstation.Core.CatalogNativeTest do
   test "composition resolves the complete native graph without any stub" do
     graph = Catalog.compose(host: "linux")
 
-    # Post-order DFS over the id-sorted specs: dependencies first, ties by
-    # id sort — elixir (requires empty after the editor went native in
-    # stage one) leads, prompt (foundation-only) sorts between fonts and
-    # secrets, secrets (the last id) stays last. The agent, editor,
-    # languages and terminal domains' manifests left in the absorption
-    # chain's first stage (the native modules/{agent,editor,languages,
-    # terminal,theme} modules own those surfaces now).
+    # Post-order DFS over the id-sorted specs: the absorption chain's
+    # foundation bundle left the foundation bundle's manifests (foundation,
+    # prompt, fonts, node, secrets) — elixir is the last manifest standing
+    # (the native modules/{agent,editor,foundation,fonts,languages,secrets,
+    # terminal,theme} modules own every other surface now).
     assert Enum.map(graph.ordered, & &1.id) == [
-             "elixir",
-             "foundation",
-             "fonts",
-             "node",
-             "prompt",
-             "secrets"
+             "elixir"
            ]
 
-    assert graph.enabled["prompt"] and graph.enabled["secrets"]
+    assert graph.enabled["elixir"]
   end
 
   test "composition keeps graph rejection semantics through the catalog seam" do
@@ -217,16 +211,11 @@ defmodule Workstation.Core.CatalogNativeTest do
     test "the owner-declared anchors hold" do
       taxonomy = Packages.taxonomy()
 
-      assert taxonomy["fonts"] == "foundation/fonts"
-      assert taxonomy["secrets"] == "foundation/secrets"
-      assert taxonomy["foundation"] == "foundation/base"
+      # every domain's manifest but elixir's retired in the absorption
+      # chain's first stage (modules/{agent,editor,foundation,fonts,
+      # languages,secrets,terminal,theme} own those surfaces natively)
 
-      # the agent, editor, languages, terminal and theme domains' manifests
-      # retired in the absorption chain's first stage
-      # (modules/{agent,editor,languages,terminal,theme} own those surfaces
-      # natively)
-
-      for runtime <- ~w(node elixir) do
+      for runtime <- ~w(elixir) do
         assert taxonomy[runtime] == "foundation/runtime"
       end
     end

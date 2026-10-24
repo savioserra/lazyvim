@@ -49,7 +49,7 @@ defmodule Workstation.Core.Catalog.DiscoverTest do
     # shrinks with the absorption chain (agent + herdr, editor + go +
     # typescript, then tmux left in stage one).
     assert Packages.packages() == Discover.specs()
-    assert length(Packages.packages()) == 6
+    assert length(Packages.packages()) == 1
   end
 
   test "discovered specs are the native catalog, id-sorted with no duplicates" do

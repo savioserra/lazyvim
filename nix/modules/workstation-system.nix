@@ -25,6 +25,27 @@ in
       default = [ ];
       description = "Additional system packages for this host's workstation plane.";
     };
+
+    # the tailscale transport (the fleet's layer) — declared per host;
+    # options mirrored at home scope by modules/foundation/foundation.nix
+    foundation.tailscale.enable = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = ''
+        The fleet transport (ssh, the dashboard's --host binding, all host
+        convergence ride it). The host's MagicDNS name comes from
+        workstation.host.tailscale.fqdn.
+      '';
+    };
+    foundation.tailscale.acceptDns = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = ''
+        Accept the tailnet's DNS settings on the transport. Declared per
+        host; the wiring lands with the first transport module that carries
+        the option (the NixOS module integrates the tailnet DNS on enable).
+      '';
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -35,6 +56,14 @@ in
       pkgs.tmux
       pkgs.btop
     ] ++ cfg.extraPackages;
+    # --- the tailscale transport (the fleet's layer) -----------------------
+    # ssh, the dashboard's --host binding and all host convergence ride it;
+    # the host's MagicDNS name is workstation.host.tailscale.fqdn (set only
+    # in hosts/<host>/default.nix). acceptDns stays the declared surface —
+    # neither the NixOS nor the nix-darwin module carried the option at the
+    # pin; the NixOS module integrates the tailnet DNS through the resolver
+    # on enable.
+    services.tailscale.enable = lib.mkIf cfg.foundation.tailscale.enable true;
 
     # activation marker (kmsg surfaces on the serial console; plain stdout
     # serves human `switch` runs)
@@ -43,27 +72,6 @@ in
       text = ''
         echo "workstation: engine staged at ${engine}/bin/workstation (system plane)"
         echo "workstation: engine staged at ${engine}/bin/workstation (system plane)" > /dev/kmsg 2>/dev/null || true
-      '';
-    };
-
-    # boot-to-activation proof: one oneshot unit ordered after the home
-    # activation and multi-user, printing to journal+console so the serial
-    # log carries all three markers the VM test driver greps for
-    systemd.services.workstation-proof = {
-      description = "Workstation boot-to-activation proof";
-      wantedBy = [ "multi-user.target" ];
-      after = [ "multi-user.target" "home-manager-vm.service" ];
-      wants = [ "home-manager-vm.service" ];
-      serviceConfig = {
-        Type = "oneshot";
-        RemainAfterExit = true;
-        StandardOutput = "journal+console";
-        StandardError = "journal+console";
-      };
-      script = ''
-        echo "workstation: engine staged at ${engine}/bin/workstation (system plane)"
-        echo "workstation: home plane active (home-manager activation completed)"
-        echo "workstation: boot-to-activation proof complete (multi-user reached)"
       '';
     };
   };
