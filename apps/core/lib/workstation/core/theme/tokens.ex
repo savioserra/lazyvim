@@ -5,7 +5,7 @@ defmodule Workstation.Core.Theme.Tokens do
 
   The token set has exactly two carriers that must agree value-for-value:
   this module (in-process resolution for the daemon) and
-  `workstation/packages/theme/tokens.lua` (the managed-tree payload, read as
+  `modules/theme/tokens.lua` (the managed-tree payload, read as
   bytes, never executed). The duplication is deliberate and reviewed, with
   an ExUnit consistency anchor
   (`apps/core/test/workstation/core/theme/tokens_test.exs`) that compares the

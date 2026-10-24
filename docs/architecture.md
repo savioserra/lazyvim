@@ -60,8 +60,7 @@ eval-time assertions.)
 
 A capability is self-contained at its final address: `modules/<domain>/`
 holds the capability's home-manager module(s) beside the payload bytes it
-deploys (the payload rename is the absorption chain's last card — until it
-lands, the bytes live under `workstation/packages/`). The filesystem is
+deploys. The filesystem is
 the registry: the capability walk (nix/lib/capabilities.nix) is the one
 discovery both the home leg's imports and the report's fold read; a
 hand-kept module list is a defect by definition. Adding a capability is

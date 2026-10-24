@@ -42,7 +42,7 @@ in
     ];
 
     workstation.editor.languagePlugins = [
-      (self + "/workstation/packages/languages/typescript/files/languages/plugins/typescript.lua")
+      ./files/languages/plugins/typescript.lua
     ];
   };
 }

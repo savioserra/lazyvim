@@ -1,8 +1,7 @@
 # The agent domain's skill payload paths — the single source both the
 # agent module (the option defaults) and the flake's hermesSkills output
-# import. Payload bytes live under workstation/packages/agent/files/ until
-# the co-location card renames them beside this module.
+# import. The bytes live beside this module (the co-located payload).
 { self }:
 {
-  secrets = self + "/workstation/packages/agent/files/.hermes/skills/secrets";
+  secrets = ./files/.hermes/skills/secrets;
 }

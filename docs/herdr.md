@@ -8,7 +8,7 @@ never manages the runtime.
 
 | Item | Owner |
 | --- | --- |
-| Binary `0.9.0` (linux x86_64, macOS arm64; WSL uses the Linux asset) | `workstation/packages/agent/herdr` — the download contract fetches the exact pinned binary to `.local/opt/herdr/bin/herdr` (per-platform SHA-256), the link recipe publishes `.local/bin/herdr` |
+| Binary `0.9.0` (linux x86_64, macOS arm64; WSL uses the Linux asset) | the `herdr` pin (`modules/agent/agent.nix` + `workstation/versions.json`) — the checksummed fetchurl derivation lands the exact pinned binary in the store, linked straight to `.local/bin/herdr` |
 | Server, panes, sockets, `~/.config/herdr`, sessions, saved machines | Human/host; lifecycle commands never start, stop, attach or inspect them |
 
 The retired Pi integration hook (`herdr-pi`, a file recipe at

@@ -46,9 +46,9 @@ workstation system applied --generation 7  # inspect a past switch
 
 ## The engine
 
-The engine is an Elixir OTP release (`nix/engine.nix`, `mixRelease`) plus
-the payload tree under `workstation/packages/`. The declared state is the
-capability modules under `modules/` — the home leg renders them and the
+The engine is an Elixir OTP release (`nix/engine.nix`, `mixRelease`). The
+declared state is the capability modules under `modules/` — module and
+payload bytes co-located in one directory; the home leg renders them and the
 fold (`nix/report.nix`) reports them as `flake.evalReport`, and the
 release bakes that report so the engine's reads and the substrate ship
 from one flake snapshot. (The retired manifest format and its walker are

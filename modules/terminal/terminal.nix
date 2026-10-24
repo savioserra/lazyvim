@@ -40,8 +40,7 @@ let
   nunchuxTree = pins.compose (pins.fetchGitPin "nunchux" { }) [
     {
       path = "bin/.platform";
-      source =
-        self + "/workstation/packages/terminal/nunchux/files/.tmux/plugins/nunchux/bin/.platform";
+      source = ./nunchux/files/.tmux/plugins/nunchux/bin/.platform;
     }
   ];
 
@@ -51,8 +50,7 @@ let
   # theme rebrand)
   nunchuxConfig = theme.assertNoUnresolved
     (theme.renderSlots
-      (builtins.readFile
-        (self + "/workstation/packages/terminal/nunchux/files/.config/nunchux/config")));
+      (builtins.readFile ./nunchux/files/.config/nunchux/config));
 in
 {
   config = {
@@ -61,8 +59,7 @@ in
         # the managed config: the payload file, and the XDG link to it
         # (intra-home — the walker's mkOutOfStoreSymlink shape, declared)
         {
-          ".tmux.conf".source =
-            self + "/workstation/packages/terminal/tmux/files/.tmux.conf";
+          ".tmux.conf".source = ./tmux/files/.tmux.conf;
           ".config/tmux/tmux.conf".source = config.lib.file.mkOutOfStoreSymlink
             "${config.home.homeDirectory}/.tmux.conf";
         }

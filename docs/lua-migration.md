@@ -8,9 +8,9 @@ records the boundary decisions that survive the deletion:
 - The engine is Elixir-only: zero `nvim -l` and zero `vim.system` in the
   engine path; nvim exists on hosts only as a managed capability the
   substrate provisions.
-- `packages/theme/tokens.lua` and other package payload Lua files are DATA
-  consumed as bytes (chezmoi token envelopes), never executed.
-- `workstation/packages/editor/nvim/**` is editor runtime payload; the profile
+- `modules/theme/tokens.lua` and other payload Lua files are DATA
+  consumed as bytes, never executed.
+- `modules/editor/nvim/**` is editor runtime payload; the profile
   composition is native now (the editor capability's nix derivation,
   `modules/editor/editor.nix`) — the manifest-era engine compositor
   (`Workstation.Packages.Nvim.Profile`) retired with the format.

@@ -28,7 +28,7 @@
     ];
 
     workstation.editor.languagePlugins = [
-      (self + "/workstation/packages/languages/elixir/files/languages/plugins/elixir.lua")
+      ./files/languages/plugins/elixir.lua
     ];
   };
 }

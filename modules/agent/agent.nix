@@ -53,7 +53,7 @@ let
     # store copy carries the executable bit (the old envelope's
     # `executable: true`, native)
     ''
-      install -Dm755 ${self + "/workstation/packages/agent/files/hermes-launcher.sh"} "$out/hermes-launcher"
+      install -Dm755 ${./files/hermes-launcher.sh} "$out/hermes-launcher"
     '';
 in
 {

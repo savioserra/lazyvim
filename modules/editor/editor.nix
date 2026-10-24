@@ -5,7 +5,8 @@
 # What the walker's nvim-profile lane never did — deploy the composed
 # profile.lua — this module does:
 #   - the static config payload deploys as one recursive home.file tree
-#     (everything under workstation/packages/editor/nvim/files/.config/nvim
+#     (everything under nvim/files/.config/nvim — the payload co-located
+#     beside this module
 #     EXCEPT lazy-lock.json — the lock is runtime-extended application state
 #     and is never byte-compared);
 #   - profile.lua composes from the language entries the editor and the
@@ -32,9 +33,8 @@
 let
   cfg = config.workstation.editor;
 
-  payloadNvim = self + "/workstation/packages/editor/nvim/files/.config/nvim";
-  modifyTemplate =
-    self + "/workstation/packages/editor/nvim/files/modify/lazy-lock.json.sh";
+  payloadNvim = ./nvim/files/.config/nvim;
+  modifyTemplate = ./nvim/files/modify/lazy-lock.json.sh;
   lazyLockBaseline = payloadNvim + "/lazy-lock.json";
 
   # the profile's base entry: the editor's own standard composition (the

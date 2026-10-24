@@ -5,7 +5,7 @@
 | Hosts | Linux, macOS |
 | Main target | `~/.tmux.conf` and `~/.config/tmux/tmux.conf` symlink |
 | Status bar | tmux2k, upstream `onedark` theme |
-| Package implementation | `Workstation.Packages.Tmux` (payload `workstation/packages/terminal/tmux/`) |
+| Implementation | the terminal capability's module (`modules/terminal/terminal.nix`, payload `tmux/` co-located) |
 | Plugin root | `~/.tmux/plugins/` |
 
 ## Core settings
@@ -108,7 +108,7 @@ The load-bearing pre-seed is that marker: upstream's `nunchux.tmux`
 exclusion-class defect as `tmux-fingers` — whenever `bin/.platform` is
 missing or names another platform. With the marker present, plugin load
 runs the commit-pinned repo binary and never fetches. Host-side pin
-assertion: `packages/nunchux/verify/nunchux.sh` (checkout HEAD, binary
+assertion: `modules/terminal/nunchux/verify/nunchux.sh` (checkout HEAD, binary
 content pin, marker; read-only, never executes the binary).
 
 The launch chord is **C-Space, root** (no prefix): `@nunchux-key` is set to
@@ -242,7 +242,7 @@ config) and remove any `tmux.conf.bak.*` left in `~/.config/tmux/`.
 ## Verification
 
 - assert each engine-provisioned checkout at its pinned commit —
-  `packages/tmux/verify/tmux.sh` reads the pin inventory's
+  `modules/terminal/tmux/verify/tmux.sh` reads the pin inventory's
   `<plugin>_git_commit` rows and checks every `~/.tmux/plugins/<name>`
   HEAD against its pin (read-only, fails closed on the first mismatch);
 - assert the XDG symlink target;

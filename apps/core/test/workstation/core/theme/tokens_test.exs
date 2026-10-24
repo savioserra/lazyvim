@@ -4,7 +4,7 @@ defmodule Workstation.Core.Theme.TokensTest do
   alias Workstation.Core.Theme.Tokens
 
   test "the engine token set carries the same contract values as the theme payload" do
-    # Cross-carrier consistency: packages/theme/tokens.lua (the managed-tree
+    # Cross-carrier consistency: modules/theme/tokens.lua (the managed-tree
     # payload) must carry identical values. The token set names no consumer
     # package; consumer choices live in the consumers' own package modules
     # (see the herdr catalog module).

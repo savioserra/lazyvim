@@ -16,7 +16,7 @@
 }:
 let
   lines = lib.splitString "\n"
-    (builtins.readFile (self + "/workstation/packages/theme/tokens.lua"));
+    (builtins.readFile ./tokens.lua);
 
   # the lines of a closed `M.<name> = {` ... `}` block
   blockLines = name:

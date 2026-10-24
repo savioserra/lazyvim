@@ -11,7 +11,7 @@
 | `hosts/` | `wsl` (the linux leg; NixOS-WSL), `mac` (nix-darwin); per-host identity lives only here |
 | `.github/workflows/ci.yml` | Platform matrix: the check matrix under a pinned mise toolchain |
 | `.github/workflows/release.yml` | Tagged source archives |
-| `workstation/packages/`, `workstation/versions.json` | Package payload assets, data files and canonical pins |
+| `modules/`, `workstation/versions.json` | Capability payload bytes co-located with their declaring modules, data files and canonical pins |
 | `workstation/bin/workstation` | Sole public lifecycle launcher (POSIX sh): sandbox, checkout anchor, locale guard, exec of the placed release |
 
 ## Documentation map

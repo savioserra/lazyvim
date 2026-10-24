@@ -107,10 +107,9 @@ let
     }) fragmentTargets.${f.id})
     fragments;
 
-  # the starship config payload rides the prompt package's payload tree
-  # until the co-location card moves the bytes beside this module
-  starshipToml =
-    self + "/workstation/packages/terminal/prompt/files/.config/starship.toml";
+  # the starship config payload, co-located beside this module (the
+  # dissolved prompt capability's bytes live with their owner)
+  starshipToml = ./starship.toml;
 in
 {
   options.workstation.foundation = {

@@ -1,7 +1,7 @@
 # Theme capability
 
 One canonical color source for every workstation surface that renders color.
-Owned by `workstation/packages/theme` (`tokens.lua` holds the data payload;
+Owned by `modules/theme/` (`tokens.lua` holds the data payload;
 the engine carrier is `Workstation.Core.Theme.Tokens`). Re-branding edits both carriers.
 
 Current brand: **Starlight** — the oasis.nvim starlight `@thm_*` palette

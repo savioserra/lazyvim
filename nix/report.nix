@@ -34,7 +34,7 @@
   pkgs,
   # home-manager.lib — the module system the capability modules declare into
   hm,
-  # the flake tree (modules/, nix/, workstation/ payloads resolve against it)
+  # the flake tree (modules/, nix/ resolve against it)
   treeRoot,
   # REQUIRED — no default may bake an identity (t_40cf3088). The eval's
   # home.homeDirectory; the report itself pins no home paths.

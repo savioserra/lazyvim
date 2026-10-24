@@ -15,8 +15,7 @@ let
   # the node version pin is the payload's .node-version file (the
   # change-rule's canonical address), read — never duplicated
   nodeVersion = lib.trim
-    (builtins.readFile
-      (self + "/workstation/packages/languages/node/files/.node-version"));
+    (builtins.readFile ./files/.node-version);
 
   nvmTree = pins.tool "nvm_sh" {
     archive = "tar.gz";
@@ -68,10 +67,8 @@ in
     ];
 
     home.file = {
-      ".node-version".source =
-        self + "/workstation/packages/languages/node/files/.node-version";
-      ".config/shell/nvm.sh".source =
-        self + "/workstation/packages/languages/node/files/nvm.sh";
+      ".node-version".source = ./files/.node-version;
+      ".config/shell/nvm.sh".source = ./files/nvm.sh;
       ".local/opt/nvm".source = provisionedTree;
     };
   };
