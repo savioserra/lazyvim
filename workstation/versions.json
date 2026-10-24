@@ -1,9 +1,4 @@
 {
-  "chezmoi": "2.72.1",
-  "chezmoi_darwin_arm64_sha256": "938d422091cc001e68fe3fd7efea9b923a36facbf2b8db67063639abbaf72de2",
-  "chezmoi_darwin_arm64_url": "https://github.com/twpayne/chezmoi/releases/download/v{V}/chezmoi_{V}_darwin_arm64.tar.gz",
-  "chezmoi_linux_x86_64_sha256": "9f97d32caca166e5c92160ec3a9325519809c38963121cef38173142065c981f",
-  "chezmoi_linux_x86_64_url": "https://github.com/twpayne/chezmoi/releases/download/v{V}/chezmoi_{V}_linux_amd64.tar.gz",
   "fd": "10.4.2",
   "fd_darwin_arm64_sha256": "623dc0afc81b92e4d4606b380d7bc91916ba7b97814263e554d50923a39e480a",
   "fd_darwin_arm64_url": "https://github.com/sharkdp/fd/releases/download/v{V}/fd-v{V}-aarch64-apple-darwin.tar.gz",
