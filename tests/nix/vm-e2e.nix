@@ -234,5 +234,30 @@ writeShellScriptBin "workstation-e2e" ''
     || fail "system domain receipt" "no 'system domain: generation ... applied' line in the user journal"
   pass "system domain receipt ($receipt lines)"
 
+  # 5. the read smoke: the release serves the BAKED report — status is the
+  #    declared inventory, plan probes the live targets of the switched
+  #    home (the wires are the v2 schemas; canonical JSON, keys sorted)
+  step "read smoke (status from the baked report)"
+  status_json=$(workstation json status) \
+    || fail "read smoke (status)" "json status failed against the release"
+  echo "$status_json" | grep -q '"engine":{"mode":"report"' \
+    || fail "read smoke (status)" "the status wire does not name the report mode"
+  echo "$status_json" | grep -q '"schema":"workstation.status.v2"' \
+    || fail "read smoke (status)" "the status wire is not the v2 schema"
+  echo "$status_json" | grep -q '"editor"' \
+    || fail "read smoke (status)" "the declared inventory carries no editor capability"
+  pass "read smoke (status)"
+
+  step "read smoke (plan probes the switched home)"
+  plan_json=$(workstation json plan) \
+    || fail "read smoke (plan)" "json plan failed against the release"
+  echo "$plan_json" | grep -q '"schema":"workstation.plan.v2"' \
+    || fail "read smoke (plan)" "the plan wire is not the v2 schema"
+  echo "$plan_json" | grep -q '\.local/bin/nvim' \
+    || fail "read smoke (plan)" "the declared surface does not name the nvim bin target"
+  echo "$plan_json" | grep -q 'link -> ' \
+    || fail "read smoke (plan)" "no declared target probed as a live link (the probe saw an unswitched home)"
+  pass "read smoke (plan)"
+
   echo "workstation-e2e: OK"
 ''

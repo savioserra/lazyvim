@@ -35,6 +35,14 @@
         nixpkgs.legacyPackages.${system}.callPackage ./nix/engine.nix {
           beamPackages = nixpkgs.legacyPackages.${system}.beam.packages.erlang_28;
           src = self;
+          # the declared-state report bakes into the release: reads serve
+          # the same flake snapshot that built it. The fold evals on the
+          # host system only — the other build system's release fails its
+          # reads closed until the fold grows that platform.
+          report =
+            if system == hostSystem
+            then builtins.toJSON self.evalReport.${hostSystem}
+            else null;
         };
 
       # per-host identity lives ONLY in hosts/<host>/default.nix: the flake

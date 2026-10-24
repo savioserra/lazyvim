@@ -25,6 +25,11 @@
   fetchurl,
   beamPackages,
   src,
+  # the declared-state report JSON (flake.evalReport at this snapshot) —
+  # baked into the release so the daemon's reads serve the same flake
+  # snapshot that built it (nix/report.nix is the fold). null on build
+  # systems the fold does not eval (the darwin leg; reads then fail closed).
+  report ? null,
 }:
 
 let
@@ -93,4 +98,14 @@ beamPackages.mixRelease {
   # NOTE: the default postFixup strips ${erlang} references and wraps
   # $out/bin with a PATH of coreutils/gnused/gnugrep/gawk. Kept as-is —
   # the build gate's consumer smoke passed against this exact shape.
+
+  # The declared-state report bakes at share/workstation/eval-report.json
+  # (Workstation.Core.Report's release path): release and declared state
+  # ship from one flake snapshot, so the daemon's reads are coherent by
+  # construction.
+  postInstall = lib.optionalString (report != null) ''
+    install -Dm644 ${
+      builtins.toFile "eval-report.json" report
+    } $out/share/workstation/eval-report.json
+  '';
 }
