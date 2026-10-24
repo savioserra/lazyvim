@@ -5,9 +5,8 @@ defmodule Workstation.Core.Theme.TokensTest do
 
   test "the engine token set carries the same contract values as the theme payload" do
     # Cross-carrier consistency: modules/theme/tokens.lua (the managed-tree
-    # payload) must carry identical values. The token set names no consumer
-    # package; consumer choices live in the consumers' own package modules
-    # (see the herdr catalog module).
+    # payload) must carry identical values. The token set names no consumer;
+    # consumer choices live in the consumers' own modules.
     assert Tokens.version() == 4
 
     assert Map.new(Tokens.slots()) == %{

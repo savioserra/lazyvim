@@ -5,13 +5,12 @@ defmodule Workstation.Core.Theme.Tokens do
 
   The token set has exactly two carriers that must agree value-for-value:
   this module (in-process resolution for the daemon) and
-  `modules/theme/tokens.lua` (the managed-tree payload, read as
+  `modules/theme/tokens.lua` (the canonical payload, read as
   bytes, never executed). The duplication is deliberate and reviewed, with
   an ExUnit consistency anchor
-  (`apps/core/test/workstation/core/theme/tokens_test.exs`) that compares the
-  rendered `.chezmoidata.toml` envelope byte-for-byte against the committed
-  theme goldens fixture (`tests/goldens/theme/input.json`). Re-branding edits
-  BOTH carriers and re-records the goldens; a stale carrier fails the
+  (`apps/core/test/workstation/core/theme/tokens_test.exs`) that compares
+  the contract values carrier-for-carrier. Re-branding edits
+  BOTH carriers; a stale carrier fails the
   consistency test instead of silently serving stale colors.
 
   Layers (identical in both carriers):

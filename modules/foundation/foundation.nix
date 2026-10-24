@@ -82,11 +82,11 @@ let
   # exactly the order the manifests' topo walk used to derive (minus the
   # retired mise fragment)
   fragments = [
-    (frag "user-local-bin" "# chezmoi: managed user-local bin")
-    (frag "managed-profile" "# chezmoi: load managed profile")
-    (frag "managed-eza" "# chezmoi: managed eza ls")
-    (frag "managed-starship" "# chezmoi: managed starship prompt")
-    (frag "managed-starship-zsh" "# chezmoi: managed starship prompt")
+    (frag "user-local-bin" "# workstation: managed user-local bin")
+    (frag "managed-profile" "# workstation: load managed profile")
+    (frag "managed-eza" "# workstation: managed eza ls")
+    (frag "managed-starship" "# workstation: managed starship prompt")
+    (frag "managed-starship-zsh" "# workstation: managed starship prompt")
   ];
 
   fragmentTargets = {

@@ -21,7 +21,7 @@ Never enumerate, inspect, or modify another vault. Desktop CLI authentication ma
 ## Default workflow
 
 1. Ask what application, item, and field schema the user intends to manage.
-2. Prefer stable `op://Workstation/<item>/<field>` references in chezmoi source.
+2. Prefer stable `op://Workstation/<item>/<field>` references in the declared source tree.
 3. Prefer `op run` or `op inject` so values flow directly to the consuming process.
 4. Keep normal `workstation apply`, sync, tests, and verification independent of vault authentication.
 5. Inspect only titles, field labels, categories, and other non-secret metadata when diagnosing schema.
@@ -30,7 +30,7 @@ Never enumerate, inspect, or modify another vault. Desktop CLI authentication ma
 
 - Never retrieve an existing password, token, private key, credential, or recovery value into model context.
 - Never print secret values, include them in tool results, or ask the user to paste them into chat.
-- Never place secret values in command arguments, Git, chezmoi source, patches, logs, session files, or temporary files.
+- Never place secret values in command arguments, Git, the declared source tree, patches, logs, session files, or temporary files.
 - Never expose `OP_SERVICE_ACCOUNT_TOKEN` or any 1Password session token.
 - If an operation cannot be completed without exposing a value through the available tools, ask the user to complete that step in the 1Password application.
 

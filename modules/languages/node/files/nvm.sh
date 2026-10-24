@@ -1,4 +1,4 @@
-# Managed by chezmoi. Load nvm and activate the engine-pinned default Node
+# Managed by the workstation substrate. Load nvm and activate the pinned default Node
 # version, so fresh and reconciled hosts always resolve `node` on PATH.
 export NVM_DIR="$HOME/.local/opt/nvm"
 if [ -s "$NVM_DIR/nvm.sh" ]; then

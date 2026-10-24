@@ -40,9 +40,9 @@ echo "prompt verify: ok — starship config deployed"
 # exact in the fragment files. The grep patterns quote the literal lines
 # — the $( in them is data.
 for rc in .bashrc .zshrc; do
-  grep -Fqx "# chezmoi: managed eza ls" "$home/$rc" ||
+  grep -Fqx "# workstation: managed eza ls" "$home/$rc" ||
     fail "$rc carries no managed-eza fragment (run: workstation apply)"
-  grep -Fqx "# chezmoi: managed starship prompt" "$home/$rc" ||
+  grep -Fqx "# workstation: managed starship prompt" "$home/$rc" ||
     fail "$rc carries no managed-starship fragment (run: workstation apply)"
 done
 # shellcheck disable=SC2016

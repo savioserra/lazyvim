@@ -25,7 +25,7 @@ in
       {
         target = ".profile";
         id = "managed-op-env";
-        marker = "# chezmoi: managed op env";
+        marker = "# workstation: managed op env";
         payload = ./fragments/managed-op-env.sh;
       }
     ];

@@ -49,19 +49,19 @@ in
       {
         target = ".profile";
         id = "managed-nvm";
-        marker = "# chezmoi: load managed nvm";
+        marker = "# workstation: load managed nvm";
         payload = ./fragments/managed-nvm.sh;
       }
       {
         target = ".bashrc";
         id = "managed-nvm";
-        marker = "# chezmoi: load managed nvm";
+        marker = "# workstation: load managed nvm";
         payload = ./fragments/managed-nvm.sh;
       }
       {
         target = ".zshrc";
         id = "managed-nvm";
-        marker = "# chezmoi: load managed nvm";
+        marker = "# workstation: load managed nvm";
         payload = ./fragments/managed-nvm.sh;
       }
     ];

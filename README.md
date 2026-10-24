@@ -114,7 +114,7 @@ contracts; see the references below.
 | [`docs/index.md`](docs/index.md) | Repository navigation |
 | [`docs/testing.md`](docs/testing.md) | Fast checks, isolated E2E and acceptance limits |
 | [`docs/capabilities.md`](docs/capabilities.md) | Capability boundaries and lifecycle |
-| [`docs/chezmoi.md`](docs/chezmoi.md) | Home state law (native declarations) and the cutover history |
+| [`docs/home-state.md`](docs/home-state.md) | Home state law (native declarations) and the cutover history |
 | [`docs/tools.md`](docs/tools.md) | Managed inventory and prerequisites |
 | [`docs/secrets.md`](docs/secrets.md) | User-owned authentication and explicit secrets skill |
 | [`docs/nvim.md`](docs/nvim.md), [`docs/tmux.md`](docs/tmux.md) | Application configuration |

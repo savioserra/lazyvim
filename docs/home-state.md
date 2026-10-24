@@ -11,16 +11,12 @@ face; both retire with the format (operator ruling 2026-10-21,
 `workstation-switch`, never a file backend. Authentication, sessions and
 provider state remain user-owned.
 
-During the deletion chain the walker still renders the surviving manifests
-into the same `home.file` surfaces this document describes; the law below is
-the post-absorption shape and the transition is marked where it matters.
-
 ## Source generation
 
 | Step | Owner | Contract |
 | --- | --- | --- |
 | Declaration | `modules/<domain>/<domain>.nix` | Native nix: home.file surfaces, pins, fragments, activation scripts |
-| Payload | `workstation/packages/<domain>/<id>/` (→ co-located in `modules/<domain>/`) | Referenced bytes, copied into the store at eval |
+| Payload | `modules/<domain>/` (co-located with the declaring module) | Referenced bytes, copied into the store at eval |
 | Pin derivation | `nix/lib/pins.nix` | Checksummed fetch, layout/extraction rules, build-time probe gate |
 | Claim composition | `nix/lib/pins.nix` | Overlapping dir claims compose into one derivation |
 | Deployment | the generation | `home-manager switch` links every target atomically |
@@ -91,7 +87,7 @@ Two native shapes, both declared:
   `Workstation.Core.Policy`) retires with the format.
 
 The single `.chezmoidata.toml` token envelope retired with the templates:
-`packages/theme/tokens.lua` is the canonical token payload, and nix reads
+`modules/theme/tokens.lua` is the canonical token payload, and nix reads
 it directly (the extraction asserted at eval, `modules/theme/theme.nix`).
 
 ## Isolated validation

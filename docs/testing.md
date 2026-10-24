@@ -27,7 +27,7 @@ using 1024-byte blocks; use the byte-equivalent setting otherwise).
 
 Synthetic graph/composition/CLI/harness tests are not downloaded-asset,
 real Pi discovery/reload or native-platform acceptance. Backend rendering requires
-[a full source audit first](chezmoi.md#isolated-validation); dry-run is not a sandbox.
+[a full source audit first](home-state.md#isolated-validation); dry-run is not a sandbox.
 
 ## Real integration
 
