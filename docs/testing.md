@@ -13,9 +13,7 @@ the byte-identical golden replay (`mix workstation.goldens` vs
 message naming `mise exec -- mix workstation.goldens` — before the full
 `mix test` suite (hermetic fixture homes, no host state touched). The
 in-suite drift anchor (`Workstation.Core.GoldenGenerateTest`) carries the
-same assertion for direct `mix test` runs. Then: the nix eval-goldens
-walker drift guard (`sh .github/scripts/eval-goldens.sh` in a
-`nixos/nix` docker container; skips where nix/docker is unavailable), the
+same assertion for direct `mix test` runs. Then: the
 nix identity gate (per-host identity lives only in
 `hosts/<host>/default.nix`), `sh -n` + ShellCheck
 over the remaining shell scripts, the UTF-8 locale guard gate over the POSIX
@@ -42,9 +40,8 @@ Real substrate integration needs nix and explicit authorization:
   engine release — the mixRelease with the vendored NIFs, digest-gated by
   `nix/engine.nix`'s preConfigure check);
 - boot the NixOS VM test (`tests/nix`): it proves the daemon user unit and
-  the switch seam end to end;
-- run the walker drift guard (`sh .github/scripts/eval-goldens.sh`) and
-  compare the walker report against `tests/goldens`.
+  the switch seam end to end, and smokes the engine's read verbs against
+  the baked report.
 
 Work in a scratch context: never a live home, never the operator's store
 paths. Failures retain the build log, the VM console output and the failing

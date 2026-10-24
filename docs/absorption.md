@@ -239,7 +239,9 @@ E2E (`tests/nix`) with retained receipts:
 
 ## Transition truth
 
-The docs state the native law as of the design commit. Until the chain's
-last commit, the manifests remain the walker's transitional input — every
-doc that still describes them says so in one place, and no doc describes a
-post-absorption surface as if it already existed.
+The docs state the native law as of their owning chain commit. The walker
+and the byte guard are gone (stage 2): the declared state is the modules'
+fold, the engine's reads move to the baked report within stage 2, and the
+payload bytes under `workstation/packages/` stay put until the chain's
+last commit — no doc describes a surface before its owning commit lands
+it.

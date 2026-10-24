@@ -47,12 +47,12 @@ workstation system applied --generation 7  # inspect a past switch
 ## The engine
 
 The engine is an Elixir OTP release (`nix/engine.nix`, `mixRelease`) plus
-the package tree under `workstation/packages/` — self-contained package
-dirs (manifest beside payloads) that BOTH readers consume as data: the nix
-walker (`nix/manifest-lib.nix`) renders them into the HM/NixOS
-declarations, and the engine's native catalog composes the desired state
-for its reads. The walker report is drift-guarded against the recorded
-goldens (`sh .github/scripts/eval-goldens.sh`; CI runs it on Linux).
+the payload tree under `workstation/packages/`. The declared state is the
+capability modules under `modules/` — the home leg renders them and the
+fold (`nix/report.nix`) reports them as `flake.evalReport`, and the
+release bakes that report so the engine's reads and the substrate ship
+from one flake snapshot. (The retired manifest format and its walker are
+history: `docs/absorption.md` carries the retirement.)
 
 ```sh
 workstation          # TUI dashboard: engine / capabilities / plan / status
@@ -122,8 +122,8 @@ contracts; see the references below.
 | `AGENTS.md` | Contributor rules |
 
 Run `sh .github/scripts/check.sh` for safe isolated source checks (golden
-contract, nix eval-goldens, identity gate, engine suite, doclint, shell
-checks); never run fixtures directly against a switched home. Real nix
+contract, identity gate, engine suite, doclint, shell checks); never run
+fixtures directly against a switched home. Real nix
 builds and VM boots require explicit authorization; follow
 [testing](docs/testing.md), not a live-home experiment. CI uses Linux and
 macOS arm64 runners; WSL follows Linux. Release CI validates before

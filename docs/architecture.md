@@ -83,8 +83,10 @@ effects (the deliberate golden re-record that pinned this shape is the
 typed-effects plan change, rationale in its commit).
 
 Goldens pin byte-identity of plan outputs across refactors; the nix
-generation is the ownership and baseline story (eval-goldens guards the
-walker's drift against the same recorded tree).
+generation is the ownership and baseline story. (The eval-report byte
+guard was transition scaffolding: it retired with the walker it pinned —
+declared-surface verification is the report fold's eval-time assertions
+plus behavioral VM/activation runs.)
 
 ## Package self-containment (the law)
 

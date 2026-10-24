@@ -82,36 +82,32 @@ defmodule Workstation.Daemon.Capabilities.SystemTest do
   end
 
   describe "the eval-report contract (the two-reader drift guard)" do
-    # tests/nix/goldens/eval-report.json carries the walker side of the
-    # system-domain contract; this suite carries the daemon side. Either
-    # reader renaming its half reds HERE, in a plain `mix test`, before
-    # the eval-goldens gate can even run. The root walk stops at the
-    # engine checkout (flake.nix) — robust to `mix test` from the root or
-    # inside an app dir.
-    @golden Path.join(
-              Enum.reduce(1..8, Path.expand(__DIR__), fn _i, d ->
-                if File.exists?(Path.join(d, "flake.nix")), do: d, else: Path.dirname(d)
-              end),
-              "tests/nix/goldens/eval-report.json"
-            )
+    # nix/system-domain.nix carries the nix side of the system-domain
+    # contract; this suite carries the daemon side. Either reader renaming
+    # its half reds HERE, in a plain `mix test`. The nix file is read as
+    # the contract SOURCE it is (the eval-report byte guard retired with
+    # the walker); the runtime pin is the report the engine's release
+    # bakes. The root walk stops at the engine checkout (flake.nix) —
+    # robust to `mix test` from the root or inside an app dir.
+    @contract_file Path.join(
+                     Enum.reduce(1..8, Path.expand(__DIR__), fn _i, d ->
+                       if File.exists?(Path.join(d, "flake.nix")), do: d, else: Path.dirname(d)
+                     end),
+                     "nix/system-domain.nix"
+                   )
 
-    test "the committed eval report names this module's domain, op and message" do
-      assert File.exists?(@golden), "missing #{@golden} — the nix substrate left the tree?"
+    test "the nix publish contract names this module's domain, op and message" do
+      assert File.exists?(@contract_file), "missing #{@contract_file} — the nix substrate left the tree?"
+      source = File.read!(@contract_file)
 
-      {:ok, body} = File.read(@golden)
-      {:ok, report} = Jason.decode(body)
-
-      contract = Map.fetch!(report, "systemDomain")
-      assert contract["domain"] == Capabilities.System.domain()
-      assert contract["op"] == Capabilities.System.op()
-
-      event = Capabilities.System.applied_event(4, 3)
-      assert contract["eventType"] == event["type"]
-      assert contract["messageFormat"] == "generation N applied (rollback available at M)"
-
-      driver = Map.fetch!(contract, "driver")
-      assert driver["unit"] == "workstation-daemon.service"
-      assert Enum.sort(driver["subcommands"]) == ["apply", "rollback", "sync", "update"]
+      assert source =~ ~s(domain = "#{Capabilities.System.domain()}";)
+      assert source =~ ~s(op = "#{Capabilities.System.op()}";)
+      assert source =~ ~s(eventType = "#{Capabilities.System.op()}";)
+      assert source =~ "messageFormat = \"generation N applied (rollback available at M)\""
+      assert source =~ ~s(unit = "workstation-daemon.service";)
+      for subcommand <- ["apply", "rollback", "sync", "update"] do
+        assert source =~ "\"#{subcommand}\""
+      end
     end
   end
 end

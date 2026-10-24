@@ -29,9 +29,6 @@ else
 	fail=1
 fi
 
-step 'nix eval-goldens (walker drift guard at HEAD — skips where nix/docker is unavailable)'
-sh .github/scripts/eval-goldens.sh || fail=1
-
 step 'nix identity gate (per-host identity lives only in hosts/<host>/default.nix)'
 if git grep -i savio -- nix hosts flake.nix; then
 	fail=1

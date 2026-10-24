@@ -365,9 +365,8 @@ The canonical gate (`sh .github/scripts/check.sh`) is Elixir-native: the full
 `mix test` umbrella suite, the byte-identical golden replay
 (`mix workstation.goldens` into a scratch root, `diff -r` against
 `tests/goldens`), `sh -n` + ShellCheck over the remaining shell scripts
-(`workstation/bin/workstation`, `.github/scripts/*.sh`), the nix
-eval-goldens walker drift guard, the release boot smoke when a local tarball is
-built, and `git diff --check`.
+(`workstation/bin/workstation`, `.github/scripts/*.sh`), the release boot smoke
+when a local tarball is built, and `git diff --check`.
 
 ## Goldens (Elixir replay contract)
 

@@ -15,9 +15,9 @@ where it matters.
 
 ```text
 flake.nix
-  -> modules/* (the native declarations; during the
-     transition the walker in nix/manifest-lib.nix renders the surviving
-     manifests into the same home.file/claim surfaces)
+  -> modules/* (the native declarations; the capability walk
+     nix/lib/capabilities.nix is the registry — the home leg's imports and
+     the declared-state report's fold read the same walk)
   -> nix/modules (workstation-home, workstation-system)
   -> nix/engine.nix (mixRelease of the umbrella -> the engine release,
      baking the declared-state report into the release)
@@ -29,8 +29,8 @@ workstation/bin/workstation (POSIX sh: sandbox, checkout anchor, locale guard)
   -> exec the placed elixir release binary
       -> Workstation.CLI.Router (read verbs, TTY contract)
           -> Workstation.Daemon.Read (status.run / plan.run)
-      -> the declared-state report (flake evalReport; the catalog fold
-         during the transition)
+      -> the declared-state report (flake evalReport; the modules' fold,
+         nix/report.nix)
 
 core -X-> catalog/packages/providers/chezmoi/Neovim
 ```
@@ -212,11 +212,12 @@ hidden.
 
 ## Validation
 
-Validation is nix eval, fail-closed at build time:
+Validation is nix eval, fail-closed at eval time:
 
-- the eval golden (`tests/nix/goldens/eval-report.json`,
-  `.github/scripts/eval-goldens.sh`) byte-guards the declared surface — a
-  declaration edit without a deliberate re-record reds in seconds;
+- the report fold's integrity assertions: the per-capability surfaces must
+  compose to the full evaluation (a misclassified module file throws, never
+  silently shrinks the report), and the declared fragments/retire lists
+  must agree between the fold and the composed surface;
 - target collisions across capabilities throw at eval (two lanes claiming
   one home target never silently compose);
 - pin gates: 64-hex digest shape, platform asset presence, probe output —

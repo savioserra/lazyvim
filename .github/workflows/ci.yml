@@ -62,8 +62,7 @@ jobs:
           chmod +x "$HOME/.local/bin/mise"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
-      # The canonical gate: golden contract, nix eval-goldens (docker on
-      # Linux; skipped where nix/docker is unavailable), the identity gate,
+      # The canonical gate: golden contract, the identity gate,
       # the engine suite, doclint and the shell checks.
       - name: Run the check matrix
         shell: bash

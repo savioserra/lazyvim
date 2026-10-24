@@ -6,14 +6,13 @@
 # readers can subscribe: the daemon hears it over the existing wire
 # protocol (the workstation-switch driver's publish step calls
 # `workstation system applied`), and the evaluator reads THIS contract
-# from the flake's eval report — byte-guarded against
-# tests/nix/goldens/eval-report.json by .github/scripts/eval-goldens.sh,
-# and cross-checked against the daemon's own constants by
-# Workstation.Daemon.Capabilities.SystemTest (the golden is the shared
-# pin between the two languages).
+# from the flake's eval report (flake.evalReport — the same JSON the
+# engine's release bakes), cross-checked against the daemon's own
+# constants by Workstation.Daemon.Capabilities.SystemTest — the two
+# readers' shared pin, enforced in code.
 #
-# Changing anything here is a deliberate golden re-record AND a daemon
-# counterpart edit — neither reader can move alone.
+# Changing anything here is a deliberate counterpart edit on the daemon
+# side — neither reader can move alone.
 {
   domain = "system";
   op = "system.applied";

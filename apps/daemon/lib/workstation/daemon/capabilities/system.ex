@@ -18,11 +18,10 @@ defmodule Workstation.Daemon.Capabilities.System do
       and returns the record as the op result, so a headless driver has a
       synchronous receipt, and
     * the evaluator reads the publish CONTRACT (domain name, op name,
-      event shape) from the walker's eval report — byte-guarded by
-      `tests/nix/goldens/eval-report.json` in check.sh's eval-goldens
-      gate, and cross-checked against THIS module's constants by
-      `Workstation.Daemon.Capabilities.SystemTest` so the two readers
-      cannot drift silently.
+      event shape) from the flake's eval report (`flake.evalReport` —
+      `nix/system-domain.nix`), cross-checked against THIS module's
+      constants by `Workstation.Daemon.Capabilities.SystemTest` so the
+      two readers cannot drift silently.
 
   The event speaks the nix profile generation ("generation N applied
   (rollback available at N-1)"), NOT any engine release identity — the
