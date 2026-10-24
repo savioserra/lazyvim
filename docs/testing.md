@@ -6,23 +6,20 @@
 sh .github/scripts/check.sh
 ```
 
-The fused engine's matrix is Elixir-native and fails fast on golden drift:
-the byte-identical golden replay (`mix workstation.goldens` vs
-`tests/goldens`) is the FIRST check.sh step, so a payload edit under
-`workstation/packages/` without a golden re-record reds in seconds — with a
-message naming `mise exec -- mix workstation.goldens` — before the full
-`mix test` suite (hermetic fixture homes, no host state touched). The
-in-suite drift anchor (`Workstation.Core.GoldenGenerateTest`) carries the
-same assertion for direct `mix test` runs. Then: the
+The fused engine's matrix is Elixir-native: the
 nix identity gate (per-host identity lives only in
-`hosts/<host>/default.nix`), `sh -n` + ShellCheck
+`hosts/<host>/default.nix`), the full
+`mix test` suite (hermetic fixture homes, no host state touched), `sh -n`
++ ShellCheck
 over the remaining shell scripts, the UTF-8 locale guard gate over the POSIX
 shim (stubbed `locale`, stub release; no tarball needed), the release boot
 smoke when a local release tarball is built, and `git diff --check`.
 ShellCheck is required in Linux CI; report local absence.
 
 The retired Lua suites, the `nvim -l` syntax pass and StyLua died with the Lua
-engine; `tests/goldens/` stays canonical and is regenerated, never hand-edited.
+engine; the recorded-envelope goldens and their replay contract retired with
+the manifest format they pinned (docs/absorption.md — verification is
+behavioral).
 Never run fixtures directly against a switched home: they write fake Node/npm state.
 For bounded Linux source checks, use a cleared environment, network denial,
 120-second deadline and a **4 MiB per-file** limit (`ulimit -f 4096` in a shell

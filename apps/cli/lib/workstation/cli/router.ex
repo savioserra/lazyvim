@@ -8,10 +8,10 @@ defmodule Workstation.CLI.Router do
   the same release when absent), send one op, render the result. Read verbs
   (`status`, `plan`, `json <command>`) send `status.run` / `plan.run`.
   There is NO in-process fallback: a daemon that
-  cannot be reached or spawned is a clear operator error. The one
-  in-process path is `--input <file>` golden replay, which is offline by
-  definition (`Workstation.CLI.Core` over a recorded envelope, no daemon
-  involved). The write plane lives in the nix substrate: mutation is the
+  cannot be reached or spawned is a clear operator error. (The one
+  former in-process path — `--input <file>` golden replay — retired with
+  the goldens it replayed.) The write plane lives in the nix substrate:
+  mutation is the
   `workstation-switch` drivers (apply/rollback/update/sync), and the
   engine's receipt verb `system applied` publishes the generation event.
 
@@ -39,7 +39,6 @@ defmodule Workstation.CLI.Router do
   error, daemon unavailable).
   """
 
-  alias Workstation.CLI.Core
   alias Workstation.CLI.Capabilities
   alias Workstation.CLI.DaemonClient
   alias Workstation.CLI.Render
@@ -225,11 +224,6 @@ defmodule Workstation.CLI.Router do
         value_name: "DIR",
         long: "--home",
         help: "destination home (default: $WORKSTATION_HOME, else $HOME)"
-      ],
-      input: [
-        value_name: "FILE",
-        long: "--input",
-        help: "plan replay: recorded golden input.json instead of the live native catalog"
       ]
     ]
   end
@@ -499,63 +493,46 @@ defmodule Workstation.CLI.Router do
 
   # Live reads belong to the daemon: the CLI is a thin client, so the wire
   # is assembled once daemon-side (Workstation.Daemon.Read) and the CLI
-  # renders it unchanged. `--input <file>` is the recorded-envelope replay:
-  # fully offline (Workstation.CLI.Core), no daemon involved, same wire.
-  # Exit codes are unchanged: core evaluation (envelope) failures are
-  # precondition (3), daemon unavailability and native collection failures
-  # are engine (4).
+  # renders it unchanged. (The `--input` recorded-envelope replay retired
+  # with the goldens it replayed.) Exit codes are unchanged: core
+  # evaluation failures are precondition (3), daemon unavailability and
+  # native collection failures are engine (4).
   defp evaluate(command, home, result) do
-    case result.options[:input] do
-      nil ->
-        case DaemonClient.call(read_op(command), %{}, client_opts(result, @read_timeout_ms)) do
-          {:ok, wire} ->
-            {:ok, wire}
+    case DaemonClient.call(read_op(command), %{}, client_opts(result, @read_timeout_ms)) do
+      {:ok, wire} ->
+        {:ok, wire}
 
-          {:error, {tag, message}} when is_atom(tag) ->
-            # Daemon transport failure: unavailable, died mid-op, or
-            # timed out — engine-exit operator error, message verbatim.
-            fail(4, "error: #{tag}: #{message}")
+      {:error, {tag, message}} when is_atom(tag) ->
+        # Daemon transport failure: unavailable, died mid-op, or
+        # timed out — engine-exit operator error, message verbatim.
+        fail(4, "error: #{tag}: #{message}")
 
-          # ensure-daemon's spawn refusal rides as a bare message (no release
-          # binary, spawn failure) — engine exit, never a CaseClause crash.
-          {:error, message} when is_binary(message) ->
-            fail(4, "error: #{message}")
+      # ensure-daemon's spawn refusal rides as a bare message (no release
+      # binary, spawn failure) — engine exit, never a CaseClause crash.
+      {:error, message} when is_binary(message) ->
+        fail(4, "error: #{message}")
 
-          # The daemon-side read failure classes over the wire: Read's
-          # {:core, _}/{:engine, _} arrive as STRING codes (JSON), so a
-          # bare-host engine-checkout refusal used to fall through every
-          # arm and crash the CLI with a CaseClauseError instead of the
-          # intended fail-closed operator error (2026-10-07 shim-anchor
-          # gate). Same exit semantics as the offline replay arm: core
-          # evaluation failures are precondition (3), engine failures are
-          # engine (4).
-          {:error, {"core", message}} when is_binary(message) ->
-            fail(3, "error: core evaluation failed: #{message}")
+      # The daemon-side read failure classes over the wire: Read's
+      # {:core, _}/{:engine, _} arrive as STRING codes (JSON), so a
+      # bare-host engine-checkout refusal used to fall through every
+      # arm and crash the CLI with a CaseClauseError instead of the
+      # intended fail-closed operator error (2026-10-07 shim-anchor
+      # gate). Core evaluation failures are precondition (3), engine
+      # failures are engine (4).
+      {:error, {"core", message}} when is_binary(message) ->
+        fail(3, "error: core evaluation failed: #{message}")
 
-          {:error, {"engine", message}} when is_binary(message) ->
-            fail(4, "error: #{format_engine_error(message)}")
+      {:error, {"engine", message}} when is_binary(message) ->
+        fail(4, "error: #{format_engine_error(message)}")
 
-          {:error, {code, message}} when is_binary(code) and is_binary(message) ->
-            # Any other wire refusal keeps the client exit table (locked
-            # is precondition, everything else engine) — protocol drift
-            # degrades to an operator error, never a crash.
-            fail(client_exit(code), "error: #{code}: #{message}")
+      {:error, {code, message}} when is_binary(code) and is_binary(message) ->
+        # Any other wire refusal keeps the client exit table (locked
+        # is precondition, everything else engine) — protocol drift
+        # degrades to an operator error, never a crash.
+        fail(client_exit(code), "error: #{code}: #{message}")
 
-          {:error, code, message} ->
-            fail(client_exit(code), "error: #{code}: #{message}")
-        end
-
-      input ->
-        case Core.evaluate(command, home, input: input) do
-          {:ok, wire} ->
-            {:ok, wire}
-
-          {:error, {:core, reason}} ->
-            fail(3, "error: core evaluation failed: #{reason}")
-
-          {:error, {:engine, reason}} ->
-            fail(4, "error: #{format_engine_error(reason)}")
-        end
+      {:error, code, message} ->
+        fail(client_exit(code), "error: #{code}: #{message}")
     end
   end
 
@@ -586,7 +563,13 @@ defmodule Workstation.CLI.Router do
 
   ## plumbing
 
-  defp resolve_home(result) do
+  @doc """
+  The destination-home resolution precedence: the `--home` flag, else
+  `$WORKSTATION_HOME`, else `$HOME`; none resolvable is a usage error
+  (exit 2). Public so the resolution contract is pinnable without a
+  daemon (the launcher shim rebases flag and env to one destination).
+  """
+  def resolve_home(result) do
     case result.options[:home] do
       nil ->
         case System.get_env("WORKSTATION_HOME") || System.get_env("HOME") do

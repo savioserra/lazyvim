@@ -92,24 +92,23 @@ Two native shapes, both declared:
 
 The single `.chezmoidata.toml` token envelope retired with the templates:
 `packages/theme/tokens.lua` is the canonical token payload, and nix reads
-it directly (the extraction asserted by the eval golden).
+it directly (the extraction asserted at eval, `modules/theme/theme.nix`).
 
 ## Isolated validation
 
-`workstation plan` is the public preview (mutates nothing). The offline
-replay path substitutes a recorded golden envelope for the live catalog
-during the transition:
+`workstation plan` is the public preview (mutates nothing): the daemon
+composes the declared surface from the baked report and probes the live
+target states — no daemon-side mutation anywhere.
 
 ```sh
-workstation plan --input tests/goldens/<profile>/input.json --home <scratch>
+workstation plan --home <scratch>
 ```
 
-Generations are target-specific (private state and any inlined link
-destinations derive from that home), so replay against a scratch home stays
-deterministic. The read-depth goldens are byte-compared on every
-`sh .github/scripts/check.sh` run; see [real integration](testing.md#real-integration)
-for the authorized substrate harness. The recorded-envelope goldens retire
-with the format; the eval golden over the declared surface survives them.
+Reads are daemon-routed and pure (no journal, no filesystem probing beyond
+the per-target state report); substrate verification is the VM/activation
+harness — see [real integration](testing.md#real-integration). The
+recorded-envelope goldens and the eval byte guard retired with the format
+(docs/absorption.md — verification is behavioral).
 
 ## Breaking cutover (historical)
 

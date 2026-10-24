@@ -77,16 +77,15 @@ before the apply-phase effect — the ordering the nix program carries.
 
 A CLI verb is a prefix of this list: `status` runs to `resolve`, `plan` to
 `compose` (`Pipeline.verb_depth/1`). Read depths stay pure (no filesystem
-probing beyond the per-target state report), so golden replay
-is a function of its input bytes; the recorded plan body DECLARES its typed
-effects (the deliberate golden re-record that pinned this shape is the
-typed-effects plan change, rationale in its commit).
+probing beyond the per-target state report), so evaluation is a function of
+the declared input alone. (The recorded plan body's golden matrix retired
+with the format it pinned — docs/absorption.md decision 5: verification is
+behavioral.)
 
-Goldens pin byte-identity of plan outputs across refactors; the nix
-generation is the ownership and baseline story. (The eval-report byte
-guard was transition scaffolding: it retired with the walker it pinned —
-declared-surface verification is the report fold's eval-time assertions
-plus behavioral VM/activation runs.)
+The nix generation is the ownership and baseline story. (The eval-report
+byte guard was transition scaffolding: it retired with the walker it
+pinned — declared-surface verification is the report fold's eval-time
+assertions plus behavioral VM/activation runs.)
 
 ## Package self-containment (the law)
 

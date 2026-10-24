@@ -178,7 +178,6 @@ defmodule Workstation.CLITest do
 
       assert :ok = result
       assert stdout =~ "--home"
-      assert stdout =~ "--input"
     end
 
     test "help <verb> prints that verb's usage (not the top-level help)" do
@@ -191,87 +190,12 @@ defmodule Workstation.CLITest do
     end
   end
 
-  # The live-read slices of this suite (canonical-json wire shape, status/diff
-  # live-catalog evaluation) moved to Workstation.CLI.LiveTest: live verbs
-  # route through the daemon now, and those tests need a serialized in-process
-  # daemon tree (engine work, M1). Only the --input offline-replay slices
-  # stay here.
-  describe "core evaluation (graduated default)" do
-    defp golden_dir(profile), do: Path.join([repo_root(), "tests", "goldens", profile])
-
-    defp core_argv(commands, home, extra) do
-      String.split(commands, " ") ++ ["--home", home] ++ extra
-    end
-
-    test "plan --input reproduces the recorded golden envelope (offline byte parity)" do
-      golden = golden_dir("full-home")
-      {_root, home} = temp_test_root()
-
-      argv = core_argv("json plan", home, ["--input", Path.join([golden, "input.json"])])
-
-      {result, first} = capture_main(argv)
-      assert result == :ok
-
-      {_result, second} = capture_main(argv)
-      # Identical evaluation state yields byte-identical wire bytes.
-      assert first == second
-
-      wire = Jason.decode!(first)
-
-      assert %{
-               "schema" => "workstation.plan.v1",
-               "generation" => generation,
-               "plan" => _plan,
-               "manifest" => _manifest,
-               "target_states" => states
-             } = wire
-
-      # Envelope-level golden equality (the supervisor-approved contract):
-      # the plan body and manifest are the recorded content-addressed
-      # artifacts verbatim, so the comparison is over canonical bytes of the
-      # sub-documents, never over decoded shapes, where an empty map and an
-      # empty list are the same recorded bytes.
-      assert canonical_json(wire["plan"]) == File.read!(Path.join([golden, "expected", "plan.json"]))
-
-      assert canonical_json(wire["manifest"]) ==
-               File.read!(Path.join([golden, "expected", "manifest.json"]))
-
-      assert generation == String.trim_trailing(File.read!(Path.join([golden, "expected", "generation.txt"])))
-
-      assert is_list(states)
-      # The absorption endgame: the recorded catalog is empty, so the
-      # plan's target states encode as the empty list (CanonicalJSON's
-      # empty-map law) — the envelope shape is the contract, not its size.
-      assert states == []
-      # The CLI wire is itself canonical JSON (compact, keys sorted).
-      assert String.trim_trailing(first, "\n") == canonical_json(wire)
-    end
-
-    test "status --input derives identity from the replayed envelope" do
-      golden = golden_dir("full-home")
-      {_root, home} = temp_test_root()
-
-      {result, output} =
-        capture_main(core_argv("json status", home, ["--input", Path.join([golden, "input.json"])]))
-
-      assert result == :ok
-      wire = Jason.decode!(output)
-
-      assert %{
-               "schema" => "workstation.status.v1",
-               "engine" => %{"name" => "workstation", "mode" => "elixir"},
-               "destination" => destination,
-               "packages" => packages,
-               "graph_order" => graph_order
-             } = wire
-
-      assert destination == Path.expand(home)
-      # The absorption endgame: the replayed envelope's catalog is empty —
-      # the envelope shape is the contract, not its size.
-      assert is_list(packages) and packages == []
-      assert is_list(graph_order)
-    end
-
+  # The live-read slices of this suite (canonical-json wire shape, status
+  # live evaluation) live in Workstation.CLI.LiveTest: live verbs route
+  # through the daemon, and those tests need a serialized in-process daemon
+  # tree. The recorded-envelope replay slices retired with the goldens
+  # they replayed; what stays here is the renderer's synthetic-wire contract.
+  describe "plan wire text rendering" do
     test "plan text renders the attributed entry lines and the target column" do
       generation = String.duplicate("a", 64)
 
@@ -323,16 +247,6 @@ defmodule Workstation.CLITest do
       # The anchor's %-45s padded target column.
       assert text =~ ~r/^  target \.bashrc +absent$/m
       assert text =~ "plan complete."
-    end
-
-    test "a core evaluation conflict or precondition exits 3" do
-      {_root, home} = temp_test_root()
-      envelope = unique_home("ws-core-input") <> ".json"
-
-      File.write!(envelope, ~s({"profile": "exit3", "host": "linux", "home": "/home/golden",
-        "packages": [{"id": "a", "requires": ["ghost"], "contributes": []}], "assets": {}}))
-
-      assert {:shutdown, 3} = run_main(core_argv("plan", home, ["--input", envelope]))
     end
   end
 
@@ -457,11 +371,11 @@ defmodule Workstation.CLITest.EnvContract do
   Serialized (`async: false`) because System env is one VM-wide fact and the
   async sibling suite must not observe a mutated environment.
 
-  The home-resolution pins ride the `--input` offline-replay path (engine
-  work, M1): live reads are daemon-routed now, and the daemon pins its own
-  home — so the RESOLUTION precedence this suite pins is exercised where it
-  actually lives, in the Router's flag > $WORKSTATION_HOME > $HOME chain,
-  against an envelope that deliberately names a different home.
+  Home resolution is a pure Router precedence (flag > $WORKSTATION_HOME >
+  $HOME); the wire-level pins that used to ride the retired `--input`
+  replay path now live in `Workstation.CLI.LiveTest` against the real
+  daemon route. This module keeps the env-only slice: no resolvable home
+  is a usage error before any daemon contact.
   """
 
   use ExUnit.Case, async: false
@@ -491,98 +405,52 @@ defmodule Workstation.CLITest.EnvContract do
     {root, home}
   end
 
-  # Runs Router.main/1 off the test process with one env var overridden for
-  # the run; the spawned process inherits the mutated environment at spawn.
-  # Returns {result, stdout, stderr}: json output rides stdout, contract
-  # refusals ride stderr.
-  defp run_main_with_env(argv, key, value) do
+  # One env var overridden for the duration of fun, restored after.
+  defp with_env(key, value, fun) do
     original = System.get_env(key)
     if value, do: System.put_env(key, value), else: System.delete_env(key)
 
     try do
-      me = self()
-
-      {pid, ref} =
-        spawn_monitor(fn ->
-          stderr =
-            ExUnit.CaptureIO.capture_io(:stderr, fn ->
-              stdout =
-                ExUnit.CaptureIO.capture_io(fn ->
-                  result =
-                    try do
-                      Router.main(argv)
-                      :ok
-                    catch
-                      :exit, {:shutdown, code} -> {:shutdown, code}
-                    end
-
-                  send(me, {:main_result, result})
-                end)
-
-              send(me, {:main_stdout, stdout})
-            end)
-
-          send(me, {:main_stderr, stderr})
-        end)
-
-      result =
-        receive do
-          {:main_result, result} -> result
-          {:DOWN, ^ref, :process, ^pid, reason} -> {:down, reason}
-        after
-          120_000 -> flunk("router main did not finish")
-        end
-
-      stdout =
-        receive do
-          {:main_stdout, stdout} -> stdout
-        after
-          5_000 -> ""
-        end
-
-      stderr =
-        receive do
-          {:main_stderr, stderr} -> stderr
-        after
-          5_000 -> ""
-        end
-
-      {result, stdout, stderr}
+      fun.()
     after
       if original, do: System.put_env(key, original), else: System.delete_env(key)
     end
   end
 
   describe "home resolution" do
-    # The flag beats $WORKSTATION_HOME, which beats $HOME — the launcher shim
-    # rebases both to one destination, so verbs address the intended home.
-    # --input keeps these offline (envelope home is a red herring on
-    # purpose): the wire's destination must be the RESOLVED home, never the
-    # ambient environment and never the recorded envelope's home.
-    test "--home wins over $WORKSTATION_HOME" do
+    # The Router's pure resolution precedence — the flag beats
+    # $WORKSTATION_HOME, which beats $HOME. (The launcher shim rebases flag
+    # and env to one destination; the retired --input replay used to carry
+    # these pins through the wire.) resolve_home/1 reads a parse result's
+    # options map, so a literal shape is enough here.
+    test "the --home flag wins over $WORKSTATION_HOME" do
       {_r1, home} = temp_test_root()
       {_r2, env_home} = temp_test_root()
-      envelope = offline_envelope()
 
-      {:ok, output, _stderr} =
-        run_main_with_env(["json", "status", "--home", home, "--input", envelope], "WORKSTATION_HOME", env_home)
+      output =
+        with_env("WORKSTATION_HOME", env_home, fn ->
+          Router.resolve_home(%{options: %{home: home}})
+        end)
 
-      assert Jason.decode!(output)["destination"] == Path.expand(home)
+      assert output == Path.expand(home)
     end
 
     test "$WORKSTATION_HOME wins over $HOME" do
       {_root, env_home} = temp_test_root()
       real_home = System.get_env("HOME") || raise("HOME must be set in the test environment")
-      envelope = offline_envelope()
 
-      {:ok, output, _stderr} =
-        run_main_with_env(["json", "status", "--input", envelope], "WORKSTATION_HOME", env_home)
+      output =
+        with_env("WORKSTATION_HOME", env_home, fn ->
+          Router.resolve_home(%{options: %{home: nil}})
+        end)
 
-      wire = Jason.decode!(output)
-      assert wire["destination"] == Path.expand(env_home)
-      refute wire["destination"] == real_home
+      assert output == Path.expand(env_home)
+      refute output == Path.expand(real_home)
     end
 
+    # No resolvable home is a usage error BEFORE any daemon contact — the
+    # resolution precedence has nothing to resolve, so the verb refuses at
+    # the Router (exit 2, "pass --home DIR").
     test "no resolvable home is a usage error" do
       home_override = System.get_env("WORKSTATION_HOME")
       home_original = System.get_env("HOME")
@@ -644,17 +512,5 @@ defmodule Workstation.CLITest.EnvContract do
     # The --headless bypass pin moved to Workstation.CLI.LiveTest: the
     # headless chain now needs a daemon pinned to the sandbox home (engine
     # work, M1), which cannot share this module's env bracketing.
-  end
-
-  # A minimal valid catalog envelope whose recorded home is deliberately
-  # NOT any sandbox home: resolution precedence must send the wire's
-  # destination to the resolved home, never the envelope's.
-  defp offline_envelope do
-    path = unique_home("ws-env-envelope") <> ".json"
-
-    File.write!(path, ~s({"profile": "env-resolution", "host": "linux", "home": "/home/golden",
-      "packages": [], "assets": {}}))
-
-    path
   end
 end

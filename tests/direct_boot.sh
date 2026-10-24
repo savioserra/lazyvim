@@ -1,18 +1,20 @@
 #!/bin/sh
 # Release boot smoke (lane b8): verify the shipped tarball boots and the
-# graduated core CLI reproduces recorded golden bytes from a bare extract,
+# graduated core CLI answers a live read from a bare extract,
 # with no mix/no build toolchain and no repo checkout in play.
 #
 # Contract: the smoke never touches the real $HOME. The extracted release
 # runs inside a marked private test home (tests/test-home.sh boundary), and
-# evaluation inputs are the recorded goldens. Every temp artifact lives
+# the read route is the real daemon route (ensure-daemon spawns the
+# release's own daemon). Every temp artifact lives
 # under the smoke's own scratch directory (cleaned by the trap).
 #
 # The smoke verifies, in order:
 #   1. the tarball checksum matches its sidecar (sha256sum -c);
 #   2. the release binary boots headless and reports the pinned version;
-#   3. the packaged CLI reproduces golden plan/manifest/generation bytes
-#      byte-for-byte from the recorded envelope (JSON canonical form);
+#   3. the packaged CLI answers a live status read: the daemon spawns, the
+#      wire is canonical JSON with the pinned status schema and the
+#      resolved destination, and the daemon stops cleanly;
 #   4. the packaged TUI boots as a process (headless smoke only: render
 #      parity is the daemon+TUI lane's contract, not this smoke's);
 #   5. the packaged engine adapters hard-fail closed: with no Lua runtime
@@ -24,18 +26,21 @@ set -u
 
 REPO_ROOT=$(cd "$(dirname "$0")/.." && pwd)
 : "${WORKSTATION_B8_TARBALL:=$REPO_ROOT/workstation-0.1.0-linux-x64.tar.gz}"
-GOLDEN_DIR="$REPO_ROOT/tests/goldens/full-home"
 
 fail() {
 	printf 'direct_boot: FAIL: %s\n' "$1" >&2
 	exit 1
 }
 
+command -v jq >/dev/null 2>&1 ||
+	fail "jq is required for the wire assertions but was not found"
+command -v timeout >/dev/null 2>&1 ||
+	fail "timeout is required so an interactive-capable invocation can never hang the gate"
+
 # ---- 0. inputs ------------------------------------------------------------
 
 [ -f "$WORKSTATION_B8_TARBALL" ] ||
 	fail "tarball missing at $WORKSTATION_B8_TARBALL (build with: mise exec -- env MIX_ENV=prod mix release workstation --overwrite at the repo root)"
-[ -f "$GOLDEN_DIR/input.json" ] || fail "golden input missing at $GOLDEN_DIR/input.json"
 
 # ---- 1. tarball checksum --------------------------------------------------
 
@@ -67,42 +72,33 @@ version_output=$("$BIN" version) || fail "release boot failed: version"
 [ "$version_output" = "workstation 0.1.0" ] ||
 	fail "release boot reports unexpected version: $version_output"
 
-# ---- 4. golden replay through the shipped CLI -------------------------------
+# ---- 4. live read through the shipped CLI -----------------------------------
 
-plan_output=$("$BIN" json plan --home "$SMOKE_HOME" --input "$GOLDEN_DIR/input.json") ||
-	fail "release boot failed: json plan (exit $?)"
+# The shipped release answers a read verb: ensure-daemon spawns the
+# release's own daemon pinned to the marked test home, and the wire comes
+# back as canonical JSON carrying the pinned status schema and the resolved
+# destination. (The retired golden-byte replay rode --input; the read
+# smoke is the real route now.)
+status_output=$("$BIN" json status --home "$SMOKE_HOME") ||
+	fail "release boot failed: json status (exit $?)"
 
-check_member() {
-	# check_member <member> <golden file> — the shipped CLI's wire member must
-	# equal the recorded golden bytes exactly (already canonical JSON).
-	member=$1
-	golden_file=$2
-	golden_bytes=$(cat "$golden_file")
-	printf '%s' "$plan_output" |
-		jq -c --arg member "$member" --arg golden "$golden_bytes" \
-			'if (.[$member] | tostring) == $golden then empty else error("mismatch") end' >/dev/null 2>&1 ||
-		fail "$member does not reproduce $golden_file"
-}
-
-command -v jq >/dev/null 2>&1 ||
-	fail "jq is required for the golden comparison but was not found"
-command -v timeout >/dev/null 2>&1 ||
-	fail "timeout is required so an interactive-capable invocation can never hang the gate"
-
-check_member plan "$GOLDEN_DIR/expected/plan.json"
-check_member manifest "$GOLDEN_DIR/expected/manifest.json"
-
-printf '%s' "$plan_output" |
-	jq -er --arg golden "$(cat "$GOLDEN_DIR/expected/generation.txt")" \
-		'if .generation == $golden then true else error("mismatch") end' >/dev/null ||
-	fail "generation does not reproduce expected/generation.txt"
+printf '%s' "$status_output" |
+	jq -er --arg home "$SMOKE_HOME" \
+		'if (.schema | startswith("workstation.status.")) and .destination == $home then true else error("mismatch") end' >/dev/null ||
+	fail "status wire is not the pinned schema/destination"
 
 # The shipped wire must already be canonical (compact, keys sorted): the
-# golden-byte comparison is only meaningful if the CLI emits canonical JSON
-# (apps/cli/lib/workstation/cli/json.ex contract).
-printf '%s' "$plan_output" |
+# schema assertion is only meaningful if the CLI emits canonical JSON
+# (the Core.CanonicalJSON wire contract).
+printf '%s' "$status_output" |
 	jq -S -c . >/dev/null 2>&1 ||
-	fail "plan wire is not valid JSON"
+	fail "status wire is not valid JSON"
+
+# the daemon the CLI spawned stops cleanly through its own control verb
+# (the daemon pins the home the read verb resolved; the socket lives under
+# the marked test home)
+WORKSTATION_HOME="$SMOKE_HOME" "$BIN" daemon stop >/dev/null 2>&1 ||
+	fail "the spawned daemon did not stop cleanly"
 
 # ---- 5. TUI process smoke ---------------------------------------------------
 
@@ -138,4 +134,4 @@ ENGINE_EXIT=$?
 [ "$ENGINE_EXIT" -eq 2 ] ||
 	fail "retired --engine flag must exit 2 (usage), got $ENGINE_EXIT"
 
-printf 'direct_boot: OK (checksum, boot version, golden bytes, TUI process, retired engine path refused)\n'
+printf 'direct_boot: OK (checksum, boot version, live read smoke, TUI process, retired engine path refused)\n'

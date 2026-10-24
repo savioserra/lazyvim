@@ -76,6 +76,20 @@ defmodule Workstation.CLI.LiveTest do
     assert is_list(graph_order)
   end
 
+  # Home-resolution precedence: the flag/env beats chain is the Router's
+  # pure resolution (pinned directly in Workstation.CLITest.EnvContract);
+  # the live route proves the env half — the daemon serves the resolved
+  # home ($WORKSTATION_HOME in this fixture), never the ambient $HOME.
+  test "$WORKSTATION_HOME beats $HOME on the live route", %{home: home} do
+    real_home = System.get_env("HOME") || raise("HOME must be set in the test environment")
+    refute Path.expand(home) == Path.expand(real_home)
+
+    {result, output} = capture_main(["json", "status"])
+
+    assert result == :ok
+    assert Jason.decode!(output)["destination"] == Path.expand(home)
+  end
+
   # Regression (substrate final gate): a fresh home's capabilities envelope can
   # carry nil-able fields — a file row's `mode` — and the canonical-JSON
   # encoder crashed with "canonical JSON cannot encode nil" exactly on

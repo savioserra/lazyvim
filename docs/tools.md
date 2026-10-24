@@ -37,15 +37,14 @@ Supported deployment policy is Linux, WSL-as-Linux, and macOS (arm64).
 ## Pin maintenance
 
 The package manifests are canonical: every download pin carries its version,
-URL and SHA-256 beside its payloads, and the walker renders each as a
+URL and SHA-256 beside its payloads, and the substrate renders each as a
 checksummed derivation — the store, not the home, is where bytes are
 verified. `workstation/versions.json` mirrors the pins for the verify lane:
 the package verify scripts (`workstation/packages/*/verify/*.sh`) compare
 the deployed tool's version banner against the recorded pin on every host.
-A pin bump means updating the owning manifest (and its `versions.json`
-mirror row), re-recording the affected goldens (`mise exec -- mix
-workstation.goldens`), and switching: the generation moves because the
-walker's derivations move.
+A pin bump means updating the owning capability's module pin and its
+`versions.json` mirror row, and switching: the generation moves because the
+derivations move.
 
 The retired acquisition layer (the mise-first installer, the bootstrap
 runtime installer, the engine's download/mise/git apply faces) died with

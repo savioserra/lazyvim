@@ -2,7 +2,6 @@ apps/cli/lib/workstation/cli.ex:Workstation.CLI:no-layer
 apps/cli/lib/workstation/cli/capabilities.ex:Workstation.CLI.Capabilities:no-layer
 apps/cli/lib/workstation/cli/control.ex:Workstation.CLI.Control:no-layer
 apps/cli/lib/workstation/cli/control_verbs.ex:Workstation.CLI.ControlVerbs:no-layer
-apps/cli/lib/workstation/cli/core.ex:Workstation.CLI.Core:no-layer
 apps/cli/lib/workstation/cli/daemon_client.ex:Workstation.CLI.DaemonClient:no-layer
 apps/cli/lib/workstation/cli/output.ex:Workstation.CLI.Output:no-layer
 apps/cli/lib/workstation/cli/render.ex:Workstation.CLI.Render:no-layer
@@ -16,7 +15,6 @@ apps/cli/lib/workstation/cli/tui/shell/dashboard.ex:Workstation.CLI.TUI.Shell.Da
 apps/cli/lib/workstation/cli/tui/shell/help.ex:Workstation.CLI.TUI.Shell.Help:no-layer
 apps/cli/lib/workstation/cli/tui/shell/text_view.ex:Workstation.CLI.TUI.Shell.TextView:no-layer
 apps/cli/lib/workstation/cli/tui/theme.ex:Workstation.CLI.TUI.Theme:no-layer
-apps/core/lib/mix/tasks/workstation.goldens.ex:Mix.Tasks.Workstation.Goldens:no-layer
 apps/core/lib/workstation/backends/chezmoi.ex:Workstation.Backends.Chezmoi:no-layer
 apps/core/lib/workstation/core.ex:Workstation.Core:no-layer
 apps/core/lib/workstation/core/catalog.ex:Workstation.Core.Catalog:no-layer
@@ -31,7 +29,6 @@ apps/core/lib/workstation/core/contracts/provider.ex:Workstation.Core.Contracts.
 apps/core/lib/workstation/core/contracts/provider.ex:Workstation.Core.Contracts.Provider:no-layer
 apps/core/lib/workstation/core/contracts/provider.ex:Workstation.Core.Contracts.Provider:no-policy
 apps/core/lib/workstation/core/contracts/shell.ex:Workstation.Core.Contracts.Shell:no-layer
-apps/core/lib/workstation/core/golden.ex:Workstation.Core.Golden:no-layer
 apps/core/lib/workstation/core/policy.ex:Workstation.Core.Policy:no-layer
 apps/core/lib/workstation/core/shell_program.ex:Workstation.Core.ShellProgram:no-layer
 apps/core/lib/workstation/core/source.ex:Workstation.Core.Source:no-layer

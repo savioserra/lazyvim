@@ -25,40 +25,6 @@ defmodule Workstation.Core.CatalogNativeTest do
   # in its final commit) — the native modules own every surface.
   @native_count 0
 
-  @goldens_root Path.expand("../../../../../tests/goldens", __DIR__)
-
-  test "the native catalog equals the recorded complete full-home envelope" do
-    input =
-      @goldens_root
-      |> Path.join("full-home/input.json")
-      |> File.read!()
-      |> EngineState.decode_json()
-      |> case do
-        {:ok, input} -> input
-        {:error, reason} -> raise("committed golden input.json is undecodable: #{inspect(reason)}")
-      end
-
-    recorded = Catalog.load(input)
-
-    # Sanity: the recording really is the complete catalog — otherwise the
-    # equality below would pass vacuously.
-    assert length(recorded.packages) == @native_count
-
-    native = Catalog.native(host: recorded.host, home: Catalog.canonical_home())
-
-    # The declared foundation layer (lane fusion-final-r2 taxonomy) is
-    # status-wire metadata: it lives in the native declarations but outside
-    # the frozen envelope contract, so the identity anchor compares the
-    # envelope shape exactly and strips the declaration from both sides.
-    strip_taxonomy = fn packages -> Enum.map(packages, &Map.delete(&1, :foundation)) end
-
-    assert strip_taxonomy.(native.packages) == strip_taxonomy.(recorded.packages)
-
-    # Asset bodies: the native filesystem reads must equal the recorded
-    # inlined bytes for every asset key.
-    assert native.assets == recorded.assets
-  end
-
   test "composition resolves the complete native graph without any stub" do
     graph = Catalog.compose(host: "linux")
 

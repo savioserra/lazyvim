@@ -7,10 +7,6 @@ defmodule Workstation.Daemon.Read do
   the CLI in the engine client/server refactor): the CLI daemon client
   routes every read verb through the daemon and renders the returned wire
   unchanged, so the daemon is the one place that composes the live catalog.
-  The CLI keeps one in-process path — `--input` golden replay — which is
-  offline by definition (it substitutes a recorded envelope for the live
-  catalog and touches no daemon state) and delegates to this module with
-  `input: {:file, envelope}` so both paths produce identical bytes.
 
   Without `input`, the evaluated catalog is the native live envelope
   (`Workstation.Core.Catalog.live/1`): the declared package registry with
@@ -18,19 +14,12 @@ defmodule Workstation.Daemon.Read do
   to the evaluated home. The daemon always serves its own pinned home (the
   home it booted with); ops carry no home parameter.
 
-  Parity anchors (kept byte-identical across the whole recorded matrix,
-  tests/goldens/<profile>):
-
-    * plan body — the recorded `plan.json` projection, as proven by
-      `Workstation.Core.GoldenReplayTest`; the projection below produces
-      exactly those bytes (nil fields dropped, empty maps kept as maps,
-      modes as four-digit octal strings).
-    * target states — lstat no-follow per planned target, `absent` /
-      `link -> dest` / `type mode-octal`. The patch/diff records retired
-      with the engine's write plane; the declared-vs-live review surface
-      is the nix generation diff (`nix store diff-closures` /
-      `home-manager generations`), and the plan's per-target state report
-      stays the engine's honest contribution.
+  Target states — lstat no-follow per planned target, `absent` /
+  `link -> dest` / `type mode-octal`. The patch/diff records retired
+  with the engine's write plane; the declared-vs-live review surface
+  is the nix generation diff (`nix store diff-closures` /
+  `home-manager generations`), and the plan's per-target state report
+  stays the engine's honest contribution.
 
   State-root bracketing: the core reads engine state through
   `Workstation.Core.EngineState.home/0` (`WORKSTATION_HOME`). This module
@@ -53,7 +42,7 @@ defmodule Workstation.Daemon.Read do
   @doc "Schema identifier of the hard-cut plan wire."
   def plan_schema, do: @plan_schema
 
-  @type input :: {:native, term()} | {:file, map()}
+  @type input :: {:native, term()}
 
   @type error :: {:error, {:core, String.t()}} | {:error, {:engine, String.t()}}
 
@@ -67,23 +56,22 @@ defmodule Workstation.Daemon.Read do
   @spec evaluate(atom(), String.t(), keyword()) :: {:ok, map()} | error()
   def evaluate(command, home, opts) when command in [:status, :plan] and is_list(opts) do
     expanded = Path.expand(home)
+    input = load_input(opts[:input], expanded)
 
-    with {:ok, input} <- load_input(opts[:input], expanded) do
-      bracket(expanded, fn ->
-        # A verb is a pipeline prefix: status runs to resolve (catalog +
-        # graph), plan to compose.
-        run =
-          Pipeline.run(
-            %Pipeline.Run{input: input, home: expanded},
-            Pipeline.verb_depth(command)
-          )
+    bracket(expanded, fn ->
+      # A verb is a pipeline prefix: status runs to resolve (catalog +
+      # graph), plan to compose.
+      run =
+        Pipeline.run(
+          %Pipeline.Run{input: input, home: expanded},
+          Pipeline.verb_depth(command)
+        )
 
-        case command do
-          :status -> status(expanded, run)
-          :plan -> plan(expanded, run)
-        end
-      end)
-    end
+      case command do
+        :status -> status(expanded, run)
+        :plan -> plan(expanded, run)
+      end
+    end)
   end
 
   @doc """
@@ -126,19 +114,15 @@ defmodule Workstation.Daemon.Read do
 
   ## input collection
 
-  # The evaluated input is either the live native catalog (the daemon's
-  # default) or a decoded golden envelope (`input: {:file, envelope}` — the
-  # CLI's offline replay path).
+  # The evaluated input is the live native catalog (the daemon's default).
+  # Collection failures are engine failures, not core evaluation failures:
+  # a missing engine checkout or an empty package asset is an integrity
+  # problem in the engine source, not a bad user envelope.
   defp load_input(nil, home) do
-    {:ok, {:native, Catalog.live(home)}}
+    {:native, Catalog.live(home)}
   rescue
-    # Collection failures are engine failures, not core evaluation failures:
-    # a missing engine checkout or an empty package asset is an integrity
-    # problem in the engine source, not a bad user envelope.
     error in [ArgumentError] -> {:error, {:engine, Exception.message(error)}}
   end
-
-  defp load_input({:file, decoded}, _home) when is_map(decoded), do: {:ok, {:file, decoded}}
 
   ## state-root bracket
 

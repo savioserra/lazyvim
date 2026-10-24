@@ -192,9 +192,9 @@ verb — reads (`status`, `plan`, `capabilities`, `json <command>`) and
 control (`daemon stop`) — rides the socket
 protocol below, and a daemon that cannot be
 reached or spawned is a clear operator error (`daemon_unavailable`, exit
-4), never a silent fallback. The one deliberate offline exception is
-`--input <envelope.json>` read replay, which evaluates a RECORDED envelope
-in-process and never consults a daemon by definition.
+4), never a silent fallback. (The one former offline exception —
+`--input <envelope.json>` recorded-envelope replay — retired with the
+goldens it replayed.)
 
 Ensure-daemon (`Workstation.CLI.DaemonClient`): the first verb resolves the
 per-user socket (`Listener.socket_path/1`); when absent or dead it spawns a
@@ -274,10 +274,11 @@ sha256sum workstation-0.1.0-linux-x64.tar.gz > workstation-0.1.0-linux-x64.tar.g
   build host exists in this repo's acceptance set).
 - Boot smoke: `sh tests/direct_boot.sh` verifies the sidecar checksum,
   extracts to a scratch dir, boots the release headless against a marked
-  private test home, replays `tests/goldens/minimal/input.json` and compares
-  the plan/manifest/generation bytes against the recorded goldens — proving
-  the release core is the same engine the goldens pin. It never touches the
-  real `$HOME`.
+  private test home and answers a live status read through the real daemon
+  route (ensure-daemon spawns the release's own daemon; the wire must be
+  canonical JSON with the pinned status schema and the resolved
+  destination, and the daemon stops cleanly). It never touches the real
+  `$HOME`.
 
 ## Launcher (workstation/bin/workstation) and the placed release
 
@@ -368,70 +369,19 @@ The canonical gate (`sh .github/scripts/check.sh`) is Elixir-native: the full
 (`workstation/bin/workstation`, `.github/scripts/*.sh`), the release boot smoke
 when a local tarball is built, and `git diff --check`.
 
-## Goldens (Elixir replay contract)
+## Goldens (RETIRED — the replay contract's death record)
 
-`tests/goldens/<profile>/` holds byte-stable engine evidence. The canonical
-re-record path is the native engine: `mix workstation.goldens` (umbrella root;
-an explicit root argument records elsewhere — the default destination is the
-repository tree, so regeneration must be a byte no-op on a consistent tree).
-It drives `Workstation.Core.Golden` (elixir), the only generator since the
-c5 retirement of the Lua engine: `project_plan/2` is the shared byte-parity
-projection (generator and replay both call it, so the recorded and replayed
-views cannot diverge), and `generate/0` emits the whole tree from the native
-catalog with `nvim` composed natively since the c4b lane. The retired Lua
-generator (`workstation/lua/workstation/golden.lua`, deleted with the collect
-bridge) always ran through the private test-home boundary, never against the
-real home. The drift anchor is `Workstation.Core.GoldenGenerateTest` (native
-engine regenerates the committed tree byte for byte; `generation.txt`
-addresses the exact manifest bytes), and `Workstation.Core.GoldenReplayTest`
-replays every recorded profile and fails if any profile stops being replayed. Each profile directory contains `input.json` plus
-`expected/{plan.json,manifest.json,generation.txt}`. reproduce the expected bytes exactly — a mismatch is an implementation bug;
-expected bytes are never regenerated to match a wrong implementation.
-Profiles: `minimal` (foundation shell fragments), `full-home` (the complete
-catalog in discovery order — module-name sort), `theme` (theme/tmux/agent
-closure: chezmoi-data envelope, template files, symlink), `conflicts` (two
-declarers, one shared target: directory merges plus an exact single-owner
-directory), `shell-order` (fragment collection order — the stable walk, no declared
-order keys — inside a package), `nvim-profile` (composed profile intents
-in the same collection order).
-
-`input.json` is the only replay input: engine-agnostic normalized recipe
-envelopes (`packages[].{id,requires,after?,supported_hosts,contributes[].{provider,spec}}`,
-inline `assets` map). Normalization is part of the contract: derived
-`components` are dropped and re-derived through provider validation at replay
-time; asset bodies are inlined under `"<package id>:<asset path>"`;
-absolute symlink destinations under the recording home are pinned to
-`/home/golden`; packages stay in discovery order (module-name sort — the
-record order is metadata only, execution order is derived per composition);
-`after` lists are recorded only when declared (nil-drop, like every absent
-field), and order/position/priority fields are rejected on both live specs
-and recorded envelopes — integer ordering knobs are banned.
-Replay rebuilds recipes through the same
-domain validation the engine applies at collection (unknown fields rejected),
-resolves the graph for `host`, plans against a fresh journal, and must
-reproduce the expected bytes exactly — a mismatch is an implementation bug;
-expected bytes are never regenerated to match a wrong implementation.
-
-`expected/plan.json` is the normalized plan view (entries sorted by native
-source name with name/target/operation/type/mode/attribution/bytes_sha256/
-fingerprint plus declared link/exact/template; removals, unsupported
-reversals, fragments journal, remove file, composed profile ids, data
-envelope owner+bytes, journal revision, baseline generation).
-`expected/manifest.json` and `expected/generation.txt` are the byte oracle:
-canonical JSON (compact, object keys sorted ascending bytewise, arrays in
-order, control bytes escaped, non-ASCII raw), the manifest array exactly as
-specified in the golden generator header (construction order, field set,
-array ordering), and `generation.txt` = sha256 of those manifest bytes.
-
-The retired Lua-side suite (`tests/goldens.test.lua`, deleted with the Lua
-generator in the c5 lane) generated every profile twice in two separate
-engine processes and asserted all three trees byte-identical (generation ids
-and fingerprints are content addresses and must not depend on per-process
-encoder seeding), then asserted the committed tree matches exactly;
-`Workstation.Core.GoldenGenerateTest` asserts the native side the same way.
-The suite never rewrites goldens: drift means the engine or the inputs changed
-and must be re-recorded deliberately, with the reason recorded in the lane
-report.
+The recorded-envelope goldens (`tests/goldens/<profile>/` with
+`input.json` + `expected/{plan.json,manifest.json,generation.txt}`) and
+their machinery — `Workstation.Core.Golden`, the `mix workstation.goldens`
+generator, the CLI's `--input` replay path, the direct-boot golden-byte
+comparison — retired with the manifest format they pinned
+(docs/absorption.md, the deletion chain's stage 2; the operator's binding
+spec is "no byte-goldens"). Verification is behavioral: the read verbs
+serve the baked declared-state report (proven by the read-mode tests and
+the VM E2E read smoke), substrate verification is the VM/activation runs,
+and the nix side's structural assertions live in the report fold's eval
+(nix/report.nix). The historical contract text lives in Git history.
 
 ## Daemon (apps/daemon, lane b6)
 
