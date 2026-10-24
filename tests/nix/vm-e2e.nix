@@ -114,7 +114,7 @@ writeShellScriptBin "workstation-e2e" ''
   prof="$home/.config/nvim/lua/languages/profile.lua"
   [ -r "$prof" ] \
     || fail "deployed language profile" "$prof missing (the composition gap closed natively)"
-  grep -q 'id = "standard"' "$prof" \
+  grep -q '\["id"\] = "standard"' "$prof" \
     || fail "deployed language profile" "the standard entry is missing from $prof"
   grep -q 'lazyvim.plugins.extras.lang.go' "$prof" \
     || fail "deployed language profile" "the go entry is missing from $prof"

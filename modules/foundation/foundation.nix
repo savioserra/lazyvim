@@ -55,7 +55,9 @@ let
       probe = {
         argv = [ "lazygit" "--version" ];
         output =
-          "commit=aafe61082e7ed383d318fd40e48f85645e6afc7b, build date=2026-07-15T11:34:26Z, build source=binaryRelease, version={V},";
+          "commit=aafe61082e7ed383d318fd40e48f85645e6afc7b, build date=2026-07-15T11:34:26Z, build source=binaryRelease, version={V}, os=${pkgs.stdenv.hostPlatform.parsed.kernel.name}, arch=${
+            if pkgs.stdenv.hostPlatform.isAarch64 then "arm64" else "amd64"
+          }, git version=";
       };
     };
     tree-sitter = pins.tool "tree_sitter" {
