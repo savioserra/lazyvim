@@ -160,18 +160,12 @@
 
       homeManagerModules.workstation = ./nix/modules/workstation-home.nix;
 
-      # pin overrides ONLY: the substrate's pinned tools from the same
-      # inventory the modules consume. Nothing else may enter this
-      # overlay — a pin override lands here, never inside a domain module.
+      # pin overrides ONLY: the foundation domain's pin surface lives here
+      # (harlequin + hsql — one upstream distribution; the pinned nixpkgs
+      # 25.05 predates hsql; the foundation module asserts the floor so an
+      # unapplied overlay dies loudly). The download pins live in their
+      # owning domain modules — nothing else may enter this overlay.
       overlays.default = final: prev: {
-        workstationPins = import ./nix/lib/pins.nix {
-          lib = final.lib;
-          pkgs = final;
-        };
-        # the foundation domain's pin: harlequin + hsql (one upstream
-        # distribution — the terminal SQL IDE and its headless agent CLI).
-        # The pinned nixpkgs (25.05) predates hsql; the foundation module
-        # asserts the floor so an unapplied overlay dies loudly.
         harlequin = nixpkgs-foundation.legacyPackages.${prev.system}.harlequin;
       };
 

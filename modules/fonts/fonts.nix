@@ -12,6 +12,10 @@ let
   pins = import ../../nix/lib/pins.nix { inherit lib pkgs; };
 
   fontTree = pins.tool "font" {
+    version = "3.5.0";
+    # one upstream archive serves both platform legs (same bytes, same sha)
+    url = "https://github.com/ryanoasis/nerd-fonts/releases/download/v{V}/JetBrainsMono.tar.xz";
+    sha256 = "0227b220360a6f819b9ead92343e8112b34733054782561af50cfba1e8afab63";
     archive = "tar.xz";
     layout = "flat";
     probe = {

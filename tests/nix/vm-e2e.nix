@@ -260,6 +260,15 @@ writeShellScriptBin "workstation-e2e" ''
     || fail "foundation plane" "the nerd font tree did not deploy"
   pass "foundation plane"
 
+  step "terminal pin manifest (the deployed verify anchor)"
+  [ -r "$home/.tmux/plugins.pins.json" ] \
+    || fail "terminal pin manifest" "the deployed plugin pin manifest did not deploy"
+  grep -q '"tpm":{' "$home/.tmux/plugins.pins.json" \
+    || fail "terminal pin manifest" "no tpm pin in the deployed manifest"
+  grep -q '"nunchux":{' "$home/.tmux/plugins.pins.json" \
+    || fail "terminal pin manifest" "no nunchux pin in the deployed manifest"
+  pass "terminal pin manifest"
+
   step "theme token path deployed (the switch-time push surface)"
   totop="$home/.local/state/workstation/theme.json"
   [ -L "$totop" ] \

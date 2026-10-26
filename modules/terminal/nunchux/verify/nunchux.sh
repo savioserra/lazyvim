@@ -3,11 +3,12 @@
 #
 # Asserts the substrate-provisioned plugin checkout upstream's nunchux.tmux
 # relies on: ~/.tmux/plugins/nunchux is a git checkout at the pinned commit
-# (versions.json nunchux_git_commit), bin/nunchux is the
-# executable repo build recorded by nunchux_repo_linux_amd64_sha256, and
-# bin/.platform carries the platform marker ensure_binary compares — so
-# plugin load runs the commit-pinned binary and never fetches
-# releases/latest unchecksummed. Never executes the binary.
+# (the terminal module's declared pin, deployed as
+# ~/.tmux/plugins.pins.json), bin/nunchux is the executable repo build
+# recorded by the pin's repo_linux_amd64_sha256, and bin/.platform carries
+# the platform marker ensure_binary compares — so plugin load runs the
+# commit-pinned binary and never fetches releases/latest unchecksummed.
+# Never executes the binary.
 #
 # The engine never runs this script; it is the host lane's assertion surface
 # (docs/capabilities.md "Package payload rule"). Exits nonzero with a message
@@ -15,10 +16,9 @@
 set -eu
 
 home=${WORKSTATION_VERIFY_HOME:-$HOME}
-here=$(cd "$(dirname "$0")" && pwd)
-root=${WORKSTATION_REPO_ROOT:-$here/../../../..}
-# WORKSTATION_REPO_ROOT is the repo anchor (a checkout of this repo).
-manifest=$root/versions.json
+# the deployed pin manifest: the terminal module's declared pins, deployed
+# beside the checkouts at activation
+manifest=$home/.tmux/plugins.pins.json
 checkout=$home/.tmux/plugins/nunchux
 bin=$checkout/bin/nunchux
 platform_file=$checkout/bin/.platform
@@ -28,13 +28,15 @@ fail() {
   exit 1
 }
 
-[ -f "$manifest" ] || fail "versions manifest not found at $manifest (set WORKSTATION_REPO_ROOT)"
+[ -f "$manifest" ] || fail "deployed pin manifest not found at $manifest (run: workstation apply)"
 command -v git >/dev/null 2>&1 || fail "git not on PATH; cannot verify the pinned checkout"
 
-pin_commit=$(sed -n 's/.*"nunchux_git_commit":[[:space:]]*"\([^"]*\)".*/\1/p' "$manifest" | head -n 1)
-pin_sha=$(sed -n 's/.*"nunchux_repo_linux_amd64_sha256":[[:space:]]*"\([^"]*\)".*/\1/p' "$manifest" | head -n 1)
-[ -n "$pin_commit" ] || fail "nunchux_git_commit pin missing from $manifest"
-[ -n "$pin_sha" ] || fail "nunchux_repo_linux_amd64_sha256 pin missing from $manifest"
+row=$(grep -o '"nunchux":{[^}]*}' "$manifest" || true)
+[ -n "$row" ] || fail "no nunchux pin in $manifest"
+pin_commit=$(printf '%s' "$row" | sed -n 's/.*"rev":[[:space:]]*"\([0-9a-f]\{40\}\)".*/\1/p')
+pin_sha=$(printf '%s' "$row" | sed -n 's/.*"repo_linux_amd64_sha256":[[:space:]]*"\([0-9a-f]\{64\}\)".*/\1/p')
+[ -n "$pin_commit" ] || fail "the nunchux pin carries no rev"
+[ -n "$pin_sha" ] || fail "the nunchux pin carries no repo_linux_amd64_sha256"
 
 [ -d "$checkout" ] || fail "plugin checkout missing at $checkout (run: workstation apply)"
 head=$(git -C "$checkout" rev-parse HEAD 2>/dev/null || true)

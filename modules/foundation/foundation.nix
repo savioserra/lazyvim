@@ -24,9 +24,21 @@
 let
   pins = import ../../nix/lib/pins.nix { inherit lib pkgs; };
 
-  # the checksummed pins: store trees the bin links reach directly
+  # the checksummed pins: the foundation domain's declared pin data — one
+  # pin, one owner, one surface (the bump moves these rows and the
+  # consumers together), rendered as store trees the bin links reach
+  # directly
   tools = {
     rg = pins.tool "ripgrep" {
+      version = "15.2.0";
+      url = {
+        linux_x86_64 = "https://github.com/BurntSushi/ripgrep/releases/download/{V}/ripgrep-{V}-x86_64-unknown-linux-musl.tar.gz";
+        darwin_arm64 = "https://github.com/BurntSushi/ripgrep/releases/download/{V}/ripgrep-{V}-aarch64-apple-darwin.tar.gz";
+      };
+      sha256 = {
+        linux_x86_64 = "33e15bcf1624b25cdd2a55813a47a2f95dbe126268203e76aa6a585d1e7b149c";
+        darwin_arm64 = "3750b2e93f37e0c692657da574d7019a101c0084da05a790c83fd335bad973e4";
+      };
       archive = "tar.gz";
       probe = {
         argv = [ "rg" "--version" ];
@@ -36,6 +48,15 @@ let
       };
     };
     fd = pins.tool "fd" {
+      version = "10.4.2";
+      url = {
+        linux_x86_64 = "https://github.com/sharkdp/fd/releases/download/v{V}/fd-v{V}-x86_64-unknown-linux-gnu.tar.gz";
+        darwin_arm64 = "https://github.com/sharkdp/fd/releases/download/v{V}/fd-v{V}-aarch64-apple-darwin.tar.gz";
+      };
+      sha256 = {
+        linux_x86_64 = "def59805cd14b5651b68990855f426ad087f3b96881296d963910431ba3143c8";
+        darwin_arm64 = "623dc0afc81b92e4d4606b380d7bc91916ba7b97814263e554d50923a39e480a";
+      };
       archive = "tar.gz";
       probe = {
         argv = [ "fd" "--version" ];
@@ -43,6 +64,15 @@ let
       };
     };
     fzf = pins.tool "fzf" {
+      version = "0.74.2";
+      url = {
+        linux_x86_64 = "https://github.com/junegunn/fzf/releases/download/v{V}/fzf-{V}-linux_amd64.tar.gz";
+        darwin_arm64 = "https://github.com/junegunn/fzf/releases/download/v{V}/fzf-{V}-darwin_arm64.tar.gz";
+      };
+      sha256 = {
+        linux_x86_64 = "b3648f48675612b69ee35371cf6dc99ca96d767e89b912d079080916ac8ba8bd";
+        darwin_arm64 = "d60ddb36356566ac69bae7c3504e888916cf747c9ad2132141c09229b1e28dee";
+      };
       archive = "tar.gz";
       probe = {
         argv = [ "fzf" "--version" ];
@@ -52,6 +82,15 @@ let
       };
     };
     lazygit = pins.tool "lazygit" {
+      version = "0.63.1";
+      url = {
+        linux_x86_64 = "https://github.com/jesseduffield/lazygit/releases/download/v{V}/lazygit_{V}_linux_x86_64.tar.gz";
+        darwin_arm64 = "https://github.com/jesseduffield/lazygit/releases/download/v{V}/lazygit_{V}_darwin_arm64.tar.gz";
+      };
+      sha256 = {
+        linux_x86_64 = "8e033bc78c8e192dee9510e951f6c9e154289b7198d22c924ed1d0a951b0dac1";
+        darwin_arm64 = "b963e9d0a1f4649708c594ac6c999cdcd435f8e679e220e78e87c4642badedd6";
+      };
       archive = "tar.gz";
       layout = "flat";
       probe = {
@@ -63,6 +102,15 @@ let
       };
     };
     tree-sitter = pins.tool "tree_sitter" {
+      version = "0.26.11";
+      url = {
+        linux_x86_64 = "https://github.com/tree-sitter/tree-sitter/releases/download/v{V}/tree-sitter-cli-linux-x64.zip";
+        darwin_arm64 = "https://github.com/tree-sitter/tree-sitter/releases/download/v{V}/tree-sitter-cli-macos-arm64.zip";
+      };
+      sha256 = {
+        linux_x86_64 = "ff1b7f9863f2faafd78dc0e66d902ee85b37f709b314b22c009f51caf233eebd";
+        darwin_arm64 = "050f41d60a054b608ea392ba14722bba9457bdc0ab11a5706c77f034dafc68ac";
+      };
       archive = "zip";
       probe = {
         argv = [ "tree-sitter" "--version" ];

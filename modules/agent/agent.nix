@@ -57,8 +57,22 @@ let
 
   pins = import ../../nix/lib/pins.nix { inherit lib pkgs; };
 
-  # the runtime pins (versions.json is the interim inventory)
+  # the runtime pins: the agent domain's declared pin data (one pin, one
+  # owner, one surface). The interpreter is the release the pinned
+  # hermes-agent rev's pm/lock.json carries — the python-build-standalone
+  # 20260901 install_only archive (the probe gates the interpreter at
+  # BUILD time); herdr is the archive-less release binary.
+  hermesPythonVersion = "3.14.7";
   hermesPython = pins.tool "hermes_python" {
+    version = hermesPythonVersion;
+    url = {
+      linux_x86_64 = "https://github.com/astral-sh/python-build-standalone/releases/download/20260901/cpython-3.14.7+20260901-x86_64-unknown-linux-gnu-install_only.tar.gz";
+      darwin_arm64 = "https://github.com/astral-sh/python-build-standalone/releases/download/20260901/cpython-3.14.7+20260901-aarch64-apple-darwin-install_only.tar.gz";
+    };
+    sha256 = {
+      linux_x86_64 = "0ab3305457051cd3e7c031857e005f1bda17c218a1990567dacaaac6dd1d14f0";
+      darwin_arm64 = "30daa970c7d223530120f1693cd3c6fa4c0c0d31ef158710b0dd77f286a5b23e";
+    };
     archive = "tar.gz";
     layout = "release";
     probe = {
@@ -66,7 +80,17 @@ let
       output = "Python {V}";
     };
   };
-  herdr = pins.tool "herdr" { };
+  herdr = pins.tool "herdr" {
+    version = "0.9.0";
+    url = {
+      linux_x86_64 = "https://github.com/herdrdev/herdr/releases/download/v{V}/herdr-linux-x86_64";
+      darwin_arm64 = "https://github.com/herdrdev/herdr/releases/download/v{V}/herdr-macos-aarch64";
+    };
+    sha256 = {
+      linux_x86_64 = "4fa1a01158dd8043da92d31b270780b0dcc10603038d9b61cac4d81ab63fb71f";
+      darwin_arm64 = "32b53df09872628059c789a69f02a6b8e29e14ddf26711421f3463f70c1aef17";
+    };
+  };
 
   launcher = pkgs.runCommand "ws-hermes-launcher" { }
     # the payload lands 0644 in git; the launcher is a PATH entry, so the
@@ -83,7 +107,7 @@ let
     engine = {
       inherit (hermes.pin) url rev;
     };
-    python = pins.inventory."hermes_python";
+    python = hermesPythonVersion;
   };
 
   # the agent's authored skills: the single source both this module (the

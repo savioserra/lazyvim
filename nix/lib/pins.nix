@@ -1,15 +1,19 @@
-# The pin machinery: the manifest walker's download/git lanes re-landed as
-# native derivations (docs/absorption.md, "The mapping"). Modules declare
-# WHAT is pinned; this library owns HOW a pin becomes a store path:
+# The pin machinery: the manifest walker's download lane re-landed as
+# native derivations (docs/absorption.md, "The mapping"). The inventory
+# retired: a pin's data lives in its OWNING domain's module — one pin, one
+# owner, one surface (docs/endgame.md) — and this library owns the shared
+# HOW a declared pin becomes a store path:
 #
-#   tool       — a fetchurl-backed tree from the versions.json inventory
-#                (the repo-root versions.json stays the interim pin
-#                inventory: nix reads it with builtins.fromJSON; no pin is
-#                duplicated into module literals)
-#   fetchGitPin — a fetchGit-pinned checkout (url + rev from the inventory)
-#   compose    — the under-dir-claim composition (immutable store cannot
-#                host a file inside a dir symlink, so children overlay into
-#                one derived tree — the walker's claim composition)
+#   tool    — a fetchurl-backed tree from the module's declared pin data
+#             (version + per-platform url/sha256 travel with the payload
+#             bytes that consume them; a bump moves pin and consumer
+#             together)
+#   compose — the under-dir-claim composition (immutable store cannot
+#             host a file inside a dir symlink, so children overlay into
+#             one derived tree — the walker's claim composition)
+#
+# Git checkout pins are `builtins.fetchGit { url; rev; }` at the declaring
+# module — a builtin call, not machinery.
 #
 # The probe honesty gate is a BUILD-TIME assertion: a wrong pin fails the
 # build, not a host verify. Two shapes, straight from the download
@@ -29,54 +33,50 @@
 {
   lib,
   pkgs,
-  # the pin inventory — override only in tests; every consumer reads the
-  # same bytes (versions.json at the repo root — the interim inventory;
-  # docs/endgame.md names its retirement)
-  pinsJson ? builtins.fromJSON (builtins.readFile ../../versions.json),
 }:
 let
-  # platform vocabulary: the same tag set the inventory keys on
+  # platform vocabulary: the tag set the declared pins key on
   platform =
     if pkgs.stdenv.hostPlatform.isx86_64 && pkgs.stdenv.hostPlatform.isLinux then
       "linux_x86_64"
     else if pkgs.stdenv.hostPlatform.isAarch64 && pkgs.stdenv.hostPlatform.isDarwin then
       "darwin_arm64"
     else
-      throw "workstation-pins: no platform mapping for system '${pkgs.system}' (the inventory knows linux_x86_64 and darwin_arm64)";
+      throw "workstation-pins: no platform mapping for system '${pkgs.system}' (declared pins know linux_x86_64 and darwin_arm64)";
 
   hex64 = h: builtins.match "[0-9a-f]{64}" h != null;
 
-  # the {V} substitution the inventory URL templates carry
+  # the {V} substitution the declared URL templates carry
   withVersion = version: url:
     if version != null then builtins.replaceStrings [ "{V}" ] [ version ] url else url;
 
-  # one pinned tool tree from the inventory: the version/url/sha256 rows are
-  # "<name>", "<name>_<platform>_url", "<name>_<platform>_sha256"; the
-  # archive/layout/probe discipline is the OWNING MODULE's declaration (the
-  # download contract's data, moved from the manifests into the modules).
-  tool = name: meta@{
+  # one pinned tool tree from the OWNING MODULE's declared data: version
+  # (required — the probe's honesty template and the {V} urls both move
+  # with it), url and sha256 either a string (one archive serves both
+  # platform legs) or a per-platform attrset over the tag set above; the
+  # archive/layout/probe discipline is the same declaration.
+  tool = name: {
+    version,
+    url,
+    sha256,
     archive ? "none",
     layout ? "release",
     probe ? null,
-    version ? null,
-    url ? null,
-    sha256 ? null,
   }:
     let
-      v = if meta.version or null != null then meta.version else pinsJson.${name}
-        or (throw "workstation-pins: no version pin '${name}' in the inventory (declare version explicitly for tools whose pin lives elsewhere, e.g. the node payload's .node-version)");
-      u = if meta.url or null != null then meta.url else withVersion v
-        (pinsJson."${name}_${platform}_url"
-          or (throw "workstation-pins: no ${platform} url pin '${name}_${platform}_url' in the inventory"));
-      s = if meta.sha256 or null != null then meta.sha256 else pinsJson."${name}_${platform}_sha256"
-        or (throw "workstation-pins: no ${platform} sha256 pin '${name}_${platform}_sha256' in the inventory");
+      pick = what: v:
+        if builtins.isString v then v
+        else v.${platform} or (throw "workstation-pins: no ${platform} ${what} declared for '${name}' (a pin declares a string or both linux_x86_64 and darwin_arm64)");
+      urlTemplate = pick "url" url;
+      s = pick "sha256" sha256;
     in
     assert hex64 s
       || throw "workstation-pins: pin sha256 of '${name}' is not a 64-hex digest (the download contract's eval-time gate)";
+    assert !(lib.hasInfix "{V}" urlTemplate) || version != null
+      || throw "workstation-pins: '${name}' declares a {V} url without a version";
     fetchPin {
-      inherit name archive layout probe;
-      version = v;
-      url = u;
+      inherit name archive layout probe version;
+      url = withVersion version urlTemplate;
       sha256 = s;
     };
 
@@ -189,18 +189,6 @@ let
         ''
       );
 
-  # a pinned git checkout (fetchGit, exact rev — the six plugin checkouts).
-  # The rev/url come from the inventory ("<name>_git_commit"/"<name>_git_url")
-  # unless the caller pins them explicitly.
-  fetchGitPin = name: meta@{ url ? null, rev ? null, ... }:
-    let
-      r = if meta.rev or null != null then meta.rev else pinsJson."${name}_git_commit"
-        or (throw "workstation-pins: no git pin '${name}_git_commit' in the inventory");
-      u = if meta.url or null != null then meta.url else pinsJson."${name}_git_url"
-        or (throw "workstation-pins: no git pin '${name}_git_url' in the inventory");
-    in
-    builtins.fetchGit { url = u; rev = r; };
-
   # the under-dir-claim composition: children (files or whole trees)
   # overlay INTO the base tree — immutable store cannot host a file inside
   # a dir symlink, so the composed tree is one derivation
@@ -230,8 +218,5 @@ let
         '';
 in
 {
-  inherit platform tool fetchGitPin compose pinsJson;
-  # raw inventory access for consumers that read a pin row directly (the
-  # hermes checkout ensure bakes url+rev into an activation script)
-  inventory = pinsJson;
+  inherit tool compose;
 }
