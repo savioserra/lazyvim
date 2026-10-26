@@ -4,12 +4,15 @@
 # The domain modules (modules/<domain>/) own their file planes natively —
 # home.file, the shell fragment lane's DECLARED list, the retire tombstones.
 # This module assembles the fragment lane's rendered shape (a fragment file
-# per id and one sourced rc file per target) and the switch driver. The
-# switch wrapper is baked with this generation's engine + flake; there is no
-# resident engine process — reads answer from the baked eval report, and the
-# switch-time receipt lands in the state tree's switch.log.
-# The declared-state report is the fold's (flake.evalReport — nix/report.nix),
-# not a passthrough here.
+# per id and one sourced rc file per target), stages the workstation client
+# (the launcher shim from bin/workstation, plus this generation's flake
+# snapshot at ~/.local/opt/workstation/flake — the shim's read verbs eval
+# the report from exactly the tree this generation shipped) and the switch
+# driver. There is no resident engine process and no baked report: reads
+# are nix evals over the flake, and the switch-time receipt lands in the
+# state tree's switch.log.
+# The declared-state report is the fold's (workstation.report — nix/report.nix),
+# answered by eval, never staged.
 {
   config,
   lib,
@@ -90,8 +93,8 @@ in
         else
           echo "workstation: retire no-op (${p} absent)"
         fi
-        # the receipt log's home (a fresh home has no state tree yet — the
-        # daemon creates it later, and the activation runs first)
+        # the receipt log's home (a fresh home has no state tree yet —
+        # the activation runs first)
         mkdir -p "$HOME/.local/state/workstation"
         echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) ${p}" >> "$HOME/.local/state/workstation/retire.log"
       '') cfg.retire);
@@ -112,14 +115,16 @@ in
     # (the fontconfig discovery moved to modules/fonts/fonts.nix with the
     # fonts manifest's death)
 
-    # --- the write plane: workstation-switch, the nix-switch driver -------
-    # Thin wrappers around home-manager switch / nixos-rebuild switch whose
-    # tail writes the generation receipt (switch.log in the state tree —
-    # the one event a switch carries; consumers read the log or watch the
-    # theme token path, nothing polls). Baked: this generation's engine and
-    # flake snapshot, plus the host's two flake attrs; every value is
-    # overridable by env (the driver's header documents the seams).
+    # --- the client lane: the launcher shim + this generation's flake ------
+    # The shim (bin/workstation at the repo tree — the same bytes the
+    # repo's own checkout runs) is staged on PATH as a derivation; the
+    # flake snapshot lands at ~/.local/opt/workstation/flake so the shim's
+    # read verbs eval the report from exactly the tree this generation
+    # shipped (the resolution order's last resort — a checkout or an
+    # explicit --flake outranks it).
     home.packages = [
+      (pkgs.writeShellScriptBin "workstation"
+        (builtins.readFile (self + "/bin/workstation")))
       (import ../workstation-switch.nix {
         inherit pkgs;
         flake = self;
@@ -132,6 +137,8 @@ in
             "UNCONFIGURED-workstation.switch.systemAttr";
       })
     ];
+
+    home.file.".local/opt/workstation/flake".source = self;
 
     # the shell fragment lane and the retire list are DECLARED by the domain
     # modules (workstation-options.nix) and rendered above

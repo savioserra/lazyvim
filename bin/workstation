@@ -1,0 +1,137 @@
+#!/bin/sh
+# The workstation launcher: the nix substrate's whole client. Reads are
+# nix evals over the flake's declared-state report
+# (#workstation.report.<verb> — the capability modules' fold, nix/report.nix);
+# the write plane is the generation's workstation-switch driver. No resident
+# process, no wire protocol, no release to acquire — the Elixir engine
+# retired with the daemon, the TUI and the read plane it served.
+set -eu
+
+usage() {
+	cat <<'EOF'
+workstation — the nixpkgs-native workstation substrate
+
+reads (the declared state, answered by nix eval over
+#workstation.report.<verb>):
+  status          the declared inventory: counts, capability order
+  plan            the declared surface the next switch applies
+  capabilities    the per-capability declared surface
+                  (scope with an attrpath: workstation capabilities editor)
+
+write plane (the generation's workstation-switch driver):
+  apply|rollback|update|sync [--system]
+
+other:
+  help            this text
+
+The read flake resolves in this order: --flake PATH, $WORKSTATION_FLAKE,
+the enclosing checkout (the first flake.nix walking up from $PWD), the
+staged generation snapshot (~/.local/opt/workstation/flake — the home
+lane stages it at every switch).
+EOF
+}
+
+die() {
+	printf 'workstation: %s\n' "$1" >&2
+	exit "${2:-1}"
+}
+
+flake=""
+while [ $# -gt 0 ]; do
+	case "$1" in
+	--flake)
+		[ $# -ge 2 ] || die '--flake needs a PATH argument' 2
+		flake=$2
+		shift 2
+		;;
+	--flake=*)
+		flake=${1#--flake=}
+		shift
+		;;
+	help|-h|--help)
+		usage
+		exit 0
+		;;
+	--version)
+		printf '%s\n' 'workstation — nixpkgs-native substrate (reads: nix eval; writes: workstation-switch)'
+		exit 0
+		;;
+	--)
+		shift
+		break
+		;;
+	-*)
+		die "unknown option $1 (see: workstation help)" 2
+		;;
+	*)
+		break
+		;;
+	esac
+done
+
+verb=${1:-}
+if [ -n "$verb" ]; then
+	shift
+fi
+
+# The read flake: explicit, then the enclosing checkout, then the staged
+# generation snapshot. A bare host with neither fails closed with the fix
+# named — the substrate has no embedded fallback to misread.
+if [ -z "$flake" ]; then
+	dir=$PWD
+	links=0
+	while :; do
+		if [ -f "$dir/flake.nix" ]; then
+			flake=$dir
+			break
+		fi
+		[ "$dir" != / ] || break
+		parent=$(CDPATH='' cd -P "$dir/.." 2>/dev/null && pwd -P) || break
+		[ "$parent" != "$dir" ] || break
+		dir=$parent
+		links=$((links + 1))
+		[ "$links" -le 64 ] || die 'walked too far up looking for flake.nix' 1
+	done
+fi
+if [ -z "$flake" ] && [ -e "${HOME:?}/.local/opt/workstation/flake" ]; then
+	flake=$HOME/.local/opt/workstation/flake
+fi
+
+case "$verb" in
+status | plan | capabilities)
+	[ -n "$flake" ] ||
+		die 'no flake to read — pass --flake PATH, run inside a checkout, or apply the substrate once (it stages ~/.local/opt/workstation/flake)' 2
+	# optional attrpath scope: `workstation capabilities editor` reads
+	# #workstation.report.capabilities.editor — every element must be a
+	# plain attribute name (never shell-interpreted, never an eval escape)
+	scope=''
+	for arg in "$@"; do
+		case "$arg" in
+		*[!A-Za-z0-9_.-]*)
+			die "invalid scope element: $arg (attribute names only)" 2
+			;;
+		esac
+		scope="$scope.$arg"
+	done
+	exec nix --extra-experimental-features 'nix-command flakes' \
+		eval --json "$flake#workstation.report.$verb$scope"
+	;;
+apply | rollback | update | sync)
+	if command -v workstation-switch >/dev/null 2>&1; then
+		exec workstation-switch "$verb" "$@"
+	fi
+	die 'the write plane is the generation'\''s workstation-switch driver and it is not on PATH — apply the substrate first (the home lane stages it)' 2
+	;;
+'')
+	usage
+	exit 0
+	;;
+*)
+	[ "$verb" = help ] && {
+		usage
+		exit 0
+	}
+	printf "workstation: unknown verb '%s' (see: workstation help)\n" "$verb" >&2
+	exit 2
+	;;
+esac

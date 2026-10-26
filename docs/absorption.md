@@ -211,6 +211,16 @@ absorption chain's transitional machinery: once nix owned the write plane
 and the read verbs served the baked report, the wire protocol had no
 client left and retired with the read plane's move in-process.)
 
+**Endgame addendum (2026-10-26, the one-pass ruling):** even those
+survivors are gone. The operator ruled there is no transition to protect —
+no host had cut over — so the daemon, the TUI, the Elixir read plane and
+`apps/` itself deleted in one pass: reads are `nix eval` over
+`workstation.report.<verb>`, the client is `bin/workstation` + the staged
+`workstation-switch`, and the Elixir plane (`apps/`, `mix.exs`,
+`mix.lock`, `deps/`, `_build/`, `nix/engine.nix`) left the repo entirely.
+The ledger above is the absorption's record; [endgame.md](endgame.md) is
+the living shape and carries the full retirement ledger from here on.
+
 ## The deletion chain
 
 Three cards, serially parent-chained behind this one; every commit runs the

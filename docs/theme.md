@@ -1,8 +1,8 @@
 # Theme capability
 
 One canonical color source for every workstation surface that renders color.
-Owned by `modules/theme/` (`tokens.lua` holds the data payload;
-the engine carrier is `Workstation.Core.Theme.Tokens`). Re-branding edits both carriers.
+Owned by `modules/theme/` (`tokens.lua` holds the data payload; nix reads it
+directly at eval). Re-branding edits that one carrier.
 
 Current brand: **Starlight** — the oasis.nvim starlight `@thm_*` palette
 (dark) and its `light_3` sibling (light, upstream's default intensity).
@@ -43,9 +43,8 @@ all reusing existing palette hues:
 | `border_diff` | reserved (declared; the diff box retired with the write plane) | red — the mutation surface (`err` = `@thm_red #ff7979` family) |
 
 They live in both layers (slots + per-appearance palette) and are
-overlay-settable like every other palette role; `Tokens.border_roles/0` is
-the closed membership list a consumer validates against. Panels outside the
-domain set (daemon liveness, host, help, verb overlays) keep `chrome`.
+overlay-settable like every other palette role. Panels outside the
+domain set (host, help, overlay surfaces) keep `chrome`.
 
 ## Distribution
 
@@ -70,33 +69,17 @@ or watch the link, nothing polls).
 | --- | --- | --- |
 | tmux (status bar) | — (upstream-truthed) | pinned `tmux2k` at the upstream `onedark` theme; `.tmux.conf` sets no theme color options — upstream's onedark palette is canonical (the tokens palette does not feed the bar). The tmux2k slot template target still carries its removal tombstone from the ADDENDUM 2 swap ([tmux](tmux.md)) |
 | nunchux (launcher config) | `slots` | the terminal module renders `.config/nunchux/config` from the payload template by slot substitution (`renderSlots` from the extracted tokens, asserted unresolved-slot-free); the checkout is the fetchGit-pinned store tree ([tmux](tmux.md)) |
-| herdr | philosophy (terminal-following) | documented canonical choice only: `[theme] name = "terminal"`, `auto_switch = true` (see [herdr](herdr.md)); herdr tracks the host terminal's live ANSI palette, so under the Starlight rebrand it renders starlight via the terminal theme — the engine never writes herdr's live `config.toml` and ships no herdr colors |
+| herdr | philosophy (terminal-following) | documented canonical choice only: `[theme] name = "terminal"`, `auto_switch = true` (see [herdr](herdr.md)); herdr tracks the host terminal's live ANSI palette, so under the Starlight rebrand it renders starlight via the terminal theme — the substrate never writes herdr's live `config.toml` and ships no herdr colors |
 | nvim | upstream pin (`oasis-starlight`) | `lazy-lock.json` pins `uhs-robert/oasis.nvim`; the editor rides the upstream starlight palette tokens.lua cites — not a generated colorscheme (rebrand spec S-R4); starlight wins all hosts, Omarchy import dropped (S-R2) |
-| term_ui (Elixir TUI) | `palette` | shipped mirror `Workstation.Core.Theme.Tokens` with tests; the CLI TUI theme resolver resolves the base palette (the daemon `theme.resolve` overlay path retired with the daemon — no overlay state survives outside a switch; the deployed store token path carries the same bytes for file-reading consumers) |
 
-## TUI box anatomy note
+## Consumers and the follow law
 
-The TUI's btop-style box anatomy (`Workstation.CLI.TUI.Shell.Box`, hard
-contracts in docs/elixir.md "TUI application shell") is role-keyed end to
-end. Title islands follow btop's exact construction: the superscript keycap
-digit (`Shell.keycap/1`, the btop_draw.cpp:87 superscript table — ⁰ ¹ ² ³
-⁴-⁹, clamped 0-9) rides `shortcut`, bold, with no space before the title
-word (`┐¹engine┌`, never `┐1 engine ┌`); the title word itself rides
-`text` (near-white), bold — btop's global title treatment. Panel borders
-are per-domain (`border_*` roles above); box connectors and frames outside
-the domain set = `chrome`; buttonbar keycaps = `shortcut`, bold, with their
-enabled labels = `text` (disabled = `inactive`); active tab and label
-highlights = `accent`; selection = the `selected_bg`/`selected_fg` pair
-(never color-alone); de-emphasis = `inactive`; value severity/age = the
-`ramp_start`/`ramp_mid`/`ramp_end` trio (severity/age ramps).
-The plain-digit keycap form exists only as an explicit narrow-TTY opt-in,
-never the default. No box painter hardcodes a color, so re-branding stays
-a two-carrier edit: `tokens.lua` and `Workstation.Core.Theme.Tokens`.
-
-## Tests
-
-- `apps/core/test/workstation/core/theme/tokens_test.exs`: the parity
-  anchor — the engine carrier carries the same contract values as
-  `tokens.lua` and the role set is complete.
-- `apps/cli/test/workstation/cli/tui/theme_test.exs`: the CLI base
-  palette mirrors the core tokens exactly.
+The theme's live surface is the store token link
+`~/.local/state/workstation/theme.json`: the switch re-points it at each
+generation's token store path (the activation hook), and consumers read it
+at startup or watch the link — nothing polls, no daemon drives the
+follow. The daemon's `theme.resolve` overlay domain retired with the
+daemon; the retired Elixir TUI's shipped token mirror retired with the
+TUI. A new consumer renders from the deployed token file or from
+`workstationTheme.lib` (the flake output) at eval — never from a second
+copy of the bytes.

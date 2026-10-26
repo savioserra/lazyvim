@@ -31,7 +31,7 @@ timeout 1200 "$run_script" -nographic </dev/null >"$log" 2>&1 || {
 }
 
 echo "== assertions =="
-grep -q 'workstation: engine staged' "$log" \
+grep -q 'workstation: substrate staged' "$log" \
   || { echo 'FAIL: workstation system-activation marker missing' >&2; exit 1; }
 grep -q 'workstation: home plane active' "$log" \
   || { echo 'FAIL: home-manager activation never completed' >&2; exit 1; }

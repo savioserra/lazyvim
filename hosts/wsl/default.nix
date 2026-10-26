@@ -1,6 +1,6 @@
 # The WSL host leg: NixOS-WSL running the workstation substrate.
 # Home plane: workstation-home (the native declarations -> HM). System plane:
-# workstation-system (engine + nixpkgs toolchains).
+# workstation-system (the nixpkgs toolchains + the transport wiring).
 #
 # This file is the ONLY place this host's identity lives — the flake
 # derives the homeConfigurations rebuild key and every username/home path
@@ -32,7 +32,6 @@ in
     inherit system;
     specialArgs = {
       inherit self;
-      engine = self.packages.${system}.workstation;
     };
     modules = [
       nixos-wsl.nixosModules.default
@@ -40,7 +39,7 @@ in
       ../../nix/modules/host.nix
       home-manager.nixosModules.home-manager
       (
-        { config, engine, ... }:
+        { config, ... }:
         {
           workstation.enable = true;
 
@@ -71,7 +70,7 @@ in
             useGlobalPkgs = true;
             useUserPackages = true;
             extraSpecialArgs = {
-              inherit self engine;
+              inherit self;
             };
             users.${user}.imports = [
               (

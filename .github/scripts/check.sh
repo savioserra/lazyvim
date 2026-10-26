@@ -1,12 +1,15 @@
 #!/bin/sh
-# The fused engine's check matrix: the Elixir engine is the only engine, so
-# the matrix is Elixir-native. The retired Lua suites, the nvim -l syntax
-# pass and StyLua died with the Lua engine; the recorded-envelope goldens
-# and their replay contract retired with the manifest format they pinned
-# (docs/absorption.md decision 5 — verification is behavioral).
+# The check matrix: the nixpkgs-native substrate is declared state, so the
+# matrix is static source gates plus the nix eval read gate. The Elixir
+# engine battery (mix test, doclint, the release boot smoke, the locale
+# guard) retired with the engine; verification beyond this matrix is
+# behavioral — the docker-nix acceptance (closures) and the VM E2E
+# (activation + consumers), owned by docs/testing.md.
 #
-# Ordering is load-bearing: the identity gate runs first (cheap source
-# grep), then the engine suite.
+# Ordering: the identity gate runs first (cheap source grep), then the
+# engine-free gate (no Elixir module token survives anywhere in the tree),
+# then the shell checks, then the nix eval reads (skipped with a loud note
+# where nix is absent — the docker acceptance owns them there).
 set -eu
 repo_root=$(CDPATH='' cd -P "$(dirname "$0")/../.." && pwd -P)
 cd "$repo_root"
@@ -15,20 +18,23 @@ fail=0
 step() { printf '\n== %s\n' "$1"; }
 
 step 'nix identity gate (per-host identity lives only in hosts/<host>/default.nix)'
-if git grep -i savio -- nix hosts flake.nix; then
+if git grep -i savio -- nix hosts flake.nix modules bin; then
 	fail=1
-	printf 'identity gate: hardcoded personal identity under nix/ hosts/ flake.nix — parameterize: hosts/<host>/default.nix is the only identity surface (derive keys, pass homeDir explicitly)\n' >&2
+	printf 'identity gate: hardcoded personal identity under nix/ hosts/ flake.nix modules/ bin/ — parameterize: hosts/<host>/default.nix is the only identity surface\n' >&2
 fi
 
-step 'engine suite (mix test)'
-mise exec -- mix test || fail=1
-
-step 'moduledoc convention (doclint)'
-sh .github/scripts/doclint.sh || fail=1
+step 'engine-free gate (the Elixir plane stays gone: no engine module token anywhere)'
+# the token is assembled at runtime so this gate's own source never
+# carries it — the tree-wide grep must come back EMPTY
+engine_module_token='def''module'
+if git grep -n "$engine_module_token" -- .; then
+	fail=1
+	printf 'engine-free gate: the Elixir engine retired; this tree is nixpkgs-native (docs/endgame.md)\n' >&2
+fi
 
 step 'shell syntax (sh -n) and ShellCheck when available'
 {
-find workstation modules .github/scripts -type f \( -name '*.sh' -o -name 'workstation' \) -print
+	find bin modules .github/scripts tests hosts -type f \( -name '*.sh' -o -name 'workstation' \) -print
 } | while IFS= read -r file; do
 	sh -n "$file" || exit 1
 	if command -v shellcheck >/dev/null 2>&1; then
@@ -39,22 +45,21 @@ if ! command -v shellcheck >/dev/null 2>&1; then
 	printf 'ShellCheck unavailable here; required in the Linux CI job.\n' >&2
 fi
 
-step 'release boot smoke (skipped when the local release build is cold)'
-if [ -f workstation-0.1.0-linux-x64.tar.gz ]; then
-	sh tests/direct_boot.sh || fail=1
-else
-	printf 'no release tarball built; skipping (build with: mise exec -- env MIX_ENV=prod mix release workstation --overwrite)\n'
-fi
+step 'launcher shim dispatch gate (stubbed nix, stubbed switch driver)'
+sh .github/scripts/shim-dispatch.sh || fail=1
 
-step 'shim engine-repo anchor (non-bootstrap verb through the checkout shim)'
-if [ -f workstation-0.1.0-linux-x64.tar.gz ]; then
-	sh .github/scripts/shim-anchor.sh || fail=1
+step 'nix eval read gate (#workstation.report.<verb> answers)'
+if command -v nix >/dev/null 2>&1; then
+	for verb in status plan capabilities; do
+		nix --extra-experimental-features 'nix-command flakes' \
+			eval --json ".#workstation.report.$verb" >/dev/null || fail=1
+	done
+	printf 'status counts: '
+	nix --extra-experimental-features 'nix-command flakes' \
+		eval --json .#workstation.report.status.counts
 else
-	printf 'no release tarball built; skipping (build with: mise exec -- env MIX_ENV=prod mix release workstation --overwrite)\n'
+	printf 'nix unavailable here; the docker acceptance owns the eval gate (docs/testing.md).\n' >&2
 fi
-
-step 'shim UTF-8 locale guard (stubbed locale, stub release)'
-sh .github/scripts/shim-locale-guard.sh || fail=1
 
 step 'whitespace (git diff --check)'
 git diff --check || fail=1

@@ -89,11 +89,33 @@ writeShellScriptBin "workstation-e2e" ''
   [ -z "$socks" ] || fail "no state socket remains" "$socks"
   pass "no state socket remains"
 
-  # 2. consumer smoke: the engine answers, the nvim profile link resolves
-  step "workstation --version"
-  workstation --version >/dev/null 2>&1 \
-    || fail "workstation --version" "the engine on PATH does not answer"
-  pass "workstation --version"
+  # 2. consumer smoke: the launcher shim dispatches, the nvim profile link
+  #    resolves
+  # the home lane's packages land on the profile PATH; resolve through the
+  # known profile locations too so the proof never bets on PATH shape
+  find_client() {
+    local bin
+    bin=$(command -v "$1" 2>/dev/null || true)
+    if [ -z "$bin" ]; then
+      for bin in "$home/.nix-profile/bin/$1" "/etc/profiles/per-user/vm/bin/$1" /run/current-system/sw/bin/"$1"; do
+        [ -x "$bin" ] && { printf '%s\n' "$bin"; return 0; }
+      done
+      return 1
+    fi
+    printf '%s\n' "$bin"
+  }
+  step "launcher shim dispatch (help, usage, unknown verb)"
+  shim_bin=$(find_client workstation) \
+    || fail "launcher shim dispatch" "workstation is not staged"
+  "$shim_bin" help >/dev/null 2>&1 \
+    || fail "launcher shim dispatch" "workstation help failed"
+  "$shim_bin" frobnicate >/dev/null 2>&1 &&
+    fail "launcher shim dispatch" "an unknown verb must fail (exit 2)"
+  rc=0
+  "$shim_bin" frobnicate >/dev/null 2>&1 || rc=$?
+  [ "$rc" = 2 ] \
+    || fail "launcher shim dispatch" "unknown verb must exit 2 (got $rc)"
+  pass "launcher shim dispatch"
 
   step "nvim profile link"
   [ -x "$home/.local/bin/nvim" ] \
@@ -282,30 +304,23 @@ writeShellScriptBin "workstation-e2e" ''
     || fail "switch receipt" "no 'generation N applied' line in switch.log"
   pass "switch receipt in switch.log"
 
-  # 5. the read smoke: the release serves the BAKED report — status is the
-  #    declared inventory, plan probes the live targets of the switched
-  #    home (the wires are the v2 schemas; canonical JSON, keys sorted)
-  step "read smoke (status from the baked report)"
-  status_json=$(workstation json status) \
-    || fail "read smoke (status)" "json status failed against the release"
-  echo "$status_json" | grep -q '"engine":{"mode":"report"' \
-    || fail "read smoke (status)" "the status wire does not name the report mode"
-  echo "$status_json" | grep -q '"schema":"workstation.status.v2"' \
-    || fail "read smoke (status)" "the status wire is not the v2 schema"
-  echo "$status_json" | grep -q '"editor"' \
-    || fail "read smoke (status)" "the declared inventory carries no editor capability"
-  pass "read smoke (status)"
-
-  step "read smoke (plan probes the switched home)"
-  plan_json=$(workstation json plan) \
-    || fail "read smoke (plan)" "json plan failed against the release"
-  echo "$plan_json" | grep -q '"schema":"workstation.plan.v2"' \
-    || fail "read smoke (plan)" "the plan wire is not the v2 schema"
-  echo "$plan_json" | grep -q '\.local/bin/nvim' \
-    || fail "read smoke (plan)" "the declared surface does not name the nvim bin target"
-  echo "$plan_json" | grep -q 'link -> ' \
-    || fail "read smoke (plan)" "no declared target probed as a live link (the probe saw an unswitched home)"
-  pass "read smoke (plan)"
+  # 5. the staged client: the shim's read flake (the generation's snapshot
+  #    at ~/.local/opt/workstation/flake) and the write driver are staged —
+  #    the reads themselves are nix evals and are proven HOST-side
+  #    (tests/direct-nix.sh: the same flake the VM applied answers status,
+  #    plan and capabilities there, where the eval's inputs exist)
+  step "staged client (flake snapshot, launcher, switch driver)"
+  [ -L "$home/.local/opt/workstation/flake" ] \
+    || fail "staged client" "$home/.local/opt/workstation/flake is not the generation's flake snapshot link"
+  case "$(readlink -f "$home/.local/opt/workstation/flake")" in
+    /nix/store/*) ;;
+    *) fail "staged client" "the flake snapshot does not resolve into the store" ;;
+  esac
+  command -v workstation-switch >/dev/null 2>&1 \
+    || [ -x "$home/.nix-profile/bin/workstation-switch" ] \
+    || [ -x "/etc/profiles/per-user/vm/bin/workstation-switch" ] \
+    || fail "staged client" "the workstation-switch driver is not staged"
+  pass "staged client (flake snapshot, launcher, switch driver)"
 
   echo "workstation-e2e: OK"
 ''

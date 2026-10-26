@@ -1,9 +1,9 @@
 #!/bin/sh
 # nunchux package verify — the pinned-checkout contract (read-only).
 #
-# Asserts the engine-provisioned plugin checkout upstream's nunchux.tmux
+# Asserts the substrate-provisioned plugin checkout upstream's nunchux.tmux
 # relies on: ~/.tmux/plugins/nunchux is a git checkout at the pinned commit
-# (workstation/versions.json nunchux_git_commit), bin/nunchux is the
+# (versions.json nunchux_git_commit), bin/nunchux is the
 # executable repo build recorded by nunchux_repo_linux_amd64_sha256, and
 # bin/.platform carries the platform marker ensure_binary compares — so
 # plugin load runs the commit-pinned binary and never fetches
@@ -16,9 +16,8 @@ set -eu
 
 home=${WORKSTATION_VERIFY_HOME:-$HOME}
 here=$(cd "$(dirname "$0")" && pwd)
-root=${WORKSTATION_ENGINE_REPO:-$here/../../../..}
-# WORKSTATION_ENGINE_REPO is the repo anchor (itself or its workstation child).
-[ -f "$root/versions.json" ] || root=$root/workstation
+root=${WORKSTATION_REPO_ROOT:-$here/../../../..}
+# WORKSTATION_REPO_ROOT is the repo anchor (a checkout of this repo).
 manifest=$root/versions.json
 checkout=$home/.tmux/plugins/nunchux
 bin=$checkout/bin/nunchux
@@ -29,7 +28,7 @@ fail() {
   exit 1
 }
 
-[ -f "$manifest" ] || fail "versions manifest not found at $manifest (set WORKSTATION_ENGINE_REPO)"
+[ -f "$manifest" ] || fail "versions manifest not found at $manifest (set WORKSTATION_REPO_ROOT)"
 command -v git >/dev/null 2>&1 || fail "git not on PATH; cannot verify the pinned checkout"
 
 pin_commit=$(sed -n 's/.*"nunchux_git_commit":[[:space:]]*"\([^"]*\)".*/\1/p' "$manifest" | head -n 1)

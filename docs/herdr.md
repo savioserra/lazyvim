@@ -1,7 +1,7 @@
 # Herdr
 
 [Herdr](https://herdr.dev) is a terminal workspace with an upstream-owned
-background server. The workstation engine provisions the pinned binary; it
+background server. The workstation substrate provisions the pinned binary; it
 never manages the runtime.
 
 ## Ownership
@@ -29,7 +29,7 @@ sourced specification, preserved in Git history as `backlog/docs/doc-1`):
 
 ## Usage notes
 
-- Theme: the engine documents one canonical choice but never writes herdr's
+- Theme: the substrate documents one canonical choice but never writes herdr's
   live `config.toml` (the binary owns it: onboarding, Settings edits,
   `herdr config reset-keys`). Set once in herdr's Settings:
   `[theme] name = "terminal"`, `auto_switch = true` — herdr then follows the

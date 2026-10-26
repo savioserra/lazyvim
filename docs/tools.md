@@ -76,4 +76,4 @@ Nix hosts need none of these: the store builds are self-contained.
 | ShellCheck | Validation tool supplied by Linux CI image; used wherever available | `.github/scripts/check.sh`; no unpinned lint downloads |
 | 1Password desktop app and account session | User application and interactive authentication are outside source state | Install the official app, enable CLI integration, and sign in interactively |
 | Mason-installed LSP servers/formatters/linters | Neovim-internal package manager, not a host binary | `zapling/mason-lock.nvim`, `modules/editor/nvim/files/.config/nvim/mason-lock.json` — see [Neovim](nvim.md) |
-| lazy.nvim-installed Neovim plugins | Neovim-internal package manager | `modules/editor/nvim/files/.config/nvim/lazy-lock.json` is the engine-pinned baseline; the deployed copy is runtime-extended mutable state — see [Neovim](nvim.md) |
+| lazy.nvim-installed Neovim plugins | Neovim-internal package manager | `modules/editor/nvim/files/.config/nvim/lazy-lock.json` is the substrate-pinned baseline; the deployed copy is runtime-extended mutable state — see [Neovim](nvim.md) |

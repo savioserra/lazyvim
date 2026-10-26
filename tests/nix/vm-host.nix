@@ -5,17 +5,21 @@
 #   workstation-e2e runs after the activation proof, as the vm user:
 #     1. the RETIREMENT holds: no daemon unit staged or known, no state
 #        socket anywhere under the state tree
-#     2. consumer smoke: `workstation --version`, the nvim profile link,
-#        the theme token path (the switch-time push surface)
+#     2. consumer smoke: the launcher shim dispatches (help/usage
+#        contract), the nvim profile link, the theme token path (the
+#        switch-time push surface)
 #     3. an apply-driven nix switch runs (the workstation-switch driver
 #        over the standalone vm@vm activationPackage — fully offline: the
 #        evaluation already happened at build time on the host)
 #     4. the switch receipt lands in the state tree's switch.log
-#     5. read smokes: the engine answers from the baked eval report
+#     5. the staged client: the shim on PATH and the generation's flake
+#        snapshot at ~/.local/opt/workstation/flake (the reads' offline
+#        eval surface — the reads themselves are proven host-side, where
+#        nix eval has its inputs)
 #
 # `tests/nix/run-vm.sh` builds system.build.vm, boots it, and greps the
 # serial console for the OK marker and any FAIL line.
-{ self, config, qemuVmModule, engine, ... }:
+{ self, config, qemuVmModule, ... }:
 let
   # x86_64-linux is this VM's system (the host leg that runs it).
   pkgs = import self.inputs.nixpkgs { system = "x86_64-linux"; };
@@ -71,7 +75,7 @@ in
   home-manager = {
     useGlobalPkgs = true;
     useUserPackages = true;
-    extraSpecialArgs = { inherit self engine; };
+    extraSpecialArgs = { inherit self; };
     users.vm.imports = [
       # the VM persona's declared home — the shared body (also the
       # standalone vm@vm configuration the E2E applies)
@@ -104,7 +108,7 @@ in
       StandardError = "journal+console";
     };
     script = ''
-      echo "workstation: engine staged at ${engine}/bin/workstation (system plane)"
+      echo "workstation: substrate staged (system plane)"
       echo "workstation: home plane active (home-manager activation completed)"
       echo "workstation: boot-to-activation proof complete (multi-user reached)"
     '';

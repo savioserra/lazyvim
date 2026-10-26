@@ -4,43 +4,37 @@
 
 | Path | Role |
 | --- | --- |
-| `README.md` | Host switching, the engine's read verbs |
+| `README.md` | Host switching, the read verbs |
 | `AGENTS.md` | Repository-wide implementation rules |
-| `apps/` | The engine: the report reader (`core`), CLI/TUI (`cli`) — Elixir-only |
-| `flake.nix`, `nix/` | The substrate: the capability modules and their walk, the declared-state report fold, the engine derivation, the switch drivers |
+| `flake.nix`, `nix/` | The substrate: the capability walk, the declared-state report fold and its read verbs, the switch driver, the home/system/host modules |
+| `bin/workstation` | The launcher shim (POSIX sh): flake resolution + verb dispatch; reads are nix evals, writes delegate to the staged `workstation-switch` |
 | `hosts/` | `wsl` (the linux leg; NixOS-WSL), `mac` (nix-darwin); per-host identity lives only here |
-| `.github/workflows/ci.yml` | Platform matrix: the check matrix under a pinned mise toolchain |
+| `.github/workflows/ci.yml` | The static battery + the nix evaluation leg |
 | `.github/workflows/release.yml` | Tagged source archives |
-| `modules/`, `workstation/versions.json` | Capability payload bytes co-located with their declaring modules, data files and canonical pins |
-| `workstation/bin/workstation` | Sole public lifecycle launcher (POSIX sh): sandbox, checkout anchor, locale guard, exec of the placed release |
+| `modules/`, `versions.json` | Capability payload bytes co-located with their declaring modules, data files, and the interim pin inventory |
 
 ## Documentation map
 
 | Document | Scope |
 | --- | --- |
+| [`endgame.md`](endgame.md) | The final shape: structure, invariants, retirement ledger, the endgame decisions |
 | [`capabilities.md`](capabilities.md) | Dependency direction, declaration contract, lifecycle phases |
 | [`home-state.md`](home-state.md) | Home state law: native declarations, hot-home scope, legacy cutover |
 | [`tools.md`](tools.md) | Managed tool inventory and platform coverage |
-| [`testing.md`](testing.md) | Offline checks and isolated Linux container E2E recipe |
+| [`testing.md`](testing.md) | Offline checks, the docker-nix acceptance and the VM E2E |
 | [`secrets.md`](secrets.md) | 1Password boundary, vault scope, Pi skill policy |
 | [`nvim.md`](nvim.md) | Editor entry points, profile, plugins, locks |
 | [`tmux.md`](tmux.md) | Settings, plugin pins, theme |
 | [`theme.md`](theme.md) | Shared color tokens, slot/palette layers, derived pi themes |
 | [`herdr.md`](herdr.md) | Pinned Herdr binary and official Pi hook, ownership and compatibility gates |
-| [`elixir.md`](elixir.md) | Engine architecture: umbrella layout, CLI/TUI contract, the read plane, taxonomy, goldens, migration history |
 
-## Elixir migration policy (binding)
+## Substrate law (binding)
 
-The Elixir surface (CLI, TUI, core) carries **no deprecated or
-backward-compatibility APIs**: no legacy aliases, no compat shims, no dual
-wire-schema versions — one current version, hard-cut. Retired code paths are
-dropped in the lane that touches them (each drop recorded in the lane's
-report), and removals happen in the lane that touches the code — delete,
-don't deprecate. The Lua runtime is deleted outright: the engine is the
-Elixir OTP release, and nvim appears on hosts only as a managed capability.
-This relaxes nothing else:
-parity evidence (goldens, generation hashes, wire JSON) is never weakened, and distribution
-stays checksummed `mix release` tarballs only. The Elixir engine is described
-by its own contract — code, comments, and docs never frame it as a "port" or "rewrite"; Lua
-appears only as live payload data (deployed editor config, theme tokens read as bytes), and
-migration narrative stays in `docs/elixir.md`.
+The substrate is nixpkgs-native: declared state + two clients, no engine.
+There are **no deprecated or backward-compatibility surfaces**: one current
+shape per verb, per option, per pin — hard-cut. Retired paths are dropped
+in the lane that touches them — delete, don't deprecate. The filesystem is
+the capability registry; reads are `nix eval` over `workstation.report`;
+verification is behavioral (docs/endgame.md is the anchor). Lua appears
+only as live payload data (deployed editor config, theme tokens read as
+bytes), never executed.

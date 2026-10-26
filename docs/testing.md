@@ -6,20 +6,20 @@
 sh .github/scripts/check.sh
 ```
 
-The fused engine's matrix is Elixir-native: the
-nix identity gate (per-host identity lives only in
-`hosts/<host>/default.nix`), the full
-`mix test` suite (hermetic fixture homes, no host state touched), `sh -n`
-+ ShellCheck
-over the remaining shell scripts, the UTF-8 locale guard gate over the POSIX
-shim (stubbed `locale`, stub release; no tarball needed), the release boot
-smoke when a local release tarball is built, and `git diff --check`.
-ShellCheck is required in Linux CI; report local absence.
+The static battery: the nix identity gate (per-host identity lives only in
+`hosts/<host>/default.nix`), the engine-free gate (the tree-wide grep for
+the Elixir module token stays empty — the engine stays gone), `sh -n` +
+ShellCheck over the shell surfaces, the launcher shim's dispatch gate (a
+stub `nix` and a stub `workstation-switch` — dispatch, flake resolution
+order, delegation and fail-closed paths, no nix install needed), the nix
+eval read gate (`#workstation.report.<verb>` answers — self-skipped where
+nix is absent; the docker acceptance owns it there), and
+`git diff --check`. ShellCheck is required in Linux CI; report local
+absence.
 
-The retired Lua suites, the `nvim -l` syntax pass and StyLua died with the Lua
-engine; the recorded-envelope goldens and their replay contract retired with
-the manifest format they pinned (docs/absorption.md — verification is
-behavioral).
+Verification beyond the battery is behavioral (docs/endgame.md decision 2):
+structural assertions live in the eval (the report fold's integrity
+checks), never as byte contracts.
 Never run fixtures directly against a switched home: they write fake Node/npm state.
 For bounded Linux source checks, use a cleared environment, network denial,
 120-second deadline and a **4 MiB per-file** limit (`ulimit -f 4096` in a shell
@@ -31,14 +31,29 @@ real Pi discovery/reload or native-platform acceptance. Backend rendering requir
 
 ## Real integration
 
-Real substrate integration needs nix and explicit authorization:
+Real substrate integration needs nix (docker `nixos/nix:2.35.3` against a
+persistent store volume works; build from `git archive HEAD` extractions —
+worktree gitdirs do not resolve in containers) and explicit authorization.
+The acceptance ladder, cheapest first:
 
-- build the flake's package set (`packages.<system>.workstation` builds the
-  engine release — the mixRelease with the vendored NIFs, digest-gated by
-  `nix/engine.nix`'s preConfigure check);
-- boot the NixOS VM test (`tests/nix`): it proves the daemon user unit and
-  the switch seam end to end, and smokes the engine's read verbs against
-  the baked report.
+- **The reads answer**: `nix eval --json .#workstation.report.{status,
+  plan,capabilities}` and every host leg's toplevel `drvPath` evaluates
+  (CI's nix job runs exactly this on a clean checkout).
+- **The closures build**: the linux home configuration's
+  `activationPackage` and the VM test's system closure.
+- **The VM E2E** (`tests/nix/run-vm.sh`): boots the NixOS VM (tcg where
+  KVM is absent; the timeout is the boot bound) and runs
+  `tests/nix/vm-e2e.nix` inside it — the daemonless retirement proof (no
+  unit, no socket), the consumer smokes (the launcher shim dispatch, the
+  nvim profile link, the language profile, the agent skills at pinned
+  versions, the tmux/nunchux/foundation planes, the theme token path), the
+  adopt rehearsal (a copy-contract tree makes way for the declared
+  symlink), the apply-driven switch (`workstation-switch apply` over the
+  offline activation override) and the switch receipt. This IS the
+  fresh-host parity proof (r5 standard): a bare VM home, one apply from
+  the flake, the resulting home matching the declared expectations,
+  consumer-smoked end to end. Receipts land in `tests/nix/*.log`
+  (gitignored).
 
 Work in a scratch context: never a live home, never the operator's store
 paths. Failures retain the build log, the VM console output and the failing

@@ -1,16 +1,14 @@
-# The system leg: the engine derivation and the nixpkgs toolchains on a
-# NixOS system. The daemon runs as a USER unit (workstation-home); this
-# module owns the system plane only:
-#   - the engine binary on the system PATH (the .local/bin contract keeps
-#     working through the home lane)
-#   - the mise toolchain pins (tmux, btop) die here: nixpkgs provides the
-#     toolchains (the mise envelope lane is refused in the walker)
+# The system leg: the substrate's system plane on a NixOS system — the
+# nixpkgs toolchains and the transport wiring. The workstation client is a
+# HOME lane concern (the launcher shim and the switch driver stage into the
+# user's profile); this module owns the system plane only:
+#   - the nixpkgs toolchains the retired mise pins used to provide
+#     (tmux, btop — versions now nixpkgs-owned)
 {
   config,
   lib,
   pkgs,
   self,
-  engine,
   ...
 }:
 let
@@ -18,7 +16,7 @@ let
 in
 {
   options.workstation = {
-    enable = lib.mkEnableOption "the workstation substrate (engine + nixpkgs toolchains)";
+    enable = lib.mkEnableOption "the workstation substrate (the system plane of the nixpkgs-native monorepo)";
 
     extraPackages = lib.mkOption {
       type = lib.types.listOf lib.types.package;
@@ -50,7 +48,6 @@ in
 
   config = lib.mkIf cfg.enable {
     environment.systemPackages = [
-      engine
       # the deleted mise pins' nixpkgs replacements (terminal/tmux manifest:
       # tmux 3.7c, btop 1.4.7 — versions now nixpkgs-owned)
       pkgs.tmux
@@ -70,8 +67,8 @@ in
     system.activationScripts.workstation = {
       deps = [ "users" ];
       text = ''
-        echo "workstation: engine staged at ${engine}/bin/workstation (system plane)"
-        echo "workstation: engine staged at ${engine}/bin/workstation (system plane)" > /dev/kmsg 2>/dev/null || true
+        echo "workstation: substrate staged (system plane)"
+        echo "workstation: substrate staged (system plane)" > /dev/kmsg 2>/dev/null || true
       '';
     };
   };

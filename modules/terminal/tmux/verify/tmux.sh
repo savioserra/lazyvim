@@ -17,9 +17,8 @@ set -eu
 
 home=${WORKSTATION_VERIFY_HOME:-$HOME}
 here=$(cd "$(dirname "$0")" && pwd)
-root=${WORKSTATION_ENGINE_REPO:-$here/../../../..}
-# WORKSTATION_ENGINE_REPO is the repo anchor (itself or its workstation child).
-[ -f "$root/versions.json" ] || root=$root/workstation
+root=${WORKSTATION_REPO_ROOT:-$here/../../../..}
+# WORKSTATION_REPO_ROOT is the repo anchor (a checkout of this repo).
 manifest=$root/versions.json
 
 fail() {
@@ -27,7 +26,7 @@ fail() {
   exit 1
 }
 
-[ -f "$manifest" ] || fail "pin inventory not found at $manifest (set WORKSTATION_ENGINE_REPO)"
+[ -f "$manifest" ] || fail "pin inventory not found at $manifest (set WORKSTATION_REPO_ROOT)"
 command -v git >/dev/null 2>&1 || fail "git not on PATH; cannot verify the pinned checkouts"
 
 # The plugin set, tpm first (it must exist before the first tmux start).

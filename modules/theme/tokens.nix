@@ -11,11 +11,6 @@
 # polls — a consumer reads the file at startup or watches the link). The
 # engine's resident theme domain retired with the daemon; this file is the
 # theme's live surface now. Rollback restores the prior generation's link.
-#
-# The engine's compiled mirror (`Workstation.Core.Theme.Tokens`) carries the
-# same bytes for in-release consumers and is parity-tested against this
-# extraction's source (apps/core/test/.../tokens_test.exs reads the same
-# tokens.lua the nix parser reads).
 {
   lib,
   pkgs,

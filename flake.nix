@@ -1,5 +1,5 @@
 {
-  description = "workstation — the engine-owned workstation state, rendered per-host by nix";
+  description = "workstation — the operator's workstation state, declared in nix and rendered per-host";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
@@ -33,25 +33,46 @@
   outputs =
     { self, nixpkgs, home-manager, nixos-wsl, nix-darwin, nixpkgs-foundation, hermes-agent }:
     let
-      # the engine builds where its NIF vendoring is proven (the build
-      # gate): x86_64-linux built + smoked; aarch64-darwin evals clean,
-      # its per-target NIF artifacts are the named gap
-      buildSystems = [ "x86_64-linux" "aarch64-darwin" ];
+      # the fold runs on the host system's nixpkgs; the report itself pins
+      # no platform beyond that
       hostSystem = "x86_64-linux";
 
-      engineFor = system:
-        nixpkgs.legacyPackages.${system}.callPackage ./nix/engine.nix {
-          beamPackages = nixpkgs.legacyPackages.${system}.beam.packages.erlang_28;
-          src = self;
-          # the declared-state report bakes into the release: reads serve
-          # the same flake snapshot that built it. The fold evals on the
-          # host system only — the other build system's release fails its
-          # reads closed until the fold grows that platform.
-          report =
-            if system == hostSystem
-            then builtins.toJSON self.evalReport.${hostSystem}
-            else null;
+      # the declared-state report: the capability modules' fold
+      # (nix/report.nix) at this tree — the ONE read source. `nix eval
+      # .#workstation.report.<verb>` answers the declared state; the
+      # workstation shim's read verbs are thin wrappers over exactly these
+      # attrs (bin/workstation). No release bakes it, no daemon serves it.
+      report = import ./nix/report.nix {
+        lib = nixpkgs.lib;
+        # the fold applies the substrate's pin-override overlay itself
+        # (the foundation capability's harlequin floor asserts it)
+        pkgs = nixpkgs.legacyPackages.${hostSystem}.extend self.overlays.default;
+        hm = home-manager.lib;
+        treeRoot = self;
+        # no default may bake an identity: the eval's home.homeDirectory
+        # arrives per host; the report pins no home paths.
+        homeDir = linuxHost.homeDir;
+      };
+
+      # the read verbs: the report's operator-facing projections. The
+      # shapes are the contract (docs/endgame.md):
+      #   status       the declared inventory — counts + capability order
+      #   plan         the surface the next switch applies, with the
+      #                report digest (the declared state's content id)
+      #   capabilities the per-capability accounting keyed by id — scope
+      #                reads with an attrpath (#...capabilities.editor)
+      reportVerbs = {
+        status = {
+          inherit (report) counts capabilityOrder;
         };
+        plan = {
+          digest = builtins.hashString "sha256" (builtins.toJSON report);
+          inherit (report) fileTargetNames claimTargets fragmentOrder retire;
+        };
+        capabilities = builtins.listToAttrs (
+          map (row: nixpkgs.lib.nameValuePair row.id row) report.accounting
+        );
+      };
 
       # per-host identity lives ONLY in hosts/<host>/default.nix: the flake
       # derives the rebuild key and every username/home path from the host
@@ -69,28 +90,7 @@
       };
     in
     {
-      packages = nixpkgs.lib.genAttrs buildSystems
-        (system: { workstation = engineFor system; });
-
-      # the declared-state report: the capability modules' fold
-      # (nix/report.nix) at this tree. The engine's release bakes the same
-      # JSON (nix/engine.nix), so release and declared state ship from the
-      # one flake snapshot. This is also the operator's direct eval
-      # surface — `nix eval .#evalReport.<system>.<field>` answers the
-      # declared state without the engine.
-      evalReport.${hostSystem} =
-        (import ./nix/report.nix {
-          lib = nixpkgs.lib;
-          # the fold applies the substrate's pin-override overlay itself
-          # (the foundation capability's harlequin floor asserts it)
-          pkgs = nixpkgs.legacyPackages.${hostSystem}.extend self.overlays.default;
-          hm = home-manager.lib;
-          treeRoot = self;
-          # no default may bake an identity (t_40cf3088): the eval's
-          # home.homeDirectory arrives per host; the report pins no home
-          # paths.
-          homeDir = linuxHost.homeDir;
-        });
+      workstation.report = reportVerbs;
 
       # the rebuild key is DERIVED from the host identity (${user}@<host>),
       # never hand-typed
@@ -98,7 +98,6 @@
         pkgs = nixpkgs.legacyPackages.${hostSystem};
         extraSpecialArgs = {
           inherit self;
-          engine = self.packages.${hostSystem}.workstation;
         };
         modules = [
           (
@@ -125,7 +124,6 @@
         pkgs = nixpkgs.legacyPackages.${hostSystem};
         extraSpecialArgs = {
           inherit self;
-          engine = self.packages.${hostSystem}.workstation;
         };
         modules = [
           { nixpkgs.overlays = [ self.overlays.default ]; }
@@ -181,7 +179,6 @@
         system = hostSystem;
         specialArgs = {
           inherit self;
-          engine = self.packages.${hostSystem}.workstation;
           # resolved at the flake level: forcing pkgs inside a module's
           # imports re-enters _module.args.pkgs (infinite recursion)
           qemuVmModule = "${nixpkgs}/nixos/modules/virtualisation/qemu-vm.nix";

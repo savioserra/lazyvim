@@ -6,23 +6,6 @@
 .build/
 node_modules/
 
-# Mix build artifacts stay out of Git; the canonical pins live in mix.lock
-# at the umbrella root.
-/_build/
-/deps/
-/tmp/
-/cover/
-*.ez
-
-# Release distribution artifacts (§1): built with `MIX_ENV=prod mix release
-# workstation` + tar, checksum sidecar next to it; rebuilt locally, never
-# committed.
-/workstation-*.tar.gz
-/workstation-*.tar.gz.sha256
-
-# BEAM crash dumps are never source.
-/erl_crash.dump
-
 # Neovim runtime data belongs under XDG data/state/cache, not in Git.
 .nvim-data/
 .nvim-state/

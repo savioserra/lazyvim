@@ -7,7 +7,7 @@ decoded, nothing executes `chezmoi apply`. The recorded-source grammar and
 the engine's `Workstation.Backends.Chezmoi` were the manifest format's file
 face; both retire with the format (operator ruling 2026-10-21,
 [absorption](absorption.md)). The public interface is the repo-native
-`workstation/bin/workstation`, and the write plane is
+`bin/workstation`, and the write plane is
 `workstation-switch`, never a file backend. Authentication, sessions and
 provider state remain user-owned.
 
@@ -92,17 +92,9 @@ it directly (the extraction asserted at eval, `modules/theme/theme.nix`).
 
 ## Isolated validation
 
-`workstation plan` is the public preview (mutates nothing): the daemon
-composes the declared surface from the baked report and probes the live
-target states — no daemon-side mutation anywhere.
-
-```sh
-workstation plan --home <scratch>
-```
-
-Reads are daemon-routed and pure (no journal, no filesystem probing beyond
-the per-target state report); substrate verification is the VM/activation
-harness — see [real integration](testing.md#real-integration). The
+Reads are pure `nix eval`s over `workstation.report` (the shim wraps them)
+and mutate nothing; substrate verification is the VM/activation harness —
+see [real integration](testing.md#real-integration). The
 recorded-envelope goldens and the eval byte guard retired with the format
 (docs/absorption.md — verification is behavioral).
 
@@ -115,7 +107,7 @@ flake (see [README](../README.md#hosts)); an old
 `~/.local/share/workstation` deployed payload is operator-owned cleanup —
 inspect it, back it up to a new absent sibling path, never clone into or
 delete an ambiguous directory, and stop on ambiguity. User files, secrets
-and session state are not engine cleanup targets, and no automatic rollback
+and session state are not substrate cleanup targets, and no automatic rollback
 may touch authentication.
 
 Other legacy engine payload inspection/cleanup is operator-owned; there is

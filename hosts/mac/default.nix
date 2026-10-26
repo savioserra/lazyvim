@@ -14,11 +14,6 @@
 # the darwin user, the HM user and the rebuild key all follow; the
 # real-host cutover owns proving them against the live host before first
 # switch.
-#
-# The engine on aarch64-darwin evals clean (the named gap: per-target NIF
-# vendoring is open) — the darwin leg consumes the real engine derivation
-# exactly like the Linux legs, and the first real switch must BUILD it on
-# the mac.
 {
   self,
   nixpkgs,
@@ -39,14 +34,12 @@ let
 
   retiredBrew = import ./retired-brew.nix;
 
-  # The nix set this host's CLI lives on: the engine plus the nixpkgs
-  # toolchains the substrate owns (mirrors the system leg's toolchain
-  # replacements; the mac's own brew formulas retire into this list).
-  # eza leads it because the walker REFUSES eza's download envelope on
-  # darwin_arm64 (no pinned asset) — the nix set must own it or the
-  # opt-link lane refuses the link as dangling.
+  # The nix set this host's CLI lives on: the nixpkgs toolchains the
+  # substrate owns (mirrors the system leg's toolchain replacements; the
+  # mac's own brew formulas retire into this list).
+  # eza leads it because the walker REFUSED eza's download envelope on
+  # darwin_arm64 (no pinned asset) — the nix set must own it.
   nixPackages = with nixpkgs.legacyPackages.${system}; [
-    self.packages.${system}.workstation
     eza
     tmux
     btop
@@ -78,7 +71,6 @@ in
     inherit system;
     specialArgs = {
       inherit self;
-      engine = self.packages.${system}.workstation;
     };
     modules = [
       ../../nix/modules/workstation-system.nix
@@ -132,7 +124,6 @@ in
             useUserPackages = true;
             extraSpecialArgs = {
               inherit self;
-              engine = self.packages.${system}.workstation;
             };
             users.${user}.imports = [
               (

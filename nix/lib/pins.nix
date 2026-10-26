@@ -3,7 +3,7 @@
 # WHAT is pinned; this library owns HOW a pin becomes a store path:
 #
 #   tool       — a fetchurl-backed tree from the versions.json inventory
-#                (workstation/versions.json stays the interim pin
+#                (the repo-root versions.json stays the interim pin
 #                inventory: nix reads it with builtins.fromJSON; no pin is
 #                duplicated into module literals)
 #   fetchGitPin — a fetchGit-pinned checkout (url + rev from the inventory)
@@ -30,8 +30,9 @@
   lib,
   pkgs,
   # the pin inventory — override only in tests; every consumer reads the
-  # same bytes
-  pinsJson ? builtins.fromJSON (builtins.readFile ../../workstation/versions.json),
+  # same bytes (versions.json at the repo root — the interim inventory;
+  # docs/endgame.md names its retirement)
+  pinsJson ? builtins.fromJSON (builtins.readFile ../../versions.json),
 }:
 let
   # platform vocabulary: the same tag set the inventory keys on

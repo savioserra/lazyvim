@@ -6,8 +6,9 @@ the module and the payload bytes it deploys co-located in the domain
 directory (the format's retirement is recorded in
 [absorption](absorption.md)). The package-manifest format is retired by
 operator ruling 2026-10-21; the walker and the engine's manifest-era
-reader plane are gone: the declared state is the
-modules' fold and the engine reads the baked report. Nothing in this
+reader plane are gone, and the engine itself retired with them: the
+declared state is the modules' fold, and reads are `nix eval` over
+`workstation.report.<verb>`. Nothing in this
 reference describes a surface before its
 owning commit lands it.
 
@@ -18,40 +19,33 @@ flake.nix
   -> modules/* (the native declarations; the capability walk
      nix/lib/capabilities.nix is the registry — the home leg's imports and
      the declared-state report's fold read the same walk)
-  -> nix/modules (workstation-home, workstation-system)
-  -> nix/engine.nix (mixRelease of the umbrella -> the engine release,
-     baking the declared-state report into the release)
+  -> nix/modules (workstation-home, workstation-system, host identity)
+  -> nix/report.nix (the declared-state fold; flake.nix projects it as
+     workstation.report.{status,plan,capabilities})
   -> nix/workstation-switch.nix (the write plane: switch / rollback, the
      switch.log receipt in its tail)
   -> hosts/<host> (wsl / mac; identity only in hosts/<host>/default.nix)
 
-workstation/bin/workstation (POSIX sh: sandbox, checkout anchor, locale guard)
-  -> exec the placed elixir release binary
-      -> Workstation.CLI.Router (read verbs, TTY contract)
-          -> Workstation.CLI.Output (the read plane)
-      -> the declared-state report (flake evalReport; the modules' fold,
-         nix/report.nix, baked into the release)
-
-core speaks shapes only — the report reader, engine state, the theme tokens
+bin/workstation (POSIX sh: flake resolution, verb dispatch)
+  -> reads:  nix eval --json <flake>#workstation.report.<verb>
+  -> writes: exec the staged workstation-switch driver
 ```
 
-The engine is Elixir-only: the release binary executes every verb in-process,
-there is no Lua execution and no nvim invocation anywhere in the engine path.
-Mutation is the nix substrate's (`workstation-switch`); `bin/workstation` is
-the sole public entry point; nvim is a managed host capability the substrate
-provisions, never an engine dependency.
+There is no engine: no resident process, no wire protocol, no TUI, no
+Elixir plane. Mutation is the nix substrate's (`workstation-switch`);
+`bin/workstation` is the sole public entry point; nvim is a managed host
+capability the substrate provisions. `modules/**/*.lua` are data payload
+files read as bytes, never executed.
 
 ## Module boundaries
 
 | Module | Contract |
 | --- | --- |
-| `Workstation.CLI.Router` | Verb parsing, TTY-default contract (`--headless`), exit codes |
-| `Workstation.CLI.Output` | The read plane: the hard-cut wire builders over the baked report (in-process; no socket) |
-| `Workstation.CLI.TUI.*` | The one dashboard (engine/capabilities/plan/status boxes, browser, help) |
-| `Workstation.CLI.Capabilities` | The capability-domain grouped envelope over the status+plan wires |
-| `Workstation.Core.Report` | The declared-state report reader: release-baked JSON (or `WORKSTATION_REPORT`), structurally validated, cached per node — the engine's only declared-state source |
-| `Workstation.Core.EngineState` | Fail-closed private state root + canonical JSON |
+| `bin/workstation` | The launcher shim: flake resolution order, verb dispatch, exit codes (the dispatch gate: `.github/scripts/shim-dispatch.sh`) |
+| `flake.nix` `reportVerbs` | The read verbs' projection over the report fold — the operator-facing read contract |
 | `modules/<domain>/<domain>.nix` | The domain's native declaration: home.file surfaces, pins, fragments, activation scripts — payload co-located in the domain directory |
+| `nix/report.nix` | The declared-state fold: every capability evaluated once against home-manager, integrity-asserted (targets compose, nothing escapes classification, no identity leaks) |
+| `nix/lib/capabilities.nix` | The registry walk: discovers `modules/<domain>/` — the one discovery the home leg and the fold share |
 | `nix/lib/pins.nix` | The pin machinery: checksummed `fetchurl`/`fetchGit` derivations, layout/extraction rules, claim composition, build-time probe gates |
 | `modules/agent/agent.nix` | The agent domain's hot-home surfaces: managed skill leaves (store-path `home.file`), the checkout ensure and version-matched skill provisions (activation scripts) |
 | `modules/<domain>/` payload dirs | Capability payload assets (`files/`, verify scripts) and data files, co-located with the declaring module |
@@ -174,10 +168,10 @@ SHA-256 mirrors `versions.json` byte-for-byte.
 ## Capability domains
 
 The declared state is presented grouped by **capability domain** wherever
-it is listed: the `workstation capabilities` verb (text and `--json`), and
-the TUI capabilities browser. One pure view,
-`Workstation.CLI.Capabilities.group/1`, folds the report wires into that
-envelope, so the CLI listing and the browser cannot disagree about
+it is listed: `nix eval .#workstation.report.capabilities` (scope with an
+attrpath — `.#workstation.report.capabilities.editor`) and the shim's
+`workstation capabilities` wrapper answer from the same fold, so the raw
+eval and the wrapper cannot disagree about
 structure or counts.
 
 Grain contract: domains and capabilities are rollup rows (capability count,
@@ -226,17 +220,14 @@ Validation is nix eval, fail-closed at eval time:
 | Phase | Owner | Responsibility |
 | --- | --- | --- |
 | switch / rollback | `workstation-switch` (nix) | Build the generation from the flake, activate atomically, write the receipt to the state tree's `switch.log` |
-| `plan` | the engine | Preview the attributable declared state (capability, lane, target) from the report; mutate nothing |
-| `status` / `capabilities` | the engine | Report paths, the declared surface, the taxonomy and the capability-domain rollups |
+| `plan` / `status` / `capabilities` | `nix eval` over `workstation.report` (the shim wraps it) | Answer the declared state; mutate nothing |
 | verify lane | `modules/*/verify/*.sh` | Consumer smokes: deployed versions and observable behavior against the recorded pins |
 
-Every engine read verb answers in-process from the baked declared-state
-report (`Workstation.CLI.Output` over `Workstation.Core.Report`) — there
-is no resident engine process and no socket. The daemon (the resident
-read server, the pubsub hub, the `system`/`theme` overlay domains and the
-per-user Unix socket) retired with the read plane's move: the VM boot test
-(`tests/nix`) now pins the retirement itself — no daemon unit, no socket —
-plus the switch receipt in `switch.log`.
+Reads are pure evals — there is no resident process and no socket. The
+daemon (the resident read server, the pubsub hub, the `system`/`theme`
+overlay domains and the per-user Unix socket) retired with the engine:
+the VM boot test (`tests/nix`) pins the retirement itself — no daemon
+unit, no socket — plus the switch receipt in `switch.log`.
 
 A switch is the one event a generation carries: the driver's tail appends
 the receipt line to `switch.log`, and the switch re-points the theme token
@@ -247,13 +238,6 @@ the confirmation-plan flow, the adoption ladder, the stale-pending guard,
 the pre-replace daemon drain, the release-refresh handoff and its
 rendezvous gate — retired with the engine's write plane (the nix
 generation is atomic; rollback replaces every recovery ladder).
-
-The launcher shim (`workstation/bin/workstation`) resolves the checkout repo
-anchor — the mix umbrella root — for EVERY verb and
-exports `WORKSTATION_ENGINE_REPO` when one exists (the anchor gate is
-`.github/scripts/shim-anchor.sh`, run by `check.sh` when a release tarball
-is built). A bare host matches neither anchor shape and exports nothing:
-the release keeps its own fail-closed detection.
 
 ## Neovim package and profile
 
@@ -346,7 +330,7 @@ ships the pins, the launcher, the skills and the verify only.
 ## Payload rule
 
 Host-specific or feature-specific payload remains under the owning
-capability as data — the engine has no per-capability code hooks and never
+capability as data — the substrate has no per-capability code hooks and never
 executes payload modules:
 
 ```text

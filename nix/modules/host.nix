@@ -1,9 +1,9 @@
 # The host identity options: the typed surface hosts/<host>/default.nix is
 # the only place to WRITE. Every consumer — the tailscale transport, the
-# dashboard's --host binding, the flake's configuration keys, the daemon's
-# machine references — derives from config.workstation.host.*; no module
-# hand-types an identity fact. Imported by every system-level leg (NixOS,
-# nix-darwin); the HM home scope carries no identity of its own.
+# dashboard's --host binding, the flake's configuration keys — derives from
+# config.workstation.host.*; no module hand-types an identity fact.
+# Imported by every system-level leg (NixOS, nix-darwin); the HM home scope
+# carries no identity of its own.
 {
   lib,
   ...

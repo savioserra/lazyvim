@@ -4,8 +4,9 @@
 # capability is evaluated once against home-manager and the fold reports the
 # composed declared surface. No manifest exists; nothing here reads one.
 #
-# Report shape (the wire, consumed by the engine's baked release —
-# nix/engine.nix — and by eval-time readers):
+# Report shape (the fold's raw record — the read verbs in flake.nix project
+# it into workstation.report.<verb>, which `nix eval` and the workstation
+# shim's read verbs serve):
 #   counts          { capabilities fileTargets claimTargets fragments retire }
 #   fileTargetNames home-relative leaf targets declared by home.file
 #   claimTargets    home-relative tree targets (store trees claimed at a

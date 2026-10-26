@@ -34,8 +34,8 @@
 The deployed `languages/profile.lua` is **composed natively**: the editor
 capability's module (`modules/editor/editor.nix`) folds the language
 entries the language capabilities declare (`workstation.editor.languages`)
-through `lib.generators.toLua` in a build-time derivation — the engine is
-out of the loop entirely. Entries compose in id order (the base/standard
+through `lib.generators.toLua` in a build-time derivation — there is no
+engine in the loop. Entries compose in id order (the base/standard
 entry is the editor module's own). The declared fields:
 
 | Field | Shape / use |
