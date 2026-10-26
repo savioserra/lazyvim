@@ -261,7 +261,7 @@ writeShellScriptBin "workstation-e2e" ''
   pass "foundation plane"
 
   step "theme token path deployed (the switch-time push surface)"
-  toktop="$home/.local/state/workstation/theme.json"
+  totop="$home/.local/state/workstation/theme.json"
   [ -L "$totop" ] \
     || fail "theme token path" "$totop is not the store token link"
   case "$(readlink "$totop")" in
