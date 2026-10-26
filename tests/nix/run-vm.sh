@@ -19,12 +19,17 @@ echo "== building the VM closure =="
 nix build --print-build-logs \
   ".#nixosConfigurations.vm-test.config.system.build.vm" \
   --out-link tests/nix/vm-result
-run_script=$(ls tests/nix/vm-result/bin/run-*-vm)
+run_script=$(find "$repo_root"/tests/nix/vm-result/bin -name 'run-*-vm' | head -1)
 
 echo "== booting $run_script to activation + live E2E =="
+# The VM disk lands in the CURRENT directory; WORKSTATION_VM_DISK_DIR moves
+# it (parallel proofs against one checkout never fight over the qcow2 lock).
+boot_dir=${WORKSTATION_VM_DISK_DIR:-$repo_root}
+mkdir -p "$boot_dir"
+cd "$boot_dir"
 # 1200s: tcg (no KVM) boots slow, and the live E2E runs after multi-user
-# (the retirement proof + an apply-driven switch + the read smokes). The
-# VM never exits; the timeout IS the boot bound.
+# (the retirement proof + an apply-driven switch + the consumer smokes).
+# The VM never exits; the timeout IS the boot bound.
 timeout 1200 "$run_script" -nographic </dev/null >"$log" 2>&1 || {
   status=$?
   [ "$status" -eq 124 ] || { cat "$log"; exit $status; }
