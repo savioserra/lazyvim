@@ -14,10 +14,9 @@ board comments.
 | --- | --- |
 | `flake.nix`, `flake.lock` | The one entry point: inputs framed per domain (each domain owns its pin surface; `follows` dedupes shared nixpkgs/HM), the declared-state report verbs, the host legs, the mesh outputs |
 | `modules/<domain>/` | One directory per capability domain — the domain's module file AND the bytes it deploys, co-located: `modules/editor/{editor.nix, nvim/}`, `modules/terminal/{terminal.nix, tmux/, nunchux/}`, `modules/theme/{theme.nix, tokens.nix, tokens.lua}`, `modules/foundation/`, `modules/languages/{node,elixir,typescript,go}/`, `modules/agent/`, `modules/fonts/`, `modules/secrets/`. Adding a capability is adding one directory |
-| `nix/` | Shared substrate infrastructure, no capability of its own: `report.nix` (the declared-state fold), `lib/capabilities.nix` (the registry walk), `lib/pins.nix` (pin → store path), `workstation-switch.nix` (the write plane), `modules/` (the home leg, the system leg, the host-identity options) |
+| `nix/` | Shared substrate infrastructure, no capability of its own: `report.nix` (the declared-state fold), `lib/capabilities.nix` (the registry walk), `lib/pins.nix` (the declared pins' shared HOW: fetch/layout/probe machinery, the claim composition), `workstation-switch.nix` (the write plane), `modules/` (the home leg, the system leg, the host-identity options) |
 | `hosts/{wsl,mac}/` | The two target legs (WSL counted under linux). `hosts/<host>/default.nix` is the ONLY place a host's identity is written |
 | `bin/workstation` | The launcher shim: the whole client (POSIX sh). Reads are `nix eval`s over `workstation.report.<verb>`; writes delegate to the staged `workstation-switch`. The home lane stages the same bytes as a derivation onto the profile PATH |
-| `versions.json` | The interim pin inventory (tool URL + checksum rows). Every consumer reads it with `builtins.fromJSON`; no pin is duplicated into module literals. Its retirement is named below |
 | `tests/` | `tests/nix/` (the VM proof host: `vm-host.nix`, `vm-home.nix`, `vm-e2e.nix`, `run-vm.sh`) — behavioral acceptance |
 | `docs/` | The references; this file is the structure's anchor |
 | `.github/` | The static check battery, the CI (static + nix-eval jobs), tagged source archives |
@@ -87,8 +86,9 @@ Everything deleted on the road here, and what replaced it:
 | The mix test suite, doclint, the shim locale/anchor gates | The static battery (identity, engine-free, shell syntax + ShellCheck, the shim dispatch gate, the nix eval reads) + the docker-nix acceptance + the VM E2E |
 | CI's mise/elixir matrix | CI's static job + nix-eval job (evaluation only; closures are the local acceptance's job) |
 | `docs/elixir.md`, `docs/lua-migration.md`, `docs/roadmap.md`, `docs/store-design.md` | Git history; `docs/endgame.md` (this file) holds the living shape |
+| The pin inventory (`versions.json` at the repo root, read via `builtins.fromJSON`) | The pins declared in their OWNING domain's module (one pin, one owner, one surface): the fetchurl tool pins as version + per-platform url/sha256 literals, the git checkout pins as url + rev in `modules/terminal/terminal.nix` (deployed as `~/.tmux/plugins.pins.json`, the verify lane's anchor); `nix/lib/pins.nix` keeps only the shared HOW. The dead rows retired leak-free: openwiki (pi-era), the neovim bootstrap rows, nunchux's release-asset checksums |
 
-## The four endgame decisions
+## The endgame decisions
 
 1. **Platform-two (2026-10-22).** The flake targets exactly mac and linux;
    WSL is linux. Every earlier platform carve-out (arch/omarchy, a distro
@@ -106,12 +106,11 @@ Everything deleted on the road here, and what replaced it:
    `nix eval`, the shim and the switch driver are the whole client. No
    adopt-then-retire transition was built because no host was traversing
    it.
-
-## The named interim
-
-`versions.json` (repo root) is the pin inventory the modules read via
-`nix/lib/pins.nix`. It retires when its pins move to the owning domain's
-module and flake-input surface (the agent domain already shows the pattern:
-the hermes pin is a flake input, surfaced as `hermesAgentPin`); the
-change-rule survives — a pin bump moves the pin and its consumer together.
-Until then it stays the one file a tool-bump touches.
+5. **One pin, one owner, one surface (2026-10-26).** The named interim
+   closed: `versions.json` retired and its rows moved into the owning
+   domains — the fetchurl tool pins as declared module data, the source
+   checkouts as the terminal module's url+rev literals (its verify lane
+   anchors on the deployed `~/.tmux/plugins.pins.json`, the agent
+   domain's deployed-pin law), the hermes runtime staying the one
+   flake-input pin (surfaced as `hermesAgentPin`). The change-rule
+   survives: a pin bump moves the pin and its consumer together.

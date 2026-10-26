@@ -72,9 +72,10 @@ closure acceptance and the VM E2E (docs/testing.md).
 ## Current state and debt
 
 The substrate is the endgame shape (docs/endgame.md). Named remaining
-work: the pin inventory (`versions.json`) relocates into the owning
-domains' module and flake-input surfaces — the agent domain's hermes pin
-already shows the pattern. The retired increments — the manifests, the
-walker, the format, the write/acquisition plane, the daemon, the wire
-protocol, the TUI, the Elixir plane — are history, not debt:
-docs/absorption.md is the record, Git the archive.
+work: none — the last named item, the pin inventory (`versions.json`)
+relocating into the owning domains' module and flake-input surfaces,
+landed 2026-10-26 (one pin, one owner, one surface). The retired
+increments — the manifests, the walker, the format, the write/acquisition
+plane, the daemon, the wire protocol, the TUI, the Elixir plane, the pin
+inventory — are history, not debt: docs/absorption.md is the record, Git
+the archive.

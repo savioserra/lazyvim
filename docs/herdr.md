@@ -8,7 +8,7 @@ never manages the runtime.
 
 | Item | Owner |
 | --- | --- |
-| Binary `0.9.0` (linux x86_64, macOS arm64; WSL uses the Linux asset) | the `herdr` pin (`modules/agent/agent.nix` + `workstation/versions.json`) — the checksummed fetchurl derivation lands the exact pinned binary in the store, linked straight to `.local/bin/herdr` |
+| Binary `0.9.0` (linux x86_64, macOS arm64; WSL uses the Linux asset) | the `herdr` pin declared in `modules/agent/agent.nix` — the checksummed fetchurl derivation lands the exact pinned binary in the store, linked straight to `.local/bin/herdr` |
 | Server, panes, sockets, `~/.config/herdr`, sessions, saved machines | Human/host; lifecycle commands never start, stop, attach or inspect them |
 
 The retired Pi integration hook (`herdr-pi`, a file recipe at
@@ -41,6 +41,6 @@ sourced specification, preserved in Git history as `backlog/docs/doc-1`):
   `[theme.custom]` block) is a deliberate non-goal until branding is wanted.
 - Managed `.local/bin/herdr` shadows any system package (for example an
   Omarchy-provided `/usr/bin/herdr`) through the managed PATH.
-- Upgrades: the pin lives in `workstation/versions.json`; a live server keeps
+- Upgrades: the pin is declared in `modules/agent/agent.nix`; a live server keeps
   running its own version until the human restarts it. Installed bytes and
   running servers are distinct.

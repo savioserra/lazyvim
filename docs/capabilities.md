@@ -46,7 +46,7 @@ files read as bytes, never executed.
 | `modules/<domain>/<domain>.nix` | The domain's native declaration: home.file surfaces, pins, fragments, activation scripts — payload co-located in the domain directory |
 | `nix/report.nix` | The declared-state fold: every capability evaluated once against home-manager, integrity-asserted (targets compose, nothing escapes classification, no identity leaks) |
 | `nix/lib/capabilities.nix` | The registry walk: discovers `modules/<domain>/` — the one discovery the home leg and the fold share |
-| `nix/lib/pins.nix` | The pin machinery: checksummed `fetchurl`/`fetchGit` derivations, layout/extraction rules, claim composition, build-time probe gates |
+| `nix/lib/pins.nix` | The pins' shared HOW: checksummed `fetchurl` derivations from the owning modules' declared data, layout/extraction rules, claim composition, build-time probe gates (git checkout pins are `builtins.fetchGit` at the declaring module) |
 | `modules/agent/agent.nix` | The agent domain's hot-home surfaces: managed skill leaves (store-path `home.file`), the checkout ensure and version-matched skill provisions (activation scripts) |
 | `modules/<domain>/` payload dirs | Capability payload assets (`files/`, verify scripts) and data files, co-located with the declaring module |
 | `modules/theme/tokens.lua` | Canonical theme tokens (DATA: slot/palette layers, per-appearance palettes, consumer choices) — read as bytes, never executed |
@@ -66,8 +66,9 @@ owns everything the old envelope kinds expressed, natively:
 
 - **file/symlink surfaces** — `home.file` entries with store-path sources
   (intra-home links through `mkOutOfStoreSymlink`);
-- **pins** — `nix/lib/pins.nix` turns a declaration (url + 64-hex sha256 +
-  layout + optional probe) into a derivation; the probe (argv + output
+- **pins** — `nix/lib/pins.nix` turns an owning module's declared pin
+  (version + url + 64-hex sha256 + layout + optional probe) into a
+  derivation; the probe (argv + output
   template, or content member+sha for trees without an executable) asserts
   at BUILD time: a wrong pin fails the build, never a host;
 - **dir claims** — a pin's tree linked at a home target; overlapping targets
@@ -117,15 +118,16 @@ secrets    secrets
 | `typescript` | The pinned pnpm standalone tree (tar.gz `flat` — rootless `pnpm` + `dist/`), linked straight from the store derivation at `.local/bin/pnpm`; the operator's JS package manager is a declared capability | probe (build gate) + link record; own Mason/plugin surface | All |
 | `theme` | `tokens.lua` — the canonical token payload; nix extracts the slots consumers need (fail-closed line parse in `modules/theme/theme.nix` — a restructure the parser cannot read fails the eval, never renders empty tokens); deploys no home target | token bytes against the tokens module | All |
 | `tmux` | Plugin checkouts (tpm, tmux2k, tmux-yank, tmux-resurrect, vim-tmux-navigator — fetchGit-pinned); `.tmux.conf`; the `.config/tmux` link; nixpkgs tmux/btop (the mise lane retired); the stale `tmux2k.conf` theme path retires through the retire list | Commits, server, theme | Linux/macOS |
-| `nunchux` | Pinned checkout (`.tmux/plugins/nunchux` at the v3.1.3 commit — repo-tracked launcher binary) + `.platform` marker; theme-slot launcher config rendered natively (slot substitution from `tokens.lua`) | `modules/terminal/nunchux/verify/nunchux.sh` (checkout HEAD + binary pin + marker; never executes the binary) | Linux (darwin deferred; the darwin release pin stays recorded in `versions.json`) |
+| `nunchux` | Pinned checkout (`.tmux/plugins/nunchux` at the v3.1.3 commit — repo-tracked launcher binary) + `.platform` marker; theme-slot launcher config rendered natively (slot substitution from `tokens.lua`) | `modules/terminal/nunchux/verify/nunchux.sh` (checkout HEAD + binary pin + marker; never executes the binary) | Linux (darwin deferred; the release-asset rows retired with the inventory — no consumer) |
 | `prompt` | (dissolved into `foundation` — eza + starship are nixpkgs packages, the starship config and the managed rc fragments ride the foundation module) | `modules/foundation/verify/prompt.sh` (the dissolved surface: tools speak, payload deployed, rc wired) | All |
 
 ### Go toolchain acquisition
 
 Decision recorded 2026-10-15 (card t_1d7be74b): the Go toolchain is a
 declared ARCHIVE pin, not a host prerequisite. The layout (`.local/opt/go`
-exact tree + the `.local/bin/go` link) and the `versions.json` go pins
-predate the declaration cutover but had no provisioning path — the link
+exact tree + the `.local/bin/go` link) and the go pin (now declared in
+`modules/languages/go/go.nix`; originally an inventory row) predate the
+declaration cutover but had no provisioning path — the link
 dangled on every fresh host. The pin keeps one pinned-artifact seam
 (https-only URL, 64-hex SHA-256 gate, per-platform dispatch, exclusive
 target ownership) and honors the operating-contract law: a capability that
@@ -135,8 +137,8 @@ The pin's data is domain-neutral: the layout names the root discipline, the
 probe is the honesty gate — the tree must prove it is the pinned tool.
 Execution is nix's: the declaration renders as a checksummed `fetchurl`
 derivation, the store verifies the bytes, and the generation links the
-extracted tree at the target. A pin bump moves `versions.json`, the
-declaration's consumer row and the generation together.
+extracted tree at the target. A pin bump moves the owning module's
+declared pin, its consumer row and the generation together.
 
 ### Fresh-host pins: foundation tools, fonts, op, nvm/Node
 
@@ -163,7 +165,8 @@ op at `.local/opt/op` + link (zip, `flat`); the JetBrainsMono Nerd Font
 exact tree (tar.xz, `flat`, content probe, per-platform targets); nvm at
 `.local/opt/nvm` (release, content probe) with the pinned Node nested
 inside it (release, exec probe), declared parent-first. Every url and
-SHA-256 mirrors `versions.json` byte-for-byte.
+SHA-256 is declared in the owning domain's module — one pin, one owner,
+one surface (the `versions.json` mirror retired 2026-10-26).
 
 ## Capability domains
 
@@ -283,10 +286,10 @@ step; recorded in AGENTS.md's operating-contract law). Four surfaces:
    demands it. The deployed pin manifest (`.local/opt/hermes/pin.json`)
    carries the pin for the verify lane — the deployed pin, never a repo
    file.
-2. **The pinned interpreter** — a checksum-gated pin (`hermes_python` +
-   per-platform URL/SHA-256 in `versions.json`) at
-   `.local/opt/hermes/python` (probe `bin/python3 --version`). The pin is
-   the SAME release hermes-agent's own `pm/lock.json` carries at the
+2. **The pinned interpreter** — a checksum-gated pin declared in
+   `modules/agent/agent.nix` (per-platform URL/SHA-256 module literals)
+   at `.local/opt/hermes/python` (probe `bin/python3 --version`). The pin
+   is the SAME release hermes-agent's own `pm/lock.json` carries at the
    pinned rev — the rev is the authority for which interpreter build the
    runtime expects.
 3. **The engine launcher** — `programs.hermes.package`, deployed at

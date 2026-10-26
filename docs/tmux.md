@@ -61,13 +61,13 @@ Pinning rules:
 - Keep `@plugin` values as bare `user/repo` for TPM.
 - Store exact commits in this table. All six checkouts are
   substrate-provisioned pinned clones, never placed by hand: the plugin
-  pins live in `workstation/versions.json` (the interim pin inventory —
-  `<plugin>_git_commit` / `<plugin>_git_url` rows) and
-  `modules/terminal/terminal.nix` fetchGit-freezes each at the recorded
-  commit, linking the store checkout under `~/.tmux/plugins/` (tpm first —
-  it must exist before the first tmux start, which sources it via the
-  `run-shell` at the end of `.tmux.conf`); nunchux rides the same
-  inventory (below). TPM sees the pre-installed checkouts and sources
+  pins are declared in `modules/terminal/terminal.nix` (url + rev
+  literals — one pin, one owner, one surface) and fetchGit-frozen at the
+  recorded commit, linking the store checkout under `~/.tmux/plugins/`
+  (tpm first — it must exist before the first tmux start, which sources
+  it via the `run-shell` at the end of `.tmux.conf`); the same
+  declaration deploys as `~/.tmux/plugins.pins.json`, the verify lane's
+  anchor. TPM sees the pre-installed checkouts and sources
   them without cloning. Never run TPM's `prefix + I`: a TPM clone/pull
   would fight the pins — the next generation switch re-asserts them.
 - The plugin rows are asserted by the package tests (the payload seam).
@@ -84,7 +84,7 @@ TPM `user/repo#ref` supports branches/tags, not exact raw commits.
 
 | Plugin | Commit | Pin inventory |
 | --- | --- | --- |
-| `datamadsen/nunchux` | `1546eaa980d834c331496ea9d51942be07ea9fdd` (Release 3.1.3) | `versions.json`: `nunchux_git_*` (clone pin), `nunchux_repo_linux_amd64_sha256` (the repo-tracked `bin/nunchux` build), `nunchux_*` release-asset SHA-256s (distribution inventory) |
+| `datamadsen/nunchux` | `1546eaa980d834c331496ea9d51942be07ea9fdd` (Release 3.1.3) | `modules/terminal/terminal.nix` declares the clone pin (url + rev) and the repo-tracked `bin/nunchux` build's SHA-256 (deployed as `~/.tmux/plugins.pins.json`); the release-asset checksum rows retired with the shared inventory — the `.platform` marker keeps `ensure_binary` off the release fetches |
 
 Nunchux (fzf popup launcher for apps, files and task runners) is ACTIVE:
 the `@plugin` pin and the root `C-Space` chord in `.tmux.conf` are live,
@@ -250,6 +250,6 @@ config) and remove any `tmux.conf.bak.*` left in `~/.config/tmux/`.
 - assert session name;
 - assert the `2KAbhishek/tmux2k` `@plugin` pin in `.tmux.conf`;
 - assert `@tmux2k-theme=onedark`, the `cpu ram time` right side and the btop popup pin ahead of TPM init;
-- assert the `workstation/versions.json` tmux2k pin (commit + URL);
+- assert the tmux2k row of the deployed `~/.tmux/plugins.pins.json` (commit + URL);
 - assert the pinned `TMUX_PLUGIN_MANAGER_PATH`;
 - kill the isolated server on success or failure.
