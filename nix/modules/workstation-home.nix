@@ -99,7 +99,10 @@ in
         echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) ${p}" >> "$HOME/.local/state/workstation/retire.log"
       '') cfg.retire);
 
-    # --- the file plane: the modules' declared targets + the fragment lane --
+    # --- the file plane: the modules' declared targets + the fragment lane +-
+    # the generation's flake snapshot (the shim's read flake — the last
+    # resort of its resolution order; a checkout or an explicit --flake
+    # outranks it)
     home.file =
       assert
         # the lane's integrity: one fragment per (id, target) pair — two
@@ -107,7 +110,9 @@ in
         lib.length (lib.unique (map (f: [ f.id f.target ]) cfg.shell.fragments))
         == lib.length cfg.shell.fragments
         || throw "workstation-shell: duplicate fragment id/target pairs in the declared lane";
-      fragmentFiles // rcFiles;
+      fragmentFiles // rcFiles // {
+        ".local/opt/workstation/flake".source = self;
+      };
     # (.local/bin/nvim moved to modules/editor/editor.nix — the nvim
     # manifest's death in the same commit retired the walker's override
     # guard with it)
@@ -137,8 +142,6 @@ in
             "UNCONFIGURED-workstation.switch.systemAttr";
       })
     ];
-
-    home.file.".local/opt/workstation/flake".source = self;
 
     # the shell fragment lane and the retire list are DECLARED by the domain
     # modules (workstation-options.nix) and rendered above
