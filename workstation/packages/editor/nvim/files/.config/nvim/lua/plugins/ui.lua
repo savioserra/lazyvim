@@ -179,6 +179,11 @@ return {
 			preset = "modern",
 		},
 	},
+	-- Render hex/rgb/hsl and CSS variable color codes inline.
+	{
+		"brenoprata10/nvim-highlight-colors",
+		event = "LazyFile",
+	},
 	{
 		"neovim/nvim-lspconfig",
 		opts = {

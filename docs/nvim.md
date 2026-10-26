@@ -88,7 +88,7 @@ exists yet.
 | `mason-lock.lua` | Blocking exact Mason restore |
 | `theme.lua` | oasis.nvim (upstream starlight pin) + LazyVim colorscheme opt |
 | `treesitter.lua` | Parser set |
-| `ui.lua` | snacks, lualine, noice, dropbar, inline diagnostics |
+| `ui.lua` | snacks, lualine, noice, dropbar, inline diagnostics, highlight colors |
 | `editor.lua` | Movement, tags, tmux navigation, diff view |
 | `testing.lua` | neotest and Jest adapter |
 | `debugging.lua` | nvim-dap and nvim-dap-view |
