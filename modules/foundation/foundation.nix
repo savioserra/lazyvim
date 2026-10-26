@@ -1,6 +1,7 @@
 # The base shell environment: the rc lane + fd, fzf, rg, lazygit,
 # tree-sitter (checksummed pins), eza + starship (nixpkgs — the prompt
-# capability dissolved here), harlequin + hsql (one upstream distribution;
+# capability dissolved here), mise (nixpkgs — the binary only, no managed
+# footprint), harlequin + hsql (one upstream distribution;
 # the pinned nixpkgs predates hsql, so the foundation domain owns its pin
 # surface through the flake's pin-override overlay), and the tailscale
 # transport (the system legs declare services.tailscale through the system
@@ -171,6 +172,15 @@ in
       # starship the cross-shell prompt — both nixpkgs-native
       pkgs.eza
       pkgs.starship
+      # mise (mise-en-place): the nixpkgs-native binary only — per-project
+      # runtime versioning (`mise use`, `.mise.toml`, `mise x`) on every
+      # managed host, the pin riding the nixpkgs lock. The engine owns
+      # nothing around it: no managed MISE_DATA_DIR, no `.local/bin/mise`
+      # launcher, no activation fragment — the retired managed-mise lane's
+      # split-brain (t_1ae61704) stays structurally dead, and shell
+      # activation (`mise activate`) is operator opt-in (its own card, if
+      # ever — it shadows PATH tools).
+      pkgs.mise
       # harlequin + hsql: one upstream distribution (the terminal SQL IDE
       # and its headless agent CLI share adapters, config and engine). The
       # pinned nixpkgs (25.05) predates hsql — the version rides the
