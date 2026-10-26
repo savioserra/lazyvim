@@ -1,12 +1,15 @@
 #!/bin/sh
-# Managed by the workstation engine — the agent package's hermes launcher.
+# Managed by the workstation substrate — the agent capability's hermes
+# launcher (programs.hermes.package).
 #
-# The engine provisions the full stack: the pinned interpreter at
-# .local/opt/hermes/python (download contract, checksum-gated archive) and
-# the pinned checkout at .hermes/hermes-agent (git recipe). This launcher
-# resolves both at run time (never baked paths), so the bytes stay
-# machine-independent. A missing or non-executable interpreter or checkout
-# fails closed: the verify lane asserts this exact smoke.
+# The capability provisions the full stack: the pinned interpreter at
+# .local/opt/hermes/python (a store tree from the checksummed
+# python-build-standalone pin) and the pinned checkout at
+# .hermes/hermes-agent (ensured by activation to the flake input's rev,
+# the deployed pin manifest records it). This launcher resolves both at
+# run time (never baked paths), so the bytes stay machine-independent. A
+# missing or non-executable interpreter or checkout fails closed: the
+# verify lane asserts this exact smoke.
 set -eu
 
 checkout=${HERMES_ENGINE_CHECKOUT:-$HOME/.hermes/hermes-agent}

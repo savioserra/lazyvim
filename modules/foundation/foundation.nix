@@ -9,9 +9,10 @@
 # Shell fragments: the bodies are payload files beside this module; the
 # ORDER is the explicit declared list below (id, target, marker, payload)
 # — reviewed in diffs, never derived. The retired managed-mise fragment
-# is gone with the mise lane. The hsql agent skill is runtime-coupled hot
-# state: the activation provisions it from the INSTALLED derivation, so
-# the skill always matches the binary.
+# is gone with the mise lane. The hsql agent skill is generated from the
+# INSTALLED derivation at build time (hsql --skill) — version-matched by
+# construction, offline — and serves as a declared entry symlink
+# (programs.hermes.skills.hsql); no activation lane writes into hot home.
 {
   config,
   lib,
@@ -110,6 +111,24 @@ let
   # the starship config payload, co-located beside this module (the
   # dissolved prompt capability's bytes live with their owner)
   starshipToml = ./starship.toml;
+
+  # the hsql agent skill: generated from the installed derivation by the
+  # tool's own --skill generator (the hsql precedent — a tool that ships
+  # one serves its skill version-matched, offline, from the store). The
+  # generator decides file-vs-dir by the target's existence, so the build
+  # stages into a pre-created dir and copies out — one shape, always.
+  hsqlSkill = pkgs.runCommand "hsql-agent-skill-${pkgs.harlequin.version}"
+    {
+      nativeBuildInputs = [ pkgs.harlequin ];
+      passthru.version = pkgs.harlequin.version;
+    }
+    ''
+      export HOME="$TMPDIR/home"
+      mkdir -p "$HOME" "$TMPDIR/skill"
+      hsql --skill -o "$TMPDIR/skill"
+      mkdir -p "$out"
+      cp -a "$TMPDIR/skill/." "$out/"
+    '';
 in
 {
   options.workstation.foundation = {
@@ -169,16 +188,12 @@ in
       # prerequisite on any standalone leg)
     ] ++ lib.optionals config.workstation.foundation.tailscale.enable [ pkgs.tailscale ];
 
-    # the hsql agent skill: provisioned at activation from the installed
-    # derivation — version-matched by construction, offline (the skill
-    # ships inside the package)
-    home.activation.provision-hsql-skill = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-      skills="$HOME/.hermes/skills"
-      if ${pkgs.harlequin}/bin/hsql --skill -o "$skills/hsql" >/dev/null; then
-        echo "workstation: hsql agent skill provisioned (${pkgs.harlequin.name})"
-      else
-        echo "workstation: hsql agent skill provision DEFERRED (hsql --skill failed)"
-      fi
-    '';
+    # the hsql agent skill: the build-time-generated tree (above), served
+    # as a declared entry symlink by the agent module — the activation
+    # copy provision retired with the copy contract
+    programs.hermes.skills.hsql = {
+      enable = true;
+      source = hsqlSkill;
+    };
   };
 }

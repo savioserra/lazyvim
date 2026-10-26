@@ -21,6 +21,9 @@
   writeShellScriptBin,
   engine,
   self,
+  # the foundation domain's pinned harlequin version (the flake overlay's —
+  # the caller's pkgs predates hsql and carries no real version)
+  harlequinVersion,
 }:
 let
   # the standalone home the apply targets (staged into the VM closure by
@@ -136,7 +139,7 @@ writeShellScriptBin "workstation-e2e" ''
   #     skill, and the retire-list receipt (the checkout itself is the one
   #     network surface — its ensure activation defers offline with a named
   #     receipt, and the hermes verify lane is the drift gate on real hosts)
-  step "agent runtime stack (launcher, interpreter, herdr)"
+  step "agent runtime stack (launcher, interpreter, herdr, pin manifest)"
   [ -x "$home/.local/bin/hermes" ] \
     || fail "agent runtime stack" "$home/.local/bin/hermes is not executable"
   [ -f "$home/.local/opt/hermes/bin/hermes" ] \
@@ -145,12 +148,41 @@ writeShellScriptBin "workstation-e2e" ''
     || fail "agent runtime stack" "the pinned interpreter did not deploy"
   [ -x "$home/.local/bin/herdr" ] \
     || fail "agent runtime stack" "$home/.local/bin/herdr is not executable"
+  grep -Eq '"engine":\{"rev":"[0-9a-f]{40}"' "$home/.local/opt/hermes/pin.json" 2>/dev/null \
+    || fail "agent runtime stack" "the deployed pin manifest carries no engine rev"
   pass "agent runtime stack"
 
-  step "agent secrets skill linked"
+  step "agent skills served as declared entry symlinks"
+  [ -L "$home/.hermes/skills/secrets" ] \
+    || fail "agent skills" "$home/.hermes/skills/secrets is not the declared entry symlink"
+  case "$(readlink "$home/.hermes/skills/secrets")" in
+    /nix/store/*) ;;
+    *) fail "agent skills" "$home/.hermes/skills/secrets does not resolve into the store" ;;
+  esac
   [ -r "$home/.hermes/skills/secrets/SKILL.md" ] \
-    || fail "agent secrets skill linked" "$home/.hermes/skills/secrets/SKILL.md missing"
-  pass "agent secrets skill linked"
+    || fail "agent skills" "$home/.hermes/skills/secrets/SKILL.md unreadable through the symlink"
+  [ -L "$home/.hermes/skills/hsql" ] \
+    || fail "agent skills" "$home/.hermes/skills/hsql is not the declared entry symlink"
+  [ -r "$home/.hermes/skills/hsql/SKILL.md" ] \
+    || fail "agent skills" "$home/.hermes/skills/hsql/SKILL.md unreadable through the symlink"
+  # the explicit profile targeting: the named profile sees the same
+  # declared entries
+  [ -L "$home/.hermes/profiles/fresh/skills/secrets" ] \
+    || fail "agent skills" "the named profile's skills dir carries no secrets entry"
+  [ -r "$home/.hermes/profiles/fresh/skills/secrets/SKILL.md" ] \
+    || fail "agent skills" "the named profile's secrets entry is unreadable"
+  pass "agent skills"
+
+  step "hsql skill version matches the derivation (the hsql precedent)"
+  # the skill tree IS this generation's harlequin build — the fully
+  # resolved store path carries the derivation version the pin ships (HM
+  # may link through its files tree; resolve to the end)
+  case "$(readlink -f "$home/.hermes/skills/hsql")" in
+    *hsql-agent-skill-${harlequinVersion}) ;;
+    *) fail "hsql skill version" \
+      "$home/.hermes/skills/hsql does not resolve into the ${harlequinVersion} skill derivation" ;;
+  esac
+  pass "hsql skill version"
 
   step "retire-list receipt"
   [ ! -e "$home/.hermes/skills/lazyvim/SKILL.md" ] \
@@ -210,10 +242,16 @@ writeShellScriptBin "workstation-e2e" ''
     || fail "foundation plane" "the nerd font tree did not deploy"
   pass "foundation plane"
 
-  step "hsql agent skill provisioned (version-matched, offline)"
-  [ -r "$home/.hermes/skills/hsql/SKILL.md" ] \
-    || fail "hsql agent skill" "$home/.hermes/skills/hsql/SKILL.md missing"
-  pass "hsql agent skill"
+  # 2c. the adopt rehearsal: a copy-contract tree at a declared entry path
+  #     (what real hosts carry from the retired shapes) makes way for the
+  #     declared symlink at the next generation
+  step "copy-contract tree planted (adopt rehearsal)"
+  rm -rf "$home/.hermes/skills/secrets"
+  mkdir -p "$home/.hermes/skills/secrets"
+  echo "copy-contract drift" >"$home/.hermes/skills/secrets/SKILL.md"
+  [ -f "$home/.hermes/skills/secrets/SKILL.md" ] \
+    || fail "copy-contract tree planted" "the rehearsal tree did not plant"
+  pass "copy-contract tree planted"
 
   # 3. the apply-driven nix switch: the driver wraps the offline
   #    activation + generation registration, reads the generation and
@@ -224,6 +262,16 @@ writeShellScriptBin "workstation-e2e" ''
     || fail "apply-driven switch" "the driver failed (switch or publish)"
   unset WORKSTATION_SWITCH_HOME_ACTIVATE
   pass "apply-driven switch"
+
+  step "adopt step: the declared symlink replaced the copy-contract tree"
+  [ -L "$home/.hermes/skills/secrets" ] \
+    || fail "adopt step" "$home/.hermes/skills/secrets did not become the declared symlink"
+  [ -r "$home/.hermes/skills/secrets/SKILL.md" ] \
+    || fail "adopt step" "the declared skill is unreadable after the adopt"
+  grep -q " adopt .hermes/skills/secrets$" \
+    "$home/.local/state/workstation/retire.log" 2>/dev/null \
+    || fail "adopt step" "no adopt receipt in the retire log"
+  pass "adopt step"
 
   # 4. the daemon heard it: the `system` domain receipt in the user unit's
   #    journal (the capability logs the exact message it fanned out)

@@ -20,10 +20,18 @@
     # the pinned nixpkgs (25.05) predates hsql — the foundation's tool
     # rides this input through the pin-override overlay
     nixpkgs-foundation.url = "github:NixOS/nixpkgs/nixos-unstable";
+
+    # the agent domain's pin surface: hermes-agent, pinned by fetchGit rev
+    # (outputs.hermesAgentPin surfaces it as programs.hermes.pin; the
+    # checkout stays hot home — the pin owns where it points). A pin bump
+    # moves this rev and the consumer together, then `nix flake lock`.
+    # The input's own dependency tree stays its own — never traverse
+    # inputs (only the source tree is read).
+    hermes-agent.url = "git+https://github.com/NousResearch/hermes-agent?rev=b23600860f82bd66d345c0a1baefd0f264605955";
   };
 
   outputs =
-    { self, nixpkgs, home-manager, nixos-wsl, nix-darwin, nixpkgs-foundation }:
+    { self, nixpkgs, home-manager, nixos-wsl, nix-darwin, nixpkgs-foundation, hermes-agent }:
     let
       # the engine builds where its NIF vendoring is proven (the build
       # gate): x86_64-linux built + smoked; aarch64-darwin evals clean,
@@ -113,7 +121,8 @@
       };
 
       # the VM's standalone home: the exact shape the linux leg applies —
-      # and the E2E's apply target inside the offline VM
+      # and the E2E's apply target inside the offline VM (the shared VM
+      # persona body: tests/nix/vm-home.nix)
       homeConfigurations."vm@vm" = home-manager.lib.homeManagerConfiguration {
         pkgs = nixpkgs.legacyPackages.${hostSystem};
         extraSpecialArgs = {
@@ -121,18 +130,8 @@
           engine = self.packages.${hostSystem}.workstation;
         };
         modules = [
-          (
-            { ... }:
-            {
-              home.username = "vm";
-              home.homeDirectory = "/home/vm";
-              # the foundation domain's pin surface (harlequin + hsql)
-              nixpkgs.overlays = [ self.overlays.default ];
-              # the switch driver's default targets inside the VM
-              workstation.switch.homeAttr = "vm@vm";
-              workstation.switch.systemAttr = "vm-test";
-            }
-          )
+          { nixpkgs.overlays = [ self.overlays.default ]; }
+          ./tests/nix/vm-home.nix
           ./nix/modules/workstation-home.nix
         ];
       };
@@ -147,6 +146,16 @@
       # the capability outputs consumer flakes take (binding spec
       # 2026-10-22): the agent's managed skills and the theme tokens
       hermesSkills = import ./modules/agent/skills.nix { inherit self; };
+
+      # the agent domain's runtime pin, surfaced to programs.hermes.pin
+      # (modules/agent/agent.nix reads it off `self`): the clone URL, the
+      # pinned rev (the input's sourceInfo — the fetchGit pin), and the
+      # pinned tree (build-time assertions only; never a closure member)
+      hermesAgentPin = {
+        url = "https://github.com/NousResearch/hermes-agent";
+        rev = hermes-agent.sourceInfo.rev;
+        tree = hermes-agent;
+      };
 
       workstationTheme.lib = import ./modules/theme/theme.nix {
         lib = nixpkgs.lib;

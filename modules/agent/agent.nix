@@ -1,25 +1,45 @@
-# The agent domain: hermes and herdr, natively declared (docs/absorption.md
-# — the copy/git-into-.hermes/remove refusal lanes close here).
+# The agent domain: hermes and herdr, fully declarative (LM1 —
+# docs/absorption.md's copy/git-into-.hermes lanes close here under
+# programs.hermes).
 #
-# Three hot-home surfaces, exactly per the design's mapping:
-#   skills            — declared skill LEAVES as store-path home.file
-#                       entries (recursive: real dirs, per-file store
-#                       links; the agent consumes them read-only and an
-#                       in-place edit is replaced at the next switch —
-#                       declared truth wins). The skills PARENT stays hot:
-#                       the agent's runtime-mutated state is never tracked.
-#   the checkout      — home.activation ensure: idempotent clone/fetch to
-#                       the hermes_agent pin ONLY when the checkout is
-#                       absent or clean-and-behind; a dirty or
-#                       runtime-advanced tree is never touched. Activation
-#                       scripts mutate hot state; the file plane never
-#                       tracks it. A failed git step defers with a named
-#                       receipt (the checkout is the one network surface;
-#                       the hermes verify lane is the contract that catches
-#                       real drift on converged hosts).
-#   the retire list   — the substrate's declared tombstones (see
-#                       workstation.retire in workstation-home.nix); this
-#                       domain declares .hermes/skills/lazyvim/SKILL.md.
+# The hot-home surfaces and their owners:
+#   the runtime pin   — programs.hermes.pin: the flake input's fetchGit rev
+#                       (outputs.hermesAgentPin, framed per capability as
+#                       inputs.hermes-agent). The pinned checkout stays hot
+#                       home — hermes' update machinery, pm store and
+#                       recovery closures write into the tree — so the pin
+#                       owns WHERE the checkout points and the activation
+#                       ensure owns moving it: clone/fetch only when absent
+#                       or clean-and-behind; a dirty or runtime-advanced
+#                       tree is never touched. A failed git step defers with
+#                       a named receipt (the checkout is the one network
+#                       surface; the verify lane catches real drift on
+#                       converged hosts). The deployed pin manifest
+#                       (.local/opt/hermes/pin.json) is the verify lane's
+#                       only anchor — the deployed pin, never a repo file.
+#   skills            — programs.hermes.skills: ONE entry symlink per skill
+#                       per target profile (default = ~/.hermes/skills, a
+#                       named profile = ~/.hermes/profiles/<name>/skills).
+#                       The entry is atomic — a switch replaces the whole
+#                       skill, an in-place edit fails on the read-only store
+#                       (declared truth wins, loudly) — while the skills
+#                       PARENT stays hot: skills_sync seeds and updates
+#                       hermes' bundled skills there, the curator archives
+#                       there, and none of them ever write into a declared
+#                       name (a build-time assertion refuses a name the
+#                       pinned tree bundles).
+#   extensions        — programs.hermes.extensions: gateway plugin trees as
+#                       derivations (the python-env pattern), linked as
+#                       entry symlinks into ~/.hermes/plugins — user
+#                       discovery outranks bundled, so a declared extension
+#                       shadows a same-named bundled plugin; per-plugin
+#                       enablement stays live state (hermes plugins enable).
+#
+# The copy contract is retired: skill payloads are never copied or
+# per-file-linked into hot home — the declared entry symlink is the whole
+# surface. Adopt is explicit: a pre-link activation step makes way for the
+# first generation's symlinks by removing the copy-contract trees (real
+# dirs only, named receipt), then HM links the store entries.
 #
 # The runtime stack stays pinned: the hermes interpreter at
 # .local/opt/hermes/python (a store tree the launcher resolves at run
@@ -33,7 +53,7 @@
   ...
 }:
 let
-  cfg = config.workstation.agent;
+  hermes = config.programs.hermes;
 
   pins = import ../../nix/lib/pins.nix { inherit lib pkgs; };
 
@@ -55,53 +75,125 @@ let
     ''
       install -Dm755 ${./files/hermes-launcher.sh} "$out/hermes-launcher"
     '';
+
+  # the deployed pin manifest: the verify lane's only anchor (the checkout
+  # HEAD and the interpreter are verified against the DEPLOYED pin, never a
+  # repo file)
+  pinJson = builtins.toJSON {
+    engine = {
+      inherit (hermes.pin) url rev;
+    };
+    python = pins.inventory."hermes_python";
+  };
+
+  # the agent's authored skills: the single source both this module (the
+  # option setters) and the flake's hermesSkills output import — each tree
+  # serves as ONE entry symlink per target profile (the rendering lane
+  # lives in nix/modules/workstation-options.nix, so the report fold
+  # attributes every entry to the capability that set it)
+  authoredSkills = import ./skills.nix { inherit self; };
 in
 {
-  options.workstation.agent = {
-    skills = lib.mkOption {
-      type = lib.types.attrsOf lib.types.path;
-      default = import ./skills.nix { inherit self; };
-      defaultText = lib.literalExpression "import ./skills.nix { inherit self; }";
+  options.programs.hermes = {
+    # the runtime pin: the flake input's fetchGit rev, surfaced per
+    # capability. Unset means the agent domain serves no runtime: an eval
+    # that reads hermes surfaces without a pin fails loudly with the name
+    # of the missing flake output.
+    pin = lib.mkOption {
+      type = lib.types.nullOr (lib.types.submodule {
+        options = {
+          url = lib.mkOption {
+            type = lib.types.str;
+            description = "The hermes-agent upstream git URL (the clone surface).";
+          };
+          rev = lib.mkOption {
+            type = lib.types.str;
+            description = "The pinned hermes-agent commit.";
+          };
+          tree = lib.mkOption {
+            type = lib.types.raw;
+            description = ''
+              The pinned tree as the caller's flake input value — build-time
+              assertions read it; it never enters the deployed closure.
+            '';
+          };
+        };
+      });
+      default = if self ? hermesAgentPin then self.hermesAgentPin else null;
+      defaultText = lib.literalExpression "self.hermesAgentPin";
       description = ''
-        The agent's managed skills: skill name -> payload dir. Each skill
-        leaf renders as a store-path home.file entry (recursive), so HM
-        manages exactly the declared leaves while the rest of ~/.hermes
-        stays hot.
+        The hermes-agent runtime pin (upstream URL, pinned rev, pinned
+        tree). The flake surfaces it as outputs.hermesAgentPin from its
+        inputs.hermes-agent.
+      '';
+    };
+
+    package = lib.mkOption {
+      type = lib.types.package;
+      default = launcher;
+      defaultText = lib.literalExpression "launcher";
+      description = ''
+        The engine launcher derivation: resolves the pinned interpreter and
+        the pinned checkout from $HOME at run time, fails closed when
+        either is missing. Deployed at .local/opt/hermes/bin/hermes and on
+        PATH as .local/bin/hermes.
       '';
     };
   };
 
   config = {
-    # --- the declared skill leaves -----------------------------------------
-    home.file = lib.mkMerge (
-      lib.mapAttrsToList
-        (name: dir: {
-          ".hermes/skills/${name}" = {
-            source = dir;
-            recursive = true;
-          };
-        })
-        cfg.skills
-      ++ [
-        # --- the runtime stack ---------------------------------------------
-        {
-          # the pinned interpreter tree the launcher resolves at run time
-          ".local/opt/hermes/python".source = hermesPython;
-          # the engine launcher: the payload file at its runtime home...
-          ".local/opt/hermes/bin/hermes".source = "${launcher}/hermes-launcher";
-          # ...and the PATH entry — the store path links directly, no
-          # ../opt indirection
-          ".local/bin/hermes".source = "${launcher}/hermes-launcher";
-          # herdr: archive-less pin, the same direct store-path link
-          ".local/bin/herdr".source = "${herdr}/bin/herdr";
-        }
-      ]
-    );
+    # --- the eval-time contract --------------------------------------------
+    assertions = [
+      {
+        assertion = hermes.pin != null;
+        message =
+          "programs.hermes.pin is unset — the flake must surface "
+          + "`hermesAgentPin` (its pinned hermes-agent input: url, rev, "
+          + "tree); see outputs.hermesAgentPin in flake.nix";
+      }
+    ] ++ map
+      (name: {
+        assertion =
+          hermes.pin.tree == null
+          || !builtins.pathExists (hermes.pin.tree + "/skills/${name}");
+        message =
+          "programs.hermes.skills.${name} collides with a skill the pinned "
+          + "hermes-agent bundles — skills_sync owns that name at runtime "
+          + "and would fight the declared entry symlink; rename the "
+          + "declared skill";
+      })
+      (builtins.attrNames (lib.filterAttrs (_: skill: skill.enable) hermes.skills));
+
+    # --- the agent's authored skills + the runtime stack --------------------
+    # (the skill ENTRY rendering lives in nix/modules/workstation-options.nix
+    # — the cross-capability lane — so the report fold attributes every
+    # entry to the capability that set it)
+    programs.hermes.skills = lib.mapAttrs
+      (_: source: {
+        enable = true;
+        inherit source;
+      })
+      authoredSkills;
+
+    home.file = {
+      # the pinned interpreter tree the launcher resolves at run time
+      ".local/opt/hermes/python".source = hermesPython;
+      # the pin manifest: the verify lane's anchor (the deployed pin,
+      # never a repo file)
+      ".local/opt/hermes/pin.json".text = pinJson;
+      # the engine launcher: the payload file at its runtime home...
+      ".local/opt/hermes/bin/hermes".source = "${hermes.package}/hermes-launcher";
+      # ...and the PATH entry — the store path links directly, no
+      # ../opt indirection
+      ".local/bin/hermes".source = "${hermes.package}/hermes-launcher";
+      # herdr: archive-less pin, the same direct store-path link
+      ".local/bin/herdr".source = "${herdr}/bin/herdr";
+    };
 
     # --- the pinned checkout (hot home; activation-managed) ----------------
     home.activation.ensure-hermes-checkout = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-      url=${lib.escapeShellArg pins.inventory."hermes_agent_git_url"}
-      rev=${lib.escapeShellArg pins.inventory."hermes_agent_git_commit"}
+      url=${lib.escapeShellArg hermes.pin.url}
+      rev=${lib.escapeShellArg hermes.pin.rev}
       checkout="$HOME/.hermes/hermes-agent"
       if ! command -v git >/dev/null 2>&1; then
         echo "workstation: hermes checkout ensure deferred — git unavailable on PATH"

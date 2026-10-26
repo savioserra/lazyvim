@@ -18,7 +18,14 @@
 let
   # x86_64-linux is this VM's system (the host leg that runs it).
   pkgs = import self.inputs.nixpkgs { system = "x86_64-linux"; };
-  e2e = pkgs.callPackage ./vm-e2e.nix { inherit self engine; };
+  # the foundation domain's pin surface: the hsql skill's version rides the
+  # flake's pin-override overlay (the raw pinned nixpkgs predates hsql) —
+  # the E2E asserts the deployed skill against THIS version
+  harlequinVersion = (import self.inputs.nixpkgs {
+    system = "x86_64-linux";
+    overlays = [ self.overlays.default ];
+  }).harlequin.version;
+  e2e = pkgs.callPackage ./vm-e2e.nix { inherit self engine harlequinVersion; };
 in
 {
   imports = [ qemuVmModule ];
@@ -65,16 +72,9 @@ in
     useUserPackages = true;
     extraSpecialArgs = { inherit self engine; };
     users.vm.imports = [
-      (
-        { ... }:
-        {
-          home.username = "vm";
-          home.homeDirectory = "/home/vm";
-          # the switch driver's default targets inside the VM
-          workstation.switch.homeAttr = "vm@vm";
-          workstation.switch.systemAttr = "vm-test";
-        }
-      )
+      # the VM persona's declared home — the shared body (also the
+      # standalone vm@vm configuration the E2E applies)
+      ./vm-home.nix
       ../../nix/modules/workstation-home.nix
     ];
   };

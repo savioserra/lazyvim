@@ -112,10 +112,10 @@ secrets    secrets
 
 | Capability | Provides | Verify | Host support |
 | --- | --- | --- | --- |
-| `foundation` | The base shell environment: the rc lane (fragment bodies as payload files, the declared order — bash-login `.bash_profile` include included), fd/fzf/rg/lazygit/tree-sitter as checksummed pins linked straight from their store trees (`nix/lib/pins.nix`, probes now build gates), eza + starship nixpkgs (the dissolved prompt capability), harlequin + hsql (one upstream distribution via the foundation domain's pin-override overlay; the hsql agent skill provisions at activation, version-matched), and the tailscale transport (`workstation.foundation.tailscale.*`; `services.tailscale` on the system legs) | `modules/foundation/verify/prompt.sh` (the dissolved surface: tools speak, payload deployed, rc wired) | All |
+| `foundation` | The base shell environment: the rc lane (fragment bodies as payload files, the declared order — bash-login `.bash_profile` include included), fd/fzf/rg/lazygit/tree-sitter as checksummed pins linked straight from their store trees (`nix/lib/pins.nix`, probes now build gates), eza + starship nixpkgs (the dissolved prompt capability), harlequin + hsql (one upstream distribution via the foundation domain's pin-override overlay; the hsql agent skill is generated from the harlequin derivation at build time and serves as a declared entry symlink), and the tailscale transport (`workstation.foundation.tailscale.*`; `services.tailscale` on the system legs) | `modules/foundation/verify/prompt.sh` (the dissolved surface: tools speak, payload deployed, rc wired) | All |
 | `fonts` | Exact pinned JetBrainsMono Nerd Font tree (tar.xz `flat`, SHA-256-gated; per-platform targets: linux `.local/share/fonts/JetBrainsMonoNerdFont`, darwin `Library/Fonts/JetBrainsMonoNerdFont`); content probe pins `JetBrainsMonoNerdFont-Regular.ttf` bytes; fontconfig enabled so `fc-cache` sees it | content probe (build gate) | All |
 | `node` | nvm (pinned v0.40.4, content probe pins `nvm.sh` bytes) then the pinned Node nested at `.local/opt/nvm/versions/node/v<version>` (probe `bin/node --version`), declared parent-first so the nested tree composes into the nvm tree; the rc loader (`.config/shell/nvm.sh`) and `.node-version` payload unchanged; the loader activates the pinned default fork-free | both probes (build gates) + NVM and Node version | All |
-| `agent` | Hermes Agent full-stack: the pinned checkout (`~/.hermes/hermes-agent` at the `hermes_agent_git_commit` pin, ensured by activation — never file-tracked), the pinned interpreter (`.local/opt/hermes/python`, checksum-gated python-build-standalone pin), the engine launcher (`.local/opt/hermes/bin/hermes` payload on PATH as `.local/bin/hermes`), managed skills at `~/.hermes/skills/secrets` (store-path leaves via `modules/agent/agent.nix`); the retired `lazyvim` skill target retires through the declared retire list | `modules/agent/verify/hermes.sh` (checkout at pin, managed skill, interpreter, launcher `--version` consumer smoke; full-stack or exit 1) | All |
+| `agent` | Hermes Agent full-stack, declarative under `programs.hermes` (`modules/agent/agent.nix`): the runtime pin rides the flake's `hermes-agent` input (fetchGit rev, surfaced as `outputs.hermesAgentPin` -> `programs.hermes.pin`); the pinned checkout (`~/.hermes/hermes-agent`) is ensured to the pin by activation — never file-tracked; the pinned interpreter (`.local/opt/hermes/python`, checksum-gated python-build-standalone pin); the engine launcher (`programs.hermes.package`, on PATH as `.local/bin/hermes`); the deployed pin manifest (`.local/opt/hermes/pin.json`) is the verify anchor; declared skills serve as ONE store entry symlink per target profile (`programs.hermes.skills` — `secrets` authored at `modules/agent/skills/secrets`, `hsql` generated from the harlequin derivation); gateway extensions link as entry symlinks into `~/.hermes/plugins`; the retired `lazyvim` skill target retires through the declared retire list | `modules/agent/verify/hermes.sh` (checkout at the deployed pin, store-symlink skills, interpreter, launcher `--version` consumer smoke; full-stack or exit 1) | All |
 | `go` | Exact pinned toolchain tree at `.local/opt/go` (per-platform SHA-256, single-root tarball, probe `bin/go version`) + `.local/bin/go` | probe (build gate) + link record | Linux/WSL/macOS |
 | `elixir` | nixpkgs toolchains via `home.packages` (erlang 28 + elixir 1.18; the mise lane retired — toolchains come from nixpkgs) | Own Mason expectations and the plugin module through nvim leaf helpers | All |
 | `herdr` | Exact pinned binary linked straight from its store derivation at `.local/bin/herdr` (the `../opt` bin-link shape died with the manifests); never server/pane/session lifecycle | fingerprint + link record | All |
@@ -293,35 +293,47 @@ ruling 2026-10-15, "and we still dont have hermes?": the capability owns the
 stack — resources-without-runtime is a defect, not a documented manual
 step; recorded in AGENTS.md's operating-contract law). Four surfaces:
 
-1. **The pinned checkout** — `versions.json` carries
-   `hermes_agent_git_commit` / `hermes_agent_git_url` (upstream
-   `NousResearch/hermes-agent`); `~/.hermes/hermes-agent` is ensured to the
-   pin by an activation script — clone/fetch only when absent or
-   clean-and-behind, never touching a dirty or runtime-advanced tree. The
-   hot-dir law: activation mutates, the file plane never tracks.
+1. **The runtime pin** — the flake's `hermes-agent` input, pinned by
+   fetchGit rev (`flake.nix`, the agent domain's pin surface) and surfaced
+   as `outputs.hermesAgentPin` -> `programs.hermes.pin`; the activation
+   ensure moves `~/.hermes/hermes-agent` to the pin — clone/fetch only
+   when absent or clean-and-behind, never touching a dirty or
+   runtime-advanced tree. The hot-dir law: activation mutates, the file
+   plane never tracks. The checkout stays hot because the runtime writes
+   into it (update machinery, the pm store, recovery closures); a full
+   derivation is the named alternative, deferred until hermeticity
+   demands it. The deployed pin manifest (`.local/opt/hermes/pin.json`)
+   carries the pin for the verify lane — the deployed pin, never a repo
+   file.
 2. **The pinned interpreter** — a checksum-gated pin (`hermes_python` +
    per-platform URL/SHA-256 in `versions.json`) at
    `.local/opt/hermes/python` (probe `bin/python3 --version`). The pin is
-   the SAME release hermes-agent's own `pm/lock.json` carries at the pinned
-   commit — the commit is the authority for which interpreter build the
+   the SAME release hermes-agent's own `pm/lock.json` carries at the
+   pinned rev — the rev is the authority for which interpreter build the
    runtime expects.
-3. **The engine launcher** — an engine-authored payload at
-   `.local/opt/hermes/bin/hermes` (executable), on PATH as
-   `.local/bin/hermes`. The launcher resolves the interpreter and the
-   checkout from `$HOME` at run time (no baked paths), runs the interpreter
-   isolated (`-I`, no inherited `PYTHON*` config, bytecode kept out of the
-   engine-owned checkout) and fails closed with a named message when either
-   pin is missing.
-4. **The managed skills** — `modules/agent/agent.nix`
-   (`workstation.agent.skills`) maps skill names to
-   payload dirs and renders each skill leaf as a store-path `home.file`
-   (`~/.hermes/skills/secrets` first). The hot-dir law, scoped precisely:
-   HM manages declared skill LEAVES — the agent consumes them read-only,
-   and an in-place edit is replaced at the next switch (declared truth
-   wins) — while the agent's runtime-mutated state (checkout, tools, pm
-   store, profiles, boards, memories, sessions) stays untracked forever.
-   The retired `lazyvim` skill target retires through the declared retire
-   list. The copy contract retires with the format.
+3. **The engine launcher** — `programs.hermes.package`, deployed at
+   `.local/opt/hermes/bin/hermes` and on PATH as `.local/bin/hermes`. The
+   launcher resolves the interpreter and the checkout from `$HOME` at run
+   time (no baked paths), runs the interpreter isolated (`-I`, no
+   inherited `PYTHON*` config, bytecode kept out of the engine-owned
+   checkout) and fails closed with a named message when either pin is
+   missing.
+4. **The declared skills** — `programs.hermes.skills`
+   (`modules/agent/agent.nix` renders, owning capabilities set): each
+   enabled skill serves as ONE store entry symlink per target profile
+   (`profiles` — "default" is `~/.hermes/skills`, a named profile is
+   `~/.hermes/profiles/<name>/skills`). The entry is atomic: a switch
+   replaces the whole skill; an in-place edit fails on the read-only
+   store — declared truth wins, loudly. The skills PARENT stays hot (the
+   hot-dir law): `skills_sync` seeds hermes' bundled skills there and the
+   curator archives there; a build-time assertion refuses a declared name
+   the pinned tree bundles (skills_sync owns that name and would fight
+   the link). `secrets` is authored at `modules/agent/skills/secrets`;
+   `hsql` is generated from the harlequin derivation by `hsql --skill` at
+   build time (the hsql precedent: version-matched, offline). Gateway
+   extensions (`programs.hermes.extensions`) link the same way into
+   `~/.hermes/plugins/<name>`, where user discovery outranks bundled;
+   per-plugin enablement stays live state.
 
 One verifier, `modules/agent/verify/hermes.sh`, asserts all of
 it on every host and ends in the consumer smoke: `hermes --version` through
@@ -330,8 +342,9 @@ runtime is provisioning drift, never a documented state. Beyond the
 consumer gate the runtime stays upstream's: `hermes update`'s pm-managed
 dependency closure, tool store (`~/.hermes/tools/...`) and gateway are
 runtime-extended state the capability never freezes. Runtime updates go
-through the pins: bump `hermes_agent_git_commit`, move the `hermes_python`
-pins to the release the new commit's `pm/lock.json` names, and switch.
+through the pins: bump the `hermes-agent` input's rev (`nix flake lock`
+follows), move the `hermes_python` pins to the release the new commit's
+`pm/lock.json` names, and switch.
 
 Kanban boards and profiles are runtime state the capability never owns: it
 ships the pins, the launcher, the skills and the verify only.
