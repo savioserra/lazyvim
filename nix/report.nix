@@ -162,7 +162,7 @@ assert fragmentsOk || throw "workstation-report: the capability fragments do not
 assert retireOk || throw "workstation-report: the capability tombstones do not compose to the full eval's retire list";
 assert relativeOk || throw "workstation-report: a declared target is not home-relative — home-manager machinery rode the evaluated home into the report";
 {
-  inherit counts fileTargetNames claimTargets;
+  inherit counts fileTargetNames claimTargets retire;
   capabilityOrder = capabilityWalk.ids;
   inherit fragmentOrder;
   # one row per capability: { id, foundation, fileTargets, claimTargets,
