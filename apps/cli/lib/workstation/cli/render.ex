@@ -5,9 +5,9 @@ defmodule Workstation.CLI.Render do
 
   Non-TTY output is always plain text; this module is deliberately
   terminal-free so output is stable under redirection and in tests. The
-  wires are assembled once, daemon-side (`Workstation.Daemon.Read`) over
-  the baked declared-state report; field order is fixed, so identical
-  declared state renders identical text.
+  wires are assembled once, in-process, over the baked declared-state
+  report; field order is fixed, so identical declared state renders
+  identical text.
   """
 
   ## core wire views (workstation.{status,plan}.v2)

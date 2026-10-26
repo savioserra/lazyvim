@@ -8,8 +8,8 @@ defmodule Workstation.Core.ArchitectureDepsTest do
   and not merely passing tautologically.
 
     1. **The theme capability is a GENERIC engine.** Its engine modules
-       (`Workstation.Core.Theme`, `Workstation.Core.Theme.Tokens`, the CLI
-       and daemon theme resolvers) must never name a concrete consumer
+       (`Workstation.Core.Theme.Tokens`, the CLI theme resolver) must never
+       name a concrete consumer
        package. Consumers derive from the theme tokens in their own
        capability modules — natively, under `modules/` — which the engine
        never names.
@@ -30,10 +30,8 @@ defmodule Workstation.Core.ArchitectureDepsTest do
   @elixir_root Path.expand("../../../../..", __DIR__)
 
   @theme_engine_files [
-    "apps/core/lib/workstation/core/theme.ex",
     "apps/core/lib/workstation/core/theme/tokens.ex",
-    "apps/cli/lib/workstation/cli/tui/theme.ex",
-    "apps/daemon/lib/workstation/daemon/capabilities/theme.ex"
+    "apps/cli/lib/workstation/cli/tui/theme.ex"
   ]
 
   describe "theme engine purity" do

@@ -3,9 +3,11 @@
 Nix-substrate workstation for pinned Neovim, tmux configuration and Pi
 resources on Linux x86_64 (including WSL-as-Linux) and macOS arm64.
 Nix owns the lifecycle — build, pins, the file plane, activation and
-rollback; the `workstation` engine is the resident read surface (status,
-plan, capabilities, the TUI dashboard) and the daemon that serves reads and
-publishes generation-switch events.
+rollback; the `workstation` engine is the read surface (status, plan,
+capabilities, the TUI dashboard), answering from the declared-state report
+baked into its release. There is no resident engine process and no socket:
+the daemon retired with the read plane's move in-process, and a switch's
+receipt lands in the state tree's `switch.log`.
 
 ## Prerequisites
 
@@ -17,7 +19,8 @@ publishes generation-switch events.
   `nixosConfigurations`), `hosts/mac` (nix-darwin, `darwinConfigurations`;
   brew reduced to casks). WSL counts as the linux leg (operator ruling
   2026-10-22: the flake targets exactly mac and linux). A NixOS VM boot test
-  (`tests/nix`) proves the daemon user unit and the switch seam.
+  (`tests/nix`) proves the retirement (no daemon unit, no socket), the
+  switch receipt and the read smokes.
 - Git for the checkout; on a checkout host (no nix), mise resolves the
   repo-pinned Erlang/Elixir toolchain (`.tool-versions`) to build the
   release.
@@ -26,22 +29,21 @@ publishes generation-switch events.
 
 Switch a host through the substrate — the leg-native rebuild, or the
 `workstation-switch` driver (baked into each generation; it wraps the
-leg-native switch and publishes the receipt to the running daemon):
+leg-native switch and writes the receipt):
 
 ```sh
 sudo nixos-rebuild switch --flake .#wsl      # linux leg (NixOS-WSL)
 darwin-rebuild switch --flake .#mac          # macOS leg (nix-darwin)
 
-workstation-switch apply            # leg-native switch + the receipt publish
+workstation-switch apply            # leg-native switch + the switch.log receipt
 workstation-switch rollback         # atomic rollback to the prior generation
 ```
 
-Every switch ends with the receipt publish on the `system` overlay domain;
-read it through the engine:
+Every switch ends with a receipt line in the state tree's `switch.log`
+(`~/.local/state/workstation/switch.log`):
 
 ```sh
-workstation system applied                 # the current generation receipt
-workstation system applied --generation 7  # inspect a past switch
+tail -n 5 ~/.local/state/workstation/switch.log   # generation N applied (rollback available at M)
 ```
 
 ## The engine
@@ -52,7 +54,8 @@ payload bytes co-located in one directory; the home leg renders them and the
 fold (`nix/report.nix`) reports them as `flake.evalReport`, and the
 release bakes that report so the engine's reads and the substrate ship
 from one flake snapshot. (The retired manifest format and its walker are
-history: `docs/absorption.md` carries the retirement.)
+history: `docs/absorption.md` carries the retirement. The same declared
+state answers directly from nix: `nix eval .#evalReport.<system>.<field>`.)
 
 ```sh
 workstation          # TUI dashboard: engine / capabilities / plan / status
@@ -69,17 +72,13 @@ Without a TTY the bare verb prints the verb help instead of hanging
 non-interactive run WITHOUT the flag hard-errors instead of degrading
 silently.
 
-### Client/daemon model
+### Read model
 
-Every verb speaks to the workstation **daemon** — a per-user background
-process serving reads and pubsub (“`iex` to a running node”). The first
-verb resolves the daemon's Unix socket; when absent or dead the client
-spawns a daemon detached from the installed release and waits (bounded)
-for its handshake. There is no in-process fallback: a daemon that cannot
-start is a clear error. `workstation daemon stop` retires it manually.
-On NixOS the daemon runs as the `workstation-daemon` user unit (the VM
-test pins it); generation switches publish on the `system` overlay domain
-and any subscribed client sees them live.
+Reads evaluate the baked report in-process (`Workstation.CLI.Output` over
+`Workstation.Core.Report`) — there is no daemon to reach, spawn or stop.
+The theme's live surface is a store token path
+(`~/.local/state/workstation/theme.json`) the switch re-points every
+generation; consumers read it or watch the link — nothing polls.
 
 The copy contract and the hot-home law survive: home-manager never manages
 `~/.hermes`; hot directories carry declared copy payloads (inert data), so

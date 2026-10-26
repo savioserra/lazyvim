@@ -1,7 +1,6 @@
 # The WSL host leg: NixOS-WSL running the workstation substrate.
-# Home plane: workstation-home (manifests -> HM). System plane:
-# workstation-system (engine + nixpkgs toolchains). The daemon runs as a
-# user unit inside the home plane.
+# Home plane: workstation-home (the native declarations -> HM). System plane:
+# workstation-system (engine + nixpkgs toolchains).
 #
 # This file is the ONLY place this host's identity lives — the flake
 # derives the homeConfigurations rebuild key and every username/home path

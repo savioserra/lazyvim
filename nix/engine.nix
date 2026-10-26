@@ -26,7 +26,7 @@
   beamPackages,
   src,
   # the declared-state report JSON (flake.evalReport at this snapshot) —
-  # baked into the release so the daemon's reads serve the same flake
+  # baked into the release so the read verbs serve the same flake
   # snapshot that built it (nix/report.nix is the fold). null on build
   # systems the fold does not eval (the darwin leg; reads then fail closed).
   report ? null,
@@ -69,9 +69,11 @@ beamPackages.mixRelease {
   inherit src;
   mixFodDeps = mixDeps;
   # The mix-generated bin/workstation_ctl reads releases/COOKIE at boot;
-  # the default (removeCookie = true) deletes it and the daemon then dies
-  # on `cat: releases/COOKIE`. The daemon genuinely uses distribution, so
-  # the cookie stays (it is baked into the derivation by `mix release`).
+  # the default (removeCookie = true) deletes it and the release control
+  # surface then dies on `cat: releases/COOKIE`. The control verbs
+  # (`workstation start`/`stop`, the dist node surface) genuinely use
+  # distribution, so the cookie stays (it is baked into the derivation by
+  # `mix release`).
   removeCookie = false;
 
   # Integrity gate before `mix deps.compile` (the mdex_native compile
@@ -101,7 +103,7 @@ beamPackages.mixRelease {
 
   # The declared-state report bakes at share/workstation/eval-report.json
   # (Workstation.Core.Report's release path): release and declared state
-  # ship from one flake snapshot, so the daemon's reads are coherent by
+  # ship from one flake snapshot, so the read verbs are coherent by
   # construction.
   postInstall = lib.optionalString (report != null) ''
     install -Dm644 ${

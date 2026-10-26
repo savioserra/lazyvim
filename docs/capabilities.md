@@ -21,18 +21,18 @@ flake.nix
   -> nix/modules (workstation-home, workstation-system)
   -> nix/engine.nix (mixRelease of the umbrella -> the engine release,
      baking the declared-state report into the release)
-  -> nix/workstation-switch.nix (the write plane: switch / rollback / publish)
-      -> publish receipt -> the daemon's `system` overlay domain
+  -> nix/workstation-switch.nix (the write plane: switch / rollback, the
+     switch.log receipt in its tail)
   -> hosts/<host> (wsl / mac; identity only in hosts/<host>/default.nix)
 
 workstation/bin/workstation (POSIX sh: sandbox, checkout anchor, locale guard)
   -> exec the placed elixir release binary
       -> Workstation.CLI.Router (read verbs, TTY contract)
-          -> Workstation.Daemon.Read (status.run / plan.run)
+          -> Workstation.CLI.Output (the read plane)
       -> the declared-state report (flake evalReport; the modules' fold,
-         nix/report.nix)
+         nix/report.nix, baked into the release)
 
-core speaks shapes only — the report reader, engine state, the theme platform
+core speaks shapes only — the report reader, engine state, the theme tokens
 ```
 
 The engine is Elixir-only: the release binary executes every verb in-process,
@@ -46,11 +46,9 @@ provisions, never an engine dependency.
 | Module | Contract |
 | --- | --- |
 | `Workstation.CLI.Router` | Verb parsing, TTY-default contract (`--headless`), exit codes |
-| `Workstation.CLI.DaemonClient` | Thin protocol client over the per-user Unix socket (no in-process fallback) |
+| `Workstation.CLI.Output` | The read plane: the hard-cut wire builders over the baked report (in-process; no socket) |
 | `Workstation.CLI.TUI.*` | The one dashboard (engine/capabilities/plan/status boxes, browser, help) |
 | `Workstation.CLI.Capabilities` | The capability-domain grouped envelope over the status+plan wires |
-| `Workstation.Daemon.Read` | The read engine behind `status.run`/`plan.run` |
-| `Workstation.Daemon.*` | The resident daemon: reads, pubsub (`EventBus`), the `system` overlay domain, `Overlay` claim/release |
 | `Workstation.Core.Report` | The declared-state report reader: release-baked JSON (or `WORKSTATION_REPORT`), structurally validated, cached per node — the engine's only declared-state source |
 | `Workstation.Core.EngineState` | Fail-closed private state root + canonical JSON |
 | `modules/<domain>/<domain>.nix` | The domain's native declaration: home.file surfaces, pins, fragments, activation scripts — payload co-located in the domain directory |
@@ -87,8 +85,9 @@ owns everything the old envelope kinds expressed, natively:
 - **activation scripts** — the hot-home and mutation surfaces (the hermes
   checkout ensure, the nvim lock merge, the retire list), sequenced with
   `lib.hm.sequence`;
-- **units** — the daemon user unit and the switch driver, sequenced by
-  systemd (`After=`/`WantedBy`).
+- **the switch driver** — the one system-ordered surface: a switch is the
+  event; its tail writes the receipt and the activation re-points the
+  theme token path.
 
 Ordering between capabilities does not exist as a graph: store closure has
 no apply order. The only ordered surfaces are the ones above (fragment list,
@@ -226,28 +225,23 @@ Validation is nix eval, fail-closed at eval time:
 
 | Phase | Owner | Responsibility |
 | --- | --- | --- |
-| switch / rollback | `workstation-switch` (nix) | Build the generation from the flake, activate atomically, publish the receipt to the daemon's `system` domain |
+| switch / rollback | `workstation-switch` (nix) | Build the generation from the flake, activate atomically, write the receipt to the state tree's `switch.log` |
 | `plan` | the engine | Preview the attributable declared state (capability, lane, target) from the report; mutate nothing |
 | `status` / `capabilities` | the engine | Report paths, the declared surface, the taxonomy and the capability-domain rollups |
-| `system applied` | the engine | Read the nix switch receipt (current generation, rollback pointer) |
 | verify lane | `modules/*/verify/*.sh` | Consumer smokes: deployed versions and observable behavior against the recorded pins |
 
-Every engine verb speaks to the workstation DAEMON (`apps/daemon`) —
-the resident read server and the only pubsub hub. The CLI and
-TUI are thin protocol clients over the per-user Unix socket: reads map to
-`status.run`/`plan.run`. The
-client's ensure-daemon spawns a daemon detached from the installed release
-when the socket is absent or dead (bounded handshake; `workstation daemon
-stop` retires it manually); there is no in-process fallback — a missing
-daemon is an operator error. On NixOS the daemon runs as the
-`workstation-daemon` user unit; the VM boot test (`tests/nix`) pins that
-unit and the switch seam.
+Every engine read verb answers in-process from the baked declared-state
+report (`Workstation.CLI.Output` over `Workstation.Core.Report`) — there
+is no resident engine process and no socket. The daemon (the resident
+read server, the pubsub hub, the `system`/`theme` overlay domains and the
+per-user Unix socket) retired with the read plane's move: the VM boot test
+(`tests/nix`) now pins the retirement itself — no daemon unit, no socket —
+plus the switch receipt in `switch.log`.
 
-The daemon publishes generation events: every successful switch ends with
-the driver's receipt publish on the `system` overlay domain (the
-`system applied` wire op), and subscribed
-clients hear the generation change live. The `Overlay` domain claim/release
-is unchanged. The historical write plane's op surface —
+A switch is the one event a generation carries: the driver's tail appends
+the receipt line to `switch.log`, and the switch re-points the theme token
+path (`~/.local/state/workstation/theme.json`) — consumers read files or
+watch the link, nothing polls. The historical write plane's op surface —
 `bootstrap.run`/`apply.run`/`update.run`/`sync.run`/`verify.run`,
 the confirmation-plan flow, the adoption ladder, the stale-pending guard,
 the pre-replace daemon drain, the release-refresh handoff and its

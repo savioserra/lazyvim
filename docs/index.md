@@ -6,7 +6,7 @@
 | --- | --- |
 | `README.md` | Host switching, the engine's read verbs |
 | `AGENTS.md` | Repository-wide implementation rules |
-| `apps/` | The engine: core composition, CLI/TUI (`cli`), daemon shell (`daemon`) — Elixir-only |
+| `apps/` | The engine: the report reader (`core`), CLI/TUI (`cli`) — Elixir-only |
 | `flake.nix`, `nix/` | The substrate: the capability modules and their walk, the declared-state report fold, the engine derivation, the switch drivers |
 | `hosts/` | `wsl` (the linux leg; NixOS-WSL), `mac` (nix-darwin); per-host identity lives only here |
 | `.github/workflows/ci.yml` | Platform matrix: the check matrix under a pinned mise toolchain |
@@ -27,11 +27,11 @@
 | [`tmux.md`](tmux.md) | Settings, plugin pins, theme |
 | [`theme.md`](theme.md) | Shared color tokens, slot/palette layers, derived pi themes |
 | [`herdr.md`](herdr.md) | Pinned Herdr binary and official Pi hook, ownership and compatibility gates |
-| [`elixir.md`](elixir.md) | Engine architecture: umbrella layout, CLI/TUI contract, daemon, taxonomy, goldens, migration history |
+| [`elixir.md`](elixir.md) | Engine architecture: umbrella layout, CLI/TUI contract, the read plane, taxonomy, goldens, migration history |
 
 ## Elixir migration policy (binding)
 
-The Elixir surface (CLI, TUI, daemon, core) carries **no deprecated or
+The Elixir surface (CLI, TUI, core) carries **no deprecated or
 backward-compatibility APIs**: no legacy aliases, no compat shims, no dual
 wire-schema versions — one current version, hard-cut. Retired code paths are
 dropped in the lane that touches them (each drop recorded in the lane's

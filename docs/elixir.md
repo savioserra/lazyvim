@@ -160,9 +160,9 @@ Two dependency rules are enforced by `ArchitectureDepsTest`
 (`apps/core/test/workstation/core/architecture_deps_test.exs`, a
 source-scan suite) and must never regrow:
 
-1. **Theme engine is generic.** The theme engine (`Workstation.Core.Theme`,
-   `Workstation.Core.Theme.Tokens`, the CLI/daemon theme resolvers) exposes
-   tokens + slots + palette + resolved themes. It must never name a
+1. **Theme engine is generic.** The theme engine (`Workstation.Core.Theme.Tokens`,
+   the CLI theme resolver) exposes
+   tokens + slots + palette. It must never name a
    consumer package: consumers derive from the tokens natively, in their
    own capability modules under `modules/` (nix-side) or their own view
    code (CLI-side). Dependency direction: consumer -> theme platform.
@@ -174,74 +174,36 @@ source-scan suite) and must never regrow:
 in the absorption chain's stage 2 — the dialect they guarded has no
 speaker. The historical three-law text lives in Git history.)
 
-## Architecture: the client/daemon split (THE design)
+## Architecture: the read plane and the substrate (THE design)
 
-The daemon is the resident read server and the only pubsub hub; the nix
-substrate's switch drivers are the only mutation engine. The CLI — and the
-TUI dashboard, which is a view over the same protocol — are
-thin protocol clients; the CLI relates to the daemon exactly like `iex`
-relates to a running node. There is no in-process fallback path: every
-verb — reads (`status`, `plan`, `capabilities`, `json <command>`) and
-control (`daemon stop`) — rides the socket
-protocol below, and a daemon that cannot be
-reached or spawned is a clear operator error (`daemon_unavailable`, exit
-4), never a silent fallback. (The one former offline exception —
-`--input <envelope.json>` recorded-envelope replay — retired with the
-goldens it replayed.)
+The read plane answers from the BAKED EVAL REPORT in-process
+(`Workstation.CLI.Output` — the flake's `evalReport` fold, `nix/report.nix`,
+cached into the release at `share/workstation/eval-report.json` by
+`nix/engine.nix`, so release and declared state ship from one flake
+snapshot). Every read verb — `status`, `plan`, `capabilities`,
+`json <command>` — evaluates the report for the resolved destination and
+renders it; there is no resident engine process, no socket, and no wire
+protocol. The daemon that used to serve these reads (and its pubsub/overlay
+machinery — `EventBus`, `Overlay`, the `system`/`theme` domains) retired
+with the read plane's move: a socket was a middleman for data the release
+already carries. The same declared state answers directly from nix:
+`nix eval .#evalReport.<system>.<field>`.
 
-Ensure-daemon (`Workstation.CLI.DaemonClient`): the first verb resolves the
-per-user socket (`Listener.socket_path/1`); when absent or dead it spawns a
-daemon DETACHED from the same installed release bin (the launcher shim's
-engine-repo anchor rides along in the environment), then waits — bounded —
-for the hello handshake before speaking. `workstation daemon stop` retires
-the daemon manually; no OS service manager is involved. A clean stop
-retires the listener immediately but deliberately leaves the 0-byte socket
-file in place — the daemon never deletes a file it cannot prove is its own
-dead socket — and the next boot proves it dead and reclaims it. A daemon stays
-pinned to the home it booted for; a client asking for a different
-destination is told to stop it and let ensure-daemon spawn one for that
-home.
+The write plane lives in the nix substrate: mutation is the
+`workstation-switch` drivers (apply/rollback/update/sync) around
+`home-manager switch` / `nixos-rebuild switch`. The driver's tail writes
+the generation receipt — stdout plus the state tree's `switch.log` — and
+the switch itself is the only event a generation carries: the activation
+re-points the theme token path (`~/.local/state/workstation/theme.json`,
+the theme module's store link), consumers read files or watch the link,
+nothing polls and nothing publishes through the engine.
 
-Stop polarity (two disjoint registries, by design): the stop for a
-daemon ensure-daemon spawned is `workstation daemon stop` — the socket
-frame above. The bare `workstation stop` verb is the release control
-surface (`bin/workstation_ctl stop`): a dist-erl RPC to the node named
+Stop polarity (the release control surface, by design): the bare
+`workstation stop` verb is the release control surface
+(`bin/workstation_ctl stop`): a dist-erl RPC to the node named
 `workstation@<host>`, which only a `workstation start`-launched release
-answers. A daemon booted through the Router (`workstation daemon`, the
-spawn path ensure-daemon uses) registers no dist node name, so the bare
-verb answers `noconnection` against a perfectly live socket daemon —
-that is the naming split reporting itself, not a dead daemon.
-
-Live streaming: long ops (`apply.run`, `update.run`) publish structured
-progress on the EventBus `:op` topic (`Workstation.Daemon.Events`:
-`run.started`/`step.started`/`step.done`/`run.log`/`run.finished`, each
-stamped with an `op_ref`); the owning session forwards the frames to the
-connected client while the op runs. The headless CLI renders the same
-stream as lines (the familiar `[1/5] pull ok` shape, now event-driven);
-the TUI screens transition rows on the frames instead of driving steps
-themselves. Abort (`x` in the TUI) sends `op.abort` with the stream token;
-the daemon cancels the op at its NEXT STEP BOUNDARY — never mid-step, a
-boundary is the only honest cancellation point for a lock-holding chain —
-and reports the `aborted` outcome. `q` during a run DETACHES: the daemon
-keeps the lock and finishes without a viewer.
-
-Update across release refresh: a chained `update.run` whose `bootstrap`
-refreshes the installed release writes the handoff note (writer identity
-captured BEFORE the installer re-stamps; see the update-lifecycle section)
-and STOPS THE DAEMON. The client observes the disconnect, re-spawns the
-daemon from the refreshed release, and resumes the remaining chain under
-the same lock — one banner, one chain, exit 0, note cleared on success.
-
-Passive availability (supervisor-directed engine scope): the daemon serves
-`update.check` — a read-only `git ls-remote origin` against the install
-repo's origin compared to local HEAD, TTL-cached (10 min) and bounded
-(5 s), answering `up_to_date`, `behind{local,remote,remote_ref}` or
-`unknown{reason}`. `status` merges the verdict as an additive optional
-`update` object (`available` true/false with the shas when behind; ABSENT
-when unknown — offline looks like no-news), and the TUI fires the check
-asynchronously on screen open and after a completed update, surfacing
-`↑ update available (abc1234 → def5678) — [u] update` in the accent role
-only when behind; `[u]` hands off to the standard update flow.
+answers. There is no daemon to stop any other way — the socket era's
+`workstation daemon` verb retired with the daemon.
 
 ## Distribution
 
@@ -254,11 +216,11 @@ mise exec -- env MIX_ENV=prod mix release workstation --overwrite
 sha256sum workstation-0.1.0-linux-x64.tar.gz > workstation-0.1.0-linux-x64.tar.gz.sha256
 ```
 
-- Never escript: the TUI and the daemon need the full OTP runtime, which an
+- Never escript: the TUI needs the full OTP runtime, which an
   escript cannot carry.
 - The shipped `bin/workstation` is the product CLI dispatcher (docs §CLI);
   the release control script it replaces lives on as `bin/workstation_ctl`
-  (start/stop/eval/rpc for the daemon boot path and ops).
+  (start/stop/eval/rpc — an ops surface).
 - Runtime requirement: linux x86_64 with **glibc ≥ 2.17 and libstdc++**
   (`beam.smp` links `libc.so.6`/`libstdc++.so.6`/`libgcc_s.so.1` — verified
   in the lane b8 report); the bundled ERTS is built against the host glibc,
@@ -267,11 +229,9 @@ sha256sum workstation-0.1.0-linux-x64.tar.gz > workstation-0.1.0-linux-x64.tar.g
   build host exists in this repo's acceptance set).
 - Boot smoke: `sh tests/direct_boot.sh` verifies the sidecar checksum,
   extracts to a scratch dir, boots the release headless against a marked
-  private test home and answers a live status read through the real daemon
-  route (ensure-daemon spawns the release's own daemon; the wire must be
-  canonical JSON with the pinned status schema and the resolved
-  destination, and the daemon stops cleanly). It never touches the real
-  `$HOME`.
+  private test home and answers a live status read from the baked report
+  (the wire must be canonical JSON with the pinned status schema and the
+  resolved destination). It never touches the real `$HOME`.
 
 ## Launcher (workstation/bin/workstation) and the placed release
 
@@ -292,8 +252,8 @@ of the way:
 3. **Handoff**: UTF-8 locale guard, then `exec` of the placed release
    binary (`$HOME/.local/opt/workstation/bin/workstation`) — the Elixir
    engine IS the engine runtime; the launcher never interprets verbs. The
-   release is placed by the nix switch drivers (the daemon user unit runs
-   the store path) or staged from a repo-root mix release on checkout
+   release is placed by the nix switch drivers (the store path links into
+   the home profile) or staged from a repo-root mix release on checkout
    hosts; the launcher acquires nothing.
 
 The `~/.local/bin/workstation` symlink on the substrate is the nix
@@ -326,7 +286,6 @@ ordering-field bans are history with the catalog arm.
 | `.tool-versions` | Repo-wide toolchain pin (Elixir 1.18.5-otp-27, Erlang/OTP 28.5): per-clone in-repo activation |
 | `apps/core/` | `Workstation.Core.*` — pure engine port, zero runtime deps |
 | `apps/cli/` | `Workstation.CLI.*` — optimus CLI, term_ui TUI (exact `2.0.0-rc.2` pin) |
-| `apps/daemon/` | `Workstation.Daemon.*` — Zoi strict wire schemas, frame codec, protocol |
 | `tests/direct_boot.sh` | Release tarball boot smoke: checksum sidecar, headless boot, golden replay from a bare extract (never the real `$HOME`) |
 
 Toolchain activation: the repo-root `.tool-versions` pins the battery
@@ -341,9 +300,9 @@ plain sh stays a guarded no-op) and the managed default-version config
 elixir/erlang defaults — an existing foreign file conflicts instead of being
 adopted).
 
-Dependency direction: `daemon -> core`, `cli -> daemon + core` — one frame
-codec and Protocol live in the daemon app; its supervision tree is inert in
-CLI one-shot mode.
+Dependency direction: `cli -> core` — the read plane (`Workstation.CLI.Output`)
+serves the baked report through the core's reader and state primitives;
+there is no second engine app.
 
 ## Test
 
@@ -373,24 +332,29 @@ the VM E2E read smoke), substrate verification is the VM/activation runs,
 and the nix side's structural assertions live in the report fold's eval
 (nix/report.nix). The historical contract text lives in Git history.
 
-## Daemon (apps/daemon, lane b6)
+## Daemon (apps/daemon — RETIRED with the read plane's move; historical record)
 
-`Workstation.Daemon.Application` boots one `:rest_for_one` tree — Listener →
+The daemon app (`Workstation.Daemon.*` — the resident read server, the
+pubsub hub, the `system`/`theme` overlay domains and the socket protocol)
+retired when the read verbs moved to the baked eval report
+(Workstation.CLI.Output): with the wire protocol's last client gone, the
+user unit dropped from the home module and the app deleted with its tests.
+This section remains only as the historical record of the semantics the
+in-process read plane superseded.
+
+`Workstation.Daemon.Application` booted one `:rest_for_one` tree — Listener →
 Sessions → EventBus → CapabilityRegistry → OpRegistry → TaskSupervisor →
 Overlay, then the
 flattened `Workstation.Daemon.Capabilities.children/0` after them — so every
-runtime dependency flows strictly forward and any crash rebuilds the whole
-serving generation in dependency order (capability children start after the
-registry and never outlive it). The historical write capabilities and their
-supervised orchestrator child retired with the write plane; the tree serves
-reads and pubsub. The listener binds
+runtime dependency flowed strictly forward and any crash rebuilt the whole
+serving generation in dependency order. The listener bound
 `<home>/.local/state/workstation/daemon/<uid>.sock` (dir `0700`, socket
 `0600`, no-follow owner/type guards over every state component — 0700,
-current uid, no symlinks) and never touches `:gen_tcp`; the `:socket` API is used
-with `family: :local` only. On `EADDRINUSE` it probes the endpoint with a
-real hello handshake: a completed handshake means a live generation and boot
-fails with `{:already_running, path}`; connect-refused or mute endpoints are
-dead and are unlinked (after an owner/type re-check) and rebound.
+current uid, no symlinks) and never touched `:gen_tcp`; the `:socket` API was used
+with `family: :local` only. On `EADDRINUSE` it probed the endpoint with a
+real hello handshake: a completed handshake meant a live generation and boot
+failed with `{:already_running, path}`; connect-refused or mute endpoints were
+dead and were unlinked (after an owner/type re-check) and rebound.
 
 Wire format: 4-byte big-endian unsigned length + UTF-8 JSON;
 `{v:1,id,op,params}` answered by `{id,ok:true,result}` or
@@ -596,17 +560,10 @@ the output-wire schema below.
 
 ## CLI (apps/cli, `workstation` on the release PATH)
 
-Every verb is a daemon client (`Workstation.CLI.DaemonClient`): reads send
-`status.run`/`plan.run` (the daemon assembles the hard-cut wire
-daemon-side — the CLI renders it unchanged), the switch receipt reads the
-`system` overlay domain, and control sends `daemon.stop` over a
-short-lived connection that never spawns anything.
-`workstation json <status|plan>` prints the raw
-wire for boundary debugging. Ensure-daemon runs before every verb (see the
-architecture section); there is NO in-process fallback — a daemon that
-cannot be reached or spawned is the verb's error.
-`--input <envelope.json>` is the offline replay exception: a recorded
-envelope evaluated in-process, no daemon involved, same wire.
+Every read verb (`status`, `plan`, `capabilities`,
+`workstation json <status|plan>`) evaluates the baked report in-process
+(`Workstation.CLI.Output` — see the architecture section) and renders the
+hard-cut wire; `json` prints the raw wire for boundary debugging.
 On a usable terminal the bare verb opens the TUI dashboard; without a TTY
 it prints the verb help (exit 0) — scripts pass `--headless` to the read
 verbs, and a non-interactive run without the flag hard-errors.
@@ -640,86 +597,50 @@ as unusable — pass `--headless` there.
 A bare `workstation` on a usable terminal opens the **TUI application
 shell** (`Workstation.CLI.TUI.Shell`) — one full-screen app instead of a
 prompt. The shell is a second Elm component (`TermUI.Elm`) whose mosaic IS
-the app (no tabs): a keycap toggle strip on the top row (`1`–`6` toggle
-the boxes — a hidden box renders a dimmed `[n] label` island, a visible
-one glows; a strip click is that digit keypress), `p`/`P` cycling the
+the app (no tabs): digits toggle the boxes, `p`/`P` cycling the
 layout presets (full mosaic / audit / minimal, wrap-around; `--preset N`
-pins the boot layout), `?` help-and-back, `q` quit — and the six-box
-dashboard as the entire app: `1 engine` (identity + `●` liveness badge),
+pins the boot layout), `?` help-and-back, `q` quit — and the four-box
+dashboard as the entire app: `1 engine` (identity + `●` read-state badge),
 `2 capabilities` (the domain-grouped browser: `↑/↓` move, `enter` or `→`
 expands a rollup down to packages then file rows, `←` or `backspace`
-collapses — in-pane, never a tab switch), `3 journal` (generation,
-applied-at, age meter), `4 plan` and `5 diff` (the what-changed summaries
-with would-change/pending badges), `6 status` (the probe's deep rows).
-Enter toggles a box's in-box deep view (the read zoom), `r` refreshes the
-reads over the client/daemon protocol with the same
-daemon ops as the verbs (`Workstation.CLI.DaemonClient` — the daemon stays
-the only source of live state; `Workstation.CLI.Core` is the `--input`
-offline evaluator and is not on the shell path) and every box has
-explicit loading, empty, error and daemon-disconnected states.
+collapses — in-pane, never a tab switch), `3 plan` (the what-changed
+summary with would-change/pending badges), `4 status` (the read's deep
+rows). Enter toggles a box's in-box deep view (the read zoom), `r`
+refreshes the reads over the read plane (`Workstation.CLI.Output` — the
+baked eval report, the same surface the verbs answer) and every box has
+explicit loading, empty and error states.
 
 Mouse: `TUI.run` writes the SGR tracking bracket itself (`?1000` +
 `?1006` on entry, both disable sequences in an after-clause — a crash
 must never leave the terminal emitting mouse bytes); the pinned `term_ui`
 runtime has no mouse support of its own. The shell routes `Event.Mouse`
-in `Shell.event_to_msg/2`: a left press on a strip island is that
-island's digit keypress (one spelling with the keyboard — toggle,
-preset cycle and help all route through the same update path), the wheel
+in `Shell.event_to_msg/2`: a left press inside a zoomable box toggles
+that box's deep view, the wheel
 maps to the focused pane's `↑/↓` wherever the pointer
 sits — over chrome included — and every other mouse event is ignored.
 The bracket is pane-local, so under tmux mouse capture applies only
 while the shell runs: after exit (clean or crashed) the terminal stops
 emitting mouse bytes and tmux/terminal selection behaves as before.
 
-`apply` and `update` open as **overlays inside the app** (the shell embeds
-`Workstation.CLI.TUI.Apply`/`Update` over the dashboard and forwards keys
-and resizes — §1.6 the run/done panel floats over the living dashboard,
-whose wires keep landing in the cache underneath), keeping their
-daemon-event-driven behavior — the screens never drive steps, `x` aborts
-at the next boundary, `q` detaches and a running op keeps running
-daemon-side. The dashboard is read-only by design — the write plane lives
-in the nix substrate's `workstation-switch` drivers, so there is nothing
-to confirm in-app. The TTY contract above governs the bare verb too: a
-non-TTY bare `workstation` prints the verb help and exits 0, never a
-hang. Tests drive the shell through `TermUI.Runtime` with fake wires and
-recorded event streams, so every state is replayable.
-
-The screens themselves are event-driven clients: the apply screen sends
-ONE `apply.run` op on the typed confirm and the update screen ONE
-`update.run` sub-chain op likewise (the update screen boots idle — the
-chain never fires on open); rows transition (`pending → running → ok/failed/
-skipped`) on the daemon's event frames — the screens never drive steps —
-and the op task runs outside the Elm loop (`TermUI.Command.async/2`) with
-event frames queued back via `TermUI.Runtime.send_message/2`, so every
-transition resolves through pure `update/2` and the deterministic backend
-can replay a recorded run. `x` aborts (op.abort, next step boundary),
-`q` detaches (the daemon keeps running), the completion toast carries the
-verdict, and the passive availability indicator (supervisor-directed
-scope) re-checks `update.check` on open and after a completed chain —
-silent unless the branch is behind, in which case the accent footer shows
-`↑ update available (local → remote) — [u] update` and `[u]` hands off to
-the standard update flow (the update screen re-runs its own chain; the
-apply screen asks the router to launch the update screen). Known
-rendering deferral: per-entry apply progress — the daemon's `apply.run`
-stream reports run boundaries only (entry-level events would need core
-applier hooks, and core/ is frozen by contract), so the apply screen
-renders run-boundary states, not a percent bar.
+(The historical `apply`/`update` screens — the typed-confirm overlays that
+spoke the daemon's mutating ops — retired with the engine's write plane;
+the dashboard is read-only by design and the write plane lives in the nix
+substrate's `workstation-switch` drivers, so there is nothing to confirm
+in-app. The TTY contract above governs the bare verb: a non-TTY bare
+`workstation` prints the verb help and exits 0, never a hang. Tests drive
+the shell through `TermUI.Runtime` with fake wires and recorded event
+streams, so every state is replayable.)
 
 Safety guards (fail closed, never touch the operator's state):
 
 - the destination resolves `--home` > `$WORKSTATION_HOME` > `$HOME` (the
   launcher shim rebases both env vars to the same destination, so verbs
-  address the intended home either way); there is no marker/refusal
-  machinery on the CLI — the fused front door serves real homes, and the
-  mutation gates ARE the contract: the TUI typed-confirm gate (the dialog
-  echoes the collected plan and the run arms only when the operator types
-  the verb — `apply`/`update` — and Enter; it applies only the requested
-  generation) or an explicit `--headless`;
+  address the intended home either way);
 - read-side evaluation brackets `WORKSTATION_HOME` around the core and
   restores the previous value, so the core reads exactly the selected home
   and never the operator's state;
-- before the fail-closed journal read, `EngineState` performs the 0700
-  state-root repair: a symlinked or foreign-owned component fails closed.
+- `EngineState` keeps the guarded home reads: a symlinked or foreign-owned
+  state component fails closed.
 
 #### Home mosaic and box anatomy (hard contracts)
 
@@ -731,12 +652,12 @@ width sweep (every width 80..240 at heights 24/40/55/83; a pinned
 3-size matrix once missed whole width classes, e.g. the even mosaic
 split at 204 columns, where content rows dropped a border column):
 
-- **Width switch**: at >= 110 columns the six-box home is the slot
-  mosaic — the 2x2 quadrants (engine|journal, plan|diff) plus the two
+- **Width switch**: at >= 110 columns the four-box home is the slot
+  mosaic — the top quadrants (engine, plan) plus the two
   full-width bottom bands (capabilities, status); below, the visible
-  boxes stack full width in the priority order engine > journal >
-  capabilities > plan > diff > status, each on a bounded-fill track that
-  honors its minimum height (3/3/4/3/3/4 rows) and scales proportionally
+  boxes stack full width in the priority order engine >
+  capabilities > plan > status, each on a bounded-fill track that
+  honors its minimum height and scales proportionally
   when the body runs short — a box is never clipped away, its content
   elides inside the still-closed borders.
 - **Closed borders at every row**: every `╭` meets a `╮`, every `╰` meets
@@ -756,11 +677,6 @@ split at 204 columns, where content rows dropped a border column):
   counter first, then trailing buttons, keeping the title island last.
   Corners never yield: degenerate widths fall back to plain closed
   corners.
-- **Update-hint placement**: a surfaced update hint rides the
-  capabilities band body when the band has room; on the stacked home the
-  persistent `u update` buttonbar button advertises it (at 80x24 the
-  stacked band may clip the hint body — the button keeps the update
-  reachable).
 
 Box anatomy (`Shell.Box`): the title is an island inside the top border
 run (`╭─┐¹engine┌──…`), an optional right island carries counters and

@@ -75,7 +75,9 @@
       # the declared-state report: the capability modules' fold
       # (nix/report.nix) at this tree. The engine's release bakes the same
       # JSON (nix/engine.nix), so release and declared state ship from the
-      # one flake snapshot.
+      # one flake snapshot. This is also the operator's direct eval
+      # surface — `nix eval .#evalReport.<system>.<field>` answers the
+      # declared state without the engine.
       evalReport.${hostSystem} =
         (import ./nix/report.nix {
           lib = nixpkgs.lib;
@@ -88,11 +90,7 @@
           # home.homeDirectory arrives per host; the report pins no home
           # paths.
           homeDir = linuxHost.homeDir;
-        }) // {
-          # the `system` overlay domain's publish contract (the nix side of
-          # the two-reader drift guard — see nix/system-domain.nix)
-          systemDomain = import ./nix/system-domain.nix;
-        };
+        });
 
       # the rebuild key is DERIVED from the host identity (${user}@<host>),
       # never hand-typed

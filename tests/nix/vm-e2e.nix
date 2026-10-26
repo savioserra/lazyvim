@@ -19,7 +19,6 @@
   pkgs,
   writeShellScript,
   writeShellScriptBin,
-  engine,
   self,
   # the foundation domain's pinned harlequin version (the flake overlay's —
   # the caller's pkgs predates hsql and carries no real version)
@@ -35,7 +34,7 @@ let
   # arguments, one store path) — referenced absolutely so the proof does
   # not bet on PATH shape
   switchDriver = import ../../nix/workstation-switch.nix {
-    inherit pkgs engine;
+    inherit pkgs;
     flake = self;
     homeAttr = "vm@vm";
     systemAttr = "vm-test";
@@ -56,8 +55,7 @@ writeShellScriptBin "workstation-e2e" ''
   home=/home/vm
   export HOME=$home
   export PATH=/run/current-system/sw/bin:$PATH
-  # the user manager's bus: a system-level service has no XDG_RUNTIME_DIR,
-  # and every `systemctl --user` / `journalctl --user` below needs it
+  # the user manager's bus: the retirement probe below asks systemctl --user
   export XDG_RUNTIME_DIR=/run/user/$(id -u)
 
   step() {
@@ -71,36 +69,25 @@ writeShellScriptBin "workstation-e2e" ''
   fail() {
     echo "workstation-e2e: $1 ... FAIL: $2" >&2
     # The failure is the interesting data on a headless proof host: dump
-    # the unit's state and journal to the serial console before dying.
-    systemctl --user status workstation-daemon.service --no-pager -l 2>&1 | tail -15 >&2 || true
-    journalctl --user -u workstation-daemon.service --no-pager 2>&1 | tail -30 >&2 || true
-    ls -la $home/.config/systemd/user/ "$home/.config/systemd/user/default.target.wants" 2>&1 | tail -12 >&2 || true
+    # the user unit dir to the serial console before dying.
+    ls -la $home/.config/systemd/user/ "$home/.config/systemd/user/default.target.wants" 2>&1 | tail -12 >&2
     exit 1
   }
 
-  # 1. the daemon user unit: lingered user manager, active unit, socket bound
-  step "daemon user unit active"
-  for i in $(seq 1 240); do
-    if systemctl --user is-active --quiet workstation-daemon.service 2>/dev/null; then
-      break
-    fi
-    [ $((i % 30)) -eq 0 ] && echo "workstation-e2e:   still waiting for the daemon unit ($i)"
-    sleep 1
-  done
-  systemctl --user is-active --quiet workstation-daemon.service \
-    || fail "daemon user unit active" "workstation-daemon.service never became active"
-  pass "daemon user unit active"
+  # 1. the retirement: no resident engine process, no socket, no unit
+  step "daemon unit retired"
+  if [ -e "$home/.config/systemd/user/workstation-daemon.service" ]; then
+    fail "daemon unit retired" "workstation-daemon.service is still staged in the user units"
+  fi
+  systemctl --user cat workstation-daemon.service >/dev/null 2>&1 \
+    && fail "daemon unit retired" "systemd still knows workstation-daemon.service" \
+    || true
+  pass "daemon unit retired"
 
-  step "daemon socket bound"
-  sock=""
-  for i in $(seq 1 120); do
-    sock=$(ls $home/.local/state/workstation/daemon/*.sock 2>/dev/null | head -1)
-    [ -n "$sock" ] && break
-    [ $((i % 30)) -eq 0 ] && echo "workstation-e2e:   still waiting for the socket ($i)"
-    sleep 1
-  done
-  [ -n "$sock" ] || fail "daemon socket bound" "no socket under $home/.local/state/workstation/daemon/"
-  pass "daemon socket bound ($sock)"
+  step "no state socket remains"
+  socks=$(find $home/.local/state/workstation -name '*.sock' 2>/dev/null || true)
+  [ -z "$socks" ] || fail "no state socket remains" "$socks"
+  pass "no state socket remains"
 
   # 2. consumer smoke: the engine answers, the nvim profile link resolves
   step "workstation --version"
@@ -148,7 +135,7 @@ writeShellScriptBin "workstation-e2e" ''
     || fail "agent runtime stack" "the pinned interpreter did not deploy"
   [ -x "$home/.local/bin/herdr" ] \
     || fail "agent runtime stack" "$home/.local/bin/herdr is not executable"
-  grep -Eq '"engine":\{"rev":"[0-9a-f]{40}"' "$home/.local/opt/hermes/pin.json" 2>/dev/null \
+  grep -Eq '"engine":\{"rev":"[0-9a-f]{40}' "$home/.local/opt/hermes/pin.json" 2>/dev/null \
     || fail "agent runtime stack" "the deployed pin manifest carries no engine rev"
   pass "agent runtime stack"
 
@@ -242,6 +229,20 @@ writeShellScriptBin "workstation-e2e" ''
     || fail "foundation plane" "the nerd font tree did not deploy"
   pass "foundation plane"
 
+  step "theme token path deployed (the switch-time push surface)"
+  toktop="$home/.local/state/workstation/theme.json"
+  [ -L "$totop" ] \
+    || fail "theme token path" "$totop is not the store token link"
+  case "$(readlink "$totop")" in
+    /nix/store/*) ;;
+    *) fail "theme token path" "$totop does not resolve into the store" ;;
+  esac
+  grep -q '"dark"' "$totop" \
+    || fail "theme token path" "the token file carries no dark palette"
+  grep -q '#[0-9a-fA-F]\{6\}' "$totop" \
+    || fail "theme token path" "the token file carries no hex roles"
+  pass "theme token path deployed"
+
   # 2c. the adopt rehearsal: a copy-contract tree at a declared entry path
   #     (what real hosts carry from the retired shapes) makes way for the
   #     declared symlink at the next generation
@@ -254,12 +255,11 @@ writeShellScriptBin "workstation-e2e" ''
   pass "copy-contract tree planted"
 
   # 3. the apply-driven nix switch: the driver wraps the offline
-  #    activation + generation registration, reads the generation and
-  #    publishes the receipt over the wire
+  #    activation + generation registration, then writes the receipt
   step "apply-driven switch (workstation-switch apply)"
   export WORKSTATION_SWITCH_HOME_ACTIVATE="${homeActivate}"
   ${switchDriver}/bin/workstation-switch apply \
-    || fail "apply-driven switch" "the driver failed (switch or publish)"
+    || fail "apply-driven switch" "the driver failed (switch or receipt)"
   unset WORKSTATION_SWITCH_HOME_ACTIVATE
   pass "apply-driven switch"
 
@@ -273,14 +273,14 @@ writeShellScriptBin "workstation-e2e" ''
     || fail "adopt step" "no adopt receipt in the retire log"
   pass "adopt step"
 
-  # 4. the daemon heard it: the `system` domain receipt in the user unit's
-  #    journal (the capability logs the exact message it fanned out)
-  step "system domain receipt in the daemon journal"
-  receipt=$(journalctl --user -u workstation-daemon.service --since "-5 min" --no-pager 2>/dev/null \
-    | grep -c "system domain: generation .* applied") || receipt=0
-  [ "''${receipt:-0}" -ge 1 ] \
-    || fail "system domain receipt" "no 'system domain: generation ... applied' line in the user journal"
-  pass "system domain receipt ($receipt lines)"
+  # 4. the switch receipt: the driver's tail appended the generation line
+  #    to the state tree's switch.log (the daemon journal is gone with the
+  #    daemon)
+  step "switch receipt in switch.log"
+  grep -q "generation [0-9]* applied (rollback available at" \
+    "$home/.local/state/workstation/switch.log" 2>/dev/null \
+    || fail "switch receipt" "no 'generation N applied' line in switch.log"
+  pass "switch receipt in switch.log"
 
   # 5. the read smoke: the release serves the BAKED report — status is the
   #    declared inventory, plan probes the live targets of the switched

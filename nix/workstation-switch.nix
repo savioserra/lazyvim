@@ -2,17 +2,16 @@
 # operators (apply / rollback / update / sync) as thin wrappers around
 # `home-manager switch` / `nixos-rebuild switch`.
 #
-# The seam law: nix owns the write plane end to end once proven on a
-# real host; the daemon's own apply path retires only AFTER that proof,
-# never here. This
-# driver PROVES the replacement — every successful switch ends with the
-# receipt publish (`workstation system applied`, the `system` overlay
-# domain's wire op), which is how the daemon hears the switch.
+# The seam law: nix owns the write plane end to end. The driver's tail
+# writes the generation RECEIPT — the one event a switch carries. There is
+# no daemon to publish to (the resident engine retired with the wire
+# protocol): the receipt line lands on stdout and appends to
+# `$HOME/.local/state/workstation/switch.log`, and the switch itself is the
+# push — every consumer watches a file (the switch log, the theme token
+# path the theme module re-points each generation), nothing polls.
 #
 # Home plane (default) wraps the user's `home-manager` profile; the
-# `--system` flag wraps the host's `nixos-rebuild` profile (root runs it;
-# the publish lands on the operator user's daemon — on single-user hosts
-# run the publish as that user, e.g. `runuser -u <user> --`).
+# `--system` flag wraps the host's `nixos-rebuild` profile (root runs it).
 #
 # Baked by the staging module (workstation-home.nix): the engine, the
 # flake source snapshot THIS generation ships, and the two flake attrs.
@@ -28,7 +27,6 @@
 #                                     build time; `apply`/`sync` only)
 {
   pkgs,
-  engine,
   flake,
   homeAttr,
   systemAttr,
@@ -40,14 +38,15 @@ let
   # the generation read after the switch is shared.
   rebuild = if pkgs.stdenv.isDarwin then "darwin-rebuild" else "nixos-rebuild";
 
-  # The receipt: read the switched profile's generation and publish it on
-  # the `system` domain. The profile link's tail IS the generation number
-  # (home-manager-N-link / system-N-link) — the same source
-  # `home-manager generations` reads, never a side-channel counter.
+  # The receipt: read the switched profile's generation and write the
+  # receipt — stdout plus the state tree's switch.log (append; the operator
+  # scrollback of every switch this home took). The profile link's tail IS
+  # the generation number (home-manager-N-link / system-N-link) — the same
+  # source `home-manager generations` reads, never a side-channel counter.
   readAndPublish = ''
     link="$(readlink "$profile" 2>/dev/null || true)"
     if [ -z "$link" ]; then
-      echo "workstation-switch: no generation link at $profile — nothing published" >&2
+      echo "workstation-switch: no generation link at $profile — nothing receipted" >&2
       exit 1
     fi
     gen="''${link%-link}"
@@ -56,12 +55,15 @@ let
       echo "workstation-switch: no generation number in $link" >&2
       exit 1
     fi
-    rollback=$((gen - 1))
-    if [ "$rollback" -ge 1 ]; then
-      exec "${engine}/bin/workstation" system applied --generation "$gen" --rollback-generation "$rollback"
+    if [ "$gen" -ge 2 ]; then
+      message="generation $gen applied (rollback available at $((gen - 1)))"
     else
-      exec "${engine}/bin/workstation" system applied --generation "$gen"
+      message="generation $gen applied (no prior generation)"
     fi
+    echo "workstation-switch: $message"
+    state_dir="''${XDG_STATE_HOME:-$HOME/.local/state}/workstation"
+    mkdir -p "$state_dir"
+    echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) $message" >> "$state_dir/switch.log"
   '';
 in
 pkgs.writeShellScriptBin "workstation-switch" ''
@@ -125,7 +127,7 @@ pkgs.writeShellScriptBin "workstation-switch" ''
       ;;
   esac
 
-  # The publish replaces the process (exec): the driver's exit code IS the
-  # receipt's — a refused publish fails the switch run loudly.
+  # The receipt closes the run: a broken generation read fails the switch
+  # run loudly (exit 1), never silently.
   ${readAndPublish}
 ''

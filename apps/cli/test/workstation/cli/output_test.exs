@@ -1,8 +1,7 @@
 defmodule Workstation.CLI.OutputTest do
   @moduledoc """
-  The wire builders' shapes (daemon-built, CLI-delegated): the schema
-  tokens pin the hard-cut envelopes' identity and the report data travels
-  verbatim.
+  The read plane's wire builders: the schema tokens pin the hard-cut
+  envelopes' identity and the report data travels verbatim.
   """
 
   use ExUnit.Case, async: true

@@ -1,9 +1,10 @@
 defmodule Workstation.CLI do
   @moduledoc """
-  Workstation command-line front end. The read-only `status`/`plan`/`diff`
-  surface evaluates the native live catalog in-process through the Elixir
-  core (see `Workstation.CLI.Core`); `--input` substitutes a recorded
-  golden envelope for offline replay. There is no second front end and no
-  external engine process.
+  Workstation command-line front end. The read-only `status`/`plan`/
+  `capabilities` surface evaluates the baked declared-state report
+  in-process (`Workstation.CLI.Output` — the flake's eval-report fold
+  cached into the release); the bare verb is the TUI dashboard over the
+  same reads. There is no second front end, no socket, and no resident
+  engine process.
   """
 end

@@ -69,15 +69,4 @@ defmodule Workstation.Core.Theme.TokensTest do
       end
     end
   end
-
-  test "every palette role is settable by a theme overlay" do
-    # Roles-are-the-API: the overlay patch surface (Core.Theme.settable_roles)
-    # must cover the whole declared palette, or an envelope role becomes
-    # unpatchable and the API silently narrows.
-    settable = MapSet.new(Workstation.Core.Theme.settable_roles())
-
-    for {role, _hex} <- Tokens.palette(:dark) do
-      assert MapSet.member?(settable, Atom.to_string(role)), "palette role #{role} is not overlay-settable"
-    end
-  end
 end

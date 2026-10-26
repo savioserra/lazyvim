@@ -5,18 +5,17 @@
 #
 # Contract: the smoke never touches the real $HOME. The extracted release
 # runs inside a marked private test home (tests/test-home.sh boundary), and
-# the read route is the real daemon route (ensure-daemon spawns the
-# release's own daemon). Every temp artifact lives
+# the read route is in-process (the baked declared-state report — no
+# resident engine process). Every temp artifact lives
 # under the smoke's own scratch directory (cleaned by the trap).
 #
 # The smoke verifies, in order:
 #   1. the tarball checksum matches its sidecar (sha256sum -c);
 #   2. the release binary boots headless and reports the pinned version;
-#   3. the packaged CLI answers a live status read: the daemon spawns, the
-#      wire is canonical JSON with the pinned status schema and the
-#      resolved destination, and the daemon stops cleanly;
+#   3. the packaged CLI answers a live status read: the wire is canonical
+#      JSON with the pinned status schema and the resolved destination;
 #   4. the packaged TUI boots as a process (headless smoke only: render
-#      parity is the daemon+TUI lane's contract, not this smoke's);
+#      parity is the TUI lane's contract, not this smoke's);
 #   5. the packaged engine adapters hard-fail closed: with no Lua runtime
 #      and no engine root shipped, any accidental engine evaluation is a
 #      loud boot error, never a silent fallback (exit-code table, adapter
@@ -74,11 +73,10 @@ version_output=$("$BIN" version) || fail "release boot failed: version"
 
 # ---- 4. live read through the shipped CLI -----------------------------------
 
-# The shipped release answers a read verb: ensure-daemon spawns the
-# release's own daemon pinned to the marked test home, and the wire comes
-# back as canonical JSON carrying the pinned status schema and the resolved
-# destination. (The retired golden-byte replay rode --input; the read
-# smoke is the real route now.)
+# The shipped release answers a read verb in-process: the baked report's
+# wire comes back as canonical JSON carrying the pinned status schema and
+# the resolved destination. (The retired daemon route and the golden-byte
+# replay both predate this smoke's current form.)
 status_output=$("$BIN" json status --home "$SMOKE_HOME") ||
 	fail "release boot failed: json status (exit $?)"
 
@@ -94,17 +92,18 @@ printf '%s' "$status_output" |
 	jq -S -c . >/dev/null 2>&1 ||
 	fail "status wire is not valid JSON"
 
-# the daemon the CLI spawned stops cleanly through its own control verb
-# (the daemon pins the home the read verb resolved; the socket lives under
-# the marked test home)
-WORKSTATION_HOME="$SMOKE_HOME" "$BIN" daemon stop >/dev/null 2>&1 ||
-	fail "the spawned daemon did not stop cleanly"
+# the retired daemon verb stays retired: `daemon stop` is a usage error
+# (exit 2), never a half-working control path
+"$BIN" daemon stop --home "$SMOKE_HOME" >/dev/null 2>&1
+DAEMON_EXIT=$?
+[ "$DAEMON_EXIT" -eq 2 ] ||
+	fail "retired daemon verb must exit 2 (usage), got $DAEMON_EXIT"
 
 # ---- 5. TUI process smoke ---------------------------------------------------
 
-# Headless boot only: TERM is unset/dumb in gate environments and the daemon
-# session lifecycle is not this smoke's contract. A real render is exercised
-# by the daemon+TUI lane's suite (apps/cli/test/workstation/cli/tui/).
+# Headless boot only: TERM is unset/dumb in gate environments and the TUI
+# render is not this smoke's contract. A real render is exercised
+# by the TUI lane's suite (apps/cli/test/workstation/cli/tui/).
 TUI_INPUT_DIR="$WORK_DIR/tui-input"
 mkdir -p "$TUI_INPUT_DIR"
 TUI_INPUT_FILE="$TUI_INPUT_DIR/keys"

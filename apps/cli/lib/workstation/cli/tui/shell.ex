@@ -13,16 +13,16 @@ defmodule Workstation.CLI.TUI.Shell do
     * `?` toggles the help reference (a boxed scrollable pane — the
       floating-paged variant is a recorded deviation).
 
-  All reads go through the client (one `DaemonClient.call` per wire, the
-  same ops the verbs send); the shell never mutates anything — the write
-  plane lives in the nix substrate (`workstation-switch`), and this
-  dashboard is the resident read surface. The `:load` seam is an injected
-  fun, so tests replay fixed wire streams with no daemon involved
+  All reads go through the read plane (`Workstation.CLI.Output.evaluate/2`,
+  the baked eval report served in-process); the shell never mutates
+  anything — the write plane lives in the nix substrate
+  (`workstation-switch`), and this dashboard is the resident read surface.
+  The `:load` seam is an injected
+  fun, so tests replay fixed wire streams with no filesystem involved
   (deterministic replay).
 
-  Data states are explicit per box: loading (probe in flight), data,
-  error, and the daemon-disconnected shape (transport failure wording
-  surfaced with the recovery hint). Keys are documented in the help pane.
+  Data states are explicit per box: loading (read in flight), data,
+  error. Keys are documented in the help pane.
   """
 
   use TermUI.Elm
@@ -30,12 +30,9 @@ defmodule Workstation.CLI.TUI.Shell do
   alias TermUI.{Command, Event, Layout, Style}
   alias TermUI.Widget.Helpers
 
-  alias Workstation.CLI.{Capabilities, Render}
-  alias Workstation.CLI.DaemonClient
+  alias Workstation.CLI.{Capabilities, Output, Render}
   alias Workstation.CLI.TUI.Theme
   alias Workstation.CLI.TUI.Shell.{Box, CapabilitiesBrowser, Dashboard, Help, TextView}
-
-  @read_timeout_ms 120_000
 
   # The dashboard's wires: every box subscribes to the same reads the old
   # tabs did — the placement changed, the data seams did not (§2.5).
@@ -44,10 +41,9 @@ defmodule Workstation.CLI.TUI.Shell do
   ## production entry
 
   @doc """
-  Router entry for the bare `workstation` verb once the daemon is
-  confirmed healthy (`Shell.DaemonEntry`): resolve the theme from the
-  destination home's daemon (base palette fallback) and run this shell on
-  the TTY backend. `TermUI` injects `:dimensions` at init.
+  Router entry for the bare `workstation` verb: resolve the theme from the
+  base token palette and run this shell on the TTY backend. `TermUI`
+  injects `:dimensions` at init.
   """
   def run(opts) do
     home = Keyword.fetch!(opts, :home)
@@ -98,11 +94,9 @@ defmodule Workstation.CLI.TUI.Shell do
         }
 
   @doc "The read wires behind the dashboard's boxes."
-  @spec daemon_load(atom(), String.t()) :: {:ok, map()} | {:error, String.t()}
-  def daemon_load(command, destination) do
-    op = Map.fetch!(%{status: "status.run", plan: "plan.run"}, command)
-
-    case DaemonClient.call(op, %{}, home: destination, timeout_ms: @read_timeout_ms) do
+  @spec read_load(atom(), String.t()) :: {:ok, map()} | {:error, String.t()}
+  def read_load(command, destination) do
+    case Output.evaluate(command, destination) do
       {:ok, wire} ->
         {:ok, wire}
 
@@ -124,7 +118,7 @@ defmodule Workstation.CLI.TUI.Shell do
       theme: Keyword.fetch!(opts, :theme),
       dimensions: Keyword.fetch!(opts, :dimensions),
       cache: %{},
-      load: Keyword.get(opts, :load, &daemon_load(&1, Keyword.fetch!(opts, :destination))),
+      load: Keyword.get(opts, :load, &read_load(&1, Keyword.fetch!(opts, :destination))),
       caps: CapabilitiesBrowser.init(nil),
       caps_env: nil,
       text_views: %{},
@@ -137,7 +131,7 @@ defmodule Workstation.CLI.TUI.Shell do
       dashboard: Dashboard.new(Keyword.get(opts, :preset, 0))
     }
 
-    # Boot effects: the dashboard's three reads — all asynchronous; the
+    # Boot effects: the dashboard's reads — all asynchronous; the
     # first frame paints immediately in the loading state.
     {state, commands} = load_commands(state, @wires, false)
     {state, commands}
@@ -578,11 +572,6 @@ defmodule Workstation.CLI.TUI.Shell do
     Enum.fetch!(digits, n |> max(0) |> min(9))
   end
 
-  defp disconnected?(message) do
-    text = message_text(message)
-    String.contains?(text, "daemon_unavailable") or String.contains?(text, "daemon_died")
-  end
-
   # Wire failures may carry non-binary reasons (a raised exception folded
   # by the runtime's async envelope); every render path normalizes first.
   defp message_text(message) when is_binary(message), do: message
@@ -592,7 +581,7 @@ defmodule Workstation.CLI.TUI.Shell do
     Box.frame(engine_rows(state, styles), dims,
       border_style: styles.border_engine,
       title: [{keycap(1), styles.keycap}, {"engine", styles.text}],
-      right: daemon_badge(state, styles)
+      right: read_badge(state, styles)
     )
   end
 
@@ -604,8 +593,8 @@ defmodule Workstation.CLI.TUI.Shell do
     )
   end
 
-  # The status probe's deep rows (§2.1 box 4): the host facts the daemon
-  # tab carried (destination, platform, graph order).
+  # The status read's deep rows (§2.1 box 4): the host facts (destination,
+  # platform, graph order).
   defp status_box(state, styles, dims) do
     Box.frame(status_rows(state, styles), dims,
       border_style: styles.border_status,
@@ -626,23 +615,13 @@ defmodule Workstation.CLI.TUI.Shell do
     ]
   end
 
-  # Read failures split into the transport shape (daemon unreachable —
-  # the recovery hint names the start command) and every other failure
-  # (the verbatim message; r retries either way).
+  # A read failure renders its verbatim message; r retries.
   defp status_rows(%{cache: %{status: {:error, message}}}, styles) do
-    if disconnected?(message) do
-      [
-        [{" daemon unreachable", styles.err}],
-        [{" " <> message_text(message), styles.err}],
-        [{" start it with `workstation daemon` — retry with r", styles.inactive}]
-      ]
-    else
-      [
-        [{" read failed", styles.err}],
-        [{" " <> message_text(message), styles.err}],
-        [{" retry with r", styles.inactive}]
-      ]
-    end
+    [
+      [{" read failed", styles.err}],
+      [{" " <> message_text(message), styles.err}],
+      [{" retry with r", styles.inactive}]
+    ]
   end
 
   defp status_rows(_state, styles), do: [label_row("status", "loading…", styles)]
@@ -669,13 +648,13 @@ defmodule Workstation.CLI.TUI.Shell do
   defp as_value(value) when is_binary(value), do: {value, Style.new()}
   defp as_value({text, _style} = span) when is_binary(text), do: span
 
-  # Liveness badge on the engine box's top border: one state glyph, one
-  # role color (accent reachable, err unreachable, inactive probing).
-  defp daemon_badge(state, styles) do
+  # Read-state badge on the engine box's top border: one state glyph, one
+  # role color (accent read answered, err read failed, inactive loading).
+  defp read_badge(state, styles) do
     case Map.get(state.cache, :status) do
-      {:ok, _wire} -> [{"● reachable", styles.accent}]
-      {:error, _message} -> [{"● unreachable", styles.err}]
-      _loading -> [{"● probing", styles.inactive}]
+      {:ok, _wire} -> [{"● report", styles.accent}]
+      {:error, _message} -> [{"● unreadable", styles.err}]
+      _loading -> [{"● loading", styles.inactive}]
     end
   end
 

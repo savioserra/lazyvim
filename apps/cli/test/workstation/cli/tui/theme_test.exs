@@ -1,44 +1,8 @@
 defmodule Workstation.CLI.TUI.ThemeTest do
-  use ExUnit.Case, async: false
-
-  # Fixture homes are cross-VM collision-proof: `System.unique_integer/1`
-  # restarts its sequence in every `mix test` VM, so a home that outlives its
-  # run (a killed run's leftovers) is re-drawn verbatim by a later one. The
-  # boot millisecond in base36 never repeats across VMs, any same-named
-  # leftover is swept before use, and the home is removed on exit (the full
-  # note lives in apps/daemon/test/workstation/daemon/generation_test.exs).
-  defp unique_home(prefix) do
-    token = Integer.to_string(:os.system_time(:millisecond), 36)
-    home = Path.join(System.tmp_dir!(), "#{prefix}-#{token}")
-
-    File.rm_rf!(home)
-    on_exit(fn -> File.rm_rf!(home) end)
-    home
-  end
-
-
-  # Daemon resolution binds a real unix socket against a per-test home, so
-  # this module is serial and never touches the real HOME (WORKSTATION_HOME
-  # is the engine's own env contract).
+  use ExUnit.Case, async: true
 
   alias Workstation.CLI.TUI.Theme
   alias Workstation.Core.Theme.Tokens
-  alias Workstation.Daemon.{Application, Listener}
-
-  setup do
-    home = unique_home("b7-theme-test")
-    File.mkdir_p!(home)
-    previous = System.get_env("WORKSTATION_HOME")
-    System.put_env("WORKSTATION_HOME", home)
-
-    on_exit(fn ->
-      if previous,
-        do: System.put_env("WORKSTATION_HOME", previous),
-        else: System.delete_env("WORKSTATION_HOME")
-    end)
-
-    %{home: home}
-  end
 
   test "base path mirrors the core tokens palette exactly" do
     assert Theme.base_colors(:dark) == Map.new(Tokens.palette(:dark))
@@ -71,34 +35,16 @@ defmodule Workstation.CLI.TUI.ThemeTest do
              |> Enum.sort()
   end
 
-  test "missing home falls back to the base palette, fail-closed" do
-    resolution =
-      Theme.resolve(
-        home:
-          unique_home("b7-no-such-home")
-      )
+  test "resolve answers the base palette, dark by default and light on request" do
+    resolution = Theme.resolve([])
 
     assert resolution.source == :base
     assert resolution.colors == Theme.base_colors(:dark)
-  end
 
-  test "resolve without a home only answers from the base palette" do
-    assert Theme.resolve(appearance: :light).source == :base
-    assert Theme.resolve(appearance: :light).colors == Theme.base_colors(:light)
-  end
+    light = Theme.resolve(appearance: :light)
 
-  test "daemon resolution answers with the closed role set and daemon source" do
-    %{home: home} = test_ctx()
-
-    start_supervised!(Application.supervisor_spec())
-    wait_for_file(Listener.socket_path(home))
-
-    resolution = Theme.resolve(home: home)
-
-    assert resolution.source == :daemon
-    # The daemon carries no overlays in this tree, so its resolution is the
-    # same bytes the base path derives — the two paths must agree by mirror.
-    assert resolution.colors == Theme.base_colors(:dark)
+    assert light.source == :base
+    assert light.colors == Theme.base_colors(:light)
   end
 
   test "to_term_ui_color converts #rrggbb and refuses every other shape" do
@@ -108,15 +54,5 @@ defmodule Workstation.CLI.TUI.ThemeTest do
     assert Theme.to_term_ui_color("#89b4") == nil
     assert Theme.to_term_ui_color("#zzzzzz") == nil
     assert Theme.to_term_ui_color(:cyan) == nil
-  end
-
-  defp test_ctx, do: %{home: System.get_env("WORKSTATION_HOME")}
-
-  defp wait_for_file(path, tries \\ 100)
-
-  defp wait_for_file(_path, 0), do: flunk("listener socket never appeared")
-
-  defp wait_for_file(path, tries) do
-    if File.exists?(path), do: :ok, else: Process.sleep(20) && wait_for_file(path, tries - 1)
   end
 end

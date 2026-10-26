@@ -204,9 +204,12 @@ battery-green before the next starts):
   `.github/scripts/eval-goldens.sh`) retires with the walker —
   verification goes behavioral (decision 5).
 
-The engine's survivors: the CLI/TUI shell, the daemon (reads, pubsub, the
-`system` domain, `Overlay`, theme), `Core.EngineState`, and the report reader
-that replaces the catalog arm.
+The engine's survivors: the CLI/TUI shell, `Core.EngineState`, and the
+report reader that replaced the catalog arm. (The daemon — reads, pubsub,
+the `system` domain, `Overlay`, the theme resolver — was the last of the
+absorption chain's transitional machinery: once nix owned the write plane
+and the read verbs served the baked report, the wire protocol had no
+client left and retired with the read plane's move in-process.)
 
 ## The deletion chain
 

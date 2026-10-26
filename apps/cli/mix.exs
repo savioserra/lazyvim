@@ -32,8 +32,7 @@ defmodule Workstation.CLI.MixProject do
       {:jason, "~> 1.4"},
       {:term_ui, "== 2.0.0-rc.2"},
       {:stream_data, "~> 1.4", only: :test},
-      {:core, in_umbrella: true},
-      {:daemon, in_umbrella: true}
+      {:core, in_umbrella: true}
     ]
   end
 end

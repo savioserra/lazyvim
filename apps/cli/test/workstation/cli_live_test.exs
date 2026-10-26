@@ -1,14 +1,15 @@
 defmodule Workstation.CLI.LiveTest do
   @moduledoc """
-  The live reads against a REAL in-process daemon tree — the client/daemon
-  split's end-to-end contract for the verbs that have no offline form.
+  The live reads through the Router — the verbs' end-to-end contract
+  against the baked report reader (`Workstation.Core.Report` pinned to a
+  fixture through its cache seam).
 
-  Migrated from `Workstation.CLITest` (engine work, M1): live reads route
-  through `status.run` / `plan.run` / `diff.run`, so these tests need a
-  daemon pinned to the sandbox home and must never run concurrent with the
-  async suite (WORKSTATION_HOME and the daemon tree are process-global).
   The write verbs retired with the engine's write plane; mutation lives in
-  the nix substrate's workstation-switch drivers.
+  the nix substrate's workstation-switch drivers. The daemon that used to
+  serve these reads retired with the read plane's move in-process — there
+  is no resident engine process to pin, only the report cache (which is why
+  this module stays serial: WORKSTATION_HOME and the cache are
+  process-global).
   """
 
   use ExUnit.Case, async: false
@@ -17,8 +18,7 @@ defmodule Workstation.CLI.LiveTest do
   # restarts its sequence in every `mix test` VM, so a home that outlives its
   # run (a killed run's leftovers) is re-drawn verbatim by a later one. The
   # boot millisecond in base36 never repeats across VMs, any same-named
-  # leftover is swept before use, and the home is removed on exit (the full
-  # note lives in apps/daemon/test/workstation/daemon/generation_test.exs).
+  # leftover is swept before use, and the home is removed on exit.
   defp unique_home(prefix) do
     token = Integer.to_string(:os.system_time(:millisecond), 36)
     home = Path.join(System.tmp_dir!(), "#{prefix}-#{token}")
@@ -30,7 +30,6 @@ defmodule Workstation.CLI.LiveTest do
 
 
   alias Workstation.CLI.Router
-  alias Workstation.Daemon.Listener
 
   setup do
     home = unique_home("ws-cli-live")
@@ -42,16 +41,13 @@ defmodule Workstation.CLI.LiveTest do
       if previous, do: System.put_env("WORKSTATION_HOME", previous), else: System.delete_env("WORKSTATION_HOME")
     end)
 
-    # The daemon reads the BAKED report; dev/test pins the fixture through
+    # The reads serve the BAKED report; dev/test pins the fixture through
     # the reader's cache seam (same VM, same cache). The fixture shape is
     # the report fold's (nix/report.nix): counts, the target lists, the
     # capability order and the per-capability accounting rows.
     Workstation.Core.Report.put(report_fixture())
 
     on_exit(&Workstation.Core.Report.clear/0)
-
-    start_supervised!(Workstation.Daemon.Application.supervisor_spec())
-    wait_for_file(Listener.socket_path())
 
     %{home: home}
   end
@@ -146,7 +142,7 @@ defmodule Workstation.CLI.LiveTest do
 
   # Home-resolution precedence: the flag/env beats chain is the Router's
   # pure resolution (pinned directly in Workstation.CLITest.EnvContract);
-  # the live route proves the env half — the daemon serves the resolved
+  # the live route proves the env half — the read serves the resolved
   # home ($WORKSTATION_HOME in this fixture), never the ambient $HOME.
   test "$WORKSTATION_HOME beats $HOME on the live route", %{home: home} do
     real_home = System.get_env("HOME") || raise("HOME must be set in the test environment")
@@ -232,12 +228,4 @@ defmodule Workstation.CLI.LiveTest do
   defp canonical_json(value) when is_list(value), do: Jason.encode!(value)
 
   defp canonical_json(value), do: Jason.encode!(value)
-
-  defp wait_for_file(path, tries \\ 100)
-
-  defp wait_for_file(_path, 0), do: flunk("listener socket never appeared")
-
-  defp wait_for_file(path, tries) do
-    if File.exists?(path), do: :ok, else: (Process.sleep(20) && wait_for_file(path, tries - 1))
-  end
 end

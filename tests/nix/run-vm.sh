@@ -23,8 +23,8 @@ run_script=$(ls tests/nix/vm-result/bin/run-*-vm)
 
 echo "== booting $run_script to activation + live E2E =="
 # 1200s: tcg (no KVM) boots slow, and the live E2E runs after multi-user
-# (daemon user unit + wire handshake + an apply-driven switch + the
-# journal receipt). The VM never exits; the timeout IS the boot bound.
+# (the retirement proof + an apply-driven switch + the read smokes). The
+# VM never exits; the timeout IS the boot bound.
 timeout 1200 "$run_script" -nographic </dev/null >"$log" 2>&1 || {
   status=$?
   [ "$status" -eq 124 ] || { cat "$log"; exit $status; }
@@ -38,9 +38,9 @@ grep -q 'workstation: home plane active' "$log" \
 grep -q 'workstation: boot-to-activation proof complete' "$log" \
   || { echo 'FAIL: VM never reached multi-user' >&2; exit 1; }
 
-# The live proof: daemon user unit up, wire handshake, apply-driven
-# switch, the `system` domain receipt in the daemon's journal, consumer
-# smoke — all inside the VM, asserted by tests/nix/vm-e2e.nix's driver.
+# The live proof: the retirement holds (no daemon unit, no socket),
+# apply-driven switch, the switch receipt in switch.log, consumer smoke —
+# all inside the VM, asserted by tests/nix/vm-e2e.nix's driver.
 if grep -q 'workstation-e2e: .* FAIL' "$log"; then
   grep 'workstation-e2e:' "$log" >&2
   echo 'FAIL: the workstation E2E failed inside the VM' >&2

@@ -58,8 +58,11 @@ renders empty tokens). Template consumers substitute slots natively:
 `workstationTheme.lib` (the flake output carrying `renderSlots` +
 `assertNoUnresolved`) turns `{{ .theme.slots.<name> }}` references into
 extracted values, and a template naming a slot the token set does not
-carry fails the eval. No home target is deployed — the theme capability
-owns data, not targets.
+carry fails the eval. One home target IS deployed: the store token path —
+`modules/theme/tokens.nix` links the extracted tokens (palette + slots) at
+`~/.local/state/workstation/theme.json`, a store symlink the switch
+re-points every generation (the switch-time push; consumers read the file
+or watch the link, nothing polls).
 
 ## Consumers
 
@@ -69,7 +72,7 @@ owns data, not targets.
 | nunchux (launcher config) | `slots` | the terminal module renders `.config/nunchux/config` from the payload template by slot substitution (`renderSlots` from the extracted tokens, asserted unresolved-slot-free); the checkout is the fetchGit-pinned store tree ([tmux](tmux.md)) |
 | herdr | philosophy (terminal-following) | documented canonical choice only: `[theme] name = "terminal"`, `auto_switch = true` (see [herdr](herdr.md)); herdr tracks the host terminal's live ANSI palette, so under the Starlight rebrand it renders starlight via the terminal theme — the engine never writes herdr's live `config.toml` and ships no herdr colors |
 | nvim | upstream pin (`oasis-starlight`) | `lazy-lock.json` pins `uhs-robert/oasis.nvim`; the editor rides the upstream starlight palette tokens.lua cites — not a generated colorscheme (rebrand spec S-R4); starlight wins all hosts, Omarchy import dropped (S-R2) |
-| term_ui (Elixir TUI + daemon) | `palette` | shipped mirror `Workstation.Core.Theme.Tokens` with tests: the daemon `theme.resolve` overlay applies role sets over it (docs/elixir.md, daemon wire), and the CLI TUI theme resolver mirrors the same palette (pinned by `theme_test.exs` "base path mirrors the core tokens palette exactly") |
+| term_ui (Elixir TUI) | `palette` | shipped mirror `Workstation.Core.Theme.Tokens` with tests; the CLI TUI theme resolver resolves the base palette (the daemon `theme.resolve` overlay path retired with the daemon — no overlay state survives outside a switch; the deployed store token path carries the same bytes for file-reading consumers) |
 
 ## TUI box anatomy note
 
@@ -94,8 +97,6 @@ a two-carrier edit: `tokens.lua` and `Workstation.Core.Theme.Tokens`.
 
 - `apps/core/test/workstation/core/theme/tokens_test.exs`: the parity
   anchor — the engine carrier carries the same contract values as
-  `tokens.lua`, the role set is complete, and every palette role is
-  overlay-settable.
+  `tokens.lua` and the role set is complete.
 - `apps/cli/test/workstation/cli/tui/theme_test.exs`: the CLI base
-  palette mirrors the core tokens exactly; daemon resolutions carry the
-  closed role set.
+  palette mirrors the core tokens exactly.

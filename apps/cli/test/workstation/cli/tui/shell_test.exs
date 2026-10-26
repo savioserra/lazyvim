@@ -283,7 +283,7 @@ defmodule Workstation.CLI.TUI.ShellTest do
     assert text =~ "generation:  gen-3"
     # editor (nvim+helix: 3 declared targets) + terminal (tmux: 1) = 2 domains.
     assert text =~ "2 domains · 4 files · 0 would change"
-    assert text =~ "● reachable"
+    assert text =~ "● report"
     assert text =~ "r refresh"
     assert text =~ "destination:"
   end
@@ -465,18 +465,17 @@ defmodule Workstation.CLI.TUI.ShellTest do
     assert text =~ "3 capabilities · 3 file targets"
   end
 
-  test "status box shows the recovery shape when the daemon is unreachable" do
+  test "status box shows the failure shape when the read fails" do
     runtime =
-      start_shell_wide(load: loader(%{status: {:error, {"daemon_unavailable", "ENOENT"}}}))
+      start_shell_wide(load: loader(%{status: {:error, {"engine", "ENOENT"}}}))
 
-    # The status read rides its own async seam (loading → unreachable).
+    # The status read rides its own async seam (loading → failed).
     text =
       await_frame(fn frame ->
-        body_text(frame) =~ "daemon unreachable"
+        body_text(frame) =~ "read failed"
       end) |> body_text()
 
-    assert text =~ "daemon unreachable"
-    assert text =~ "workstation daemon"
+    assert text =~ "read failed"
 
     # r retries the read (the seam keeps failing; the error stays honest).
     # The reload is an async seam round-trip — ride the draws for the
@@ -540,28 +539,28 @@ defmodule Workstation.CLI.TUI.ShellTest do
     |> Enum.any?(fn col -> Frame.cell(frame, row, col).fg == rgb end)
   end
 
-  test "the engine badge tints reachable state accent and unreachable err" do
+  test "the engine badge tints the answered read accent and a failed read err" do
     _runtime = start_shell()
 
     # The badge rides the engine box border once the status read lands —
     # a settled drain can predate the load under suite load.
-    frame = await_frame(fn frame -> body_text(frame) =~ "● reachable" end)
+    frame = await_frame(fn frame -> body_text(frame) =~ "● report" end)
 
-    row = find_row(frame, "● reachable")
+    row = find_row(frame, "● report")
     # The badge rides the engine box title - row 1 in the stack layout.
     assert row
     assert fg_in_row?(frame, row, {91, 173, 255})
 
-    _runtime = start_shell(load: loader(%{status: {:error, {"daemon_unavailable", "ENOENT"}}}))
+    _runtime = start_shell(load: loader(%{status: {:error, {"engine", "ENOENT"}}}))
 
     # The error loader means the home never shows the engine identity —
-    # the readiness gate is the engine badge's unreachable verdict.
+    # the readiness gate is the engine badge's unreadable verdict.
     frame =
       await_frame(fn frame ->
-        body_text(frame) =~ "● unreachable"
+        body_text(frame) =~ "● unreadable"
       end)
 
-    row = find_row(frame, "● unreachable")
+    row = find_row(frame, "● unreadable")
     # The badge rides the engine box title — row 1 in the stack layout.
     assert row
     assert fg_in_row?(frame, row, {255, 121, 121})

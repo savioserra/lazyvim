@@ -76,7 +76,7 @@ mkdir -p "$TMPDIR"
 chmod 700 "$XDG_RUNTIME_DIR"
 
 # The installed engine release: on the nix substrate the switch drivers
-# place it (the daemon user unit runs the store path directly); on a
+# place it (the store path links into the home profile); on a
 # checkout host it is the mix release built at the repo root and staged
 # here. Nothing else is ever executed.
 release=$HOME/.local/opt/workstation/bin/workstation

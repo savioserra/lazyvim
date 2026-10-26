@@ -32,10 +32,9 @@ workstation-switch apply --system
   evaluated on the x86_64 runner, where the aarch64-darwin engine
   derivation evals clean (the named gap: per-target NIF vendoring is
   open, so the first real switch must BUILD the engine on the mac).
-- the daemon's darwin shape: no launchd agent yet — HM's launchd surface
-  does not exist inside the nix-darwin-integrated home module, so the
-  daemon starts on demand (the CLI's ensure-daemon spawn covers the
-  `system` domain receipt). A launchd agent is a mac-cutover follow-up.
+- the theme token path and the switch receipt are platform-free (files in
+  the state tree); there is no resident engine process on any leg — the
+  daemon era's launchd-agent question retired with the daemon.
 - consumer smoke + live apply + `brew leaves` enumeration: NOT run — the
   mac host was unreachable from the runner (ssh `mac`: connection timed
   out; re-verified 2026-10-22). When reachable: enumerate `brew leaves`,
