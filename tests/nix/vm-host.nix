@@ -114,14 +114,15 @@ in
     '';
   };
 
-  # the live proof, run as the vm user. Ordering: wanted by multi-user
-  # only — the proof unit's `after multi-user` makes any service-level
-  # after/wants chain here an ordering cycle (systemd would delete this
-  # job to break it); the e2e runs after the boot-home activation has
-  # landed, which multi-user + home-manager-vm.service guarantee.
+  # the live proof, run as the vm user. Ordering: after the home-manager
+  # activation unit — the boot home must be fully linked before the first
+  # assertion runs (the editor tree is large and the link phase is the
+  # activation's tail; an unordered start raced it and lost). A pure
+  # After= edge: no wants, no requires — nothing here can cycle.
   systemd.services.workstation-e2e = {
-    description = "Workstation E2E: retirement proof + apply-driven switch + read smokes";
+    description = "Workstation E2E: retirement proof + apply-driven switch + consumer smokes";
     wantedBy = [ "multi-user.target" ];
+    after = [ "multi-user.target" "home-manager-vm.service" ];
     serviceConfig = {
       Type = "oneshot";
       User = "vm";

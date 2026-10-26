@@ -118,6 +118,15 @@ writeShellScriptBin "workstation-e2e" ''
   pass "launcher shim dispatch"
 
   step "nvim profile link"
+  # belt and suspenders for the boot home: the unit ordering guarantees the
+  # home-manager activation completed; the bounded settle turns a lost
+  # ordering race (if one ever returns) from a FAIL into a loud wait
+  settle=0
+  while [ $settle -lt 90 ]; do
+    [ -x "$home/.local/bin/nvim" ] && [ -r "$home/.config/nvim/lua/languages/profile.lua" ] && break
+    settle=$((settle + 3))
+    sleep 3
+  done
   [ -x "$home/.local/bin/nvim" ] \
     || fail "nvim profile link" "$home/.local/bin/nvim is not executable"
   pass "nvim profile link"
