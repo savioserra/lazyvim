@@ -1,12 +1,10 @@
 # The endgame: the repo's final shape
 
-The workstation is a **nixpkgs-native monorepo**. There is no engine: no
-resident daemon, no wire protocol, no TUI, no Elixir plane, no release to
-build or stage. The capability modules declare; home-manager renders; two
-small shell clients (the launcher shim and the switch driver) are the whole
-operator surface; `nix eval` answers every question about the declared
-state. This document is the structure's home — the shape lives here, not in
-board comments.
+The workstation is a **nixpkgs-native monorepo**. The capability modules
+declare; home-manager renders; two small shell clients (the launcher shim
+and the switch driver) are the whole operator surface; `nix eval` answers
+every question about the declared state. This document is the structure's
+home.
 
 ## The final folder structure
 

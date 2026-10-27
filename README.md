@@ -1,109 +1,89 @@
 # workstation
 
-A nixpkgs-native workstation substrate for Linux x86_64 (WSL counts as
-linux) and macOS arm64: capability modules — editor (Neovim/LazyVim),
-terminal (tmux, nunchux), theme, languages, foundation, fonts, secrets,
-agent (hermes) — declared once, rendered by home-manager, switched by one
-command. Nix owns the lifecycle — the file plane, activation and rollback —
-and every question about the declared state is answered by `nix eval` over
-`workstation.report.<verb>`. There is no engine: no resident process, no
-socket, no release to build. A switch's receipt lands in the state tree's
-`switch.log`.
+A nixpkgs-native workstation substrate for Linux x86_64 and macOS arm64
+(WSL counts as linux). Capability modules — editor, terminal, theme,
+languages, foundation, fonts, secrets, agent — are declared once, rendered
+by home-manager, and switched by one command. The declared state answers
+every question: `nix eval` over `workstation.report.<verb>`. Each switch
+writes a receipt to `~/.local/state/workstation/switch.log`.
 
-## Prerequisites
+## Install
 
-- Nix with flakes enabled (the one hard prerequisite — the daemon is
-  host-owned on standalone-Home-Manager legs, platform-managed on
-  NixOS/nix-darwin ones).
-- `workstation init` captures the machine's identity once, at install
-  time, into `hosts/identity.nix` (whiptail dialogs prefilled with the
-  detected values; keep the file uncommitted). whiptail ships with the
-  substrate (`pkgs.newt`); a bare box before its first switch falls back
-  to the detected values verbatim. The flake renders every pinned tool
-  into the store.
-- The legs: `hosts/linux` (the linux leg; NixOS-WSL system plane, `homeConfigurations` +
-  `nixosConfigurations`), `hosts/mac` (nix-darwin, `darwinConfigurations`;
-  brew reduced to casks). WSL counts as the linux leg (operator ruling
-  2026-10-22: the flake targets exactly mac and linux).
+```sh
+git clone https://github.com/savioserra/lazyvim.git && cd lazyvim
+./bin/workstation init   # capture identity + first switch (the shim ships in the clone)
+workstation apply    # every later update, rollback, sync
+```
+
+`workstation init` runs whiptail dialogs prefilled with the detected
+values (hostname, user, home, tailscale fqdn) and writes
+`hosts/identity.nix`. Keep that file uncommitted. whiptail ships with the
+substrate; on a bare box it falls back to the detected values.
+
+Prerequisite: nix with flakes enabled. The nix daemon is host-owned on
+standalone-Home-Manager hosts, platform-managed on NixOS and nix-darwin.
 
 ## Hosts
 
-Switch a host through the substrate — the leg-native rebuild, or the
-`workstation-switch` driver (staged into each generation; it wraps the
-leg-native switch and writes the receipt). The operator surface is one
-command — the leg-native switch is never typed by a user:
+| Host leg | Directory | Plane |
+| --- | --- | --- |
+| linux (WSL counts as linux) | `hosts/linux` | `homeConfigurations` + `nixosConfigurations` (NixOS-WSL system plane) |
+| mac | `hosts/mac` | `darwinConfigurations` (nix-darwin; brew reduced to casks) |
+
+## Reads
 
 ```sh
-workstation init     # once per machine: capture identity + the first switch
-workstation apply    # every later update (rollback/update/sync alongside)
-```
-
-Every switch ends with a receipt line in the state tree's `switch.log`
-(`~/.local/state/workstation/switch.log`):
-
-```sh
-tail -n 5 ~/.local/state/workstation/switch.log   # generation N applied (rollback available at M)
-```
-
-## Reads: nix eval, nothing else
-
-The declared state is the capability modules under `modules/` — module and
-payload bytes co-located in one directory; the fold (`nix/report.nix`)
-reports the composed surface, and the flake projects it as the read verbs.
-`workstation status|plan|capabilities` (the launcher shim, `bin/workstation`)
-are thin wrappers over exactly these evals; on a nix-managed home they read
-the generation's own flake snapshot (`~/.local/opt/workstation/flake`), and
-inside a checkout they read the checkout.
-
-```sh
-nix eval .#workstation.report.status          # the declared inventory (JSON)
-nix eval .#workstation.report.plan            # the surface the next switch applies (+ digest)
+nix eval .#workstation.report.status                # declared inventory (JSON)
+nix eval .#workstation.report.plan                  # what the next switch applies
 nix eval .#workstation.report.capabilities.editor   # scope with an attrpath
 
-workstation status         # the same answers through the shim (thin wrapper)
-workstation capabilities editor
-workstation help           # the verb contract; the bare verb prints usage
+workstation status                 # the same answers through the shim
+workstation capabilities editor    # scoped through the shim
+workstation help                   # the verb contract
 ```
 
-The read verbs never mutate a home; mutation is `workstation-switch`'s
-alone. Ownership and baseline over time are the nix generation's story
-(`home-manager generations`, `nix store diff-closures`).
+The shim reads the generation's flake snapshot
+(`~/.local/opt/workstation/flake`) on a switched host, or the enclosing
+checkout inside one. Reads mutate nothing. Ownership and history over time:
+`home-manager generations`, `nix store diff-closures`.
 
-The theme's live surface is a store token path
-(`~/.local/state/workstation/theme.json`) the switch re-points every
-generation; consumers read it or watch the link — nothing polls.
+The switch re-points the theme token path
+(`~/.local/state/workstation/theme.json`) every generation. Consumers read
+the file or watch the link.
 
 `~/.hermes` stays hot home: home-manager never manages it. The pinned
-hermes checkout carries its runtime writes (update machinery, the pm
-store, recovery closures); managed skill leaves are read-only store
-symlinks the declarative agent module owns.
+hermes checkout carries the runtime writes; managed skill leaves are
+read-only store symlinks.
 
-## Secrets and ownership
+## Secrets
 
 No login profiles, secret values, provider credentials, 1Password account
-sessions, or vault state belong to the substrate. The source-managed ntfy
-notifier and pinned Pi packages retain their own discovery/reload
-contracts; see the references below.
+sessions, or vault state belong to the substrate. See
+[docs/secrets.md](docs/secrets.md).
 
-## Documentation and validation
+## Documentation
 
 | Reference | Scope |
 | --- | --- |
-| [`docs/endgame.md`](docs/endgame.md) | The final shape: structure, invariants, retirement ledger |
-| [`docs/index.md`](docs/index.md) | Repository navigation |
-| [`docs/testing.md`](docs/testing.md) | Fast checks, the docker-nix acceptance, the container E2E |
-| [`docs/capabilities.md`](docs/capabilities.md) | Capability boundaries and lifecycle |
-| [`docs/home-state.md`](docs/home-state.md) | Home state law (native declarations) and the cutover history |
-| [`docs/tools.md`](docs/tools.md) | Managed inventory and prerequisites |
-| [`docs/secrets.md`](docs/secrets.md) | User-owned authentication and explicit secrets skill |
-| [`docs/nvim.md`](docs/nvim.md), [`docs/tmux.md`](docs/tmux.md) | Application configuration |
-| `AGENTS.md` | Contributor rules |
+| [docs/index.md](docs/index.md) | Repository navigation |
+| [docs/endgame.md](docs/endgame.md) | The final shape: structure and invariants |
+| [docs/architecture.md](docs/architecture.md) | Declared state and the two clients |
+| [docs/capabilities.md](docs/capabilities.md) | Capability boundaries and lifecycle |
+| [docs/home-state.md](docs/home-state.md) | Home state law |
+| [docs/tools.md](docs/tools.md) | Tool inventory and prerequisites |
+| [docs/testing.md](docs/testing.md) | Checks and acceptance |
+| [docs/secrets.md](docs/secrets.md) | Authentication boundary |
+| [docs/nvim.md](docs/nvim.md), [docs/tmux.md](docs/tmux.md) | Application configuration |
+| [AGENTS.md](AGENTS.md) | Contributor rules |
 
-Run `sh .github/scripts/check.sh` for the static battery (identity gate,
-engine-free gate, shell checks, the shim dispatch gate, the nix eval reads
-where nix exists); never run fixtures directly against a switched home.
-Real nix builds and container E2E runs require explicit authorization; follow
-[testing](docs/testing.md), not a live-home experiment. CI runs the static
-battery plus a nix evaluation leg (closure builds stay the local docker
-acceptance's job). Release CI validates before producing tagged source
-archives and SHA-256 sums.
+## Checks
+
+```sh
+sh .github/scripts/check.sh
+```
+
+Covers the identity gate, the tree-purity gate, shell checks, the shim
+dispatch gate, and the nix eval reads. Never run fixtures against a
+switched home. Behavioral acceptance: the container E2E. CI runs the
+static battery plus the nix evaluation leg. Release CI validates tagged
+source archives and SHA-256 sums.

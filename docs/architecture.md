@@ -6,7 +6,7 @@ payload bytes — rendered by home-manager and reported by the fold
 (`nix/report.nix`). The clients are `bin/workstation` (reads: thin
 wrappers over `nix eval .#workstation.report.<verb>`; help/usage) and
 `workstation-switch` (the write plane: leg-native rebuilds plus the
-switch.log receipt). There is no resident process anywhere.
+switch.log receipt).
 
 ## The declared state and the read verbs
 
@@ -61,7 +61,7 @@ nix.
 
 The check battery (.github/scripts/check.sh) holds the lines in code: the
 identity gate (personal strings only in `hosts/<host>/default.nix`), the
-engine-free gate (the tree-wide grep for the Elixir module token stays
+tree-purity gate (the tree-wide grep for a foreign module-system token stays
 empty), shell syntax + ShellCheck, the shim dispatch gate, the nix eval
 read gate. Verification beyond the battery is behavioral — the docker-nix
 closure acceptance and the container E2E (docs/testing.md).

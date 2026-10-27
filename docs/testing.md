@@ -7,8 +7,8 @@ sh .github/scripts/check.sh
 ```
 
 The static battery: the nix identity gate (per-host identity lives only in
-`hosts/<host>/default.nix`), the engine-free gate (the tree-wide grep for
-the Elixir module token stays empty — the engine stays gone), `sh -n` +
+`hosts/<host>/default.nix`), the tree-purity gate (the tree-wide grep for a
+foreign module-system token stays empty), `sh -n` +
 ShellCheck over the shell surfaces, the launcher shim's dispatch gate (a
 stub `nix` and a stub `workstation-switch` — dispatch, flake resolution
 order, delegation and fail-closed paths, no nix install needed), the nix

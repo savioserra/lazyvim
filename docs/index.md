@@ -32,7 +32,7 @@
 
 ## Substrate law (binding)
 
-The substrate is nixpkgs-native: declared state + two clients, no engine.
+The substrate is nixpkgs-native: declared state + two clients.
 There are **no deprecated or backward-compatibility surfaces**: one current
 shape per verb, per option, per pin — hard-cut. Retired paths are dropped
 in the lane that touches them — delete, don't deprecate. The filesystem is

@@ -130,8 +130,8 @@ checkout directly.
 
 Compliance flag: upstream ships NO LICENSE file, so the code is
 all-rights-reserved by default — running it is a user-owned choice; the
-binary bytes ride the commit pin and are never executed by the engine or
-the verify lane.
+binary bytes ride the commit pin and are never executed by the substrate
+or its verify lane.
 
 ## Excluded plugin
 

@@ -2,8 +2,7 @@
 # The workstation launcher: the nix substrate's whole client. Reads are
 # nix evals over the flake's declared-state report
 # (#workstation.report.<verb> — the capability modules' fold, nix/report.nix);
-# the write plane is the generation's workstation-switch driver. No resident
-# process, no release to acquire.
+# the write plane is the generation's workstation-switch driver.
 set -eu
 
 usage() {

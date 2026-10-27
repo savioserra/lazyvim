@@ -71,10 +71,8 @@ for Elixir/HEEx: the `modules/languages/elixir/` capability declares the profile
 as the `elixirls` client) and verifies real LSP attach plus `mix format`
 formatting through the leaf helpers, while the deployed module constrains
 ElixirLS (dialyzer and dep fetching off) and pins conform-owned
-`mix format` as the autoformatter. Unlike `node` for TypeScript, the BEAM
-toolchain is a host prerequisite here — `elixir`/`erlang` must resolve on
-PATH (mise- or system-managed); no engine-owned elixir runtime capability
-exists yet.
+`mix format` as the autoformatter. The BEAM toolchain is the elixir
+capability's nixpkgs runtime (erlang 28 + elixir 1.18, on PATH).
 
 ## Plugin ownership
 

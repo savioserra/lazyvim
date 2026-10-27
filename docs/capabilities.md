@@ -24,8 +24,8 @@ bin/workstation (POSIX sh: flake resolution, verb dispatch)
   writes: exec the staged workstation-switch driver
 ```
 
-- No resident process, no wire protocol, no TUI.
-- Mutation is `workstation-switch`; `bin/workstation` is the sole entry point.
+- Reads are pure `nix eval`; mutation is `workstation-switch`.
+- `bin/workstation` is the sole entry point.
 - `modules/**/*.lua` are data payload files, read as bytes, never executed.
 
 ## Module boundaries
@@ -265,9 +265,9 @@ Fail-closed at eval:
 | `plan` / `status` / `capabilities` | `nix eval` over `workstation.report` | Answer the declared state; mutate nothing |
 | verify lane | `modules/*/verify/*.sh` | Consumer smokes against the recorded pins |
 
-Reads are pure evals — no resident process, no socket. The container E2E
-(`tests/nix`) asserts the shape itself: no daemon unit, no socket, the
-switch receipt in `switch.log`.
+Reads are pure evals. The container E2E (`tests/nix`) asserts the shape
+itself: the switch receipt in `switch.log`, and the home carries only
+declared targets.
 
 A switch is the one event a generation carries: the receipt line lands in
 `switch.log`, and the switch re-points the theme token path

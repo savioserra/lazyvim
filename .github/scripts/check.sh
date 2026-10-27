@@ -1,13 +1,11 @@
 #!/bin/sh
 # The check matrix: the nixpkgs-native substrate is declared state, so the
-# matrix is static source gates plus the nix eval read gate. The Elixir
-# engine battery (mix test, doclint, the release boot smoke, the locale
-# guard) retired with the engine; verification beyond this matrix is
-# behavioral — the docker-nix acceptance (closures) and the container E2E
-# (activation + consumers), owned by docs/testing.md.
+# matrix is static source gates plus the nix eval read gate. Behavioral
+# verification — the docker-nix acceptance (closures) and the container
+# E2E (activation + consumers) — is owned by docs/testing.md.
 #
 # Ordering: the identity gate runs first (cheap source grep), then the
-# engine-free gate (no Elixir module token survives anywhere in the tree),
+# tree-purity gate (one module system in the tree),
 # then the shell checks, then the nix eval reads (skipped with a loud note
 # where nix is absent — the docker acceptance owns them there).
 set -eu
@@ -45,12 +43,12 @@ gate 'identity gate' \
 	'identity gate: hardcoded personal identity in the tracked tree — the legs are templates; hosts/identity.nix (captured by workstation init, kept uncommitted) is the only identity surface' \
 	git grep -iE 'savio|shyylol' -- . ':(exclude).github/scripts/check.sh'
 
-step 'engine-free gate (the Elixir plane stays gone: no engine module token anywhere in the tree)'
+step 'tree-purity gate (one module system in the tree)'
 # the token is assembled at runtime so this gate's own source never
 # carries it — the tree-wide grep must come back EMPTY
 engine_module_token='def''module'
-gate 'engine-free gate' \
-	'engine-free gate: the Elixir engine retired; this tree is nixpkgs-native (docs/endgame.md)' \
+gate 'tree-purity gate' \
+	'tree-purity gate: a foreign module-system token survives in the tree (docs/endgame.md)' \
 	git grep -n "$engine_module_token" -- .
 
 step 'shell syntax (sh -n) and ShellCheck when available'
