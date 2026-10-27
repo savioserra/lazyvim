@@ -40,25 +40,22 @@ let
       # a slot claimed by two distinct ids is an ambiguous lane (which one
       # sources first is exactly the PATH semantics the contract exists to
       # declare) — never a silent tie-break
-      owners =
-        lib.mapAttrsToList (_: ss: ss) (builtins.groupBy (s: toString s.order) slots);
+      owners = lib.mapAttrsToList (_: ss: ss) (builtins.groupBy (s: toString s.order) slots);
       shared = lib.filter (ss: lib.length ss > 1) owners;
       sharedNames = map (
-        ss: "order ${toString (builtins.head ss).order}: ${
-          lib.concatStringsSep " + " (map (s: s.id) ss)
-        }"
+        ss: "order ${toString (builtins.head ss).order}: ${lib.concatStringsSep " + " (map (s: s.id) ss)}"
       ) shared;
     in
     assert
       ambiguous == [ ]
       || throw "workstation-shell: fragment ids declare conflicting orders across targets (${
-        lib.concatStringsSep ", " (map (s: "${s.id}: ${lib.concatStringsSep " vs " (map toString s.orders)}") ambiguous)
+        lib.concatStringsSep ", " (
+          map (s: "${s.id}: ${lib.concatStringsSep " vs " (map toString s.orders)}") ambiguous
+        )
       }) — one fragment, one order slot";
     assert
       shared == [ ]
-      || throw "workstation-shell: distinct fragments share an order slot (${
-        lib.concatStringsSep "; " sharedNames
-      }) — the lane's order is PATH semantics, declared per fragment; give each id its own slot";
+      || throw "workstation-shell: distinct fragments share an order slot (${lib.concatStringsSep "; " sharedNames}) — the lane's order is PATH semantics, declared per fragment; give each id its own slot";
     lib.sort (a: b: a.order < b.order) fragments;
 in
 {

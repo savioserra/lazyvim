@@ -110,10 +110,7 @@ let
         && !(builtins.elem "imports" keys);
     in
     if unplaceable then
-      throw
-        "workstation-capabilities: ${toString file} carries module keys (${
-          lib.concatStringsSep ", " keys
-        }) in no standard module shape (config, options, imports) — classification would silently drop it; give it a standard shape or move it out of modules/"
+      throw "workstation-capabilities: ${toString file} carries module keys (${lib.concatStringsSep ", " keys}) in no standard module shape (config, options, imports) — classification would silently drop it; give it a standard shape or move it out of modules/"
     else
       value != null && builtins.all (k: builtins.elem k moduleKeys) keys;
 

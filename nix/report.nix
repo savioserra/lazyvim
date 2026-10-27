@@ -116,8 +116,9 @@ let
   # the composed lane's order: the explicit order contract
   # (nix/lib/shell-lane.nix) — the ONE sort the home leg's rendered rc
   # files also read; the module system's merged list order is never it
-  lane = (import ./lib/shell-lane.nix { inherit lib; }).sortedFragments
-    fullEval.workstation.shell.fragments;
+  lane =
+    (import ./lib/shell-lane.nix { inherit lib; }).sortedFragments
+      fullEval.workstation.shell.fragments;
   fragments = map (f: {
     id = f.id;
     target = f.target;

@@ -93,8 +93,7 @@ in
           nixpkgs.overlays = [ self.overlays.default ];
           # the secrets domain's license acceptance (the 1Password CLI rides
           # nixpkgs unfree — nix/lib/license.nix, named and scoped)
-          nixpkgs.config.allowUnfreePredicate =
-            import ../../nix/lib/license.nix { lib = nixpkgs.lib; };
+          nixpkgs.config.allowUnfreePredicate = import ../../nix/lib/license.nix { lib = nixpkgs.lib; };
 
           # host identity: the ONLY place this host's facts are written
           # (the options are declared in the substrate; consumers derive)

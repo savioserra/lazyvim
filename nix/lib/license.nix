@@ -8,5 +8,4 @@
 # composition silently fails the eval or, worse, silently widens the
 # acceptance.
 { lib }:
-pkg:
-lib.getName pkg == "1password-cli"
+pkg: lib.getName pkg == "1password-cli"

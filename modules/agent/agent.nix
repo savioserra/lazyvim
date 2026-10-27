@@ -71,7 +71,7 @@ let
         lock = builtins.fromJSON (builtins.readFile (hermes.pin.tree + "/pm/lock.json"));
         locked =
           lock.packages.python.version
-          or (throw "workstation-agent: the pinned hermes rev's pm/lock.json carries no packages.python entry — the interpreter floor cannot be derived");
+            or (throw "workstation-agent: the pinned hermes rev's pm/lock.json carries no packages.python entry — the interpreter floor cannot be derived");
       in
       builtins.head (lib.splitString "+" locked);
 
@@ -90,20 +90,27 @@ let
   # binary.
   herdrVersion = "0.9.0";
   herdrPin =
-    if pkgs.stdenv.hostPlatform.isx86_64 && pkgs.stdenv.hostPlatform.isLinux then {
-      url = "https://github.com/herdrdev/herdr/releases/download/v${herdrVersion}/herdr-linux-x86_64";
-      sha256 = "4fa1a01158dd8043da92d31b270780b0dcc10603038d9b61cac4d81ab63fb71f";
-    } else if pkgs.stdenv.hostPlatform.isAarch64 && pkgs.stdenv.hostPlatform.isDarwin then {
-      url = "https://github.com/herdrdev/herdr/releases/download/v${herdrVersion}/herdr-macos-aarch64";
-      sha256 = "32b53df09872628059c789a69f02a6b8e29e14ddf26711421f3463f70c1aef17";
-    } else
+    if pkgs.stdenv.hostPlatform.isx86_64 && pkgs.stdenv.hostPlatform.isLinux then
+      {
+        url = "https://github.com/herdrdev/herdr/releases/download/v${herdrVersion}/herdr-linux-x86_64";
+        sha256 = "4fa1a01158dd8043da92d31b270780b0dcc10603038d9b61cac4d81ab63fb71f";
+      }
+    else if pkgs.stdenv.hostPlatform.isAarch64 && pkgs.stdenv.hostPlatform.isDarwin then
+      {
+        url = "https://github.com/herdrdev/herdr/releases/download/v${herdrVersion}/herdr-macos-aarch64";
+        sha256 = "32b53df09872628059c789a69f02a6b8e29e14ddf26711421f3463f70c1aef17";
+      }
+    else
       throw "workstation-agent: no herdr release asset declared for system '${pkgs.system}' (the pin knows linux x86_64 and darwin arm64)";
-  herdr = pkgs.runCommand "herdr-${herdrVersion}" {
-    src = pkgs.fetchurl herdrPin;
-    passthru.pinVersion = herdrVersion;
-  } ''
-    install -Dm755 "$src" "$out/bin/herdr"
-  '';
+  herdr =
+    pkgs.runCommand "herdr-${herdrVersion}"
+      {
+        src = pkgs.fetchurl herdrPin;
+        passthru.pinVersion = herdrVersion;
+      }
+      ''
+        install -Dm755 "$src" "$out/bin/herdr"
+      '';
 
   launcher =
     pkgs.runCommand "ws-hermes-launcher" { }

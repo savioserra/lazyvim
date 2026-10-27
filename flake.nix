@@ -289,54 +289,69 @@
         {
           # the declared-state reads answer: the fold evaluated through the
           # read verbs' projection (the shim's contract)
-          report-reads = pkgs.runCommand "workstation-check-report-reads" {
-            report = builtins.toJSON reportVerbs;
-            passAsFile = [ "report" ];
-          } ''
-            mkdir -p "$out"
-            mv "$reportPath" "$out/report.json"
-          '';
+          report-reads =
+            pkgs.runCommand "workstation-check-report-reads"
+              {
+                report = builtins.toJSON reportVerbs;
+                passAsFile = [ "report" ];
+              }
+              ''
+                mkdir -p "$out"
+                mv "$reportPath" "$out/report.json"
+              '';
 
           # every host leg still evaluates — toplevel drvPath forces the
           # full evaluation of each leg and builds nothing
-          linux-leg-eval = pkgs.runCommand "workstation-check-linux-leg-eval" {
-            toplevel = linuxHost.nixosConfig.config.system.build.toplevel.drvPath;
-          } ''
-            mkdir -p "$out"
-            printf '%s\n' "$toplevel" > "$out/toplevel.drv"
-          '';
-          mac-leg-eval = pkgs.runCommand "workstation-check-mac-leg-eval" {
-            toplevel = macHost.darwinConfig.config.system.build.toplevel.drvPath;
-          } ''
-            mkdir -p "$out"
-            printf '%s\n' "$toplevel" > "$out/toplevel.drv"
-          '';
-          home-legs-eval = pkgs.runCommand "workstation-check-home-legs-eval" {
-            linux = linuxHome.activationPackage.drvPath;
-            vm = vmHome.activationPackage.drvPath;
-          } ''
-            mkdir -p "$out"
-            printf '%s\n' "$linux" > "$out/linux.drv"
-            printf '%s\n' "$vm" > "$out/vm.drv"
-          '';
+          linux-leg-eval =
+            pkgs.runCommand "workstation-check-linux-leg-eval"
+              {
+                toplevel = linuxHost.nixosConfig.config.system.build.toplevel.drvPath;
+              }
+              ''
+                mkdir -p "$out"
+                printf '%s\n' "$toplevel" > "$out/toplevel.drv"
+              '';
+          mac-leg-eval =
+            pkgs.runCommand "workstation-check-mac-leg-eval"
+              {
+                toplevel = macHost.darwinConfig.config.system.build.toplevel.drvPath;
+              }
+              ''
+                mkdir -p "$out"
+                printf '%s\n' "$toplevel" > "$out/toplevel.drv"
+              '';
+          home-legs-eval =
+            pkgs.runCommand "workstation-check-home-legs-eval"
+              {
+                linux = linuxHome.activationPackage.drvPath;
+                vm = vmHome.activationPackage.drvPath;
+              }
+              ''
+                mkdir -p "$out"
+                printf '%s\n' "$linux" > "$out/linux.drv"
+                printf '%s\n' "$vm" > "$out/vm.drv"
+              '';
 
           # the golden boot: the VM E2E (tests/nix/run-vm.sh) — the VM
           # closure rides in as an input, the script boots it and asserts
           # the activation markers + the live E2E's verdict on the serial log
-          vm-e2e = pkgs.runCommand "workstation-check-vm-e2e" {
-            vm = vmTestConfig.config.system.build.vm;
-            script = ./tests/nix/run-vm.sh;
-            nativeBuildInputs = [
-              pkgs.coreutils
-              pkgs.findutils
-              pkgs.gnugrep
-            ];
-          } ''
-            export WORKSTATION_VM_BUILT="$vm"
-            export WORKSTATION_VM_DISK_DIR="$TMPDIR/disk"
-            mkdir -p "$WORKSTATION_VM_DISK_DIR"
-            sh "$script" "$out/boot.log"
-          '';
+          vm-e2e =
+            pkgs.runCommand "workstation-check-vm-e2e"
+              {
+                vm = vmTestConfig.config.system.build.vm;
+                script = ./tests/nix/run-vm.sh;
+                nativeBuildInputs = [
+                  pkgs.coreutils
+                  pkgs.findutils
+                  pkgs.gnugrep
+                ];
+              }
+              ''
+                export WORKSTATION_VM_BUILT="$vm"
+                export WORKSTATION_VM_DISK_DIR="$TMPDIR/disk"
+                mkdir -p "$WORKSTATION_VM_DISK_DIR"
+                sh "$script" "$out/boot.log"
+              '';
         };
     };
 }

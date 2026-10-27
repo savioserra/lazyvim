@@ -63,7 +63,15 @@ let
     };
   };
   plugins = builtins.mapAttrs (
-    _: pin: pkgs.fetchFromGitHub { inherit (pin) owner repo rev hash; }
+    _: pin:
+    pkgs.fetchFromGitHub {
+      inherit (pin)
+        owner
+        repo
+        rev
+        hash
+        ;
+    }
   ) pluginPins;
 
   # nunchux: the checkout pin + the repo-tracked linux build's sha (the
@@ -111,14 +119,22 @@ let
   # nunchux: the pinned checkout with the .platform marker composed in
   # (with it present, upstream's ensure_binary never fetches
   # releases/latest unchecksummed)
-  nunchuxTree = compose (pkgs.fetchFromGitHub {
-    inherit (nunchuxPin) owner repo rev hash;
-  }) [
-    {
-      path = "bin/.platform";
-      source = ./nunchux/files/.tmux/plugins/nunchux/bin/.platform;
-    }
-  ];
+  nunchuxTree =
+    compose
+      (pkgs.fetchFromGitHub {
+        inherit (nunchuxPin)
+          owner
+          repo
+          rev
+          hash
+          ;
+      })
+      [
+        {
+          path = "bin/.platform";
+          source = ./nunchux/files/.tmux/plugins/nunchux/bin/.platform;
+        }
+      ];
 
   # the pin manifest: the declared pins, deployed beside the checkouts —
   # the verify lane's only anchor (verified against the DEPLOYED pin,
