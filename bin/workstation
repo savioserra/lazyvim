@@ -173,9 +173,11 @@ init)
 	case "$(uname -s)" in
 	Darwin)
 		printf 'workstation: first activation (darwin plane, %s) ...\n' "$key"
-		exec nix --extra-experimental-features 'nix-command flakes' run \
-			github:LnL7/nix-darwin#darwin-rebuild -- switch \
-			--flake "$flake#$key"
+		drv=$(nix --extra-experimental-features 'nix-command flakes' \
+			build --no-link --print-out-paths \
+			github:LnL7/nix-darwin#darwin-rebuild)
+		exec sudo env NIX_CONFIG="extra-experimental-features = nix-command flakes" \
+			"$drv/bin/darwin-rebuild" switch --flake "$flake#$key"
 		;;
 	esac
 	printf 'workstation: first activation (home plane, %s) ...\n' "$key"
