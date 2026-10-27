@@ -33,14 +33,14 @@ sourced specification, preserved in Git history as `backlog/docs/doc-1`):
   live `config.toml` (the binary owns it: onboarding, Settings edits,
   `herdr config reset-keys`). Set once in herdr's Settings:
   `[theme] name = "terminal"`, `auto_switch = true` — herdr then follows the
-  host terminal's ANSI palette exactly like the tmux bar here (nvim is the
-  one brand-pinned exception: it loads the upstream oasis starlight palette),
-  with optional
+  host terminal's ANSI palette exactly like the tmux bar here (the editor
+  is the one brand-pinned exception: it loads the upstream oasis starlight
+  palette), with optional
   `[theme.custom]` accents derived from the shared tokens
   ([theme](theme.md)). Enforcement (a `modify_` fragment patching only the
   `[theme.custom]` block) is a deliberate non-goal until branding is wanted.
-- Managed `.local/bin/herdr` shadows any system package (for example an
-  Omarchy-provided `/usr/bin/herdr`) through the managed PATH.
+- Managed `.local/bin/herdr` shadows any system package through the
+  managed PATH.
 - Upgrades: the pin is declared in `modules/agent/agent.nix`; a live server keeps
   running its own version until the human restarts it. Installed bytes and
   running servers are distinct.

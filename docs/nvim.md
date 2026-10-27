@@ -130,15 +130,14 @@ Mason restore requirements:
 | Colorscheme | `oasis-starlight` — `uhs-robert/oasis.nvim` pinned at `main` `a3ef178fe47c69691e676a8da98ce5735c3013db` in `lazy-lock.json` |
 | Mechanism | `lua/plugins/theme.lua` runs `require("oasis").setup({ style = "starlight" })` then `vim.cmd.colorscheme("oasis-starlight")` at startup; LazyVim's `colorscheme` opt carries the same value |
 | Dark/light | oasis switches on `vim.o.background` — both appearances map to its dual-mode palette natively (`light_intensity` 3 is the upstream default) |
-| Omarchy import | Dropped with the Starlight rebrand: starlight wins on all hosts (rebrand spec S-R2), so the editor no longer follows the desktop theme |
 
 Rules:
 
 - oasis.nvim is the upstream port, deliberately NOT a colorscheme generated
   from the workstation tokens: tokens.lua drives engine surfaces; editor
   syntax rides the complete upstream palette (rebrand spec S-R4).
-- Deployed lockfiles that still carry `tender.vim` (or Omarchy theme plugin
-  extras) reconcile on the next apply: the pin left the seeded baseline, so it
+- Deployed lockfiles that still carry retired theme plugins reconcile on
+  the next apply: the pin left the seeded baseline, so it
   becomes a host extra that prunes once its installed plugin directory goes
   (documented lockfile merge semantics above).
 - Apply the colorscheme on the next Neovim start; running instances only get
