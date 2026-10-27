@@ -122,13 +122,6 @@ init)
 	escape() {
 		printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'
 	}
-	fqdn=''
-	if command -v tailscale >/dev/null 2>&1; then
-		# shellcheck disable=SC2016  # the $ anchors are sed regex, not shell
-		fqdn=$(tailscale status --json 2>/dev/null |
-			grep -o '"DNSName"[^,]*' | head -1 |
-			sed 's/.*: *"//; s/"$//; s/\.$//') || fqdn=''
-	fi
 	# The capture UI: whiptail dialogs prefilled with the detected values
 	# (the prerequisite ships in foundation; a bare box before its first
 	# switch falls back to the detected values verbatim).
@@ -142,7 +135,6 @@ init)
 		host=$(ask 'machine name (hostname)' "$host") || die 'init: cancelled' 1
 		user=$(ask 'operator user' "$user") || die 'init: cancelled' 1
 		home_dir=$(ask 'home directory' "$home_dir") || die 'init: cancelled' 1
-		fqdn=$(ask 'tailscale MagicDNS fqdn (empty: none)' "$fqdn") || die 'init: cancelled' 1
 	else
 		printf 'workstation: whiptail not on PATH (prerequisite) — capturing the detected values verbatim\n' >&2
 	fi
@@ -153,11 +145,10 @@ init)
 		printf '  host = "%s";\n' "$(escape "$host")"
 		printf '  user = "%s";\n' "$(escape "$user")"
 		printf '  home = "%s";\n' "$(escape "$home_dir")"
-		printf '  tailscaleFqdn = "%s";\n' "$(escape "$fqdn")"
 		printf '}\n'
 	} >"$flake/hosts/identity.nix"
-	printf 'workstation: identity captured in %s/hosts/identity.nix (host=%s user=%s fqdn=%s)\n' \
-		"$flake" "$host" "$user" "${fqdn:-<none — tailscale absent or down>}"
+	printf 'workstation: identity captured in %s/hosts/identity.nix (host=%s user=%s)\n' \
+		"$flake" "$host" "$user"
 	printf 'workstation: keep the file uncommitted\n'
 	# The first activation rides init: one command per machine, the
 	# leg-native switch stays inside the shim (users never type it). The

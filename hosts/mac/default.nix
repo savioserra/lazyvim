@@ -101,8 +101,6 @@ in
             name = hostName;
             user = user;
             homeDirectory = homeDir;
-            # tailscale.fqdn: the operator declares the host's MagicDNS
-            # name here at first real apply
           };
           # the fleet transport (the shared system module owns the wiring)
           workstation.foundation.tailscale.enable = true;

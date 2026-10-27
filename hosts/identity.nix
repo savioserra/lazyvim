@@ -4,11 +4,7 @@
 # against the dirty working tree). Every consumer — tailscale, the
 # dashboard binding, the rebuild keys — derives from this file.
 {
-  # shellExtras = "stty -ixon"; # optional: the operator's shell lines,
-  # appended LAST in the managed rc lane (.bashrc/.zshrc) — absent or
-  # empty renders no operator fragment
   host = "TEMPLATE"; # hostname -s
   user = "TEMPLATE"; # the operator user
   home = "/home/TEMPLATE"; # $HOME
-  tailscaleFqdn = ""; # MagicDNS name, e.g. host.tailnet.ts.net (may be empty)
 }
