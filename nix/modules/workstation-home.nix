@@ -28,22 +28,32 @@ let
   # the aggregate renders — a fragment file per id (marker + body) and one
   # rc file per target sourcing them in the declared order (the explicit
   # contract the walker's derived topo walk used to be)
-  fragmentFiles = builtins.foldl'
-    (acc: f: acc // {
-      ".config/workstation/shell/${f.id}.sh".text =
-        "${f.marker}\n${builtins.readFile f.payload}";
-    })
-    { } cfg.shell.fragments;
+  fragmentFiles = builtins.foldl' (
+    acc: f:
+    acc
+    // {
+      ".config/workstation/shell/${f.id}.sh".text = "${f.marker}\n${builtins.readFile f.payload}";
+    }
+  ) { } cfg.shell.fragments;
 
-  rcFiles = builtins.foldl'
-    (acc: f: acc // {
-      ${f.target}.text = (acc.${f.target}.text or "") + "${f.marker}\n" + ''
-        [ -r "$HOME/.config/workstation/shell/${f.id}.sh" ] && . "$HOME/.config/workstation/shell/${f.id}.sh"
-      '';
-    })
-    (builtins.listToAttrs (map (t: lib.nameValuePair t { text = ""; })
-      (lib.unique (map (f: f.target) cfg.shell.fragments))))
-    cfg.shell.fragments;
+  rcFiles =
+    builtins.foldl'
+      (
+        acc: f:
+        acc
+        // {
+          ${f.target}.text =
+            (acc.${f.target}.text or "")
+            + "${f.marker}\n"
+            + ''
+              [ -r "$HOME/.config/workstation/shell/${f.id}.sh" ] && . "$HOME/.config/workstation/shell/${f.id}.sh"
+            '';
+        }
+      )
+      (builtins.listToAttrs (
+        map (t: lib.nameValuePair t { text = ""; }) (lib.unique (map (f: f.target) cfg.shell.fragments))
+      ))
+      cfg.shell.fragments;
   # the module list comes from the shared capability walk
   # (nix/lib/capabilities.nix) — the same registry the report fold reads, so
   # the composed order (and with it the rc lanes' sourcing order) is the
@@ -85,8 +95,8 @@ in
 
   config = {
     # --- the declared retire list (workstation.retire) ---------------------
-    home.activation.workstation-retire = lib.hm.dag.entryAfter [ "writeBoundary" ]
-      (lib.concatMapStrings (p: ''
+    home.activation.workstation-retire = lib.hm.dag.entryAfter [ "writeBoundary" ] (
+      lib.concatMapStrings (p: ''
         if [ -e "$HOME/${p}" ] || [ -L "$HOME/${p}" ]; then
           rm -f "$HOME/${p}"
           echo "workstation: retired ${p}"
@@ -97,7 +107,8 @@ in
         # the activation runs first)
         mkdir -p "$HOME/.local/state/workstation"
         echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) ${p}" >> "$HOME/.local/state/workstation/retire.log"
-      '') cfg.retire);
+      '') cfg.retire
+    );
 
     # --- the file plane: the modules' declared targets + the fragment lane +-
     # the generation's flake snapshot (the shim's read flake — the last
@@ -107,10 +118,18 @@ in
       assert
         # the lane's integrity: one fragment per (id, target) pair — two
         # owners of one pair would silently overwrite each other's body
-        lib.length (lib.unique (map (f: [ f.id f.target ]) cfg.shell.fragments))
-        == lib.length cfg.shell.fragments
+        lib.length (
+          lib.unique (
+            map (f: [
+              f.id
+              f.target
+            ]) cfg.shell.fragments
+          )
+        ) == lib.length cfg.shell.fragments
         || throw "workstation-shell: duplicate fragment id/target pairs in the declared lane";
-      fragmentFiles // rcFiles // {
+      fragmentFiles
+      // rcFiles
+      // {
         ".local/opt/workstation/flake".source = self;
       };
     # (.local/bin/nvim moved to modules/editor/editor.nix — the nvim
@@ -128,13 +147,15 @@ in
     # shipped (the resolution order's last resort — a checkout or an
     # explicit --flake outranks it).
     home.packages = [
-      (pkgs.writeShellScriptBin "workstation"
-        (builtins.readFile (self + "/bin/workstation")))
+      (pkgs.writeShellScriptBin "workstation" (builtins.readFile (self + "/bin/workstation")))
       (import ../workstation-switch.nix {
         inherit pkgs;
         flake = self;
         homeAttr =
-          if cfg.switch.homeAttr != null then cfg.switch.homeAttr else "UNCONFIGURED-workstation.switch.homeAttr";
+          if cfg.switch.homeAttr != null then
+            cfg.switch.homeAttr
+          else
+            "UNCONFIGURED-workstation.switch.homeAttr";
         systemAttr =
           if cfg.switch.systemAttr != null then
             cfg.switch.systemAttr

@@ -47,6 +47,10 @@ jobs:
 
       - uses: DeterminateSystems/nix-installer-action@e50d5f73bfe71c2dd0aa4218de8f4afa59f8f81d # v16
 
+      - name: The nixfmt gate (RFC 166 formatting is CI-enforced)
+        shell: bash
+        run: nix run nixpkgs#nixfmt-rfc-style -- --check $(git ls-files '*.nix')
+
       - name: Evaluate the declared-state reads
         shell: bash
         run: |
@@ -60,7 +64,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          nix eval --raw .#nixosConfigurations.wsl.config.system.build.toplevel.drvPath > /dev/null
+          for system in $(nix eval --json .#nixosConfigurations --apply 'builtins.attrNames' | tr -d '[]\" ' | tr ',' ' '); do
+            nix eval --raw ".#nixosConfigurations.$system.config.system.build.toplevel.drvPath" > /dev/null
+          done
           nix eval --raw .#nixosConfigurations.vm-test.config.system.build.toplevel.drvPath > /dev/null
           for system in $(nix eval --json .#darwinConfigurations --apply 'builtins.attrNames' | tr -d '[]" ' | tr ',' ' '); do
             nix eval --raw ".#darwinConfigurations.$system.config.system.build.toplevel.drvPath" > /dev/null

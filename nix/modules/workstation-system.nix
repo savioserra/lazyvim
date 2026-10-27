@@ -52,7 +52,8 @@ in
       # tmux 3.7c, btop 1.4.7 — versions now nixpkgs-owned)
       pkgs.tmux
       pkgs.btop
-    ] ++ cfg.extraPackages;
+    ]
+    ++ cfg.extraPackages;
     # --- the tailscale transport (the fleet's layer) -----------------------
     # ssh, the dashboard's --host binding and all host convergence ride it;
     # the host's MagicDNS name is workstation.host.tailscale.fqdn (set only

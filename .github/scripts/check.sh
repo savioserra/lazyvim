@@ -45,6 +45,14 @@ if ! command -v shellcheck >/dev/null 2>&1; then
 	printf 'ShellCheck unavailable here; required in the Linux CI job.\n' >&2
 fi
 
+step 'nixfmt-rfc-style gate (RFC 166)'
+if command -v nixfmt >/dev/null 2>&1; then
+	{ find flake.nix modules nix hosts tests -type f -name '*.nix' -print; } |
+		xargs nixfmt --check || fail=1
+else
+	printf 'nixfmt unavailable here; the nix CI job owns the format gate.\n' >&2
+fi
+
 step 'launcher shim dispatch gate (stubbed nix, stubbed switch driver)'
 sh .github/scripts/shim-dispatch.sh || fail=1
 

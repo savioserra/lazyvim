@@ -41,7 +41,10 @@ let
       };
       archive = "tar.gz";
       probe = {
-        argv = [ "rg" "--version" ];
+        argv = [
+          "rg"
+          "--version"
+        ];
         # upstream prints the packaging rev beside the version (the release
         # identity's own suffix — moves with the pin on a bump)
         output = "ripgrep {V} (rev e89fff89ac)";
@@ -59,7 +62,10 @@ let
       };
       archive = "tar.gz";
       probe = {
-        argv = [ "fd" "--version" ];
+        argv = [
+          "fd"
+          "--version"
+        ];
         output = "fd {V}";
       };
     };
@@ -75,7 +81,10 @@ let
       };
       archive = "tar.gz";
       probe = {
-        argv = [ "fzf" "--version" ];
+        argv = [
+          "fzf"
+          "--version"
+        ];
         # upstream prints the build commit beside the version (the release
         # identity's own suffix — moves with the pin on a bump)
         output = "{V} (3337be9d)";
@@ -94,11 +103,13 @@ let
       archive = "tar.gz";
       layout = "flat";
       probe = {
-        argv = [ "lazygit" "--version" ];
-        output =
-          "commit=aafe61082e7ed383d318fd40e48f85645e6afc7b, build date=2026-07-15T11:34:26Z, build source=binaryRelease, version={V}, os=${pkgs.stdenv.hostPlatform.parsed.kernel.name}, arch=${
-            if pkgs.stdenv.hostPlatform.isAarch64 then "arm64" else "amd64"
-          }, git version=";
+        argv = [
+          "lazygit"
+          "--version"
+        ];
+        output = "commit=aafe61082e7ed383d318fd40e48f85645e6afc7b, build date=2026-07-15T11:34:26Z, build source=binaryRelease, version={V}, os=${pkgs.stdenv.hostPlatform.parsed.kernel.name}, arch=${
+          if pkgs.stdenv.hostPlatform.isAarch64 then "arm64" else "amd64"
+        }, git version=";
       };
     };
     tree-sitter = pins.tool "tree_sitter" {
@@ -113,7 +124,10 @@ let
       };
       archive = "zip";
       probe = {
-        argv = [ "tree-sitter" "--version" ];
+        argv = [
+          "tree-sitter"
+          "--version"
+        ];
         output = "tree-sitter {V}";
       };
     };
@@ -140,22 +154,30 @@ let
   ];
 
   fragmentTargets = {
-    user-local-bin = [ ".profile" ".bashrc" ".zshrc" ];
+    user-local-bin = [
+      ".profile"
+      ".bashrc"
+      ".zshrc"
+    ];
     managed-profile = [ ".bash_profile" ];
-    managed-eza = [ ".bashrc" ".zshrc" ];
+    managed-eza = [
+      ".bashrc"
+      ".zshrc"
+    ];
     managed-starship = [ ".bashrc" ];
     managed-starship-zsh = [ ".zshrc" ];
   };
 
   # the option's entries: one per (id, target) pair
-  fragmentEntries = lib.concatMap
-    (f: map (target: {
+  fragmentEntries = lib.concatMap (
+    f:
+    map (target: {
       inherit target;
       id = f.id;
       marker = f.marker;
       payload = f.payload;
-    }) fragmentTargets.${f.id})
-    fragments;
+    }) fragmentTargets.${f.id}
+  ) fragments;
 
   # the starship config payload, co-located beside this module (the
   # dissolved prompt capability's bytes live with their owner)
@@ -166,18 +188,19 @@ let
   # one serves its skill version-matched, offline, from the store). The
   # generator decides file-vs-dir by the target's existence, so the build
   # stages into a pre-created dir and copies out — one shape, always.
-  hsqlSkill = pkgs.runCommand "hsql-agent-skill-${pkgs.harlequin.version}"
-    {
-      nativeBuildInputs = [ pkgs.harlequin ];
-      passthru.version = pkgs.harlequin.version;
-    }
-    ''
-      export HOME="$TMPDIR/home"
-      mkdir -p "$HOME" "$TMPDIR/skill"
-      hsql --skill -o "$TMPDIR/skill"
-      mkdir -p "$out"
-      cp -a "$TMPDIR/skill/." "$out/"
-    '';
+  hsqlSkill =
+    pkgs.runCommand "hsql-agent-skill-${pkgs.harlequin.version}"
+      {
+        nativeBuildInputs = [ pkgs.harlequin ];
+        passthru.version = pkgs.harlequin.version;
+      }
+      ''
+        export HOME="$TMPDIR/home"
+        mkdir -p "$HOME" "$TMPDIR/skill"
+        hsql --skill -o "$TMPDIR/skill"
+        mkdir -p "$out"
+        cp -a "$TMPDIR/skill/." "$out/"
+      '';
 in
 {
   options.workstation.foundation = {
@@ -239,17 +262,17 @@ in
       # pinned nixpkgs (25.05) predates hsql — the version rides the
       # flake's pin-override overlay; the floor makes an unapplied overlay
       # die loudly here instead of quietly shipping a hsql-less IDE.
-      (assert
-        lib.versionAtLeast (pkgs.harlequin.version or "0") "2.9"
-        || throw
-          "workstation-foundation: pkgs.harlequin ${
-            pkgs.harlequin.version or "?"
-          } predates hsql — the flake's overlays.default (the foundation domain's pin surface) must be applied (nixpkgs.overlays)";
-        pkgs.harlequin)
+      (
+        assert
+          lib.versionAtLeast (pkgs.harlequin.version or "0") "2.9"
+          || throw "workstation-foundation: pkgs.harlequin ${pkgs.harlequin.version or "?"} predates hsql — the flake's overlays.default (the foundation domain's pin surface) must be applied (nixpkgs.overlays)";
+        pkgs.harlequin
+      )
       # the tailscale CLI on the home PATH (the daemon is the system
       # service on NixOS/darwin legs; tailscaled is the host-owned
       # prerequisite on any standalone leg)
-    ] ++ lib.optionals config.workstation.foundation.tailscale.enable [ pkgs.tailscale ];
+    ]
+    ++ lib.optionals config.workstation.foundation.tailscale.enable [ pkgs.tailscale ];
 
     # the hsql agent skill: the build-time-generated tree (above), served
     # as a declared entry symlink by the agent module — the activation

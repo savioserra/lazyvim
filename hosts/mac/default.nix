@@ -38,11 +38,15 @@ let
   # mac's own brew formulas retire into this list).
   # eza leads it because the walker REFUSED eza's download envelope on
   # darwin_arm64 (no pinned asset) — the nix set must own it.
-  nixPackages = with nixpkgs.legacyPackages.${system}; [
-    eza
-    tmux
-    btop
-  ];
+  nixPackages =
+    let
+      hostPkgs = nixpkgs.legacyPackages.${system};
+    in
+    [
+      hostPkgs.eza
+      hostPkgs.tmux
+      hostPkgs.btop
+    ];
 
   # nix owns `name` when some package's pname equals it, or its store name
   # is the formula name possibly version-suffixed (name / name-<version>).
@@ -64,7 +68,13 @@ let
 in
 {
   # identity surface the flake consumes — derive, never hand-type
-  inherit system user hostName homeDir hostKey;
+  inherit
+    system
+    user
+    hostName
+    homeDir
+    hostKey
+    ;
 
   darwinConfig = nix-darwin.lib.darwinSystem {
     inherit system;

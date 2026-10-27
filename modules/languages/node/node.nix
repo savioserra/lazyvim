@@ -14,8 +14,7 @@ let
 
   # the node version pin is the payload's .node-version file (the
   # change-rule's canonical address), read — never duplicated
-  nodeVersion = lib.trim
-    (builtins.readFile ./files/.node-version);
+  nodeVersion = lib.trim (builtins.readFile ./files/.node-version);
 
   nvmTree = pins.tool "nvm_sh" {
     version = "0.40.4";
@@ -41,7 +40,10 @@ let
     };
     archive = "tar.xz";
     probe = {
-      argv = [ "bin/node" "--version" ];
+      argv = [
+        "bin/node"
+        "--version"
+      ];
       output = "v{V}";
     };
   };

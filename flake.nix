@@ -31,7 +31,15 @@
   };
 
   outputs =
-    { self, nixpkgs, home-manager, nixos-wsl, nix-darwin, nixpkgs-foundation, hermes-agent }:
+    {
+      self,
+      nixpkgs,
+      home-manager,
+      nixos-wsl,
+      nix-darwin,
+      nixpkgs-foundation,
+      hermes-agent,
+    }:
     let
       # the fold runs on the host system's nixpkgs; the report itself pins
       # no platform beyond that
@@ -67,7 +75,12 @@
         };
         plan = {
           digest = builtins.hashString "sha256" (builtins.toJSON report);
-          inherit (report) fileTargetNames claimTargets fragmentOrder retire;
+          inherit (report)
+            fileTargetNames
+            claimTargets
+            fragmentOrder
+            retire
+            ;
         };
         capabilities = builtins.listToAttrs (
           map (row: nixpkgs.lib.nameValuePair row.id row) report.accounting
@@ -82,11 +95,21 @@
       # it) and the mac leg — operator ruling 2026-10-22 (platform-two;
       # no distro-named legs anywhere)
       linuxHost = import ./hosts/linux/default.nix {
-        inherit self nixpkgs home-manager nixos-wsl;
+        inherit
+          self
+          nixpkgs
+          home-manager
+          nixos-wsl
+          ;
       };
 
       macHost = import ./hosts/mac/default.nix {
-        inherit self nixpkgs home-manager nix-darwin;
+        inherit
+          self
+          nixpkgs
+          home-manager
+          nix-darwin
+          ;
       };
     in
     {

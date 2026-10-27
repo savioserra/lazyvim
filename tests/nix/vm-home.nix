@@ -12,6 +12,12 @@
   workstation.switch.systemAttr = "vm-test";
   # the E2E's profile-targeting proof: the declared skills also land in a
   # named profile's skills dir (a fresh profile sees the declared skills)
-  programs.hermes.skills.secrets.profiles = [ "default" "fresh" ];
-  programs.hermes.skills.hsql.profiles = [ "default" "fresh" ];
+  programs.hermes.skills.secrets.profiles = [
+    "default"
+    "fresh"
+  ];
+  programs.hermes.skills.hsql.profiles = [
+    "default"
+    "fresh"
+  ];
 }

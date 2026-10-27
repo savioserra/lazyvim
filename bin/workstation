@@ -116,6 +116,10 @@ init)
 	host=$(hostname -s 2>/dev/null || hostname)
 	user=${USER:-$(id -un)}
 	home_dir=$HOME
+	# nix-string escape (backslash, quote) — the capture writes a nix file
+	escape() {
+		printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'
+	}
 	fqdn=''
 	if command -v tailscale >/dev/null 2>&1; then
 		# shellcheck disable=SC2016  # the $ anchors are sed regex, not shell
@@ -141,13 +145,13 @@ init)
 		printf 'workstation: whiptail not on PATH (prerequisite) — capturing the detected values verbatim\n' >&2
 	fi
 	{
-		printf '# The machine identity, captured by workstation init (%s).\n' "$(date -u +%Y-%m-%dT%H:%MZ)"
+		printf '# The machine identity, captured by workstation init (%s).\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 		printf '# Local edit — keep it uncommitted (the committed copy is the template).\n'
 		printf '{\n'
-		printf '  host = "%s";\n' "$host"
-		printf '  user = "%s";\n' "$user"
-		printf '  home = "%s";\n' "$home_dir"
-		printf '  tailscaleFqdn = "%s";\n' "$fqdn"
+		printf '  host = "%s";\n' "$(escape "$host")"
+		printf '  user = "%s";\n' "$(escape "$user")"
+		printf '  home = "%s";\n' "$(escape "$home_dir")"
+		printf '  tailscaleFqdn = "%s";\n' "$(escape "$fqdn")"
 		printf '}\n'
 	} >"$flake/hosts/identity.nix"
 	printf 'workstation: identity captured in %s/hosts/identity.nix (host=%s user=%s fqdn=%s)\n' \

@@ -25,8 +25,10 @@ let
   };
 
   fontTarget =
-    if pkgs.stdenv.isDarwin then "Library/Fonts/JetBrainsMonoNerdFont"
-    else ".local/share/fonts/JetBrainsMonoNerdFont";
+    if pkgs.stdenv.isDarwin then
+      "Library/Fonts/JetBrainsMonoNerdFont"
+    else
+      ".local/share/fonts/JetBrainsMonoNerdFont";
 in
 {
   config = {

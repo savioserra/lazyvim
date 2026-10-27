@@ -28,12 +28,16 @@ let
       names = builtins.attrNames entries;
       nixFiles = builtins.filter (n: entries.${n} == "regular" && lib.hasSuffix ".nix" n) names;
       subdirs = builtins.filter (n: entries.${n} == "directory") names;
-      here = if nixFiles == [ ] then [ ] else [
-        {
-          id = rel;
-          files = map (n: dir + "/${n}") nixFiles;
-        }
-      ];
+      here =
+        if nixFiles == [ ] then
+          [ ]
+        else
+          [
+            {
+              id = rel;
+              files = map (n: dir + "/${n}") nixFiles;
+            }
+          ];
     in
     here ++ lib.concatLists (map (n: walk (if rel == "" then n else "${rel}/${n}")) subdirs);
 
@@ -58,17 +62,29 @@ let
       "modules" = [ ];
       "specialArgs" = { };
     }
-    .${name} or (throw "workstation-capabilities: module argument '${name}' is outside the standard module set — the capability probe cannot classify this file");
+    .${name}
+      or (throw "workstation-capabilities: module argument '${name}' is outside the standard module set — the capability probe cannot classify this file");
 
-  moduleKeys = [ "options" "config" "imports" "_file" "_class" "key" "disabledModules" "meta" ];
+  moduleKeys = [
+    "options"
+    "config"
+    "imports"
+    "_file"
+    "_class"
+    "key"
+    "disabledModules"
+    "meta"
+  ];
 
   isModuleFile =
     file:
     let
       imported = import file;
       probe =
-        if !(builtins.isFunction imported) then null
-        else imported (builtins.mapAttrs (n: _: probeArg n) (builtins.functionArgs imported));
+        if !(builtins.isFunction imported) then
+          null
+        else
+          imported (builtins.mapAttrs (n: _: probeArg n) (builtins.functionArgs imported));
       attempt = if probe == null then null else builtins.tryEval probe;
       value = if attempt == null || !attempt.success then null else attempt.value;
     in
@@ -76,8 +92,9 @@ let
     && builtins.all (k: builtins.elem k moduleKeys) (builtins.attrNames value)
     && builtins.elem "config" (builtins.attrNames value);
 
-  capabilities = lib.sort (a: b: a.id < b.id)
-    (map (cap: cap // { moduleFiles = builtins.filter isModuleFile cap.files; }) (walk ""));
+  capabilities = lib.sort (a: b: a.id < b.id) (
+    map (cap: cap // { moduleFiles = builtins.filter isModuleFile cap.files; }) (walk "")
+  );
 in
 {
   # capability ids in composition order (the walk's id sort)

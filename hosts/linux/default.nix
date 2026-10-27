@@ -1,12 +1,9 @@
 # The linux leg TEMPLATE: NixOS-WSL-flavored system plane + the home plane
 # (workstation-home, the native declarations -> HM). Identity is NOT here —
-# hosts/identity.nix, captured by `workstation init` at install time.
-#
-# This file is the ONLY place this host's identity lives — the flake
-# derives the homeConfigurations rebuild key and every username/home path
-# from the block below (the identity gate in check.sh reds on personal
-# strings anywhere else under nix/ hosts/ flake.nix). Flip `user` and the
-# NixOS user, the HM user and the rebuild key all follow.
+# hosts/identity.nix holds it, captured by `workstation init` at install
+# time (the committed copy is the template; the local rewrite stays
+# uncommitted). The flake derives the rebuild key and every username/home
+# path from that file.
 {
   self,
   nixpkgs,
@@ -28,7 +25,12 @@ let
 in
 {
   # identity surface the flake consumes — derive, never hand-type
-  inherit system user homeDir homeKey;
+  inherit
+    system
+    user
+    homeDir
+    homeKey
+    ;
   name = id.host;
 
   nixosConfig = nixpkgs.lib.nixosSystem {
@@ -42,7 +44,7 @@ in
       ../../nix/modules/host.nix
       home-manager.nixosModules.home-manager
       (
-        { config, ... }:
+        { config, lib, ... }:
         {
           workstation.enable = true;
 
@@ -55,9 +57,10 @@ in
             name = id.host;
             user = user;
             homeDirectory = homeDir;
-            # tailscale.fqdn: the operator declares the host's MagicDNS
-            # name here at first real apply
-          };
+          }
+          // (lib.optionalAttrs ((id.tailscaleFqdn or "") != "") {
+            tailscale.fqdn = id.tailscaleFqdn;
+          });
           # the fleet transport (the shared system module owns the wiring)
           workstation.foundation.tailscale.enable = true;
 

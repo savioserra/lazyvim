@@ -87,9 +87,9 @@ let
   # references substitute from the extracted tokens (byte-equal to
   # upstream's default config — only the two slot references carry the
   # theme rebrand)
-  nunchuxConfig = theme.assertNoUnresolved
-    (theme.renderSlots
-      (builtins.readFile ./nunchux/files/.config/nunchux/config));
+  nunchuxConfig = theme.assertNoUnresolved (
+    theme.renderSlots (builtins.readFile ./nunchux/files/.config/nunchux/config)
+  );
 in
 {
   config = {
@@ -99,8 +99,8 @@ in
         # (intra-home — the walker's mkOutOfStoreSymlink shape, declared)
         {
           ".tmux.conf".source = ./tmux/files/.tmux.conf;
-          ".config/tmux/tmux.conf".source = config.lib.file.mkOutOfStoreSymlink
-            "${config.home.homeDirectory}/.tmux.conf";
+          ".config/tmux/tmux.conf".source =
+            config.lib.file.mkOutOfStoreSymlink "${config.home.homeDirectory}/.tmux.conf";
           ".tmux/plugins.pins.json".text = pinsManifest + "\n";
         }
       ]
@@ -120,4 +120,3 @@ in
     workstation.retire = [ ".config/tmux/themes/tmux2k.conf" ];
   };
 }
-

@@ -23,7 +23,10 @@ let
     archive = "tar.gz";
     layout = "flat";
     probe = {
-      argv = [ "pnpm" "--version" ];
+      argv = [
+        "pnpm"
+        "--version"
+      ];
       output = "{V}";
     };
   };

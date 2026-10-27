@@ -64,21 +64,21 @@ let
   mergeLua =
     let
       lines = lib.splitString "\n" (builtins.readFile modifyTemplate);
-      start = lib.lists.findFirstIndex
-        (l: lib.hasPrefix "cat >" l && lib.hasSuffix "<<'__WORKSTATION_LAZY_LOCK_LUA__'" l)
-        (throw "workstation-editor: the lazy-lock modify template's heredoc declaration is missing")
-        lines;
-      end = lib.lists.findFirstIndex
-        (l: l == "__WORKSTATION_LAZY_LOCK_LUA__")
-        (throw "workstation-editor: the lazy-lock modify template's heredoc delimiter is missing")
-        lines;
+      start =
+        lib.lists.findFirstIndex
+          (l: lib.hasPrefix "cat >" l && lib.hasSuffix "<<'__WORKSTATION_LAZY_LOCK_LUA__'" l)
+          (throw "workstation-editor: the lazy-lock modify template's heredoc declaration is missing")
+          lines;
+      end = lib.lists.findFirstIndex (
+        l: l == "__WORKSTATION_LAZY_LOCK_LUA__"
+      ) (throw "workstation-editor: the lazy-lock modify template's heredoc delimiter is missing") lines;
     in
-    assert end > start + 1
+    assert
+      end > start + 1
       || throw "workstation-editor: the lazy-lock modify template's heredoc body is empty";
-    builtins.replaceStrings
-      [ "__WORKSTATION_ENGINE_PINS__" ]
-      [ (builtins.readFile lazyLockBaseline) ]
-      (lib.concatStringsSep "\n" (lib.sublist (start + 1) (end - start - 1) lines));
+    builtins.replaceStrings [ "__WORKSTATION_ENGINE_PINS__" ] [ (builtins.readFile lazyLockBaseline) ] (
+      lib.concatStringsSep "\n" (lib.sublist (start + 1) (end - start - 1) lines)
+    );
 
   mergeProgram = pkgs.writeText "ws-lazy-lock-merge.lua" mergeLua;
 
@@ -94,7 +94,9 @@ let
     rm -f "$out/lazy-lock.json"
     mkdir -p "$out/lua/languages/plugins"
     cp ${pkgs.writeText "languages-profile.lua" profileLua} "$out/lua/languages/profile.lua"
-    ${lib.concatMapStringsSep "\n" (p: ''cp -a "${p}" "$out/lua/languages/plugins/$(basename "${p}")"'') cfg.languagePlugins}
+    ${lib.concatMapStringsSep "\n" (
+      p: ''cp -a "${p}" "$out/lua/languages/plugins/$(basename "${p}")"''
+    ) cfg.languagePlugins}
   '';
 in
 {

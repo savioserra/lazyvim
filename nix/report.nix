@@ -49,9 +49,12 @@ let
     let
       domain = builtins.head (lib.splitString "/" id);
     in
-    if domain == "foundation" then "base"
-    else if domain == "languages" then "runtime"
-    else domain;
+    if domain == "foundation" then
+      "base"
+    else if domain == "languages" then
+      "runtime"
+    else
+      domain;
 
   # --- evaluation -----------------------------------------------------------
   # One home-manager evaluation per capability (the attribution fold), one
@@ -60,7 +63,8 @@ let
   # modules plus the shared option declarations — never the home leg's
   # rendering module — so the report sees the DECLARED surface, not the
   # rendered fragment files.
-  evalModules = moduleFiles:
+  evalModules =
+    moduleFiles:
     (hm.homeManagerConfiguration {
       inherit pkgs;
       # the domain modules take `self` (the flake tree) beside the standard
@@ -73,7 +77,8 @@ let
           home.homeDirectory = homeDir;
           home.stateVersion = "25.05";
         }
-      ] ++ moduleFiles;
+      ]
+      ++ moduleFiles;
     }).config;
 
   capabilityEvals = map (cap: evalModules cap.moduleFiles) capabilityWalk.capabilities;
@@ -90,18 +95,21 @@ let
   # leak the report must not carry (the report pins no home path)
   homeRelative = lib.filterAttrs (k: _: !(lib.hasPrefix "/" k));
 
-  declaredHomeFile = eval:
-    homeRelative
-      (lib.filterAttrs (k: _: !(builtins.elem k baselineKeys)) eval.home.file);
+  declaredHomeFile =
+    eval: homeRelative (lib.filterAttrs (k: _: !(builtins.elem k baselineKeys)) eval.home.file);
 
-  claimTargetsOf = eval: builtins.attrNames
-    (lib.filterAttrs (_: v: v.recursive or false) (declaredHomeFile eval));
-  leafTargetsOf = eval: builtins.attrNames
-    (lib.filterAttrs (_: v: !(v.recursive or false)) (declaredHomeFile eval));
+  claimTargetsOf =
+    eval: builtins.attrNames (lib.filterAttrs (_: v: v.recursive or false) (declaredHomeFile eval));
+  leafTargetsOf =
+    eval: builtins.attrNames (lib.filterAttrs (_: v: !(v.recursive or false)) (declaredHomeFile eval));
 
   # a capability's fragments as (id, target) pairs — the lane's declared unit
-  fragmentPairsOf = eval:
-    map (f: { id = f.id; target = f.target; }) eval.workstation.shell.fragments;
+  fragmentPairsOf =
+    eval:
+    map (f: {
+      id = f.id;
+      target = f.target;
+    }) eval.workstation.shell.fragments;
 
   capRow = id: eval: {
     inherit id;
@@ -112,16 +120,15 @@ let
     retire = eval.workstation.retire;
   };
 
-  rows = lib.sort (a: b: a.id < b.id)
-    (lib.zipListsWith (cap: eval: capRow cap.id eval)
-      capabilityWalk.capabilities capabilityEvals);
+  rows = lib.sort (a: b: a.id < b.id) (
+    lib.zipListsWith (cap: eval: capRow cap.id eval) capabilityWalk.capabilities capabilityEvals
+  );
 
   # --- the composed surface (the full eval; order = the walk's id sort) ------
   fragments = fragmentPairsOf fullEval;
   fragmentOrder = map (t: {
     target = t;
-    fragments = map (f: f.id)
-      (builtins.filter (f: f.target == t) fragments);
+    fragments = map (f: f.id) (builtins.filter (f: f.target == t) fragments);
   }) (lib.unique (map (f: f.target) fragments));
 
   fileTargetNames = leafTargetsOf fullEval;
@@ -157,12 +164,25 @@ let
     retire = builtins.length retire;
   };
 in
-assert unionOk || throw "workstation-report: a capability's declared targets do not compose to the full eval's — a module file escaped the fold's classification";
-assert fragmentsOk || throw "workstation-report: the capability fragments do not compose to the full eval's declared lane";
-assert retireOk || throw "workstation-report: the capability tombstones do not compose to the full eval's retire list";
-assert relativeOk || throw "workstation-report: a declared target is not home-relative — home-manager machinery rode the evaluated home into the report";
+assert
+  unionOk
+  || throw "workstation-report: a capability's declared targets do not compose to the full eval's — a module file escaped the fold's classification";
+assert
+  fragmentsOk
+  || throw "workstation-report: the capability fragments do not compose to the full eval's declared lane";
+assert
+  retireOk
+  || throw "workstation-report: the capability tombstones do not compose to the full eval's retire list";
+assert
+  relativeOk
+  || throw "workstation-report: a declared target is not home-relative — home-manager machinery rode the evaluated home into the report";
 {
-  inherit counts fileTargetNames claimTargets retire;
+  inherit
+    counts
+    fileTargetNames
+    claimTargets
+    retire
+    ;
   capabilityOrder = capabilityWalk.ids;
   inherit fragmentOrder;
   # one row per capability: { id, foundation, fileTargets, claimTargets,

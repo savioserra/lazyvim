@@ -76,7 +76,10 @@ let
     archive = "tar.gz";
     layout = "release";
     probe = {
-      argv = [ "bin/python3" "--version" ];
+      argv = [
+        "bin/python3"
+        "--version"
+      ];
       output = "Python {V}";
     };
   };
@@ -92,13 +95,14 @@ let
     };
   };
 
-  launcher = pkgs.runCommand "ws-hermes-launcher" { }
-    # the payload lands 0644 in git; the launcher is a PATH entry, so the
-    # store copy carries the executable bit (the old envelope's
-    # `executable: true`, native)
-    ''
-      install -Dm755 ${./files/hermes-launcher.sh} "$out/hermes-launcher"
-    '';
+  launcher =
+    pkgs.runCommand "ws-hermes-launcher" { }
+      # the payload lands 0644 in git; the launcher is a PATH entry, so the
+      # store copy carries the executable bit (the old envelope's
+      # `executable: true`, native)
+      ''
+        install -Dm755 ${./files/hermes-launcher.sh} "$out/hermes-launcher"
+      '';
 
   # the deployed pin manifest: the verify lane's only anchor (the checkout
   # HEAD and the interpreter are verified against the DEPLOYED pin, never a
@@ -124,25 +128,27 @@ in
     # that reads hermes surfaces without a pin fails loudly with the name
     # of the missing flake output.
     pin = lib.mkOption {
-      type = lib.types.nullOr (lib.types.submodule {
-        options = {
-          url = lib.mkOption {
-            type = lib.types.str;
-            description = "The hermes-agent upstream git URL (the clone surface).";
+      type = lib.types.nullOr (
+        lib.types.submodule {
+          options = {
+            url = lib.mkOption {
+              type = lib.types.str;
+              description = "The hermes-agent upstream git URL (the clone surface).";
+            };
+            rev = lib.mkOption {
+              type = lib.types.str;
+              description = "The pinned hermes-agent commit.";
+            };
+            tree = lib.mkOption {
+              type = lib.types.raw;
+              description = ''
+                The pinned tree as the caller's flake input value — build-time
+                assertions read it; it never enters the deployed closure.
+              '';
+            };
           };
-          rev = lib.mkOption {
-            type = lib.types.str;
-            description = "The pinned hermes-agent commit.";
-          };
-          tree = lib.mkOption {
-            type = lib.types.raw;
-            description = ''
-              The pinned tree as the caller's flake input value — build-time
-              assertions read it; it never enters the deployed closure.
-            '';
-          };
-        };
-      });
+        }
+      );
       default = if self ? hermesAgentPin then self.hermesAgentPin else null;
       defaultText = lib.literalExpression "self.hermesAgentPin";
       description = ''
@@ -175,29 +181,24 @@ in
           + "`hermesAgentPin` (its pinned hermes-agent input: url, rev, "
           + "tree); see outputs.hermesAgentPin in flake.nix";
       }
-    ] ++ map
-      (name: {
-        assertion =
-          hermes.pin.tree == null
-          || !builtins.pathExists (hermes.pin.tree + "/skills/${name}");
-        message =
-          "programs.hermes.skills.${name} collides with a skill the pinned "
-          + "hermes-agent bundles — skills_sync owns that name at runtime "
-          + "and would fight the declared entry symlink; rename the "
-          + "declared skill";
-      })
-      (builtins.attrNames (lib.filterAttrs (_: skill: skill.enable) hermes.skills));
+    ]
+    ++ map (name: {
+      assertion = hermes.pin.tree == null || !builtins.pathExists (hermes.pin.tree + "/skills/${name}");
+      message =
+        "programs.hermes.skills.${name} collides with a skill the pinned "
+        + "hermes-agent bundles — skills_sync owns that name at runtime "
+        + "and would fight the declared entry symlink; rename the "
+        + "declared skill";
+    }) (builtins.attrNames (lib.filterAttrs (_: skill: skill.enable) hermes.skills));
 
     # --- the agent's authored skills + the runtime stack --------------------
     # (the skill ENTRY rendering lives in nix/modules/workstation-options.nix
     # — the cross-capability lane — so the report fold attributes every
     # entry to the capability that set it)
-    programs.hermes.skills = lib.mapAttrs
-      (_: source: {
-        enable = true;
-        inherit source;
-      })
-      authoredSkills;
+    programs.hermes.skills = lib.mapAttrs (_: source: {
+      enable = true;
+      inherit source;
+    }) authoredSkills;
 
     home.file = {
       # the pinned interpreter tree the launcher resolves at run time

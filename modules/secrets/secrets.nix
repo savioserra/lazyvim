@@ -23,7 +23,10 @@ let
     archive = "zip";
     layout = "flat";
     probe = {
-      argv = [ "op" "--version" ];
+      argv = [
+        "op"
+        "--version"
+      ];
       output = "{V}";
     };
   };

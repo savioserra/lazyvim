@@ -26,7 +26,10 @@ let
     archive = "tar.gz";
     layout = "release";
     probe = {
-      argv = [ "bin/go" "version" ];
+      argv = [
+        "bin/go"
+        "version"
+      ];
       output = "go version go{V} ${goOs}/${goArch}";
     };
   };

@@ -13,3 +13,9 @@ node_modules/
 
 # The nix VM test's build link (tests/nix/run-vm.sh).
 /tests/nix/vm-result
+.worktrees/
+_build/
+deps/
+.builds/
+erl_crash.dump
+t_*.err

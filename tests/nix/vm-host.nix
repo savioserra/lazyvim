@@ -19,17 +19,23 @@
 #
 # `tests/nix/run-vm.sh` builds system.build.vm, boots it, and greps the
 # serial console for the OK marker and any FAIL line.
-{ self, config, qemuVmModule, ... }:
+{
+  self,
+  config,
+  qemuVmModule,
+  ...
+}:
 let
   # x86_64-linux is this VM's system (the host leg that runs it).
   pkgs = import self.inputs.nixpkgs { system = "x86_64-linux"; };
   # the foundation domain's pin surface: the hsql skill's version rides the
   # flake's pin-override overlay (the raw pinned nixpkgs predates hsql) —
   # the E2E asserts the deployed skill against THIS version
-  harlequinVersion = (import self.inputs.nixpkgs {
-    system = "x86_64-linux";
-    overlays = [ self.overlays.default ];
-  }).harlequin.version;
+  harlequinVersion =
+    (import self.inputs.nixpkgs {
+      system = "x86_64-linux";
+      overlays = [ self.overlays.default ];
+    }).harlequin.version;
   e2e = pkgs.callPackage ./vm-e2e.nix { inherit self harlequinVersion; };
 in
 {
@@ -99,7 +105,10 @@ in
   systemd.services.workstation-proof = {
     description = "Workstation boot-to-activation proof";
     wantedBy = [ "multi-user.target" ];
-    after = [ "multi-user.target" "home-manager-vm.service" ];
+    after = [
+      "multi-user.target"
+      "home-manager-vm.service"
+    ];
     wants = [ "home-manager-vm.service" ];
     serviceConfig = {
       Type = "oneshot";
@@ -122,7 +131,10 @@ in
   systemd.services.workstation-e2e = {
     description = "Workstation E2E: retirement proof + apply-driven switch + consumer smokes";
     wantedBy = [ "multi-user.target" ];
-    after = [ "multi-user.target" "home-manager-vm.service" ];
+    after = [
+      "multi-user.target"
+      "home-manager-vm.service"
+    ];
     serviceConfig = {
       Type = "oneshot";
       User = "vm";

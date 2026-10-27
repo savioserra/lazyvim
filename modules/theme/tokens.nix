@@ -25,10 +25,12 @@ let
     inherit self;
   };
 
-  themeTokens = pkgs.writeText "workstation-theme-tokens.json" (builtins.toJSON {
-    palette = theme.palette;
-    slots = theme.slots;
-  });
+  themeTokens = pkgs.writeText "workstation-theme-tokens.json" (
+    builtins.toJSON {
+      palette = theme.palette;
+      slots = theme.slots;
+    }
+  );
 in
 {
   config.home.file.".local/state/workstation/theme.json".source = themeTokens;
