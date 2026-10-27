@@ -171,12 +171,11 @@ init)
 		die 'the mac first switch bootstraps nix-darwin itself — see docs/testing.md (the leg-native bootstrap); this shim owns it after the first switch' 2
 	fi
 	printf 'workstation: first activation (home plane, %s) ...\n' "$key"
-	nix --extra-experimental-features 'nix-command flakes' \
-		build --no-link --print-build-logs \
-		"$flake#homeConfigurations.$key.activationPackage"
-	# the activation package lands in the store; run its activate
+	# one invocation builds AND prints the out path - a separate eval would
+	# re-evaluate the dirty tree and could return a path this run never built
 	store_path=$(nix --extra-experimental-features 'nix-command flakes' \
-		eval --raw "$flake#homeConfigurations.$key.activationPackage")
+		build --no-link --print-out-paths \
+		"$flake#homeConfigurations.$key.activationPackage")
 	"$store_path/activate"
 	printf 'workstation: applied — every later update is: workstation apply\n'
 	;;
