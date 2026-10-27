@@ -167,9 +167,17 @@ init)
 		fi
 	fi
 	key="$user@$host"
-	if command -v darwin-rebuild >/dev/null 2>&1; then
-		die 'the mac first switch bootstraps nix-darwin itself — see docs/testing.md (the leg-native bootstrap); this shim owns it after the first switch' 2
-	fi
+	# the leg selects by PLATFORM, not by installed CLIs: a fresh mac has no
+	# darwin-rebuild yet, and the homeConfiguration key of the linux leg is
+	# the same identity-derived string on every host
+	case "$(uname -s)" in
+	Darwin)
+		printf 'workstation: first activation (darwin plane, %s) ...\n' "$key"
+		exec nix --extra-experimental-features 'nix-command flakes' run \
+			nix-darwin/nix-darwin#darwin-rebuild -- switch \
+			--flake "$flake#$key"
+		;;
+	esac
 	printf 'workstation: first activation (home plane, %s) ...\n' "$key"
 	# one invocation builds AND prints the out path - a separate eval would
 	# re-evaluate the dirty tree and could return a path this run never built
