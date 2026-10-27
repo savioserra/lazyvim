@@ -55,6 +55,7 @@ gate 'tree-purity gate' \
 step 'shell syntax (sh -n) and ShellCheck when available'
 {
 	find bin modules .github/scripts tests hosts -type f \( -name '*.sh' -o -name 'workstation' \) -print
+	printf 'install.sh\n'
 } | while IFS= read -r file; do
 	sh -n "$file" || exit 1
 	if command -v shellcheck >/dev/null 2>&1; then

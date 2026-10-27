@@ -10,10 +10,19 @@ writes a receipt to `~/.local/state/workstation/switch.log`.
 ## Install
 
 ```sh
-git clone https://github.com/savioserra/lazyvim.git && cd lazyvim
-./bin/workstation init   # capture identity + first switch (the shim ships in the clone)
-workstation apply    # every later update, rollback, sync
+curl -fsSL https://raw.githubusercontent.com/savioserra/lazyvim/main/install.sh | sh
 ```
+
+The guarded form (read what runs first) is the recommended one:
+
+```sh
+sh -c "$(curl -fsSL https://raw.githubusercontent.com/savioserra/lazyvim/main/install.sh)"
+```
+
+`install.sh` ensures nix (the one prerequisite), clones the repo to
+`~/lazyvim` (`WORKSTATION_CHECKOUT` overrides), and runs `workstation
+init` — the identity capture and the first switch. Every later update is
+`workstation apply`.
 
 `workstation init` runs whiptail dialogs prefilled with the detected
 values (hostname, user, home, tailscale fqdn) and writes

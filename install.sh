@@ -34,6 +34,7 @@ if ! command -v nix >/dev/null 2>&1; then
 fi
 for profile in /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh \
 	/nix/etc/profile.d/nix-daemon.sh; do
+	# shellcheck disable=SC1090  # the profile path is fixed above, not a variable
 	[ -f "$profile" ] && . "$profile" && break
 done
 command -v nix >/dev/null 2>&1 ||
