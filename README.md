@@ -10,7 +10,7 @@ writes a receipt to `~/.local/state/workstation/switch.log`.
 ## Install
 
 ```sh
-git clone https://github.com/savioserra/lazyvim.git && cd lazyvim
+git clone <repository-url> && cd lazyvim
 ./bin/workstation init   # capture identity + first switch (the shim ships in the clone)
 workstation apply    # every later update, rollback, sync
 ```
