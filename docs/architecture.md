@@ -65,8 +65,6 @@ overrides only), `workstationTheme.lib`, `hermesSkills`, `hermesAgentPin`.
   smokes, HM idempotency/rollback. Structural assertions (counts, the
   fold's union checks) stay assertions — no byte-goldens, no re-record
   rituals.
-- **No phase labels.** Planning markers live in card bodies, never in
-  landed content.
 - **No `workstation/` partition, no `payload/` folder.** The name survives
   only as the flake/product identity.
 - **`~/.hermes` stays hot home.** The pinned hermes checkout is runtime

@@ -30,8 +30,10 @@ Read the nearest scoped `AGENTS.md` and follow the owning reference:
 - Keep language composition in the Neovim profile. Go is an editor toolchain here (no root Go CLI, no services, no Makefiles).
 - Never commit generated plugin/Mason/parser/cache/session/history state or secret values. Secret-reference/vault work requires explicit user `/skill:secrets` invocation; authentication stays user-owned.
 - The identity gate reds on personal strings anywhere in the tracked tree; `hosts/identity.nix` (the machine's captured identity) stays uncommitted.
+- Phase markers may ride transient comments for cross-phase handover; they
+  do not ship in code — no phase-named files, options, config keys or
+  commit messages survive to the merged tree.
 - Work lands roadmap-style: future work is seeded as a parent-chained chain (task1 → task2 → …), serial within a surface. A card whose declared surface overlaps an in-flight card's waits behind it via a parent link — never dispatched alongside it.
-- Phase labels (P0, P1, …) are transient planning scaffolding: they live in card bodies and board surfaces, never in landed repo content — no phase-named code, comments, docs, config keys or commit messages survive to the merged tree.
 - A card is done only when its declared surface exists at git HEAD: workers deliver branch commits (or land them), and `kanban_complete` metadata names the commit sha. Uncommitted scratch work is not a done state — feature-sized cards run in persistent workspaces (`worktree:`/`dir:`), never scratch; if work must ride uncommitted, the card names it orchestrator-owned and stays open until landed. The reviewer/lead verifies the surface at HEAD before accepting.
 
 ## Required checks
