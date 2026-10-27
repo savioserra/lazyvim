@@ -1,146 +1,81 @@
 # Workstation architecture
 
-The engine is a **capability-speaking microkernel**. It knows what a capability
-is — never which capabilities exist. Packages are self-describing carriers that
-add capabilities to the host; a registry discovers them; the kernel resolves
-and applies them. Dependencies between packages are declared, versioned, and
-capability-keyed — never direct references.
+The substrate is **declared state and two clients**. The declared state is
+the capability modules under `modules/<domain>/` — co-located module and
+payload bytes — rendered by home-manager and reported by the fold
+(`nix/report.nix`). The clients are `bin/workstation` (reads: thin
+wrappers over `nix eval .#workstation.report.<verb>`; help/usage) and
+`workstation-switch` (the write plane: leg-native rebuilds plus the
+switch.log receipt). There is no resident process anywhere: the daemon,
+the wire protocol and the TUI retired with the Elixir plane
+(docs/endgame.md carries the ledger; docs/absorption.md the earlier
+deaths).
 
-## Layers and the law of each
+## The declared state and the read verbs
 
-1. **Kernel** — generic machinery: manifest discovery, dependency resolution,
-   plan composition, precondition checks, apply, journal, verify. Speaks only
-   contracts and shapes. Forbidden: the name of any package, backend, or
-   consumer. The kernel cannot answer "is nvim installed"; it can answer "is
-   the capability provided by package X satisfied".
-2. **Contracts (ports)** — the technology-neutral capability surfaces:
-   a thing that wants colors (theme), a thing that owns files (source), a
-   thing that fetches pinned artifacts (download), a thing that provisions
-   mise-managed tools (mise), a thing that composes
-   shell state, a thing with profiles. Contracts define the handshake, never
-   an implementation.
-3. **Backends (adapters)** — one dialect per backend behind a contract
-   (e.g. the chezmoi file-source dialect and its native name encoding).
-   Only the backend layer may speak its dialect; nothing above or beside
-   imports it by name.
-4. **Platform engines** — generic domain engines over contracts (the theme
-   token/role/appearance engine). Forbidden: any consumer's name. Consumers
-   derive from the platform; the platform never learns who consumes it.
-5. **Packages** — where everything concrete lives: files, settings, profiles,
-   colorscheme derivations, binary pins, version pins. A package declares a
-   manifest (identity, domain, version, capabilities provided, capabilities
-   consumed, compatibility) and owns its derivation logic contract-calling.
-   A package is a self-contained tree outside the kernel — one home per
-   package; the engine discovers it, never embeds or mirrors it.
+The report carries the declared surface structurally: counts, the target
+lists (file targets and tree claims), the capability order, the fragment
+lane (per-target, in the capabilities' merged declaration order), and the
+per-capability accounting rows (id, foundation, the declared surfaces, the
+retire tombstones). The fold's integrity assertions run at eval time — a
+misclassified module file, a fragment lane that does not compose, or an
+absolute (identity-carrying) target fails the evaluation; nothing serves.
 
-Dependency direction: packages → contracts → kernel, with backends plugging
-into contracts. Never sideways by name, never downward.
+The flake projects the report as the read verbs (the operator-facing
+contract — reshaped freely from the retired wire schemas; no
+byte-compatibility is owed):
 
-## Discovery and resolution
+  * `status` — the declared inventory: counts + capability order.
+  * `plan` — the surface the next switch applies (file targets, tree
+    claims, the fragment lane, the retire list) with the report digest —
+    the declared state's content id. Mutation is never a read's job:
+    `workstation-switch` owns it (atomic generations, rollback, the
+    receipt).
+  * `capabilities` — the accounting keyed by capability id; attrpath
+    scoping is free (`nix eval .#workstation.report.capabilities.editor`).
 
-The registry composes the catalog from whatever manifests the package tree
-carries — data (`manifest.json`) or, while the data conversion runs,
-compiled manifest modules — never a hand-written registration list.
-Discovery is deterministic (sorted, test-excluded, conformance-validated,
-duplicate-id-rejecting). Resolution builds an acyclic graph over declared
-provides/requires: orders dependents after dependencies, fails loudly on
-missing requirements, incompatible versions, cycles, or contested
-capabilities. Optional requires degrade gracefully instead of failing.
+Ownership and baseline over time are the nix generation's story
+(`nix store diff-closures` / `home-manager generations`) — the retired
+plan verb's live-probe half is deliberately not re-created.
 
-Adding a package — or swapping one (editor, terminal, agent runtime) — is
-adding a manifest plus payloads. Zero kernel edits. An unknown package
-self-serves every platform through contracts alone.
+## The capability-module law
 
-## The pipeline (the engine's one stage list)
+A capability is self-contained at its final address: `modules/<domain>/`
+holds the capability's home-manager module(s) beside the payload bytes it
+deploys. The filesystem is the registry: the capability walk
+(nix/lib/capabilities.nix) is the one discovery both the home leg's
+imports and the report's fold read; a hand-kept module list is a defect by
+definition. Adding a capability is adding one directory. Options are
+domain-level (`workstation.<domain>.*`); tools are entries within; per-tool
+module files are never created.
 
-The engine is ONE named stage list reduced over a `%Workstation.Pipeline.Run{}`
-accumulator (`Workstation.Pipeline`):
+## The client law
 
-    discover -> resolve -> compose -> check -> stage -> anchor ->
-      interpret -> claim -> verify
-
-Kernel modules implement stages — catalog discovery, dependency resolution,
-plan composition, preconditions, staged publish, journal anchoring,
-generation verification — and nothing else threads mutation state by
-parameter. The execution itself is a FOLD: the plan's typed mutation program
-(`Workstation.Pipeline.effects/1`: per-target effects first, the single
-staged-generation apply effect last) is dispatched through DISCOVERED
-`Workstation.Core.Contracts.Contract` implementations. The kernel names no
-effect contract; a new mutation kind plugs in by implementing the behaviour
-(id, validate_spec, plan_effect, run_effect, fingerprint) and is found by
-conformance, never by registration.
-
-Ordering is the invariant, not a preference, and the stage order IS the
-ordering: preconditions run before any write; the pending attempt record
-anchors before any effect runs; the applied provenance record lands only
-after every effect succeeded; the generation directory is re-verified after
-the fold. Effects declare their phase, and the fold runs per-target effects
-before the apply-phase effect — a pinned artifact installs before the staged
-generation applies.
-
-A CLI verb is a prefix of this list: `status` runs to `resolve`, `plan` and
-`diff` run to `compose`, `apply` runs to `verify` (`Pipeline.verb_depth/1`).
-Read depths stay pure (no journal, no filesystem probing), so golden replay
-is a function of its input bytes; the recorded plan body DECLARES its typed
-effects (the deliberate golden re-record that pinned this shape is the
-typed-effects plan change, rationale in its commit).
-
-The journal anchors ownership and baseline; goldens pin byte-identity of
-plan outputs across refactors; the apply lock serializes mutators.
-
-## Package self-containment (the law)
-
-A package is self-contained: its manifest, payloads, profiles and
-derivation logic live in exactly one place — the package's own tree,
-outside the kernel. The kernel holds no package content and no package
-mirror; discovery is the only path from the engine to a package. When a
-package changes, exactly one tree changes — maintaining any package fact
-in two places is a defect by definition, not a style issue. The store
-mechanism (metadata plane, lockfile pinning, mirrors) is retired as a
-direction: self-containment plus discovery is the whole distribution
-story, and fresh-box parity consumes the package tree directly.
+`bin/workstation` stays plain POSIX sh: resolve the flake (`--flake` >
+`$WORKSTATION_FLAKE` > the enclosing checkout > the staged generation
+snapshot), dispatch the verb, exec. Reads exec `nix eval --json` over the
+report attrs and print the answer unchanged; writes exec the staged
+`workstation-switch`; help exits 0, usage errors exit 2, a read with no
+resolvable flake fails closed naming the fix. The shim dispatch gate
+(.github/scripts/shim-dispatch.sh) holds this contract in CI with a stub
+nix.
 
 ## Enforcement
 
-A layer-law guard suite fails CI when a layer's forbidden vocabulary
-reappears (kernel naming a package, platform naming a consumer, contract
-naming an implementation) and when import direction inverts. The rules are
-enforced in code, not prose.
-
-## Module hierarchy & moduledoc conventions
-
-The module tree mirrors the layers, and every module's moduledoc is the
-architecture's documentation surface:
-
-1. **Kernel — `Workstation.Core`** (graph, plan, journal, apply,
-   preconditions, digest, engine_state, json/canonical_json): pure
-   machinery. Each kernel moduledoc states the kernel law: it names no
-   package, backend, or consumer — it speaks only contracts and shapes.
-2. **Contracts — `Workstation.Core.Contracts`** (the capability
-   provider contract, download, mise, shell): handshakes, never
-   implementations. A contract moduledoc names its purpose and states
-   its implementor policy — where implementations live (package modules
-   under `Workstation.Packages.*`) and that the engine discovers them,
-   never lists them.
-3. **Backends — `Workstation.Backends.*`** (chezmoi): one dialect per
-   contract. A backend moduledoc names the dialect it owns — encoding,
-   recipe contract, provider ids, argv — and that generic core may touch
-   it only through this module API.
-4. **Platform engines** (theme) stay kernel-side; their moduledocs are
-   consumer-free by law: consumers derive, never named.
-5. **Packages — `Workstation.Packages.*`**: everything concrete
-   (specs, payloads, profiles). A package moduledoc names what it
-   contributes and which contracts it consumes.
-
-The layer-law guard suite (`ArchitectureDepsTest`,
-`LayerLawTest`) enforces the namespaces, the forbidden vocabulary and
-the import direction in code; a moduledoc that contradicts this section
-fails the suite the same way a violated import does.
+The check battery (.github/scripts/check.sh) holds the lines in code: the
+identity gate (personal strings only in `hosts/<host>/default.nix`), the
+engine-free gate (the tree-wide grep for the Elixir module token stays
+empty), shell syntax + ShellCheck, the shim dispatch gate, the nix eval
+read gate. Verification beyond the battery is behavioral — the docker-nix
+closure acceptance and the VM E2E (docs/testing.md).
 
 ## Current state and debt
 
-The discovery seed exists (runtime manifest discovery, conformance-
-validated). Known debt being burned down: platform consumer records in the
-theme engine. The retired increments — the download contract, the discovery
-triplication, the resident nvim dialect — are the engine now, not debt.
-Each remaining item is tracked as an increment against this document.
+The substrate is the endgame shape (docs/endgame.md). Named remaining
+work: none — the last named item, the pin inventory (`versions.json`)
+relocating into the owning domains' module and flake-input surfaces,
+landed 2026-10-26 (one pin, one owner, one surface). The retired
+increments — the manifests, the walker, the format, the write/acquisition
+plane, the daemon, the wire protocol, the TUI, the Elixir plane, the pin
+inventory — are history, not debt: docs/absorption.md is the record, Git
+the archive.

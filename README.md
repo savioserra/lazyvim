@@ -1,192 +1,106 @@
 # LazyVim workstation
 
-Repo-native workstation engine for pinned Neovim, tmux configuration and Pi
+Nix-substrate workstation for pinned Neovim, tmux configuration and Pi
 resources on Linux x86_64 (including WSL-as-Linux) and macOS arm64.
-`workstation` owns the lifecycle; chezmoi is its subordinate home-file backend.
+Nix owns the lifecycle — pins, the file plane, activation and rollback —
+and every question about the declared state is answered by `nix eval` over
+`workstation.report.<verb>`. There is no engine: no resident process, no
+socket, no release to build. A switch's receipt lands in the state tree's
+`switch.log`.
 
 ## Prerequisites
 
-The user or CI image supplies these; workstation never runs an OS package
-manager:
+- Nix with flakes enabled. The hosts under [`hosts/`](hosts/) declare
+  everything else: per-host identity lives only in
+  `hosts/<host>/default.nix`, and the flake renders every pinned tool into
+  the store.
+- The legs: `hosts/wsl` (the linux leg; NixOS-WSL, `homeConfigurations` +
+  `nixosConfigurations`), `hosts/mac` (nix-darwin, `darwinConfigurations`;
+  brew reduced to casks). WSL counts as the linux leg (operator ruling
+  2026-10-22: the flake targets exactly mac and linux). A NixOS VM boot
+  test (`tests/nix`) proves the daemonless shape end to end: no unit, no
+  socket, the apply-driven switch, the receipt, the consumer smokes.
 
-- Git, HTTPS curl, xz and unzip. On Linux these four are the whole distro
-  prerequisite set, as measured on a bare box: a stock `ubuntu:24.04` image
-  is missing all four (`apt install git curl xz-utils unzip` on Ubuntu/WSL —
-  the base image already ships tar, gzip, `sha256sum` and sh). Git stays
-  deliberately unpinned — no pinnable first-party static build exists, see
-  [`docs/tools.md`](docs/tools.md); macOS ships it with the Command Line
-  Tools.
-- POSIX shell, tar/gzip, SHA-256 tools (`sha256sum` on Linux, `shasum` on
-  macOS), and ordinary Unix filesystem tools. The tar.xz archive pins (Node,
-  the Nerd Font) extract through xz and the zip archive pins (op,
-  tree-sitter) through unzip: the installer fail-closes on git and curl up
-  front, and the engine's bootstrap then verifies the whole four-tool set
-  before provisioning — one refusal naming every missing tool with the
-  install command (the machine-readable set lives in
-  [`docs/tools.md`](docs/tools.md)); a missing tool at `apply` still
-  surfaces as a named extraction refusal, the fail-closed backstop.
-- tmux >=3.2 and btop: mise-contract-managed on Linux — the tools are declared
-  with the `linux` platform scope, so a macOS apply omits them and they remain
-  host prerequisites there (brew); the fresh-install sequence first-acquires
-  them on Linux through the installer.
-- Hermes Agent is provisioned full-stack by the engine (pinned git checkout,
-  pinned interpreter, engine launcher on PATH) — no manual runtime step. The
-  runtime pins live in `workstation/versions.json`
-  (`hermes_agent_git_commit`, `hermes_python` + per-platform URL/SHA-256);
-  see [`docs/capabilities.md`](docs/capabilities.md#hermes-resources) for
-  the provisioning contract.
-- C compiler/build tools for parser and application-package builds (macOS Command
-  Line Tools); Linux fontconfig (`fc-cache`, `fc-list`). macOS supplies
-  `system_profiler` for font verification.
+## Hosts
 
-Bootstrap itself needs only the shell/download/archive/hash/filesystem essentials
-plus git and curl — not Node, Python, jq, system Neovim, LuaJIT, a preinstalled
-chezmoi or a preinstalled mise. The installer is mise-first: it acquires a
-checksum-pinned mise, provisions the first-acquisition tool pins (tmux and
-btop on Linux; skipped on darwin, where they remain host prerequisites and
-the banner states the skip — then the pinned Erlang/Elixir toolchain the
-release build resolves), and the
-engine itself — a checksummed Elixir OTP release — builds from the checkout
-with that toolchain; the installed release thereafter manages its own
-re-acquisition (`workstation bootstrap` refreshes it after `pull`). Managed
-tools and their exact pins are listed in [`docs/tools.md`](docs/tools.md).
-
-## Fresh installation
-
-**Stop if `~/.local/share/workstation` already exists.** It may be the old deployed
-engine payload, not a Git clone. Follow the guarded [cutover procedure](docs/chezmoi.md#breaking-cutover)
-with the operator; never clone over or erase it.
-
-One-line bootstrap — the installer performs exactly the guarded sequence below and
-enforces the same stop rule (overrides: `WORKSTATION_REPO`, `WORKSTATION_REF`,
-`WORKSTATION_DEST`):
+Switch a host through the substrate — the leg-native rebuild, or the
+`workstation-switch` driver (staged into each generation; it wraps the
+leg-native switch and writes the receipt):
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/savioserra/lazyvim/main/install.sh -o /tmp/workstation-install.sh && sh /tmp/workstation-install.sh
+sudo nixos-rebuild switch --flake .#wsl      # linux leg (NixOS-WSL)
+darwin-rebuild switch --flake .#mac          # macOS leg (nix-darwin)
+
+workstation-switch apply            # leg-native switch + the switch.log receipt
+workstation-switch rollback         # atomic rollback to the prior generation
 ```
 
-The guarded form is deliberate: a piped `curl -fsSL <url> | sh` feeds `sh` empty
-stdin when the fetch fails, and `sh` exits 0 on zero commands — the prompt
-returns as if the install succeeded, with nothing installed. To audit first,
-run the same command without the `&& sh /tmp/workstation-install.sh` half, read
-the fetched file, then run it.
-
-On a bare Debian/Ubuntu box, install the distro set first — `apt install git
-curl xz-utils unzip`; those four are the whole list (see
-[Prerequisites](#prerequisites)). The installer fail-closes on git and curl
-before touching anything; the engine's bootstrap then verifies the whole set
-before provisioning, so without `xz`/`unzip` the run refuses there — once,
-naming every missing tool with the install command — and the first `apply`
-extraction refusal stays only as the fail-closed backstop.
-
-Or manually:
-```sh
-git clone https://github.com/savioserra/lazyvim.git "$HOME/.local/share/workstation"
-"$HOME/.local/share/workstation/workstation/bin/workstation" bootstrap
-"$HOME/.local/bin/workstation" apply
-"$HOME/.local/bin/workstation" sync
-"$HOME/.local/bin/workstation" verify
-```
-
-The clone is the **whole repository**; every home-state payload and recipe
-lives with its owning package under `workstation/packages/`, and the engine —
-an Elixir OTP release built from the checkout — generates target-specific
-chezmoi source at apply time; there is no checked-in centralized payload tree
-and no Lua or nvim execution in the engine path. Any checkout can host the
-launcher. The installer is mise-first: after the clone it acquires the pinned
-mise binary, provisions the first-acquisition Linux tool pins (`tmux`, `btop`,
-then the pinned Erlang/Elixir toolchain) through mise backends, and only then
-bootstraps; on darwin the tmux/btop pins are skipped (host prerequisites,
-stated in the banner) and every mise resolution in the chain — the toolchain
-install and the release build alike — is scoped to the checkout's own pins,
-so an ambient global pin (a stale linux-only declaration in
-`~/.config/mise/config.toml` or `conf.d`) can never abort the install. The
-engine's mise contract owns the tool set from the first apply
-onward (engine-pinned binary, composed global config, tool state under the
-engine state root). Bootstrap prepares the checksum-pinned Neovim runtime and
-chezmoi backend (managed capabilities), builds/installs the engine release, then
-atomically creates
-`~/.local/bin/workstation` pointing to that checkout's actual repo-native launcher.
-A matching link is retained; conflicting user files/links/directories are refused,
-not replaced. Keep the checkout available. Add `~/.local/bin` to your PATH for the
-commands below (managed shell files also do this for future shells).
-
-## Daily lifecycle
+Every switch ends with a receipt line in the state tree's `switch.log`
+(`~/.local/state/workstation/switch.log`):
 
 ```sh
-workstation          # TUI home (TTY): tabs for status/plan/diff/capabilities/daemon/help
-workstation plan     # attributable change-set/patch preview; mutates nothing
-workstation diff     # preview file-backend changes (not a setup simulation)
-workstation apply    # guarded legacy retirement, files, then package setup
-workstation sync     # separately restore mutable application state
-workstation verify   # check installed versions and behavior
-workstation update   # git pull --ff-only, fresh bootstrap, apply, sync, verify
-workstation status   # inspect paths, the explicit package graph and the catalog taxonomy
-workstation capabilities  # capability-domain rollups with per-package/file drill-down
+tail -n 5 ~/.local/state/workstation/switch.log   # generation N applied (rollback available at M)
 ```
 
-On a usable terminal the bare verb opens the TUI application shell: every
-read view and the capabilities browser are tabs in one app, and `apply`/
-`update` open as screens within it (their daemon-event-driven behavior is
-unchanged). Without a TTY the bare verb prints the verb help instead of
-hanging (exit 0, no TUI start).
+## Reads: nix eval, nothing else
 
-Interactive verbs (`apply`, `update`) render the terminal UI when stdout is
-a usable terminal. Scripts and CI pass `--headless` to run the plain
-executor; a non-interactive run WITHOUT the flag hard-errors instead of
-degrading silently.
+The declared state is the capability modules under `modules/` — module and
+payload bytes co-located in one directory; the fold (`nix/report.nix`)
+reports the composed surface, and the flake projects it as the read verbs.
+`workstation status|plan|capabilities` (the launcher shim, `bin/workstation`)
+are thin wrappers over exactly these evals; on a nix-managed home they read
+the generation's own flake snapshot (`~/.local/opt/workstation/flake`), and
+inside a checkout they read the checkout.
 
-### Client/daemon model
+```sh
+nix eval .#workstation.report.status          # the declared inventory (JSON)
+nix eval .#workstation.report.plan            # the surface the next switch applies (+ digest)
+nix eval .#workstation.report.capabilities.editor   # scope with an attrpath
 
-Every verb speaks to the workstation **daemon** — a per-user background
-process that is the only mutation engine and the only source of live state
-(“`iex` to a running node”). The first verb resolves the daemon's Unix
-socket; when absent or dead the client spawns a daemon detached from the
-installed release and waits (bounded) for its handshake. There is no
-in-process fallback: a daemon that cannot start is a clear error, since
-the apply lock must have exactly one owner. `workstation daemon stop`
-retires it manually; no OS service manager is involved.
+workstation status         # the same answers through the shim (thin wrapper)
+workstation capabilities editor
+workstation help           # the verb contract; the bare verb prints usage
+```
 
-Long verbs stream their progress live: headless runs render the familiar
-`[1/5] pull ok` lines from the daemon's event stream, the TUI transitions
-rows on the same events, and `update` survives its own release refresh —
-the daemon hands off across the rebuild and the client re-spawns it, so
-one banner, one chain, one exit code. Interactive screens accept `x` to
-abort at the next step boundary (`q` merely detaches; the daemon keeps
-running). The daemon also watches passively: `status` reports an
-`update_available` verdict, and the TUI shows `↑ update available … — [u]
-update` only when the install branch is behind its origin — silence means
-up to date or unknown.
+The read verbs never mutate a home; mutation is `workstation-switch`'s
+alone. Ownership and baseline over time are the nix generation's story
+(`home-manager generations`, `nix store diff-closures`).
 
-Update invokes the freshly pulled launcher for **bootstrap before apply**, so new
-runtime/backend/release pins are installed. Every child is checked; the first failure
-stops subsequent phases. Bootstrap/backend failure never reports readiness.
-`apply` refreshes the materialized Node pin and PATH before setup. Direct `setup`
-before first apply rejects a missing/invalid `.node-version` before nvm/Node
-provisioning; it is not the fresh-install entry point. There are no compatibility
-aliases or `workstation apply --dry-run`; use `diff` or an isolated file render.
+The theme's live surface is a store token path
+(`~/.local/state/workstation/theme.json`) the switch re-points every
+generation; consumers read it or watch the link — nothing polls.
 
-No login profiles, secret values, provider credentials, 1Password account sessions,
-or vault state belong to the engine. The source-managed ntfy notifier and pinned
-Pi packages retain their own discovery/reload contracts; see the references below.
+`~/.hermes` stays hot home: home-manager never manages it. The pinned
+hermes checkout carries its runtime writes (update machinery, the pm
+store, recovery closures); managed skill leaves are read-only store
+symlinks the declarative agent module owns.
+
+## Secrets and ownership
+
+No login profiles, secret values, provider credentials, 1Password account
+sessions, or vault state belong to the substrate. The source-managed ntfy
+notifier and pinned Pi packages retain their own discovery/reload
+contracts; see the references below.
 
 ## Documentation and validation
 
 | Reference | Scope |
 | --- | --- |
+| [`docs/endgame.md`](docs/endgame.md) | The final shape: structure, invariants, retirement ledger |
 | [`docs/index.md`](docs/index.md) | Repository navigation |
-| [`docs/testing.md`](docs/testing.md) | Fast checks, isolated E2E and acceptance limits |
-| [`docs/capabilities.md`](docs/capabilities.md) | Package boundaries and lifecycle |
-| [`docs/chezmoi.md`](docs/chezmoi.md) | File backend, scratch rendering, guarded cutover |
+| [`docs/testing.md`](docs/testing.md) | Fast checks, the docker-nix acceptance, the VM E2E |
+| [`docs/capabilities.md`](docs/capabilities.md) | Capability boundaries and lifecycle |
+| [`docs/home-state.md`](docs/home-state.md) | Home state law (native declarations) and the cutover history |
 | [`docs/tools.md`](docs/tools.md) | Managed inventory and prerequisites |
 | [`docs/secrets.md`](docs/secrets.md) | User-owned authentication and explicit secrets skill |
 | [`docs/nvim.md`](docs/nvim.md), [`docs/tmux.md`](docs/tmux.md) | Application configuration |
-| [`docs/elixir.md`](docs/elixir.md) | Engine architecture, CLI/TUI contract, taxonomy, migration history |
 | `AGENTS.md` | Contributor rules |
 
-Run `sh .github/scripts/check.sh` for safe isolated source checks; never run
-fixtures directly against an applied home. Real scratch integration downloads
-assets and requires explicit authorization; follow [testing](docs/testing.md),
-not a live-home experiment. CI uses Linux and macOS arm64 runners; WSL follows
-Linux. Release CI validates before producing tagged source archives and SHA-256
-sums, not a separate engine build or installer.
+Run `sh .github/scripts/check.sh` for the static battery (identity gate,
+engine-free gate, shell checks, the shim dispatch gate, the nix eval reads
+where nix exists); never run fixtures directly against a switched home.
+Real nix builds and VM boots require explicit authorization; follow
+[testing](docs/testing.md), not a live-home experiment. CI runs the static
+battery plus a nix evaluation leg (closure builds stay the local docker
+acceptance's job). Release CI validates before producing tagged source
+archives and SHA-256 sums.

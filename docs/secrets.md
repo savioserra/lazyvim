@@ -7,7 +7,7 @@
 | `secrets` capability | Verify the pinned 1Password CLI; do not inspect authentication or vault state |
 | `Workstation` vault | Dedicated scope for this workstation's secrets |
 | `/skill:secrets` | Explicit-only policy for safe metadata, references, and approved mutations |
-| Chezmoi source | Store `op://` references and non-secret schema only |
+| Declared source | Store `op://` references and non-secret schema only |
 
 The capability name describes the workstation concern; 1Password is its current
 backend. The desktop application, account session, and vault contents remain
@@ -47,9 +47,11 @@ service account instead:
    chmod 600 /etc/pi/op.env && unset OP_SA_TOKEN
    ```
 
-3. The managed `~/.profile` block (`# chezmoi: managed op env`) auto-exports
+3. The managed `~/.profile` block (`# workstation: managed op env`) auto-exports
    `/etc/pi/op.env` in login shells when the file exists. The same pattern
-   applies to `/etc/ntfy/notifier.env` (`# chezmoi: managed ntfy notifier env`).
+   applies to `/etc/ntfy/notifier.env` — a host-owned file whose block still
+   carries its legacy `# chezmoi: managed ntfy notifier env` marker (rename
+   it on the host, never in this repo).
 
 These are operator-run steps, not commands for an agent to execute. Values never
 enter Git, agent context or chat; `/etc` files stay the live mechanism and the

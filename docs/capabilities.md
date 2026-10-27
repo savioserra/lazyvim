@@ -1,263 +1,192 @@
-# Workstation package and lifecycle reference
+# Workstation capability and lifecycle reference
+
+The declared state of the workstation is NATIVE nix/home-manager
+declarations: one module per capability domain under `modules/<domain>/`,
+the module and the payload bytes it deploys co-located in the domain
+directory (the format's retirement is recorded in
+[absorption](absorption.md)). The package-manifest format is retired by
+operator ruling 2026-10-21; the walker and the engine's manifest-era
+reader plane are gone, and the engine itself retired with them: the
+declared state is the modules' fold, and reads are `nix eval` over
+`workstation.report.<verb>`. Nothing in this
+reference describes a surface before its
+owning commit lands it.
 
 ## Dependency direction
 
 ```text
-workstation/bin/workstation (POSIX sh: sandbox + runtime/release acquisition)
-  -> exec elixir release binary
-      -> Workstation.CLI.Router (verbs, TTY contract)
-          -> Workstation.CLI.Core (read side) / Workstation.CLI.Engine (lifecycle)
-      -> Workstation.Core.Plan (shared composition)
-          -> Workstation.Core.Catalog.Packages (native catalog data modules)
-          -> Workstation.Core.Graph (host selection, requires, topological order)
-          -> discovered recipe providers (chezmoi, shared shell,
-             nvim-profile) -> deterministic source plan
-      -> Workstation.Pipeline (under Core.ApplyLock) / Update.* steps
-          -> Workstation.Core.Provisioner (chezmoi backend, exact generation)
-          -> Workstation.Core.Journal + EngineState (generations, lock, journal)
+flake.nix
+  -> modules/* (the native declarations; the capability walk
+     nix/lib/capabilities.nix is the registry — the home leg's imports and
+     the declared-state report's fold read the same walk)
+  -> nix/modules (workstation-home, workstation-system, host identity)
+  -> nix/report.nix (the declared-state fold; flake.nix projects it as
+     workstation.report.{status,plan,capabilities})
+  -> nix/workstation-switch.nix (the write plane: switch / rollback, the
+     switch.log receipt in its tail)
+  -> hosts/<host> (wsl / mac; identity only in hosts/<host>/default.nix)
 
-core -X-> catalog/packages/providers/chezmoi/Neovim
+bin/workstation (POSIX sh: flake resolution, verb dispatch)
+  -> reads:  nix eval --json <flake>#workstation.report.<verb>
+  -> writes: exec the staged workstation-switch driver
 ```
 
-The engine is Elixir-only: the release binary executes every verb in-process,
-there is no Lua execution and no nvim invocation anywhere in the engine path,
-and `Workstation.Core.Plan.composed_plan/2` is the single plan composition the
-daemon applier and the one-shot CLI driver share. `bin/workstation` is the
-sole public entry point; nvim is a managed host capability installed at
-bootstrap, never an engine dependency.
+There is no engine: no resident process, no wire protocol, no TUI, no
+Elixir plane. Mutation is the nix substrate's (`workstation-switch`);
+`bin/workstation` is the sole public entry point; nvim is a managed host
+capability the substrate provisions. `modules/**/*.lua` are data payload
+files read as bytes, never executed.
 
 ## Module boundaries
 
 | Module | Contract |
 | --- | --- |
-| `Workstation.CLI.Router` | Verb parsing, TTY-default contract (`--headless`), exit codes |
-| `Workstation.CLI.Core` | Read-side evaluation (`status`, `plan`, `diff`, `json`) with state-root bracketing |
-| `Workstation.CLI.Engine` | One-shot lifecycle driver (`bootstrap`, `apply`, `update`, `sync`, `verify`, `pull`) under the apply lock |
-| `Workstation.CLI.TUI.*` | Interactive apply/update screens (optimus CLI + term_ui) |
-| `Workstation.Core.Plan` | The shared collect -> graph -> plan -> baseline composition |
-| `Workstation.Core.Catalog.Packages` | Native catalog: one pure-data contribution module per package, DISCOVERED at runtime (no registration list) |
-| `Workstation.Core.Catalog.Spec` | The package-spec provider behaviour + spec shape validation (including the banned integer-ordering fields) |
-| `Workstation.Core.Catalog.Discover` | Runtime provider discovery (`:code.all_available/0` + behaviour conformance, test-tree exclusion, duplicate-id rejection) |
-| `Workstation.Core.Graph` | Host selection, `requires` (necessity + ordering) and `after` (ordering-only) edges, topological ordering with id-sort ties |
-| `Workstation.Core.Source` | Source plan and manifest over the recipe provider contracts (chezmoi dialect via `Workstation.Backends.Chezmoi`, shared shell and pinned downloads — single artifacts and probe-gated archive trees — via `Workstation.Core.Contracts.Shell`/`Download`, managed mise tools via `Workstation.Core.Contracts.Mise`) |
-| `Workstation.Pipeline` | The one stage-list fold: preconditions, publish, backend apply, journal record, post-apply verify |
-| `Workstation.Core.Provisioner` | Chezmoi backend with an exact generation |
-| `Workstation.Core.Policy` | Engine-owned legacy tombstones |
-| `Workstation.Core.{Journal,EngineState,ApplyLock}` | Immutable generations, fail-closed private state tree, exclusive apply lock |
-| `packages/<name>/` | Package payload assets (`files/`, `dot-*` targets) and data files |
-| `packages/theme/tokens.lua` | Canonical theme tokens (DATA: slot/palette layers, per-appearance palettes, consumer choices) — read as bytes, never executed |
+| `bin/workstation` | The launcher shim: flake resolution order, verb dispatch, exit codes (the dispatch gate: `.github/scripts/shim-dispatch.sh`) |
+| `flake.nix` `reportVerbs` | The read verbs' projection over the report fold — the operator-facing read contract |
+| `modules/<domain>/<domain>.nix` | The domain's native declaration: home.file surfaces, pins, fragments, activation scripts — payload co-located in the domain directory |
+| `nix/report.nix` | The declared-state fold: every capability evaluated once against home-manager, integrity-asserted (targets compose, nothing escapes classification, no identity leaks) |
+| `nix/lib/capabilities.nix` | The registry walk: discovers `modules/<domain>/` — the one discovery the home leg and the fold share |
+| `nix/lib/pins.nix` | The pins' shared HOW: checksummed `fetchurl` derivations from the owning modules' declared data, layout/extraction rules, claim composition, build-time probe gates (git checkout pins are `builtins.fetchGit` at the declaring module) |
+| `modules/agent/agent.nix` | The agent domain's hot-home surfaces: managed skill leaves (store-path `home.file`), the checkout ensure and version-matched skill provisions (activation scripts) |
+| `modules/<domain>/` payload dirs | Capability payload assets (`files/`, verify scripts) and data files, co-located with the declaring module |
+| `modules/theme/tokens.lua` | Canonical theme tokens (DATA: slot/palette layers, per-appearance palettes, consumer choices) — read as bytes, never executed |
 
-## Contribution contract
+## The declaration contract
 
-A package contributes its catalog identity through a **pure-data Elixir
-module** under `apps/core/lib/workstation/core/catalog/packages/`
-(one module per package) that declares `@behaviour
-Workstation.Core.Catalog.Spec` and implements `spec/0`. There is no
-registration list: discovery (`Workstation.Core.Catalog.Discover`) scans
-the loaded code namespace for `Workstation.Core.Catalog.Packages.*`
-providers via `:code.all_available/0`, keeps behaviour-conforming modules
-(test-tree sources are excluded deterministically by the beam's recorded
-compile path), validates every spec shape, rejects duplicate ids and
-orders providers by module name. Adding a package means dropping in a
-conforming module — zero engine edits.
+A capability declares once, as a native nix module under
+`modules/<domain>/`, imported by `workstation-home.nix`
+(the system plane's toolchains ride `workstation-system.nix`/`home.packages`).
+There is no registration list: the module import IS the registration, and
+nix's module system rejects duplicate options louder than any validator.
 
-The spec map declares the package identity, host support, dependencies,
-provisioning recipes (`Workstation.Core.Source` constructors), lifecycle
-steps (`Workstation.Core.Update` step atoms) and the descriptive
-`foundation: "foundation/<layer>"` taxonomy entry; payload lives under
-`packages/<name>/` and is referenced by relative path. Ordering between
-packages comes exclusively from `requires` (necessity + ordering) and the
-optional `after` (ordering-only) edges; integer ordering fields
-(`order`, `position`, `priority`) are banned on package specs and
-rejected at discovery, and graph ties among dependency-equal packages
-resolve by id sort. There is no factory, no invocation and no Lua in the
-contract: collection is data inspection
-(`Catalog.Packages.packages/0`), validation is structural
-(`Workstation.Core.Catalog.validations/0` + `Graph`), and the whole path is
-deterministic and golden-graded.
+The declaration references its payload bytes by relative path beside it
+(under `modules/<domain>/`) — nix copies them into the store at eval
+time; payload stays reviewable, syntax-checked, diffable text. The module
+owns everything the old envelope kinds expressed, natively:
 
-Each `contributes` entry is a
-`{ provider, spec }` envelope; the `Workstation.Core.Source` constructors
-copy options and perform no I/O, target writes or registration. Core
-validates only the generic envelope shape; each registered provider
-validates its own specs and rejects unknown options. Kinds: `file`,
-`directory`, `symlink`, `modify` (one whole inline body or package-relative
-asset - structured fragments are the `Workstation.Core.Contracts.Shell` compositor's input
-alone and are rejected here) and `remove`. Packages may declare whole-body
-`modify` programs for engine-seeded, runtime-extended mutable targets: the
-recipe embeds its baseline, apply never byte-compares the target, and a
-package-owned merge reconciles runtime drift. `lazy-lock.json` under the
-nvim package is the reference implementation; see [nvim](nvim.md). Such
-recipes inherit the documented whole-body retirement semantics (unsupported
-reversal, never auto-removal). Native attributes are `private`,
-`executable`, `exact` and `template`; conflicting or unrepresentable
-combinations are rejected instead of pretending arbitrary POSIX modes are
-encoded. Recipe content is exactly one inline body or a package-relative
-asset confined to the owner package (no symlink traversal). The catalog
-does not deep-merge records, and package identity is declared only by the
-conforming module itself — a package never needs to know that other
-packages exist beyond the edges it declares.
+- **file/symlink surfaces** — `home.file` entries with store-path sources
+  (intra-home links through `mkOutOfStoreSymlink`);
+- **pins** — `nix/lib/pins.nix` turns an owning module's declared pin
+  (version + url + 64-hex sha256 + layout + optional probe) into a
+  derivation; the probe (argv + output
+  template, or content member+sha for trees without an executable) asserts
+  at BUILD time: a wrong pin fails the build, never a host;
+- **dir claims** — a pin's tree linked at a home target; overlapping targets
+  compose into one derivation (a payload file inside a pinned tree overlays
+  into the same store result);
+- **shell fragments** — body bytes as payload files; the module declares the
+  ordered fragment list (id, target, marker, payload path) and the rc lane
+  sources them in declared order;
+- **activation scripts** — the hot-home and mutation surfaces (the hermes
+  checkout ensure, the nvim lock merge, the retire list), sequenced with
+  `lib.hm.sequence`;
+- **the switch driver** — the one system-ordered surface: a switch is the
+  event; its tail writes the receipt and the activation re-points the
+  theme token path.
 
-Example (the actual theme declaration, abridged):
+Ordering between capabilities does not exist as a graph: store closure has
+no apply order. The only ordered surfaces are the ones above (fragment list,
+activation sequence, unit dependencies).
 
-```elixir
-defmodule Workstation.Core.Catalog.Packages.Theme do
-  @moduledoc """
-  Theme tokens (packages/theme) — a payload-only package.
-  """
+## Capability graph
 
-  @behaviour Workstation.Core.Catalog.Spec
-
-  @impl true
-  def spec do
-    %{
-      id: "theme",
-      requires: ["foundation"],
-      supported_hosts: %{"darwin" => true, "linux" => true},
-      foundation: "foundation/theme",
-      contributes: [Workstation.Core.Catalog.Packages.theme_data()]
-    }
-  end
-end
-```
-
-`contributes` entries whose payload needs token substitution compose
-recipes with the `Workstation.Core.Source` constructors; the theme package
-uses `chezmoi_data` — the single source-root `.chezmoidata.toml` token
-envelope (the theme canonical tokens are DATA and are read as bytes, never
-executed).
-
-## Package graph
-
-`requires` edges carry necessity (the dependency must exist and be enabled
-for the host) plus ordering. The optional `after` edge is ordering-only
-(systemd `After=` semantics): it sequences the declarer after the target
-only when the target is present and enabled on the host — it never pulls a
-package in and never fails on absence. Use `after` for pure sequencing
-between otherwise-independent packages; use `requires` only when the
-dependency is genuinely needed.
+The taxonomy is declared data on each module (its domain), consumed by the
+report and rendered grouped wherever the declared state is listed:
 
 ```text
-foundation
-├── fonts
-├── node
-├── go [Neovim language toolchain]
-├── agent [Hermes Agent provisioned full-stack: pinned git checkout, pinned interpreter, engine launcher; managed skills]
-├── herdr [pinned terminal-workspace binary; runtime-optional, no server lifecycle]
-├── secrets
-├── nvim [requires foundation+node+go; owns base/standard/Go profile intents]
-├── tmux [linux,darwin]
-├── nunchux [requires foundation+theme; linux — pinned checkout (git recipe) + platform marker + theme-slot config]
-└── prompt [requires foundation; linux — eza managed `ls` (content-probed linux-only pin: no darwin asset upstream) + starship prompt (both-platform pins): guarded rc fragments + the omarchy-lean starship config]
-
-nvim
-├── typescript [requires node+nvim; owns its plugin module, profile intent, the pinned pnpm and verification]
-└── elixir [requires nvim; owns its plugin module, profile intent and verification]
+base       foundation
+fonts      fonts
+runtime    elixir, go, node, typescript
+editor     nvim (+ languages: typescript, elixir declare editor entries)
+terminal   nunchux, prompt, tmux
+theme      theme
+agent      agent, herdr
+secrets    secrets
 ```
 
-| Package | Setup | Sync | Verify | Host support |
-| --- | --- | --- | --- | --- |
-| `foundation` | The CLI tools the editor surface consumes, each a checksum-gated download-contract archive pin at `.local/opt/<tool>` (ripgrep, fd, fzf, lazygit, tree-sitter, rainfrog — per-platform SHA-256 from `versions.json`; the `release` layout for rg/fd/fzf/tree-sitter/rainfrog, `flat` for lazygit's rootless tarball, `zip` for tree-sitter), each probe-gated (`<tool> --version` carries the pinned version) and surfaced on PATH by a `.local/bin/<tool>` link recipe; plus the mise binary pin, the managed mise fragment (it activates the engine's pinned binary by absolute path — the `.local/bin/mise` launcher symlink when it carries its contract link shape, else the sole `.local/opt/mise/<version>/bin/mise` pin, else a silent no-op — and never a bare `mise` from PATH, so a distro mise ranked first can never be paired with the engine's managed data and config), the PATH fragments and the bash-login include fragment (`~/.bash_profile` sources the managed `~/.profile` — bash login shells read `~/.bash_profile` INSTEAD of `~/.profile` when it exists, so a pre-existing hand file can no longer shadow the engine PATH) | — | `download-archive` journal records (probes re-run on claim and on verify) + the link records | All |
-| `fonts` | Exact pinned JetBrainsMono Nerd Font tree via the download contract (tar.xz `flat` archive, SHA-256-gated; per-platform `targets`: linux `.local/share/fonts/JetBrainsMonoNerdFont`, darwin `Library/Fonts/JetBrainsMonoNerdFont`); the content probe pins `JetBrainsMonoNerdFont-Regular.ttf` bytes — a data tree with no executable to version; host cache/registration reads the provisioned directory | — | `download-archive` record (the content probe re-runs on claim and on verify) | All |
-| `node` | nvm via the download contract (pinned v0.40.4 tarball, exact tree at `.local/opt/nvm`, content probe pins `nvm.sh` bytes) then the pinned Node (tar.xz archive, exact tree at `.local/opt/nvm/versions/node/v<version>`, probe `bin/node --version` = `v{V}`) — declared parent-first so the nested target extracts into the provisioned nvm tree; the rc loader (`.config/shell/nvm.sh`) and `.node-version` recipes unchanged; the rc loader also activates the pinned default — it resolves the recorded nvm `default` alias, falls back to the sole provisioned version when the alias is missing or unresolvable (seeding the alias through nvm itself, once), and exports the same PATH/NVM_BIN/NVM_INC state `nvm use` would set, fork-free, so fresh and reconciled hosts resolve `node` with zero manual steps; an explicit `nvm use` earlier in the shell always wins | — | `download-archive` records (both probes re-run on claim and on verify) + NVM and Node version | All |
-| `agent` | Hermes Agent provisioned full-stack: the pinned git recipe (`~/.hermes/hermes-agent` at the `hermes_agent_git_commit` pin), the pinned interpreter (`.local/opt/hermes/python` — a checksum-gated `hermes_python` archive pin, the same python-build-standalone release hermes-agent's own `pm/lock.json` carries at the pinned commit), the engine launcher (`.local/opt/hermes/bin/hermes` payload, resolved at run time) surfaced on PATH as `.local/bin/hermes`, and the managed skills at `~/.hermes/skills/secrets` — served through the copy contract, because the agent home is hot state no backend may track (the retired `lazyvim` skill target carries a recorded-ownership removal tombstone) | — | `packages/agent/verify/hermes.sh` (resources + runtime on every host: checkout HEAD at the pin, managed skill file, pinned interpreter, launcher `--version` consumer smoke; read-only; full-stack or exit 1) | All |
-| `go` | Exact pinned toolchain tree via the download contract's archive form (`.local/opt/go` — per-platform SHA-256, member-checked single-root tarball, one root stripped, probe-verified `bin/go version` = `go version go{V}`); go link recipe (`.local/bin/go`) | — | `download-archive` journal record (the probe re-runs on claim and on verify — version drift fails loudly) + the link record | Linux/WSL/macOS |
-| `elixir` | `provider: "mise"` tool declarations (erlang 28.5, elixir 1.18.5-otp-27) in `workstation/packages/languages/elixir/manifest.json`; the engine contract (`Workstation.Core.Contracts.Mise`) composes `.config/mise/config.toml` and the managed tool state under the engine state root — no mise payload ships with the package (the mise binary pin and the activation fragment `.config/shell/mise.sh` belong to `foundation`) | — | Own Mason expectations, plugin module and behavior/formatter cases through nvim leaf helpers | All |
-| `herdr` | Exact pinned binary via the download contract (`.local/opt/herdr/bin/herdr`, per-platform SHA-256); herdr link recipe | — | Applied-download fingerprint (binary bytes carry the pinned checksum) + the link record; never server/pane/session lifecycle | All |
-| `secrets` | Pinned op via the download contract (zip `flat` archive — the `op` + `op.sig` pair — exact tree at `.local/opt/op`, probe `op --version`); op env fragment; op link recipe (`.local/bin/op`) | — | `download-archive` record + the link record; verify only `--version`, never account or vault state | All supported hosts |
-| `nvim` | — | Locks and parsers | Startup, locks, mason coverage, base/standard/Go behavior | All |
-| `typescript` | The pinned pnpm standalone tree via the download contract (tar.gz `flat` archive — the rootless `pnpm` + `dist/` tree at `.local/opt/pnpm`, probe `pnpm --version` = `{V}`, per-platform SHA-256 from `versions.json`) + the `.local/bin/pnpm` link recipe: the operator's JS package manager is a declared capability, so node-tree reconciliation restores it instead of dropping it as un-owned collateral | — | `download-archive` journal record (the probe re-runs on claim and on verify — version drift fails loudly) + the link record; plus own Mason expectations, plugin module and behavior/formatter cases through nvim leaf helpers | All |
-| `theme` | Single source-root `.chezmoidata.toml` token envelope via `provision.chezmoi_data`; deploys no home target | — | Envelope bytes against the tokens module; requires `foundation` | All |
-| `tmux` | Plugin checkout; tmux config/theme/link recipes | — | Commits, server, theme | Linux/macOS |
-| `nunchux` | Pinned plugin checkout via the git recipe (`.tmux/plugins/nunchux` at the v3.1.3 commit — carries the repo-tracked launcher binary) plus the `.platform` marker (upstream `ensure_binary` never fetches); theme-slot launcher config | — | `packages/nunchux/verify/nunchux.sh` (checkout HEAD + binary content pin + platform marker; read-only, never executes the binary) | Linux (darwin deferred — linux-only package; the darwin release pin stays recorded in `versions.json`) |
-| `prompt` | eza + starship via the download contract (eza 0.23.5 — lone-root-file tarball, content probe pins the binary bytes because `eza --version` leads with the tagline; starship 1.27.0 — lone-root-file tarball, exec probe `starship {V}`; both assets mirrored from `versions.json`, exact `.local/opt/<tool>` trees + `.local/bin/<tool>` link recipes); the omarchy-lean starship config at `.config/starship.toml`; marker-guarded rc fragments (`managed-eza` `ls` alias, `managed-starship` per-shell init) into `.bashrc`/`.zshrc` — `command -v` guards keep plain `ls` and no prompt where a tool is absent; `.profile` untouched | — | `packages/prompt/verify/prompt.sh` (pinned bytes + probes + rc wiring; read-only consumer smoke) | Linux (darwin: package off per the 2026-10-20 ruling — eza publishes no darwin_arm64 asset; starship's darwin pin stays recorded in `versions.json` as inventory) |
+| Capability | Provides | Verify | Host support |
+| --- | --- | --- | --- |
+| `foundation` | The base shell environment: the rc lane (fragment bodies as payload files, the declared order — bash-login `.bash_profile` include included), fd/fzf/rg/lazygit/tree-sitter as checksummed pins linked straight from their store trees (`nix/lib/pins.nix`, probes now build gates), eza + starship nixpkgs (the dissolved prompt capability), harlequin + hsql (one upstream distribution via the foundation domain's pin-override overlay; the hsql agent skill is generated from the harlequin derivation at build time and serves as a declared entry symlink), and the tailscale transport (`workstation.foundation.tailscale.*`; `services.tailscale` on the system legs) | `modules/foundation/verify/prompt.sh` (the dissolved surface: tools speak, payload deployed, rc wired) | All |
+| `fonts` | Exact pinned JetBrainsMono Nerd Font tree (tar.xz `flat`, SHA-256-gated; per-platform targets: linux `.local/share/fonts/JetBrainsMonoNerdFont`, darwin `Library/Fonts/JetBrainsMonoNerdFont`); content probe pins `JetBrainsMonoNerdFont-Regular.ttf` bytes; fontconfig enabled so `fc-cache` sees it | content probe (build gate) | All |
+| `node` | nvm (pinned v0.40.4, content probe pins `nvm.sh` bytes) then the pinned Node nested at `.local/opt/nvm/versions/node/v<version>` (probe `bin/node --version`), declared parent-first so the nested tree composes into the nvm tree; the rc loader (`.config/shell/nvm.sh`) and `.node-version` payload unchanged; the loader activates the pinned default fork-free | both probes (build gates) + NVM and Node version | All |
+| `agent` | Hermes Agent full-stack, declarative under `programs.hermes` (`modules/agent/agent.nix`): the runtime pin rides the flake's `hermes-agent` input (fetchGit rev, surfaced as `outputs.hermesAgentPin` -> `programs.hermes.pin`); the pinned checkout (`~/.hermes/hermes-agent`) is ensured to the pin by activation — never file-tracked; the pinned interpreter (`.local/opt/hermes/python`, checksum-gated python-build-standalone pin); the engine launcher (`programs.hermes.package`, on PATH as `.local/bin/hermes`); the deployed pin manifest (`.local/opt/hermes/pin.json`) is the verify anchor; declared skills serve as ONE store entry symlink per target profile (`programs.hermes.skills` — `secrets` authored at `modules/agent/skills/secrets`, `hsql` generated from the harlequin derivation); gateway extensions link as entry symlinks into `~/.hermes/plugins`; the retired `lazyvim` skill target retires through the declared retire list | `modules/agent/verify/hermes.sh` (checkout at the deployed pin, store-symlink skills, interpreter, launcher `--version` consumer smoke; full-stack or exit 1) | All |
+| `go` | Exact pinned toolchain tree at `.local/opt/go` (per-platform SHA-256, single-root tarball, probe `bin/go version`) + `.local/bin/go` | probe (build gate) + link record | Linux/WSL/macOS |
+| `elixir` | nixpkgs toolchains via `home.packages` (erlang 28 + elixir 1.18; the mise lane retired — toolchains come from nixpkgs) | Own Mason expectations and the plugin module through nvim leaf helpers | All |
+| `herdr` | Exact pinned binary linked straight from its store derivation at `.local/bin/herdr` (the `../opt` bin-link shape died with the manifests); never server/pane/session lifecycle | fingerprint + link record | All |
+| `secrets` | Pinned op (zip `flat` — the `op` + `op.sig` pair at `.local/opt/op`, probe `op --version`); op env fragment; link record | record + verify `--version` only, never account or vault state | All supported hosts |
+| `nvim` | The editor payload (`files/.config/nvim/**`), the nixpkgs neovim on PATH (`.local/bin/nvim`), the composed language profile (see [Neovim](#neovim-package-and-profile)) | Startup, locks, mason coverage, base/standard/Go behavior | All |
+| `typescript` | The pinned pnpm standalone tree (tar.gz `flat` — rootless `pnpm` + `dist/`), linked straight from the store derivation at `.local/bin/pnpm`; the operator's JS package manager is a declared capability | probe (build gate) + link record; own Mason/plugin surface | All |
+| `theme` | `tokens.lua` — the canonical token payload; nix extracts the slots consumers need (fail-closed line parse in `modules/theme/theme.nix` — a restructure the parser cannot read fails the eval, never renders empty tokens); deploys no home target | token bytes against the tokens module | All |
+| `tmux` | Plugin checkouts (tpm, tmux2k, tmux-yank, tmux-resurrect, vim-tmux-navigator — fetchGit-pinned); `.tmux.conf`; the `.config/tmux` link; nixpkgs tmux/btop (the mise lane retired); the stale `tmux2k.conf` theme path retires through the retire list | Commits, server, theme | Linux/macOS |
+| `nunchux` | Pinned checkout (`.tmux/plugins/nunchux` at the v3.1.3 commit — repo-tracked launcher binary) + `.platform` marker; theme-slot launcher config rendered natively (slot substitution from `tokens.lua`) | `modules/terminal/nunchux/verify/nunchux.sh` (checkout HEAD + binary pin + marker; never executes the binary) | Linux (darwin deferred; the release-asset rows retired with the inventory — no consumer) |
+| `prompt` | (dissolved into `foundation` — eza + starship are nixpkgs packages, the starship config and the managed rc fragments ride the foundation module) | `modules/foundation/verify/prompt.sh` (the dissolved surface: tools speak, payload deployed, rc wired) | All |
 
 ### Go toolchain acquisition
 
 Decision recorded 2026-10-15 (card t_1d7be74b): the Go toolchain is a
-download-contract ARCHIVE pin, not a host prerequisite. The documented
-layout (`.local/opt/go` exact tree + the `.local/bin/go` link) and the
-`versions.json` go pins predate the engine's data-manifest cutover but had
-no provisioning path — the link dangled on every fresh host. Extending the
-download contract keeps one pinned-artifact seam (https-only fetch, 64-hex
-SHA-256 gate, per-platform asset dispatch, staged install, exclusive
-target ownership) instead of a second acquisition lane, and honors the
-operating-contract law: a package that names a tool ships the tool.
+declared ARCHIVE pin, not a host prerequisite. The layout (`.local/opt/go`
+exact tree + the `.local/bin/go` link) and the go pin (now declared in
+`modules/languages/go/go.nix`; originally an inventory row) predate the
+declaration cutover but had no provisioning path — the link
+dangled on every fresh host. The pin keeps one pinned-artifact seam
+(https-only URL, 64-hex SHA-256 gate, per-platform dispatch, exclusive
+target ownership) and honors the operating-contract law: a capability that
+names a tool ships the tool.
 
-The archive form is domain-neutral data on the pin: `archive` names the
-format, `probe` (argv + first-line output template with `{V}`) is the
-honesty gate — the tree must prove it is the pinned tool before it
-activates, on already-converged hosts the probe skips the fetch entirely,
-and the applied record (`type: download-archive`) re-probes on every
-verify. Extraction is the bootstrap's discipline: traversal-checked
-single-root members, exactly one root stripped, private sibling staging,
-one rename into place — serialized by the apply lock the pipeline's caller
-already holds, so no second installer lock exists. A tree that does not
-carry the pinned version is never overwritten: inspect and remove it
-explicitly to re-install (pin bumps included). The pins stay byte-identical
-to `versions.json` (`go`, `go_<plat>_url`/`_sha256`); a bump re-records the
-generation because the pin descriptor is content-addressed.
+The pin's data is domain-neutral: the layout names the root discipline, the
+probe is the honesty gate — the tree must prove it is the pinned tool.
+Execution is nix's: the declaration renders as a checksummed `fetchurl`
+derivation, the store verifies the bytes, and the generation links the
+extracted tree at the target. A pin bump moves the owning module's
+declared pin, its consumer row and the generation together.
 
-### Fresh-host archive provisioning: foundation tools, fonts, op, nvm/Node
+### Fresh-host pins: foundation tools, fonts, op, nvm/Node
 
 Decision recorded 2026-10-15 (card t_cf14f71b, after the audit t_bf0c0acc
 found the docs claiming provisioning no source implemented): every tool
-class above is a download-contract ARCHIVE pin — none stays a documented
-host prerequisite, per the operating-contract law. The seam is the same
-one contract the go decision grew; the audit's forbidden outcome (docs
-claim, source silent) is closed on all four rows. What the contract
-gained, each fail-closed and tested:
+class above is a declared pin — none stays a documented host prerequisite.
+The vocabulary, each shape fail-closed:
 
-* formats `tar.xz` and `zip` join `tar.gz` (the apply-time host tools
-  `xz`/`unzip` are named prerequisites — a missing tool is a loud,
-  named failure, never a silent fallback);
-* the declared `layout` names the root discipline — `release` (default:
-  exactly one root; a root directory strips one component, a lone root
-  file IS the tree — the fzf/tree-sitter shape) and `flat` (rootless
-  top-level members — lazygit, the op pair, the font set — safe because
-  the staging directory is always fresh);
-* the probe has a second shape, the content probe
-  (`{member, sha256}`), for trees that carry no executable at all —
-  nvm's checkout and the font directory prove their identity by pinned
-  member bytes instead of faking a version line;
-* the destination may dispatch per platform (`targets`, the mirror of
-  `assets`) — the font lands in `.local/share/fonts` on linux and
-  `Library/Fonts` on darwin, and the resolution happens only at the
-  apply boundary so a recorded plan stays machine-independent.
+* formats `tar.xz` and `zip` join `tar.gz` (store-side extraction has no
+  host-tool dependency — a declared format the pins library cannot extract
+  is a loud, named build failure, never a silent fallback);
+* the declared `layout` names the root discipline — `release` (exactly one
+  root; a root directory strips one component, a lone root file IS the
+  tree) and `flat` (rootless top-level members);
+* the probe has a content shape (`{member, sha256}`) for trees that carry
+  no executable — nvm's checkout and the font directory prove identity by
+  pinned member bytes;
+* the destination may dispatch per platform — the font lands in
+  `.local/share/fonts` on linux and `Library/Fonts` on darwin.
 
 Per-tool seams: ripgrep, fd, fzf, tree-sitter, rainfrog at
-`.local/opt/<tool>` + a `.local/bin` link (release layout; lazygit
-`flat`); op at `.local/opt/op` + link (zip, `flat`); the JetBrainsMono
-Nerd Font exact tree (tar.xz, `flat`, content probe, per-platform
-targets; host cache/registration reads the directory); nvm at
-`.local/opt/nvm` (release, content probe) with the pinned Node nested at
-`.local/opt/nvm/versions/node/v<version>` (release, exec probe),
-declared parent-first in the node package's manifest. Every url and
-SHA-256 mirrors `versions.json` byte-for-byte — no pin catalog key
-changed. The full-home golden envelope carries the provisioned state;
-the generation ids move because the pin descriptors are
-content-addressed.
+`.local/opt/<tool>` + a `.local/bin` link (release layout; lazygit `flat`);
+op at `.local/opt/op` + link (zip, `flat`); the JetBrainsMono Nerd Font
+exact tree (tar.xz, `flat`, content probe, per-platform targets); nvm at
+`.local/opt/nvm` (release, content probe) with the pinned Node nested
+inside it (release, exec probe), declared parent-first. Every url and
+SHA-256 is declared in the owning domain's module — one pin, one owner,
+one surface (the `versions.json` mirror retired 2026-10-26).
 
 ## Capability domains
 
-The desired state is presented grouped by **capability domain** — the
-`foundation/<name>` lifecycle layers the catalog already declares —
-wherever it is listed: the `workstation capabilities` verb (text and
-`--json`), and the TUI capabilities browser. One pure view,
-`Workstation.CLI.Capabilities.group/1`, folds the existing `status` and
-`plan` wires into that envelope, so the CLI listing and the browser cannot
-disagree about structure or counts.
+The declared state is presented grouped by **capability domain** wherever
+it is listed: `nix eval .#workstation.report.capabilities` (scope with an
+attrpath — `.#workstation.report.capabilities.editor`) and the shim's
+`workstation capabilities` wrapper answer from the same fold, so the raw
+eval and the wrapper cannot disagree about
+structure or counts.
 
-Grain contract: domains and packages are rollup rows (package count, file
-count, how many files would change, last applied generation in the
-header); file rows are the drill-down leaves. Never a raw file dump at the
-top level. Every file appears exactly once, under its primary package
-(`hd(attribution)`), with remaining contributors shown as an `also` note;
-entries without attribution land in an honest `unattributed` bucket.
+Grain contract: domains and capabilities are rollup rows (capability count,
+file count, last applied generation in the header); file rows are the
+drill-down leaves. Never a raw file dump at the top level. Every file
+appears exactly once, under its primary capability (`hd(attribution)`),
+with remaining contributors shown as an `also` note; entries without
+attribution land in an honest `unattributed` bucket.
 
-Domain order is lifecycle order; the mapping today:
+Domain order is lifecycle order:
 
-| Domain | Packages |
+| Domain | Capabilities |
 | --- | --- |
 | `base` | `foundation` |
 | `fonts` | `fonts` |
@@ -268,312 +197,167 @@ Domain order is lifecycle order; the mapping today:
 | `agent` | `agent`, `herdr` |
 | `secrets` | `secrets` |
 
-A foundation name outside the pinned lifecycle order still renders
-(appended, sorted) rather than vanishing — a wrong-grained taxonomy is
-surfaced, not hidden.
+A domain name outside the pinned lifecycle order still renders (appended,
+sorted) rather than vanishing — a wrong-grained taxonomy is surfaced, not
+hidden.
 
 ## Validation
 
-The catalog and graph reject missing or duplicate package identities, invalid
-dependency or host-support values, unknown contribution fields, unknown
-lifecycle step names and malformed recipe envelopes (`Workstation.Core.Catalog.validations/0`).
-Registered providers reject unknown options, unsafe targets
-(absolute, traversing, engine-state overlap), conflicting attribute
-combinations, unconfined assets and ambiguous modify inputs. The assembler
-rejects duplicate exclusive targets, incompatible ancestor types/attributes,
-removals overlapping ownership and exact directories encompassing other owners.
+Validation is nix eval, fail-closed at eval time:
 
-The catalog rejects:
-
-- missing or duplicate package identities;
-- unknown lifecycle steps or contribution fields;
-- invalid dependency or host-support values;
-- undeclared foundation layers.
-
-The graph rejects duplicate IDs, unknown dependencies, dependency cycles, and enabled packages that require unsupported packages.
+- the report fold's integrity assertions: the per-capability surfaces must
+  compose to the full evaluation (a misclassified module file throws, never
+  silently shrinks the report), and the declared fragments/retire lists
+  must agree between the fold and the composed surface;
+- target collisions across capabilities throw at eval (two lanes claiming
+  one home target never silently compose);
+- pin gates: 64-hex digest shape, platform asset presence, probe output —
+  wrong pins fail the derivation build;
+- envelope identities in the report are asserted unique (the accounting
+  cannot lie);
+- the identity gate in `check.sh` holds per-host identity to
+  `hosts/<host>/default.nix`.
 
 ## Lifecycle phases
 
-| Phase | Input state | Responsibility |
+| Phase | Owner | Responsibility |
 | --- | --- | --- |
-| `bootstrap` | Whole source checkout, shell prerequisites | Verify the host distro prerequisite set (the machine-readable block in docs/tools.md — one refusal, the full missing set, the install command), install verified pinned runtime/backend, then the engine provisions and verifies the conflict-safe public launcher symlink |
-| `plan` | Source declarations and journal | Validate and preview attributable change sets, generated-source patches, target preconditions and unsupported reversals; mutate nothing |
-| `diff` | Same desired-state generation as apply | Ensure backend, preview file changes only; no retirement/setup/sync/verify |
-| `apply` | Validated plan | Retire owned real-account legacy service (never scratch), retire recorded clones whose recipe the plan dropped (guarded: HEAD at the recorded pin on a clean tree — drift refuses with the divergence named), publish the immutable generation, apply through the backend, refresh Node pin/PATH, setup |
-| `setup` | Applied target home | Provision package archives and configure host state |
-| `sync` | Configured applications | Restore mutable application state |
-| `verify` | Complete target home | Assert versions and observable behavior |
-| `update` | Git clone | Checked pull --ff-only, release refresh, bootstrap, apply, sync, verify; stop at first failure |
+| switch / rollback | `workstation-switch` (nix) | Build the generation from the flake, activate atomically, write the receipt to the state tree's `switch.log` |
+| `plan` / `status` / `capabilities` | `nix eval` over `workstation.report` (the shim wraps it) | Answer the declared state; mutate nothing |
+| verify lane | `modules/*/verify/*.sh` | Consumer smokes: deployed versions and observable behavior against the recorded pins |
 
-Every lifecycle verb is served by the workstation DAEMON (`apps/daemon`) —
-the only mutation engine and the only source of live state. The CLI and
-TUI are thin protocol clients over the per-user Unix socket: reads map to
-`status.run`/`plan.run`/`diff.run`, lifecycle verbs to
-`bootstrap.run`/`apply.run`/`update.run`/`sync.run`/`verify.run`, and
-`update` carries the whole chain in ONE op (a `steps` sub-chain). The
-`apply` verb sources its confirmation plan from the read-shaped
-`apply.plan` — the daemon's own mutation-bound composition (journal
-baseline, removal activation, retirements), NOT `plan.run`'s pure
-read-mode projection, whose generation is structurally different exactly
-when a declared removal activates (first convergence after a state
-change). Confirming against the composition the daemon executes keeps the
-stale-plan guard a true freshness comparison: it refuses a world that
-changed between the confirmation and the locked run, never that
-structural divergence. The apply refusal reports the COMPLETE conflict
-set (the full un-owned target list, computed before any mutation) with a
-per-target probe verdict, and `workstation apply --adopt` is the
-operator-gated door that adopts probe-verified un-owned targets —
-content identity is the law. It is the FIRST recovery move for that
-class, before any removal: adoption is wholesale (the journal claim
-records the whole target as owned, so un-declared content inside a
-probe-verified tree survives), while templates, version-mismatched
-download trees and pending-attempt strays refuse regardless of
-`--adopt` and recover by explicit removal — the adopt-first decision
-ladder leads docs/chezmoi.md's guarded-apply recovery section.
-The stale pending-attempt guard reconciles against the plan's whole
-desired surface (bootstrap-provisioned targets included) and refuses
-once with the complete unreconciled set, each line naming its per-class
-recovery door; a completed apply retires the pending anchor under
-`journal/retired/`, renamed and preserved.
-The
-client's ensure-daemon spawns a daemon detached from the installed release
-when the socket is absent or dead (bounded handshake; `workstation daemon
-stop` retires it manually); there is no in-process fallback — a missing
-daemon is an operator error, because the apply lock must have exactly one
-owner.
+Reads are pure evals — there is no resident process and no socket. The
+daemon (the resident read server, the pubsub hub, the `system`/`theme`
+overlay domains and the per-user Unix socket) retired with the engine:
+the VM boot test (`tests/nix`) pins the retirement itself — no daemon
+unit, no socket — plus the switch receipt in `switch.log`.
 
-The verbs that may replace the installed release (`apply`, `update`,
-`bootstrap`) first ask a LIVE daemon to exit gracefully
-(`Workstation.CLI.PreReplace`): the daemon runs the installed release in
-memory, so a replacement under a surviving beam would keep serving stale
-code. The daemon's `daemon.stop` is the graceful contract — the reply's
-flush ACKs the stop deterministically (the session marks the op's reply
-frame as flushed the moment it reaches the socket, and the stop proceeds
-past that handshake, bounded even when a client vanished mid-op) — after
-which it DRAINS its in-flight op tasks (bounded; each settling op
-releases its own apply lock), removes the socket node (no-follow
-owned-socket proof), then halts 0 — and the client waits, bounded (~10s),
-for BOTH the socket node's removal and the beam's actual exit before
-proceeding (the daemon's OS pid comes from the client's `SO_PEERCRED` read
-where the platform provides one — Linux — and otherwise from the
-`daemon.stop` wire result, which carries the daemon's own pid since
-darwin's `xucred` has no pid field and a dir-owner-proof generation no
-kernel read at all; a pid from neither source refuses fail-closed); the
-verb's own first call then spawns the fresh daemon on
-demand from the current release. A refusal (including a daemon too old to
-know `daemon.stop`) or a wedged exit FAILS CLOSED with an explicit error —
-the verb never replaces the release under a surviving stale daemon and
-never signals the process; killing is only ever the MANUAL stop verb's
-escalation ladder. The pre-replace stop composes with the release-refresh
-handoff: both share the daemon's pending-stop marker, so a second request
-while a stop is pending is a daemon-side no-op.
-
-Long ops stream structured events (`run.started`/`step.started`/
-`step.done`/`run.log`/`run.finished`, stamped with an `op_ref`) that both
-the headless lines and the TUI rows render; `op.abort` cancels the running
-op at its NEXT STEP BOUNDARY (never mid-step — a boundary is the only
-honest cancellation point for a lock-holding chain) and reports `aborted`;
-detaching (`q`) lets the daemon finish without a viewer. Recorded TUI
-deferrals: the abort key forwards `op.abort` with the stream's `op_ref`,
-which the screens learn from the `run.started` frame — an abort pressed
-before that first frame is a recorded no-op (the key is inert, the run
-continues) — and the TUI renders run/step boundaries only, so
-`apply.run`'s entry-level progress and `run.log` tails stay deferred
-until core applier hooks exist (core/ is frozen by contract). The daemon also
-serves the read-only `update.check` — `git ls-remote origin` vs local HEAD
-on the install repo the update verb pulls, 5 s bound, 10-minute TTL cache —
-answering `up_to_date`, `behind{local,remote,remote_ref}` or
-`unknown{reason}`; `status` merges it as an additive optional `update`
-object (absent when unknown), and the TUI shows the passive accent
-indicator `↑ update available (abc1234 → def5678) — [u] update` only when
-behind, with `[u]` launching the standard update flow. See the engine
-architecture in [docs/elixir.md](elixir.md).
-
-Bootstrap's engine step owns the `~/.local/bin/workstation` launcher symlink:
-identical canonical target, conflicting user files refused, no completion
-after a backend failure. Update refreshes the installed release from the
-freshly pulled checkout before the lifecycle steps so pin and engine changes
-take effect: when the engine checkout carries a buildable mix umbrella
-(the anchor resolution matches the launcher shim's), the platform is
-supported and the `mise` toolchain is present, the bootstrap step runs the
-same `bootstrap/install-runtime.sh` acquisition a fresh machine takes. The
-installer stamps every activated release with the source HEAD it built
-(`.built-from` beside the release); a stamp equal to the current checkout
-HEAD makes the refresh a no-op, so the update handoff terminates, and a
-failed build aborts the chain instead of continuing under stale code. A
-refresh that cannot happen is a failure, never a skip: a release whose
-stamp provably differs from the pulled HEAD on a host without the `mise`
-toolchain aborts the bootstrap naming the skew (the 2026-10-19 incident —
-bootstrap "ok", then apply under a stale release dying on a misleading
-payload-contract error), and an installer that exits 0 without stamping
-the pulled HEAD is refused the same way — trust the stamp, never the exit
-status. The apply surfaces enforce the same rule at their own door: the
-update chain's apply step, `apply.run`, and the `apply.plan` confirmation
-refuse a provable stamp-vs-HEAD skew ("stale engine release, refresh the
-release") BEFORE evaluating, because a stale generation evaluating fresh
-manifests reads its failures as payload-contract errors; without a
-buildable checkout or a stamp there is nothing provable and nothing
-changes. A bare
-host (no checkout) keeps the runtime-only bootstrap contract — the update
-chain refreshes nothing engine-side there, and the designed engine-upgrade
-path is re-running the acquisition from a checkout (`workstation bootstrap`).
-
-Because a refresh changes the release ON DISK while the running process
-keeps its OLD loaded code, the chain hands off — ENTIRELY daemon-side
-since the client/daemon refactor: the daemon's chained `update.run`
-captures the WRITER's identity as of before the installer re-stamps the
-release (`.built-from` stamp; an in-place refresh reuses the same release
-root, so identity can never be the path), writes the handoff note under
-the destination state root (writer stamp + the REMAINING steps), answers
-the op with the `handoff` outcome, and stops itself — the GRACEFUL stop
-(drain, socket-node removal, exit 0; see the verb table narrative above),
-which the client's pre-replace gate composes with instead of fighting. The
-CLIENT observes
-the disconnect, re-spawns the daemon from the REFRESHED release
-(ensure-daemon, bounded handshake), and re-sends the remaining sub-chain —
-the fresh daemon consumes the note, resumes the remaining steps under the
-same lock, clears the note after the resumed chain exits 0, and the
-operator sees one banner, one chain, one exit code. Identity is compared,
-never assumed: the refreshed code consuming a note of its OWN stamp is the
-resume target; an AGED stamp (the note predates the operator's newer
-checkout) means the note is stale — it is consumed with no resume (the
-designed engine-upgrade path is re-running `workstation bootstrap`, which
-also self-heals a stranded note), so the chain never resurrects steps an
-operator already superseded. The note names identity only; the client's
-re-spawn derives its daemon binary from the release ROOT
-(`<root>/bin/workstation`, guarded to be an existing executable), never
-from the identity token — spawning the stamp as a path is the 2026-10-05
-P0. A handoff decision after the final step is a no-op (never an empty
-resume), and a failing resumed chain is echoed once, never retried. The
-TUI does not survive a rebuild: interactive operators re-run
-`workstation update`, which the refresh stamp makes a fast no-op rebuild
-path. Because the refresh rewrites the release ON DISK while daemon nodes
-may be spawning or surviving against the same tree, the rendezvous gate
-(`Workstation.Daemon.Generation`, docs/elixir.md) backs the handoff:
-every daemon node pins its own generation at boot, refuses to serve when
-the installed `.built-from` stamp proves it stale (`stale_generation` on
-the wire, then a graceful self-stop so the next client respawns the
-installed generation), and the `--resume-from` child health-checks its
-fresh daemon with one real read op through DaemonClient before the
-resumed chain — apply included — proceeds. See [installation and daily use](../README.md).
-
-The launcher shim (`workstation/bin/workstation`) resolves the checkout repo
-anchor — the mix umbrella root — for EVERY verb and
-exports `WORKSTATION_ENGINE_REPO` when one exists, so a checkout-launched
-release resolves package assets and update steps without a preset
-environment (the anchor gate is `.github/scripts/shim-anchor.sh`, run by
-`check.sh` when a release tarball is built). A bare host matches neither
-anchor shape and exports nothing: the release keeps its own fail-closed
-detection.
+A switch is the one event a generation carries: the driver's tail appends
+the receipt line to `switch.log`, and the switch re-points the theme token
+path (`~/.local/state/workstation/theme.json`) — consumers read files or
+watch the link, nothing polls. The historical write plane's op surface —
+`bootstrap.run`/`apply.run`/`update.run`/`sync.run`/`verify.run`,
+the confirmation-plan flow, the adoption ladder, the stale-pending guard,
+the pre-replace daemon drain, the release-refresh handoff and its
+rendezvous gate — retired with the engine's write plane (the nix
+generation is atomic; rollback replaces every recovery ladder).
 
 ## Neovim package and profile
 
-`packages/editor/nvim` declares the base/standard/Go language intents as
-`nvim-profile` recipes; language capabilities such as `typescript`
-declare their own intents the same way. The engine composes them
-through the discovered `nvim-profile` provider
-(`Workstation.Packages.Nvim.Profile`): intents compose in collection order —
-the graph's stable walk (dependencies first, ties by id sort; no intent
-declares an order number) — the assembled list is validated by the nvim-owned compositor
-(`Workstation.Packages.Nvim.Profile`) and ONE attributed chezmoi recipe is
-emitted that serializes the deployed
-`.config/nvim/lua/languages/profile.lua`. The deployed profile is plain
-runtime Lua owned by the editor capability; a tampered deployed copy can
-never alter the graph or the desired source because composition is
-source-derived. `nvim` requires `foundation`, `node` and `go` explicitly;
-`typescript` requires `node` and `nvim`. Dependencies are never inferred
-from deployed profile state.
+The editor capability declares its payload (`files/.config/nvim/**`) as
+`home.file` surfaces and the nixpkgs neovim as `.local/bin/nvim` — the
+bootstrap pin is replaced loudly at eval (the payload must still declare
+the link; the drift guard fires on both sides). Language capabilities
+(`typescript`, `elixir`) declare their profile entries as module data:
+`lazyvim_extras`, `plugin_module` and mason packages. A nix derivation
+composes them, in declared order, into ONE deployed
+`.config/nvim/lua/languages/profile.lua` (`lib.generators.toLua`
+serialization, the byte shape pinned by a derivation-output golden). A
+tampered deployed copy can never alter the declared source because
+composition is derivation-derived.
 
 | Consumer | Use |
 | --- | --- |
 | `packages/editor/nvim/files/.config/nvim/**` | Editor runtime payload (lazy.nvim bootstrap, own behavior verification) |
-| `.config/nvim/lua/languages/profile.lua` (deployed) | Generated profile consumed by the editor runtime; serialized by `Workstation.Packages.Nvim.Profile` |
+| `.config/nvim/lua/languages/profile.lua` (deployed) | Composed profile consumed by the editor runtime; built by the nvim capability's derivation |
+| `.config/nvim/lazy-lock.json` | The pinned plugin lock: seeded by the activation merge script from the payload baseline, never byte-compared afterwards (runtime-extended) |
 
-The former package-side compositor and child-verification helpers
-(`packages/editor/nvim/{compose,profile,init,leaf,child}.lua`) were engine-side Lua
-and died with the engine; the profile contract they enforced now lives in
-`Workstation.Packages.Nvim.Profile`.
+The manifest-era compositor (`Workstation.Packages.Nvim.Profile`) is
+retired: the composition is native (the editor capability's derivation —
+the absorption chain's named gap, closed), and the VM E2E asserts the
+deployed profile.
 
 ## Hermes resources
 
 The `agent` capability provisions Hermes Agent **full-stack** (operator
-ruling 2026-10-15, "and we still dont have hermes?": the engine owns the
+ruling 2026-10-15, "and we still dont have hermes?": the capability owns the
 stack — resources-without-runtime is a defect, not a documented manual
-step; recorded in AGENTS.md's operating-contract law). The capability owns
-four surfaces:
+step; recorded in AGENTS.md's operating-contract law). Four surfaces:
 
-1. **The pinned checkout** — the git recipe (`workstation/versions.json`
-   carries `hermes_agent_git_commit` / `hermes_agent_git_url`, upstream
-   `NousResearch/hermes-agent`) provisioning `~/.hermes/hermes-agent` at
-   the pinned commit.
-2. **The pinned interpreter** — a checksum-gated download pin
-   (`hermes_python` + per-platform URL/SHA-256 in `workstation/versions.json`)
-   installing the python-build-standalone `install_only` archive at
-   `.local/opt/hermes/python` (one root stripped, probe
-   `bin/python3 --version`). The pin is the SAME release hermes-agent's own
-   `pm/lock.json` carries at `hermes_agent_git_commit` — the pinned commit
-   is the authority for which interpreter build the runtime expects, and the
-   engine mirrors it with the usual URL+SHA-256 discipline.
-3. **The engine launcher** — an engine-authored payload at
-   `.local/opt/hermes/bin/hermes` (executable), surfaced on PATH as the
-   contract-maintained symlink `.local/bin/hermes`. The launcher resolves
-   the interpreter and the checkout from `$HOME` at run time (no baked
-   paths), runs the interpreter isolated (`-I`, no inherited `PYTHON*`
-   config, bytecode kept out of the engine-owned checkout) and fails closed
-   with a named message when either pin is missing.
-4. **The managed skills** — `~/.hermes/skills/secrets` is served through the
-   copy contract (`Workstation.Core.Contracts.Copy`): an idempotent
-   byte-compare serve with no derived backend state, because the agent home
-   is hot state the agent mutates between applies — any tracked state under
-   it would fight those writes and fail every apply on an agent-active host
-   (operator ruling 2026-10-15, "stop dir tracking"). The retired `lazyvim`
-   skill target carries a recorded-ownership removal tombstone, which
-   dir-tracks nothing: removals have no source name and no ancestors.
+1. **The runtime pin** — the flake's `hermes-agent` input, pinned by
+   fetchGit rev (`flake.nix`, the agent domain's pin surface) and surfaced
+   as `outputs.hermesAgentPin` -> `programs.hermes.pin`; the activation
+   ensure moves `~/.hermes/hermes-agent` to the pin — clone/fetch only
+   when absent or clean-and-behind, never touching a dirty or
+   runtime-advanced tree. The hot-dir law: activation mutates, the file
+   plane never tracks. The checkout stays hot because the runtime writes
+   into it (update machinery, the pm store, recovery closures); a full
+   derivation is the named alternative, deferred until hermeticity
+   demands it. The deployed pin manifest (`.local/opt/hermes/pin.json`)
+   carries the pin for the verify lane — the deployed pin, never a repo
+   file.
+2. **The pinned interpreter** — a checksum-gated pin declared in
+   `modules/agent/agent.nix` (per-platform URL/SHA-256 module literals)
+   at `.local/opt/hermes/python` (probe `bin/python3 --version`). The pin
+   is the SAME release hermes-agent's own `pm/lock.json` carries at the
+   pinned rev — the rev is the authority for which interpreter build the
+   runtime expects.
+3. **The engine launcher** — `programs.hermes.package`, deployed at
+   `.local/opt/hermes/bin/hermes` and on PATH as `.local/bin/hermes`. The
+   launcher resolves the interpreter and the checkout from `$HOME` at run
+   time (no baked paths), runs the interpreter isolated (`-I`, no
+   inherited `PYTHON*` config, bytecode kept out of the engine-owned
+   checkout) and fails closed with a named message when either pin is
+   missing.
+4. **The declared skills** — `programs.hermes.skills`
+   (`modules/agent/agent.nix` renders, owning capabilities set): each
+   enabled skill serves as ONE store entry symlink per target profile
+   (`profiles` — "default" is `~/.hermes/skills`, a named profile is
+   `~/.hermes/profiles/<name>/skills`). The entry is atomic: a switch
+   replaces the whole skill; an in-place edit fails on the read-only
+   store — declared truth wins, loudly. The skills PARENT stays hot (the
+   hot-dir law): `skills_sync` seeds hermes' bundled skills there and the
+   curator archives there; a build-time assertion refuses a declared name
+   the pinned tree bundles (skills_sync owns that name and would fight
+   the link). `secrets` is authored at `modules/agent/skills/secrets`;
+   `hsql` is generated from the harlequin derivation by `hsql --skill` at
+   build time (the hsql precedent: version-matched, offline). Gateway
+   extensions (`programs.hermes.extensions`) link the same way into
+   `~/.hermes/plugins/<name>`, where user discovery outranks bundled;
+   per-plugin enablement stays live state.
 
-One verifier, `workstation/packages/agent/verify/hermes.sh`, asserts all of
+One verifier, `modules/agent/verify/hermes.sh`, asserts all of
 it on every host and ends in the consumer smoke: `hermes --version` through
 the PATH entry must succeed — full-stack or exit 1; a missing or broken
 runtime is provisioning drift, never a documented state. Beyond the
 consumer gate the runtime stays upstream's: `hermes update`'s pm-managed
 dependency closure, tool store (`~/.hermes/tools/...`) and gateway are
-runtime-extended state the package never freezes — the engine provisions
-the interpreter and the entry point exactly as it provisions mise and nvim,
-and upstream's own machinery fills its store from its own locks on demand.
-Runtime updates go through the engine: bump `hermes_agent_git_commit`, move
-the `hermes_python` pins to the release the new commit's `pm/lock.json`
-names, remove the checkout explicitly (the git contract never moves a
-pinned checkout), re-apply.
+runtime-extended state the capability never freezes. Runtime updates go
+through the pins: bump the `hermes-agent` input's rev (`nix flake lock`
+follows), move the `hermes_python` pins to the release the new commit's
+`pm/lock.json` names, and switch.
 
-Kanban boards and profiles are runtime state the package never owns: the
-package ships the pins, the launcher, the skills and the verify only.
+Kanban boards and profiles are runtime state the capability never owns: it
+ships the pins, the launcher, the skills and the verify only.
 
-## Package payload rule
+## Payload rule
 
-Host-specific or feature-specific payload logic remains under the owning
-package as data or package-owned assets — the engine has no per-package code
-hooks and never executes package modules:
+Host-specific or feature-specific payload remains under the owning
+capability as data — the substrate has no per-capability code hooks and never
+executes payload modules:
 
 ```text
-packages/fonts/files/
-packages/languages/node/files/
-packages/agent/verify/
+modules/fonts/files/
+modules/languages/node/files/
+modules/agent/verify/
 ```
 
-Everything the engine must know about a package is declared in its native
-catalog module (`apps/core/lib/workstation/core/catalog/packages/`);
-anything requiring host execution is expressed as a provisioning recipe the
-backend executes, a verify assertion the engine evaluates, or package-owned
-payload the host tool consumes.
+Everything the substrate must know about a capability is declared in its
+native module; payload bytes are referenced by relative path and copied
+into the store at eval. Anything requiring host execution is a pin
+derivation, an activation script, or a verify assertion the verify lane
+evaluates. The payload home co-locates into `modules/<domain>/` when the
+absorption chain's final card lands.
 
 ## Verification requirements
 
 - Verify executable versions through the configured environment.
 - Verify tmux with an isolated server/socket.
 - Verify fonts through host registration or cache visibility.
-- Verify Neovim imports by successful startup.
+- Verify Neovim imports by successful startup (and the composed profile).
 - Verify languages with real files, parsers, and attached LSP clients.
 - Verify formatters by comparing on-disk output.
-- Verify the agent package's full stack on every host: resources (pinned
+- Verify the agent capability's full stack on every host: resources (pinned
   checkout, managed skills) and runtime (pinned interpreter, engine
   launcher) alike, ending in the `hermes --version` consumer smoke — an
   absent or broken runtime is provisioning drift, never a documented state.

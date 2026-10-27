@@ -5,7 +5,7 @@
 | Target | `~/.config/nvim` |
 | Distribution | LazyVim |
 | Plugin manager | lazy.nvim |
-| Managed source | `workstation/packages/editor/nvim/files/.config/nvim/` |
+| Managed source | `modules/editor/nvim/files/.config/nvim/` |
 
 ## Startup and composition
 
@@ -31,27 +31,24 @@
 
 ## Profile fields
 
-The deployed `languages/profile.lua` is **generated**
-by the nvim-owned compositor (`Workstation.Packages.Nvim.Profile`) from declared
-`nvim-profile` recipes (base/standard/Go from the nvim package's
-`manifest.json`, language entries from their own packages' manifests such as
-`packages/languages/typescript/manifest.json`),
-ordered Go, TypeScript, standard. The engine compositor checks these fields:
+The deployed `languages/profile.lua` is **composed natively**: the editor
+capability's module (`modules/editor/editor.nix`) folds the language
+entries the language capabilities declare (`workstation.editor.languages`)
+through `lib.generators.toLua` in a build-time derivation — there is no
+engine in the loop. Entries compose in id order (the base/standard
+entry is the editor module's own). The declared fields:
 
 | Field | Shape / use |
 | --- | --- |
 | `id` | Required unique non-empty string |
-| `requires` | Optional list of non-empty host capability IDs; added to `nvim` dependencies |
+| `requires` | Optional list of non-empty host capability IDs |
 | `lazyvim_extras` | Optional list of non-empty module names; imported before base custom specs |
 | `plugin_module` | Optional non-empty module name; imported after base custom specs |
 | `mason_packages` | Optional list of non-empty package names; verification requires entries in `mason-lock.json` |
-| `language_cases` | Optional list of tables with non-empty strings `language`, `filename`, `contents`, `client`; real parser/LSP checks |
-| `formatter_cases` | Optional list of tables with non-empty strings `language`, `filename`, `contents`, `expected`; on-disk output checks |
 
-Formatter cases also support `project_files`, a filename-to-contents map written
-by the verification consumer (the deployed editor runtime's leaf helpers) before
-the source file. The profile validator does not validate that map or reject unknown
-fields; list checks tolerate gaps rather than enforcing a strict dense-array schema.
+The behavior cases (`language_cases`/`formatter_cases`) stay payload data:
+they feed the verify lane's parser/LSP and formatter checks, not the
+deployed file.
 
 Put language-specific LazyVim imports here, include parser/LSP cases for supported
 languages and formatter cases wherever formatting is promised. See
@@ -59,17 +56,17 @@ languages and formatter cases wherever formatting is promised. See
 
 ### Editor specs versus lifecycle packages
 
-`workstation/packages/languages/typescript/files/languages/plugins/typescript.lua` returns lazy.nvim
+`modules/languages/typescript/files/languages/plugins/typescript.lua` returns lazy.nvim
 plugin specs — TypeScript/JavaScript LSP ownership, completion and editor
-commands — deployed as a plain runtime module. The `workstation/packages/languages/typescript`
-package owns it, declares the profile intent (`plugin_module =
+commands — deployed as a plain runtime module. The `modules/languages/typescript/`
+capability owns it, declares the profile intent (`plugin_module =
 "languages.plugins.typescript"`) and verifies its own behavior through the
-nvim leaf helpers; `workstation/packages/editor/nvim/` owns editor sync, locks and
+nvim leaf helpers; `modules/editor/nvim/` owns editor sync, locks and
 base/standard/Go verification; `node` owns the host runtime. Deployed Neovim
-imports runtime configuration only, never package factories or engine modules.
+imports runtime configuration only, never capability factories or engine modules.
 
-`workstation/packages/languages/elixir/files/languages/plugins/elixir.lua` follows the same split
-for Elixir/HEEx: the `workstation/packages/languages/elixir` package declares the profile intent
+`modules/languages/elixir/files/languages/plugins/elixir.lua` follows the same split
+for Elixir/HEEx: the `modules/languages/elixir/` capability declares the profile intent
 (the `lazyvim.plugins.extras.lang.elixir` extra, Mason's `elixir-ls`, attaching
 as the `elixirls` client) and verifies real LSP attach plus `mix format`
 formatting through the leaf helpers, while the deployed module constrains

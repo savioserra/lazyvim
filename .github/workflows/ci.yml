@@ -11,40 +11,60 @@ permissions:
   contents: read
 
 jobs:
-  unix:
-    strategy:
-      fail-fast: false
-      matrix:
-        os:
-          - ubuntu-24.04
-          - macos-15
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+  # the static battery: identity gate, engine-free gate, shell syntax +
+  # ShellCheck, the launcher shim's dispatch gate (stubbed nix — no nix
+  # install needed), whitespace. The nix-eval read gate inside check.sh
+  # self-skips here and is owned by the nix job below plus the docker
+  # acceptance (docs/testing.md).
+  static:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
 
-      # CI-only unmanaged prerequisites, never workstation lifecycle installers.
-      # Runner images supply Git, curl, archive/hash tools and build tools.
-      - name: Prepare unmanaged tmux and Bash prerequisites
+      # runner-provided; no unpinned lint downloads
+      - name: Confirm ShellCheck is available
         shell: bash
-        run: |
-          set -euo pipefail
-          if [[ "$RUNNER_OS" == Linux ]]; then
-            sudo apt-get update
-            sudo apt-get install -y tmux
-            command -v shellcheck # runner-provided; no unpinned lint downloads
-            command -v fc-cache
-          else
-            test "$(uname -m)" = arm64
-            brew install bash tmux
-          fi
+        run: command -v shellcheck
 
-      - name: Bootstrap and validate isolated engine lifecycle
+      - name: Run the check matrix
+        shell: bash
+        run: sh .github/scripts/check.sh
+
+  # the nix leg: the declared-state reads and the flake's eval surface.
+  # Evaluation only — closure builds are the docker acceptance's job
+  # (docs/testing.md); this proves the reads answer and every host leg
+  # still evaluates on a clean checkout.
+  nix-evals:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+
+      - uses: DeterminateSystems/nix-installer-action@e50d5f73bfe71c2dd0aa4218de8f4afa59f8f81d # v16
+
+      - name: Evaluate the declared-state reads
         shell: bash
         run: |
           set -euo pipefail
-          # Outside runner HOME/source; retained for inspection, never rm caller input.
-          scratch_parent="$(mktemp -d /tmp/workstation-ci.XXXXXX)"
-          ./.github/scripts/test-apply.sh "$scratch_parent/home"
+          for verb in status plan capabilities; do
+            nix eval --json ".#workstation.report.$verb" > /dev/null
+          done
+          nix eval --json .#workstation.report.status.counts
+
+      - name: Evaluate every host leg
+        shell: bash
+        run: |
+          set -euo pipefail
+          nix eval --raw .#nixosConfigurations.wsl.config.system.build.toplevel.drvPath > /dev/null
+          nix eval --raw .#nixosConfigurations.vm-test.config.system.build.toplevel.drvPath > /dev/null
+          for system in $(nix eval --json .#darwinConfigurations --apply 'builtins.attrNames' | tr -d '[]" ' | tr ',' ' '); do
+            nix eval --raw ".#darwinConfigurations.$system.config.system.build.toplevel.drvPath" > /dev/null
+          done
+          for home in $(nix eval --json .#homeConfigurations --apply 'builtins.attrNames' | tr -d '[]" ' | tr ',' ' '); do
+            nix eval --raw ".#homeConfigurations.$home.activationPackage.drvPath" > /dev/null
+          done

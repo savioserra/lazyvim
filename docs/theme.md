@@ -1,8 +1,8 @@
 # Theme capability
 
 One canonical color source for every workstation surface that renders color.
-Owned by `workstation/packages/theme` (`tokens.lua` holds the data payload;
-the engine carrier is `Workstation.Core.Theme.Tokens`). Re-branding edits both carriers.
+Owned by `modules/theme/` (`tokens.lua` holds the data payload; nix reads it
+directly at eval). Re-branding edits that one carrier.
 
 Current brand: **Starlight** — the oasis.nvim starlight `@thm_*` palette
 (dark) and its `light_3` sibling (light, upstream's default intensity).
@@ -37,94 +37,49 @@ all reusing existing palette hues:
 | --- | --- | --- |
 | `border_engine` | engine panel | blue — engine-core forward view (`accent` = `@thm_primary #5badff` family) |
 | `border_plan` | plan panel (home + tab) | blue — the planned mutation surface |
-| `border_journal` | journal panel | green — health-log semantics (`ok` = `@thm_green #7fcf78` family) |
+| `border_journal` | reserved (declared; the journal box retired with the write plane) | green — health-log semantics (`ok` = `@thm_green #7fcf78` family) |
 | `border_status` | status panel (home + tab) | green — health verdicts |
 | `border_capabilities` | capabilities panel + browser | yellow — pending-apply caution (`warn` = `@thm_yellow #f0e68c`, doubles as the theme's active-pane border hue) |
-| `border_diff` | diff panel (home + tab) | red — the mutation surface (`err` = `@thm_red #ff7979` family) |
+| `border_diff` | reserved (declared; the diff box retired with the write plane) | red — the mutation surface (`err` = `@thm_red #ff7979` family) |
 
 They live in both layers (slots + per-appearance palette) and are
-overlay-settable like every other palette role; `Tokens.border_roles/0` is
-the closed membership list a consumer validates against. Panels outside the
-domain set (daemon liveness, host, help, verb overlays) keep `chrome`.
+overlay-settable like every other palette role. Panels outside the
+domain set (host, help, overlay surfaces) keep `chrome`.
 
 ## Distribution
 
-The package contributes one `provision.chezmoi_data` recipe: a single
-source-root `.chezmoidata.toml` envelope rendered deterministically from
-`tokens.chezmoidata()`. It is generation metadata — staged, hashed in the
-manifest, byte-verified — but never a home target. chezmoi merges it into
-template data at the top level, so templates read
-`{{ .theme.slots.accent }}` and `{{ .theme.palette.dark.accent }}`.
-
-At most one package may declare the envelope; a second declarer fails the
-plan.
+The token set has no envelope and no render step: `tokens.lua` is the
+canonical byte source and nix reads it directly at eval — the fail-closed
+line extraction in `modules/theme/theme.nix` (every listed key must exist,
+every value must match its layer's shape, the extracted set asserted
+non-empty; a restructure the parser cannot read fails the eval, never
+renders empty tokens). Template consumers substitute slots natively:
+`workstationTheme.lib` (the flake output carrying `renderSlots` +
+`assertNoUnresolved`) turns `{{ .theme.slots.<name> }}` references into
+extracted values, and a template naming a slot the token set does not
+carry fails the eval. One home target IS deployed: the store token path —
+`modules/theme/tokens.nix` links the extracted tokens (palette + slots) at
+`~/.local/state/workstation/theme.json`, a store symlink the switch
+re-points every generation (the switch-time push; consumers read the file
+or watch the link, nothing polls).
 
 ## Consumers
 
 | Surface | Layer | Mechanism |
 | --- | --- | --- |
 | tmux (status bar) | — (upstream-truthed) | pinned `tmux2k` at the upstream `onedark` theme; `.tmux.conf` sets no theme color options — upstream's onedark palette is canonical (the tokens palette does not feed the bar). The tmux2k slot template target still carries its removal tombstone from the ADDENDUM 2 swap ([tmux](tmux.md)) |
-| nunchux (launcher config) | `slots` | `template = true` path owned by the `nunchux` package (moved from tmux with the payload); plugin live — the checkout is engine-provisioned by the pinned-clone recipe ([tmux](tmux.md)) |
-| herdr | philosophy (terminal-following) | documented canonical choice only: `[theme] name = "terminal"`, `auto_switch = true` (see [herdr](herdr.md)); herdr tracks the host terminal's live ANSI palette, so under the Starlight rebrand it renders starlight via the terminal theme — the engine never writes herdr's live `config.toml` and ships no herdr colors |
+| nunchux (launcher config) | `slots` | the terminal module renders `.config/nunchux/config` from the payload template by slot substitution (`renderSlots` from the extracted tokens, asserted unresolved-slot-free); the checkout is the fetchGit-pinned store tree ([tmux](tmux.md)) |
+| herdr | philosophy (terminal-following) | documented canonical choice only: `[theme] name = "terminal"`, `auto_switch = true` (see [herdr](herdr.md)); herdr tracks the host terminal's live ANSI palette, so under the Starlight rebrand it renders starlight via the terminal theme — the substrate never writes herdr's live `config.toml` and ships no herdr colors |
 | nvim | upstream pin (`oasis-starlight`) | `lazy-lock.json` pins `uhs-robert/oasis.nvim`; the editor rides the upstream starlight palette tokens.lua cites — not a generated colorscheme (rebrand spec S-R4); starlight wins all hosts, Omarchy import dropped (S-R2) |
-| term_ui (Elixir TUI + daemon) | `palette` | shipped mirror `Workstation.Core.Theme.Tokens` with tests: the daemon `theme.resolve` overlay applies role sets over it (docs/elixir.md, daemon wire), and the CLI TUI theme resolver mirrors the same palette (pinned by `theme_test.exs` "base path mirrors the core tokens palette exactly") |
 
-## TUI box anatomy note
+## Consumers and the follow law
 
-The TUI's btop-style box anatomy (`Workstation.CLI.TUI.Shell.Box`, hard
-contracts in docs/elixir.md "TUI application shell") is role-keyed end to
-end. Title islands follow btop's exact construction: the superscript keycap
-digit (`Shell.keycap/1`, the btop_draw.cpp:87 superscript table — ⁰ ¹ ² ³
-⁴-⁹, clamped 0-9) rides `shortcut`, bold, with no space before the title
-word (`┐¹engine┌`, never `┐1 engine ┌`); the title word itself rides
-`text` (near-white), bold — btop's global title treatment. Panel borders
-are per-domain (`border_*` roles above); box connectors and frames outside
-the domain set = `chrome`; buttonbar keycaps = `shortcut`, bold, with their
-enabled labels = `text` (disabled = `inactive`); active tab and label
-highlights = `accent`; selection = the `selected_bg`/`selected_fg` pair
-(never color-alone); de-emphasis = `inactive`; value severity/age = the
-`ramp_start`/`ramp_mid`/`ramp_end` trio (journal freshness, drift age).
-The plain-digit keycap form exists only as an explicit narrow-TTY opt-in,
-never the default. No box painter hardcodes a color, so re-branding stays
-a two-carrier edit: `tokens.lua` and `Workstation.Core.Theme.Tokens`.
-
-## Tests
-## Derivation contract
-
-Consumers derive from the token set through the theme derivation contract
-(`Workstation.Core.Theme.Derivation`): a package declares its needs — which
-roles, which appearances — and the platform validates the declaration
-fail-closed against the token set, resolves the palette, and hands it to a
-consumer-owned rendering adapter. The consumer owns rendering; the platform
-owns resolution and the law. Three canon patterns cover every consumer in
-this document:
-
-- **Envelope-rendered** (pi/agent canon): the package requires `theme` and
-  its payloads are templates rendered against the data envelope
-  (`.chezmoidata.toml`) — no per-build adapter runs; the backend renders.
-- **Terminal-following** (herdr canon): no generated artifact; the
-  consumer's own live config follows the host terminal, and the declaration
-  records that choice so the theme contract carries no consumer record.
-- **Upstream-truthed** (tmux canon): the consumer rides an upstream palette
-  and the token values mirror it for engine-side surfaces; no runtime
-  derivation runs.
-
-In-process surfaces that overlay roles at runtime are not derivations —
-they resolve through `Workstation.Core.Theme.resolve/1` against the same
-token set, so there is exactly one color truth per layer.
-
-
-- `apps/core/test/workstation/core/theme/tokens_test.exs`: parity
-  anchor — the mirror's rendered `.chezmoidata.toml` envelope is
-  byte-identical to the committed theme goldens fixture, contract values
-  match `tokens.lua`, the role set is complete, and every palette role is
-  overlay-settable.
-- `apps/cli/test/workstation/cli/tui/theme_test.exs`: the CLI base
-  palette mirrors the core tokens exactly; daemon resolutions carry the
-  closed role set.
-- `apps/core/test/workstation/golden_generate_test.exs`: the plan
-  pipeline regenerates the committed goldens byte-for-byte, so any engine
-  edit that forgets the Elixir mirror or the rendered envelope fails the
-  drift anchor.
-- `mix workstation.goldens` re-records the committed goldens after a
-  deliberate token change (regenerate, never patch).
+The theme's live surface is the store token link
+`~/.local/state/workstation/theme.json`: the switch re-points it at each
+generation's token store path (the activation hook), and consumers read it
+at startup or watch the link — nothing polls, no daemon drives the
+follow. The daemon's `theme.resolve` overlay domain retired with the
+daemon; the retired Elixir TUI's shipped token mirror retired with the
+TUI. A new consumer renders from the deployed token file or from
+`workstationTheme.lib` (the flake output) at eval — never from a second
+copy of the bytes.

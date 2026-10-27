@@ -6,77 +6,57 @@
 sh .github/scripts/check.sh
 ```
 
-The fused engine's matrix is Elixir-native and fails fast on golden drift:
-the byte-identical golden replay (`mix workstation.goldens` vs
-`tests/goldens`) is the FIRST check.sh step, so a payload edit under
-`workstation/packages/` without a golden re-record reds in seconds — with a
-message naming `mise exec -- mix workstation.goldens` — before the full
-`mix test` suite (hermetic fixture homes, no host state touched). The
-in-suite drift anchor (`Workstation.Core.GoldenGenerateTest`) carries the
-same assertion for direct `mix test` runs. Then: `sh -n` + ShellCheck
-over the remaining shell scripts, the UTF-8 locale guard gate over the POSIX
-shim (stubbed `locale`, stub release; no tarball needed), the release boot
-smoke when a local release tarball is built, and `git diff --check`.
-ShellCheck is required in Linux CI; report local absence.
+The static battery: the nix identity gate (per-host identity lives only in
+`hosts/<host>/default.nix`), the engine-free gate (the tree-wide grep for
+the Elixir module token stays empty — the engine stays gone), `sh -n` +
+ShellCheck over the shell surfaces, the launcher shim's dispatch gate (a
+stub `nix` and a stub `workstation-switch` — dispatch, flake resolution
+order, delegation and fail-closed paths, no nix install needed), the nix
+eval read gate (`#workstation.report.<verb>` answers — self-skipped where
+nix is absent; the docker acceptance owns it there), and
+`git diff --check`. ShellCheck is required in Linux CI; report local
+absence.
 
-The retired Lua suites, the `nvim -l` syntax pass and StyLua died with the Lua
-engine; `tests/goldens/` stays canonical and is regenerated, never hand-edited.
-Never run fixtures directly against an applied home: they write fake Node/npm state.
+Verification beyond the battery is behavioral (docs/endgame.md decision 2):
+structural assertions live in the eval (the report fold's integrity
+checks), never as byte contracts.
+Never run fixtures directly against a switched home: they write fake Node/npm state.
 For bounded Linux source checks, use a cleared environment, network denial,
 120-second deadline and a **4 MiB per-file** limit (`ulimit -f 4096` in a shell
 using 1024-byte blocks; use the byte-equivalent setting otherwise).
 
-Synthetic graph/provisioning/bootstrap/CLI/harness tests are not downloaded-asset,
+Synthetic graph/composition/CLI/harness tests are not downloaded-asset,
 real Pi discovery/reload or native-platform acceptance. Backend rendering requires
-[a full source audit first](chezmoi.md#isolated-validation); dry-run is not a sandbox.
+[a full source audit first](home-state.md#isolated-validation); dry-run is not a sandbox.
 
 ## Real integration
 
-With explicit network/installation authorization, `.github/scripts/test-apply.sh
-<new-absolute-home>` runs bootstrap → public apply → sync → checks → public verify.
-The target must be absent and outside the real home/source (not their ancestor or
-descendant). The harness claims it atomically, clears ambient environment/Git
-configuration, uses private writable roots and never loads login profiles or
-`/etc` auth snippets. Failures retain scratch evidence and the failing exit code.
-Use existing trusted prerequisites; do not download lint tools to close a local gap.
+Real substrate integration needs nix (docker `nixos/nix:2.35.3` against a
+persistent store volume works; build from `git archive HEAD` extractions —
+worktree gitdirs do not resolve in containers) and explicit authorization.
+The acceptance ladder, cheapest first:
 
-## Linux container E2E recipe
+- **The reads answer**: `nix eval --json .#workstation.report.{status,
+  plan,capabilities}` and every host leg's toplevel `drvPath` evaluates
+  (CI's nix job runs exactly this on a clean checkout).
+- **The closures build**: the linux home configuration's
+  `activationPackage` and the VM test's system closure.
+- **The VM E2E** (`tests/nix/run-vm.sh`): boots the NixOS VM (tcg where
+  KVM is absent; the timeout is the boot bound) and runs
+  `tests/nix/vm-e2e.nix` inside it — the daemonless retirement proof (no
+  unit, no socket), the consumer smokes (the launcher shim dispatch, the
+  nvim profile link, the language profile, the agent skills at pinned
+  versions, the tmux/nunchux/foundation planes, the theme token path), the
+  adopt rehearsal (a copy-contract tree makes way for the declared
+  symlink), the apply-driven switch (`workstation-switch apply` over the
+  offline activation override) and the switch receipt. This IS the
+  fresh-host parity proof (r5 standard): a bare VM home, one apply from
+  the flake, the resulting home matching the declared expectations,
+  consumer-smoked end to end. Receipts land in `tests/nix/*.log`
+  (gitignored).
 
-[`.github/Dockerfile.e2e`](../.github/Dockerfile.e2e) wraps the unchanged harness.
-Build and execution require separate approval. A recipe/offline pass proves neither
+Work in a scratch context: never a live home, never the operator's store
+paths. Failures retain the build log, the VM console output and the failing
+exit code. Use existing trusted prerequisites; do not download lint tools to
+close a local gap. A green offline pass proves neither the eval nor the boot
 ran; Linux containers do not establish native macOS arm64 or WSL acceptance.
-
-### Base provenance
-
-The `FROM` pin is the official Ubuntu 24.04 `linux/amd64` manifest SHA256
-`1e0a86e57d247923571b75e0aaf48a1449cf8c543d51fb3e07a4a7d7bfa79316`.
-Public [manifest metadata](https://registry-1.docker.io/v2/library/ubuntu/manifests/24.04)
-and resolution receipts are retained in TASK-34 notes/Git history. Apt is limited
-to image-local unmanaged OS/build/font/shell prerequisites (repository versions
-are unpinned); no managed runtimes/apps, user caches or credentials are baked in.
-
-### Build context and runtime contract
-
-- Prepare an independent Git clone of the reviewed commit with sanitized Git
-  settings and `clone --no-local --no-hardlinks --template=`. Remove local origin;
-  confirm exact HEAD, clean tracked/untracked status, no alternates or hardlinked
-  objects. Include `.git` for the checker. Never send the working checkout, root
-  home, untracked `.pi`, auth files or ambient Docker/Git configuration. Build only
-  this context with `--platform=linux/amd64 -f .github/Dockerfile.e2e`.
-- Use image UID/GID 10001, HOME `/caller`, and a read-only rootfs including the
-  account-owned `/source`; no writable source overlay. Fixture copies may be
-  edited only in private scratch space.
-- Supply a fresh labeled test-only `/work` volume (initialized to 10001:10001) and
-  **private, bounded, executable `/tmp` tmpfs**: fixtures execute shims there, so
-  `noexec` is invalid. Keep `nosuid,nodev`; record actual mount flags. `/work/home`
-  must be absent and distinct from `/caller`. Retain volume/first-failure receipts;
-  no `--rm`, automatic retries or broad cleanup.
-- Drop all capabilities, set no-new-privileges; bound CPU, memory, PIDs, per-file
-  size (2 GiB) and wall time (25 minutes with kill escalation). Use private network
-  and PID namespaces. No privileged mode, host networking, published ports, host
-  sockets/directory mounts, auth/session environment, service/daemon changes,
-  model/vault/account probes or sourced login profiles.
-- Retain commands, image/source IDs, identity/isolation/mount/limit receipts,
-  stdout/stderr and exits. Stop at first failure. Only after full success, validate
-  cached public bootstrap in a **separate network-none** container with the retained
-  volume and same immutable source.
