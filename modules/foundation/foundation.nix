@@ -77,6 +77,11 @@ let
     (frag "managed-eza" 40 "# workstation: managed eza ls")
     (frag "managed-starship" 50 "# workstation: managed starship prompt")
     (frag "managed-starship-zsh" 60 "# workstation: managed starship prompt")
+    # the editor env defaults (EDITOR/VISUAL/GIT_EDITOR=nvim): substrate
+    # facts — the editor domain's nvim IS the workstation editor, so the
+    # env rides the managed shell environment on every rc target (a
+    # capability naming a tool declares its env)
+    (frag "managed-editor-env" 70 "# workstation: managed editor env")
     (frag "managed-direnv" 80 "# workstation: managed direnv hook")
     (frag "managed-direnv-zsh" 90 "# workstation: managed direnv hook")
   ];
@@ -94,6 +99,11 @@ let
     ];
     managed-starship = [ ".bashrc" ];
     managed-starship-zsh = [ ".zshrc" ];
+    managed-editor-env = [
+      ".profile"
+      ".bashrc"
+      ".zshrc"
+    ];
     managed-direnv = [ ".bashrc" ];
     managed-direnv-zsh = [ ".zshrc" ];
   };
@@ -114,6 +124,13 @@ let
   # the starship config payload, co-located beside this module (the
   # dissolved prompt capability's bytes live with their owner)
   starshipToml = ./starship.toml;
+
+  # the operator's shell extras as the fragment payload: the declared text
+  # itself as a store source path (builtins.toFile — a plain store path, no
+  # derivation) — the lane's renderer reads it back and guards it with the
+  # fragment marker. Empty extras never reach this binding (the fragment
+  # list is gated on the option above).
+  operatorExtras = builtins.toFile "workstation-operator-extras" config.workstation.foundation.shell.extras;
 
   # the hsql agent skill: generated from the installed derivation by the
   # tool's own --skill generator (the hsql precedent — a tool that ships
@@ -155,11 +172,45 @@ in
         the option (the NixOS module integrates the tailnet DNS on enable).
       '';
     };
+    shell.extras = lib.mkOption {
+      type = lib.types.lines;
+      default = "";
+      description = ''
+        The operator's shell lines (the stty -ixon class): per-machine
+        interactive preferences with no substrate opinion, declared in the
+        identity file (hosts/identity.nix, shellExtras — the ONLY per-host
+        surface) and wired by the host legs. Rendered as the rc lane's LAST
+        fragment (.bashrc/.zshrc, marker-guarded) so the operator's lines
+        compose after every managed one and may override them; every switch
+        re-renders them, so the prefs hold across applies. Empty (the
+        template) renders no fragment and leaves the lane exactly managed.
+      '';
+    };
   };
 
   config = {
-    # the shell lane: this domain's fragments in the declared order
-    workstation.shell.fragments = fragmentEntries;
+    # the shell lane: this domain's fragments in the declared order, plus
+    # the operator's extras fragment when the machine declares any — the
+    # payload is the extras text itself (a store source path), rendered
+    # with the lane's marker guard
+    workstation.shell.fragments =
+      fragmentEntries
+      ++ lib.optionals (config.workstation.foundation.shell.extras != "") [
+        {
+          target = ".bashrc";
+          id = "operator-extras";
+          order = 100;
+          marker = "# workstation: operator extras";
+          payload = operatorExtras;
+        }
+        {
+          target = ".zshrc";
+          id = "operator-extras";
+          order = 100;
+          marker = "# workstation: operator extras";
+          payload = operatorExtras;
+        }
+      ];
 
     home.file = {
       ".config/starship.toml".source = starshipToml;

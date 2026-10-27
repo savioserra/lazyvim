@@ -143,6 +143,9 @@ in
                 {
                   home.username = user;
                   home.homeDirectory = homeDir;
+                  # the operator's shell extras: the identity file is the
+                  # per-machine declaration point (shellExtras, optional)
+                  workstation.foundation.shell.extras = id.shellExtras or "";
                   # the mac's mutating seam is the --system plane
                   # (darwin-rebuild); the driver's default system target is
                   # derived from the identity block (never hand-typed).
