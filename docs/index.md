@@ -24,7 +24,6 @@
 | [`testing.md`](testing.md) | Offline checks, the docker-nix acceptance and the container E2E |
 | [`endgame.md`](endgame.md) | The final shape: structure, invariants, the retirement ledger |
 | [`architecture.md`](architecture.md) | Declared state + two clients, the read verbs, the write plane |
-| [`absorption.md`](absorption.md) | (Historical) the manifests-to-native-declarations absorption |
 | [`secrets.md`](secrets.md) | 1Password boundary, vault scope, Pi skill policy |
 | [`nvim.md`](nvim.md) | Editor entry points, profile, plugins, locks |
 | [`tmux.md`](tmux.md) | Settings, plugin pins, theme |

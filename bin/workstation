@@ -3,8 +3,7 @@
 # nix evals over the flake's declared-state report
 # (#workstation.report.<verb> — the capability modules' fold, nix/report.nix);
 # the write plane is the generation's workstation-switch driver. No resident
-# process, no wire protocol, no release to acquire — the Elixir engine
-# retired with the daemon, the TUI and the read plane it served.
+# process, no release to acquire.
 set -eu
 
 usage() {

@@ -6,10 +6,7 @@ payload bytes — rendered by home-manager and reported by the fold
 (`nix/report.nix`). The clients are `bin/workstation` (reads: thin
 wrappers over `nix eval .#workstation.report.<verb>`; help/usage) and
 `workstation-switch` (the write plane: leg-native rebuilds plus the
-switch.log receipt). There is no resident process anywhere: the daemon,
-the wire protocol and the TUI retired with the Elixir plane
-(docs/endgame.md carries the ledger; docs/absorption.md the earlier
-deaths).
+switch.log receipt). There is no resident process anywhere.
 
 ## The declared state and the read verbs
 
@@ -69,15 +66,9 @@ empty), shell syntax + ShellCheck, the shim dispatch gate, the nix eval
 read gate. Verification beyond the battery is behavioral — the docker-nix
 closure acceptance and the container E2E (docs/testing.md).
 
-## Current state and debt
+## Current state
 
-The substrate is the endgame shape (docs/endgame.md). Named remaining
-work: none — the last named item, the pin inventory (`versions.json`)
-relocating into the owning domains' module and flake-input surfaces,
-landed 2026-10-26 (one pin, one owner, one surface), and the download-pin
-machinery itself followed on 2026-10-27 (nixpkgs owns the tools; the
-overlay + floors keep the eval loud). The retired
-increments — the manifests, the walker, the format, the write/acquisition
-plane, the daemon, the wire protocol, the TUI, the Elixir plane, the pin
-inventory — are history, not debt: docs/absorption.md is the record, Git
-the archive.
+The substrate is the endgame shape (docs/endgame.md): the capability
+modules, the walk, the report fold, the switch driver, two hosts, one
+identity template. Remaining work lives on the board, not in this
+document.

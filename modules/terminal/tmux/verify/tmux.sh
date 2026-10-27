@@ -11,7 +11,7 @@
 # (verify/nunchux.sh); hermes-agent's git pin is the activation ensure's,
 # never a store checkout.
 #
-# The engine never runs this script; it is the host lane's assertion surface
+# No substrate lane invokes this script; it is the host lane's assertion surface
 # (docs/capabilities.md "Package payload rule"). Exits nonzero with a message
 # on the first failed assertion.
 set -eu
@@ -34,7 +34,7 @@ plugins="tpm tmux2k tmux-yank tmux-resurrect vim-tmux-navigator"
 
 for name in $plugins; do
   row=$(grep -o "\"$name\":{[^}]*}" "$manifest" || true)
-  [ -n "$row" ] || fail "no $name pin in $manifest — the plugin set must stay engine-provisioned"
+  [ -n "$row" ] || fail "no $name pin in $manifest — the plugin set must stay substrate-provisioned"
   commit=$(printf '%s' "$row" | sed -n 's/.*"rev":[[:space:]]*"\([0-9a-f]\{40\}\)".*/\1/p')
   [ -n "$commit" ] || fail "the $name pin carries no rev — the manifest must name the pinned commit"
   target=".tmux/plugins/$name"
@@ -46,4 +46,4 @@ for name in $plugins; do
   echo "tmux verify: ok — $target at the pinned commit $commit"
 done
 
-echo "tmux verify: the engine-provisioned plugin set is at its pins"
+echo "tmux verify: the substrate-provisioned plugin set is at its pins"

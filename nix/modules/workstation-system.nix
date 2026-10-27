@@ -48,7 +48,7 @@ in
 
   config = lib.mkIf cfg.enable {
     environment.systemPackages = [
-      # the deleted mise pins' nixpkgs replacements (terminal/tmux manifest:
+      # the toolchain replacements (the terminal/tmux lane:
       # tmux 3.7c, btop 1.4.7 — versions now nixpkgs-owned)
       pkgs.tmux
       pkgs.btop

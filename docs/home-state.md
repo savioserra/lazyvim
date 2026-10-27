@@ -1,13 +1,8 @@
 # Home state: native declarations
 
 Home state is nix: home-manager links every declared target from store
-paths, and `workstation-switch` owns activation and rollback. There is no
-chezmoi in this repo — no binary is provisioned, no source grammar is
-decoded, nothing executes `chezmoi apply`. The recorded-source grammar and
-the engine's `Workstation.Backends.Chezmoi` were the manifest format's file
-face; both retire with the format (operator ruling 2026-10-21,
-[absorption](absorption.md)). The public interface is the repo-native
-`bin/workstation`, and the write plane is
+paths, and `workstation-switch` owns activation and rollback. The public
+interface is the repo-native `bin/workstation`, and the write plane is
 `workstation-switch`, never a file backend. Authentication, sessions and
 provider state remain user-owned.
 
@@ -59,18 +54,12 @@ Runtime-extended mutable targets (targets a running program rewrites) are
 never byte-compared: the nvim plugin lock seeds from its pinned baseline
 through an activation merge script and stays the editor's between switches.
 
-## Engine state (historical)
+## The state root
 
-The engine state root (the destination home's
+The state root (the destination home's
 `.local/state/workstation` tree, never in ambient XDG roots, the source
-checkout or Git) carries only read-side state. The guarded-apply
-machinery's files —
-`generations/<sha256>` staged source generations, `apply.lock`,
-`apply.lock.audit`, `journal/applied.json`,
-`journal/pending|failed|retired` —
-retired with the write plane; a legacy home may still carry them and the
-substrate never reads them. Operator-owned cleanup of those leftovers is
-optional and manual; nothing recreates them.
+checkout or Git) carries only read-side state: the switch receipt
+(`switch.log`) and the theme token link. Nothing recreates legacy trees.
 
 `workstation plan` previews the attributable declared state from the report
 (capability, lane, target). The declared-vs-applied diff story is the nix
@@ -92,22 +81,17 @@ Two native shapes, both declared:
   `{ path = "..."; recursive = true; }` — the declaration is the consent,
   and the hook removes exactly the declared path recursively. A directory
   met without the consent is reported with the fix named and skipped,
-  never silently forced (the vps cutover, 2026-10-27: plain `rm` on the
-  nvm tree failed and the tombstone silently stayed). The manifest-era
-  tombstone vocabulary (`kind = "remove"` recipes, `.chezmoiremove`
-  composition, `Workstation.Core.Policy`) retires with the format.
+  never silently forced (the vps cutover, 2026-10-27: the nvm tombstone
+  taught the tree-consent shape).
 
-The single `.chezmoidata.toml` token envelope retired with the templates:
 `modules/theme/tokens.lua` is the canonical token payload, and nix reads
 it directly (the extraction asserted at eval, `modules/theme/theme.nix`).
 
 ## Isolated validation
 
 Reads are pure `nix eval`s over `workstation.report` (the shim wraps them)
-and mutate nothing; substrate verification is the VM/activation harness —
-see [real integration](testing.md#real-integration). The
-recorded-envelope goldens and the eval byte guard retired with the format
-(docs/absorption.md — verification is behavioral).
+and mutate nothing; verification is behavioral — see
+[testing](testing.md#real-integration).
 
 ## Breaking cutover (historical)
 
@@ -121,7 +105,6 @@ delete an ambiguous directory, and stop on ambiguity. User files, secrets
 and session state are not substrate cleanup targets, and no automatic rollback
 may touch authentication.
 
-Other legacy engine payload inspection/cleanup is operator-owned; there is
-no blanket recursive migration deletion. Historical decision references to
-the checked-in `chezmoi/` tree, `.chezmoiroot`, externals and scripts
-explain the previous layout and are not current instructions.
+Other legacy payload inspection/cleanup is operator-owned; there is no
+blanket recursive migration deletion. Old layout references explain the
+previous state and are not current instructions.

@@ -2,10 +2,9 @@
 
 ## Goal
 
-Maintain a reproducible engine-owned workstation source state. The engine is
-Elixir-only (the OTP release is the engine; Neovim is a managed host
-capability, never an engine dependency) for Linux, WSL-as-Linux, and macOS
-(arm64).
+Maintain a reproducible workstation source state: a nixpkgs-native
+substrate for Linux (WSL counts as linux) and macOS (arm64) — capability
+modules declared once, rendered by home-manager, switched by one command.
 
 ## Read first
 
@@ -15,27 +14,25 @@ Read the nearest scoped `AGENTS.md` and follow the owning reference:
 | --- | --- |
 | Navigation / install and daily use | [docs/index.md](docs/index.md) / [README.md](README.md) |
 | Lifecycle and capability contracts | [docs/capabilities.md](docs/capabilities.md) |
-| Home state law and legacy cutover | [docs/home-state.md](docs/home-state.md) |
-| The absorption: manifests → native declarations | [docs/absorption.md](docs/absorption.md) |
+| Home state law | [docs/home-state.md](docs/home-state.md) |
 | Checks and acceptance limits | [docs/testing.md](docs/testing.md) |
 | Editor / terminal | [docs/nvim.md](docs/nvim.md) / [docs/tmux.md](docs/tmux.md) |
-| Secret handling / pin inventory | [docs/secrets.md](docs/secrets.md) / [docs/tools.md](docs/tools.md) |
+| Secret handling / tool inventory | [docs/secrets.md](docs/secrets.md) / [docs/tools.md](docs/tools.md) |
 
 ## Operating contract
 
-- A capability that names a tool ships the tool: resources-without-runtime (a clone, a symlink or a config with no provisioned, working binary) is a defect, not a documented manual step. Verify must smoke the consumer (`hermes --version`-class checks), not only fingerprints. Operator ruling 2026-10-15.
-
-- Edit source, not deployed state. Every home-state payload lives with its owning capability under `workstation/packages/` (renamed `workstation/payload/` by the absorption chain); home state is declared in `nix/modules/capabilities/` and linked from the store, never checked in as deployed state. Never implicitly overwrite a clone or delete a legacy payload.
-- `bin/workstation` is the sole public lifecycle interface and `workstation-switch` is the sole write plane. There is no chezmoi: no aliases, source-path discovery, externals, lifecycle scripts or root wrappers.
-- Declare each lifecycle capability once as a native nix module under `nix/modules/capabilities/`; payload stays with the owning capability under `workstation/packages/` (→ `workstation/payload/`). Keep core domain-neutral: no catalog/package/Neovim imports. Detailed composition and lifecycle rules belong to `docs/elixir.md`.
-- The engine path is Elixir-only: no Lua execution and no nvim invocation anywhere in the engine (`workstation/packages/**/*.lua` are data/payload files read as bytes, never run). `workstation/bin/workstation` stays plain POSIX sh: sandbox, runtime/release acquisition, then exec of the engine release.
-- Interactive verbs render the TUI by default; non-interactive callers pass `--headless` explicitly — a non-TTY run without the flag hard-errors instead of degrading silently.
-- All downloads are pinned declarations rendered by the substrate. No Node bootstrap dependency, unpinned downloads, `sudo` or OS-package-manager installation of managed tools.
-- Keep language composition in the Neovim profile. Do not recreate the retired root Go CLI (`go.mod`, `internal/`, `cmd/`), nested Go service modules, daemons, actor runtimes or any Makefile; Go is an editor toolchain here.
+- A capability that names a tool ships the tool: resources-without-runtime (a clone, a symlink or a config with no provisioned, working binary) is a defect, not a documented manual step. Verify must smoke the consumer (`hermes --version`-class checks), not only fingerprints.
+- Edit source, not deployed state. Every payload lives with its owning capability under `modules/<domain>/` (module and bytes co-located); home state is declared and linked from the store, never checked in as deployed state. Never implicitly overwrite a clone; legacy payloads retire through the declared retire list.
+- `bin/workstation` is the sole public lifecycle interface; `workstation-switch` (staged into each generation) is the sole write plane.
+- Keep core domain-neutral: no cross-domain imports; composition happens through the capability walk (`nix/lib/capabilities.nix`).
+- Payload stays data: Lua appears only as deployed editor/theme data read as bytes, never executed.
+- Tools come from nixpkgs through the flake's pin-override overlay (`overlays.default`) with version floors asserted in the owning modules, or an inline pin where nixpkgs lacks coverage (documented in the owning module). No unpinned downloads, no `sudo`, no OS-package-manager installation of managed tools.
+- Keep language composition in the Neovim profile. Go is an editor toolchain here (no root Go CLI, no services, no Makefiles).
 - Never commit generated plugin/Mason/parser/cache/session/history state or secret values. Secret-reference/vault work requires explicit user `/skill:secrets` invocation; authentication stays user-owned.
-- Work lands roadmap-style: future work is seeded as a parent-chained chain (task1 → task2 → …), serial within a surface. A card whose declared surface overlaps an in-flight card's waits behind it via a parent link — never dispatched alongside it. Operator ruling 2026-10-15.
-- Phase labels (P0, P1, …) are transient planning scaffolding: they live in card bodies and board surfaces, never in landed repo content — no phase-named code, comments, docs, config keys or commit messages survive to the merged tree. Before any merge to main, sweep the landing's files for phase markers and rewrite to permanent names; reviewers grep for them. Operator ruling 2026-10-21.
-- A card is done only when its declared surface exists at git HEAD: workers deliver branch commits (or land them), and `kanban_complete` metadata names the commit sha. Uncommitted scratch work is not a done state — feature-sized cards run in persistent workspaces (`worktree:`/`dir:`), never scratch; if work must ride uncommitted, the card names it orchestrator-owned and stays open until landed. The reviewer/lead verifies the surface at HEAD before accepting. Operator ruling 2026-10-20 (the t_f595e580 phantom landing).
+- The identity gate reds on personal strings anywhere in the tracked tree; `hosts/identity.nix` (the machine's captured identity) stays uncommitted.
+- Work lands roadmap-style: future work is seeded as a parent-chained chain (task1 → task2 → …), serial within a surface. A card whose declared surface overlaps an in-flight card's waits behind it via a parent link — never dispatched alongside it.
+- Phase labels (P0, P1, …) are transient planning scaffolding: they live in card bodies and board surfaces, never in landed repo content — no phase-named code, comments, docs, config keys or commit messages survive to the merged tree.
+- A card is done only when its declared surface exists at git HEAD: workers deliver branch commits (or land them), and `kanban_complete` metadata names the commit sha. Uncommitted scratch work is not a done state — feature-sized cards run in persistent workspaces (`worktree:`/`dir:`), never scratch; if work must ride uncommitted, the card names it orchestrator-owned and stays open until landed. The reviewer/lead verifies the surface at HEAD before accepting.
 
 ## Required checks
 
@@ -45,24 +42,20 @@ Run checks relevant to the change. Before completion, run all available fast che
 sh .github/scripts/check.sh
 ```
 
-Never run fixtures directly against an applied home: they write fake Node/npm state.
-Follow [testing](docs/testing.md) for isolation, individual shell checks and retained
-receipts. Audit full source before a backend render; dry-run is not a sandbox.
-Real lifecycle/downloads require explicit authorization; synthetic checks do not
-replace Linux/WSL and native macOS arm64 acceptance.
+Never run fixtures directly against an applied home. Behavioral acceptance
+owns isolation: the container E2E for the home plane, the eval gates for the
+declared surface. Native Linux and macOS arm64 acceptance stays explicit.
 
 ## Change rules
 
 | Change | Required updates |
 | --- | --- |
-| Host tool version | `workstation/versions.json`, the owning capability's pin row, `docs/tools.md` |
-| Node version | `workstation/packages/languages/node/files/.node-version`, canonical Node URL/checksum |
-| Global npm capability | Exact version, registry integrity, feature setup/verify, docs |
-| Hermes Agent pin | `workstation/versions.json` (`hermes_agent_git_commit`), the hermes module row (`nix/modules/hermes.nix`), `docs/tools.md` |
-| Managed Hermes skill | `workstation/packages/agent/files/.hermes/skills/<name>/SKILL.md`, the `workstation.hermes.skills` entry in `nix/modules/hermes.nix`, `workstation/packages/agent/verify/hermes.sh`, `docs/capabilities.md` |
-| tmux plugin pin | `workstation/packages/terminal/tmux/init.lua` (payload data; the checkouts themselves provision via the capability layer, not engine recipes), `docs/tmux.md` |
-| Workstation capability | native nix module (`nix/modules/capabilities/<name>.nix`), payload assets, tests, docs |
-| Neovim language | the language entry in `nix/modules/capabilities/nvim.nix`, lockfiles if needed, behavior case |
+| Tool version | the tool's floor in its owning capability's module, `docs/tools.md` |
+| Neovim version | the editor domain's neovim floor (`modules/editor/editor.nix`), `docs/tools.md` |
+| Hermes Agent pin | the flake's `hermes-agent` input rev, `modules/agent/agent.nix`, `docs/tools.md` |
+| Managed Hermes skill | `modules/agent/skills/<name>/`, the `programs.hermes.skills` entry, `modules/agent/verify/hermes.sh`, `docs/capabilities.md` |
+| tmux plugin pin | the `fetchFromGitHub` rev in `modules/terminal/terminal.nix`, `docs/tmux.md` |
+| Capability | `modules/<domain>/` (module + payload bytes co-located), tests, docs |
+| Neovim language | the language entry in the language domain's module, lockfiles if needed, behavior case |
 | Removed deployed source | a retire-list entry in the owning capability's module (the generation diff retires file-plane-owned targets; the activation retire list retires legacy paths) |
-| New platform condition | canonical asset metadata, capability support, package backend, CI/test coverage |
-
+| New platform condition | canonical asset metadata, capability support, CI/test coverage |

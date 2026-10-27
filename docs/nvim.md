@@ -107,7 +107,7 @@ drifted copies reconcile: engine pins win, host extras with an installed
 plugin directory are preserved, stale extras are pruned, and malformed input
 fails closed. Verify asserts every engine pin is present at its exact
 branch/commit and installed at that commit; host extras are reported
-audit-only (bounding them by class would couple the engine to whatever
+audit-only (bounding them by class would couple the editor to whatever
 external spec source produced them). Consequences: the deployed file carries
 mode 0755 because modify programs deploy as executable, and `workstation
 diff` stays the readable surface for effective lockfile changes (`plan` shows
@@ -136,7 +136,7 @@ Rules:
   from the workstation tokens: tokens.lua drives engine surfaces; editor
   syntax rides the complete upstream palette (rebrand spec S-R4).
 - Deployed lockfiles that still carry `tender.vim` (or Omarchy theme plugin
-  extras) reconcile on the next apply: the pin left the engine seed, so it
+  extras) reconcile on the next apply: the pin left the seeded baseline, so it
   becomes a host extra that prunes once its installed plugin directory goes
   (documented lockfile merge semantics above).
 - Apply the colorscheme on the next Neovim start; running instances only get

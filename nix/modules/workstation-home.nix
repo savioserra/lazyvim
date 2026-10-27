@@ -171,11 +171,11 @@ in
         ".local/opt/workstation/flake".source = self;
       };
     # (.local/bin/nvim moved to modules/editor/editor.nix — the nvim
-    # manifest's death in the same commit retired the walker's override
+    # the walker's override retired with the manifest lane
     # guard with it)
 
     # (the fontconfig discovery moved to modules/fonts/fonts.nix with the
-    # fonts manifest's death)
+    # the fonts lane's retirement)
 
     # --- the client lane: the launcher shim + this generation's flake ------
     # The shim (bin/workstation at the repo tree — the same bytes the

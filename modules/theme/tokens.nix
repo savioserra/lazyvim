@@ -9,7 +9,7 @@
 # The path is a plain symlink into the store that the switch re-points at
 # every generation (the switch-time push: one re-link per switch, nothing
 # polls — a consumer reads the file at startup or watches the link). The
-# engine's resident theme domain retired with the daemon; this file is the
+# switch re-points this file; it is the
 # theme's live surface now. Rollback restores the prior generation's link.
 {
   lib,

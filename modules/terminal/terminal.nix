@@ -165,7 +165,7 @@ in
     home.file = lib.mkMerge (
       [
         # the managed config: the payload file, and the XDG link to it
-        # (intra-home — the walker's mkOutOfStoreSymlink shape, declared)
+        # (intra-home, declared)
         {
           ".tmux.conf".source = ./tmux/files/.tmux.conf;
           ".config/tmux/tmux.conf".source =

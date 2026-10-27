@@ -1,7 +1,5 @@
 # The theme domain: tokens.lua is the canonical byte source and nix reads
-# it directly (docs/absorption.md — the chezmoi-data refusal lane retires:
-# the envelope was the token table's chezmoi-side projection, and nothing
-# deploys — the theme capability owns data, not home targets).
+# it directly — the theme capability owns data, not home targets.
 #
 # The extraction is a fail-closed line parse of the token module's closed
 # blocks (M.slots, M.palette.dark, M.palette.light): every listed key must
