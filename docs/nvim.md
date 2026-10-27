@@ -98,20 +98,24 @@ exists yet.
 | Mason tools | `mason-lock.json` | `:MasonLockRestore` |
 | Tree-sitter parsers | Parser config + locked plugin | `:TSUpdate` |
 
-`lazy-lock.json` is engine-seeded, runtime-extended mutable application
-state, not byte-owned configuration: it deploys through a package-owned
-whole-body `modify` merge program
-(`files/modify/lazy-lock.json.sh` with the committed asset embedded verbatim),
-never a whole-file recipe. Absent targets seed the baseline byte-for-byte;
-drifted copies reconcile: engine pins win, host extras with an installed
-plugin directory are preserved, stale extras are pruned, and malformed input
-fails closed. Verify asserts every engine pin is present at its exact
-branch/commit and installed at that commit; host extras are reported
-audit-only (bounding them by class would couple the editor to whatever
-external spec source produced them). Consequences: the deployed file carries
-mode 0755 because modify programs deploy as executable, and `workstation
-diff` stays the readable surface for effective lockfile changes (`plan` shows
-the program body with its embedded pin block).
+`lazy-lock.json` is substrate-seeded, runtime-extended mutable application
+state, not byte-owned configuration:
+
+- Deploys through a package-owned whole-body `modify` merge program
+  (`files/modify/lazy-lock.json.sh`, the committed asset embedded
+  verbatim) — never a whole-file recipe.
+- Absent targets seed the baseline byte-for-byte.
+- Drifted copies reconcile: substrate pins win; host extras with an
+  installed plugin directory are preserved; stale extras are pruned;
+  malformed input fails closed.
+- Verify asserts every substrate pin at its exact branch/commit and
+  installed at that commit; host extras are reported audit-only (bounding
+  them by class would couple the editor to whatever external spec source
+  produced them).
+- The deployed file carries mode 0755 (modify programs deploy as
+  executable); `workstation diff` is the readable surface for effective
+  lockfile changes (`plan` shows the program body with its embedded pin
+  block).
 
 Mason restore requirements:
 

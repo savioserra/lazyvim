@@ -90,21 +90,18 @@ TPM `user/repo#ref` supports branches/tags, not exact raw commits.
 | `datamadsen/nunchux` | `1546eaa980d834c331496ea9d51942be07ea9fdd` (Release 3.1.3) | `modules/terminal/terminal.nix` declares the clone pin (url + rev) and the repo-tracked `bin/nunchux` build's SHA-256 (deployed as `~/.tmux/plugins.pins.json`); the release-asset checksum rows retired with the shared inventory — the `.platform` marker keeps `ensure_binary` off the release fetches |
 
 Nunchux (fzf popup launcher for apps, files and task runners) is ACTIVE:
-the `@plugin` pin and the root `C-Space` chord in `.tmux.conf` are live,
-and the checkout itself is the first package-wired pinned-clone recipe:
-a generation switch provisions `datamadsen/nunchux` at
-`~/.tmux/plugins/nunchux` at the exact v3.1.3
-commit — a store checkout linked at the target, so re-switching neither
-fetches nor moves a checkout already at the pin. The recipe made
-the interim download-contract pre-seed obsolete: upstream tracks
-`bin/nunchux` in the repo (a linux-amd64 build of the same 3.1.3 release,
-`nunchux-go 3.1.3`, content-pinned by `nunchux_repo_linux_amd64_sha256`),
-and the download contract refuses to overwrite mismatched bytes, so the
-release artifact and the checkout could not compose at one path. The
-launcher payload lives in the `nunchux` package: the checkout pin, the
-slot-templated `~/.config/nunchux/config` target (byte-equal to upstream's
-default config, consuming theme slots — [theme](theme.md)), and the
-`bin/.platform` marker.
+
+- `@plugin` pin and the root `C-Space` chord in `.tmux.conf` are live.
+- The checkout provisions at `~/.tmux/plugins/nunchux`, hash-pinned
+  `fetchFromGitHub` at the v3.1.3 commit — a store checkout linked at the
+  target: re-switching neither fetches nor moves a checkout already at the
+  pin.
+- Upstream tracks `bin/nunchux` in the repo (a linux-amd64 build of the
+  same release), so the release artifact and the checkout compose at one
+  path.
+- The launcher payload (the checkout pin, the slot-templated
+  `~/.config/nunchux/config` consuming theme slots — [theme](theme.md) —
+  and the `bin/.platform` marker) lives in the `nunchux` package.
 
 The load-bearing pre-seed is that marker: upstream's `nunchux.tmux`
 `ensure_binary` fetches `releases/latest` — unchecksummed, the same
