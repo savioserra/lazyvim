@@ -274,6 +274,7 @@
             python314
             _1password-cli
             nerd-fonts
+            neovim
             ;
 
           # the foundation domain's tree-sitter CLI, SCOPED: nixpkgs' own

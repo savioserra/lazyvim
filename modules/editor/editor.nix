@@ -31,6 +31,14 @@
   ...
 }:
 let
+  # the editor's neovim, floored at the retired download pin's version
+  # (0.12.4): the overlay supplies the foundation set's prebuilt closure
+  # (self-consistent — foundation's neovim compiles against foundation's
+  # tree-sitter), so the workstation's nvim never drops below the pin line
+  nvim =
+    assert lib.versionAtLeast (pkgs.neovim.version or "0") "0.12"
+      || throw "workstation-editor: neovim ${pkgs.neovim.version or "?"} predates the retired pin floor 0.12 — the flake's overlays.default must carry the foundation set's neovim";
+    pkgs.neovim;
   cfg = config.workstation.editor;
 
   payloadNvim = ./nvim/files/.config/nvim;
@@ -110,9 +118,9 @@ in
         source = configTree;
         recursive = true;
       };
-      # the nixpkgs neovim on PATH — the nvim-profile lane's bin override,
+  # the nixpkgs neovim on PATH — the nvim-profile lane's bin override,
       # now the declaration itself (the bootstrap archive pin is retired)
-      ".local/bin/nvim".source = "${pkgs.neovim}/bin/nvim";
+      ".local/bin/nvim".source = "${nvim}/bin/nvim";
     };
 
     # the lock merge: seed an absent lock from the pinned baseline,
@@ -124,9 +132,9 @@ in
       trap 'rm -f "$work"' EXIT
       cp ${mergeProgram} "$work"
       if [ -f "$lock" ]; then
-        ${pkgs.neovim}/bin/nvim -l "$work" < "$lock" > "$lock.merged"
+        ${nvim}/bin/nvim -l "$work" < "$lock" > "$lock.merged"
       else
-        ${pkgs.neovim}/bin/nvim -l "$work" < /dev/null > "$lock.merged"
+        ${nvim}/bin/nvim -l "$work" < /dev/null > "$lock.merged"
       fi
       mv "$lock.merged" "$lock"
       echo "workstation: lazy-lock merge applied (${config.home.homeDirectory}/.config/nvim/lazy-lock.json)"
