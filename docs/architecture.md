@@ -60,7 +60,7 @@ overrides only), `workstationTheme.lib`, `hermesSkills`, `hermesAgentPin`.
   floored in the owning modules) + eza, starship, harlequin+hsql
   (nixpkgs) + the tailscale transport (system legs: `services.tailscale`;
   standalone-HM legs: CLI in `home.packages`, tailscaled a host-owned
-  prerequisite). nvm retired — nix owns the node runtime.
+  prerequisite).
 - **Verification is behavioral.** Container activation runs, consumer
   smokes, HM idempotency/rollback. Structural assertions (counts, the
   fold's union checks) stay assertions — no byte-goldens, no re-record

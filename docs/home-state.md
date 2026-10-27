@@ -13,7 +13,7 @@ provider state remain user-owned.
 | Declaration | `modules/<domain>/<domain>.nix` | Native nix: home.file surfaces, tools (overlay + floors), fragments, activation scripts |
 | Payload | `modules/<domain>/` (co-located with the declaring module) | Referenced bytes, copied into the store at eval |
 | Fragment lane order | `nix/lib/shell-lane.nix` | The fragments' `order` slots sorted once — the rc files and the report read the same sort; shared/ambiguous slots fail the eval |
-| Claim composition | `modules/terminal/terminal.nix` (inline) | Overlapping dir claims compose into one derivation (the `.platform` marker — the one consumer since the pins library retired) |
+| Claim composition | `modules/terminal/terminal.nix` (inline) | Overlapping dir claims compose into one derivation (the `.platform` marker — the one consumer) |
 | Deployment | the generation | `home-manager switch` links every target atomically |
 
 Target collisions throw at eval — two capabilities claiming one home target
@@ -93,18 +93,7 @@ Reads are pure `nix eval`s over `workstation.report` (the shim wraps them)
 and mutate nothing; verification is behavioral — see
 [testing](testing.md#real-integration).
 
-## Breaking cutover (historical)
+## Breaking cutover
 
-The guarded cutover procedure was written for the retired apply plane; the
-record of how the old deployed payload was replaced by a Git clone stays in
-Git history. On the substrate, a fresh host switches from the
-flake (see [README](../README.md#hosts)); an old
-`~/.local/share/workstation` deployed payload is operator-owned cleanup —
-inspect it, back it up to a new absent sibling path, never clone into or
-delete an ambiguous directory, and stop on ambiguity. User files, secrets
-and session state are not substrate cleanup targets, and no automatic rollback
-may touch authentication.
-
-Other legacy payload inspection/cleanup is operator-owned; there is no
-blanket recursive migration deletion. Old layout references explain the
-previous state and are not current instructions.
+The pre-substrate cutover procedure is Git history; a fresh host switches
+from `workstation init`.

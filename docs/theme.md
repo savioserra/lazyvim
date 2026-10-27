@@ -37,10 +37,10 @@ all reusing existing palette hues:
 | --- | --- | --- |
 | `border_engine` | engine panel | blue — engine-core forward view (`accent` = `@thm_primary #5badff` family) |
 | `border_plan` | plan panel (home + tab) | blue — the planned mutation surface |
-| `border_journal` | reserved (declared; the journal box retired with the write plane) | green — health-log semantics (`ok` = `@thm_green #7fcf78` family) |
+| `border_journal` | reserved (declared) | green — health-log semantics (`ok` = `@thm_green #7fcf78` family) |
 | `border_status` | status panel (home + tab) | green — health verdicts |
 | `border_capabilities` | capabilities panel + browser | yellow — pending-apply caution (`warn` = `@thm_yellow #f0e68c`, doubles as the theme's active-pane border hue) |
-| `border_diff` | reserved (declared; the diff box retired with the write plane) | red — the mutation surface (`err` = `@thm_red #ff7979` family) |
+| `border_diff` | reserved (declared) | red — the mutation surface (`err` = `@thm_red #ff7979` family) |
 
 They live in both layers (slots + per-appearance palette) and are
 overlay-settable like every other palette role. Panels outside the
@@ -77,9 +77,7 @@ or watch the link, nothing polls).
 The theme's live surface is the store token link
 `~/.local/state/workstation/theme.json`: the switch re-points it at each
 generation's token store path (the activation hook), and consumers read it
-at startup or watch the link — nothing polls, no daemon drives the
-follow. The daemon's `theme.resolve` overlay domain retired with the
-daemon; the retired Elixir TUI's shipped token mirror retired with the
-TUI. A new consumer renders from the deployed token file or from
+at startup or watch the link — nothing polls. A new consumer renders from
+the deployed token file or from
 `workstationTheme.lib` (the flake output) at eval — never from a second
 copy of the bytes.

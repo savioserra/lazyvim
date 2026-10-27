@@ -64,7 +64,7 @@ Pinning rules:
   pins are declared in `modules/terminal/terminal.nix`
   (owner/repo/rev/hash literals — one pin, one owner, one surface) and
   hash-pinned `fetchFromGitHub` at the recorded commit (hermetic and
-  in-store — the un-locked `fetchGit` calls retired 2026-10-27), linking
+  in-store), linking
   the store checkout under `~/.tmux/plugins/`
   (tpm first — it must exist before the first tmux start, which sources
   it via the `run-shell` at the end of `.tmux.conf`); the same
@@ -87,7 +87,7 @@ TPM `user/repo#ref` supports branches/tags, not exact raw commits.
 
 | Plugin | Commit | Pin inventory |
 | --- | --- | --- |
-| `datamadsen/nunchux` | `1546eaa980d834c331496ea9d51942be07ea9fdd` (Release 3.1.3) | `modules/terminal/terminal.nix` declares the clone pin (url + rev) and the repo-tracked `bin/nunchux` build's SHA-256 (deployed as `~/.tmux/plugins.pins.json`); the release-asset checksum rows retired with the shared inventory — the `.platform` marker keeps `ensure_binary` off the release fetches |
+| `datamadsen/nunchux` | `1546eaa980d834c331496ea9d51942be07ea9fdd` (Release 3.1.3) | `modules/terminal/terminal.nix` declares the clone pin (url + rev) and the repo-tracked `bin/nunchux` build's SHA-256 (deployed as `~/.tmux/plugins.pins.json`); the `.platform` marker keeps `ensure_binary` off the release fetches |
 
 Nunchux (fzf popup launcher for apps, files and task runners) is ACTIVE:
 
@@ -175,7 +175,7 @@ re-run; the real fix is a switch at the new pin.
 Pin-move migration: a pinned clone never moves to a different commit in
 place (the pin is the checkout's identity — the substrate freezes each
 commit as its own store path), so a home carrying the tmux2k checkout at
-the retired `07b3228b` pin is re-linked at `d8c5c292` by the next switch;
+the pin is re-linked at `d8c5c292` by the next switch;
 the old checkout stays on disk only if something outside the generation
 put it there — remove it explicitly. Same pattern as the nunchux pre-seed
 migration note above.
@@ -207,7 +207,7 @@ investigation (2026-10-13) reverted it — oasis's seconds clock pinned a 1Hz
 status re-render whose scroll-style repaints stacked on limited mobile
 clients (Termius/iOS), while tmux2k's `|` separators and HH:MM clock are
 narrow-phone-safe. The tokens slot layer stays in [theme](theme.md) for
-future consumers; the retired `~/.config/tmux/themes/tmux2k.conf` target
+future consumers; the `~/.config/tmux/themes/tmux2k.conf` target
 is a declared retire-list tombstone in `modules/terminal/terminal.nix`
 (an idempotent activation `rm -f` with a named receipt — already-absent
 no-op on homes that never had it).
