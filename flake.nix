@@ -301,11 +301,16 @@
               '';
 
           # every host leg still evaluates — toplevel drvPath forces the
-          # full evaluation of each leg and builds nothing
+          # full evaluation of each leg and builds nothing. The drvPath's
+          # string context is discarded ON PURPOSE: kept, the context makes
+          # nix realize the leg's whole closure as a dependency of this
+          # check — a darwin closure is unbuildable on a linux host and an
+          # eval gate must never schedule builds (producing the drvPath
+          # here already forced the leg's evaluation, which is the proof).
           linux-leg-eval =
             pkgs.runCommand "workstation-check-linux-leg-eval"
               {
-                toplevel = linuxHost.nixosConfig.config.system.build.toplevel.drvPath;
+                toplevel = builtins.unsafeDiscardStringContext linuxHost.nixosConfig.config.system.build.toplevel.drvPath;
               }
               ''
                 mkdir -p "$out"
@@ -314,7 +319,7 @@
           mac-leg-eval =
             pkgs.runCommand "workstation-check-mac-leg-eval"
               {
-                toplevel = macHost.darwinConfig.config.system.build.toplevel.drvPath;
+                toplevel = builtins.unsafeDiscardStringContext macHost.darwinConfig.config.system.build.toplevel.drvPath;
               }
               ''
                 mkdir -p "$out"
@@ -323,8 +328,8 @@
           home-legs-eval =
             pkgs.runCommand "workstation-check-home-legs-eval"
               {
-                linux = linuxHome.activationPackage.drvPath;
-                vm = vmHome.activationPackage.drvPath;
+                linux = builtins.unsafeDiscardStringContext linuxHome.activationPackage.drvPath;
+                vm = builtins.unsafeDiscardStringContext vmHome.activationPackage.drvPath;
               }
               ''
                 mkdir -p "$out"
