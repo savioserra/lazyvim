@@ -1,7 +1,10 @@
-# The Node language capability: the pinned nvm tree with the pinned node
-# nested inside it (the claim composition — one store tree, declared
-# parent-first), the .node-version declaration (the version pin's own
-# source), the nvm.sh loader payload, and the managed-nvm rc fragments.
+# The Node language capability: the nixpkgs runtime (pkgs.nodejs_24 —
+# operator ruling 2026-10-27: nix owns the runtime; the nvm lane retired
+# with the pins machinery — nvm was the old world's version manager, and
+# its default-alias bug class dies structurally with it). The
+# .node-version declaration is DERIVED from the runtime (one source: the
+# nixpkgs version), so per-project version tools (mise et al) read the
+# version this generation actually ships.
 {
   config,
   lib,
@@ -10,80 +13,30 @@
   ...
 }:
 let
-  pins = import ../../../nix/lib/pins.nix { inherit lib pkgs; };
+  # the version-class pin: the 24 major rides the nixpkgs set (the
+  # foundation domain's pin-override overlay keeps it current); the patch
+  # drift is nixpkgs' to maintain, never a SHA to keep alive
+  nodejs = pkgs.nodejs_24;
 
-  # the node version pin is the payload's .node-version file (the
-  # change-rule's canonical address), read — never duplicated
-  nodeVersion = lib.trim (builtins.readFile ./files/.node-version);
-
-  nvmTree = pins.tool "nvm_sh" {
-    version = "0.40.4";
-    # one upstream archive serves both platform legs (same bytes, same sha)
-    url = "https://github.com/nvm-sh/nvm/archive/refs/tags/v{V}.tar.gz";
-    sha256 = "5949b50e4640f2be2263f963952673d7f1a8745a83f05365e99f032fe78307fd";
-    archive = "tar.gz";
-    probe = {
-      member = "nvm.sh";
-      sha256 = "7bb0324a92b1b7a3d612a00fd361f0daa78960cb4d404e7e42acf76eb53f6850";
-    };
-  };
-
-  nodeTree = pins.tool "node" {
-    version = nodeVersion;
-    url = {
-      linux_x86_64 = "https://nodejs.org/dist/v{V}/node-v{V}-linux-x64.tar.xz";
-      darwin_arm64 = "https://nodejs.org/dist/v{V}/node-v{V}-darwin-arm64.tar.xz";
-    };
-    sha256 = {
-      linux_x86_64 = "14b342e71204f811bde6153be8e04b62aef63c236fef92b55f9c83154b409647";
-      darwin_arm64 = "3f1cf157479c1480352083105e13faf9d008ede98e7e157746b6df940d197b94";
-    };
-    archive = "tar.xz";
-    probe = {
-      argv = [
-        "bin/node"
-        "--version"
-      ];
-      output = "v{V}";
-    };
-  };
-
-  # the node install tree nested inside the nvm tree (nvm's own layout:
-  # $NVM_DIR/versions/node/v<version>)
-  provisionedTree = pins.compose nvmTree [
-    {
-      path = "versions/node/v${nodeVersion}";
-      source = nodeTree;
-    }
-  ];
+  # the derived version declaration (the change-rule's canonical address —
+  # a store text file, not a module literal, so it can never drift from
+  # the runtime)
+  nodeVersionFile = pkgs.writeText "node-version" "${nodejs.version}\n";
 in
 {
   config = {
-    workstation.shell.fragments = [
-      {
-        target = ".profile";
-        id = "managed-nvm";
-        marker = "# workstation: load managed nvm";
-        payload = ./fragments/managed-nvm.sh;
-      }
-      {
-        target = ".bashrc";
-        id = "managed-nvm";
-        marker = "# workstation: load managed nvm";
-        payload = ./fragments/managed-nvm.sh;
-      }
-      {
-        target = ".zshrc";
-        id = "managed-nvm";
-        marker = "# workstation: load managed nvm";
-        payload = ./fragments/managed-nvm.sh;
-      }
-    ];
+    home.packages = [ nodejs ];
 
-    home.file = {
-      ".node-version".source = ./files/.node-version;
-      ".config/shell/nvm.sh".source = ./files/nvm.sh;
-      ".local/opt/nvm".source = provisionedTree;
-    };
+    home.file.".node-version".source = nodeVersionFile;
+
+    # the nvm lane's tombstones: the provisioned tree (the store claim at
+    # .local/opt/nvm) and the rc loader payload — hosts carrying them from
+    # the pin world lose them at the next activation, each with a named
+    # receipt (the generation diff also retires them; the tombstones make
+    # the retirement hold even where the diff is bypassed)
+    workstation.retire = [
+      ".local/opt/nvm"
+      ".config/shell/nvm.sh"
+    ];
   };
 }

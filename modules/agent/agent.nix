@@ -41,10 +41,13 @@
 # first generation's symlinks by removing the copy-contract trees (real
 # dirs only, named receipt), then HM links the store entries.
 #
-# The runtime stack stays pinned: the hermes interpreter at
-# .local/opt/hermes/python (a store tree the launcher resolves at run
-# time) and the engine launcher on PATH — the store path links directly,
-# no ../opt indirection. herdr is an archive-less pin linked the same way.
+# The runtime stack (operator ruling 2026-10-27: the pins machinery is
+# redundant — nixpkgs owns the interpreter): the hermes interpreter is
+# pkgs.python314 at .local/opt/hermes/python, floored at the release the
+# pinned hermes rev's pm/lock.json carries (the eval dies loud on a
+# mismatch — the rev is the authority for which interpreter build the
+# runtime expects). The engine launcher rides PATH; herdr has NO nixpkgs
+# coverage — it keeps a download pin, inline in its owning module below.
 {
   config,
   lib,
@@ -55,45 +58,52 @@
 let
   hermes = config.programs.hermes;
 
-  pins = import ../../nix/lib/pins.nix { inherit lib pkgs; };
+  # the interpreter's version floor: the release the pinned hermes rev's
+  # pm/lock.json names (packages.python.version — "3.14.7+<buildtag>"; the
+  # semver prefix is the floor). Read from the pinned tree so a hermes rev
+  # bump re-derives the floor at eval — the eval dies naming both versions
+  # when the nixpkgs set (via the flake's pin-override overlay) lags.
+  lockedPythonVersion =
+    if hermes.pin == null then
+      null
+    else
+      let
+        lock = builtins.fromJSON (builtins.readFile (hermes.pin.tree + "/pm/lock.json"));
+        locked =
+          lock.packages.python.version
+          or (throw "workstation-agent: the pinned hermes rev's pm/lock.json carries no packages.python entry — the interpreter floor cannot be derived");
+      in
+      builtins.head (lib.splitString "+" locked);
 
-  # the runtime pins: the agent domain's declared pin data (one pin, one
-  # owner, one surface). The interpreter is the release the pinned
-  # hermes-agent rev's pm/lock.json carries — the python-build-standalone
-  # 20260901 install_only archive (the probe gates the interpreter at
-  # BUILD time); herdr is the archive-less release binary.
-  hermesPythonVersion = "3.14.7";
-  hermesPython = pins.tool "hermes_python" {
-    version = hermesPythonVersion;
-    url = {
-      linux_x86_64 = "https://github.com/astral-sh/python-build-standalone/releases/download/20260901/cpython-3.14.7+20260901-x86_64-unknown-linux-gnu-install_only.tar.gz";
-      darwin_arm64 = "https://github.com/astral-sh/python-build-standalone/releases/download/20260901/cpython-3.14.7+20260901-aarch64-apple-darwin-install_only.tar.gz";
-    };
-    sha256 = {
-      linux_x86_64 = "0ab3305457051cd3e7c031857e005f1bda17c218a1990567dacaaac6dd1d14f0";
-      darwin_arm64 = "30daa970c7d223530120f1693cd3c6fa4c0c0d31ef158710b0dd77f286a5b23e";
-    };
-    archive = "tar.gz";
-    layout = "release";
-    probe = {
-      argv = [
-        "bin/python3"
-        "--version"
-      ];
-      output = "Python {V}";
-    };
-  };
-  herdr = pins.tool "herdr" {
-    version = "0.9.0";
-    url = {
-      linux_x86_64 = "https://github.com/herdrdev/herdr/releases/download/v{V}/herdr-linux-x86_64";
-      darwin_arm64 = "https://github.com/herdrdev/herdr/releases/download/v{V}/herdr-macos-aarch64";
-    };
-    sha256 = {
-      linux_x86_64 = "4fa1a01158dd8043da92d31b270780b0dcc10603038d9b61cac4d81ab63fb71f";
-      darwin_arm64 = "32b53df09872628059c789a69f02a6b8e29e14ddf26711421f3463f70c1aef17";
-    };
-  };
+  hermesPython =
+    assert
+      lockedPythonVersion == null
+      || lib.versionAtLeast pkgs.python314.version lockedPythonVersion
+      || throw "workstation-agent: pkgs.python314 ${pkgs.python314.version} predates the release the pinned hermes rev's pm/lock.json carries (${lockedPythonVersion}) — the flake's overlays.default (the foundation domain's pin surface) must be applied (nixpkgs.overlays), or the hermes-agent rev must move to a lock the nixpkgs set satisfies";
+    pkgs.python314;
+
+  # herdr keeps a download pin: no nixpkgs coverage (upstream ships
+  # release binaries only — no package in either pinned nixpkgs set), so
+  # it stays the substrate's ONE download pin, inline in its owning
+  # module (one pin, one owner, one surface — a bump moves these rows and
+  # the consumer together). Archive-less: the fetched bytes ARE the
+  # binary.
+  herdrVersion = "0.9.0";
+  herdrPin =
+    if pkgs.stdenv.hostPlatform.isx86_64 && pkgs.stdenv.hostPlatform.isLinux then {
+      url = "https://github.com/herdrdev/herdr/releases/download/v${herdrVersion}/herdr-linux-x86_64";
+      sha256 = "4fa1a01158dd8043da92d31b270780b0dcc10603038d9b61cac4d81ab63fb71f";
+    } else if pkgs.stdenv.hostPlatform.isAarch64 && pkgs.stdenv.hostPlatform.isDarwin then {
+      url = "https://github.com/herdrdev/herdr/releases/download/v${herdrVersion}/herdr-macos-aarch64";
+      sha256 = "32b53df09872628059c789a69f02a6b8e29e14ddf26711421f3463f70c1aef17";
+    } else
+      throw "workstation-agent: no herdr release asset declared for system '${pkgs.system}' (the pin knows linux x86_64 and darwin arm64)";
+  herdr = pkgs.runCommand "herdr-${herdrVersion}" {
+    src = pkgs.fetchurl herdrPin;
+    passthru.pinVersion = herdrVersion;
+  } ''
+    install -Dm755 "$src" "$out/bin/herdr"
+  '';
 
   launcher =
     pkgs.runCommand "ws-hermes-launcher" { }
@@ -106,12 +116,15 @@ let
 
   # the deployed pin manifest: the verify lane's only anchor (the checkout
   # HEAD and the interpreter are verified against the DEPLOYED pin, never a
-  # repo file)
+  # repo file). Null-safe on the pin: a null pin deploys an empty engine
+  # row and the module's assertion fires the friendly message — the eval
+  # never dies on a type error first.
   pinJson = builtins.toJSON {
     engine = {
-      inherit (hermes.pin) url rev;
+      url = if hermes.pin != null then hermes.pin.url else "";
+      rev = if hermes.pin != null then hermes.pin.rev else "";
     };
-    python = hermesPythonVersion;
+    python = pkgs.python314.version;
   };
 
   # the agent's authored skills: the single source both this module (the
@@ -202,6 +215,7 @@ in
 
     home.file = {
       # the pinned interpreter tree the launcher resolves at run time
+      # (pkgs.python314, floored at the locked release — see above)
       ".local/opt/hermes/python".source = hermesPython;
       # the pin manifest: the verify lane's anchor (the deployed pin,
       # never a repo file)
@@ -211,16 +225,18 @@ in
       # ...and the PATH entry — the store path links directly, no
       # ../opt indirection
       ".local/bin/hermes".source = "${hermes.package}/hermes-launcher";
-      # herdr: archive-less pin, the same direct store-path link
+      # herdr: the one download pin, the same direct store-path link
       ".local/bin/herdr".source = "${herdr}/bin/herdr";
     };
 
     # --- the pinned checkout (hot home; activation-managed) ----------------
     home.activation.ensure-hermes-checkout = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-      url=${lib.escapeShellArg hermes.pin.url}
-      rev=${lib.escapeShellArg hermes.pin.rev}
+      url=${lib.escapeShellArg (if hermes.pin != null then hermes.pin.url else "")}
+      rev=${lib.escapeShellArg (if hermes.pin != null then hermes.pin.rev else "")}
       checkout="$HOME/.hermes/hermes-agent"
-      if ! command -v git >/dev/null 2>&1; then
+      if [ -z "$rev" ]; then
+        echo "workstation: hermes checkout ensure deferred — programs.hermes.pin is unset (the module's assertion names the fix)"
+      elif ! command -v git >/dev/null 2>&1; then
         echo "workstation: hermes checkout ensure deferred — git unavailable on PATH"
       elif [ ! -d "$checkout/.git" ]; then
         if git clone --quiet "$url" "$checkout" && git -C "$checkout" checkout --quiet --detach "$rev"; then

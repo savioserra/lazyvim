@@ -4,7 +4,7 @@
 
 | Component | Contract |
 | --- | --- |
-| `secrets` capability | Verify the pinned 1Password CLI; do not inspect authentication or vault state |
+| `secrets` capability | Verify the 1Password CLI (nixpkgs-owned); do not inspect authentication or vault state |
 | `Workstation` vault | Dedicated scope for this workstation's secrets |
 | `/skill:secrets` | Explicit-only policy for safe metadata, references, and approved mutations |
 | Declared source | Store `op://` references and non-secret schema only |

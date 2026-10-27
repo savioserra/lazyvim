@@ -24,17 +24,22 @@ let
   cfg = config.workstation;
 
   # the native shell lane: the owning domain modules declare their
-  # fragments (id, target, marker, payload) on workstation.shell.fragments;
-  # the aggregate renders — a fragment file per id (marker + body) and one
-  # rc file per target sourcing them in the declared order (the explicit
-  # contract the walker's derived topo walk used to be)
+  # fragments (id, target, marker, payload, order) on
+  # workstation.shell.fragments; the aggregate renders — a fragment file
+  # per id (marker + body) and one rc file per target sourcing them in the
+  # DECLARED order (the explicit order contract, nix/lib/shell-lane.nix —
+  # never the module system's merged list order, which is REVERSE module
+  # order)
+  shellLane = import ../lib/shell-lane.nix { inherit lib; };
+  lane = shellLane.sortedFragments cfg.shell.fragments;
+
   fragmentFiles = builtins.foldl' (
     acc: f:
     acc
     // {
       ".config/workstation/shell/${f.id}.sh".text = "${f.marker}\n${builtins.readFile f.payload}";
     }
-  ) { } cfg.shell.fragments;
+  ) { } lane;
 
   rcFiles =
     builtins.foldl'
@@ -51,13 +56,15 @@ let
         }
       )
       (builtins.listToAttrs (
-        map (t: lib.nameValuePair t { text = ""; }) (lib.unique (map (f: f.target) cfg.shell.fragments))
+        map (t: lib.nameValuePair t { text = ""; }) (lib.unique (map (f: f.target) lane))
       ))
-      cfg.shell.fragments;
+      lane;
   # the module list comes from the shared capability walk
-  # (nix/lib/capabilities.nix) — the same registry the report fold reads, so
-  # the composed order (and with it the rc lanes' sourcing order) is the
-  # walk's id sort everywhere
+  # (nix/lib/capabilities.nix) — the same registry the report fold reads,
+  # so the composed surface and its report can never disagree about which
+  # modules exist; the FRAGMENT lane's order is its own explicit contract
+  # (the order field, sorted by nix/lib/shell-lane.nix) — both the rc
+  # files above and the report's fragmentOrder read that one sort
   capabilityWalk = import ../lib/capabilities.nix {
     inherit lib;
     treeRoot = self;
@@ -145,22 +152,17 @@ in
     # flake snapshot lands at ~/.local/opt/workstation/flake so the shim's
     # read verbs eval the report from exactly the tree this generation
     # shipped (the resolution order's last resort — a checkout or an
-    # explicit --flake outranks it).
+    # explicit --flake outranks it). The switch driver receives the leg's
+    # default attrs VERBATIM — a leg that stages no default for a plane
+    # (the mac leg's home plane) gets a driver that fails closed naming
+    # the fix, never a sentinel attr that looks switchable.
     home.packages = [
       (pkgs.writeShellScriptBin "workstation" (builtins.readFile (self + "/bin/workstation")))
       (import ../workstation-switch.nix {
         inherit pkgs;
         flake = self;
-        homeAttr =
-          if cfg.switch.homeAttr != null then
-            cfg.switch.homeAttr
-          else
-            "UNCONFIGURED-workstation.switch.homeAttr";
-        systemAttr =
-          if cfg.switch.systemAttr != null then
-            cfg.switch.systemAttr
-          else
-            "UNCONFIGURED-workstation.switch.systemAttr";
+        homeAttr = cfg.switch.homeAttr;
+        systemAttr = cfg.switch.systemAttr;
       })
     ];
 

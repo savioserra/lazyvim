@@ -1,7 +1,10 @@
-# The fonts domain: the JetBrainsMono Nerd Font tree (a checksummed pin
-# with the content-probe member gate) and the fontconfig discovery the
-# walker's platform coverage used to carry. Linux deploys under
-# ~/.local/share/fonts; darwin under ~/Library/Fonts.
+# The fonts domain: the JetBrainsMono Nerd Font from nixpkgs (operator
+# ruling 2026-10-27: the pins machinery is redundant — the package rides
+# the foundation domain's pin-override overlay, current with the retired
+# 3.5.0 download pin) and the fontconfig discovery. The font FILES deploy
+# at the same per-platform targets the pin tree used (linux:
+# ~/.local/share/fonts; darwin: ~/Library/Fonts) — the claim reaches into
+# the package's fontconfig-visible tree.
 {
   config,
   lib,
@@ -9,20 +12,11 @@
   ...
 }:
 let
-  pins = import ../../nix/lib/pins.nix { inherit lib pkgs; };
+  fontPackage = pkgs.nerd-fonts.jetbrains-mono;
 
-  fontTree = pins.tool "font" {
-    version = "3.5.0";
-    # one upstream archive serves both platform legs (same bytes, same sha)
-    url = "https://github.com/ryanoasis/nerd-fonts/releases/download/v{V}/JetBrainsMono.tar.xz";
-    sha256 = "0227b220360a6f819b9ead92343e8112b34733054782561af50cfba1e8afab63";
-    archive = "tar.xz";
-    layout = "flat";
-    probe = {
-      member = "JetBrainsMonoNerdFont-Regular.ttf";
-      sha256 = "1767e08e6b207eb57c114e833b817e26c6a7625bbcf474e3b4dd0f73c10e5bdc";
-    };
-  };
+  # the package's font directory (the nerd-fonts packages install under
+  # share/fonts/truetype/NerdFonts/<font>)
+  fontTree = "${fontPackage}/share/fonts/truetype/NerdFonts/JetBrainsMono";
 
   fontTarget =
     if pkgs.stdenv.isDarwin then

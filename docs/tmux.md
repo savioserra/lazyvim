@@ -61,12 +61,15 @@ Pinning rules:
 - Keep `@plugin` values as bare `user/repo` for TPM.
 - Store exact commits in this table. All six checkouts are
   substrate-provisioned pinned clones, never placed by hand: the plugin
-  pins are declared in `modules/terminal/terminal.nix` (url + rev
-  literals — one pin, one owner, one surface) and fetchGit-frozen at the
-  recorded commit, linking the store checkout under `~/.tmux/plugins/`
+  pins are declared in `modules/terminal/terminal.nix`
+  (owner/repo/rev/hash literals — one pin, one owner, one surface) and
+  hash-pinned `fetchFromGitHub` at the recorded commit (hermetic and
+  in-store — the un-locked `fetchGit` calls retired 2026-10-27), linking
+  the store checkout under `~/.tmux/plugins/`
   (tpm first — it must exist before the first tmux start, which sources
   it via the `run-shell` at the end of `.tmux.conf`); the same
-  declaration deploys as `~/.tmux/plugins.pins.json`, the verify lane's
+  declaration deploys as `~/.tmux/plugins.pins.json` (url + rev rows
+  derived from the same literals), the verify lane's
   anchor. TPM sees the pre-installed checkouts and sources
   them without cloning. Never run TPM's `prefix + I`: a TPM clone/pull
   would fight the pins — the next generation switch re-asserts them.

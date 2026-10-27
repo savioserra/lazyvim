@@ -76,6 +76,13 @@ let
     "meta"
   ];
 
+  # The classification: a MODULE is any file whose module-argset import
+  # yields a module in one of its standard shapes — `config`, `options`,
+  # or `imports`. Requiring `config` specifically would SILENTLY demote an
+  # options-only module to a library and drop it from the walk's every
+  # consumer (the home leg's imports and the report fold alike), so any
+  # standard shape composes. A module-keyed attrset in NO standard shape is
+  # a loud classification failure naming the file — never a silent drop.
   isModuleFile =
     file:
     let
@@ -86,11 +93,29 @@ let
         else
           imported (builtins.mapAttrs (n: _: probeArg n) (builtins.functionArgs imported));
       attempt = if probe == null then null else builtins.tryEval probe;
-      value = if attempt == null || !attempt.success then null else attempt.value;
+      value =
+        if attempt == null || !attempt.success || !builtins.isAttrs attempt.value then
+          null
+        else
+          attempt.value;
+      keys = if value == null then [ ] else builtins.attrNames value;
+      # a module-keyed attrset that is none of the standard shapes: the
+      # classification cannot place it, and placing it as a library would
+      # drop a real module silently
+      unplaceable =
+        keys != [ ]
+        && builtins.all (k: builtins.elem k moduleKeys) keys
+        && !(builtins.elem "config" keys)
+        && !(builtins.elem "options" keys)
+        && !(builtins.elem "imports" keys);
     in
-    builtins.isAttrs value
-    && builtins.all (k: builtins.elem k moduleKeys) (builtins.attrNames value)
-    && builtins.elem "config" (builtins.attrNames value);
+    if unplaceable then
+      throw
+        "workstation-capabilities: ${toString file} carries module keys (${
+          lib.concatStringsSep ", " keys
+        }) in no standard module shape (config, options, imports) — classification would silently drop it; give it a standard shape or move it out of modules/"
+    else
+      value != null && builtins.all (k: builtins.elem k moduleKeys) keys;
 
   capabilities = lib.sort (a: b: a.id < b.id) (
     map (cap: cap // { moduleFiles = builtins.filter isModuleFile cap.files; }) (walk "")

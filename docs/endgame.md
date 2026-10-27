@@ -14,7 +14,7 @@ board comments.
 | --- | --- |
 | `flake.nix`, `flake.lock` | The one entry point: inputs framed per domain (each domain owns its pin surface; `follows` dedupes shared nixpkgs/HM), the declared-state report verbs, the host legs, the mesh outputs |
 | `modules/<domain>/` | One directory per capability domain — the domain's module file AND the bytes it deploys, co-located: `modules/editor/{editor.nix, nvim/}`, `modules/terminal/{terminal.nix, tmux/, nunchux/}`, `modules/theme/{theme.nix, tokens.nix, tokens.lua}`, `modules/foundation/`, `modules/languages/{node,elixir,typescript,go}/`, `modules/agent/`, `modules/fonts/`, `modules/secrets/`. Adding a capability is adding one directory |
-| `nix/` | Shared substrate infrastructure, no capability of its own: `report.nix` (the declared-state fold), `lib/capabilities.nix` (the registry walk), `lib/pins.nix` (the declared pins' shared HOW: fetch/layout/probe machinery, the claim composition), `workstation-switch.nix` (the write plane), `modules/` (the home leg, the system leg, the host-identity options) |
+| `nix/` | Shared substrate infrastructure, no capability of its own: `report.nix` (the declared-state fold), `lib/capabilities.nix` (the registry walk), `lib/shell-lane.nix` (the fragment lane's order contract), `lib/license.nix` (the secrets domain's license acceptance), `workstation-switch.nix` (the write plane), `modules/` (the home leg, the system leg, the host-identity options) |
 | `hosts/{linux,mac}/` | The two target legs WSL and any linux server count under the linux leg. `hosts/<host>/default.nix` is the ONLY place a host's identity is written |
 | `bin/workstation` | The launcher shim: the whole client (POSIX sh). Reads are `nix eval`s over `workstation.report.<verb>`; writes delegate to the staged `workstation-switch`. The home lane stages the same bytes as a derivation onto the profile PATH |
 | `tests/` | `tests/nix/` (the VM proof host: `vm-host.nix`, `vm-home.nix`, `vm-e2e.nix`, `run-vm.sh`) — behavioral acceptance |
@@ -27,7 +27,9 @@ board comments.
 scope with an attrpath), `homeManagerModules.workstation`,
 `homeConfigurations` (the linux leg + the VM persona),
 `darwinConfigurations` (the mac leg), `nixosConfigurations.<host>` (the linux system plane),
-`nixosConfigurations.vm-test`, `overlays.default` (pin overrides ONLY),
+`nixosConfigurations.vm-test`, `checks.<system>` (`nix flake check` is the
+canonical validation entry: the declared-state reads, every host leg's
+eval, and the golden VM E2E boot), `overlays.default` (pin overrides ONLY),
 `workstationTheme.lib`, `hermesSkills`, `hermesAgentPin`.
 
 ## The invariants
@@ -47,16 +49,22 @@ scope with an attrpath), `homeManagerModules.workstation`,
   against home-manager. Options are domain-level (`workstation.<domain>.*`);
   tools are entries within — never per-tool module files.
 - **Resources-without-runtime is a defect.** A capability that names a tool
-  ships the tool; verify smokes the consumer, not a fingerprint. All
-  downloads are pinned declarations; no unpinned downloads, no `sudo`, no
-  OS-package-manager installation of managed tools.
-- **Foundation inventory (final).** The shell rc lane + fd, fzf, rg,
-  lazygit, tree-sitter (checksummed pins) + eza, starship, harlequin+hsql
-  (nixpkgs) + tailscale (system legs: `services.tailscale`; standalone-HM
+  ships the tool; verify smokes the consumer, not a fingerprint. Tools ride
+  nixpkgs (the pins machinery retired 2026-10-27 — the overlay + floors
+  keep the eval loud); the remaining pins (herdr, the tmux/nunchux
+  checkouts, the hermes checkout input) are pinned declarations. No
+  unpinned downloads, no `sudo`, no OS-package-manager installation of
+  managed tools.
+- **Foundation inventory (final).** The shell rc lane (the fragments'
+  declared order slots) + fd, fzf, rg, lazygit, tree-sitter, node, pnpm,
+  go, op, the JetBrainsMono Nerd Font (nixpkgs via the foundation input,
+  floored in the owning modules) + eza, starship, harlequin+hsql (nixpkgs)
+  + tailscale (system legs: `services.tailscale`; standalone-HM
   legs: CLI in `home.packages`, tailscaled a host-owned prerequisite).
   rainfrog retired; the prompt capability dissolved into foundation; op
   lives in secrets; the hsql agent skill provisions at activation,
-  version-matched to the harlequin derivation.
+  version-matched to the harlequin derivation; nvm retired with the pins
+  machinery — nix owns the node runtime.
 - **Verification is behavioral.** VM activation runs, consumer smokes, HM
   idempotency/rollback. Structural assertions (counts, the fold's union
   checks) stay assertions — there are no byte-goldens and no re-record
@@ -89,6 +97,9 @@ Everything deleted on the road here, and what replaced it:
 | CI's mise/elixir matrix | CI's static job + nix-eval job (evaluation only; closures are the local acceptance's job) |
 | `docs/elixir.md`, `docs/lua-migration.md`, `docs/roadmap.md`, `docs/store-design.md` | Git history; `docs/endgame.md` (this file) holds the living shape |
 | The pin inventory (`versions.json` at the repo root, read via `builtins.fromJSON`) | The pins declared in their OWNING domain's module (one pin, one owner, one surface): the fetchurl tool pins as version + per-platform url/sha256 literals, the git checkout pins as url + rev in `modules/terminal/terminal.nix` (deployed as `~/.tmux/plugins.pins.json`, the verify lane's anchor); `nix/lib/pins.nix` keeps only the shared HOW. The dead rows retired leak-free: openwiki (pi-era), the neovim bootstrap rows, nunchux's release-asset checksums |
+| The download-pin machinery itself (`nix/lib/pins.nix`: the fetchurl HOW, the layout rules, the probe gates) + the tool download pins (fd, fzf, rg, lazygit, tree-sitter, node/nvm, pnpm, go, op, the JetBrainsMono tree) | nixpkgs — operator ruling 2026-10-27: the machinery is redundant; the tools ride the flake's pin-override overlay (`nixpkgs-foundation`) with version floors asserted in the owning modules, on PATH via `home.packages`; nvm retired with it (nix owns the node runtime; `.local/opt/nvm` and `.config/shell/nvm.sh` retire through the declared tombstones). What stays pinned declares inline: herdr (no nixpkgs coverage), the tmux/nunchux checkouts as hash-pinned `fetchFromGitHub` (the un-locked `fetchGit` calls with them), the hermes checkout as the flake input |
+| The rc lane's derived composition order (the merged module list order — nixpkgs' module system merges `listOf` in REVERSE module order; the "walk's id sort everywhere" claim was false) | The explicit order contract: each fragment declares an `order` slot, `nix/lib/shell-lane.nix` sorts the lane once (the rendered rc files and the report's fragmentOrder read the same sort), and a shared or ambiguous slot fails the eval |
+| The switch driver's `UNCONFIGURED-…` sentinel home attr (the mac leg's default-verb `apply` landed on the fabricated attr) | The driver receives the leg's defaults verbatim (null = no default) and fails closed naming the fix; the mac leg's documented seam stays `--system` |
 
 ## The endgame decisions
 
@@ -116,3 +127,16 @@ Everything deleted on the road here, and what replaced it:
    domain's deployed-pin law), the hermes runtime staying the one
    flake-input pin (surfaced as `hermesAgentPin`). The change-rule
    survives: a pin bump moves the pin and its consumer together.
+6. **The pins machinery retires; nixpkgs owns the tools (2026-10-27).**
+   The download-pin library, the tool download pins and nvm are
+   redundant: the tools ride the flake's pin-override overlay with
+   version floors asserted in their owning modules (a lagging lock dies
+   loudly), the tmux plugin checkouts pin as hash-pinned
+   `fetchFromGitHub` (hermetic, in-store — no un-locked `fetchGit`),
+   herdr keeps the one inline download pin (no nixpkgs coverage,
+   documented in its owning module), and the hermes interpreter is
+   `pkgs.python314` floored at the pinned rev's `pm/lock.json` release.
+   `checks.<system>` makes `nix flake check` the canonical validation
+   entry (the reads, every host leg's eval, the golden VM E2E boot).
+   The change-rule survives in its overlay form: the lock moves the
+   versions, the floors keep the move honest.

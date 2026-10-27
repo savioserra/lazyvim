@@ -1,5 +1,6 @@
-# The Go language capability: the pinned toolchain (a store tree the bin
-# links into directly) and the editor profile entry.
+# The Go language capability: the nixpkgs toolchain (floored at the
+# retired download pin's minor — operator ruling 2026-10-27: the pins
+# machinery is redundant) and the editor profile entry.
 {
   config,
   lib,
@@ -7,36 +8,21 @@
   ...
 }:
 let
-  pins = import ../../../nix/lib/pins.nix { inherit lib pkgs; };
-
-  # go's --version vocabulary: GOOS/GOARCH (the two platform legs the
-  # substrate targets)
-  goOs = pkgs.stdenv.hostPlatform.parsed.kernel.name;
-  goArch = if pkgs.stdenv.hostPlatform.isAarch64 then "arm64" else "amd64";
-  goTree = pins.tool "go" {
-    version = "1.27.1";
-    url = {
-      linux_x86_64 = "https://go.dev/dl/go{V}.linux-amd64.tar.gz";
-      darwin_arm64 = "https://go.dev/dl/go{V}.darwin-arm64.tar.gz";
-    };
-    sha256 = {
-      linux_x86_64 = "63d339f0da5ab53635a56f2490a7984dfe12dfcff22ad749f63edaf590168445";
-      darwin_arm64 = "ee215d57e0ec269c60cc9ceca68e6bda321ba9ee5afe24f4b0988703c2d87d12";
-    };
-    archive = "tar.gz";
-    layout = "release";
-    probe = {
-      argv = [
-        "bin/go"
-        "version"
-      ];
-      output = "go version go{V} ${goOs}/${goArch}";
-    };
-  };
+  # the floor guards the overlay: the pinned 25.05 set carries go 1.24 —
+  # the foundation input's current 1.26.x is the declared surface, and an
+  # unapplied overlay (or a lagging lock) dies here instead of quietly
+  # downgrading the toolchain (the retired pin carried 1.27.1; the locked
+  # foundation input carries 1.26.9 — the floor holds the minor, the next
+  # flake lock update raises it, nixpkgs owns the drift)
+  go =
+    assert
+      lib.versionAtLeast (pkgs.go.version or "0") "1.26"
+      || throw "workstation-go: pkgs.go ${pkgs.go.version or "?"} predates the floor 1.26 — the flake's overlays.default must be applied (nixpkgs.overlays)";
+    pkgs.go;
 in
 {
   config = {
-    home.file.".local/bin/go".source = "${goTree}/bin/go";
+    home.packages = [ go ];
 
     workstation.editor.languages = [
       {

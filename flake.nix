@@ -45,6 +45,10 @@
       # no platform beyond that
       hostSystem = "x86_64-linux";
 
+      # the secrets domain's license acceptance (nix/lib/license.nix) — the
+      # 1Password CLI rides nixpkgs unfree, named and scoped
+      licensePredicate = import ./nix/lib/license.nix { inherit (nixpkgs) lib; };
+
       # the declared-state report: the capability modules' fold
       # (nix/report.nix) at this tree — the ONE read source. `nix eval
       # .#workstation.report.<verb>` answers the declared state; the
@@ -53,8 +57,13 @@
       report = import ./nix/report.nix {
         lib = nixpkgs.lib;
         # the fold applies the substrate's pin-override overlay itself
-        # (the foundation capability's harlequin floor asserts it)
-        pkgs = nixpkgs.legacyPackages.${hostSystem}.extend self.overlays.default;
+        # (the domains' version floors assert it) and carries the license
+        # acceptance
+        pkgs = import nixpkgs {
+          system = hostSystem;
+          overlays = [ self.overlays.default ];
+          config.allowUnfreePredicate = licensePredicate;
+        };
         hm = home-manager.lib;
         treeRoot = self;
         # no default may bake an identity: the eval's home.homeDirectory
@@ -111,14 +120,17 @@
           nix-darwin
           ;
       };
-    in
-    {
-      workstation.report = reportVerbs;
-
-      # the rebuild key is DERIVED from the host identity (${user}@<host>),
-      # never hand-typed
-      homeConfigurations.${linuxHost.homeKey} = home-manager.lib.homeManagerConfiguration {
-        pkgs = nixpkgs.legacyPackages.${hostSystem};
+      # the two standalone home configurations (the linux leg's rebuild key
+      # + the VM persona): bound here so the outputs and the checks read
+      # the same values
+      linuxHome = home-manager.lib.homeManagerConfiguration {
+        # the overlay carries the domains' version floors; the license
+        # acceptance carries the secrets domain's CLI
+        pkgs = import nixpkgs {
+          system = hostSystem;
+          overlays = [ self.overlays.default ];
+          config.allowUnfreePredicate = licensePredicate;
+        };
         extraSpecialArgs = {
           inherit self;
         };
@@ -128,8 +140,10 @@
             {
               home.username = linuxHost.user;
               home.homeDirectory = linuxHost.homeDir;
-              # the foundation domain's pin surface (harlequin + hsql)
+              # the domains' pin surface (version-currency overrides) and
+              # the secrets domain's license acceptance
               nixpkgs.overlays = [ self.overlays.default ];
+              nixpkgs.config.allowUnfreePredicate = licensePredicate;
               # the switch driver's default targets: derived from the host
               # identity (never hand-typed)
               workstation.switch.homeAttr = linuxHost.homeKey;
@@ -143,17 +157,59 @@
       # the VM's standalone home: the exact shape the linux leg applies —
       # and the E2E's apply target inside the offline VM (the shared VM
       # persona body: tests/nix/vm-home.nix)
-      homeConfigurations."vm@vm" = home-manager.lib.homeManagerConfiguration {
-        pkgs = nixpkgs.legacyPackages.${hostSystem};
+      vmHome = home-manager.lib.homeManagerConfiguration {
+        pkgs = import nixpkgs {
+          system = hostSystem;
+          overlays = [ self.overlays.default ];
+          config.allowUnfreePredicate = licensePredicate;
+        };
         extraSpecialArgs = {
           inherit self;
         };
         modules = [
-          { nixpkgs.overlays = [ self.overlays.default ]; }
+          {
+            nixpkgs.overlays = [ self.overlays.default ];
+            nixpkgs.config.allowUnfreePredicate = licensePredicate;
+          }
           ./tests/nix/vm-home.nix
           ./nix/modules/workstation-home.nix
         ];
       };
+
+      # the VM proof host: bound here so the outputs and the checks' e2e
+      # gate read the same configuration
+      vmTestConfig = nixpkgs.lib.nixosSystem {
+        system = hostSystem;
+        specialArgs = {
+          inherit self;
+          # resolved at the flake level: forcing pkgs inside a module's
+          # imports re-enters _module.args.pkgs (infinite recursion)
+          qemuVmModule = "${nixpkgs}/nixos/modules/virtualisation/qemu-vm.nix";
+        };
+        modules = [
+          (
+            { ... }:
+            {
+              # the domains' pin surface (version-currency overrides) and
+              # the secrets domain's license acceptance
+              nixpkgs.overlays = [ self.overlays.default ];
+              nixpkgs.config.allowUnfreePredicate = licensePredicate;
+            }
+          )
+          ./nix/modules/workstation-system.nix
+          ./nix/modules/host.nix
+          home-manager.nixosModules.home-manager
+          ./tests/nix/vm-host.nix
+        ];
+      };
+    in
+    {
+      workstation.report = reportVerbs;
+
+      # the rebuild key is DERIVED from the host identity (${user}@<host>),
+      # never hand-typed
+      homeConfigurations.${linuxHost.homeKey} = linuxHome;
+      homeConfigurations."vm@vm" = vmHome;
 
       # the mac leg: nix-darwin + the substrate. Brew keeps ONLY casks
       # (GUI apps); every retired-from-brew formula must exist in the nix
@@ -183,36 +239,95 @@
 
       homeManagerModules.workstation = ./nix/modules/workstation-home.nix;
 
-      # pin overrides ONLY: the foundation domain's pin surface lives here
-      # (harlequin + hsql — one upstream distribution; the pinned nixpkgs
-      # 25.05 predates hsql; the foundation module asserts the floor so an
-      # unapplied overlay dies loudly). The download pins live in their
-      # owning domain modules — nothing else may enter this overlay.
+      # pin overrides ONLY: the domains' version-currency surface lives
+      # here (operator ruling 2026-10-27 — the download pins retired,
+      # nixpkgs owns the tools). Each row pulls the named tool from the
+      # foundation input (nixos-unstable, locked) because the pinned 25.05
+      # set predates the floor the owning module asserts; a lagging lock
+      # dies loudly at the floor. The license acceptance (nix/lib/license.nix)
+      # is config, not an overlay — it rides the composition roots.
+      # Nothing else may enter this overlay.
       overlays.default = final: prev: {
-        harlequin = nixpkgs-foundation.legacyPackages.${prev.system}.harlequin;
+        inherit (nixpkgs-foundation.legacyPackages.${prev.system})
+          harlequin
+          fd
+          fzf
+          ripgrep
+          lazygit
+          tree-sitter
+          go
+          pnpm
+          nodejs_24
+          python314
+          _1password-cli
+          nerd-fonts
+          ;
       };
 
-      nixosConfigurations.vm-test = nixpkgs.lib.nixosSystem {
-        system = hostSystem;
-        specialArgs = {
-          inherit self;
-          # resolved at the flake level: forcing pkgs inside a module's
-          # imports re-enters _module.args.pkgs (infinite recursion)
-          qemuVmModule = "${nixpkgs}/nixos/modules/virtualisation/qemu-vm.nix";
+      nixosConfigurations.vm-test = vmTestConfig;
+
+      # the validation surface: `nix flake check` is THE canonical entry
+      # locally and in CI (the golden run-vm.sh boot is one of the checks —
+      # no second, hand-rolled entry to drift). The eval gates force the
+      # declared-state reads and every host leg's toplevel (eval-only:
+      # nothing builds); the VM check rides the closure in as an INPUT —
+      # the boot and the live E2E assertions run inside the derivation
+      # (tcg where KVM is absent; the timeout is the boot bound).
+      checks.${hostSystem} =
+        let
+          pkgs = import nixpkgs { system = hostSystem; };
+        in
+        {
+          # the declared-state reads answer: the fold evaluated through the
+          # read verbs' projection (the shim's contract)
+          report-reads = pkgs.runCommand "workstation-check-report-reads" {
+            report = builtins.toJSON reportVerbs;
+            passAsFile = [ "report" ];
+          } ''
+            mkdir -p "$out"
+            mv "$reportPath" "$out/report.json"
+          '';
+
+          # every host leg still evaluates — toplevel drvPath forces the
+          # full evaluation of each leg and builds nothing
+          linux-leg-eval = pkgs.runCommand "workstation-check-linux-leg-eval" {
+            toplevel = linuxHost.nixosConfig.config.system.build.toplevel.drvPath;
+          } ''
+            mkdir -p "$out"
+            printf '%s\n' "$toplevel" > "$out/toplevel.drv"
+          '';
+          mac-leg-eval = pkgs.runCommand "workstation-check-mac-leg-eval" {
+            toplevel = macHost.darwinConfig.config.system.build.toplevel.drvPath;
+          } ''
+            mkdir -p "$out"
+            printf '%s\n' "$toplevel" > "$out/toplevel.drv"
+          '';
+          home-legs-eval = pkgs.runCommand "workstation-check-home-legs-eval" {
+            linux = linuxHome.activationPackage.drvPath;
+            vm = vmHome.activationPackage.drvPath;
+          } ''
+            mkdir -p "$out"
+            printf '%s\n' "$linux" > "$out/linux.drv"
+            printf '%s\n' "$vm" > "$out/vm.drv"
+          '';
+
+          # the golden boot: the VM E2E (tests/nix/run-vm.sh) — the VM
+          # closure rides in as an input, the script boots it and asserts
+          # the activation markers + the live E2E's verdict on the serial log
+          vm-e2e = pkgs.runCommand "workstation-check-vm-e2e" {
+            vm = vmTestConfig.config.system.build.vm;
+            script = ./tests/nix/run-vm.sh;
+            nativeBuildInputs = [
+              pkgs.coreutils
+              pkgs.findutils
+              pkgs.gnugrep
+            ];
+          } ''
+            export WORKSTATION_VM_BUILT="$vm"
+            export WORKSTATION_VM_DISK_DIR="$TMPDIR/disk"
+            mkdir -p "$WORKSTATION_VM_DISK_DIR"
+            sh "$script" "$out/boot.log"
+          '';
         };
-        modules = [
-          (
-            { ... }:
-            {
-              # the foundation domain's pin surface (harlequin + hsql)
-              nixpkgs.overlays = [ self.overlays.default ];
-            }
-          )
-          ./nix/modules/workstation-system.nix
-          ./nix/modules/host.nix
-          home-manager.nixosModules.home-manager
-          ./tests/nix/vm-host.nix
-        ];
-      };
     };
 }

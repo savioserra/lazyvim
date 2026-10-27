@@ -13,7 +13,9 @@
 #                   home path — the entries declared recursive)
 #   capabilityOrder capability ids, the walk's id sort (the declared order)
 #   fragmentOrder   [ { target, fragments } ] — the declared rc lane, per
-#                   target in composition order
+#                   target in the declared order contract's order
+#                   (nix/lib/shell-lane.nix — the fragments' `order` slots,
+#                   not the module system's merged list order)
 #   accounting      per-capability rows: { id, foundation, fileTargets,
 #                   claimTargets, fragments, retire }
 #
@@ -111,6 +113,16 @@ let
       target = f.target;
     }) eval.workstation.shell.fragments;
 
+  # the composed lane's order: the explicit order contract
+  # (nix/lib/shell-lane.nix) — the ONE sort the home leg's rendered rc
+  # files also read; the module system's merged list order is never it
+  lane = (import ./lib/shell-lane.nix { inherit lib; }).sortedFragments
+    fullEval.workstation.shell.fragments;
+  fragments = map (f: {
+    id = f.id;
+    target = f.target;
+  }) lane;
+
   capRow = id: eval: {
     inherit id;
     foundation = foundationOf id;
@@ -124,8 +136,9 @@ let
     lib.zipListsWith (cap: eval: capRow cap.id eval) capabilityWalk.capabilities capabilityEvals
   );
 
-  # --- the composed surface (the full eval; order = the walk's id sort) ------
-  fragments = fragmentPairsOf fullEval;
+  # --- the composed surface (the full eval) ---------------------------------
+  # (fragments/fragmentOrder bind above the capRow: the lane's explicit
+  # order contract feeds the report's projection of the rc lane)
   fragmentOrder = map (t: {
     target = t;
     fragments = map (f: f.id) (builtins.filter (f: f.target == t) fragments);

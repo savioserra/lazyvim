@@ -74,3 +74,23 @@ jobs:
           for home in $(nix eval --json .#homeConfigurations --apply 'builtins.attrNames' | tr -d '[]" ' | tr ',' ' '); do
             nix eval --raw ".#homeConfigurations.$home.activationPackage.drvPath" > /dev/null
           done
+
+  # the canonical validation entry: `nix flake check` — the flake's checks
+  # output (the declared-state reads, every host leg's eval, and the golden
+  # VM E2E boot with the live consumer smokes). The VM boots under KVM
+  # where the runner exposes it, tcg otherwise; the binary cache owns the
+  # closure builds. This is the same surface `nix flake check` runs
+  # locally — no second entry to drift.
+  flake-check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+
+      - uses: DeterminateSystems/nix-installer-action@e50d5f73bfe71c2dd0aa4218de8f4afa59f8f81d # v16
+
+      - name: nix flake check (eval gates + the VM E2E)
+        shell: bash
+        run: nix flake check --print-build-logs

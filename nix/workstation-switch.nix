@@ -13,8 +13,9 @@
 # Home plane (default) wraps the user's `home-manager` profile; the
 # `--system` flag wraps the host's `nixos-rebuild` profile (root runs it).
 #
-# Baked by the staging module (workstation-home.nix): the engine, the
-# flake source snapshot THIS generation ships, and the two flake attrs.
+# Baked by the staging module (workstation-home.nix): the flake source
+# snapshot THIS generation ships, and the two flake attrs (the leg's
+# defaults, verbatim — null means the leg stages no default for that plane).
 # Environment overrides (the seams the VM E2E and CI use):
 #   WORKSTATION_SWITCH_FLAKE          switch a different flake (e.g. a
 #                                     writable checkout, for `update`)
@@ -28,8 +29,12 @@
 {
   pkgs,
   flake,
-  homeAttr,
-  systemAttr,
+  # the leg's default targets. A null means the leg documented a different
+  # mutating seam (the mac leg: --system wraps darwin-rebuild) — the
+  # unmarked plane then fails closed with the fix named, never a sentinel
+  # attr that looks switchable and lands somewhere broken.
+  homeAttr ? null,
+  systemAttr ? null,
 }:
 let
   # The system-plane rebuild tool follows the DRIVER's platform: the
@@ -65,6 +70,24 @@ let
     mkdir -p "$state_dir"
     echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) $message" >> "$state_dir/switch.log"
   '';
+
+  # the fail-closed guards: a plane the leg staged no default for stops at
+  # the verb, with the fix named — this is how the mac leg's default-verb
+  # `apply` dies instead of switching a fabricated attr
+  guards = ''
+    need_home() {
+      if [ -z "$home_attr" ]; then
+        echo "workstation-switch: no default home attr on this leg — set workstation.switch.homeAttr in the host module (or WORKSTATION_SWITCH_HOME_ATTR); this leg's documented mutating seam may be --system" >&2
+        exit 2
+      fi
+    }
+    need_system() {
+      if [ -z "$system_attr" ]; then
+        echo "workstation-switch: no default system attr on this leg — set workstation.switch.systemAttr in the host module (or WORKSTATION_SWITCH_SYSTEM_ATTR)" >&2
+        exit 2
+      fi
+    }
+  '';
 in
 pkgs.writeShellScriptBin "workstation-switch" ''
   set -eu
@@ -90,12 +113,14 @@ pkgs.writeShellScriptBin "workstation-switch" ''
   [ $# -eq 0 ] || usage
 
   flake="''${WORKSTATION_SWITCH_FLAKE:-${flake}}"
-  home_attr="''${WORKSTATION_SWITCH_HOME_ATTR:-${homeAttr}}"
-  system_attr="''${WORKSTATION_SWITCH_SYSTEM_ATTR:-${systemAttr}}"
+  home_attr="''${WORKSTATION_SWITCH_HOME_ATTR:-${if homeAttr == null then "" else homeAttr}}"
+  system_attr="''${WORKSTATION_SWITCH_SYSTEM_ATTR:-${if systemAttr == null then "" else systemAttr}}"
   home_activate="''${WORKSTATION_SWITCH_HOME_ACTIVATE:-}"
+  ${guards}
 
   case "$plane:$cmd" in
     home:apply|home:sync)
+      need_home
       if [ -n "$home_activate" ]; then
         "$home_activate"
       else
@@ -108,11 +133,13 @@ pkgs.writeShellScriptBin "workstation-switch" ''
       profile="''${XDG_STATE_HOME:-$HOME/.local/state}/nix/profiles/home-manager"
       ;;
     home:update)
+      need_home
       nix flake update --flake "$flake"
       home-manager switch --flake "$flake#$home_attr"
       profile="''${XDG_STATE_HOME:-$HOME/.local/state}/nix/profiles/home-manager"
       ;;
     system:apply|system:sync)
+      need_system
       ${rebuild} switch --flake "$flake#$system_attr"
       profile=/nix/var/nix/profiles/system
       ;;
@@ -121,6 +148,7 @@ pkgs.writeShellScriptBin "workstation-switch" ''
       profile=/nix/var/nix/profiles/system
       ;;
     system:update)
+      need_system
       nix flake update --flake "$flake"
       ${rebuild} switch --flake "$flake#$system_attr"
       profile=/nix/var/nix/profiles/system

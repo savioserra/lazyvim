@@ -1,5 +1,7 @@
-# The TypeScript language capability: the pinned pnpm standalone tree, the
-# editor profile entry, and the language's custom plugin module.
+# The TypeScript language capability: the nixpkgs pnpm (floored at the
+# retired download pin's major — operator ruling 2026-10-27: the pins
+# machinery is redundant), the editor profile entry, and the language's
+# custom plugin module.
 {
   config,
   lib,
@@ -8,32 +10,21 @@
   ...
 }:
 let
-  pins = import ../../../nix/lib/pins.nix { inherit lib pkgs; };
-
-  pnpm = pins.tool "pnpm" {
-    version = "12.14.0";
-    url = {
-      linux_x86_64 = "https://github.com/pnpm/pnpm/releases/download/v{V}/pnpm-linux-x64.tar.gz";
-      darwin_arm64 = "https://github.com/pnpm/pnpm/releases/download/v{V}/pnpm-darwin-arm64.tar.gz";
-    };
-    sha256 = {
-      linux_x86_64 = "3910c3852136bed5bc1511b9137a45fd4357ed6b3970d9d08893641e9005867e";
-      darwin_arm64 = "50f48e0e17508952790a3fbf58fcf14f3b82efa5f594ca04ad904e29aaf854b0";
-    };
-    archive = "tar.gz";
-    layout = "flat";
-    probe = {
-      argv = [
-        "pnpm"
-        "--version"
-      ];
-      output = "{V}";
-    };
-  };
+  # the pnpm floor guards the overlay: the pinned 25.05 set carries pnpm
+  # 10 — the foundation input's current 12.x is the declared surface, and
+  # an unapplied overlay (or a lagging lock) dies here instead of quietly
+  # downgrading the operator's package manager (the retired pin was
+  # 12.14.0; the locked foundation input carries 12.9.0 — the floor holds
+  # the major, nixpkgs owns the drift)
+  pnpm =
+    assert
+      lib.versionAtLeast (pkgs.pnpm.version or "0") "12"
+      || throw "workstation-typescript: pkgs.pnpm ${pkgs.pnpm.version or "?"} predates the floor 12 — the flake's overlays.default must be applied (nixpkgs.overlays)";
+    pkgs.pnpm;
 in
 {
   config = {
-    home.file.".local/bin/pnpm".source = "${pnpm}/pnpm";
+    home.packages = [ pnpm ];
 
     workstation.editor.languages = [
       {

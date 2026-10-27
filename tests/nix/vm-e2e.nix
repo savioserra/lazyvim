@@ -237,25 +237,74 @@ writeShellScriptBin "workstation-e2e" ''
     && fail "nunchux plane" "unresolved slot references survived the render"
   pass "nunchux plane"
 
-  step "foundation plane (rc lane, foundation pins, fonts, op)"
+  step "rc lane order (the declared order contract — PATH semantics)"
+  # the slots: user-local-bin 10 leads, op-env 30 follows in .profile;
+  # .bashrc sources 10 (PATH), 40 (eza), 50 (starship), 80 (direnv) in
+  # slot order — the composition sorts by the fragments' `order`, never
+  # the module system's merged list order
+  lane_slot() {
+    # lane_slot <rc-file> <fragment-id> — the 1-based source line, empty
+    # when absent
+    grep -n "shell/$2.sh" "$home/$1" 2>/dev/null | cut -d: -f1 | head -1
+  }
+  prof_bin=$(lane_slot .profile user-local-bin)
+  prof_op=$(lane_slot .profile managed-op-env)
+  [ -n "$prof_bin" ] && [ -n "$prof_op" ] \
+    || fail "rc lane order" ".profile does not source its declared fragments"
+  [ "$prof_bin" -lt "$prof_op" ] \
+    || fail "rc lane order" "user-local-bin (slot 10) must lead managed-op-env (slot 30) in .profile"
+  bash_bin=$(lane_slot .bashrc user-local-bin)
+  bash_eza=$(lane_slot .bashrc managed-eza)
+  bash_star=$(lane_slot .bashrc managed-starship)
+  bash_direnv=$(lane_slot .bashrc managed-direnv)
+  [ -n "$bash_bin" ] && [ -n "$bash_eza" ] && [ -n "$bash_star" ] && [ -n "$bash_direnv" ] \
+    || fail "rc lane order" ".bashrc does not source its declared fragments"
+  [ "$bash_bin" -lt "$bash_eza" ] && [ "$bash_eza" -lt "$bash_star" ] && [ "$bash_star" -lt "$bash_direnv" ] \
+    || fail "rc lane order" ".bashrc must source slots 10/40/50/80 in the declared order"
+  pass "rc lane order"
+
+  step "migrated tools run (nixpkgs-owned — operator ruling 2026-10-27)"
+  for t in fd fzf rg lazygit tree-sitter node pnpm op; do
+    t_bin=$(find_client "$t") || fail "migrated tools run" "$t is not on PATH"
+    "$t_bin" --version >/dev/null 2>&1 \
+      || fail "migrated tools run" "$t --version failed at $t_bin"
+  done
+  go_bin=$(find_client go) || fail "migrated tools run" "go is not on PATH"
+  "$go_bin" version >/dev/null 2>&1 \
+    || fail "migrated tools run" "go version failed at $go_bin"
+  pass "migrated tools run"
+
+  step "node runtime single-source (.node-version derived from the nixpkgs runtime)"
+  nv=$(cat "$home/.node-version" 2>/dev/null || true)
+  [ -n "$nv" ] || fail "node runtime single-source" ".node-version missing"
+  node_bin=$(find_client node) || fail "node runtime single-source" "node is not on PATH"
+  runtime=$("$node_bin" --version | sed 's/^v//')
+  [ "$nv" = "$runtime" ] \
+    || fail "node runtime single-source" ".node-version ($nv) does not match the runtime ($runtime)"
+  pass "node runtime single-source"
+
+  step "nvm retired (the old runtime manager stays gone)"
+  [ ! -e "$home/.local/opt/nvm" ] \
+    || fail "nvm retired" ".local/opt/nvm is still deployed"
+  [ ! -e "$home/.config/shell/nvm.sh" ] \
+    || fail "nvm retired" ".config/shell/nvm.sh is still deployed"
+  grep -q " .local/opt/nvm$" \
+    "$home/.local/state/workstation/retire.log" 2>/dev/null \
+    || fail "nvm retired" "no .local/opt/nvm receipt in the retire log"
+  pass "nvm retired"
+
+  step "foundation plane (rc lane, starship fragment, fonts)"
   # the rc lane: .profile sources its fragments in the declared order
-  # (user-local-bin, managed-nvm, managed-op-env)
+  # (user-local-bin, managed-op-env)
   grep -q 'shell/user-local-bin.sh' "$home/.profile" \
     || fail "foundation plane" ".profile does not source the PATH fragment"
-  grep -q 'shell/managed-nvm.sh' "$home/.profile" \
-    || fail "foundation plane" ".profile does not source the nvm fragment"
   grep -q 'shell/managed-op-env.sh' "$home/.profile" \
     || fail "foundation plane" ".profile does not source the op-env fragment"
   [ -r "$home/.config/workstation/shell/managed-starship-zsh.sh" ] \
     || fail "foundation plane" "the per-shell starship fragment did not deploy"
   grep -q 'starship init zsh' "$home/.config/workstation/shell/managed-starship-zsh.sh" \
     || fail "foundation plane" "the zsh fragment carries the wrong init body"
-  # the checksummed pins link straight from their store trees
-  [ -x "$home/.local/bin/rg" ] \
-    || fail "foundation plane" "rg is not linked"
-  # the op CLI + the font tree
-  [ -x "$home/.local/bin/op" ] \
-    || fail "foundation plane" "op is not linked"
+  # the font tree (the nixpkgs nerd-fonts package's font dir)
   [ -d "$home/.local/share/fonts/JetBrainsMonoNerdFont" ] \
     || fail "foundation plane" "the nerd font tree did not deploy"
   pass "foundation plane"

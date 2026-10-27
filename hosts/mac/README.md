@@ -24,6 +24,11 @@ darwin-rebuild switch --flake .#<user>@<hostname>
 
 # the mutating seam (--system wraps darwin-rebuild on this host):
 workstation-switch apply --system
+
+# the default-verb home plane has no default target on this leg: the
+# staged driver fails closed naming the fix (set
+# workstation.switch.homeAttr in hosts/mac/default.nix to opt in)
+workstation-switch apply   # exits 2 with the named fix
 ```
 
 ## Proof status (2026-10-22)

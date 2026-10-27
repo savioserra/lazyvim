@@ -1,13 +1,16 @@
 #!/bin/sh
 # VM test skeleton: build the workstation VM and boot it to activation.
 #
-#   tests/nix/run-vm.sh
+#   tests/nix/run-vm.sh [log-path]
 #
 # Builds nixosConfigurations.vm-test.config.system.build.vm, boots it
 # headless and greps the serial log for the workstation activation
 # markers + a reached multi-user target. KVM is used when available;
 # otherwise qemu falls back to tcg (slow but real). Requires nix with
-# flakes; the golden CI surface runs this where a builder exists.
+# flakes; the golden CI surface runs this where a builder exists — and
+# the flake's `checks.<system>.vm-e2e` runs the same script with the VM
+# closure handed in as WORKSTATION_VM_BUILT (no nix build inside a
+# derivation; `nix flake check` is the canonical entry).
 set -eu
 repo_root=$(CDPATH='' cd -P "$(dirname "$0")/../.." && pwd -P)
 cd "$repo_root"
@@ -15,11 +18,15 @@ log="${1:-/tmp/workstation-vm-boot.log}"
 
 export NIX_CONFIG="extra-experimental-features = nix-command flakes"
 
-echo "== building the VM closure =="
-nix build --print-build-logs \
-  ".#nixosConfigurations.vm-test.config.system.build.vm" \
-  --out-link tests/nix/vm-result
-run_script=$(find "$repo_root"/tests/nix/vm-result/bin -name 'run-*-vm' | head -1)
+if [ -n "${WORKSTATION_VM_BUILT:-}" ]; then
+	run_script=$(find "$WORKSTATION_VM_BUILT/bin" -name 'run-*-vm' | head -1)
+else
+	echo "== building the VM closure =="
+	nix build --print-build-logs \
+		".#nixosConfigurations.vm-test.config.system.build.vm" \
+		--out-link tests/nix/vm-result
+	run_script=$(find "$repo_root"/tests/nix/vm-result/bin -name 'run-*-vm' | head -1)
+fi
 
 echo "== booting $run_script to activation + live E2E =="
 # The VM disk lands in the CURRENT directory; WORKSTATION_VM_DISK_DIR moves

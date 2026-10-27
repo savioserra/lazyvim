@@ -11,7 +11,7 @@
 | `hosts/` | `wsl` (the linux leg; NixOS-WSL), `mac` (nix-darwin); per-host identity lives only here |
 | `.github/workflows/ci.yml` | The static battery + the nix evaluation leg |
 | `.github/workflows/release.yml` | Tagged source archives |
-| `modules/` | Capability payload bytes co-located with their declaring modules and data files — each domain declares its own pins |
+| `modules/` | Capability payload bytes co-located with their declaring modules and data files — each domain owns its tools (nixpkgs via the overlay + floors) and its remaining pins |
 
 ## Documentation map
 

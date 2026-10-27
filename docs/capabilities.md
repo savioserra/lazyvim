@@ -46,7 +46,8 @@ files read as bytes, never executed.
 | `modules/<domain>/<domain>.nix` | The domain's native declaration: home.file surfaces, pins, fragments, activation scripts — payload co-located in the domain directory |
 | `nix/report.nix` | The declared-state fold: every capability evaluated once against home-manager, integrity-asserted (targets compose, nothing escapes classification, no identity leaks) |
 | `nix/lib/capabilities.nix` | The registry walk: discovers `modules/<domain>/` — the one discovery the home leg and the fold share |
-| `nix/lib/pins.nix` | The pins' shared HOW: checksummed `fetchurl` derivations from the owning modules' declared data, layout/extraction rules, claim composition, build-time probe gates (git checkout pins are `builtins.fetchGit` at the declaring module) |
+| `nix/lib/shell-lane.nix` | The fragment lane's order contract: the fragments' `order` slots sorted once, read by both the rendered rc files and the report's fragmentOrder; a shared or ambiguous slot fails the eval |
+| `nix/lib/license.nix` | The secrets domain's license acceptance (the 1Password CLI rides nixpkgs unfree): one predicate, imported by every composition root |
 | `modules/agent/agent.nix` | The agent domain's hot-home surfaces: managed skill leaves (store-path `home.file`), the checkout ensure and version-matched skill provisions (activation scripts) |
 | `modules/<domain>/` payload dirs | Capability payload assets (`files/`, verify scripts) and data files, co-located with the declaring module |
 | `modules/theme/tokens.lua` | Canonical theme tokens (DATA: slot/palette layers, per-appearance palettes, consumer choices) — read as bytes, never executed |
@@ -66,17 +67,25 @@ owns everything the old envelope kinds expressed, natively:
 
 - **file/symlink surfaces** — `home.file` entries with store-path sources
   (intra-home links through `mkOutOfStoreSymlink`);
-- **pins** — `nix/lib/pins.nix` turns an owning module's declared pin
-  (version + url + 64-hex sha256 + layout + optional probe) into a
-  derivation; the probe (argv + output
-  template, or content member+sha for trees without an executable) asserts
-  at BUILD time: a wrong pin fails the build, never a host;
-- **dir claims** — a pin's tree linked at a home target; overlapping targets
-  compose into one derivation (a payload file inside a pinned tree overlays
-  into the same store result);
-- **shell fragments** — body bytes as payload files; the module declares the
-  ordered fragment list (id, target, marker, payload path) and the rc lane
-  sources them in declared order;
+- **tools** — nixpkgs packages through the flake's pin-override overlay
+  (`overlays.default`, the `nixpkgs-foundation` input), each floored in
+  its owning module at the retired download pin's version (the harlequin
+  precedent — an unapplied overlay or a lagging lock dies loudly at the
+  floor, never a quiet downgrade). The remaining pins declare inline in
+  their owning modules: herdr's `fetchurl`, the tmux/nunchux checkouts as
+  hash-pinned `fetchFromGitHub`, the hermes checkout as the flake's
+  `hermes-agent` input;
+- **dir claims** — a store tree linked at a home target; overlapping
+  targets compose into one derivation (a payload file inside a claimed
+  tree overlays into the same store result — the terminal module's
+  `.platform` marker is the one consumer of that HOW since the pins
+  library retired);
+- **shell fragments** — body bytes as payload files; the module declares
+  the fragment list (id, target, marker, payload, ORDER slot) and the rc
+  lane sources them in the declared order (nix/lib/shell-lane.nix sorts
+  by the slot — PATH semantics, never the module system's merged list
+  order, which is REVERSE module order; the eval fails on a shared or
+  ambiguous slot);
 - **activation scripts** — the hot-home and mutation surfaces (the hermes
   checkout ensure, the nvim lock merge, the retire list), sequenced with
   `lib.hm.sequence`;
@@ -106,67 +115,48 @@ secrets    secrets
 
 | Capability | Provides | Verify | Host support |
 | --- | --- | --- | --- |
-| `foundation` | The base shell environment: the rc lane (fragment bodies as payload files, the declared order — bash-login `.bash_profile` include included), fd/fzf/rg/lazygit/tree-sitter as checksummed pins linked straight from their store trees (`nix/lib/pins.nix`, probes now build gates), eza + starship nixpkgs (the dissolved prompt capability), harlequin + hsql (one upstream distribution via the foundation domain's pin-override overlay; the hsql agent skill is generated from the harlequin derivation at build time and serves as a declared entry symlink), and the tailscale transport (`workstation.foundation.tailscale.*`; `services.tailscale` on the system legs) | `modules/foundation/verify/prompt.sh` (the dissolved surface: tools speak, payload deployed, rc wired) | All |
-| `fonts` | Exact pinned JetBrainsMono Nerd Font tree (tar.xz `flat`, SHA-256-gated; per-platform targets: linux `.local/share/fonts/JetBrainsMonoNerdFont`, darwin `Library/Fonts/JetBrainsMonoNerdFont`); content probe pins `JetBrainsMonoNerdFont-Regular.ttf` bytes; fontconfig enabled so `fc-cache` sees it | content probe (build gate) | All |
-| `node` | nvm (pinned v0.40.4, content probe pins `nvm.sh` bytes) then the pinned Node nested at `.local/opt/nvm/versions/node/v<version>` (probe `bin/node --version`), declared parent-first so the nested tree composes into the nvm tree; the rc loader (`.config/shell/nvm.sh`) and `.node-version` payload unchanged; the loader activates the pinned default fork-free | both probes (build gates) + NVM and Node version | All |
-| `agent` | Hermes Agent full-stack, declarative under `programs.hermes` (`modules/agent/agent.nix`): the runtime pin rides the flake's `hermes-agent` input (fetchGit rev, surfaced as `outputs.hermesAgentPin` -> `programs.hermes.pin`); the pinned checkout (`~/.hermes/hermes-agent`) is ensured to the pin by activation — never file-tracked; the pinned interpreter (`.local/opt/hermes/python`, checksum-gated python-build-standalone pin); the engine launcher (`programs.hermes.package`, on PATH as `.local/bin/hermes`); the deployed pin manifest (`.local/opt/hermes/pin.json`) is the verify anchor; declared skills serve as ONE store entry symlink per target profile (`programs.hermes.skills` — `secrets` authored at `modules/agent/skills/secrets`, `hsql` generated from the harlequin derivation); gateway extensions link as entry symlinks into `~/.hermes/plugins`; the retired `lazyvim` skill target retires through the declared retire list | `modules/agent/verify/hermes.sh` (checkout at the deployed pin, store-symlink skills, interpreter, launcher `--version` consumer smoke; full-stack or exit 1) | All |
-| `go` | Exact pinned toolchain tree at `.local/opt/go` (per-platform SHA-256, single-root tarball, probe `bin/go version`) + `.local/bin/go` | probe (build gate) + link record | Linux/WSL/macOS |
+| `foundation` | The base shell environment: the rc lane (fragment bodies as payload files, the declared order slots — bash-login `.bash_profile` include included), fd/fzf/rg/lazygit/tree-sitter as nixpkgs packages through the foundation domain's pin-override overlay, floored at the retired download pins' versions (`modules/foundation/foundation.nix`), eza + starship nixpkgs (the dissolved prompt capability), harlequin + hsql (one upstream distribution via the same overlay; the hsql agent skill is generated from the harlequin derivation at build time and serves as a declared entry symlink), and the tailscale transport (`workstation.foundation.tailscale.*`; `services.tailscale` on the system legs) | `modules/foundation/verify/prompt.sh` (the dissolved surface: tools speak, payload deployed, rc wired) | All |
+| `fonts` | The JetBrainsMono Nerd Font from nixpkgs (`pkgs.nerd-fonts.jetbrains-mono` through the foundation domain's overlay — the retired tar.xz content probe died with the pins machinery); the package's font directory deploys at the per-platform targets (linux `.local/share/fonts/JetBrainsMonoNerdFont`, darwin `Library/Fonts/JetBrainsMonoNerdFont`); fontconfig enabled so `fc-cache` sees it | the deployed font dir (the VM E2E asserts it) | All |
+| `node` | The nixpkgs runtime (`pkgs.nodejs_24` on PATH — operator ruling 2026-10-27 retired nvm with the pins machinery: nix owns the runtime, the default-alias bug class died structurally); `.node-version` is DERIVED from the runtime (one source); `.local/opt/nvm` and `.config/shell/nvm.sh` retire through the declared tombstones | the runtime's `node --version` vs the derived `.node-version` (the VM E2E asserts both) | All |
+| `agent` | Hermes Agent full-stack, declarative under `programs.hermes` (`modules/agent/agent.nix`): the runtime pin rides the flake's `hermes-agent` input (fetchGit rev, surfaced as `outputs.hermesAgentPin` -> `programs.hermes.pin`); the pinned checkout (`~/.hermes/hermes-agent`) is ensured to the pin by activation — never file-tracked; the interpreter is `pkgs.python314` (the foundation input; floored at the release the pinned rev's `pm/lock.json` carries — the eval dies loud on a mismatch) claimed at `.local/opt/hermes/python`; the engine launcher (`programs.hermes.package`, on PATH as `.local/bin/hermes`); the deployed pin manifest (`.local/opt/hermes/pin.json`) is the verify anchor; declared skills serve as ONE store entry symlink per target profile (`programs.hermes.skills` — `secrets` authored at `modules/agent/skills/secrets`, `hsql` generated from the harlequin derivation); gateway extensions link as entry symlinks into `~/.hermes/plugins`; herdr keeps the ONE inline download pin (no nixpkgs coverage — documented in the owning module); the retired `lazyvim` skill target retires through the declared retire list | `modules/agent/verify/hermes.sh` (checkout at the deployed pin, store-symlink skills, interpreter, launcher `--version` consumer smoke; full-stack or exit 1) | All |
+| `go` | The nixpkgs toolchain (`pkgs.go` through the foundation domain's overlay, floored at 1.26 — the retired 1.27.1 pin's line rises with the next lock) on PATH | the toolchain's `go version` (the VM E2E asserts it) | Linux/WSL/macOS |
 | `elixir` | nixpkgs toolchains via `home.packages` (erlang 28 + elixir 1.18; the mise lane retired — toolchains come from nixpkgs) | Own Mason expectations and the plugin module through nvim leaf helpers | All |
-| `herdr` | Exact pinned binary linked straight from its store derivation at `.local/bin/herdr` (the `../opt` bin-link shape died with the manifests); never server/pane/session lifecycle | fingerprint + link record | All |
-| `secrets` | Pinned op (zip `flat` — the `op` + `op.sig` pair at `.local/opt/op`, probe `op --version`); op env fragment; link record | record + verify `--version` only, never account or vault state | All supported hosts |
+| `herdr` | The ONE inline download pin (no nixpkgs coverage — upstream ships release binaries only; documented in `modules/agent/agent.nix`), linked straight from its store derivation at `.local/bin/herdr`; never server/pane/session lifecycle | fingerprint + link record | All |
+| `secrets` | The nixpkgs 1Password CLI (`pkgs._1password-cli` through the foundation domain's overlay; unfree — the acceptance is `nix/lib/license.nix`, named and scoped); op env fragment | record + verify `--version` only, never account or vault state | All supported hosts |
 | `nvim` | The editor payload (`files/.config/nvim/**`), the nixpkgs neovim on PATH (`.local/bin/nvim`), the composed language profile (see [Neovim](#neovim-package-and-profile)) | Startup, locks, mason coverage, base/standard/Go behavior | All |
-| `typescript` | The pinned pnpm standalone tree (tar.gz `flat` — rootless `pnpm` + `dist/`), linked straight from the store derivation at `.local/bin/pnpm`; the operator's JS package manager is a declared capability | probe (build gate) + link record; own Mason/plugin surface | All |
+| `typescript` | The nixpkgs pnpm (`pkgs.pnpm` through the foundation domain's overlay, floored at the retired pin's major 12); the operator's JS package manager is a declared capability | the toolchain's `pnpm --version` (the VM E2E asserts it); own Mason/plugin surface | All |
 | `theme` | `tokens.lua` — the canonical token payload; nix extracts the slots consumers need (fail-closed line parse in `modules/theme/theme.nix` — a restructure the parser cannot read fails the eval, never renders empty tokens); deploys no home target | token bytes against the tokens module | All |
-| `tmux` | Plugin checkouts (tpm, tmux2k, tmux-yank, tmux-resurrect, vim-tmux-navigator — fetchGit-pinned); `.tmux.conf`; the `.config/tmux` link; nixpkgs tmux/btop (the mise lane retired); the stale `tmux2k.conf` theme path retires through the retire list | Commits, server, theme | Linux/macOS |
-| `nunchux` | Pinned checkout (`.tmux/plugins/nunchux` at the v3.1.3 commit — repo-tracked launcher binary) + `.platform` marker; theme-slot launcher config rendered natively (slot substitution from `tokens.lua`) | `modules/terminal/nunchux/verify/nunchux.sh` (checkout HEAD + binary pin + marker; never executes the binary) | Linux (darwin deferred; the release-asset rows retired with the inventory — no consumer) |
+| `tmux` | Plugin checkouts (tpm, tmux2k, tmux-yank, tmux-resurrect, vim-tmux-navigator — hash-pinned `fetchFromGitHub`, hermetic and in-store; the un-locked `fetchGit` calls retired); `.tmux.conf`; the `.config/tmux` link; nixpkgs tmux/btop (the mise lane retired); the stale `tmux2k.conf` theme path retires through the retire list | Commits, server, theme | Linux/macOS |
+| `nunchux` | Pinned checkout (`.tmux/plugins/nunchux` at the v3.1.3 commit — hash-pinned `fetchFromGitHub`, repo-tracked launcher binary) + `.platform` marker composed in (the claim composition's one consumer, inline in the terminal module); theme-slot launcher config rendered natively (slot substitution from `tokens.lua`) | `modules/terminal/nunchux/verify/nunchux.sh` (checkout HEAD + binary pin + marker; never executes the binary) | Linux (darwin deferred; the release-asset rows retired with the inventory — no consumer) |
 | `prompt` | (dissolved into `foundation` — eza + starship are nixpkgs packages, the starship config and the managed rc fragments ride the foundation module) | `modules/foundation/verify/prompt.sh` (the dissolved surface: tools speak, payload deployed, rc wired) | All |
 
 ### Go toolchain acquisition
 
 Decision recorded 2026-10-15 (card t_1d7be74b): the Go toolchain is a
-declared ARCHIVE pin, not a host prerequisite. The layout (`.local/opt/go`
-exact tree + the `.local/bin/go` link) and the go pin (now declared in
-`modules/languages/go/go.nix`; originally an inventory row) predate the
-declaration cutover but had no provisioning path — the link
-dangled on every fresh host. The pin keeps one pinned-artifact seam
-(https-only URL, 64-hex SHA-256 gate, per-platform dispatch, exclusive
-target ownership) and honors the operating-contract law: a capability that
-names a tool ships the tool.
+declared capability, never a host prerequisite. The archive-pin era (the
+`.local/opt/go` exact tree + the `.local/bin/go` link) closed with the
+pins machinery (operator ruling 2026-10-27): the toolchain is
+`pkgs.go` through the foundation domain's pin-override overlay, floored
+in `modules/languages/go/go.nix` at the retired pin's minor (1.26) — an
+unapplied overlay or a lagging lock dies loudly at the floor, and the
+version line rises with the next `nix flake update` instead of a SHA
+being kept alive by hand.
 
-The pin's data is domain-neutral: the layout names the root discipline, the
-probe is the honesty gate — the tree must prove it is the pinned tool.
-Execution is nix's: the declaration renders as a checksummed `fetchurl`
-derivation, the store verifies the bytes, and the generation links the
-extracted tree at the target. A pin bump moves the owning module's
-declared pin, its consumer row and the generation together.
-
-### Fresh-host pins: foundation tools, fonts, op, nvm/Node
+### Fresh-host tools: the overlay + the remaining pins
 
 Decision recorded 2026-10-15 (card t_cf14f71b, after the audit t_bf0c0acc
 found the docs claiming provisioning no source implemented): every tool
-class above is a declared pin — none stays a documented host prerequisite.
-The vocabulary, each shape fail-closed:
-
-* formats `tar.xz` and `zip` join `tar.gz` (store-side extraction has no
-  host-tool dependency — a declared format the pins library cannot extract
-  is a loud, named build failure, never a silent fallback);
-* the declared `layout` names the root discipline — `release` (exactly one
-  root; a root directory strips one component, a lone root file IS the
-  tree) and `flat` (rootless top-level members);
-* the probe has a content shape (`{member, sha256}`) for trees that carry
-  no executable — nvm's checkout and the font directory prove identity by
-  pinned member bytes;
-* the destination may dispatch per platform — the font lands in
-  `.local/share/fonts` on linux and `Library/Fonts` on darwin.
-
-Per-tool seams: ripgrep, fd, fzf, tree-sitter, rainfrog at
-`.local/opt/<tool>` + a `.local/bin` link (release layout; lazygit `flat`);
-op at `.local/opt/op` + link (zip, `flat`); the JetBrainsMono Nerd Font
-exact tree (tar.xz, `flat`, content probe, per-platform targets); nvm at
-`.local/opt/nvm` (release, content probe) with the pinned Node nested
-inside it (release, exec probe), declared parent-first. Every url and
-SHA-256 is declared in the owning domain's module — one pin, one owner,
-one surface (the `versions.json` mirror retired 2026-10-26).
+class above ships with the substrate — none stays a documented host
+prerequisite. Since operator ruling 2026-10-27 the HOW is nixpkgs:
+the flake's `overlays.default` (the `nixpkgs-foundation` input) carries
+the version-currency set, the owning modules assert the floors, and
+`home.packages` puts the tools on PATH. What remains a literal pin
+declares inline in its owning module: herdr (the inline `fetchurl`), the
+tmux/nunchux checkouts (hash-pinned `fetchFromGitHub` — owner/repo/rev/
+hash, hermetic and in-store), and the hermes checkout (the flake input).
+Every bump moves the owning row and its consumer together; the floors
+and the deployed manifests (`~/.tmux/plugins.pins.json`,
+`~/.local/opt/hermes/pin.json`) keep the verify lanes honest.
 
 ## Capability domains
 
@@ -211,8 +201,11 @@ Validation is nix eval, fail-closed at eval time:
   must agree between the fold and the composed surface;
 - target collisions across capabilities throw at eval (two lanes claiming
   one home target never silently compose);
-- pin gates: 64-hex digest shape, platform asset presence, probe output —
-  wrong pins fail the derivation build;
+- the fragment lane's order contract: a fragment without a slot, one id
+  with two slots, or two ids sharing a slot fails the eval
+  (nix/lib/shell-lane.nix — the lane's order is PATH semantics);
+- the version floors: a tool below its owning module's floor throws
+  naming the overlay and the lock (a quiet downgrade never passes);
 - envelope identities in the report are asserted unique (the accounting
   cannot lie);
 - the identity gate in `check.sh` holds per-host identity to
@@ -286,12 +279,13 @@ step; recorded in AGENTS.md's operating-contract law). Four surfaces:
    demands it. The deployed pin manifest (`.local/opt/hermes/pin.json`)
    carries the pin for the verify lane — the deployed pin, never a repo
    file.
-2. **The pinned interpreter** — a checksum-gated pin declared in
-   `modules/agent/agent.nix` (per-platform URL/SHA-256 module literals)
-   at `.local/opt/hermes/python` (probe `bin/python3 --version`). The pin
-   is the SAME release hermes-agent's own `pm/lock.json` carries at the
-   pinned rev — the rev is the authority for which interpreter build the
-   runtime expects.
+2. **The interpreter** — `pkgs.python314` (nixpkgs-owned via the
+   foundation domain's pin-override overlay), claimed at
+   `.local/opt/hermes/python` (probe `bin/python3 --version`). Its
+   version floor is DERIVED at eval from the SAME release hermes-agent's
+   `pm/lock.json` carries at the pinned rev — the rev is the authority
+   for which interpreter build the runtime expects, and the eval dies
+   loud naming both versions on a mismatch.
 3. **The engine launcher** — `programs.hermes.package`, deployed at
    `.local/opt/hermes/bin/hermes` and on PATH as `.local/bin/hermes`. The
    launcher resolves the interpreter and the checkout from `$HOME` at run
@@ -323,12 +317,13 @@ runtime is provisioning drift, never a documented state. Beyond the
 consumer gate the runtime stays upstream's: `hermes update`'s pm-managed
 dependency closure, tool store (`~/.hermes/tools/...`) and gateway are
 runtime-extended state the capability never freezes. Runtime updates go
-through the pins: bump the `hermes-agent` input's rev (`nix flake lock`
-follows), move the `hermes_python` pins to the release the new commit's
-`pm/lock.json` names, and switch.
+through the pin: bump the `hermes-agent` input's rev (`nix flake lock`
+follows), and the interpreter's floor re-derives from the new rev's
+`pm/lock.json` at eval — if the nixpkgs set lags the locked release, the
+eval dies loud naming both versions and the fix is a lock update.
 
 Kanban boards and profiles are runtime state the capability never owns: it
-ships the pins, the launcher, the skills and the verify only.
+ships the pin, the launcher, the skills and the verify only.
 
 ## Payload rule
 
@@ -358,7 +353,7 @@ absorption chain's final card lands.
 - Verify languages with real files, parsers, and attached LSP clients.
 - Verify formatters by comparing on-disk output.
 - Verify the agent capability's full stack on every host: resources (pinned
-  checkout, managed skills) and runtime (pinned interpreter, engine
+  checkout, managed skills) and runtime (interpreter, engine
   launcher) alike, ending in the `hermes --version` consumer smoke — an
   absent or broken runtime is provisioning drift, never a documented state.
 - Treat directory existence as supporting evidence, not final proof.

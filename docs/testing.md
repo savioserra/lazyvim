@@ -36,16 +36,24 @@ persistent store volume works; build from `git archive HEAD` extractions —
 worktree gitdirs do not resolve in containers) and explicit authorization.
 The acceptance ladder, cheapest first:
 
+- **`nix flake check`** — the canonical entry (the flake's `checks`
+  output): the declared-state reads answer, every host leg still
+  evaluates (toplevel drvPath — eval only, nothing builds), and the
+  golden VM E2E boots and runs its live consumer smokes (tcg where KVM
+  is absent; the timeout is the boot bound). Locally and in CI — one
+  surface, no second entry to drift.
 - **The reads answer**: `nix eval --json .#workstation.report.{status,
   plan,capabilities}` and every host leg's toplevel `drvPath` evaluates
   (CI's nix job runs exactly this on a clean checkout).
 - **The closures build**: the linux home configuration's
   `activationPackage` and the VM test's system closure.
-- **The VM E2E** (`tests/nix/run-vm.sh`): boots the NixOS VM (tcg where
+- **The VM E2E** (`tests/nix/run-vm.sh`, the `checks.<system>.vm-e2e`
+  check's script): boots the NixOS VM (tcg where
   KVM is absent; the timeout is the boot bound) and runs
   `tests/nix/vm-e2e.nix` inside it — the daemonless retirement proof (no
   unit, no socket), the consumer smokes (the launcher shim dispatch, the
-  nvim profile link, the language profile, the agent skills at pinned
+  nvim profile link, the language profile, the rc lane's declared order,
+  the migrated tools running, the agent skills at pinned
   versions, the tmux/nunchux/foundation planes, the theme token path), the
   adopt rehearsal (a copy-contract tree makes way for the declared
   symlink), the apply-driven switch (`workstation-switch apply` over the

@@ -91,6 +91,10 @@ in
           nixpkgs.hostPlatform = system;
           # the foundation domain's pin surface (harlequin + hsql)
           nixpkgs.overlays = [ self.overlays.default ];
+          # the secrets domain's license acceptance (the 1Password CLI rides
+          # nixpkgs unfree — nix/lib/license.nix, named and scoped)
+          nixpkgs.config.allowUnfreePredicate =
+            import ../../nix/lib/license.nix { lib = nixpkgs.lib; };
 
           # host identity: the ONLY place this host's facts are written
           # (the options are declared in the substrate; consumers derive)
@@ -142,7 +146,10 @@ in
                   home.homeDirectory = homeDir;
                   # the mac's mutating seam is the --system plane
                   # (darwin-rebuild); the driver's default system target is
-                  # derived from the identity block (never hand-typed)
+                  # derived from the identity block (never hand-typed).
+                  # homeAttr stays unset — the staged driver fails closed
+                  # naming the fix when the default-verb home plane is
+                  # used (set workstation.switch.homeAttr here to opt in)
                   workstation.switch.systemAttr = hostKey;
                 }
               )

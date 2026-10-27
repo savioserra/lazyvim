@@ -1,5 +1,6 @@
 # The base shell environment: the rc lane + fd, fzf, rg, lazygit,
-# tree-sitter (checksummed pins), eza + starship (nixpkgs — the prompt
+# tree-sitter (nixpkgs, floored at the retired download pins' versions —
+# operator ruling 2026-10-27), eza + starship (nixpkgs — the prompt
 # capability dissolved here), mise (nixpkgs — the binary only, no managed
 # footprint), direnv + nix-direnv (nixpkgs — the per-repo environment
 # layer; the hooks ride the fragment lane below), harlequin + hsql (one
@@ -9,13 +10,14 @@
 # transport (the system legs declare services.tailscale through the system
 # module; workstation.foundation.tailscale.* is the options surface).
 #
-# Shell fragments: the bodies are payload files beside this module; the
-# ORDER is the explicit declared list below (id, target, marker, payload)
-# — reviewed in diffs, never derived. The retired managed-mise fragment
-# is gone with the mise lane. The hsql agent skill is generated from the
-# INSTALLED derivation at build time (hsql --skill) — version-matched by
-# construction, offline — and serves as a declared entry symlink
-# (programs.hermes.skills.hsql); no activation lane writes into hot home.
+# Shell fragments: the bodies are payload files beside this module; each
+# declares its `order` slot — the rc lane's composition order is PATH
+# semantics and is never derived (nix/lib/shell-lane.nix sorts the lane;
+# a shared or ambiguous slot fails the eval). The hsql agent skill is
+# generated from the INSTALLED derivation at build time (hsql --skill) —
+# version-matched by construction, offline — and serves as a declared entry
+# symlink (programs.hermes.skills.hsql); no activation lane writes into
+# hot home.
 {
   config,
   lib,
@@ -24,139 +26,52 @@
   ...
 }:
 let
-  pins = import ../../nix/lib/pins.nix { inherit lib pkgs; };
-
-  # the checksummed pins: the foundation domain's declared pin data — one
-  # pin, one owner, one surface (the bump moves these rows and the
-  # consumers together), rendered as store trees the bin links reach
-  # directly
+  # the foundation tools ride nixpkgs (operator ruling 2026-10-27: the
+  # pins machinery is redundant — nixpkgs maintains these five, security
+  # backports included). Each is floored at the retired download pin's
+  # version (the harlequin precedent): the pinned 25.05 set predates the
+  # floors, so the flake's pin-override overlay must be applied — an
+  # unapplied overlay (or a lagging lock) dies here instead of quietly
+  # downgrading the fleet.
+  floored =
+    name: floor: pkg:
+    assert
+      lib.versionAtLeast (pkg.version or "0") floor
+      || throw "workstation-foundation: pkgs.${name} ${pkg.version or "?"} predates the floor ${floor} — the flake's overlays.default (the foundation domain's pin surface) must be applied (nixpkgs.overlays) and its lock must carry the version";
+    pkg;
   tools = {
-    rg = pins.tool "ripgrep" {
-      version = "15.2.0";
-      url = {
-        linux_x86_64 = "https://github.com/BurntSushi/ripgrep/releases/download/{V}/ripgrep-{V}-x86_64-unknown-linux-musl.tar.gz";
-        darwin_arm64 = "https://github.com/BurntSushi/ripgrep/releases/download/{V}/ripgrep-{V}-aarch64-apple-darwin.tar.gz";
-      };
-      sha256 = {
-        linux_x86_64 = "33e15bcf1624b25cdd2a55813a47a2f95dbe126268203e76aa6a585d1e7b149c";
-        darwin_arm64 = "3750b2e93f37e0c692657da574d7019a101c0084da05a790c83fd335bad973e4";
-      };
-      archive = "tar.gz";
-      probe = {
-        argv = [
-          "rg"
-          "--version"
-        ];
-        # upstream prints the packaging rev beside the version (the release
-        # identity's own suffix — moves with the pin on a bump)
-        output = "ripgrep {V} (rev e89fff89ac)";
-      };
-    };
-    fd = pins.tool "fd" {
-      version = "10.4.2";
-      url = {
-        linux_x86_64 = "https://github.com/sharkdp/fd/releases/download/v{V}/fd-v{V}-x86_64-unknown-linux-gnu.tar.gz";
-        darwin_arm64 = "https://github.com/sharkdp/fd/releases/download/v{V}/fd-v{V}-aarch64-apple-darwin.tar.gz";
-      };
-      sha256 = {
-        linux_x86_64 = "def59805cd14b5651b68990855f426ad087f3b96881296d963910431ba3143c8";
-        darwin_arm64 = "623dc0afc81b92e4d4606b380d7bc91916ba7b97814263e554d50923a39e480a";
-      };
-      archive = "tar.gz";
-      probe = {
-        argv = [
-          "fd"
-          "--version"
-        ];
-        output = "fd {V}";
-      };
-    };
-    fzf = pins.tool "fzf" {
-      version = "0.74.2";
-      url = {
-        linux_x86_64 = "https://github.com/junegunn/fzf/releases/download/v{V}/fzf-{V}-linux_amd64.tar.gz";
-        darwin_arm64 = "https://github.com/junegunn/fzf/releases/download/v{V}/fzf-{V}-darwin_arm64.tar.gz";
-      };
-      sha256 = {
-        linux_x86_64 = "b3648f48675612b69ee35371cf6dc99ca96d767e89b912d079080916ac8ba8bd";
-        darwin_arm64 = "d60ddb36356566ac69bae7c3504e888916cf747c9ad2132141c09229b1e28dee";
-      };
-      archive = "tar.gz";
-      probe = {
-        argv = [
-          "fzf"
-          "--version"
-        ];
-        # upstream prints the build commit beside the version (the release
-        # identity's own suffix — moves with the pin on a bump)
-        output = "{V} (3337be9d)";
-      };
-    };
-    lazygit = pins.tool "lazygit" {
-      version = "0.63.1";
-      url = {
-        linux_x86_64 = "https://github.com/jesseduffield/lazygit/releases/download/v{V}/lazygit_{V}_linux_x86_64.tar.gz";
-        darwin_arm64 = "https://github.com/jesseduffield/lazygit/releases/download/v{V}/lazygit_{V}_darwin_arm64.tar.gz";
-      };
-      sha256 = {
-        linux_x86_64 = "8e033bc78c8e192dee9510e951f6c9e154289b7198d22c924ed1d0a951b0dac1";
-        darwin_arm64 = "b963e9d0a1f4649708c594ac6c999cdcd435f8e679e220e78e87c4642badedd6";
-      };
-      archive = "tar.gz";
-      layout = "flat";
-      probe = {
-        argv = [
-          "lazygit"
-          "--version"
-        ];
-        output = "commit=aafe61082e7ed383d318fd40e48f85645e6afc7b, build date=2026-07-15T11:34:26Z, build source=binaryRelease, version={V}, os=${pkgs.stdenv.hostPlatform.parsed.kernel.name}, arch=${
-          if pkgs.stdenv.hostPlatform.isAarch64 then "arm64" else "amd64"
-        }, git version=";
-      };
-    };
-    tree-sitter = pins.tool "tree_sitter" {
-      version = "0.26.11";
-      url = {
-        linux_x86_64 = "https://github.com/tree-sitter/tree-sitter/releases/download/v{V}/tree-sitter-cli-linux-x64.zip";
-        darwin_arm64 = "https://github.com/tree-sitter/tree-sitter/releases/download/v{V}/tree-sitter-cli-macos-arm64.zip";
-      };
-      sha256 = {
-        linux_x86_64 = "ff1b7f9863f2faafd78dc0e66d902ee85b37f709b314b22c009f51caf233eebd";
-        darwin_arm64 = "050f41d60a054b608ea392ba14722bba9457bdc0ab11a5706c77f034dafc68ac";
-      };
-      archive = "zip";
-      probe = {
-        argv = [
-          "tree-sitter"
-          "--version"
-        ];
-        output = "tree-sitter {V}";
-      };
-    };
+    fd = floored "fd" "10.4.2" pkgs.fd;
+    fzf = floored "fzf" "0.74.2" pkgs.fzf;
+    ripgrep = floored "ripgrep" "15.2.0" pkgs.ripgrep;
+    lazygit = floored "lazygit" "0.63.1" pkgs.lazygit;
+    tree-sitter = floored "tree-sitter" "0.26.11" pkgs.tree-sitter;
   };
 
-  # the fragment payload (id -> the marker + payload path the rc lane
+  # the fragment payload (id, order slot, marker, payload path the rc lane
   # declares; bodies live beside the module at their final address). The
-  # starship init is per-shell — the walker's id-keyed file map collapsed
-  # the two bodies (last wins); the declared list gives each shell its own.
-  frag = id: marker: {
-    inherit id marker;
+  # starship init is per-shell — the two bodies get their own ids and
+  # slots. The slots (round tens): the user-local bin fragment LEADS (PATH
+  # semantics — every later fragment may resolve through ~/.local/bin),
+  # the login glue follows, aliases then the prompt, and the direnv pair
+  # hooks last (the hook PREPENDS its export to PROMPT_COMMAND, so hooking
+  # after the prompt keeps the environment applied before each prompt
+  # rebuild).
+  frag = id: order: marker: {
+    inherit id order marker;
     payload = ./fragments + "/${id}.sh";
   };
 
-  # the explicit declared list: the rc contract's order, per target,
-  # exactly the order the manifests' topo walk used to derive (minus the
-  # retired mise fragment). The direnv pair runs after the prompt tools:
-  # the hook PREPENDS its export to PROMPT_COMMAND, so hooking last keeps
-  # the environment applied before each prompt rebuild.
+  # the declared list: the rc contract's slots, per target (the retired
+  # mise and nvm fragments' slots stay retired — 30 is the secrets domain's
+  # op-env slot)
   fragments = [
-    (frag "user-local-bin" "# workstation: managed user-local bin")
-    (frag "managed-profile" "# workstation: load managed profile")
-    (frag "managed-eza" "# workstation: managed eza ls")
-    (frag "managed-starship" "# workstation: managed starship prompt")
-    (frag "managed-starship-zsh" "# workstation: managed starship prompt")
-    (frag "managed-direnv" "# workstation: managed direnv hook")
-    (frag "managed-direnv-zsh" "# workstation: managed direnv hook")
+    (frag "user-local-bin" 10 "# workstation: managed user-local bin")
+    (frag "managed-profile" 20 "# workstation: load managed profile")
+    (frag "managed-eza" 40 "# workstation: managed eza ls")
+    (frag "managed-starship" 50 "# workstation: managed starship prompt")
+    (frag "managed-starship-zsh" 60 "# workstation: managed starship prompt")
+    (frag "managed-direnv" 80 "# workstation: managed direnv hook")
+    (frag "managed-direnv-zsh" 90 "# workstation: managed direnv hook")
   ];
 
   fragmentTargets = {
@@ -176,12 +91,14 @@ let
     managed-direnv-zsh = [ ".zshrc" ];
   };
 
-  # the option's entries: one per (id, target) pair
+  # the option's entries: one per (id, target) pair — the fragment's slot
+  # rides along (the lane's order contract reads it)
   fragmentEntries = lib.concatMap (
     f:
     map (target: {
       inherit target;
       id = f.id;
+      order = f.order;
       marker = f.marker;
       payload = f.payload;
     }) fragmentTargets.${f.id}
@@ -239,14 +156,18 @@ in
 
     home.file = {
       ".config/starship.toml".source = starshipToml;
-      ".local/bin/rg".source = "${tools.rg}/rg";
-      ".local/bin/fd".source = "${tools.fd}/fd";
-      ".local/bin/fzf".source = "${tools.fzf}/fzf";
-      ".local/bin/lazygit".source = "${tools.lazygit}/lazygit";
-      ".local/bin/tree-sitter".source = "${tools.tree-sitter}/tree-sitter";
     };
 
     home.packages = [
+      # the foundation tools: nixpkgs-owned, floored at the retired
+      # download pins' versions (the floors above make an unapplied
+      # overlay or a lagging lock die at eval — a quiet downgrade of the
+      # fleet's tool set is never a silent act)
+      tools.fd
+      tools.fzf
+      tools.ripgrep
+      tools.lazygit
+      tools.tree-sitter
       # the dissolved prompt capability: eza is the managed ls (icons),
       # starship the cross-shell prompt — both nixpkgs-native
       pkgs.eza

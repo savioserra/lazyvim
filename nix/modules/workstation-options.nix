@@ -64,6 +64,18 @@ in
             type = lib.types.path;
             description = "The fragment body's store path";
           };
+          order = lib.mkOption {
+            type = lib.types.int;
+            description = ''
+              The fragment's slot in the rc lane's composition order. The
+              order is PATH semantics (the user-local bin fragment must
+              lead so later fragments resolve through it) and is never
+              derived: declare it in round tens so a new fragment slots
+              between neighbours without renumbering the lane. Two distinct
+              ids may not share a slot and one id may not carry two — the
+              composition fails the eval on either.
+            '';
+          };
         };
       }
     );
@@ -71,7 +83,10 @@ in
     description = ''
       The shell fragments: per-fragment files under
       .config/workstation/shell/ and the one sourced rc lane per target.
-      Declared by the owning domain modules; ids must be unique.
+      Declared by the owning domain modules; ids must be unique; the rc
+      lane sources them in the declared `order` (nix/lib/shell-lane.nix) —
+      never the module system's merged list order, which is REVERSE module
+      order and would flip PATH semantics silently.
     '';
   };
 

@@ -74,7 +74,9 @@ closure acceptance and the VM E2E (docs/testing.md).
 The substrate is the endgame shape (docs/endgame.md). Named remaining
 work: none — the last named item, the pin inventory (`versions.json`)
 relocating into the owning domains' module and flake-input surfaces,
-landed 2026-10-26 (one pin, one owner, one surface). The retired
+landed 2026-10-26 (one pin, one owner, one surface), and the download-pin
+machinery itself followed on 2026-10-27 (nixpkgs owns the tools; the
+overlay + floors keep the eval loud). The retired
 increments — the manifests, the walker, the format, the write/acquisition
 plane, the daemon, the wire protocol, the TUI, the Elixir plane, the pin
 inventory — are history, not debt: docs/absorption.md is the record, Git

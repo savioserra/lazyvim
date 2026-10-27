@@ -50,6 +50,16 @@ deliberately as envelopes leave.
 | `git` into `.hermes` (1: the agent checkout) | REFUSED — hot home | `home.activation.ensure-hermes-checkout`: idempotent clone/fetch to the `programs.hermes.pin` rev (the flake's `hermes-agent` input) ONLY when the checkout is absent or clean-and-behind — never touching a dirty or runtime-advanced tree. Activation scripts mutate hot state; the file plane never tracks it |
 | `chezmoi-data` (1) | REFUSED — engine runtime data | retired: `tokens.lua` is already the canonical byte source; the envelope was its chezmoi-side projection. Nix reads `tokens.lua` directly (extraction, asserted by the eval golden) |
 
+Postscript (operator ruling 2026-10-27): the download-pin machinery this
+mapping re-landed (`nix/lib/pins.nix` — the fetchurl HOW, the layout rules,
+the probe gates) retired with the pins it served: the tools ride nixpkgs
+through the flake's pin-override overlay, floored in their owning modules
+(the harlequin precedent). What remains pinned declares inline in its
+owning module — herdr's `fetchurl`, the tmux/nunchux checkouts as
+hash-pinned `fetchFromGitHub`, the hermes checkout as the flake input. The
+table above records the absorption-time design; [endgame](endgame.md) and
+[tools](tools.md) hold the living shape.
+
 ### The nvim-profile gap this design closes
 
 The card's premise that the nvim-profile lane is "proven" is imprecise: the
