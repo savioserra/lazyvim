@@ -90,8 +90,13 @@ expect_log "$repo_root#workstation.report.capabilities.editor"
 "$shim" capabilities 'bad;name' >/dev/null 2>&1 && fail 'a scope element must be a plain attribute name'
 
 # 3b. the identity gate: writes refuse the uncaptured template
+# (the test owns its template fixture — the live checkout's identity may
+# legitimately be captured on a converged host)
+template=$root/templateflake
+mkdir -p "$template/hosts"
+printf '{ host = "TEMPLATE"; user = "TEMPLATE"; home = "/home/TEMPLATE"; tailscaleFqdn = ""; }\n' >"$template/hosts/identity.nix"
 rc=0
-WORKSTATION_FLAKE=$repo_root "$shim" apply 2>"$root/err" || rc=$?
+WORKSTATION_FLAKE=$template "$shim" apply 2>"$root/err" || rc=$?
 [ "$rc" = 2 ] || fail 'apply must refuse the uncaptured template identity with exit 2'
 grep -q 'workstation init' "$root/err" || fail 'the refusal must name workstation init'
 
