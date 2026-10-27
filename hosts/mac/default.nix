@@ -174,4 +174,9 @@ in
       )
     ];
   };
+
+  # the mac's nix is Determinate-managed: nix-darwin's native Nix
+  # management conflicts with the Determinate daemon (the switch fails
+  # without this) — nix.* options stay unused on this leg
+  nix.enable = false;
 }
