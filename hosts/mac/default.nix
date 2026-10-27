@@ -89,6 +89,10 @@ in
         { config, ... }:
         {
           nixpkgs.hostPlatform = system;
+          # the mac's nix is Determinate-managed: nix-darwin's native Nix
+          # management conflicts with the Determinate daemon (the switch
+          # fails without this) — nix.* options stay unused on this leg
+          nix.enable = false;
           # the foundation domain's pin surface (harlequin + hsql)
           nixpkgs.overlays = [ self.overlays.default ];
           # the secrets domain's license acceptance (the 1Password CLI rides
@@ -175,8 +179,4 @@ in
     ];
   };
 
-  # the mac's nix is Determinate-managed: nix-darwin's native Nix
-  # management conflicts with the Determinate daemon (the switch fails
-  # without this) — nix.* options stay unused on this leg
-  nix.enable = false;
 }
