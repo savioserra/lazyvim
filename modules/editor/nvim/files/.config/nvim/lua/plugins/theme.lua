@@ -1,10 +1,7 @@
--- Starlight via oasis.nvim — the same brand as every other workstation
--- surface (theme tokens v4 cite the upstream starlight palette, so editor
--- and engine render one family). Upstream switches dark/light on
--- vim.o.background, so both appearances map natively. The Omarchy
--- desktop-theme import was dropped with the Starlight rebrand: starlight
--- wins on all hosts (rebrand spec S-R2), so there is no precedence to
--- guard anymore.
+-- Starlight via oasis.nvim — the same palette family as every other
+-- workstation surface (theme tokens cite the upstream starlight palette).
+-- Upstream switches dark/light on vim.o.background, so both appearances
+-- map natively.
 local specs = {
 	{
 		"uhs-robert/oasis.nvim",

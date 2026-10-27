@@ -8,7 +8,7 @@ Current brand: **Starlight** — the oasis.nvim starlight `@thm_*` palette
 (dark) and its `light_3` sibling (light, upstream's default intensity).
 Palette values cite those theme tokens; the slot layer rides the matching
 starlight ANSI-16 terminal assignment. Judgment calls (chrome/muted split,
-`selected_bg`, light `muted`) are pinned in the rebrand spec S-R3.
+`selected_bg`, light `muted`) are pinned in this section.
 
 ## Layers
 
@@ -69,8 +69,8 @@ or watch the link, nothing polls).
 | --- | --- | --- |
 | tmux (status bar) | — (upstream-truthed) | pinned `tmux2k` at the upstream `onedark` theme; `.tmux.conf` sets no theme color options — upstream's onedark palette is canonical (the tokens palette does not feed the bar). The tmux2k slot template target still carries its removal tombstone from the ADDENDUM 2 swap ([tmux](tmux.md)) |
 | nunchux (launcher config) | `slots` | the terminal module renders `.config/nunchux/config` from the payload template by slot substitution (`renderSlots` from the extracted tokens, asserted unresolved-slot-free); the checkout is the fetchGit-pinned store tree ([tmux](tmux.md)) |
-| herdr | philosophy (terminal-following) | documented canonical choice only: `[theme] name = "terminal"`, `auto_switch = true` (see [herdr](herdr.md)); herdr tracks the host terminal's live ANSI palette, so under the Starlight rebrand it renders starlight via the terminal theme — the substrate never writes herdr's live `config.toml` and ships no herdr colors |
-| nvim | upstream pin (`oasis-starlight`) | `lazy-lock.json` pins `uhs-robert/oasis.nvim`; the editor rides the upstream starlight palette tokens.lua cites — not a generated colorscheme (rebrand spec S-R4); starlight wins all hosts, Omarchy import dropped (S-R2) |
+| herdr | philosophy (terminal-following) | documented canonical choice only: `[theme] name = "terminal"`, `auto_switch = true` (see [herdr](herdr.md)); herdr tracks the host terminal's live ANSI palette, so it renders the terminal theme — the substrate never writes herdr's live `config.toml` and ships no herdr colors |
+| nvim | upstream pin (`oasis-starlight`) | `lazy-lock.json` pins `uhs-robert/oasis.nvim`; the editor rides the upstream starlight palette tokens.lua cites — not a generated colorscheme |
 
 ## Consumers and the follow law
 

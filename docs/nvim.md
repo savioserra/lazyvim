@@ -135,7 +135,7 @@ Rules:
 
 - oasis.nvim is the upstream port, deliberately NOT a colorscheme generated
   from the workstation tokens: tokens.lua drives engine surfaces; editor
-  syntax rides the complete upstream palette (rebrand spec S-R4).
+  syntax rides the complete upstream palette.
 - Deployed lockfiles that still carry retired theme plugins reconcile on
   the next apply: the pin left the seeded baseline, so it
   becomes a host extra that prunes once its installed plugin directory goes

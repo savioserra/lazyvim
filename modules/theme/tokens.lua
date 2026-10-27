@@ -23,7 +23,7 @@ local M = {}
 -- Brand: Starlight (oasis.nvim starlight @thm_* tokens), dark palette from
 -- themes/dark/oasis_starlight_dark.conf, light from the light_3 sibling
 -- (upstream default intensity). Judgment calls (chrome/muted split,
--- selected_bg, light muted) per the rebrand spec S-R3.
+-- selected_bg, light muted) are the declared judgment calls.
 M.version = 4
 
 M.slots = {

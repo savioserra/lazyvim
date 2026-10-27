@@ -226,18 +226,6 @@ separator set is single-width (`|`) rather than PUA powerline arrows, which
 clients without a nerd font render double-width. Re-enabling seconds or
 powerline arrows is a deliberate local choice.
 
-## Omarchy interactions
-
-Retired: the substrate no longer targets Arch/omarchy hosts (operator
-ruling 2026-10-22 — the flake targets mac and linux, with WSL counted
-under linux). The hazard below is kept as the record of why a foreign
-distro's config refreshers must never run on a managed host: omarchy's
-`omarchy-refresh-tmux` copies `/usr/share/omarchy/config/tmux/` onto
-`~/.config/tmux/tmux.conf` with `cp -f`; on a managed host that copy
-follows the XDG symlink and would overwrite `~/.tmux.conf`. If a host
-ever carries a distro config refresher again, treat it as the same
-hazard: restore by switching (the generation re-links the managed
-config) and remove any `tmux.conf.bak.*` left in `~/.config/tmux/`.
 
 ## Verification
 

@@ -155,7 +155,7 @@ let
   # the theme-slot launcher config, rendered natively: the template's slot
   # references substitute from the extracted tokens (byte-equal to
   # upstream's default config — only the two slot references carry the
-  # theme rebrand)
+  # theme palette)
   nunchuxConfig = theme.assertNoUnresolved (
     theme.renderSlots (builtins.readFile ./nunchux/files/.config/nunchux/config)
   );

@@ -7,7 +7,8 @@
   # shellExtras = "stty -ixon"; # optional: the operator's shell lines,
   # appended LAST in the managed rc lane (.bashrc/.zshrc) — absent or
   # empty renders no operator fragment
-  host = "TEMPLATE"; # hostname -s
-  user = "TEMPLATE"; # the operator user
-  home = "/home/TEMPLATE"; # $HOME
+  host = "vps"; # hostname -s
+  user = "root"; # the operator user
+  home = "/root"; # $HOME
+  shellExtras = "stty -ixon"; # this machine's operator extras (the template comment above)
 }
