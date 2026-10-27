@@ -11,8 +11,10 @@ workstation — the nixpkgs-native workstation substrate
 
 install (once per machine):
   init            capture this machine's identity into hosts/identity.nix
-                  (whiptail dialogs prefilled with the detected values) and
-                  run the first activation — the whole install is:
+                  (whiptail dialogs prefilled with the detected values;
+                  a re-run MERGES — the fields you set are kept, only the
+                  placeholders and missing fields are filled) and run the
+                  first activation — the whole install is:
                     clone && workstation init
                   keep the identity file uncommitted; every later update is
                   `workstation apply` (WORKSTATION_NO_APPLY=1 skips the
@@ -177,12 +179,19 @@ fi
 
 case "$verb" in
 init)
-	# Capture this machine's identity once, at install time. The template
-	# file hosts/identity.nix is rewritten in the working copy; the local
-	# edit stays uncommitted (the repo carries no personal strings at
-	# HEAD — evals read the dirty tree).
+	# Capture this machine's identity once, at install time. The file is
+	# the operator's (the local rewrite stays uncommitted — the repo
+	# carries no personal strings at HEAD; evals read the dirty tree),
+	# so the capture MERGES, never replaces: a field the file already
+	# sets wins over the detected default, the shipped template's
+	# TEMPLATE placeholders are the only lines rewritten in place, and
+	# a missing captured field is inserted before the closing brace.
+	# The operator's own surface — shellExtras, tailscaleFqdn, the
+	# comments — is never touched: a re-run of a converged identity
+	# leaves the file byte-identical.
 	[ -n "$flake" ] || die 'init: no checkout found — run inside the workstation repo clone' 2
 	[ -f "$flake/hosts/identity.nix" ] || die "init: $flake/hosts/identity.nix missing (unexpected tree)" 1
+	id_file=$flake/hosts/identity.nix
 	host=$(hostname -s 2>/dev/null || hostname)
 	user=${USER:-$(id -un)}
 	home_dir=$HOME
@@ -190,33 +199,110 @@ init)
 	escape() {
 		printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'
 	}
+	# id_val <key> — the value the file carries for a captured field
+	# (the raw string between the quotes; empty when the key has no
+	# simple assignment). Values are only ever read: an existing line
+	# is kept byte for byte — an escape round-trip could corrupt an
+	# exotic value, and a re-emit could churn the operator's format.
+	id_val() {
+		sed -n "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*\"\(.*\)\"[[:space:]]*;.*/\1/p" \
+			"$id_file" | head -n 1
+	}
+	# id_raw <key> — the first line assigning the key in ANY form
+	# (empty when absent); a form id_val cannot read fails closed in
+	# capture_field below — init never guesses around a hand-written
+	# line and never writes a duplicate attribute.
+	id_raw() {
+		grep -E "^[[:space:]]*$1[[:space:]]*=" "$id_file" | head -n 1
+	}
+	# id_fill <key> <escaped-value> — merge one captured field: the
+	# shipped template's placeholders (TEMPLATE, and /home/TEMPLATE for
+	# home — the option's type requires an absolute path) are rewritten
+	# in place, an absent key is inserted before the closing brace, a set
+	# field is never touched, and the write is skipped entirely when the
+	# file already carries the final value. The value travels in the
+	# environment — never inside a regex or a sed/awk replacement, the
+	# only contexts where / & \ would be live.
+	id_fill() {
+		cur=$(id_val "$1")
+		[ "$cur" = "$2" ] && return 0
+		case $cur in
+		"" | TEMPLATE | "/home/TEMPLATE") ;;
+		*) return 0 ;; # the operator's value wins — untouched
+		esac
+		changed=1
+		tmp=$id_file.merge.$$
+		if [ -n "$cur" ]; then
+			ID_KEY=$1 ID_LINE=$(printf '  %s = "%s";' "$1" "$2") awk '
+				$0 ~ "^[ 	]*" ENVIRON["ID_KEY"] "[ 	]*=[ 	]*\"(TEMPLATE|/home/TEMPLATE)\"[ 	]*;" {
+					print ENVIRON["ID_LINE"]
+					next
+				}
+				{ print }
+			' "$id_file" >"$tmp" || { rm -f "$tmp"; die "init: could not rewrite $id_file" 1; }
+		else
+			ID_LINE=$(printf '  %s = "%s";' "$1" "$2") awk '
+				{ lines[NR] = $0 }
+				END {
+					at = 0
+					for (i = NR; i >= 1; i--)
+						if (lines[i] ~ /^[ \t]*\}[ \t]*$/) { at = i; break }
+					for (i = 1; i <= NR; i++) {
+						if (i == at) print ENVIRON["ID_LINE"]
+						print lines[i]
+					}
+					if (!at) print ENVIRON["ID_LINE"]
+				}
+			' "$id_file" >"$tmp" || { rm -f "$tmp"; die "init: could not rewrite $id_file" 1; }
+		fi
+		mv "$tmp" "$id_file"
+	}
+	# capture_field <key> <prompt> <detected> — one captured field's
+	# merge: the file's own value wins unless the field is absent or
+	# still the shipped placeholder; unreadable assignments fail
+	# closed; otherwise the value is asked (whiptail, prefilled with
+	# the detected default) and merged.
+	capture_field() {
+		cur=$(id_val "$1")
+		raw=$(id_raw "$1")
+		if [ -n "$raw" ] && [ -z "$cur" ]; then
+			die "init: $id_file assigns $1 in a form the capture cannot merge — the file wins; simplify the line or set it by hand" 1
+		fi
+		case $cur in
+		"" | TEMPLATE | "/home/TEMPLATE") ;;
+		*) return 0 ;;
+		esac
+		val=$(ask "$2" "$3") || die 'init: cancelled' 1
+		id_fill "$1" "$(escape "$val")"
+	}
 	# The capture UI: whiptail dialogs prefilled with the detected values
 	# (the prerequisite ships in foundation; a bare box before its first
 	# switch falls back to the detected values verbatim).
 	if command -v whiptail >/dev/null 2>&1; then
 		ask() {
-			# ask <title> <default> — the value on stdout (whiptail writes
+			# ask <prompt> <default> — the value on stdout (whiptail writes
 			# the dialog to stderr; the fd swap brings the value back)
 			whiptail --title ' workstation init ' --inputbox "$1" 9 68 "$2" \
 				3>&1 1>&2 2>&3
 		}
-		host=$(ask 'machine name (hostname)' "$host") || die 'init: cancelled' 1
-		user=$(ask 'operator user' "$user") || die 'init: cancelled' 1
-		home_dir=$(ask 'home directory' "$home_dir") || die 'init: cancelled' 1
 	else
 		printf 'workstation: whiptail not on PATH (prerequisite) — capturing the detected values verbatim\n' >&2
+		ask() {
+			# no dialog tool: the default is the capture
+			printf '%s' "$2"
+		}
 	fi
-	{
-		printf '# The machine identity, captured by workstation init (%s).\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-		printf '# Local edit — keep it uncommitted (the committed copy is the template).\n'
-		printf '{\n'
-		printf '  host = "%s";\n' "$(escape "$host")"
-		printf '  user = "%s";\n' "$(escape "$user")"
-		printf '  home = "%s";\n' "$(escape "$home_dir")"
-		printf '}\n'
-	} >"$flake/hosts/identity.nix"
-	printf 'workstation: identity captured in %s/hosts/identity.nix (host=%s user=%s)\n' \
-		"$flake" "$host" "$user"
+	changed=0
+	capture_field host 'machine name (hostname)' "$host"
+	capture_field user 'operator user' "$user"
+	capture_field home 'home directory' "$home_dir"
+	if [ "$changed" -eq 1 ]; then
+		printf 'workstation: identity captured in %s/hosts/identity.nix (host=%s user=%s)\n' \
+			"$flake" "$(id_val host)" "$(id_val user)"
+	else
+		printf 'workstation: identity already captured in %s/hosts/identity.nix (host=%s user=%s) — merged; the fields you set were kept\n' \
+			"$flake" "$(id_val host)" "$(id_val user)"
+	fi
 	printf 'workstation: keep the file uncommitted\n'
 	# the capability selection: the template beside the identity (the
 	# add/remove verbs edit it; an existing selection is never clobbered)

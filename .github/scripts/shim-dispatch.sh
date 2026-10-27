@@ -26,6 +26,11 @@
 #      canonically (dedup on add, the disable pin on removing a
 #      default-on path), and offer the apply (deterministically answered
 #      here by stub whiptails).
+#   6. init merges hosts/identity.nix: the shipped template's TEMPLATE
+#      placeholders are filled from detection, the operator's fields
+#      (shellExtras) survive every re-run, a converged identity re-inits
+#      byte-identical, a cancelled dialog writes nothing, and a missing
+#      template file refuses.
 set -eu
 progname='shim-dispatch.sh'
 repo_root=$(CDPATH='' cd -P "$(dirname "$0")/../.." && pwd -P)
@@ -260,4 +265,95 @@ rc=0
 sel selected extra >/dev/null 2>&1 || rc=$?
 [ "$rc" = 2 ] || fail "selected must reject arguments (got $rc)"
 
-echo "$progname: OK (dispatch, resolution order, delegation, fail-closed and selection paths all hold)"
+\
+# 6. init merges hosts/identity.nix: the shipped template's TEMPLATE
+# placeholders are filled from detection, the operator's fields
+# (shellExtras) survive every re-run, a converged identity re-inits
+# byte-identical, a cancelled dialog writes nothing, and a missing
+# template file refuses.
+init_fixture=$root/initflake
+mkdir -p "$init_fixture/hosts"
+printf '%s\n' \
+	'{' \
+	'  host = "TEMPLATE"; # captured by workstation init (hostname -s)' \
+	'  user = "TEMPLATE"; # captured by workstation init' \
+	'  home = "/home/TEMPLATE"; # captured by workstation init, the home path' \
+	'  # shellExtras = "stty -ixon"; # optional: the operator shell lines' \
+	'  shellExtras = "stty -ixon"; # the operator'"'"'s own field' \
+	'}' >"$init_fixture/hosts/identity.nix"
+# 6a. the shipped template: init fills the placeholders from detection
+# (the stub whiptail answers every dialog with its default — the detected
+# value — the way a real install accepts the prefills) and keeps the
+# operator's field byte for byte
+cat >"$stub_dir/whiptail" <<'STUB'
+#!/bin/sh
+# the dialog contract: the gadget result goes to stderr (the fd swap in
+# the shim's ask brings it back); the default is the last argument
+for a; do :; done
+printf '%s\n' "$a" >&2
+STUB
+cp "$init_fixture/hosts/identity.nix" "$root/init-6a-before"
+out=$(WORKSTATION_NO_APPLY=1 WORKSTATION_FLAKE=$init_fixture "$shim" init) ||
+	fail 'init on the shipped template must succeed'
+printf '%s' "$out" | grep -q 'identity captured' ||
+	fail 'the template capture must say it captured'
+grep -q 'TEMPLATE' "$init_fixture/hosts/identity.nix" &&
+	fail 'init must fill every TEMPLATE placeholder'
+grep -Eq '^  host = ".+";' "$init_fixture/hosts/identity.nix" ||
+	fail 'init must capture the host'
+grep -Eq '^  user = ".+";' "$init_fixture/hosts/identity.nix" ||
+	fail 'init must capture the user'
+grep -Eq '^  home = ".+";' "$init_fixture/hosts/identity.nix" ||
+	fail 'init must capture the home'
+grep -q '^  shellExtras = "stty -ixon"; # the operator'"'"'s own field$' \
+	"$init_fixture/hosts/identity.nix" ||
+	fail 'init must keep the operator shellExtras byte for byte'
+grep -q '^  # shellExtras = "stty -ixon";' "$init_fixture/hosts/identity.nix" ||
+	fail 'init must keep the comment lines'
+# 6b. a converged identity: a re-init is a byte-identical merge no-op
+cp "$init_fixture/hosts/identity.nix" "$root/init-6b-before"
+out=$(WORKSTATION_NO_APPLY=1 WORKSTATION_FLAKE=$init_fixture "$shim" init) ||
+	fail 'a converged re-init must succeed'
+printf '%s' "$out" | grep -q 'merged' ||
+	fail 'the converged re-init must say it merged'
+cmp -s "$root/init-6b-before" "$init_fixture/hosts/identity.nix" ||
+	fail 'a converged re-init must not touch the file'
+# 6c. an operator-set field wins over detection: the host stays while the
+# remaining placeholders fill around it
+init2=$root/initflake2
+mkdir -p "$init2/hosts"
+printf '%s\n' \
+	'{' \
+	'  host = "myhost"; # captured by workstation init (hostname -s)' \
+	'  user = "TEMPLATE";' \
+	'  home = "/home/TEMPLATE";' \
+	'  shellExtras = "stty -ixon"; # the operator'"'"'s own field' \
+	'}' >"$init2/hosts/identity.nix"
+WORKSTATION_NO_APPLY=1 WORKSTATION_FLAKE=$init2 "$shim" init >/dev/null ||
+	fail 'init on a half-captured identity must succeed'
+grep -q '^  host = "myhost";' "$init2/hosts/identity.nix" ||
+	fail 'init must keep the operator host over the detected one'
+grep -q '^  user = "TEMPLATE";' "$init2/hosts/identity.nix" &&
+	fail 'init must fill the placeholder user'
+grep -q '^  shellExtras = "stty -ixon";' "$init2/hosts/identity.nix" ||
+	fail 'the half-captured merge must keep shellExtras'
+# 6d. a cancelled dialog: the capture refuses and writes nothing
+printf '{\n  host = "TEMPLATE";\n  user = "TEMPLATE";\n  home = "/home/TEMPLATE";\n  shellExtras = "stty -ixon"; # kept\n}\n' >"$init2/hosts/identity.nix"
+cp "$init2/hosts/identity.nix" "$root/init-6d-before"
+printf '#!/bin/sh\nexit 1\n' >"$stub_dir/whiptail"
+rc=0
+WORKSTATION_NO_APPLY=1 WORKSTATION_FLAKE=$init2 "$shim" init >/dev/null 2>"$root/err" || rc=$?
+[ "$rc" = 1 ] || fail "a cancelled capture must exit 1 (got $rc)"
+grep -q 'cancelled' "$root/err" || fail 'the cancelled capture must say so'
+cmp -s "$root/init-6d-before" "$init2/hosts/identity.nix" ||
+	fail 'a cancelled capture must not touch the file'
+# 6e. a missing template file fails closed
+mv "$init2/hosts/identity.nix" "$root/identity.hold"
+rc=0
+WORKSTATION_NO_APPLY=1 WORKSTATION_FLAKE=$init2 "$shim" init >/dev/null 2>"$root/err" || rc=$?
+[ "$rc" = 1 ] || fail "init without the template file must exit 1 (got $rc)"
+grep -q 'missing (unexpected tree)' "$root/err" ||
+	fail 'the missing-template refusal must name it'
+mv "$root/identity.hold" "$init2/hosts/identity.nix"
+
+echo "$progname: OK (dispatch, resolution order, delegation, fail-closed, selection and init-merge paths all hold)"
