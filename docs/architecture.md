@@ -35,8 +35,7 @@ overrides only), `workstationTheme.lib`, `hermesSkills`, `hermesAgentPin`.
 
 ## The invariants
 
-- **Two targets.** mac and linux; WSL is linux. No distro-named legs, no
-  arch/omarchy references anywhere.
+- **Two targets.** mac and linux; WSL is linux.
 - **Identity is captured once per machine, at install time.**
   `workstation init` writes `hosts/identity.nix` (hostname, user, home)
   and the local rewrite stays uncommitted — the repo is a template
