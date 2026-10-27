@@ -44,7 +44,14 @@ let
     fzf = floored "fzf" "0.74.2" pkgs.fzf;
     ripgrep = floored "ripgrep" "15.2.0" pkgs.ripgrep;
     lazygit = floored "lazygit" "0.63.1" pkgs.lazygit;
-    tree-sitter = floored "tree-sitter" "0.26.11" pkgs.tree-sitter;
+    # tree-sitter rides the overlay's SCOPED name: nixpkgs' own
+    # `tree-sitter` attr is a build input of the editor (neovim links
+    # libtree-sitter built against the pinned set's tree-sitter) and must
+    # stay stock — retargeting it under neovim 0.11.5 breaks the compile
+    # (tree-sitter 0.26 removed ts_parser_timeout_micros). The CLI the
+    # fleet's editors use for parser installs rides
+    # `pkgs.workstation-tree-sitter` instead.
+    tree-sitter = floored "workstation-tree-sitter" "0.26.11" pkgs.workstation-tree-sitter;
   };
 
   # the fragment payload (id, order slot, marker, payload path the rc lane

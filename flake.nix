@@ -244,10 +244,17 @@
       # nixpkgs owns the tools). Each row pulls the named tool from the
       # foundation input (nixos-unstable, locked) because the pinned 25.05
       # set predates the floor the owning module asserts; a lagging lock
-      # dies loudly at the floor. The foundation set carries the license
-      # acceptance too — a package's meta check fires where it was
-      # constructed, and the secrets domain's CLI is unfree (scoped, see
-      # nix/lib/license.nix). Nothing else may enter this overlay.
+      # dies loudly at the floor. THE OVERRIDES MAY NOT RETARGET A NAME
+      # NIXPKGS-INTERNAL PACKAGES CONSUME AS A BUILD INPUT: the editor's
+      # libtree-sitter is built against the pinned set's tree-sitter, and
+      # swapping it underneath neovim 0.11.5 breaks the compile (tree-sitter
+      # 0.26 removed ts_parser_timeout_micros) — so the workstation's
+      # tree-sitter CLI rides the scoped `workstation-tree-sitter` name
+      # while nixpkgs' own `tree-sitter` stays stock for the editor. The
+      # foundation set carries the license acceptance too — a package's
+      # meta check fires where it was constructed, and the secrets
+      # domain's CLI is unfree (scoped, see nix/lib/license.nix). Nothing
+      # else may enter this overlay.
       overlays.default =
         final: prev:
         let
@@ -263,7 +270,6 @@
             fzf
             ripgrep
             lazygit
-            tree-sitter
             go
             pnpm
             nodejs_24
@@ -271,6 +277,12 @@
             _1password-cli
             nerd-fonts
             ;
+
+          # the foundation domain's tree-sitter CLI, SCOPED: nixpkgs' own
+          # `tree-sitter` name is a build input of the editor (neovim links
+          # libtree-sitter from its own set) and must stay stock — see the
+          # overlay's scoping rule above
+          workstation-tree-sitter = foundationPkgs.tree-sitter;
         };
 
       nixosConfigurations.vm-test = vmTestConfig;
