@@ -42,8 +42,8 @@ gate() {
 	esac
 }
 gate 'identity gate' \
-	'identity gate: hardcoded personal identity under nix/ hosts/ flake.nix modules/ bin/ — the legs are templates; hosts/identity.nix (captured by workstation init, kept uncommitted) is the only identity surface' \
-	git grep -iE 'savio|shyylol' -- nix hosts flake.nix modules bin
+	'identity gate: hardcoded personal identity in the tracked tree — the legs are templates; hosts/identity.nix (captured by workstation init, kept uncommitted) is the only identity surface' \
+	git grep -iE 'savio|shyylol' -- . ':(exclude).github/scripts/check.sh'
 
 step 'engine-free gate (the Elixir plane stays gone: no engine module token anywhere in the tree)'
 # the token is assembled at runtime so this gate's own source never
