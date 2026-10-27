@@ -39,6 +39,24 @@ standalone-Home-Manager hosts, platform-managed on NixOS and nix-darwin.
 | linux (WSL counts as linux) | `hosts/linux` | `homeConfigurations` + `nixosConfigurations` (NixOS-WSL system plane) |
 | mac | `hosts/mac` | `darwinConfigurations` (nix-darwin; brew reduced to casks) |
 
+## Selecting capabilities
+
+A machine pins its capability flags beside the identity:
+
+```sh
+workstation add languages/typescript terminal/nunchux   # enable
+workstation remove terminal/nunchux                      # disable
+workstation selected                                     # this machine's rows
+```
+
+Paths are `<domain>` or `<domain>/<member>` (`workstation selected` lists
+them all). Defaults: core domains on, the language members off
+(languages are opt-in), `foundation` baseline. `add` and `remove` edit
+`hosts/selections.nix` and offer `apply now?` — keep that file
+uncommitted, exactly like the identity. `workstation report.plan` carries
+the machine's pins; `workstation selected` renders every path's resolved
+on/off/baseline/unavailable state with dependency notes.
+
 ## Reads
 
 ```sh
@@ -48,6 +66,7 @@ nix eval .#workstation.report.capabilities.editor   # scope with an attrpath
 
 workstation status                 # the same answers through the shim
 workstation capabilities editor    # scoped through the shim
+workstation selected               # this machine's selection rows
 workstation help                   # the verb contract
 ```
 

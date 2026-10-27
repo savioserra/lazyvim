@@ -17,7 +17,9 @@ let
   go =
     assert
       lib.versionAtLeast (pkgs.workstation-go.version or "0") "1.26"
-      || throw "workstation-go: pkgs.workstation-go ${pkgs.workstation-go.version or "?"} predates the floor 1.26 — the flake's overlays.default must be applied (nixpkgs.overlays)";
+      || throw "workstation-go: pkgs.workstation-go ${
+        pkgs.workstation-go.version or "?"
+      } predates the floor 1.26 — the flake's overlays.default must be applied (nixpkgs.overlays)";
     # the SCOPED name (pkgs.workstation-go, not pkgs.go): nixpkgs' own `go`
     # is a build toolchain consumed by packages this workstation never
     # touches — libcap builds with it, and retargeting the name rehashed
@@ -25,7 +27,10 @@ let
     pkgs.workstation-go;
 in
 {
-  config = {
+  # the selection gate (workstation.languages.go.enable AND the domain
+  # enable — a member deploys under its domain, nix/lib/selections.nix):
+  # disabled = the definitions skip, never the files
+  config = lib.mkIf (config.workstation.languages.enable && config.workstation.languages.go.enable) {
     home.packages = [ go ];
 
     workstation.editor.languages = [

@@ -43,14 +43,23 @@ let
     systemAttr = null;
   };
 
-  # the offline switch step: activate + register, exactly what
-  # `home-manager switch` would have done for this generation
-  homeActivate = writeShellScript "workstation-e2e-home-activate" ''
+  # the offline switch steps: activate + register, exactly what
+  # `home-manager switch` would have done for each generation. The boot
+  # staging (run-container.sh) activates the full persona directly; the
+  # driver's apply targets the minus-go persona below.
+  homeActivateMinusGo = writeShellScript "workstation-e2e-home-activate-minus-go" ''
     set -eu
-    ${activation}/activate
+    ${activationMinusGo}/activate
     nix-env --profile "''${XDG_STATE_HOME:-$HOME/.local/state}/nix/profiles/home-manager" \
-      --set ${activation}
+      --set ${activationMinusGo}
   '';
+
+  # the removal proof's target: the SAME persona home re-applied with go
+  # deselected (tests/nix/e2e-selections-minus-go.nix — the full fixture
+  # minus languages/go). The driver's second apply activates this: the go
+  # toolchain and its profile entry leave, the other selections ride, nvim
+  # still boots — the selection removal semantics, proven on a real home.
+  activationMinusGo = self.homeConfigurations."e2e-minus-go@container".activationPackage;
 in
 writeShellScriptBin "workstation-e2e" ''
   set -u
@@ -143,8 +152,12 @@ writeShellScriptBin "workstation-e2e" ''
     || fail "deployed language profile" "the go entry is missing from $prof"
   grep -q 'lazyvim.plugins.extras.lang.elixir' "$prof" \
     || fail "deployed language profile" "the elixir entry is missing from $prof"
+  grep -q 'lazyvim.plugins.extras.lang.typescript' "$prof" \
+    || fail "deployed language profile" "the typescript entry is missing from $prof (the persona's selection fixture pins it)"
   [ -r "$home/.config/nvim/lua/languages/plugins/elixir.lua" ] \
     || fail "deployed language profile" "the elixir plugin module did not deploy"
+  [ -r "$home/.config/nvim/lua/languages/plugins/typescript.lua" ] \
+    || fail "deployed language profile" "the typescript plugin module did not deploy"
   pass "deployed language profile"
 
   step "lazy-lock merge (seeded from the pinned baseline)"
@@ -406,13 +419,70 @@ writeShellScriptBin "workstation-e2e" ''
   pass "tombstone shapes planted (retire rehearsal)"
 
   # 3. the apply-driven nix switch: the driver wraps the offline
-  #    activation + generation registration, then writes the receipt
-  step "apply-driven switch (workstation-switch apply)"
-  export WORKSTATION_SWITCH_HOME_ACTIVATE="${homeActivate}"
+  #    activation + generation registration, then writes the receipt.
+  #    THIS apply is also the selection REMOVAL proof: the activation
+  #    override targets the minus-go persona (the same home, the next
+  #    generation, go deselected), so the asserts after it prove the
+  #    removal semantics on a real home.
+  step "selection verbs live (a writable checkout copy: selected, add, dedup, refusals)"
+  # /workstation is the read-only flake mount; the verbs edit
+  # hosts/selections.nix, so they run against a writable copy. The persona
+  # home's own selection is a tracked fixture — hermetic against this
+  # battery, which proves the shim<->report loop on the checkout copy.
+  live=/tmp/ws-live
+  mkdir -p "$live"
+  cp -a /workstation/. "$live/"
+  WORKSTATION_FLAKE=$live WORKSTATION_NO_APPLY=1 "$shim_bin" selected \
+    | grep -o '"languages/go":{[^}]*}' | grep -q '"state":"off"' \
+    || fail "selection verbs live" "selected must answer the template's off row for languages/go"
+  WORKSTATION_FLAKE=$live WORKSTATION_NO_APPLY=1 "$shim_bin" add languages/go >/dev/null \
+    || fail "selection verbs live" "add languages/go failed"
+  grep -q '"languages/go"' "$live/hosts/selections.nix" \
+    || fail "selection verbs live" "add did not write the row to the checkout's selections"
+  # the report reads the edited dirty tree back: the row flips the state
+  WORKSTATION_FLAKE=$live WORKSTATION_NO_APPLY=1 "$shim_bin" selected \
+    | grep -o '"languages/go":{[^}]*}' | grep -q '"state":"on"' \
+    || fail "selection verbs live" "selected must answer on after the add (the report must read the dirty tree)"
+  WORKSTATION_FLAKE=$live WORKSTATION_NO_APPLY=1 "$shim_bin" add languages/go >/dev/null \
+    || fail "selection verbs live" "the repeated add must succeed"
+  [ "$(grep -c '"languages/go"' "$live/hosts/selections.nix")" = 1 ] \
+    || fail "selection verbs live" "add must dedup by exact path"
+  sel_out=$(WORKSTATION_FLAKE=$live WORKSTATION_NO_APPLY=1 "$shim_bin" add foundation 2>&1) \
+    && fail "selection verbs live" "add foundation must refuse"
+  printf '%s' "$sel_out" | grep -q 'baseline — always on' \
+    || fail "selection verbs live" "the baseline refusal must say so"
+  WORKSTATION_FLAKE=$live WORKSTATION_NO_APPLY=1 "$shim_bin" remove languages/go >/dev/null \
+    || fail "selection verbs live" "remove languages/go failed"
+  grep -q '"languages/go"' "$live/hosts/selections.nix" \
+    && fail "selection verbs live" "the removed row must leave the file"
+  unset shim_bin
+  pass "selection verbs live (a writable checkout copy: selected, add, dedup, refusals)"
+
+  step "apply-driven switch (the removal apply: go deselected, next generation)"
+  export WORKSTATION_SWITCH_HOME_ACTIVATE="${homeActivateMinusGo}"
   ${switchDriver}/bin/workstation-switch apply \
     || fail "apply-driven switch" "the driver failed (switch or receipt)"
   unset WORKSTATION_SWITCH_HOME_ACTIVATE
-  pass "apply-driven switch"
+  pass "apply-driven switch (the removal apply: go deselected, next generation)"
+
+  step "the removal: go left the profile and the PATH, the rest rides"
+  grep -q 'lazyvim.plugins.extras.lang.go' "$prof" \
+    && fail "the removal" "the go profile entry survived the go-deselected generation"
+  grep -q 'lazyvim.plugins.extras.lang.elixir' "$prof" \
+    || fail "the removal" "the elixir entry must ride the go-deselected generation"
+  if go_gone=$(find_client go); then
+    fail "the removal" "go is still on PATH at $go_gone after the go-deselected generation"
+  fi
+  find_client node >/dev/null \
+    || fail "the removal" "node must ride the go-deselected generation"
+  [ -r "$home/.node-version" ] \
+    || fail "the removal" ".node-version must ride the go-deselected generation"
+  pass "the removal: go left the profile and the PATH, the rest rides"
+
+  step "nvim still boots after the removal"
+  nvim_boot >/dev/null 2>"$home/.cache/e2e-nvim-boot-removal.err" \
+    || fail "nvim still boots after the removal" "nvim --headless +qa exited non-zero (see .cache/e2e-nvim-boot-removal.err in the persona home)"
+  pass "nvim still boots after the removal"
 
   step "adopt step: the declared symlink replaced the copy-contract tree"
   [ -L "$home/.hermes/skills/secrets" ] \

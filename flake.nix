@@ -75,9 +75,16 @@
       # shapes are the contract (docs/architecture.md):
       #   status       the declared inventory — counts + capability order
       #   plan         the surface the next switch applies, with the
-      #                report digest (the declared state's content id)
+      #                report digest (the declared state's content id) and
+      #                this machine's selection pins
       #   capabilities the per-capability accounting keyed by id — scope
       #                reads with an attrpath (#...capabilities.editor)
+      #   selectable   the walk-derived paths a machine can pin
+      #                (kind/baseline/default per path) — the shim's
+      #                add|remove validate against it
+      #   selections   the machine's pins + the resolved per-path rows
+      #                (on/off/baseline/unavailable + dependency notes) —
+      #                `workstation selected` serves this verbatim
       reportVerbs = {
         status = {
           inherit (report) counts capabilityOrder;
@@ -90,10 +97,26 @@
             fragmentOrder
             retire
             ;
+          # the selection delta: this machine's pins over the declared
+          # defaults — exactly what the next switch enforces beyond them
+          pins = report.selections.pins;
         };
         capabilities = builtins.listToAttrs (
           map (row: nixpkgs.lib.nameValuePair row.id row) report.accounting
         );
+        inherit (report)
+          selectable
+          selections
+          ;
+      };
+
+      # the capability selection: the machine's pins file read through the
+      # shared library (validation + the walk-derived universe). The legs
+      # and the e2e personas import the translation module beside
+      # workstation-home.nix — the home plane is where selection applies
+      selectionsLib = import ./nix/lib/selections.nix {
+        lib = nixpkgs.lib;
+        treeRoot = self;
       };
 
       # per-host identity lives ONLY in hosts/<host>/default.nix: the flake
@@ -153,13 +176,28 @@
               workstation.foundation.shell.extras = (import ./hosts/identity.nix).shellExtras or "";
             }
           )
+          # this machine's capability selection (hosts/selections.nix)
+          (selectionsLib.translationModule ./hosts/selections.nix)
           ./nix/modules/workstation-home.nix
         ];
       };
 
       # the E2E persona's standalone home: the exact shape the linux leg
       # applies — and the container E2E's apply target inside the throwaway
-      # container (the shared persona body: tests/nix/e2e-home.nix)
+      # container (the shared persona body: tests/nix/e2e-home.nix). The
+      # persona's selection is a tracked FIXTURE (never the operator's
+      # hosts/selections.nix — the lane stays hermetic against local
+      # state): the full fixture pins every language the driver asserts;
+      # the minus-go fixture removes one member for the removal proof.
+      e2eHomeModules = selectionsFile: [
+        {
+          nixpkgs.overlays = [ self.overlays.default ];
+          nixpkgs.config.allowUnfreePredicate = licensePredicate;
+        }
+        ./tests/nix/e2e-home.nix
+        (selectionsLib.translationModule selectionsFile)
+        ./nix/modules/workstation-home.nix
+      ];
       e2eHome = home-manager.lib.homeManagerConfiguration {
         pkgs = import nixpkgs {
           system = hostSystem;
@@ -169,14 +207,18 @@
         extraSpecialArgs = {
           inherit self;
         };
-        modules = [
-          {
-            nixpkgs.overlays = [ self.overlays.default ];
-            nixpkgs.config.allowUnfreePredicate = licensePredicate;
-          }
-          ./tests/nix/e2e-home.nix
-          ./nix/modules/workstation-home.nix
-        ];
+        modules = e2eHomeModules ./tests/nix/e2e-selections.nix;
+      };
+      e2eMinusGoHome = home-manager.lib.homeManagerConfiguration {
+        pkgs = import nixpkgs {
+          system = hostSystem;
+          overlays = [ self.overlays.default ];
+          config.allowUnfreePredicate = licensePredicate;
+        };
+        extraSpecialArgs = {
+          inherit self;
+        };
+        modules = e2eHomeModules ./tests/nix/e2e-selections-minus-go.nix;
       };
 
       # the container E2E's proof driver: wired once here (the same wiring
@@ -203,6 +245,10 @@
       # never hand-typed
       homeConfigurations.${linuxHost.homeKey} = linuxHome;
       homeConfigurations."e2e@container" = e2eHome;
+      # the removal proof's target: the persona home re-applied with go
+      # deselected (the container driver's second apply — the same home,
+      # the next generation)
+      homeConfigurations."e2e-minus-go@container" = e2eMinusGoHome;
 
       # the container E2E's surface — the lane's ONE wiring point: the
       # persona home (also a homeConfiguration above) and the proof driver,
@@ -361,11 +407,13 @@
               {
                 linux = builtins.unsafeDiscardStringContext linuxHome.activationPackage.drvPath;
                 e2e = builtins.unsafeDiscardStringContext e2eHome.activationPackage.drvPath;
+                e2e-minus-go = builtins.unsafeDiscardStringContext e2eMinusGoHome.activationPackage.drvPath;
               }
               ''
                 mkdir -p "$out"
                 printf '%s\n' "$linux" > "$out/linux.drv"
                 printf '%s\n' "$e2e" > "$out/e2e.drv"
+                printf '%s\n' "$e2e-minus-go" > "$out/e2e-minus-go.drv"
               '';
 
           # the container E2E lane: stages THE entry (bin/run-container-e2e)

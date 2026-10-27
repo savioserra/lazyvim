@@ -11,24 +11,29 @@
   ...
 }:
 {
-  config = {
-    # the toolchain: elixir 1.18.5 on the beam set's erlang_28 — nixpkgs
-    # carries it, no pin, no probe gate (the toolchain pattern; the mise
-    # binary pin, its activation fragment and the .config/mise composition
-    # retired with the lane)
-    home.packages = [ pkgs.beam.packages.erlang_28.elixir ];
-
-    workstation.editor.languages = [
+  # the selection gate (workstation.languages.elixir.enable AND the domain
+  # enable — a member deploys under its domain, nix/lib/selections.nix):
+  # disabled = the definitions skip, never the files
+  config =
+    lib.mkIf (config.workstation.languages.enable && config.workstation.languages.elixir.enable)
       {
-        id = "elixir";
-        lazyvim_extras = [ "lazyvim.plugins.extras.lang.elixir" ];
-        mason_packages = [ "elixir-ls" ];
-        plugin_module = "languages.plugins.elixir";
-      }
-    ];
+        # the toolchain: elixir 1.18.5 on the beam set's erlang_28 — nixpkgs
+        # carries it, no pin, no probe gate (the toolchain pattern; the mise
+        # binary pin, its activation fragment and the .config/mise composition
+        # retired with the lane)
+        home.packages = [ pkgs.beam.packages.erlang_28.elixir ];
 
-    workstation.editor.languagePlugins = [
-      (self + "/modules/languages/elixir/files/languages/plugins/elixir.lua")
-    ];
-  };
+        workstation.editor.languages = [
+          {
+            id = "elixir";
+            lazyvim_extras = [ "lazyvim.plugins.extras.lang.elixir" ];
+            mason_packages = [ "elixir-ls" ];
+            plugin_module = "languages.plugins.elixir";
+          }
+        ];
+
+        workstation.editor.languagePlugins = [
+          (self + "/modules/languages/elixir/files/languages/plugins/elixir.lua")
+        ];
+      };
 }

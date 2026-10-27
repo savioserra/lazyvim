@@ -25,7 +25,9 @@ let
       ".local/share/fonts/JetBrainsMonoNerdFont";
 in
 {
-  config = {
+  # the selection gate (workstation.fonts.enable, nix/lib/selections.nix):
+  # disabled = the definitions skip, never the files
+  config = lib.mkIf config.workstation.fonts.enable {
     home.file.${fontTarget}.source = fontTree;
 
     # fc-cache picks up ~/.local/share/fonts; keep the cache fresh

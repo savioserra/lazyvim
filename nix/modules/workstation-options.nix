@@ -176,11 +176,98 @@ in
     '';
   };
 
+  # --- the capability selection surface ---------------------------------------
+  # One enable option per selectable path, keyed to the walk's ids
+  # (nix/lib/capabilities.nix): the core domains default ON (the substrate
+  # ships them); the language MEMBERS default off — languages are the
+  # opt-in granularity; foundation carries no enable (baseline, always on).
+  # A member deploys iff `domain.enable && member.enable`: selecting a
+  # member implies its domain (the selections translation,
+  # nix/lib/selections.nix, sets both), and disabling a domain takes its
+  # members with it. Declared here — the report fold's evals load the same
+  # declarations — so every composition that loads the domain modules can
+  # both set and read them, and no gated config key is ever undeclared.
+  options.workstation.fonts.enable = lib.mkEnableOption "the fonts capability" // {
+    default = true;
+  };
+  options.workstation.secrets.enable = lib.mkEnableOption "the secrets capability" // {
+    default = true;
+  };
+  options.workstation.agent.enable = lib.mkEnableOption "the agent capability" // {
+    default = true;
+  };
+  options.workstation.theme.enable = lib.mkEnableOption "the theme capability" // {
+    default = true;
+  };
+  options.workstation.languages = {
+    enable = lib.mkEnableOption "the languages domain shell (its members are the granularity)" // {
+      default = true;
+    };
+    elixir.enable = lib.mkEnableOption "the elixir capability";
+    go.enable = lib.mkEnableOption "the go capability";
+    node.enable = lib.mkEnableOption "the node capability";
+    typescript.enable = lib.mkEnableOption "the typescript capability";
+  };
+  options.workstation.terminal = {
+    enable = lib.mkEnableOption "the terminal domain" // {
+      default = true;
+    };
+    tmux.enable = lib.mkEnableOption "the tmux capability" // {
+      default = true;
+    };
+    nunchux.enable = lib.mkEnableOption "the nunchux capability (linux only)" // {
+      default = true;
+    };
+  };
+
+  # the terminal domain's deployed pin manifest rows: the tmux capability
+  # renders ~/.tmux/plugins.pins.json from this option (the verify lane's
+  # only anchor), and each member capability contributes its own rows so a
+  # deselected member's row leaves the manifest with its checkout
+  options.workstation.terminal.pins = lib.mkOption {
+    type = lib.types.attrsOf (
+      lib.types.submodule {
+        options = {
+          url = lib.mkOption {
+            type = lib.types.str;
+            description = "The upstream repository URL.";
+          };
+          rev = lib.mkOption {
+            type = lib.types.str;
+            description = "The pinned commit.";
+          };
+          version = lib.mkOption {
+            type = lib.types.nullOr lib.types.str;
+            default = null;
+            description = "The upstream release the pin carries, when one exists.";
+          };
+          repo_linux_amd64_sha256 = lib.mkOption {
+            type = lib.types.nullOr lib.types.str;
+            default = null;
+            description = ''
+              The repo-tracked linux build's sha256 — the nunchux content
+              pin the verify lane checks the deployed binary against.
+            '';
+          };
+        };
+      }
+    );
+    default = { };
+    description = ''
+      The deployed plugin pin rows, keyed by plugin name. The manifest's
+      shape is exactly this attrset (toJSON) — one row per deployed
+      checkout, the deployed pin never a repo file.
+    '';
+  };
+
   # the editor capability's language surface, set by the language
   # capabilities (modules/languages/*) and composed by the editor module —
   # the cross-capability contract, declared here so a language capability's
   # own evaluation carries it
   options.workstation.editor = {
+    enable = lib.mkEnableOption "the editor capability" // {
+      default = true;
+    };
     languages = lib.mkOption {
       type = lib.types.listOf (
         lib.types.attrsOf (lib.types.either lib.types.str (lib.types.listOf lib.types.str))

@@ -12,6 +12,7 @@
 # switch re-points this file; it is the
 # theme's live surface now. Rollback restores the prior generation's link.
 {
+  config,
   lib,
   pkgs,
   self,
@@ -33,5 +34,11 @@ let
   );
 in
 {
-  config.home.file.".local/state/workstation/theme.json".source = themeTokens;
+  # the selection gate (workstation.theme.enable, nix/lib/selections.nix):
+  # disabled = the definitions skip, never the files — the tokens.lua
+  # extraction itself stays available to ungated consumers (the theme
+  # library is data, not config)
+  config = lib.mkIf config.workstation.theme.enable {
+    home.file.".local/state/workstation/theme.json".source = themeTokens;
+  };
 }

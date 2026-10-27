@@ -36,7 +36,8 @@ let
   # (self-consistent — foundation's neovim compiles against foundation's
   # tree-sitter), so the workstation's nvim never drops below the pin line
   nvim =
-    assert lib.versionAtLeast (pkgs.neovim.version or "0") "0.12"
+    assert
+      lib.versionAtLeast (pkgs.neovim.version or "0") "0.12"
       || throw "workstation-editor: neovim ${pkgs.neovim.version or "?"} predates the retired pin floor 0.12 — the flake's overlays.default must carry the foundation set's neovim";
     pkgs.neovim;
   cfg = config.workstation.editor;
@@ -65,9 +66,8 @@ let
 
   # the file is a lua MODULE: it must RETURN the table (a bare table
   # literal is not a valid chunk — nvim dies with E5113 on require)
-  profileLua = "return "
-    + lib.generators.toLua { } (map (e: lib.filterAttrs (_: v: v != null) e) entries)
-    + ";";
+  profileLua =
+    "return " + lib.generators.toLua { } (map (e: lib.filterAttrs (_: v: v != null) e) entries) + ";";
 
   # the merge program: the modify template's lua body (the heredoc between
   # the `cat >` line and the exact-match closing delimiter) with the
@@ -116,13 +116,16 @@ in
   # cross-capability contract: the language capabilities set it, this module
   # composes it into the deployed profile)
 
-  config = {
+  # the selection gate (workstation.editor.enable, nix/lib/selections.nix):
+  # disabled = the definitions skip, never the files — the walk, the fold
+  # and the retire lists stay complete
+  config = lib.mkIf cfg.enable {
     home.file = {
       ".config/nvim" = {
         source = configTree;
         recursive = true;
       };
-  # the nixpkgs neovim on PATH — the nvim-profile lane's bin override,
+      # the nixpkgs neovim on PATH — the nvim-profile lane's bin override,
       # now the declaration itself (the bootstrap archive pin is retired)
       ".local/bin/nvim".source = "${nvim}/bin/nvim";
     };

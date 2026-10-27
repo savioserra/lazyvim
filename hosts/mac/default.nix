@@ -153,6 +153,14 @@ in
                   workstation.switch.systemAttr = hostKey;
                 }
               )
+              # this machine's capability selection (hosts/selections.nix)
+              (
+                (import ../../nix/lib/selections.nix {
+                  lib = nixpkgs.lib;
+                  treeRoot = ../..;
+                }).translationModule
+                  ../../hosts/selections.nix
+              )
               ../../nix/modules/workstation-home.nix
             ];
           };

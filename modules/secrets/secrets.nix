@@ -17,7 +17,9 @@ let
   op = pkgs._1password-cli;
 in
 {
-  config = {
+  # the selection gate (workstation.secrets.enable, nix/lib/selections.nix):
+  # disabled = the definitions skip, never the files
+  config = lib.mkIf config.workstation.secrets.enable {
     workstation.shell.fragments = [
       {
         target = ".profile";

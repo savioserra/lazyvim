@@ -79,7 +79,7 @@ sh .github/scripts/shim-dispatch.sh || fail=1
 
 step 'nix eval read gate (#workstation.report.<verb> answers)'
 if command -v nix >/dev/null 2>&1; then
-	for verb in status plan capabilities; do
+	for verb in status plan capabilities selectable selections; do
 		nix --extra-experimental-features 'nix-command flakes' \
 			eval --json ".#workstation.report.$verb" >/dev/null || fail=1
 	done

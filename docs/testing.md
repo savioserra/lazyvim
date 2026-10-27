@@ -57,7 +57,11 @@ The lane map — which lane proves what:
   composed profile.lua is a lua CHUNK, the regression the boot smoke
   owns, the lazy-lock merge, the theme token path, the language profile,
   the rc lane's declared order, the migrated tools running, the agent
-  skills at pinned versions, the tmux/nunchux/foundation planes), the
+  skills at pinned versions, the tmux/nunchux/foundation planes, the
+  selection verbs live against a writable checkout copy), the selection
+  removal proof (the second apply re-activates the persona with go
+  deselected: the toolchain and its profile entry leave, the rest rides,
+  nvim still boots), the
   adopt rehearsal (a copy-contract tree makes way for the declared
   symlink), the retire rehearsal (a planted tombstone tree leaves
   through the declared `recursive = true` consent, verdict-receipted),

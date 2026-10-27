@@ -21,6 +21,9 @@ flake.nix
 
 bin/workstation (POSIX sh: flake resolution, verb dispatch)
   reads:  nix eval --json <flake>#workstation.report.<verb>
+  select: workstation add|remove <path>  (hosts/selections.nix, validated
+          against workstation.report.selectable; selected renders
+          workstation.report.selections)
   writes: `workstation apply` (execs the staged switch driver)
 ```
 
@@ -28,13 +31,49 @@ bin/workstation (POSIX sh: flake resolution, verb dispatch)
 - `bin/workstation` is the sole entry point.
 - `modules/**/*.lua` are data payload files, read as bytes, never executed.
 
+## Capability selection
+
+Per-machine flags live in `hosts/selections.nix` (the committed copy is
+the empty template; the local rewrite stays uncommitted — the
+`hosts/identity.nix` lifecycle). The verb grammar is the file grammar:
+
+```nix
+{
+  enable = [ "languages/typescript" ];   # pinned ON
+  disable = [ "terminal/nunchux" ];      # pinned OFF (omitted when empty)
+}
+```
+
+- Paths mirror the registry: `<domain>` or `<domain>/<member>`
+  (`editor`, `languages/typescript`, `terminal/nunchux`), `/`-separated,
+  `[A-Za-z0-9_-]` only — validated against `workstation.report.selectable`
+  before any write, and re-validated at every eval that reads the file.
+- Defaults fill everything unpinned: core domains (editor, terminal,
+  theme, fonts, secrets, agent) on; the language MEMBERS off — languages
+  are the opt-in granularity; `foundation` is baseline (always on, no
+  enable option, refused in both lists).
+- A member deploys iff `domain.enable && member.enable`: selecting a
+  member implies its domain (the translation in `nix/lib/selections.nix`
+  sets both enables), and disabling a domain takes its members with it.
+  Pinning a domain off while a member under it is selected is refused at
+  read time.
+- `workstation.report.selections` resolves every selectable path to
+  on/off/baseline/unavailable plus a dependency note (what a remove takes
+  with it — `workstation selected` serves it). Availability is probed per
+  member (the enable flag forced true vs false over the owning modules, a
+  platform truth: the nunchux darwin case renders `unavailable`).
+- Every eval of the fold applies the machine's pins, so `plan` and the
+  accounting answer for THIS machine's next switch, not the bare
+  substrate.
+
 ## Module boundaries
 
 | Module | Contract |
 | --- | --- |
 | `bin/workstation` | Launcher shim: flake resolution order, verb dispatch, exit codes (dispatch gate: `.github/scripts/shim-dispatch.sh`) |
 | `flake.nix` `reportVerbs` | The read verbs' projection over the report fold |
-| `modules/<domain>/<domain>.nix` | The domain's native declaration: `home.file` surfaces, tools, fragments, activation scripts |
+| `nix/lib/selections.nix` | The capability selection: pins-file read/validation (grammar, walk membership, baseline, contradictions), the enable-option translation (a member implies its domain), shared by the legs, the e2e personas and the report fold |
+| `modules/<domain>/<domain>.nix` | The domain's native declaration: `home.file` surfaces, tools, fragments, activation scripts — each gated on its `workstation.<domain>.enable` (members additionally on their own flag); disabled = definitions skipped, never files missing |
 | `nix/report.nix` | The declared-state fold: every capability evaluated once against home-manager, integrity-asserted |
 | `nix/lib/capabilities.nix` | The registry walk: discovers `modules/<domain>/` |
 | `nix/lib/shell-lane.nix` | The fragment lane's order contract: `order` slots sorted once, read by the rendered rc files and the report's fragmentOrder; a shared or ambiguous slot fails the eval |
@@ -80,9 +119,9 @@ Declared data on each module (its domain), consumed by the report:
 ```text
 base       foundation
 fonts      fonts
-runtime    elixir, go, node, typescript
+languages  languages/elixir, languages/go, languages/node, languages/typescript (member capabilities)
 editor     nvim (+ languages: typescript, elixir declare editor entries)
-terminal   nunchux, tmux
+terminal   terminal/tmux, terminal/nunchux (member capabilities)
 theme      theme
 agent      agent, herdr
 secrets    secrets
@@ -205,17 +244,23 @@ and sorted, never hidden.
 - Verify: token bytes against the tokens module. Hosts: all.
 
 ### `tmux`
-- Plugin checkouts (tpm, tmux2k, tmux-yank, tmux-resurrect,
-  vim-tmux-navigator) as hash-pinned `fetchFromGitHub`.
-- `.tmux.conf`; the `.config/tmux` link; nixpkgs tmux + btop; the stale
-  `tmux2k.conf` theme path retires through the retire list.
+- The `terminal/tmux` member capability: plugin checkouts (tpm, tmux2k,
+  tmux-yank, tmux-resurrect, vim-tmux-navigator) as hash-pinned
+  `fetchFromGitHub`.
+- `.tmux.conf`; the `.config/tmux` link; the deployed pin manifest
+  `.tmux/plugins.pins.json` rendered from `workstation.terminal.pins`
+  (each terminal member contributes its rows); the stale `tmux2k.conf`
+  theme path retires through the retire list.
 - Verify: commits, server, theme. Hosts: linux/macOS.
 
 ### `nunchux`
-- Pinned checkout (`.tmux/plugins/nunchux` at the v3.1.3 commit,
-  hash-pinned `fetchFromGitHub`, repo-tracked launcher binary) + the
-  `.platform` marker composed in; theme-slot launcher config rendered
-  natively from `tokens.lua`.
+- The `terminal/nunchux` member capability (linux-only — the platform
+  gate lives inside the file plane; the report marks the path
+  `unavailable` on darwin): pinned checkout (`.tmux/plugins/nunchux` at
+  the v3.1.3 commit, hash-pinned `fetchFromGitHub`, repo-tracked launcher
+  binary) + the `.platform` marker composed in; theme-slot launcher
+  config rendered natively from `tokens.lua`; the manifest row rides
+  `workstation.terminal.pins`.
 - Verify: `modules/terminal/nunchux/verify/nunchux.sh` (checkout HEAD +
   binary pin + marker; never executes the binary). Hosts: linux (darwin
   deferred; no release-asset consumer).
@@ -248,6 +293,10 @@ Fail-closed at eval:
 - the fold's integrity assertions — a misclassified module file throws,
   never silently shrinks the report; declared fragments/retire lists agree
   between the fold and the composed surface;
+- the selections file: malformed paths, unknown paths, baseline pins, and
+  domain-disabled-under-a-selected-member contradictions all throw at
+  every eval that reads it (the shim validates before writing; the
+  library validates before every read)
 - target collisions across capabilities throw;
 - the fragment order contract: no slot without a fragment id, no id with
   two slots, no slot shared by two ids;
@@ -262,7 +311,8 @@ Fail-closed at eval:
 | Phase | Owner | Responsibility |
 | --- | --- | --- |
 | switch / rollback | `workstation apply` / `workstation rollback` | Build the generation from the flake, activate atomically, write the receipt to `switch.log` |
-| `plan` / `status` / `capabilities` | `nix eval` over `workstation.report` | Answer the declared state; mutate nothing |
+| `plan` / `status` / `capabilities` / `selected` | `nix eval` over `workstation.report` | Answer the declared state; mutate nothing |
+| select | `workstation add <path>...` / `workstation remove <path>...` | Validate against the walk-derived `selectable`, edit `hosts/selections.nix` canonically, offer the apply (idempotent; the baseline refuses) |
 | verify lane | `modules/*/verify/*.sh` | Consumer smokes against the recorded pins |
 
 Reads are pure evals. The container E2E (`tests/nix`) asserts the shape

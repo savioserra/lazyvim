@@ -69,7 +69,12 @@ in
 
           wsl = {
             enable = true;
-            defaultUser = user;
+            # nixos-wsl's own config literal collides on a root defaultUser
+            # (users.users.${defaultUser} and users.users.root in one
+            # attrset — an eval error since the template's operator user
+            # became root): a root operator user rides NixOS's own root
+            # user, and the defaultUser stays nixos-wsl's ("nixos")
+            defaultUser = lib.mkIf (user != "root") user;
           };
           # the canonical declaration derives from the identity option —
           # never a second literal
@@ -93,6 +98,14 @@ in
                   workstation.switch.homeAttr = homeKey;
                   workstation.switch.systemAttr = id.host;
                 }
+              )
+              # this machine's capability selection (hosts/selections.nix)
+              (
+                (import ../../nix/lib/selections.nix {
+                  lib = nixpkgs.lib;
+                  treeRoot = ../..;
+                }).translationModule
+                  ../../hosts/selections.nix
               )
               ../../nix/modules/workstation-home.nix
             ];

@@ -13,18 +13,19 @@ switch.log receipt).
 | Path | Role |
 | --- | --- |
 | `flake.nix`, `flake.lock` | The one entry point: inputs framed per domain (each domain owns its pin surface; `follows` dedupes shared nixpkgs/HM), the declared-state report verbs, the host legs, the mesh outputs |
-| `modules/<domain>/` | One directory per capability domain — the domain's module file AND the bytes it deploys, co-located: `modules/editor/{editor.nix, nvim/}`, `modules/terminal/{terminal.nix, tmux/, nunchux/}`, `modules/theme/{theme.nix, tokens.nix, tokens.lua}`, `modules/foundation/`, `modules/languages/{node,elixir,typescript,go}/`, `modules/agent/`, `modules/fonts/`, `modules/secrets/`. Adding a capability is adding one directory |
-| `nix/` | Shared substrate infrastructure, no capability of its own: `report.nix` (the declared-state fold), `lib/capabilities.nix` (the registry walk), `lib/shell-lane.nix` (the fragment lane's order contract), `lib/license.nix` (the secrets domain's license acceptance), `workstation-switch.nix` (the write plane), `modules/` (the home leg, the system leg, the host-identity options) |
-| `hosts/{linux,mac}/` | The two target legs; WSL and any linux server count under the linux leg. `hosts/identity.nix` is the identity template, rewritten per machine by `workstation init` and kept uncommitted |
-| `bin/workstation` | The launcher shim: the whole client (POSIX sh). Reads are `nix eval`s over `workstation.report.<verb>`; writes run `workstation apply` (the staged switch driver implements them). The home lane stages the same bytes as a derivation onto the profile PATH |
-| `tests/` | The container E2E: `run-container.sh` (the lane), `e2e.nix` (the proof driver), `e2e-home.nix` (the persona) — behavioral acceptance |
+| `modules/<domain>/` | One directory per capability domain — the domain's module file AND the bytes it deploys, co-located: `modules/editor/{editor.nix, nvim/}`, `modules/terminal/{tmux/{tmux.nix, files/, verify/}, nunchux/{nunchux.nix, files/, verify/}}`, `modules/theme/{theme.nix, tokens.nix, tokens.lua}`, `modules/foundation/`, `modules/languages/{node,elixir,typescript,go}/`, `modules/agent/`, `modules/fonts/`, `modules/secrets/`. Adding a capability is adding one directory |
+| `nix/` | Shared substrate infrastructure, no capability of its own: `report.nix` (the declared-state fold + the selection lens), `lib/capabilities.nix` (the registry walk), `lib/selections.nix` (the per-machine capability selection: the pins file's read/validation and the enable-option translation), `lib/shell-lane.nix` (the fragment lane's order contract), `lib/license.nix` (the secrets domain's license acceptance), `workstation-switch.nix` (the write plane), `modules/` (the home leg, the system leg, the host-identity options) |
+| `hosts/{linux,mac}/` | The two target legs; WSL and any linux server count under the linux leg. `hosts/identity.nix` is the identity template and `hosts/selections.nix` the capability-selection template — both rewritten per machine (`workstation init` / `workstation add|remove`) and kept uncommitted |
+| `bin/workstation` | The launcher shim: the whole client (POSIX sh). Reads are `nix eval`s over `workstation.report.<verb>`; the selection verbs (`add|remove|selected`) edit `hosts/selections.nix` through the report's validation; writes run `workstation apply` (the staged switch driver implements them). The home lane stages the same bytes as a derivation onto the profile PATH |
+| `tests/` | The container E2E: `run-container.sh` (the lane), `e2e.nix` (the proof driver), `e2e-home.nix` (the persona), `e2e-selections*.nix` (the persona's tracked selection fixtures) — behavioral acceptance |
 | `docs/` | The references; this file is the structure's anchor |
 | `.github/` | The static check battery, the CI (static + nix-eval jobs), tagged source archives |
 
 ### Flake outputs
 
-`workstation.report` (the read verbs: `status`, `plan`, `capabilities` —
-scope with an attrpath), `homeManagerModules.workstation`,
+`workstation.report` (the read verbs: `status`, `plan` — with the
+machine's selection pins —, `capabilities` — scope with an attrpath,
+`selectable`, `selections`), `homeManagerModules.workstation`,
 `homeConfigurations` (the linux leg + the e2e container persona),
 `darwinConfigurations` (the mac leg), `nixosConfigurations.<host>` (the
 linux system plane), `workstationE2E` (the container lane's inputs: the
@@ -43,6 +44,13 @@ overrides only), `workstationTheme.lib`, `hermesSkills`, `hermesAgentPin`.
   tree. MagicDNS derives the host's tailscale name from the hostname.
   The identity gate in `check.sh` reds on personal strings anywhere in
   the tracked tree.
+- **Capability selection is per-machine and pinned beside the identity.**
+  `hosts/selections.nix` (template committed, local rewrite uncommitted)
+  pins `enable`/`disable` rows over the declared defaults — core domains
+  on, language members off, `foundation` baseline (unselectable). The
+  valid paths are the walk's ids (`<domain>`, `<domain>/<member>`); a
+  selected member implies its domain; every eval validates the file, so a
+  hand-broken pin fails loudly, never silently deploys.
 - **The filesystem is the capability registry.** No central catalog: the
   walk (`nix/lib/capabilities.nix`) discovers `modules/<domain>/`, and
   the report fold evaluates each capability once against home-manager.

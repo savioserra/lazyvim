@@ -191,7 +191,12 @@ in
     };
   };
 
-  config = {
+  # the selection gate (workstation.agent.enable, nix/lib/selections.nix)
+  # wraps this CONFIG block: the option DECLARATIONS above
+  # (programs.hermes.pin/package) stay ungated so every composition that
+  # loads the domain modules still carries them; disabled = the definitions
+  # skip, never the files
+  config = lib.mkIf config.workstation.agent.enable {
     # --- the eval-time contract --------------------------------------------
     assertions = [
       {
@@ -274,3 +279,8 @@ in
     workstation.retire = [ ".hermes/skills/lazyvim/SKILL.md" ];
   };
 }
+# The selection gate wraps the CONFIG block above
+# (workstation.agent.enable, nix/lib/selections.nix) — the option
+# DECLARATIONS (programs.hermes.pin/package) stay ungated so every
+# composition that loads the domain modules still carries them; disabled =
+# the definitions skip, never the files.

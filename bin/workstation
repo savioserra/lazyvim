@@ -18,6 +18,17 @@ install (once per machine):
                   `workstation apply` (WORKSTATION_NO_APPLY=1 skips the
                   first switch)
 
+selection (per-machine capability flags, hosts/selections.nix — keep the
+local rewrite uncommitted, same lifecycle as identity.nix):
+  add <path>...        enable capability(ies) on this machine
+  remove <path>...     disable capability(ies)
+  selected             this machine's resolved rows: per path on/off/
+                       baseline/unavailable + dependency notes
+  paths are <domain> or <domain>/<member> — `editor`,
+  `languages/typescript`, `terminal/nunchux` (workstation selected lists
+  them all). add and remove are idempotent, accept multiple paths, and
+  offer `apply now?` on a TTY (WORKSTATION_NO_APPLY=1 skips the offer).
+
 reads (the declared state, answered by nix eval over
 #workstation.report.<verb>):
   status          the declared inventory: counts, capability order
@@ -41,6 +52,63 @@ EOF
 die() {
 	printf 'workstation: %s\n' "$1" >&2
 	exit "${2:-1}"
+}
+
+# --- the selection verbs' helpers -------------------------------------------
+# The pins, answered by the report (the shim never parses nix source — the
+# JSON projection of #workstation.report.selections.pins.<list> is the only
+# shape it reads).
+nix_eval() {
+	nix --extra-experimental-features 'nix-command flakes' eval --json "$@"
+}
+toList() {
+	# a JSON array of grammar-safe path strings -> newline tokens
+	printf '%s' "$1" | tr -d '[]"' | tr ',' '\n' | grep -v '^$' || true
+}
+has() {
+	# has <newline-list> <path> — exact-match membership
+	printf '%s\n' "$1" | grep -Fxq "$2"
+}
+append() {
+	# append <newline-list> <path> — the canonical form keeps file order
+	[ -n "$1" ] && printf '%s\n%s\n' "$1" "$2" || printf '%s\n' "$2"
+}
+drop() {
+	# drop <newline-list> <path> — exact-match removal
+	printf '%s\n' "$1" | grep -Fvx "$2" || true
+}
+quote_lines() {
+	# <newline-list> -> one quoted nix string per row, indented to the
+	# canonical form's depth (the loop word-splits the grammar-safe tokens
+	# and an empty list prints nothing)
+	for t in $1; do
+		printf '    "%s"\n' "$t"
+	done
+}
+# the apply offer (the init precedent): whiptail yes/no where the dialog
+# tool exists, a printed next step otherwise; WORKSTATION_NO_APPLY=1 skips.
+# On yes this execs the same write plane the apply verb takes.
+offer_apply() {
+	if [ "${WORKSTATION_NO_APPLY:-}" = 1 ]; then
+		printf 'workstation: selection saved; apply skipped (WORKSTATION_NO_APPLY=1) — next: workstation apply\n'
+		return 0
+	fi
+	if command -v whiptail >/dev/null 2>&1; then
+		if whiptail --title ' workstation selection ' --yesno \
+			'Apply the new selection now?' 9 68; then
+			if [ -f "$flake/hosts/identity.nix" ] &&
+				grep -q '"TEMPLATE"' "$flake/hosts/identity.nix"; then
+				die 'identity not captured — run: workstation init' 2
+			fi
+			if command -v workstation-switch >/dev/null 2>&1; then
+				exec workstation-switch apply
+			fi
+			die 'the write plane is the generation'\''s workstation-switch driver and it is not on PATH — apply the substrate first (the home lane stages it)' 2
+		fi
+		printf 'workstation: selection saved; apply deferred — next: workstation apply\n'
+		return 0
+	fi
+	printf 'workstation: selection saved — next: workstation apply\n'
 }
 
 flake=""
@@ -150,6 +218,12 @@ init)
 	printf 'workstation: identity captured in %s/hosts/identity.nix (host=%s user=%s)\n' \
 		"$flake" "$host" "$user"
 	printf 'workstation: keep the file uncommitted\n'
+	# the capability selection: the template beside the identity (the
+	# add/remove verbs edit it; an existing selection is never clobbered)
+	if [ ! -f "$flake/hosts/selections.nix" ]; then
+		printf '{\n  enable = [\n  ];\n}\n' >"$flake/hosts/selections.nix"
+		printf 'workstation: selection template written to %s/hosts/selections.nix\n' "$flake"
+	fi
 	# The first activation rides init: one command per machine, the
 	# leg-native switch stays inside the shim (users never type it). The
 	# homeConfiguration's activationPackage is built from THIS flake — the
@@ -206,6 +280,103 @@ status | plan | capabilities)
 	done
 	exec nix --extra-experimental-features 'nix-command flakes' \
 		eval --json "$flake#workstation.report.$verb$scope"
+	;;
+selected)
+	# this machine's resolved selection: #workstation.report.selections
+	# verbatim (the same thin-wrapper contract as the other reads — the
+	# rows carry per-path on/off/baseline/unavailable + dependency notes)
+	[ -n "$flake" ] ||
+		die 'no flake to read — pass --flake PATH, run inside a checkout, or apply the substrate once (it stages ~/.local/opt/workstation/flake)' 2
+	[ $# -eq 0 ] || die 'selected takes no arguments' 2
+	exec nix --extra-experimental-features 'nix-command flakes' \
+		eval --json "$flake#workstation.report.selections"
+	;;
+add | remove)
+	# the selection verbs: validate every path against the walk-derived
+	# report BEFORE any file write (no shell or nix injection surface), edit
+	# hosts/selections.nix canonically, offer the apply
+	[ $# -ge 1 ] || die "usage: workstation $verb <path>... (see: workstation help)" 2
+	[ -n "$flake" ] ||
+		die 'no flake to read — pass --flake PATH, run inside a checkout, or apply the substrate once (it stages ~/.local/opt/workstation/flake)' 2
+	sel_file=$flake/hosts/selections.nix
+	[ -f "$sel_file" ] || die "selections: $sel_file missing (unexpected tree — workstation init writes it beside the identity)" 1
+	pins_enable=$(nix_eval "$flake#workstation.report.selections.pins.enable") ||
+		die 'selections: the report did not answer (nix eval failed — is nix on PATH?)' 1
+	pins_disable=$(nix_eval "$flake#workstation.report.selections.pins.disable") ||
+		die 'selections: the report did not answer (nix eval failed — is nix on PATH?)' 1
+	enable_list=$(toList "$pins_enable")
+	disable_list=$(toList "$pins_disable")
+	changed=0
+	for path do
+		# the grammar first: <domain> or <domain>/<member>, [A-Za-z0-9_-]
+		# only — a bad path never reaches an eval attrpath or the file
+		case $path in
+		*[!A-Za-z0-9_/-]* | "" | /* | */ | */*/*)
+			die "invalid path: $path (the grammar is <domain> or <domain>/<member>, [A-Za-z0-9_-] only)" 2
+			;;
+		esac
+		# the walk-derived row: kind, baseline, default, availability —
+		# the quoted attrpath segment is safe (the grammar excluded the
+		# quote) and an unknown path fails the eval
+		row=$(nix_eval "$flake#workstation.report.selectable.\"$path\"") ||
+			die "unknown path: $path (workstation selected lists the valid paths)" 2
+		if printf '%s' "$row" | grep -q '"baseline":true'; then
+			die "$path is baseline — always on" 2
+		fi
+		if printf '%s' "$row" | grep -q '"available":false'; then
+			printf 'workstation: note — %s deploys nothing on this platform (selected marks it unavailable)\n' "$path" >&2
+		fi
+		if [ "$verb" = add ]; then
+			if has "$enable_list" "$path"; then
+				printf 'workstation: %s already selected\n' "$path"
+				continue
+			fi
+			enable_list=$(append "$enable_list" "$path")
+			disable_list=$(drop "$disable_list" "$path")
+			changed=1
+			printf 'workstation: %s selected\n' "$path"
+		else
+			if printf '%s' "$row" | grep -q '"default":true'; then
+				pin_default=yes
+			else
+				pin_default=no
+			fi
+			if has "$enable_list" "$path"; then
+				enable_list=$(drop "$enable_list" "$path")
+				# a default-on path springs back on unless pinned off
+				[ "$pin_default" = yes ] && disable_list=$(append "$disable_list" "$path")
+				changed=1
+				printf 'workstation: %s removed\n' "$path"
+			elif has "$disable_list" "$path"; then
+				printf 'workstation: %s already off\n' "$path"
+			elif [ "$pin_default" = yes ]; then
+				disable_list=$(append "$disable_list" "$path")
+				changed=1
+				printf 'workstation: %s removed (was on by default)\n' "$path"
+			else
+				printf 'workstation: %s already off (never selected)\n' "$path"
+			fi
+		fi
+	done
+	if [ "$changed" = 1 ]; then
+		{
+			printf "# The machine's capability selection — edited by workstation add|remove.\n"
+			printf '# Local edit — keep it uncommitted (the committed copy is the empty template).\n'
+			printf '{\n  enable = [\n'
+			quote_lines "$enable_list"
+			printf '  ];\n'
+			if [ -n "$disable_list" ]; then
+				printf '  disable = [\n'
+				quote_lines "$disable_list"
+				printf '  ];\n'
+			fi
+			printf '}\n'
+		} >"$sel_file"
+		printf 'workstation: selection saved in %s\n' "$sel_file"
+		offer_apply
+	else
+		printf 'workstation: selection unchanged\n'
+	fi
 	;;
 apply | rollback | update | sync)
 	# The identity gate: writes refuse until `workstation init` captured

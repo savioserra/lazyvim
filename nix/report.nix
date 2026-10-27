@@ -18,6 +18,15 @@
 #                   not the module system's merged list order)
 #   accounting      per-capability rows: { id, foundation, fileTargets,
 #                   claimTargets, fragments, retire }
+#   selectable      the walk-derived paths this machine can pin —
+#                   <path> -> { kind (domain|member|baseline), baseline,
+#                   default }; the shim's add|remove validate against it
+#   selections      the machine's pins (hosts/selections.nix,
+#                   nix/lib/selections.nix) and the resolved rows —
+#                   <path> -> { state (on|off|baseline|unavailable), note };
+#                   every eval here applies the pins, so the composed
+#                   surface, the accounting and `plan` are this MACHINE's
+#                   next-switch truth, not the bare substrate's
 #
 # Classification law: an entry is classified by what its declaration says —
 # `recursive = true` marks a tree claim; every other home.file key is a leaf
@@ -46,6 +55,13 @@
 let
   capabilityWalk = import ./lib/capabilities.nix { inherit lib treeRoot; };
 
+  # the machine's capability selection: the pins file read and validated
+  # through the shared library — the same validation the legs' translation
+  # runs, so a hand-broken file fails every eval that could deploy it
+  selectionsLib = import ./lib/selections.nix { inherit lib treeRoot; };
+  selectionsFile = treeRoot + "/hosts/selections.nix";
+  pins = selectionsLib.readPins selectionsFile;
+
   foundationOf =
     id:
     let
@@ -64,9 +80,17 @@ let
   # baseline (the machinery subtraction). The evals load ONLY the domain
   # modules plus the shared option declarations — never the home leg's
   # rendering module — so the report sees the DECLARED surface, not the
-  # rendered fragment files.
+  # rendered fragment files. Every eval also applies this machine's
+  # capability selection (nix/lib/selections.nix, hosts/selections.nix —
+  # validated at read): the fold reports the machine's next-switch truth.
+  # The bare form (selections = false) exists for the availability probe,
+  # where a pin would out-vote the probe's forced flag through the bool
+  # OR-merge.
   evalModules =
-    moduleFiles:
+    {
+      moduleFiles,
+      selections ? true,
+    }:
     (hm.homeManagerConfiguration {
       inherit pkgs;
       # the domain modules take `self` (the flake tree) beside the standard
@@ -74,6 +98,11 @@ let
       extraSpecialArgs.self = treeRoot;
       modules = [
         (import (treeRoot + "/nix/modules/workstation-options.nix"))
+      ]
+      ++ lib.optionals selections [
+        (selectionsLib.translationModule selectionsFile)
+      ]
+      ++ [
         {
           home.username = "report";
           home.homeDirectory = homeDir;
@@ -81,11 +110,18 @@ let
         }
       ]
       ++ moduleFiles;
-    }).config;
+    });
 
-  capabilityEvals = map (cap: evalModules cap.moduleFiles) capabilityWalk.capabilities;
-  fullEval = evalModules capabilityWalk.moduleFiles;
-  baselineEval = evalModules [ ];
+  capabilityEvals = map (cap: (evalModules { moduleFiles = cap.moduleFiles; }).config) (
+    capabilityWalk.capabilities
+  );
+  fullEvalSet = evalModules { moduleFiles = capabilityWalk.moduleFiles; };
+  fullEval = fullEvalSet.config;
+  # the option tree of the composed eval: the enable options' DECLARED
+  # defaults (core domains on, language members off) — the translation may
+  # pin paths either way; the defaults are what an unpinned path rides
+  fullEvalOptions = fullEvalSet.options;
+  baselineEval = (evalModules { moduleFiles = [ ]; }).config;
 
   # home-manager's generated entries at this eval: the machinery the
   # capabilities never declared (subtracted below)
@@ -181,6 +217,140 @@ let
     fragments = builtins.length fragments;
     retire = builtins.length retire;
   };
+
+  # --- the selection lens -----------------------------------------------------
+  # The walk-derived selectable universe (domains + their members,
+  # baseline-marked — nothing hardcoded) and this machine's resolved rows.
+  # Availability is a MEMBER-level platform truth, probed by forcing the
+  # path's enable option true vs false over its owning capabilities' module
+  # files in BARE evals (pins excluded — a pin out-votes the probe through
+  # the bool OR-merge); a flag that moves nothing here marks the path
+  # unavailable (the nunchux darwin case). Domains are platform-neutral in
+  # this substrate — every domain-level module deploys on both legs — so
+  # only members probe; a future platform-gated domain extends the probe.
+  selectablePaths = lib.sort (a: b: a < b) (
+    lib.unique (selectionsLib.domains ++ selectionsLib.members)
+  );
+
+  defaultOf =
+    path:
+    (lib.getAttrFromPath (
+      [ "workstation" ] ++ lib.splitString "/" path ++ [ "enable" ]
+    ) fullEvalOptions).default;
+
+  # the probe's comparison unit: a capability eval's whole declared surface,
+  # flattened to comparable strings (targets, claims, fragment id/target
+  # pairs, tombstones, package names, the editor's composed language ids)
+  probeUnit =
+    eval:
+    lib.sort (a: b: a < b) (
+      leafTargetsOf eval
+      ++ claimTargetsOf eval
+      ++ map (f: "${f.target}/${f.id}") eval.workstation.shell.fragments
+      ++ retirePathsOf eval
+      ++ map (p: p.name) eval.home.packages
+      ++ map (e: e.id) eval.workstation.editor.languages
+    );
+
+  capabilitiesOfPath =
+    path:
+    builtins.filter (
+      cap:
+      cap.id == path
+      || (lib.length (lib.splitString "/" cap.id) == 2 && lib.head (lib.splitString "/" cap.id) == path)
+    ) capabilityWalk.capabilities;
+
+  available =
+    path:
+    if selectionsLib.pathKind path != "member" then
+      true
+    else
+      let
+        files = lib.concatMap (cap: cap.moduleFiles) (capabilitiesOfPath path);
+        forceEnable =
+          value:
+          (evalModules {
+            moduleFiles = files ++ [
+              {
+                workstation = lib.setAttrByPath (lib.splitString "/" path ++ [ "enable" ]) value;
+              }
+            ];
+            selections = false;
+          }).config;
+      in
+      probeUnit (forceEnable true) != probeUnit (forceEnable false);
+
+  # dependency notes: what a remove takes with it — copy, not logic; a path
+  # absent here renders an empty note
+  selectionNotes = {
+    editor = "off: nvim and the composed language profile leave; the theme token path keeps serving tmux";
+    fonts = "off: the nerd font and its fontconfig discovery leave";
+    secrets = "off: the op CLI and its env fragment leave";
+    agent = "off: the hermes runtime stack and the served skills leave";
+    theme = "off: the deployed token path leaves (the theme library stays available to consumers)";
+    terminal = "off: tmux and nunchux leave";
+    "terminal/tmux" = "off: the tmux config, the plugin set and the pin manifest leave";
+    "terminal/nunchux" = "off: the nunchux checkout and its rendered config leave";
+    languages = "the domain shell deploys nothing itself — the members are the granularity";
+  };
+
+  noteOf =
+    path:
+    let
+      kind = selectionsLib.pathKind path;
+    in
+    if kind == "baseline" then
+      "baseline: always on"
+    else if kind == "member" && lib.head (lib.splitString "/" path) == "languages" then
+      "off: the toolchain and its editor profile entry leave"
+    else
+      selectionNotes.${path} or "";
+
+  stateOf =
+    path:
+    if selectionsLib.pathKind path == "baseline" then
+      "baseline"
+    else
+      let
+        avail = available path;
+        on = builtins.elem path pins.enable || (!(builtins.elem path pins.disable) && defaultOf path);
+      in
+      if on then
+        (if avail then "on" else "unavailable")
+      else if avail then
+        "off"
+      else
+        "unavailable";
+
+  selectable = builtins.listToAttrs (
+    map (
+      path:
+      lib.nameValuePair path {
+        kind = selectionsLib.pathKind path;
+        baseline = selectionsLib.pathKind path == "baseline";
+        # the baseline carries no enable option — it is always on
+        default = selectionsLib.pathKind path != "baseline" && defaultOf path;
+      }
+    ) selectablePaths
+  );
+
+  selections = {
+    pins = {
+      inherit (pins)
+        enable
+        disable
+        ;
+    };
+    rows = builtins.listToAttrs (
+      map (
+        path:
+        lib.nameValuePair path {
+          state = stateOf path;
+          note = noteOf path;
+        }
+      ) selectablePaths
+    );
+  };
 in
 assert
   unionOk
@@ -200,6 +370,8 @@ assert
     fileTargetNames
     claimTargets
     retire
+    selectable
+    selections
     ;
   capabilityOrder = capabilityWalk.ids;
   inherit fragmentOrder;
