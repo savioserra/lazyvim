@@ -71,7 +71,12 @@ docker run --rm \
 	-v "$volume:/nix" \
 	"$image" /bin/sh -c '
 		set -eu
-		export NIX_CONFIG="extra-experimental-features = nix-command flakes"
+		# capped parallelism: the lane runs on shared small hosts where an
+		# unconstrained build burst OOMs (a signal-9 builder is a killed
+		# host, not a failed test); NIX_CONFIG is newline-separated
+		export NIX_CONFIG="extra-experimental-features = nix-command flakes
+max-jobs = 2
+cores = 2"
 		echo "== container: building the persona home + the proof driver =="
 		nix build --print-build-logs \
 			"/workstation#homeConfigurations.\"e2e@container\".activationPackage" \
@@ -82,7 +87,13 @@ docker run --rm \
 		echo "workstation: container staged (the persona closure is realized)"
 		home=/home/e2e
 		export HOME=$home
+		# the persona identity: the activation checks USER against
+		# home.username and the container shell carries root
+		export USER=e2e
 		mkdir -p "$home"
+		# the profile dirs the activation registers the generation into
+		# (a bare container has neither until a first switch makes them)
+		mkdir -p "$home/.local/state/nix/profiles" /nix/var/nix/profiles/per-user/e2e
 		echo "== container: staging the boot home =="
 		/tmp/e2e-home/activate
 		nix-env --profile "${XDG_STATE_HOME:-$HOME/.local/state}/nix/profiles/home-manager" \

@@ -298,7 +298,10 @@ writeShellScriptBin "workstation-e2e" ''
   nv=$(cat "$home/.node-version" 2>/dev/null || true)
   [ -n "$nv" ] || fail "node runtime single-source" ".node-version missing"
   node_bin=$(find_client node) || fail "node runtime single-source" "node is not on PATH"
-  runtime=$("$node_bin" --version | sed 's/^v//')
+  # the version strip is pure shell: the container lane runs in the
+  # minimal nix image, where sed does not exist
+  runtime=$("$node_bin" --version)
+  runtime=''${runtime#v}
   [ "$nv" = "$runtime" ] \
     || fail "node runtime single-source" ".node-version ($nv) does not match the runtime ($runtime)"
   pass "node runtime single-source"
@@ -429,7 +432,11 @@ writeShellScriptBin "workstation-e2e" ''
   #    to the state tree's switch.log (the daemon journal is gone with the
   #    daemon)
   step "switch receipt in switch.log"
-  grep -q "generation [0-9]* applied (rollback available at" \
+  # the fresh-host form: the first apply on a bare home receipts
+  # "generation 1 applied (no prior generation)"; a re-apply receipts the
+  # rollback-available form. Either way the generation line must exist —
+  # the switch ran and the receipt closed it.
+  grep -Eq "generation [0-9]+ applied \(" \
     "$home/.local/state/workstation/switch.log" 2>/dev/null \
     || fail "switch receipt" "no 'generation N applied' line in switch.log"
   pass "switch receipt in switch.log"
