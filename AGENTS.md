@@ -23,7 +23,7 @@ Read the nearest scoped `AGENTS.md` and follow the owning reference:
 
 - A capability that names a tool ships the tool: resources-without-runtime (a clone, a symlink or a config with no provisioned, working binary) is a defect, not a documented manual step. Verify must smoke the consumer (`hermes --version`-class checks), not only fingerprints.
 - Edit source, not deployed state. Every payload lives with its owning capability under `modules/<domain>/` (module and bytes co-located); home state is declared and linked from the store, never checked in as deployed state. Never implicitly overwrite a clone; legacy payloads retire through the declared retire list.
-- `bin/workstation` is the sole public lifecycle interface; `workstation-switch` (staged into each generation) is the sole write plane.
+- `workstation` is the sole public lifecycle interface (apply / rollback / update / sync / init / add / remove); the staged write-plane driver it execs is internal, never user-facing.
 - Keep core domain-neutral: no cross-domain imports; composition happens through the capability walk (`nix/lib/capabilities.nix`).
 - Payload stays data: Lua appears only as deployed editor/theme data read as bytes, never executed.
 - Tools come from nixpkgs through the flake's pin-override overlay (`overlays.default`) with version floors asserted in the owning modules, or an inline pin where nixpkgs lacks coverage (documented in the owning module). No unpinned downloads, no `sudo`, no OS-package-manager installation of managed tools.

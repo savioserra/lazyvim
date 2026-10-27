@@ -1,9 +1,9 @@
 # Home state: native declarations
 
 Home state is nix: home-manager links every declared target from store
-paths, and `workstation-switch` owns activation and rollback. The public
+paths, and `workstation` owns activation and rollback. The public
 interface is the repo-native `bin/workstation`, and the write plane is
-`workstation-switch`, never a file backend. Authentication, sessions and
+`workstation`, never a file backend. Authentication, sessions and
 provider state remain user-owned.
 
 ## Source generation

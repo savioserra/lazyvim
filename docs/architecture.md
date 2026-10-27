@@ -3,9 +3,10 @@
 The workstation is a **nixpkgs-native monorepo**: declared state and two
 clients. The capability modules under `modules/<domain>/` declare; home
 manager renders; `bin/workstation` (reads: thin wrappers over
-`nix eval .#workstation.report.<verb>`) and `workstation-switch` (the
-write plane: leg-native rebuilds plus the switch.log receipt) are the
-whole operator surface.
+`nix eval .#workstation.report.<verb>`) are the whole operator surface:
+reads are evals, writes are `workstation apply|rollback|update|sync` (the
+staged switch driver implements them: leg-native rebuilds plus the
+switch.log receipt).
 
 ## The final folder structure
 
@@ -15,7 +16,7 @@ whole operator surface.
 | `modules/<domain>/` | One directory per capability domain — the domain's module file AND the bytes it deploys, co-located: `modules/editor/{editor.nix, nvim/}`, `modules/terminal/{terminal.nix, tmux/, nunchux/}`, `modules/theme/{theme.nix, tokens.nix, tokens.lua}`, `modules/foundation/`, `modules/languages/{node,elixir,typescript,go}/`, `modules/agent/`, `modules/fonts/`, `modules/secrets/`. Adding a capability is adding one directory |
 | `nix/` | Shared substrate infrastructure, no capability of its own: `report.nix` (the declared-state fold), `lib/capabilities.nix` (the registry walk), `lib/shell-lane.nix` (the fragment lane's order contract), `lib/license.nix` (the secrets domain's license acceptance), `workstation-switch.nix` (the write plane), `modules/` (the home leg, the system leg, the host-identity options) |
 | `hosts/{linux,mac}/` | The two target legs; WSL and any linux server count under the linux leg. `hosts/identity.nix` is the identity template, rewritten per machine by `workstation init` and kept uncommitted |
-| `bin/workstation` | The launcher shim: the whole client (POSIX sh). Reads are `nix eval`s over `workstation.report.<verb>`; writes delegate to the staged `workstation-switch`. The home lane stages the same bytes as a derivation onto the profile PATH |
+| `bin/workstation` | The launcher shim: the whole client (POSIX sh). Reads are `nix eval`s over `workstation.report.<verb>`; writes run `workstation apply` (the staged switch driver implements them). The home lane stages the same bytes as a derivation onto the profile PATH |
 | `tests/` | The container E2E: `run-container.sh` (the lane), `e2e.nix` (the proof driver), `e2e-home.nix` (the persona) — behavioral acceptance |
 | `docs/` | The references; this file is the structure's anchor |
 | `.github/` | The static check battery, the CI (static + nix-eval jobs), tagged source archives |
@@ -91,8 +92,7 @@ contract):
 - `plan` — the surface the next switch applies (file targets, tree
   claims, the fragment lane, the retire list) with the report digest —
   the declared state's content id. Mutation is never a read's job:
-  `workstation-switch` owns it (atomic generations, rollback, the
-  receipt).
+  the write plane owns it (atomic generations, rollback, the receipt).
 - `capabilities` — the accounting keyed by capability id; attrpath
   scoping is free (`nix eval .#workstation.report.capabilities.editor`).
 
@@ -116,7 +116,7 @@ module files are never created.
 `$WORKSTATION_FLAKE` > the enclosing checkout > the staged generation
 snapshot), dispatch the verb, exec. Reads exec `nix eval --json` over the
 report attrs and print the answer unchanged; writes exec the staged
-`workstation-switch`; help exits 0, usage errors exit 2, a read with no
+`workstation apply` (the staged driver); help exits 0, usage errors exit 2, a read with no
 resolvable flake fails closed naming the fix. The shim dispatch gate
 (.github/scripts/shim-dispatch.sh) holds this contract in CI with a stub
 nix.

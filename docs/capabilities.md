@@ -15,16 +15,16 @@ flake.nix
   -> nix/modules          (workstation-home, workstation-system, host identity)
   -> nix/report.nix       (the declared-state fold; flake.nix projects
                            workstation.report.{status,plan,capabilities})
-  -> nix/workstation-switch.nix  (the write plane: switch / rollback, the
+  -> nix/workstation-switch.nix  (the write plane behind workstation apply:
                            switch.log receipt in its tail)
   -> hosts/<host>         (linux / mac; identity in hosts/identity.nix)
 
 bin/workstation (POSIX sh: flake resolution, verb dispatch)
   reads:  nix eval --json <flake>#workstation.report.<verb>
-  writes: exec the staged workstation-switch driver
+  writes: `workstation apply` (execs the staged switch driver)
 ```
 
-- Reads are pure `nix eval`; mutation is `workstation-switch`.
+- Reads are pure `nix eval`; mutation is `workstation apply`.
 - `bin/workstation` is the sole entry point.
 - `modules/**/*.lua` are data payload files, read as bytes, never executed.
 
@@ -261,7 +261,7 @@ Fail-closed at eval:
 
 | Phase | Owner | Responsibility |
 | --- | --- | --- |
-| switch / rollback | `workstation-switch` | Build the generation from the flake, activate atomically, write the receipt to `switch.log` |
+| switch / rollback | `workstation apply` / `workstation rollback` | Build the generation from the flake, activate atomically, write the receipt to `switch.log` |
 | `plan` / `status` / `capabilities` | `nix eval` over `workstation.report` | Answer the declared state; mutate nothing |
 | verify lane | `modules/*/verify/*.sh` | Consumer smokes against the recorded pins |
 

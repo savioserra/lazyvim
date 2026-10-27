@@ -61,7 +61,7 @@ The lane map — which lane proves what:
   adopt rehearsal (a copy-contract tree makes way for the declared
   symlink), the retire rehearsal (a planted tombstone tree leaves
   through the declared `recursive = true` consent, verdict-receipted),
-  the apply-driven switch (`workstation-switch apply` over the
+  the apply-driven switch (`workstation apply` over the
   offline activation override) and the switch receipt. This IS the
   fresh-host parity proof: a bare home, one apply from the flake, the
   resulting home matching the declared expectations, consumer-smoked end
