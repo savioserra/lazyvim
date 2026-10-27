@@ -10,11 +10,16 @@ socket, no release to build. A switch's receipt lands in the state tree's
 
 ## Prerequisites
 
-- Nix with flakes enabled. The hosts under [`hosts/`](hosts/) declare
-  everything else: per-host identity lives only in
-  `hosts/<host>/default.nix`, and the flake renders every pinned tool into
-  the store.
-- The legs: `hosts/wsl` (the linux leg; NixOS-WSL, `homeConfigurations` +
+- Nix with flakes enabled (the one hard prerequisite — the daemon is
+  host-owned on standalone-Home-Manager legs, platform-managed on
+  NixOS/nix-darwin ones).
+- `workstation init` captures the machine's identity once, at install
+  time, into `hosts/identity.nix` (whiptail dialogs prefilled with the
+  detected values; keep the file uncommitted). whiptail ships with the
+  substrate (`pkgs.newt`); a bare box before its first switch falls back
+  to the detected values verbatim. The flake renders every pinned tool
+  into the store.
+- The legs: `hosts/linux` (the linux leg; NixOS-WSL system plane, `homeConfigurations` +
   `nixosConfigurations`), `hosts/mac` (nix-darwin, `darwinConfigurations`;
   brew reduced to casks). WSL counts as the linux leg (operator ruling
   2026-10-22: the flake targets exactly mac and linux). A NixOS VM boot

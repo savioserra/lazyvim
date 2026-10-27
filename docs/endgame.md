@@ -15,7 +15,7 @@ board comments.
 | `flake.nix`, `flake.lock` | The one entry point: inputs framed per domain (each domain owns its pin surface; `follows` dedupes shared nixpkgs/HM), the declared-state report verbs, the host legs, the mesh outputs |
 | `modules/<domain>/` | One directory per capability domain — the domain's module file AND the bytes it deploys, co-located: `modules/editor/{editor.nix, nvim/}`, `modules/terminal/{terminal.nix, tmux/, nunchux/}`, `modules/theme/{theme.nix, tokens.nix, tokens.lua}`, `modules/foundation/`, `modules/languages/{node,elixir,typescript,go}/`, `modules/agent/`, `modules/fonts/`, `modules/secrets/`. Adding a capability is adding one directory |
 | `nix/` | Shared substrate infrastructure, no capability of its own: `report.nix` (the declared-state fold), `lib/capabilities.nix` (the registry walk), `lib/pins.nix` (the declared pins' shared HOW: fetch/layout/probe machinery, the claim composition), `workstation-switch.nix` (the write plane), `modules/` (the home leg, the system leg, the host-identity options) |
-| `hosts/{wsl,mac}/` | The two target legs (WSL counted under linux). `hosts/<host>/default.nix` is the ONLY place a host's identity is written |
+| `hosts/{linux,mac}/` | The two target legs WSL and any linux server count under the linux leg. `hosts/<host>/default.nix` is the ONLY place a host's identity is written |
 | `bin/workstation` | The launcher shim: the whole client (POSIX sh). Reads are `nix eval`s over `workstation.report.<verb>`; writes delegate to the staged `workstation-switch`. The home lane stages the same bytes as a derivation onto the profile PATH |
 | `tests/` | `tests/nix/` (the VM proof host: `vm-host.nix`, `vm-home.nix`, `vm-e2e.nix`, `run-vm.sh`) — behavioral acceptance |
 | `docs/` | The references; this file is the structure's anchor |
@@ -26,7 +26,7 @@ board comments.
 `workstation.report` (the read verbs: `status`, `plan`, `capabilities` —
 scope with an attrpath), `homeManagerModules.workstation`,
 `homeConfigurations` (the linux leg + the VM persona),
-`darwinConfigurations` (the mac leg), `nixosConfigurations.wsl`,
+`darwinConfigurations` (the mac leg), `nixosConfigurations.<host>` (the linux system plane),
 `nixosConfigurations.vm-test`, `overlays.default` (pin overrides ONLY),
 `workstationTheme.lib`, `hermesSkills`, `hermesAgentPin`.
 
@@ -34,11 +34,13 @@ scope with an attrpath), `homeManagerModules.workstation`,
 
 - **Two targets.** mac and linux; WSL is linux. No distro-named legs, no
   arch/omarchy references anywhere.
-- **Identity is declared once per host.** `workstation.host.{name, user,
-  homeDirectory, tailscale.fqdn}` — written only in
-  `hosts/<host>/default.nix`; tailscale, the dashboard binding and the
-  flake's rebuild keys derive from it. The identity gate in `check.sh`
-  reds on personal strings anywhere else.
+- **Identity is captured once per machine, at install time.**
+  `workstation init` writes `hosts/identity.nix` (hostname, user, home,
+  tailscale fqdn) and the local rewrite stays uncommitted — the repo is
+  a template carrying no personal strings at HEAD; evals read the dirty
+  working tree. tailscale, the dashboard binding and the flake's rebuild
+  keys derive from it. The identity gate in `check.sh` reds on personal
+  strings anywhere in the tracked tree.
 - **The filesystem is the capability registry.** No central catalog, no
   manifests: the walk (`nix/lib/capabilities.nix`) discovers
   `modules/<domain>/`, and the report fold evaluates each capability once

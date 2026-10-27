@@ -11,6 +11,11 @@ usage() {
 	cat <<'EOF'
 workstation — the nixpkgs-native workstation substrate
 
+install-time capture (once per machine):
+  init            capture this machine's identity into hosts/identity.nix
+                  (whiptail dialogs prefilled with the detected values;
+                  keep the file uncommitted)
+
 reads (the declared state, answered by nix eval over
 #workstation.report.<verb>):
   status          the declared inventory: counts, capability order
@@ -77,6 +82,9 @@ fi
 # The read flake: explicit, then the enclosing checkout, then the staged
 # generation snapshot. A bare host with neither fails closed with the fix
 # named — the substrate has no embedded fallback to misread.
+if [ -z "$flake" ] && [ -n "${WORKSTATION_FLAKE:-}" ]; then
+	flake=$WORKSTATION_FLAKE
+fi
 if [ -z "$flake" ]; then
 	dir=$PWD
 	links=0
@@ -98,6 +106,54 @@ if [ -z "$flake" ] && [ -e "${HOME:?}/.local/opt/workstation/flake" ]; then
 fi
 
 case "$verb" in
+init)
+	# Capture this machine's identity once, at install time. The template
+	# file hosts/identity.nix is rewritten in the working copy; the local
+	# edit stays uncommitted (the repo carries no personal strings at
+	# HEAD — evals read the dirty tree).
+	[ -n "$flake" ] || die 'init: no checkout found — run inside the workstation repo clone' 2
+	[ -f "$flake/hosts/identity.nix" ] || die "init: $flake/hosts/identity.nix missing (unexpected tree)" 1
+	host=$(hostname -s 2>/dev/null || hostname)
+	user=${USER:-$(id -un)}
+	home_dir=$HOME
+	fqdn=''
+	if command -v tailscale >/dev/null 2>&1; then
+		# shellcheck disable=SC2016  # the $ anchors are sed regex, not shell
+		fqdn=$(tailscale status --json 2>/dev/null |
+			grep -o '"DNSName"[^,]*' | head -1 |
+			sed 's/.*: *"//; s/"$//; s/\.$//') || fqdn=''
+	fi
+	# The capture UI: whiptail dialogs prefilled with the detected values
+	# (the prerequisite ships in foundation; a bare box before its first
+	# switch falls back to the detected values verbatim).
+	if command -v whiptail >/dev/null 2>&1; then
+		ask() {
+			# ask <title> <default> — the value on stdout (whiptail writes
+			# the dialog to stderr; the fd swap brings the value back)
+			whiptail --title ' workstation init ' --inputbox "$1" 9 68 "$2" \
+				3>&1 1>&2 2>&3
+		}
+		host=$(ask 'machine name (hostname)' "$host") || die 'init: cancelled' 1
+		user=$(ask 'operator user' "$user") || die 'init: cancelled' 1
+		home_dir=$(ask 'home directory' "$home_dir") || die 'init: cancelled' 1
+		fqdn=$(ask 'tailscale MagicDNS fqdn (empty: none)' "$fqdn") || die 'init: cancelled' 1
+	else
+		printf 'workstation: whiptail not on PATH (prerequisite) — capturing the detected values verbatim\n' >&2
+	fi
+	{
+		printf '# The machine identity, captured by workstation init (%s).\n' "$(date -u +%Y-%m-%dT%H:%MZ)"
+		printf '# Local edit — keep it uncommitted (the committed copy is the template).\n'
+		printf '{\n'
+		printf '  host = "%s";\n' "$host"
+		printf '  user = "%s";\n' "$user"
+		printf '  home = "%s";\n' "$home_dir"
+		printf '  tailscaleFqdn = "%s";\n' "$fqdn"
+		printf '}\n'
+	} >"$flake/hosts/identity.nix"
+	printf 'workstation: identity captured in %s/hosts/identity.nix (host=%s user=%s fqdn=%s)\n' \
+		"$flake" "$host" "$user" "${fqdn:-<none — tailscale absent or down>}"
+	printf 'workstation: keep the file uncommitted; next: workstation apply\n'
+	;;
 status | plan | capabilities)
 	[ -n "$flake" ] ||
 		die 'no flake to read — pass --flake PATH, run inside a checkout, or apply the substrate once (it stages ~/.local/opt/workstation/flake)' 2
@@ -117,6 +173,13 @@ status | plan | capabilities)
 		eval --json "$flake#workstation.report.$verb$scope"
 	;;
 apply | rollback | update | sync)
+	# The identity gate: writes refuse until `workstation init` captured
+	# this machine's identity — switching the bare template would create a
+	# TEMPLATE user's home on a real machine.
+	if [ -n "$flake" ] && [ -f "$flake/hosts/identity.nix" ] &&
+		grep -q '"TEMPLATE"' "$flake/hosts/identity.nix"; then
+		die 'identity not captured — run: workstation init' 2
+	fi
 	if command -v workstation-switch >/dev/null 2>&1; then
 		exec workstation-switch "$verb" "$@"
 	fi

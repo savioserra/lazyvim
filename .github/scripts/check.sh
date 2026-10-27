@@ -17,10 +17,10 @@ fail=0
 
 step() { printf '\n== %s\n' "$1"; }
 
-step 'nix identity gate (per-host identity lives only in hosts/<host>/default.nix)'
-if git grep -i savio -- nix hosts flake.nix modules bin; then
+step 'nix identity gate (the repo is a template: identity is captured at install time only — hosts/identity.nix, uncommitted on real machines)'
+if git grep -iE 'savio|shyylol' -- nix hosts flake.nix modules bin; then
 	fail=1
-	printf 'identity gate: hardcoded personal identity under nix/ hosts/ flake.nix modules/ bin/ — parameterize: hosts/<host>/default.nix is the only identity surface\n' >&2
+	printf 'identity gate: hardcoded personal identity under nix/ hosts/ flake.nix modules/ bin/ — the legs are templates; hosts/identity.nix (captured by workstation init, kept uncommitted) is the only identity surface\n' >&2
 fi
 
 step 'engine-free gate (the Elixir plane stays gone: no engine module token anywhere)'

@@ -81,7 +81,7 @@
       # the two legs the flake targets: the linux leg (WSL counted under
       # it) and the mac leg — operator ruling 2026-10-22 (platform-two;
       # no distro-named legs anywhere)
-      linuxHost = import ./hosts/wsl/default.nix {
+      linuxHost = import ./hosts/linux/default.nix {
         inherit self nixpkgs home-manager nixos-wsl;
       };
 
@@ -110,7 +110,7 @@
               # the switch driver's default targets: derived from the host
               # identity (never hand-typed)
               workstation.switch.homeAttr = linuxHost.homeKey;
-              workstation.switch.systemAttr = "wsl";
+              workstation.switch.systemAttr = linuxHost.name;
             }
           )
           ./nix/modules/workstation-home.nix
@@ -137,7 +137,7 @@
       # set or the eval fails.
       darwinConfigurations.${macHost.hostKey} = macHost.darwinConfig;
 
-      nixosConfigurations.wsl = linuxHost.nixosConfig;
+      nixosConfigurations.${linuxHost.name} = linuxHost.nixosConfig;
 
       # the capability outputs consumer flakes take (binding spec
       # 2026-10-22): the agent's managed skills and the theme tokens

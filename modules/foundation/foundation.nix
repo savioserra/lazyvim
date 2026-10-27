@@ -229,6 +229,11 @@ in
       # activation (`mise activate`) is operator opt-in (its own card, if
       # ever — it shadows PATH tools).
       pkgs.mise
+      # whiptail (the newt package): the launcher shim's install-time UI —
+      # `workstation init` captures the machine's identity through whiptail
+      # dialogs prefilled with the detected values. A prerequisite of the
+      # bin surface, shipped by the substrate so every managed host has it.
+      pkgs.newt
       # harlequin + hsql: one upstream distribution (the terminal SQL IDE
       # and its headless agent CLI share adapters, config and engine). The
       # pinned nixpkgs (25.05) predates hsql — the version rides the

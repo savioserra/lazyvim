@@ -53,18 +53,26 @@ the engine's write plane — there is no installer-side pin set anymore. The
 historical `workstation/bootstrap/bootstrap.pins` manifest and the
 `neovim_*` bootstrap archive pins retired with the shared inventory.
 
-## Distro prerequisites (checkout hosts)
+## Host prerequisites
 
-Building the release on a checkout host (no nix) needs the four host tools:
-`git`, `curl`, and the two extractors the archive pins decompress through —
-`xz-utils` for the tar.xz pins, `unzip` for the zip pins (the measured
-bare-box story is in the [README](../README.md#prerequisites)):
+The substrate has one hard prerequisite; everything else it ships:
 
-```sh
-apt install git curl xz-utils unzip   # Debian/Ubuntu
-```
+- **nix** with flakes enabled — host-owned on standalone-HM legs (the
+  daemon rides the install mode: multi-user installs run it via systemd,
+  single-user installs need none), platform-managed on NixOS and
+  nix-darwin.
+- **tailscaled** — host-owned system daemon on standalone-HM linux legs
+  (the substrate ships the CLI); system-module-owned on NixOS-WSL and
+  nix-darwin legs.
+- **whiptail** — ships with the substrate (`pkgs.newt`, foundation): the
+  launcher shim's install-time UI. `workstation init` captures the
+  machine's identity through whiptail dialogs prefilled with the detected
+  values; a bare box before its first switch (whiptail not yet on PATH)
+  falls back to the detected values verbatim.
 
-Nix hosts need none of these: the store builds are self-contained.
+The checkout-host build tools of the retired engine (git/curl/xz/unzip
+for archive pins) left with the engine: the store builds are
+self-contained.
 
 ## Not managed here
 

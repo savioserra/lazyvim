@@ -65,7 +65,7 @@ in
       type = lib.types.nullOr lib.types.str;
       default = null;
       description = ''
-        The flake attr of this host's homeConfiguration (e.g. "shyylol@wsl")
+        The flake attr of this host's homeConfiguration (e.g. "<user>@<host>")
         — the workstation-switch driver's default home-plane target.
       '';
     };

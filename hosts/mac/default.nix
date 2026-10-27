@@ -7,13 +7,10 @@
 # exit proof, not this eval (the operator runs
 # `darwin-rebuild switch --flake .#<hostKey>` there).
 #
-# This file is the ONLY place this host's identity lives — the flake
-# derives the darwinConfigurations key and every username/home path from
-# the block below (the identity gate in check.sh reds on personal strings
-# anywhere else under nix/ hosts/ flake.nix). Flip `user`/`hostName` and
-# the darwin user, the HM user and the rebuild key all follow; the
-# real-host cutover owns proving them against the live host before first
-# switch.
+# Identity is NOT in this file — hosts/identity.nix holds it (captured
+# by `workstation init` at install time; the committed copy is the
+# template). The flake derives the darwinConfigurations key and every
+# username/home path from that file.
 {
   self,
   nixpkgs,
@@ -23,13 +20,15 @@
 let
   system = "aarch64-darwin";
 
-  # --- host identity (the single source) ------------------------------------
-  # Placeholder until the host's first apply: the operator flips these two
-  # lines to the mac's real user and hostname (the eval carries no
-  # personal identity by law).
-  user = "mac";
-  hostName = "mac";
-  homeDir = "/Users/${user}";
+  # --- host identity --------------------------------------------------------
+  # NOT here. hosts/identity.nix holds the machine's identity, captured
+  # once by `workstation init` at install time (the local rewrite stays
+  # uncommitted; the committed copy is the template). This file is the
+  # mac leg TEMPLATE — flip nothing by hand.
+  id = import ../identity.nix;
+  user = id.user;
+  hostName = id.host;
+  homeDir = id.home;
   hostKey = "${user}@${hostName}";
 
   retiredBrew = import ./retired-brew.nix;

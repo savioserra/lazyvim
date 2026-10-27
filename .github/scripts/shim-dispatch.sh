@@ -89,14 +89,25 @@ out=$(cd "$repo_root" && "$shim" capabilities editor) || fail 'a scoped read fai
 expect_log "$repo_root#workstation.report.capabilities.editor"
 "$shim" capabilities 'bad;name' >/dev/null 2>&1 && fail 'a scope element must be a plain attribute name'
 
+# 3b. the identity gate: writes refuse the uncaptured template
+rc=0
+WORKSTATION_FLAKE=$repo_root "$shim" apply 2>"$root/err" || rc=$?
+[ "$rc" = 2 ] || fail 'apply must refuse the uncaptured template identity with exit 2'
+grep -q 'workstation init' "$root/err" || fail 'the refusal must name workstation init'
+
+# 3c. a captured identity lets writes delegate
+fixture=$root/fakeflake
+mkdir -p "$fixture/hosts"
+printf '{ host = "testhost"; user = "testuser"; home = "/home/testuser"; tailscaleFqdn = ""; }\n' >"$fixture/hosts/identity.nix"
+
 # 4. writes delegate to the staged driver; absence fails closed
-"$shim" apply >/dev/null 2>&1 || fail 'apply must delegate to the staged driver'
+WORKSTATION_FLAKE=$fixture "$shim" apply >/dev/null 2>&1 || fail 'apply must delegate to the staged driver'
 expect_log 'apply'
-"$shim" rollback --system >/dev/null 2>&1 || fail 'rollback --system must delegate'
+WORKSTATION_FLAKE=$fixture "$shim" rollback --system >/dev/null 2>&1 || fail 'rollback --system must delegate'
 expect_log 'rollback --system'
 mv "$stub_dir/workstation-switch" "$stub_dir/workstation-switch.bak"
-"$shim" apply >/dev/null 2>&1 && fail 'apply without a driver must fail'
+WORKSTATION_FLAKE=$fixture "$shim" apply >/dev/null 2>&1 && fail 'apply without a driver must fail'
 grep -q 'workstation-switch' "$root/err" 2>/dev/null ||
-	{ "$shim" apply 2>"$root/err" || true; grep -q 'workstation-switch' "$root/err" || fail 'the missing-driver failure must name the driver'; }
+	{ WORKSTATION_FLAKE=$fixture "$shim" apply 2>"$root/err" || true; grep -q 'workstation-switch' "$root/err" || fail 'the missing-driver failure must name the driver'; }
 
 echo "$progname: OK (dispatch, resolution order, delegation and fail-closed paths all hold)"
