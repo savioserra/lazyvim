@@ -113,6 +113,10 @@ let
       target = f.target;
     }) eval.workstation.shell.fragments;
 
+  # the tombstones as home-relative paths — the hook's consent marker
+  # (`recursive`) is activation machinery, never report surface
+  retirePathsOf = eval: map (e: e.path) eval.workstation.retire;
+
   # the composed lane's order: the explicit order contract
   # (nix/lib/shell-lane.nix) — the ONE sort the home leg's rendered rc
   # files also read; the module system's merged list order is never it
@@ -130,7 +134,7 @@ let
     fileTargets = leafTargetsOf eval;
     claimTargets = claimTargetsOf eval;
     fragments = fragmentPairsOf eval;
-    retire = eval.workstation.retire;
+    retire = retirePathsOf eval;
   };
 
   rows = lib.sort (a: b: a.id < b.id) (
@@ -147,7 +151,7 @@ let
 
   fileTargetNames = leafTargetsOf fullEval;
   claimTargets = claimTargetsOf fullEval;
-  retire = fullEval.workstation.retire;
+  retire = retirePathsOf fullEval;
 
   # --- the fold's integrity: nothing escaped classification ------------------
   # Structural assertions (never byte contracts): the union of the

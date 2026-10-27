@@ -102,19 +102,50 @@ in
 
   config = {
     # --- the declared retire list (workstation.retire) ---------------------
+    # The declaration is the consent: a plain entry removes a file or
+    # symlink (rm -f); { path; recursive = true; } removes the declared
+    # directory tree (rm -rf of exactly that path). A directory met
+    # WITHOUT the consent is reported with the fix named and skipped —
+    # no failed-rm noise, no silent destruction (the vps cutover,
+    # 2026-10-27). Every outcome carries its verdict in the receipt log.
     home.activation.workstation-retire = lib.hm.dag.entryAfter [ "writeBoundary" ] (
-      lib.concatMapStrings (p: ''
-        if [ -e "$HOME/${p}" ] || [ -L "$HOME/${p}" ]; then
-          rm -f "$HOME/${p}"
-          echo "workstation: retired ${p}"
-        else
-          echo "workstation: retire no-op (${p} absent)"
-        fi
-        # the receipt log's home (a fresh home has no state tree yet —
-        # the activation runs first)
-        mkdir -p "$HOME/.local/state/workstation"
-        echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) ${p}" >> "$HOME/.local/state/workstation/retire.log"
-      '') cfg.retire
+      lib.concatMapStrings (
+        entry:
+        let
+          p = entry.path;
+        in
+        ''
+          target="$HOME/${p}"
+          verdict=absent
+          if [ -e "$target" ] || [ -L "$target" ]; then
+        ''
+        + (
+          if entry.recursive then
+            ''
+              rm -rf "$target"
+              echo "workstation: retired ${p} (recursive)"
+              verdict=removed-recursive
+            ''
+          else
+            ''
+              if [ -d "$target" ] && [ ! -L "$target" ]; then
+                echo "workstation: retire SKIPPED (${p} is a directory — declare it with recursive = true, the consent, or remove it manually)"
+                verdict=skipped-directory
+              else
+                rm -f "$target"
+                echo "workstation: retired ${p}"
+                verdict=removed
+              fi
+            ''
+        )
+        + ''
+          fi
+          # the receipt log's home (a fresh home has no state tree yet —
+          # the activation runs first)
+          mkdir -p "$HOME/.local/state/workstation"
+          echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) ${p} $verdict" >> "$HOME/.local/state/workstation/retire.log"
+        ''
+      ) cfg.retire
     );
 
     # --- the file plane: the modules' declared targets + the fragment lane +-

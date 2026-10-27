@@ -48,7 +48,12 @@ Shared shell startup files (`.profile`, `.bashrc`, `.bash_profile`,
 declares the fragment list (id, target, marker, payload path) and the rc
 lane sources them in declared order. Removing a fragment from the list
 removes exactly its marker+body block at the next switch; the declared
-order IS the shell contract, reviewed in diffs.
+order IS the shell contract, reviewed in diffs. One fragment belongs to
+the operator: `workstation.foundation.shell.extras` (default empty)
+renders the per-machine lines the operator keeps (the `stty -ixon` class)
+as the lane's LAST fragment, declared in the identity file (`shellExtras`)
+and re-rendered by every switch — operator preferences hold across applies
+by construction, not by leaving them alone.
 
 Runtime-extended mutable targets (targets a running program rewrites) are
 never byte-compared: the nvim plugin lock seeds from its pinned baseline
@@ -81,10 +86,16 @@ Two native shapes, both declared:
   switch;
 - legacy/foreign paths (files that predate the substrate or were never
   file-plane-owned) go through the declared retire list: an idempotent
-  activation `rm -f` with a named receipt, dropped from the declarations
-  after the fleet has switched past it. The manifest-era tombstone
-  vocabulary (`kind = "remove"` recipes, `.chezmoiremove` composition,
-  `Workstation.Core.Policy`) retires with the format.
+  activation pass with a named receipt per outcome, dropped from the
+  declarations after the fleet has switched past it. A string entry is a
+  file/symlink tombstone (`rm -f`); a tree carries
+  `{ path = "..."; recursive = true; }` — the declaration is the consent,
+  and the hook removes exactly the declared path recursively. A directory
+  met without the consent is reported with the fix named and skipped,
+  never silently forced (the vps cutover, 2026-10-27: plain `rm` on the
+  nvm tree failed and the tombstone silently stayed). The manifest-era
+  tombstone vocabulary (`kind = "remove"` recipes, `.chezmoiremove`
+  composition, `Workstation.Core.Policy`) retires with the format.
 
 The single `.chezmoidata.toml` token envelope retired with the templates:
 `modules/theme/tokens.lua` is the canonical token payload, and nix reads

@@ -92,16 +92,44 @@ in
 
   # the declared retire list: legacy/foreign tombstones the generation
   # diff cannot remove (they predate the substrate or live in hot home).
-  # One idempotent activation rm -f for the whole list, once per
-  # generation, each removal leaving a named receipt in the host's
-  # workstation state log.
+  # One idempotent activation pass for the whole list, once per
+  # generation, each outcome leaving a named receipt in the host's
+  # workstation state log. A string entry is a file/symlink tombstone
+  # (rm -f); { path; recursive = true; } is the declared consent that
+  # removes a directory tree — rm -rf of exactly the declared path, and
+  # nothing else. A directory met WITHOUT the consent is reported with
+  # the fix named and skipped (the vps cutover, 2026-10-27: plain rm on
+  # the nvm tree failed and the tombstone silently stayed).
   options.workstation.retire = lib.mkOption {
-    type = lib.types.listOf lib.types.str;
+    type = lib.types.listOf (
+      lib.types.coercedTo lib.types.str (p: { path = p; }) (
+        lib.types.submodule {
+          options = {
+            path = lib.mkOption {
+              type = lib.types.str;
+              description = "The home-relative tombstone path.";
+            };
+            recursive = lib.mkOption {
+              type = lib.types.bool;
+              default = false;
+              description = ''
+                The declared consent to remove the path as a directory
+                tree at activation (rm -rf of exactly this path). Without
+                it the hook removes only files and symlinks: a directory
+                is reported with the fix named and skipped — never
+                silently forced.
+              '';
+            };
+          };
+        }
+      )
+    );
     default = [ ];
     description = ''
-      Home-relative paths to remove at activation (idempotent rm -f, a
-      named receipt per removal). Dropped once the fleet has switched
-      past the tombstone.
+      Home-relative paths to remove at activation (idempotent, a named
+      receipt per outcome). A plain string is a file/symlink tombstone;
+      recursive = true is the declared consent that removes a tree.
+      Dropped once the fleet has switched past the tombstone.
     '';
   };
   # the agent capability's declared skills, set by the owning capabilities

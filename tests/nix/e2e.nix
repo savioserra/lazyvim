@@ -225,12 +225,12 @@ writeShellScriptBin "workstation-e2e" ''
   step "retire-list receipt"
   [ ! -e "$home/.hermes/skills/lazyvim/SKILL.md" ] \
     || fail "retire-list receipt" "the lazyvim tombstone survived activation"
-  grep -q " .hermes/skills/lazyvim/SKILL.md$" \
+  grep -q " .hermes/skills/lazyvim/SKILL.md absent$" \
     "$home/.local/state/workstation/retire.log" 2>/dev/null \
-    || fail "retire-list receipt" "no lazyvim SKILL.md receipt in the retire log"
-  grep -q " .config/tmux/themes/tmux2k.conf$" \
+    || fail "retire-list receipt" "no lazyvim SKILL.md absent receipt from the boot activation"
+  grep -q " .config/tmux/themes/tmux2k.conf absent$" \
     "$home/.local/state/workstation/retire.log" 2>/dev/null \
-    || fail "retire-list receipt" "no tmux2k.conf receipt in the retire log"
+    || fail "retire-list receipt" "no tmux2k.conf absent receipt from the boot activation"
   pass "retire-list receipt"
 
   step "tmux plane (config, XDG link, pinned plugin checkouts)"
@@ -308,9 +308,9 @@ writeShellScriptBin "workstation-e2e" ''
     || fail "nvm retired" ".local/opt/nvm is still deployed"
   [ ! -e "$home/.config/shell/nvm.sh" ] \
     || fail "nvm retired" ".config/shell/nvm.sh is still deployed"
-  grep -q " .local/opt/nvm$" \
+  grep -q " .local/opt/nvm absent$" \
     "$home/.local/state/workstation/retire.log" 2>/dev/null \
-    || fail "nvm retired" "no .local/opt/nvm receipt in the retire log"
+    || fail "nvm retired" "no .local/opt/nvm absent receipt from the boot activation"
   pass "nvm retired"
 
   step "foundation plane (rc lane, starship fragment, fonts)"
@@ -363,6 +363,26 @@ writeShellScriptBin "workstation-e2e" ''
     || fail "copy-contract tree planted" "the rehearsal tree did not plant"
   pass "copy-contract tree planted"
 
+  # the retire rehearsal: the vps cutover's failing shape (2026-10-27) —
+  # a real directory at a declared tombstone path (the node module's
+  # recursive = true is the consent that removes it), the plain-file
+  # tombstone beside it, and a directory at a NO-consent tombstone (the
+  # skip contract: reported with the fix named, never forced). Planted
+  # AFTER the boot activation so the apply-driven switch's retire lane
+  # meets them present (a fresh home would receipt them absent and
+  # prove nothing).
+  step "tombstone shapes planted (retire rehearsal)"
+  mkdir -p "$home/.local/opt/nvm/bin" "$home/.config/shell" "$home/.config/tmux/themes"
+  echo "stub" >"$home/.local/opt/nvm/bin/node"
+  echo "legacy nvm loader" >"$home/.config/shell/nvm.sh"
+  mkdir -p "$home/.config/tmux/themes/tmux2k.conf"
+  echo "foreign drift" >"$home/.config/tmux/themes/tmux2k.conf/keep"
+  [ -f "$home/.local/opt/nvm/bin/node" ] \
+    && [ -f "$home/.config/shell/nvm.sh" ] \
+    && [ -f "$home/.config/tmux/themes/tmux2k.conf/keep" ] \
+    || fail "tombstone shapes planted" "the rehearsal shapes did not plant"
+  pass "tombstone shapes planted (retire rehearsal)"
+
   # 3. the apply-driven nix switch: the driver wraps the offline
   #    activation + generation registration, then writes the receipt
   step "apply-driven switch (workstation-switch apply)"
@@ -381,6 +401,29 @@ writeShellScriptBin "workstation-e2e" ''
     "$home/.local/state/workstation/retire.log" 2>/dev/null \
     || fail "adopt step" "no adopt receipt in the retire log"
   pass "adopt step"
+
+  # the retire rehearsal's verdict: the planted shapes met the
+  # apply-driven activation — the nvm tree left through the declared
+  # consent (removed-recursive: the exact shape plain rm died on in the
+  # vps cutover), the file through the plain tombstone (removed), and
+  # the no-consent directory was skipped, named, and left standing.
+  step "retire rehearsal: the planted tombstones left, verdict-receipted"
+  [ ! -e "$home/.local/opt/nvm" ] \
+    || fail "retire rehearsal" ".local/opt/nvm survived the activation"
+  [ ! -e "$home/.config/shell/nvm.sh" ] \
+    || fail "retire rehearsal" ".config/shell/nvm.sh survived the activation"
+  [ -d "$home/.config/tmux/themes/tmux2k.conf" ] \
+    || fail "retire rehearsal" "the no-consent directory was forced (the skip contract died)"
+  grep -q " .local/opt/nvm removed-recursive$" \
+    "$home/.local/state/workstation/retire.log" 2>/dev/null \
+    || fail "retire rehearsal" "no removed-recursive receipt for .local/opt/nvm"
+  grep -q " .config/shell/nvm.sh removed$" \
+    "$home/.local/state/workstation/retire.log" 2>/dev/null \
+    || fail "retire rehearsal" "no removed receipt for .config/shell/nvm.sh"
+  grep -q " .config/tmux/themes/tmux2k.conf skipped-directory$" \
+    "$home/.local/state/workstation/retire.log" 2>/dev/null \
+    || fail "retire rehearsal" "no skipped-directory receipt for .config/tmux/themes/tmux2k.conf"
+  pass "retire rehearsal: the planted tombstones left, verdict-receipted"
 
   # 4. the switch receipt: the driver's tail appended the generation line
   #    to the state tree's switch.log (the daemon journal is gone with the

@@ -38,10 +38,17 @@ in
     # .local/opt/nvm) and the rc loader payload — hosts carrying them from
     # the pin world lose them at the next activation, each with a named
     # receipt (the generation diff also retires them; the tombstones make
-    # the retirement hold even where the diff is bypassed)
+    # the retirement hold even where the diff is bypassed). The tree
+    # entry's recursive = true is the declared consent: the activation
+    # removes exactly that path recursively (the vps cutover, 2026-10-27:
+    # a bare string entry met the tree with plain rm and the tombstone
+    # silently stayed).
     workstation.retire = [
-      ".local/opt/nvm"
       ".config/shell/nvm.sh"
+      {
+        path = ".local/opt/nvm";
+        recursive = true;
+      }
     ];
   };
 }
