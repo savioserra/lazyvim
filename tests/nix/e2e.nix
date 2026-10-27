@@ -258,10 +258,12 @@ writeShellScriptBin "workstation-e2e" ''
   pass "nunchux plane"
 
   step "rc lane order (the declared order contract — PATH semantics)"
-  # the slots: user-local-bin 10 leads, op-env 30 follows in .profile;
-  # .bashrc sources 10 (PATH), 40 (eza), 50 (starship), 80 (direnv) in
-  # slot order — the composition sorts by the fragments' `order`, never
-  # the module system's merged list order
+  # the slots: user-local-bin 10 leads, op-env 30 follows in .profile, the
+  # editor env 70 rides every rc target; .bashrc sources 10 (PATH), 40
+  # (eza), 50 (starship), 70 (editor env), 80 (direnv) and .zshrc sources
+  # 10/40/60/70/90 (the per-shell starship/direnv bodies) in slot order —
+  # the composition sorts by the fragments' `order`, never the module
+  # system's merged list order
   lane_slot() {
     # lane_slot <rc-file> <fragment-id> — the 1-based source line, empty
     # when absent
@@ -269,18 +271,29 @@ writeShellScriptBin "workstation-e2e" ''
   }
   prof_bin=$(lane_slot .profile user-local-bin)
   prof_op=$(lane_slot .profile managed-op-env)
-  [ -n "$prof_bin" ] && [ -n "$prof_op" ] \
+  prof_ed=$(lane_slot .profile managed-editor-env)
+  [ -n "$prof_bin" ] && [ -n "$prof_op" ] && [ -n "$prof_ed" ] \
     || fail "rc lane order" ".profile does not source its declared fragments"
-  [ "$prof_bin" -lt "$prof_op" ] \
-    || fail "rc lane order" "user-local-bin (slot 10) must lead managed-op-env (slot 30) in .profile"
+  [ "$prof_bin" -lt "$prof_op" ] && [ "$prof_op" -lt "$prof_ed" ] \
+    || fail "rc lane order" ".profile must source slots 10/30/70 in the declared order"
   bash_bin=$(lane_slot .bashrc user-local-bin)
   bash_eza=$(lane_slot .bashrc managed-eza)
   bash_star=$(lane_slot .bashrc managed-starship)
+  bash_ed=$(lane_slot .bashrc managed-editor-env)
   bash_direnv=$(lane_slot .bashrc managed-direnv)
-  [ -n "$bash_bin" ] && [ -n "$bash_eza" ] && [ -n "$bash_star" ] && [ -n "$bash_direnv" ] \
+  [ -n "$bash_bin" ] && [ -n "$bash_eza" ] && [ -n "$bash_star" ] && [ -n "$bash_ed" ] && [ -n "$bash_direnv" ] \
     || fail "rc lane order" ".bashrc does not source its declared fragments"
-  [ "$bash_bin" -lt "$bash_eza" ] && [ "$bash_eza" -lt "$bash_star" ] && [ "$bash_star" -lt "$bash_direnv" ] \
-    || fail "rc lane order" ".bashrc must source slots 10/40/50/80 in the declared order"
+  [ "$bash_bin" -lt "$bash_eza" ] && [ "$bash_eza" -lt "$bash_star" ] && [ "$bash_star" -lt "$bash_ed" ] && [ "$bash_ed" -lt "$bash_direnv" ] \
+    || fail "rc lane order" ".bashrc must source slots 10/40/50/70/80 in the declared order"
+  zsh_bin=$(lane_slot .zshrc user-local-bin)
+  zsh_eza=$(lane_slot .zshrc managed-eza)
+  zsh_star=$(lane_slot .zshrc managed-starship-zsh)
+  zsh_ed=$(lane_slot .zshrc managed-editor-env)
+  zsh_direnv=$(lane_slot .zshrc managed-direnv-zsh)
+  [ -n "$zsh_bin" ] && [ -n "$zsh_eza" ] && [ -n "$zsh_star" ] && [ -n "$zsh_ed" ] && [ -n "$zsh_direnv" ] \
+    || fail "rc lane order" ".zshrc does not source its declared fragments"
+  [ "$zsh_bin" -lt "$zsh_eza" ] && [ "$zsh_eza" -lt "$zsh_star" ] && [ "$zsh_star" -lt "$zsh_ed" ] && [ "$zsh_ed" -lt "$zsh_direnv" ] \
+    || fail "rc lane order" ".zshrc must source slots 10/40/60/70/90 in the declared order"
   pass "rc lane order"
 
   step "migrated tools run (nixpkgs-owned — operator ruling 2026-10-27)"
@@ -327,6 +340,12 @@ writeShellScriptBin "workstation-e2e" ''
     || fail "foundation plane" "the per-shell starship fragment did not deploy"
   grep -q 'starship init zsh' "$home/.config/workstation/shell/managed-starship-zsh.sh" \
     || fail "foundation plane" "the zsh fragment carries the wrong init body"
+  # the editor env defaults (managed-editor-env, slot 70, every rc
+  # target): the fragment body carries the three nvim exports
+  for editor_export in 'export EDITOR="nvim"' 'export VISUAL="nvim"' 'export GIT_EDITOR="nvim"'; do
+    grep -Fqx "$editor_export" "$home/.config/workstation/shell/managed-editor-env.sh" \
+      || fail "foundation plane" "the editor-env fragment misses: $editor_export"
+  done
   # the font tree (the nixpkgs nerd-fonts package's font dir)
   [ -d "$home/.local/share/fonts/JetBrainsMonoNerdFont" ] \
     || fail "foundation plane" "the nerd font tree did not deploy"
@@ -427,6 +446,31 @@ writeShellScriptBin "workstation-e2e" ''
     "$home/.local/state/workstation/retire.log" 2>/dev/null \
     || fail "retire rehearsal" "no skipped-directory receipt for .config/tmux/themes/tmux2k.conf"
   pass "retire rehearsal: the planted tombstones left, verdict-receipted"
+
+  # the shell lane's operator extras (17cd11f5): the persona home declares
+  # workstation.foundation.shell.extras, so the apply-driven switch
+  # rendered the lane's LAST fragment (operator-extras, slot 100,
+  # .bashrc/.zshrc) — its marker must source after every managed one, and
+  # the editor env the lane carries must speak in a fresh login shell.
+  # Both assertions mirror the host verify's smoke
+  # (modules/foundation/verify/prompt.sh) — mirrored here, never invoked.
+  step "shell lane: the operator extras ride last, the editor env speaks in a login shell"
+  command -v bash >/dev/null 2>&1 \
+    || fail "shell lane" "bash is absent — the login-shell editor-env smoke cannot run"
+  for rc in .bashrc .zshrc; do
+    grep -Fqx "# workstation: operator extras" "$home/$rc" \
+      || fail "shell lane" "$rc carries no operator-extras fragment"
+    last_marker=$(grep "^# workstation:" "$home/$rc" | tail -n 1)
+    [ "$last_marker" = "# workstation: operator extras" ] \
+      || fail "shell lane" "$rc does not source the operator extras last (slot 100 must trail the lane)"
+  done
+  grep -Fqx "stty -ixon" "$home/.config/workstation/shell/operator-extras.sh" \
+    || fail "shell lane" "the operator-extras fragment does not carry the persona's declared extras line"
+  EDITOR_smoke=$(HOME="$home" bash -lc 'printf %s "$EDITOR"') \
+    || fail "shell lane" "a fresh login shell failed to start (the editor-env smoke died)"
+  [ "$EDITOR_smoke" = nvim ] \
+    || fail "shell lane" "a fresh login shell carries EDITOR='$EDITOR_smoke', expected nvim"
+  pass "shell lane: the operator extras ride last, the editor env speaks in a login shell"
 
   # 4. the switch receipt: the driver's tail appended the generation line
   #    to the state tree's switch.log (the daemon journal is gone with the
