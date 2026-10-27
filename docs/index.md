@@ -8,10 +8,10 @@
 | `AGENTS.md` | Repository-wide implementation rules |
 | `flake.nix`, `nix/` | The substrate: the capability walk, the declared-state report fold and its read verbs, the switch driver, the home/system/host modules |
 | `bin/workstation` | The launcher shim (POSIX sh): flake resolution + verb dispatch; reads are nix evals, writes delegate to the staged `workstation-switch` |
-| `hosts/` | `wsl` (the linux leg; NixOS-WSL), `mac` (nix-darwin); per-host identity lives only here |
+| `hosts/` | `linux` (the linux leg; NixOS-WSL system plane), `mac` (nix-darwin); identity is the tracked template `hosts/identity.nix`, rewritten per machine by `workstation init` (kept uncommitted) |
 | `.github/workflows/ci.yml` | The static battery + the nix evaluation leg |
 | `.github/workflows/release.yml` | Tagged source archives |
-| `modules/` | Capability payload bytes co-located with their declaring modules and data files — each domain owns its tools (nixpkgs via the overlay + floors) and its remaining pins |
+| `modules/` | Capability domains, one directory each — module + payload bytes co-located (adding a capability is adding one directory) — each domain owns its tools (nixpkgs via the overlay + floors) and its remaining pins |
 
 ## Documentation map
 
@@ -21,7 +21,10 @@
 | [`capabilities.md`](capabilities.md) | Dependency direction, declaration contract, lifecycle phases |
 | [`home-state.md`](home-state.md) | Home state law: native declarations, hot-home scope, legacy cutover |
 | [`tools.md`](tools.md) | Managed tool inventory and platform coverage |
-| [`testing.md`](testing.md) | Offline checks, the docker-nix acceptance and the VM E2E |
+| [`testing.md`](testing.md) | Offline checks, the docker-nix acceptance and the E2E lanes |
+| [`endgame.md`](endgame.md) | The final shape: structure, invariants, the retirement ledger |
+| [`architecture.md`](architecture.md) | Declared state + two clients, the read verbs, the write plane |
+| [`absorption.md`](absorption.md) | (Historical) the manifests-to-native-declarations absorption |
 | [`secrets.md`](secrets.md) | 1Password boundary, vault scope, Pi skill policy |
 | [`nvim.md`](nvim.md) | Editor entry points, profile, plugins, locks |
 | [`tmux.md`](tmux.md) | Settings, plugin pins, theme |

@@ -15,7 +15,7 @@ Read the nearest scoped `AGENTS.md` and follow the owning reference:
 | --- | --- |
 | Navigation / install and daily use | [docs/index.md](docs/index.md) / [README.md](README.md) |
 | Lifecycle and capability contracts | [docs/capabilities.md](docs/capabilities.md) |
-| Home state law and legacy cutover | [docs/chezmoi.md](docs/chezmoi.md) |
+| Home state law and legacy cutover | [docs/home-state.md](docs/home-state.md) |
 | The absorption: manifests → native declarations | [docs/absorption.md](docs/absorption.md) |
 | Checks and acceptance limits | [docs/testing.md](docs/testing.md) |
 | Editor / terminal | [docs/nvim.md](docs/nvim.md) / [docs/tmux.md](docs/tmux.md) |
@@ -26,7 +26,7 @@ Read the nearest scoped `AGENTS.md` and follow the owning reference:
 - A capability that names a tool ships the tool: resources-without-runtime (a clone, a symlink or a config with no provisioned, working binary) is a defect, not a documented manual step. Verify must smoke the consumer (`hermes --version`-class checks), not only fingerprints. Operator ruling 2026-10-15.
 
 - Edit source, not deployed state. Every home-state payload lives with its owning capability under `workstation/packages/` (renamed `workstation/payload/` by the absorption chain); home state is declared in `nix/modules/capabilities/` and linked from the store, never checked in as deployed state. Never implicitly overwrite a clone or delete a legacy payload.
-- `workstation/bin/workstation` is the sole public lifecycle interface and `workstation-switch` is the sole write plane. There is no chezmoi: no aliases, source-path discovery, externals, lifecycle scripts or root wrappers.
+- `bin/workstation` is the sole public lifecycle interface and `workstation-switch` is the sole write plane. There is no chezmoi: no aliases, source-path discovery, externals, lifecycle scripts or root wrappers.
 - Declare each lifecycle capability once as a native nix module under `nix/modules/capabilities/`; payload stays with the owning capability under `workstation/packages/` (→ `workstation/payload/`). Keep core domain-neutral: no catalog/package/Neovim imports. Detailed composition and lifecycle rules belong to `docs/elixir.md`.
 - The engine path is Elixir-only: no Lua execution and no nvim invocation anywhere in the engine (`workstation/packages/**/*.lua` are data/payload files read as bytes, never run). `workstation/bin/workstation` stays plain POSIX sh: sandbox, runtime/release acquisition, then exec of the engine release.
 - Interactive verbs render the TUI by default; non-interactive callers pass `--headless` explicitly — a non-TTY run without the flag hard-errors instead of degrading silently.
