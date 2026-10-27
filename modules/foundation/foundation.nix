@@ -1,7 +1,9 @@
 # The base shell environment: the rc lane + fd, fzf, rg, lazygit,
 # tree-sitter (checksummed pins), eza + starship (nixpkgs — the prompt
 # capability dissolved here), mise (nixpkgs — the binary only, no managed
-# footprint), harlequin + hsql (one upstream distribution;
+# footprint), direnv + nix-direnv (nixpkgs — the per-repo environment
+# layer; the hooks ride the fragment lane below), harlequin + hsql (one
+# upstream distribution;
 # the pinned nixpkgs predates hsql, so the foundation domain owns its pin
 # surface through the flake's pin-override overlay), and the tailscale
 # transport (the system legs declare services.tailscale through the system
@@ -144,13 +146,17 @@ let
 
   # the explicit declared list: the rc contract's order, per target,
   # exactly the order the manifests' topo walk used to derive (minus the
-  # retired mise fragment)
+  # retired mise fragment). The direnv pair runs after the prompt tools:
+  # the hook PREPENDS its export to PROMPT_COMMAND, so hooking last keeps
+  # the environment applied before each prompt rebuild.
   fragments = [
     (frag "user-local-bin" "# workstation: managed user-local bin")
     (frag "managed-profile" "# workstation: load managed profile")
     (frag "managed-eza" "# workstation: managed eza ls")
     (frag "managed-starship" "# workstation: managed starship prompt")
     (frag "managed-starship-zsh" "# workstation: managed starship prompt")
+    (frag "managed-direnv" "# workstation: managed direnv hook")
+    (frag "managed-direnv-zsh" "# workstation: managed direnv hook")
   ];
 
   fragmentTargets = {
@@ -166,6 +172,8 @@ let
     ];
     managed-starship = [ ".bashrc" ];
     managed-starship-zsh = [ ".zshrc" ];
+    managed-direnv = [ ".bashrc" ];
+    managed-direnv-zsh = [ ".zshrc" ];
   };
 
   # the option's entries: one per (id, target) pair
@@ -280,6 +288,23 @@ in
     programs.hermes.skills.hsql = {
       enable = true;
       source = hsqlSkill;
+    };
+
+    # direnv + nix-direnv: the nix ecosystem's standard per-repo
+    # environment layer (`use flake`/`use nix`, the evaluation cache, and
+    # the GC roots that survive nix-collect-garbage between visits). The
+    # HM module stages the direnv package and sources nix-direnv globally
+    # (~/.config/direnv/lib/hm-nix-direnv.sh — direnv sources every lib
+    # file before each .envrc). The shell hooks ride the fragment lane
+    # (the starship precedent): HM's enableBash/enableZshIntegration write
+    # into programs.bash/programs.zsh, which this substrate never enables
+    # (the rc lane is the rendered home.file), so enabling those flags
+    # would be a silent no-op — declared false to keep the intent loud.
+    programs.direnv = {
+      enable = true;
+      nix-direnv.enable = true;
+      enableBashIntegration = false;
+      enableZshIntegration = false;
     };
   };
 }
