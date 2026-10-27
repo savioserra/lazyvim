@@ -124,7 +124,8 @@ in
             onActivation = {
               autoUpdate = true;
               upgrade = true;
-              cleanup = "zap";
+              # cleanup dropped: brew 7.0.11 disabled the --cleanup switch
+              # entirely (the cutover caught it)
             };
             brews = [ ];
             casks = [
