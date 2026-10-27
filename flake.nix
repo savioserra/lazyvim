@@ -121,7 +121,7 @@
           ;
       };
       # the two standalone home configurations (the linux leg's rebuild key
-      # + the VM persona): bound here so the outputs and the checks read
+      # + the e2e persona): bound here so the outputs and the checks read
       # the same values
       linuxHome = home-manager.lib.homeManagerConfiguration {
         # the overlay carries the domains' version floors; the license
@@ -148,16 +148,19 @@
               # identity (never hand-typed)
               workstation.switch.homeAttr = linuxHost.homeKey;
               workstation.switch.systemAttr = linuxHost.name;
+              # the operator's shell extras: the identity file is the
+              # per-machine declaration point (shellExtras, optional)
+              workstation.foundation.shell.extras = (import ./hosts/identity.nix).shellExtras or "";
             }
           )
           ./nix/modules/workstation-home.nix
         ];
       };
 
-      # the VM's standalone home: the exact shape the linux leg applies —
-      # and the E2E's apply target inside the offline VM (the shared VM
-      # persona body: tests/nix/vm-home.nix)
-      vmHome = home-manager.lib.homeManagerConfiguration {
+      # the E2E persona's standalone home: the exact shape the linux leg
+      # applies — and the container E2E's apply target inside the throwaway
+      # container (the shared persona body: tests/nix/e2e-home.nix)
+      e2eHome = home-manager.lib.homeManagerConfiguration {
         pkgs = import nixpkgs {
           system = hostSystem;
           overlays = [ self.overlays.default ];
@@ -171,37 +174,27 @@
             nixpkgs.overlays = [ self.overlays.default ];
             nixpkgs.config.allowUnfreePredicate = licensePredicate;
           }
-          ./tests/nix/vm-home.nix
+          ./tests/nix/e2e-home.nix
           ./nix/modules/workstation-home.nix
         ];
       };
 
-      # the VM proof host: bound here so the outputs and the checks' e2e
-      # gate read the same configuration
-      vmTestConfig = nixpkgs.lib.nixosSystem {
-        system = hostSystem;
-        specialArgs = {
+      # the container E2E's proof driver: wired once here (the same wiring
+      # the retired VM proof host carried) so the lane's consumers — the container
+      # script's in-container build and the check's staging — read the same
+      # derivation
+      e2eDriver =
+        let
+          e2ePkgs = import nixpkgs {
+            system = hostSystem;
+            overlays = [ self.overlays.default ];
+            config.allowUnfreePredicate = licensePredicate;
+          };
+        in
+        e2ePkgs.callPackage ./tests/nix/e2e.nix {
           inherit self;
-          # resolved at the flake level: forcing pkgs inside a module's
-          # imports re-enters _module.args.pkgs (infinite recursion)
-          qemuVmModule = "${nixpkgs}/nixos/modules/virtualisation/qemu-vm.nix";
+          harlequinVersion = e2ePkgs.harlequin.version;
         };
-        modules = [
-          (
-            { ... }:
-            {
-              # the domains' pin surface (version-currency overrides) and
-              # the secrets domain's license acceptance
-              nixpkgs.overlays = [ self.overlays.default ];
-              nixpkgs.config.allowUnfreePredicate = licensePredicate;
-            }
-          )
-          ./nix/modules/workstation-system.nix
-          ./nix/modules/host.nix
-          home-manager.nixosModules.home-manager
-          ./tests/nix/vm-host.nix
-        ];
-      };
     in
     {
       workstation.report = reportVerbs;
@@ -209,7 +202,15 @@
       # the rebuild key is DERIVED from the host identity (${user}@<host>),
       # never hand-typed
       homeConfigurations.${linuxHost.homeKey} = linuxHome;
-      homeConfigurations."vm@vm" = vmHome;
+      homeConfigurations."e2e@container" = e2eHome;
+
+      # the container E2E's surface — the lane's ONE wiring point: the
+      # persona home (also a homeConfiguration above) and the proof driver,
+      # both built inside the container from the mounted flake
+      workstationE2E = {
+        home = e2eHome;
+        driver = e2eDriver;
+      };
 
       # the mac leg: nix-darwin + the substrate. Brew keeps ONLY casks
       # (GUI apps); every retired-from-brew formula must exist in the nix
@@ -287,7 +288,7 @@
           # both names are nixpkgs BUILD TOOLCHAINS consumed by packages
           # this workstation never touches — libcap alone builds its gobin
           # support with go, and a retargeted go rehashed libcap → systemd →
-          # gtk3/pipewire/pulse/qemu, throwing the whole VM closure off the
+          # gtk3/pipewire/pulse/qemu, throwing the whole test closure off the
           # binary cache into source builds. The languages' toolchains ride
           # the scoped names; nixpkgs' own `go`/`nodejs_24` stay stock.
           workstation-go = foundationPkgs.go;
@@ -301,15 +302,17 @@
           # the hermes env).
         };
 
-      nixosConfigurations.vm-test = vmTestConfig;
-
       # the validation surface: `nix flake check` is THE canonical entry
-      # locally and in CI (the golden run-vm.sh boot is one of the checks —
-      # no second, hand-rolled entry to drift). The eval gates force the
-      # declared-state reads and every host leg's toplevel (eval-only:
-      # nothing builds); the VM check rides the closure in as an INPUT —
-      # the boot and the live E2E assertions run inside the derivation
-      # (tcg where KVM is absent; the timeout is the boot bound).
+      # locally and in CI. The eval gates force the declared-state reads
+      # and every host leg's toplevel (eval-only: nothing builds); the
+      # container E2E check stages THE lane entry — the runnable script
+      # plus the flake source it mounts — so the lane's whole surface
+      # (persona home, driver, script) evaluates and the one entry
+      # artifact is produced. A nix build cannot drive a docker daemon
+      # (the sandbox holds no daemon socket — the VM check's
+      # in-derivation boot has no container equivalent); the behavioral
+      # run is the staged entry ON a docker host: CI's container-e2e job,
+      # or the host's shell (docs/testing.md).
       checks.${hostSystem} =
         let
           pkgs = import nixpkgs { system = hostSystem; };
@@ -357,36 +360,38 @@
             pkgs.runCommand "workstation-check-home-legs-eval"
               {
                 linux = builtins.unsafeDiscardStringContext linuxHome.activationPackage.drvPath;
-                vm = builtins.unsafeDiscardStringContext vmHome.activationPackage.drvPath;
+                e2e = builtins.unsafeDiscardStringContext e2eHome.activationPackage.drvPath;
               }
               ''
                 mkdir -p "$out"
                 printf '%s\n' "$linux" > "$out/linux.drv"
-                printf '%s\n' "$vm" > "$out/vm.drv"
+                printf '%s\n' "$e2e" > "$out/e2e.drv"
               '';
 
-          # the golden boot: the VM E2E (tests/nix/run-vm.sh) — the VM
-          # closure rides in as an input, the script boots it and asserts
-          # the activation markers + the live E2E's verdict on the serial log
-          vm-e2e =
-            pkgs.runCommand "workstation-check-vm-e2e"
+          # the container E2E lane: stages THE entry (bin/run-container-e2e)
+          # — the lane script plus the flake source it mounts, so the
+          # staged run proves the checked-out tree with zero flags. The
+          # behavioral run happens on a docker host (CI's container-e2e
+          # job runs exactly this artifact; a host without nix runs the
+          # script straight from a checkout).
+          container-e2e =
+            pkgs.runCommand "workstation-check-container-e2e"
               {
-                vm = vmTestConfig.config.system.build.vm;
-                script = ./tests/nix/run-vm.sh;
-                nativeBuildInputs = [
-                  pkgs.coreutils
-                  pkgs.findutils
-                  pkgs.gnugrep
-                ];
+                src = self;
+                script = ./tests/nix/run-container.sh;
+                nativeBuildInputs = [ pkgs.coreutils ];
               }
               ''
-                export WORKSTATION_VM_BUILT="$vm"
-                export WORKSTATION_VM_DISK_DIR="$TMPDIR/disk"
-                mkdir -p "$WORKSTATION_VM_DISK_DIR"
-                # the boot log lands in $out — the dir must exist before the
-                # script opens it (nix creates no output paths on the builder)
-                mkdir -p "$out"
-                sh "$script" "$out/boot.log"
+                # nix creates no output paths on the builder
+                mkdir -p "$out/bin" "$out/share"
+                install -m 0755 "$script" "$out/bin/run-container-e2e"
+                # the flake source the lane mounts (the staged form); the
+                # context keeps the source alive for the GC while the
+                # entry artifact exists
+                printf '%s\n' "$src" > "$out/share/flake-src"
+                # the staged entry parses (the shell battery owns the
+                # full lint)
+                sh -n "$out/bin/run-container-e2e"
               '';
         };
     };

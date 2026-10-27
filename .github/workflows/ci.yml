@@ -67,7 +67,6 @@ jobs:
           for system in $(nix eval --json .#nixosConfigurations --apply 'builtins.attrNames' | tr -d '[]\" ' | tr ',' ' '); do
             nix eval --raw ".#nixosConfigurations.$system.config.system.build.toplevel.drvPath" > /dev/null
           done
-          nix eval --raw .#nixosConfigurations.vm-test.config.system.build.toplevel.drvPath > /dev/null
           for system in $(nix eval --json .#darwinConfigurations --apply 'builtins.attrNames' | tr -d '[]" ' | tr ',' ' '); do
             nix eval --raw ".#darwinConfigurations.$system.config.system.build.toplevel.drvPath" > /dev/null
           done
@@ -76,14 +75,12 @@ jobs:
           done
 
   # the canonical validation entry: `nix flake check` — the flake's checks
-  # output (the declared-state reads, every host leg's eval, and the golden
-  # VM E2E boot with the live consumer smokes). The VM boots under KVM
-  # where the runner exposes it, tcg otherwise; the binary cache owns the
-  # closure builds. This is the same surface `nix flake check` runs
-  # locally — no second entry to drift.
+  # output (the declared-state reads, every host leg's eval, and the
+  # container E2E lane's staging — the runnable entry plus the flake source
+  # it mounts). The binary cache owns the closure builds.
   flake-check:
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -91,6 +88,29 @@ jobs:
 
       - uses: DeterminateSystems/nix-installer-action@e50d5f73bfe71c2dd0aa4218de8f4afa59f8f81d # v16
 
-      - name: nix flake check (eval gates + the VM E2E)
+      - name: nix flake check (the eval gates + the container lane's staging)
         shell: bash
         run: nix flake check --print-build-logs
+
+  # the behavioral lane: the container E2E — the check's staged entry run
+  # on a docker host (the hosted runners carry docker). The persona home
+  # plane activates in a throwaway nixos/nix container: the retirement
+  # proof, the consumer smokes (the nvim headless boot with the languages
+  # composed, the lazy-lock merge, the theme tokens), the adopt rehearsal,
+  # the apply-driven switch and the receipt. The system plane keeps its
+  # eval gate (the toplevel drvPath above — it never needed a boot).
+  container-e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+
+      - uses: DeterminateSystems/nix-installer-action@e50d5f73bfe71c2dd0aa4218de8f4afa59f8f81d # v16
+
+      - name: The container E2E (the check's staged entry)
+        shell: bash
+        run: |
+          nix build --print-build-logs .#checks.x86_64-linux.container-e2e
+          ./result/bin/run-container-e2e

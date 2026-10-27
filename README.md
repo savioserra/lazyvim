@@ -91,7 +91,7 @@ contracts; see the references below.
 | --- | --- |
 | [`docs/endgame.md`](docs/endgame.md) | The final shape: structure, invariants, retirement ledger |
 | [`docs/index.md`](docs/index.md) | Repository navigation |
-| [`docs/testing.md`](docs/testing.md) | Fast checks, the docker-nix acceptance, the VM E2E |
+| [`docs/testing.md`](docs/testing.md) | Fast checks, the docker-nix acceptance, the container E2E |
 | [`docs/capabilities.md`](docs/capabilities.md) | Capability boundaries and lifecycle |
 | [`docs/home-state.md`](docs/home-state.md) | Home state law (native declarations) and the cutover history |
 | [`docs/tools.md`](docs/tools.md) | Managed inventory and prerequisites |
@@ -102,7 +102,7 @@ contracts; see the references below.
 Run `sh .github/scripts/check.sh` for the static battery (identity gate,
 engine-free gate, shell checks, the shim dispatch gate, the nix eval reads
 where nix exists); never run fixtures directly against a switched home.
-Real nix builds and VM boots require explicit authorization; follow
+Real nix builds and container E2E runs require explicit authorization; follow
 [testing](docs/testing.md), not a live-home experiment. CI runs the static
 battery plus a nix evaluation leg (closure builds stay the local docker
 acceptance's job). Release CI validates before producing tagged source

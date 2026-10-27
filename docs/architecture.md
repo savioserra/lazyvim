@@ -67,7 +67,7 @@ identity gate (personal strings only in `hosts/<host>/default.nix`), the
 engine-free gate (the tree-wide grep for the Elixir module token stays
 empty), shell syntax + ShellCheck, the shim dispatch gate, the nix eval
 read gate. Verification beyond the battery is behavioral — the docker-nix
-closure acceptance and the VM E2E (docs/testing.md).
+closure acceptance and the container E2E (docs/testing.md).
 
 ## Current state and debt
 

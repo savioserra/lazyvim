@@ -1,15 +1,16 @@
-# The live proof driver: `workstation-e2e` runs INSIDE the VM as the vm
-# user (the workstation-e2e oneshot unit in vm-host.nix). Every step is
-# asserted loud on the serial console:
+# The live proof driver: `workstation-e2e` runs INSIDE the container E2E's
+# throwaway nix container (tests/nix/run-container.sh stages the boot home,
+# then invokes this driver). Every step is asserted loud on the log the
+# host script greps:
 #
 #   workstation-e2e: <step> ... ok / FAIL
-#   workstation-e2e: OK                       (the final marker run-vm greps)
+#   workstation-e2e: OK             (the final marker run-container.sh greps)
 #
 # The apply step drives the workstation-switch driver with a prebuilt
 # activation override (WORKSTATION_SWITCH_HOME_ACTIVATE) — the offline
-# form of `home-manager switch`: the evaluation happened at build time on
-# the host, so the override does the two things a switch would have done,
-# fully offline:
+# form of `home-manager switch`: the evaluation happened at build time
+# inside the container, so the override does the two things a switch would
+# have done, fully offline:
 #   1. run the standalone activation (home files, unit files, profile links)
 #   2. register the generation the way `home-manager switch` does
 #      (nix-env --set on the home-manager profile) — the driver's receipt
@@ -25,10 +26,10 @@
   harlequinVersion,
 }:
 let
-  # the standalone home the apply targets (staged into the VM closure by
-  # vm-host.nix so both the activation and the profile registration hit
-  # realized store paths)
-  activation = self.homeConfigurations."vm@vm".activationPackage;
+  # the standalone home the apply targets (built from the mounted flake by
+  # run-container.sh so both the activation and the profile registration
+  # hit realized store paths)
+  activation = self.homeConfigurations."e2e@container".activationPackage;
 
   # the SAME driver derivation workstation-home.nix stages (identical
   # arguments, one store path) — referenced absolutely so the proof does
@@ -36,8 +37,10 @@ let
   switchDriver = import ../../nix/workstation-switch.nix {
     inherit pkgs;
     flake = self;
-    homeAttr = "vm@vm";
-    systemAttr = "vm-test";
+    homeAttr = "e2e@container";
+    # the container lane has no system plane — the fail-closed guard is
+    # the designed behavior for a --system call with no target
+    systemAttr = null;
   };
 
   # the offline switch step: activate + register, exactly what
@@ -52,11 +55,9 @@ in
 writeShellScriptBin "workstation-e2e" ''
   set -u
 
-  home=/home/vm
+  home=/home/e2e
   export HOME=$home
   export PATH=/run/current-system/sw/bin:$PATH
-  # the user manager's bus: the retirement probe below asks systemctl --user
-  export XDG_RUNTIME_DIR=/run/user/$(id -u)
 
   step() {
     echo "workstation-e2e: $1 ..."
@@ -69,19 +70,20 @@ writeShellScriptBin "workstation-e2e" ''
   fail() {
     echo "workstation-e2e: $1 ... FAIL: $2" >&2
     # The failure is the interesting data on a headless proof host: dump
-    # the user unit dir to the serial console before dying.
+    # the user unit dir to the log before dying.
     ls -la $home/.config/systemd/user/ "$home/.config/systemd/user/default.target.wants" 2>&1 | tail -12 >&2
     exit 1
   }
 
-  # 1. the retirement: no resident engine process, no socket, no unit
+  # 1. the retirement: no resident engine process, no socket, no unit.
+  #    File-plane only here: the container lane runs without a service
+  #    manager, so "systemd knows nothing of the unit" stays a real-host
+  #    verify contract — the activation governs the files, and the files
+  #    are what this lane asserts.
   step "daemon unit retired"
   if [ -e "$home/.config/systemd/user/workstation-daemon.service" ]; then
     fail "daemon unit retired" "workstation-daemon.service is still staged in the user units"
   fi
-  systemctl --user cat workstation-daemon.service >/dev/null 2>&1 \
-    && fail "daemon unit retired" "systemd still knows workstation-daemon.service" \
-    || true
   pass "daemon unit retired"
 
   step "no state socket remains"
@@ -97,7 +99,7 @@ writeShellScriptBin "workstation-e2e" ''
     local bin
     bin=$(command -v "$1" 2>/dev/null || true)
     if [ -z "$bin" ]; then
-      for bin in "$home/.nix-profile/bin/$1" "/etc/profiles/per-user/vm/bin/$1" /run/current-system/sw/bin/"$1"; do
+      for bin in "$home/.nix-profile/bin/$1" "/etc/profiles/per-user/e2e/bin/$1" /run/current-system/sw/bin/"$1"; do
         [ -x "$bin" ] && { printf '%s\n' "$bin"; return 0; }
       done
       return 1
@@ -118,9 +120,9 @@ writeShellScriptBin "workstation-e2e" ''
   pass "launcher shim dispatch"
 
   step "nvim profile link"
-  # belt and suspenders for the boot home: the unit ordering guarantees the
-  # home-manager activation completed; the bounded settle turns a lost
-  # ordering race (if one ever returns) from a FAIL into a loud wait
+  # the container stages the boot home before the driver runs; the bounded
+  # settle turns a lost staging race (if one ever returns) from a FAIL
+  # into a loud wait
   settle=0
   while [ $settle -lt 90 ]; do
     [ -x "$home/.local/bin/nvim" ] && [ -r "$home/.config/nvim/lua/languages/profile.lua" ] && break
@@ -152,6 +154,24 @@ writeShellScriptBin "workstation-e2e" ''
   grep -q 'oasis.nvim' "$lock" \
     || fail "lazy-lock merge" "$lock does not carry the pinned baseline"
   pass "lazy-lock merge"
+
+  # the regression smoke (the vps cutover, 2026-10-27): a composed
+  # profile.lua is a lua CHUNK, not a text file — content greps passed
+  # while nvim died with E5113 on require. The boot is the proof: nvim
+  # headless must exit 0 with every language module composed. First boot
+  # restores the lock's plugins (the container is online); the bound keeps
+  # a clone storm from hanging the lane.
+  step "nvim boots headless with the languages composed"
+  nvim_boot() {
+    if command -v timeout >/dev/null 2>&1; then
+      timeout 600 "$home/.local/bin/nvim" --headless +qa
+    else
+      "$home/.local/bin/nvim" --headless +qa
+    fi
+  }
+  nvim_boot >/dev/null 2>"$home/.cache/e2e-nvim-boot.err" \
+    || fail "nvim boots headless" "nvim --headless +qa exited non-zero (see .cache/e2e-nvim-boot.err in the persona home)"
+  pass "nvim boots headless with the languages composed"
 
   # 2b. the agent domain: the pinned runtime stack, the linked secrets
   #     skill, and the retire-list receipt (the checkout itself is the one
@@ -373,9 +393,9 @@ writeShellScriptBin "workstation-e2e" ''
 
   # 5. the staged client: the shim's read flake (the generation's snapshot
   #    at ~/.local/opt/workstation/flake) and the write driver are staged —
-  #    the reads themselves are nix evals and are proven HOST-side
-  #    (tests/direct-nix.sh: the same flake the VM applied answers status,
-  #    plan and capabilities there, where the eval's inputs exist)
+  #    the reads themselves are nix evals and are proven HOST-side (the
+  #    same flake the container applied answers status, plan and
+  #    capabilities there, where the eval's inputs exist)
   step "staged client (flake snapshot, launcher, switch driver)"
   [ -L "$home/.local/opt/workstation/flake" ] \
     || fail "staged client" "$home/.local/opt/workstation/flake is not the generation's flake snapshot link"
@@ -385,7 +405,7 @@ writeShellScriptBin "workstation-e2e" ''
   esac
   command -v workstation-switch >/dev/null 2>&1 \
     || [ -x "$home/.nix-profile/bin/workstation-switch" ] \
-    || [ -x "/etc/profiles/per-user/vm/bin/workstation-switch" ] \
+    || [ -x "/etc/profiles/per-user/e2e/bin/workstation-switch" ] \
     || fail "staged client" "the workstation-switch driver is not staged"
   pass "staged client (flake snapshot, launcher, switch driver)"
 

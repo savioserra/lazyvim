@@ -17,7 +17,7 @@ board comments.
 | `nix/` | Shared substrate infrastructure, no capability of its own: `report.nix` (the declared-state fold), `lib/capabilities.nix` (the registry walk), `lib/shell-lane.nix` (the fragment lane's order contract), `lib/license.nix` (the secrets domain's license acceptance), `workstation-switch.nix` (the write plane), `modules/` (the home leg, the system leg, the host-identity options) |
 | `hosts/{linux,mac}/` | The two target legs WSL and any linux server count under the linux leg. `hosts/<host>/default.nix` is the ONLY place a host's identity is written |
 | `bin/workstation` | The launcher shim: the whole client (POSIX sh). Reads are `nix eval`s over `workstation.report.<verb>`; writes delegate to the staged `workstation-switch`. The home lane stages the same bytes as a derivation onto the profile PATH |
-| `tests/` | `tests/nix/` (the VM proof host: `vm-host.nix`, `vm-home.nix`, `vm-e2e.nix`, `run-vm.sh`) — behavioral acceptance |
+| `tests/` | `tests/nix/` (the container E2E: `run-container.sh` the lane, `e2e.nix` the proof driver, `e2e-home.nix` the persona) — behavioral acceptance |
 | `docs/` | The references; this file is the structure's anchor |
 | `.github/` | The static check battery, the CI (static + nix-eval jobs), tagged source archives |
 
@@ -25,11 +25,12 @@ board comments.
 
 `workstation.report` (the read verbs: `status`, `plan`, `capabilities` —
 scope with an attrpath), `homeManagerModules.workstation`,
-`homeConfigurations` (the linux leg + the VM persona),
+`homeConfigurations` (the linux leg + the e2e@container persona),
 `darwinConfigurations` (the mac leg), `nixosConfigurations.<host>` (the linux system plane),
-`nixosConfigurations.vm-test`, `checks.<system>` (`nix flake check` is the
+`workstationE2E` (the container lane's inputs: the persona home + the proof
+driver), `checks.<system>` (`nix flake check` is the
 canonical validation entry: the declared-state reads, every host leg's
-eval, and the golden VM E2E boot), `overlays.default` (pin overrides ONLY),
+eval, and the container E2E lane's staged entry), `overlays.default` (pin overrides ONLY),
 `workstationTheme.lib`, `hermesSkills`, `hermesAgentPin`.
 
 ## The invariants
@@ -93,7 +94,7 @@ Everything deleted on the road here, and what replaced it:
 | `nix/engine.nix`, the OTP release, the release tarballs, the locale guard, `tests/direct_boot.sh` | Nothing — there is no runtime artifact to build or stage; distribution is the flake ref (a rev) |
 | The theme domain's daemon side | The activation hook + store-path watching: the switch re-points `~/.local/state/workstation/theme.json` at the generation's token store path; consumers read or watch the link |
 | `workstation/bin/workstation` (release acquisition, sandbox, anchoring) | `bin/workstation` — the thin dispatch shim, derivation-staged by the home lane |
-| The mix test suite, doclint, the shim locale/anchor gates | The static battery (identity, engine-free, shell syntax + ShellCheck, the shim dispatch gate, the nix eval reads) + the docker-nix acceptance + the VM E2E |
+| The mix test suite, doclint, the shim locale/anchor gates | The static battery (identity, engine-free, shell syntax + ShellCheck, the shim dispatch gate, the nix eval reads) + the docker-nix acceptance + the container E2E |
 | CI's mise/elixir matrix | CI's static job + nix-eval job (evaluation only; closures are the local acceptance's job) |
 | `docs/elixir.md`, `docs/lua-migration.md`, `docs/roadmap.md`, `docs/store-design.md` | Git history; `docs/endgame.md` (this file) holds the living shape |
 | The pin inventory (`versions.json` at the repo root, read via `builtins.fromJSON`) | The pins declared in their OWNING domain's module (one pin, one owner, one surface): the fetchurl tool pins as version + per-platform url/sha256 literals, the git checkout pins as url + rev in `modules/terminal/terminal.nix` (deployed as `~/.tmux/plugins.pins.json`, the verify lane's anchor); `nix/lib/pins.nix` keeps only the shared HOW. The dead rows retired leak-free: openwiki (pi-era), the neovim bootstrap rows, nunchux's release-asset checksums |
@@ -137,6 +138,6 @@ Everything deleted on the road here, and what replaced it:
    documented in its owning module), and the hermes interpreter is
    `pkgs.python314` floored at the pinned rev's `pm/lock.json` release.
    `checks.<system>` makes `nix flake check` the canonical validation
-   entry (the reads, every host leg's eval, the golden VM E2E boot).
+   entry (the reads, every host leg's eval, the container lane's staged entry).
    The change-rule survives in its overlay form: the lock moves the
    versions, the floors keep the move honest.

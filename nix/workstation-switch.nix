@@ -16,7 +16,7 @@
 # Baked by the staging module (workstation-home.nix): the flake source
 # snapshot THIS generation ships, and the two flake attrs (the leg's
 # defaults, verbatim — null means the leg stages no default for that plane).
-# Environment overrides (the seams the VM E2E and CI use):
+# Environment overrides (the seams the container E2E and CI use):
 #   WORKSTATION_SWITCH_FLAKE          switch a different flake (e.g. a
 #                                     writable checkout, for `update`)
 #   WORKSTATION_SWITCH_HOME_ATTR      the homeConfiguration attr

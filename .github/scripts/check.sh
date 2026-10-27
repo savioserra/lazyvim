@@ -3,7 +3,7 @@
 # matrix is static source gates plus the nix eval read gate. The Elixir
 # engine battery (mix test, doclint, the release boot smoke, the locale
 # guard) retired with the engine; verification beyond this matrix is
-# behavioral — the docker-nix acceptance (closures) and the VM E2E
+# behavioral — the docker-nix acceptance (closures) and the container E2E
 # (activation + consumers), owned by docs/testing.md.
 #
 # Ordering: the identity gate runs first (cheap source grep), then the

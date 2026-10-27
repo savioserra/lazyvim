@@ -21,7 +21,7 @@
 | [`capabilities.md`](capabilities.md) | Dependency direction, declaration contract, lifecycle phases |
 | [`home-state.md`](home-state.md) | Home state law: native declarations, hot-home scope, legacy cutover |
 | [`tools.md`](tools.md) | Managed tool inventory and platform coverage |
-| [`testing.md`](testing.md) | Offline checks, the docker-nix acceptance and the E2E lanes |
+| [`testing.md`](testing.md) | Offline checks, the docker-nix acceptance and the container E2E |
 | [`endgame.md`](endgame.md) | The final shape: structure, invariants, the retirement ledger |
 | [`architecture.md`](architecture.md) | Declared state + two clients, the read verbs, the write plane |
 | [`absorption.md`](absorption.md) | (Historical) the manifests-to-native-declarations absorption |
