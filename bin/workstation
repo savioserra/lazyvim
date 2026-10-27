@@ -174,7 +174,7 @@ init)
 	Darwin)
 		printf 'workstation: first activation (darwin plane, %s) ...\n' "$key"
 		exec nix --extra-experimental-features 'nix-command flakes' run \
-			nix-darwin/nix-darwin#darwin-rebuild -- switch \
+			github:LnL7/nix-darwin#darwin-rebuild -- switch \
 			--flake "$flake#$key"
 		;;
 	esac
