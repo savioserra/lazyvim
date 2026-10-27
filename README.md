@@ -1,8 +1,10 @@
-# LazyVim workstation
+# workstation
 
-Nix-substrate workstation for pinned Neovim, tmux configuration and Pi
-resources on Linux x86_64 (including WSL-as-Linux) and macOS arm64.
-Nix owns the lifecycle — pins, the file plane, activation and rollback —
+A nixpkgs-native workstation substrate for Linux x86_64 (WSL counts as
+linux) and macOS arm64: capability modules — editor (Neovim/LazyVim),
+terminal (tmux, nunchux), theme, languages, foundation, fonts, secrets,
+agent (hermes) — declared once, rendered by home-manager, switched by one
+command. Nix owns the lifecycle — the file plane, activation and rollback —
 and every question about the declared state is answered by `nix eval` over
 `workstation.report.<verb>`. There is no engine: no resident process, no
 socket, no release to build. A switch's receipt lands in the state tree's
@@ -22,9 +24,7 @@ socket, no release to build. A switch's receipt lands in the state tree's
 - The legs: `hosts/linux` (the linux leg; NixOS-WSL system plane, `homeConfigurations` +
   `nixosConfigurations`), `hosts/mac` (nix-darwin, `darwinConfigurations`;
   brew reduced to casks). WSL counts as the linux leg (operator ruling
-  2026-10-22: the flake targets exactly mac and linux). A NixOS VM boot
-  test (`tests/nix`) proves the daemonless shape end to end: no unit, no
-  socket, the apply-driven switch, the receipt, the consumer smokes.
+  2026-10-22: the flake targets exactly mac and linux).
 
 ## Hosts
 
