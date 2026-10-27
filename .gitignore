@@ -13,6 +13,9 @@ node_modules/
 
 # The nix VM test's build link (tests/nix/run-vm.sh).
 /tests/nix/vm-result
+# The VM test's boot disk (run-vm.sh writes it beside the checkout unless
+# WORKSTATION_VM_DISK_DIR moves it).
+/vm-test.qcow2
 .worktrees/
 _build/
 deps/

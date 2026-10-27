@@ -244,25 +244,34 @@
       # nixpkgs owns the tools). Each row pulls the named tool from the
       # foundation input (nixos-unstable, locked) because the pinned 25.05
       # set predates the floor the owning module asserts; a lagging lock
-      # dies loudly at the floor. The license acceptance (nix/lib/license.nix)
-      # is config, not an overlay — it rides the composition roots.
-      # Nothing else may enter this overlay.
-      overlays.default = final: prev: {
-        inherit (nixpkgs-foundation.legacyPackages.${prev.system})
-          harlequin
-          fd
-          fzf
-          ripgrep
-          lazygit
-          tree-sitter
-          go
-          pnpm
-          nodejs_24
-          python314
-          _1password-cli
-          nerd-fonts
-          ;
-      };
+      # dies loudly at the floor. The foundation set carries the license
+      # acceptance too — a package's meta check fires where it was
+      # constructed, and the secrets domain's CLI is unfree (scoped, see
+      # nix/lib/license.nix). Nothing else may enter this overlay.
+      overlays.default =
+        final: prev:
+        let
+          foundationPkgs = import nixpkgs-foundation {
+            system = prev.system;
+            config.allowUnfreePredicate = licensePredicate;
+          };
+        in
+        {
+          inherit (foundationPkgs)
+            harlequin
+            fd
+            fzf
+            ripgrep
+            lazygit
+            tree-sitter
+            go
+            pnpm
+            nodejs_24
+            python314
+            _1password-cli
+            nerd-fonts
+            ;
+        };
 
       nixosConfigurations.vm-test = vmTestConfig;
 
