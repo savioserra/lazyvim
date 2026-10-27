@@ -16,9 +16,13 @@ let
   # flake lock update raises it, nixpkgs owns the drift)
   go =
     assert
-      lib.versionAtLeast (pkgs.go.version or "0") "1.26"
-      || throw "workstation-go: pkgs.go ${pkgs.go.version or "?"} predates the floor 1.26 — the flake's overlays.default must be applied (nixpkgs.overlays)";
-    pkgs.go;
+      lib.versionAtLeast (pkgs.workstation-go.version or "0") "1.26"
+      || throw "workstation-go: pkgs.workstation-go ${pkgs.workstation-go.version or "?"} predates the floor 1.26 — the flake's overlays.default must be applied (nixpkgs.overlays)";
+    # the SCOPED name (pkgs.workstation-go, not pkgs.go): nixpkgs' own `go`
+    # is a build toolchain consumed by packages this workstation never
+    # touches — libcap builds with it, and retargeting the name rehashed
+    # the toolchain's whole dependent world off the binary cache
+    pkgs.workstation-go;
 in
 {
   config = {

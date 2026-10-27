@@ -270,9 +270,7 @@
             fzf
             ripgrep
             lazygit
-            go
             pnpm
-            nodejs_24
             python314
             _1password-cli
             nerd-fonts
@@ -283,6 +281,23 @@
           # libtree-sitter from its own set) and must stay stock — see the
           # overlay's scoping rule above
           workstation-tree-sitter = foundationPkgs.tree-sitter;
+
+          # the Go toolchain and the Node runtime, SCOPED for the same rule:
+          # both names are nixpkgs BUILD TOOLCHAINS consumed by packages
+          # this workstation never touches — libcap alone builds its gobin
+          # support with go, and a retargeted go rehashed libcap → systemd →
+          # gtk3/pipewire/pulse/qemu, throwing the whole VM closure off the
+          # binary cache into source builds. The languages' toolchains ride
+          # the scoped names; nixpkgs' own `go`/`nodejs_24` stay stock.
+          workstation-go = foundationPkgs.go;
+          workstation-node = foundationPkgs.nodejs_24;
+
+          # python314 stays a global retarget DELIBERATELY: 25.05's attr is
+          # a near-dead pre-release the agent domain's floor overshoots, and
+          # no nixpkgs-internal package in any leg's closure consumes it as
+          # a build input — the retarget's blast radius is the agent env
+          # alone (the flake-check closure proves it: zero rehash outside
+          # the hermes env).
         };
 
       nixosConfigurations.vm-test = vmTestConfig;
@@ -367,6 +382,9 @@
                 export WORKSTATION_VM_BUILT="$vm"
                 export WORKSTATION_VM_DISK_DIR="$TMPDIR/disk"
                 mkdir -p "$WORKSTATION_VM_DISK_DIR"
+                # the boot log lands in $out — the dir must exist before the
+                # script opens it (nix creates no output paths on the builder)
+                mkdir -p "$out"
                 sh "$script" "$out/boot.log"
               '';
         };

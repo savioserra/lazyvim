@@ -1,4 +1,5 @@
-# The Node language capability: the nixpkgs runtime (pkgs.nodejs_24 —
+# The Node language capability: the nixpkgs runtime (the overlay's
+# scoped pkgs.workstation-node, nodejs_24 from the foundation input —
 # operator ruling 2026-10-27: nix owns the runtime; the nvm lane retired
 # with the pins machinery — nvm was the old world's version manager, and
 # its default-alias bug class dies structurally with it). The
@@ -15,8 +16,12 @@
 let
   # the version-class pin: the 24 major rides the nixpkgs set (the
   # foundation domain's pin-override overlay keeps it current); the patch
-  # drift is nixpkgs' to maintain, never a SHA to keep alive
-  nodejs = pkgs.nodejs_24;
+  # drift is nixpkgs' to maintain, never a SHA to keep alive. The SCOPED
+  # name (pkgs.workstation-node, not pkgs.nodejs_24): nixpkgs' own
+  # nodejs_24 is a build toolchain its own packages consume, and
+  # retargeting the name would rehash those builds off the binary cache —
+  # the overlay's scoping rule (see overlays.default).
+  nodejs = pkgs.workstation-node;
 
   # the derived version declaration (the change-rule's canonical address —
   # a store text file, not a module literal, so it can never drift from
