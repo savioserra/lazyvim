@@ -137,6 +137,9 @@ in
           home-manager = {
             useGlobalPkgs = true;
             useUserPackages = true;
+            # first switches on an old-engine home: the conflicting
+            # deployed files back up instead of aborting
+            backupFileExtension = "pre-nix-darwin";
             extraSpecialArgs = {
               inherit self;
             };
