@@ -48,9 +48,11 @@ let
   # scrollback of every switch this home took). The profile link's tail IS
   # the generation number (home-manager-N-link / system-N-link) — the same
   # source `home-manager generations` reads, never a side-channel counter.
+  # A link that doesn't resolve (dangling after a gc, a torn registration)
+  # receipts nothing: exit 1, never a fabricated number.
   readAndPublish = ''
     link="$(readlink "$profile" 2>/dev/null || true)"
-    if [ -z "$link" ]; then
+    if [ -z "$link" ] || [ ! -e "$profile" ]; then
       echo "workstation-switch: no generation link at $profile — nothing receipted" >&2
       exit 1
     fi
@@ -69,6 +71,32 @@ let
     state_dir="''${XDG_STATE_HOME:-$HOME/.local/state}/workstation"
     mkdir -p "$state_dir"
     echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) $message" >> "$state_dir/switch.log"
+  '';
+
+  # The home-plane profile: resolved the way the activation registered it.
+  # home-manager's activate derives the profile dir AT SWITCH TIME —
+  # $XDG_STATE_HOME/nix/profiles when that dir exists (nix 2.14+ moved the
+  # per-user state there), else nix's global per-user profile dir — and
+  # registers `home-manager` inside it (nix-env --profile … --set). The
+  # driver repeats that exact decision so the receipt reads the same link
+  # the switch just wrote: real hosts on determinate nix carry no
+  # $XDG_STATE_HOME/nix at all (the registration lands per-user, e.g.
+  # /nix/var/nix/profiles/per-user/root/home-manager), while the container
+  # E2E stages the XDG dir and stays on the first branch. Fail closed when
+  # neither dir exists — that is a host where no switch could have
+  # registered anything.
+  resolveHomeProfile = ''
+    state_home="''${XDG_STATE_HOME:-$HOME/.local/state}"
+    user_nix_profiles="''${state_home}/nix/profiles"
+    global_profiles="''${NIX_STATE_DIR:-/nix/var/nix}/profiles/per-user/''${USER:-$(id -un 2>/dev/null || true)}"
+    if [ -d "$user_nix_profiles" ]; then
+      profile="''${user_nix_profiles}/home-manager"
+    elif [ -d "$global_profiles" ]; then
+      profile="''${global_profiles}/home-manager"
+    else
+      echo "workstation-switch: no home-manager profile dir — tried $user_nix_profiles and $global_profiles — nothing receipted" >&2
+      exit 1
+    fi
   '';
 
   # the fail-closed guards: a plane the leg staged no default for stops at
@@ -126,17 +154,17 @@ pkgs.writeShellScriptBin "workstation-switch" ''
       else
         home-manager switch --flake "$flake#$home_attr"
       fi
-      profile="''${XDG_STATE_HOME:-$HOME/.local/state}/nix/profiles/home-manager"
+      ${resolveHomeProfile}
       ;;
     home:rollback)
       home-manager rollback
-      profile="''${XDG_STATE_HOME:-$HOME/.local/state}/nix/profiles/home-manager"
+      ${resolveHomeProfile}
       ;;
     home:update)
       need_home
       nix flake update --flake "$flake"
       home-manager switch --flake "$flake#$home_attr"
-      profile="''${XDG_STATE_HOME:-$HOME/.local/state}/nix/profiles/home-manager"
+      ${resolveHomeProfile}
       ;;
     system:apply|system:sync)
       need_system
