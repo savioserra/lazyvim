@@ -17,7 +17,7 @@ nix is absent; the docker acceptance owns it there), and
 `git diff --check`. ShellCheck is required in Linux CI; report local
 absence.
 
-Verification beyond the battery is behavioral (docs/endgame.md decision 2):
+Verification beyond the battery is behavioral (docs/architecture.md decision 2):
 structural assertions live in the eval (the report fold's integrity
 checks), never as byte contracts.
 Never run fixtures directly against a switched home: they write fake Node/npm state.

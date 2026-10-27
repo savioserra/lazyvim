@@ -48,7 +48,7 @@ step 'tree-purity gate (one module system in the tree)'
 # carries it — the tree-wide grep must come back EMPTY
 engine_module_token='def''module'
 gate 'tree-purity gate' \
-	'tree-purity gate: a foreign module-system token survives in the tree (docs/endgame.md)' \
+	'tree-purity gate: a foreign module-system token survives in the tree (docs/architecture.md)' \
 	git grep -n "$engine_module_token" -- .
 
 step 'shell syntax (sh -n) and ShellCheck when available'

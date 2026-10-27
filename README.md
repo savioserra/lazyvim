@@ -66,7 +66,6 @@ sessions, or vault state belong to the substrate. See
 | Reference | Scope |
 | --- | --- |
 | [docs/index.md](docs/index.md) | Repository navigation |
-| [docs/endgame.md](docs/endgame.md) | The final shape: structure and invariants |
 | [docs/architecture.md](docs/architecture.md) | Declared state and the two clients |
 | [docs/capabilities.md](docs/capabilities.md) | Capability boundaries and lifecycle |
 | [docs/home-state.md](docs/home-state.md) | Home state law |

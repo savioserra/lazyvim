@@ -17,12 +17,10 @@
 
 | Document | Scope |
 | --- | --- |
-| [`endgame.md`](endgame.md) | The final shape: structure, invariants, retirement ledger, the endgame decisions |
 | [`capabilities.md`](capabilities.md) | Dependency direction, declaration contract, lifecycle phases |
 | [`home-state.md`](home-state.md) | Home state law: native declarations, hot-home scope, legacy cutover |
 | [`tools.md`](tools.md) | Managed tool inventory and platform coverage |
 | [`testing.md`](testing.md) | Offline checks, the docker-nix acceptance and the container E2E |
-| [`endgame.md`](endgame.md) | The final shape: structure, invariants, the retirement ledger |
 | [`architecture.md`](architecture.md) | Declared state + two clients, the read verbs, the write plane |
 | [`secrets.md`](secrets.md) | 1Password boundary, vault scope, Pi skill policy |
 | [`nvim.md`](nvim.md) | Editor entry points, profile, plugins, locks |
@@ -37,6 +35,6 @@ There are **no deprecated or backward-compatibility surfaces**: one current
 shape per verb, per option, per pin — hard-cut. Retired paths are dropped
 in the lane that touches them — delete, don't deprecate. The filesystem is
 the capability registry; reads are `nix eval` over `workstation.report`;
-verification is behavioral (docs/endgame.md is the anchor). Lua appears
+verification is behavioral (docs/architecture.md is the anchor). Lua appears
 only as live payload data (deployed editor config, theme tokens read as
 bytes), never executed.

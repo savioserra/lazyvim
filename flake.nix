@@ -72,7 +72,7 @@
       };
 
       # the read verbs: the report's operator-facing projections. The
-      # shapes are the contract (docs/endgame.md):
+      # shapes are the contract (docs/architecture.md):
       #   status       the declared inventory — counts + capability order
       #   plan         the surface the next switch applies, with the
       #                report digest (the declared state's content id)
