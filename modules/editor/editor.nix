@@ -63,7 +63,11 @@ let
   # (the old graph walk's tie-break, promoted to the declared order)
   entries = lib.sort (a: b: a.id < b.id) ([ standardEntry ] ++ cfg.languages);
 
-  profileLua = lib.generators.toLua { } (map (e: lib.filterAttrs (_: v: v != null) e) entries);
+  # the file is a lua MODULE: it must RETURN the table (a bare table
+  # literal is not a valid chunk — nvim dies with E5113 on require)
+  profileLua = "return "
+    + lib.generators.toLua { } (map (e: lib.filterAttrs (_: v: v != null) e) entries)
+    + ";";
 
   # the merge program: the modify template's lua body (the heredoc between
   # the `cat >` line and the exact-match closing delimiter) with the
