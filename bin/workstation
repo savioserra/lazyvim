@@ -11,10 +11,14 @@ usage() {
 	cat <<'EOF'
 workstation — the nixpkgs-native workstation substrate
 
-install-time capture (once per machine):
+install (once per machine):
   init            capture this machine's identity into hosts/identity.nix
-                  (whiptail dialogs prefilled with the detected values;
-                  keep the file uncommitted)
+                  (whiptail dialogs prefilled with the detected values) and
+                  run the first activation — the whole install is:
+                    clone && workstation init
+                  keep the identity file uncommitted; every later update is
+                  `workstation apply` (WORKSTATION_NO_APPLY=1 skips the
+                  first switch)
 
 reads (the declared state, answered by nix eval over
 #workstation.report.<verb>):
@@ -156,7 +160,36 @@ init)
 	} >"$flake/hosts/identity.nix"
 	printf 'workstation: identity captured in %s/hosts/identity.nix (host=%s user=%s fqdn=%s)\n' \
 		"$flake" "$host" "$user" "${fqdn:-<none — tailscale absent or down>}"
-	printf 'workstation: keep the file uncommitted; next: workstation apply\n'
+	printf 'workstation: keep the file uncommitted\n'
+	# The first activation rides init: one command per machine, the
+	# leg-native switch stays inside the shim (users never type it). The
+	# homeConfiguration's activationPackage is built from THIS flake — the
+	# flake's own pinned home-manager, never a stray CLI. After this switch
+	# the staged driver exists and `workstation apply` owns every later one.
+	if [ "${WORKSTATION_NO_APPLY:-}" = 1 ]; then
+		printf 'workstation: capture done; apply skipped (WORKSTATION_NO_APPLY=1) — next: workstation apply\n'
+		exit 0
+	fi
+	if command -v whiptail >/dev/null 2>&1; then
+		if ! whiptail --title ' workstation init ' --yesno \
+			'Apply the substrate now (the first switch)?' 9 68; then
+			printf 'workstation: capture done; apply deferred — next: workstation apply\n'
+			exit 0
+		fi
+	fi
+	key="$user@$host"
+	if command -v darwin-rebuild >/dev/null 2>&1; then
+		die 'the mac first switch bootstraps nix-darwin itself — see docs/testing.md (the leg-native bootstrap); this shim owns it after the first switch' 2
+	fi
+	printf 'workstation: first activation (home plane, %s) ...\n' "$key"
+	nix --extra-experimental-features 'nix-command flakes' \
+		build --no-link --print-build-logs \
+		"$flake#homeConfigurations.$key.activationPackage"
+	# the activation package lands in the store; run its activate
+	store_path=$(nix --extra-experimental-features 'nix-command flakes' \
+		eval --raw "$flake#homeConfigurations.$key.activationPackage")
+	"$store_path/activate"
+	printf 'workstation: applied — every later update is: workstation apply\n'
 	;;
 status | plan | capabilities)
 	[ -n "$flake" ] ||

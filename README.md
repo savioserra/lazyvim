@@ -30,14 +30,12 @@ socket, no release to build. A switch's receipt lands in the state tree's
 
 Switch a host through the substrate — the leg-native rebuild, or the
 `workstation-switch` driver (staged into each generation; it wraps the
-leg-native switch and writes the receipt):
+leg-native switch and writes the receipt). The operator surface is one
+command — the leg-native switch is never typed by a user:
 
 ```sh
-sudo nixos-rebuild switch --flake .#wsl      # linux leg (NixOS-WSL)
-darwin-rebuild switch --flake .#mac          # macOS leg (nix-darwin)
-
-workstation-switch apply            # leg-native switch + the switch.log receipt
-workstation-switch rollback         # atomic rollback to the prior generation
+workstation init     # once per machine: capture identity + the first switch
+workstation apply    # every later update (rollback/update/sync alongside)
 ```
 
 Every switch ends with a receipt line in the state tree's `switch.log`
