@@ -65,6 +65,7 @@ let
   # rebuild).
   frag = id: order: marker: {
     inherit id order marker;
+    domain = "foundation";
     payload = ./fragments + "/${id}.sh";
   };
 
@@ -200,6 +201,7 @@ in
           target = ".bashrc";
           id = "operator-extras";
           order = 100;
+          domain = "foundation";
           marker = "# workstation: operator extras";
           payload = operatorExtras;
         }
@@ -207,6 +209,7 @@ in
           target = ".zshrc";
           id = "operator-extras";
           order = 100;
+          domain = "foundation";
           marker = "# workstation: operator extras";
           payload = operatorExtras;
         }

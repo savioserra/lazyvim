@@ -64,15 +64,24 @@ in
             type = lib.types.path;
             description = "The fragment body's store path";
           };
+          domain = lib.mkOption {
+            type = lib.types.str;
+            default = "";
+            description = ''
+              The declaring capability's id: the lane's outer sort key -
+              cross-capability composition is the registry order, so a
+              capability never reasons about another's numbers.
+            '';
+          };
           order = lib.mkOption {
             type = lib.types.int;
             description = ''
-              The fragment's slot in the rc lane's composition order. The
+              The fragment's slot in ITS DOMAIN's rc lane. The
               order is PATH semantics (the user-local bin fragment must
               lead so later fragments resolve through it) and is never
               derived: declare it in round tens so a new fragment slots
               between neighbours without renumbering the lane. Two distinct
-              ids may not share a slot and one id may not carry two — the
+              ids may not share a slot and one id may not carry two - the
               composition fails the eval on either.
             '';
           };
@@ -85,7 +94,8 @@ in
       .config/workstation/shell/ and the one sourced rc lane per target.
       Declared by the owning domain modules; ids must be unique; the rc
       lane sources them in the declared `order` (nix/lib/shell-lane.nix) —
-      never the module system's merged list order, which is REVERSE module
+      cross-capability composition is the registry id sort - never the
+              module system's merged list order, which is REVERSE module
       order and would flip PATH semantics silently.
     '';
   };

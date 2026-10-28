@@ -65,16 +65,57 @@ let
         ;
     }
   ) pluginPins;
+
+  # the tmux reply drain: tmux asks the terminal its background colour at
+  # startup (OSC 11); on a high-latency link the reply can cross the tty
+  # restore and the shell echoes the tail (`11;rgb:...`) at the next
+  # prompt. The wrapper drains that reply window after tmux returns -
+  # bash and zsh variants (the rc lane's interactive shells). The order
+  # slot is the terminal domain's own lane; other domains never see it.
+  drainBash = pkgs.writeText "tmux-drain.bash" '''
+    tmux() {
+      command tmux "$@"
+      local _rc=$?
+      read -t 0.5 -r _ </dev/tty 2>/dev/null
+      return $_rc
+    }
+  '';
+  drainZsh = pkgs.writeText "tmux-drain.zsh" '''
+    tmux() {
+      command tmux "$@"
+      local _rc=$?
+      read -t 0.5 -r _ </dev/tty 2>/dev/null
+      return $_rc
+    }
+  '';
 in
 {
-  # the tmux binary belongs to the capability that deploys its config and
-  # plugins (the tool ships beside the surface it configures)
-  home.packages = [ pkgs.tmux ];
-
-  # the selection gate (workstation.terminal.tmux.enable AND the domain
-  # enable — a member deploys under its domain, nix/lib/selections.nix):
-  # disabled = the definitions skip, never the files
   config = lib.mkIf (config.workstation.terminal.enable && config.workstation.terminal.tmux.enable) {
+    # the tmux binary belongs to the capability that deploys its config
+    # and plugins (the tool ships beside the surface it configures)
+    home.packages = [ pkgs.tmux ];
+
+    # the reply-drain wrappers ride the rc lane (bash + zsh), in the
+    # terminal domain's own lane
+    workstation.shell.fragments = [
+      {
+        target = ".bashrc";
+        id = "tmux-drain";
+        order = 10;
+        domain = "terminal";
+        marker = "# workstation: tmux reply drain";
+        payload = drainBash;
+      }
+      {
+        target = ".zshrc";
+        id = "tmux-drain-zsh";
+        order = 10;
+        domain = "terminal";
+        marker = "# workstation: tmux reply drain";
+        payload = drainZsh;
+      }
+    ];
+
     # this capability's manifest rows (the nunchux capability contributes
     # its own when it deploys — the manifest renders the union)
     workstation.terminal.pins = builtins.mapAttrs (_: pin: {
