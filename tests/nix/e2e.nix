@@ -291,16 +291,17 @@ writeShellScriptBin "workstation-e2e" ''
   pass "nunchux plane"
 
   step "rc lane order (the declared order contract — PATH semantics)"
-  # the declared contract (nix/lib/shell-lane.nix): a fragment's `order`
-  # is PATH semantics inside its own domain's lane, cross-domain
-  # composition is the (domain, order) key, and the operator's extras
-  # fragment is the lane's trailing override (its last-word position is
-  # the shell lane step's assert). The expectations below derive from the
-  # declared lanes, never hardcoded historic slots: .profile sources
-  # bin(10) < op-env(30) < editor-env(70); .bashrc sources bin(10), the
-  # foundation env lane (editor-env 70, direnv 80), then the terminal
-  # lane (tmux-drain 10, eza 10, starship 20); .zshrc the same with the
-  # per-shell bodies (direnv-zsh 90, the -zsh terminal ids)
+  # the declared contract (nix/lib/shell-lane.nix): the round-tens `order`
+  # is the fragment's slot on the GLOBAL rc scale, composed by the
+  # (trailing, order, domain) key with the numbers compared numerically —
+  # .profile sources bin(10) < op-env(30) < editor-env(70); .bashrc
+  # sources bin(10) < tmux-drain(30) < eza(40) < starship(50) <
+  # editor-env(70) < direnv(80) and .zshrc bin(10) < tmux-drain-zsh(30) <
+  # eza-zsh(40) < starship-zsh(60) < editor-env(70) < direnv-zsh(90) —
+  # the direnv hook trails the prompt, and the operator's extras fragment
+  # is the lane's trailing override (its last-word position is the shell
+  # lane step's assert). The expectations read the rendered rc files,
+  # never the module system's merged list order.
   lane_slot() {
     # lane_slot <rc-file> <fragment-id> — the 1-based source line, empty
     # when absent
@@ -322,15 +323,15 @@ writeShellScriptBin "workstation-e2e" ''
   [ -n "$bash_bin" ] && [ -n "$bash_ed" ] && [ -n "$bash_direnv" ] \
     && [ -n "$bash_drain" ] && [ -n "$bash_eza" ] && [ -n "$bash_star" ] \
     || fail "rc lane order" ".bashrc does not source its declared fragments"
-  # bin leads (PATH semantics); the foundation env lane composes before
-  # the terminal lane (the (domain, order) key); starship's 20 trails the
-  # terminal 10s. The tmux-drain/eza tie (both terminal/10) is the
-  # declaration order, never contract — the lane contract names a shared
-  # same-domain slot an ambiguity, owned by the terminal surface
-  [ "$bash_bin" -lt "$bash_ed" ] && [ "$bash_ed" -lt "$bash_direnv" ] \
-    && [ "$bash_direnv" -lt "$bash_drain" ] && [ "$bash_direnv" -lt "$bash_eza" ] \
-    && [ "$bash_eza" -lt "$bash_star" ] \
-    || fail "rc lane order" ".bashrc must compose bin < the foundation env lane < the terminal lane in the declared order"
+  # bin leads (PATH semantics — every later fragment may resolve through
+  # ~/.local/bin); the aliases and the prompt compose before the editor
+  # env; the direnv hook trails the prompt (the hook PREPENDS its export
+  # to PROMPT_COMMAND, so hooking after the prompt keeps the environment
+  # applied before each prompt rebuild)
+  [ "$bash_bin" -lt "$bash_drain" ] && [ "$bash_drain" -lt "$bash_eza" ] \
+    && [ "$bash_eza" -lt "$bash_star" ] && [ "$bash_star" -lt "$bash_ed" ] \
+    && [ "$bash_ed" -lt "$bash_direnv" ] \
+    || fail "rc lane order" ".bashrc must source slots 10/30/40/50/70/80 in the declared order"
   zsh_bin=$(lane_slot .zshrc user-local-bin)
   zsh_ed=$(lane_slot .zshrc managed-editor-env)
   zsh_direnv=$(lane_slot .zshrc managed-direnv-zsh)
@@ -340,10 +341,10 @@ writeShellScriptBin "workstation-e2e" ''
   [ -n "$zsh_bin" ] && [ -n "$zsh_ed" ] && [ -n "$zsh_direnv" ] \
     && [ -n "$zsh_drain" ] && [ -n "$zsh_eza" ] && [ -n "$zsh_star" ] \
     || fail "rc lane order" ".zshrc does not source its declared fragments"
-  [ "$zsh_bin" -lt "$zsh_ed" ] && [ "$zsh_ed" -lt "$zsh_direnv" ] \
-    && [ "$zsh_direnv" -lt "$zsh_drain" ] && [ "$zsh_direnv" -lt "$zsh_eza" ] \
-    && [ "$zsh_eza" -lt "$zsh_star" ] \
-    || fail "rc lane order" ".zshrc must compose bin < the foundation env lane < the terminal lane in the declared order"
+  [ "$zsh_bin" -lt "$zsh_drain" ] && [ "$zsh_drain" -lt "$zsh_eza" ] \
+    && [ "$zsh_eza" -lt "$zsh_star" ] && [ "$zsh_star" -lt "$zsh_ed" ] \
+    && [ "$zsh_ed" -lt "$zsh_direnv" ] \
+    || fail "rc lane order" ".zshrc must source slots 10/30/40/60/70/90 in the declared order"
   pass "rc lane order"
 
   step "migrated tools run (nixpkgs-owned — operator ruling 2026-10-27)"

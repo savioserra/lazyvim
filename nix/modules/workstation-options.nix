@@ -68,20 +68,23 @@ in
             type = lib.types.str;
             default = "";
             description = ''
-              The declaring capability's id: the lane's outer sort key -
-              cross-capability composition is the registry order, so a
-              capability never reasons about another's numbers.
+              The declaring capability's id: the composition key's
+              tiebreak - distinct domains sharing an order slot compose
+              in registry order, so a capability never renumbers
+              another's fragments.
             '';
           };
           order = lib.mkOption {
             type = lib.types.int;
             description = ''
-              The fragment's slot in ITS DOMAIN's rc lane. The
-              order is PATH semantics (the user-local bin fragment must
-              lead so later fragments resolve through it) and is never
-              derived: declare it in round tens so a new fragment slots
-              between neighbours without renumbering the lane. Two distinct
-              ids may not share a slot and one id may not carry two - the
+              The fragment's slot on the composed rc lane's GLOBAL
+              round-tens scale. The order is PATH semantics (the
+              user-local bin fragment must lead so later fragments
+              resolve through it; the direnv hook trails the prompt) and
+              is never derived: declare it in round tens so a new
+              fragment slots between neighbours without renumbering the
+              lane. Two distinct ids of the same domain may not share a
+              slot on one target and one id may not carry two - the
               composition fails the eval on either.
             '';
           };
@@ -105,9 +108,10 @@ in
       .config/workstation/shell/ and the one sourced rc lane per target.
       Declared by the owning domain modules; ids must be unique; the rc
       lane sources them in the declared `order` (nix/lib/shell-lane.nix) —
-      cross-capability composition is the registry id sort - never the
-              module system's merged list order, which is REVERSE module
-      order and would flip PATH semantics silently.
+      the (trailing, order, domain) key with the order compared numerically
+      on the global round-tens scale - never the module system's merged
+      list order, which is REVERSE module order and would flip PATH
+      semantics silently.
     '';
   };
 

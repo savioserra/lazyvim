@@ -83,6 +83,7 @@ let
       inherit target;
       id = f.id;
       order = f.order;
+      domain = f.domain;
       marker = f.marker;
       payload = f.payload;
     }) fragmentTargets.${f.id}

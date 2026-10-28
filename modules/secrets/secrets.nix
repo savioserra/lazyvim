@@ -25,6 +25,7 @@ in
         target = ".profile";
         id = "managed-op-env";
         order = 30;
+        domain = "secrets";
         marker = "# workstation: managed op env";
         payload = ./fragments/managed-op-env.sh;
       }

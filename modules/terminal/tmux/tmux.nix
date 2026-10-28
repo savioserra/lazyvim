@@ -90,13 +90,13 @@ in
   config = lib.mkIf (config.workstation.terminal.enable && config.workstation.terminal.tmux.enable) {
     home.packages = [ pkgs.tmux ];
 
-    # the reply-drain wrappers ride the rc lane (bash + zsh), in the
-    # terminal domain's own lane
+    # the reply-drain wrappers ride the rc lane (bash + zsh) at slot 30 —
+    # session glue ahead of the alias block on the shared scale
     workstation.shell.fragments = [
       {
         target = ".bashrc";
         id = "tmux-drain";
-        order = 10;
+        order = 30;
         domain = "terminal";
         marker = "# workstation: tmux reply drain";
         payload = drainBash;
@@ -104,7 +104,7 @@ in
       {
         target = ".zshrc";
         id = "tmux-drain-zsh";
-        order = 10;
+        order = 30;
         domain = "terminal";
         marker = "# workstation: tmux reply drain";
         payload = drainZsh;
