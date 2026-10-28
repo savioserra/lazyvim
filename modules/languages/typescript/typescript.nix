@@ -1,7 +1,5 @@
-# The TypeScript language capability: the nixpkgs pnpm (floored at the
-# retired download pin's major — operator ruling 2026-10-27: the pins
-# machinery is redundant), the editor profile entry, and the language's
-# custom plugin module.
+# The TypeScript language capability: pnpm (floored), the editor
+# profile entry, and the language's custom plugin module.
 {
   config,
   lib,
@@ -10,12 +8,8 @@
   ...
 }:
 let
-  # the pnpm floor guards the overlay: the pinned 25.05 set carries pnpm
-  # 10 — the foundation input's current 12.x is the declared surface, and
-  # an unapplied overlay (or a lagging lock) dies here instead of quietly
-  # downgrading the operator's package manager (the retired pin was
-  # 12.14.0; the locked foundation input carries 12.9.0 — the floor holds
-  # the major, nixpkgs owns the drift)
+  # the pnpm floor guards the overlay: a lagging lock dies loud instead
+  # of quietly downgrading the package manager
   pnpm =
     assert
       lib.versionAtLeast (pkgs.pnpm.version or "0") "12"

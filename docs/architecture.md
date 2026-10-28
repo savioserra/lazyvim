@@ -32,7 +32,7 @@ linux system plane), `workstationE2E` (the container lane's inputs: the
 persona home + the proof driver), `checks.<system>` (`nix flake check` is
 the canonical validation entry: the declared-state reads, every host leg's
 eval, and the container E2E lane's staged entry), `overlays.default` (pin
-overrides only), `workstationTheme.lib`, `hermesSkills`, `hermesAgentPin`.
+overrides only) and `workstationTheme.lib`.
 
 ## The invariants
 

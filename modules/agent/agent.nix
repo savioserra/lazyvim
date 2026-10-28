@@ -116,8 +116,7 @@ let
     python = pkgs.python314.version;
   };
 
-  # the agent's authored skills: the single source both this module (the
-  # option setters) and the flake's hermesSkills output import — each tree
+  # the agent's authored skills: the option setters' source - each tree
   # serves as ONE entry symlink per target profile (the rendering lane
   # lives in nix/modules/workstation-options.nix, so the report fold
   # attributes every entry to the capability that set it)
