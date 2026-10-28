@@ -5,4 +5,5 @@ foundationPkgs:
 final: prev: {
   workstation-go = foundationPkgs.go;
   workstation-node = foundationPkgs.nodejs_24;
+  pnpm = foundationPkgs.pnpm;
 }

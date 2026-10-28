@@ -65,7 +65,7 @@ in
             tailscale.fqdn = id.tailscaleFqdn;
           });
           # the fleet transport (the shared system module owns the wiring)
-          workstation.foundation.tailscale.enable = true;
+          workstation.network.tailscale.enable = true;
 
           wsl = {
             enable = true;

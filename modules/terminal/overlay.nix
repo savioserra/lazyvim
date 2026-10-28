@@ -3,4 +3,5 @@
 foundationPkgs:
 final: prev: {
   eza = foundationPkgs.eza;
+  starship = foundationPkgs.starship;
 }

@@ -107,7 +107,7 @@ in
             homeDirectory = homeDir;
           };
           # the fleet transport (the shared system module owns the wiring)
-          workstation.foundation.tailscale.enable = true;
+          workstation.network.tailscale.enable = true;
           # the canonical declaration derives from the identity option —
           # never a second literal
           networking.hostName = config.workstation.host.name;

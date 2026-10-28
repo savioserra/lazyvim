@@ -1,5 +1,5 @@
 # The base shell environment: the rc lane + fd, rg, lazygit (floored),
-# mise, whiptail, direnv + nix-direnv, the tailscale CLI. Fragments are
+# mise, whiptail, direnv + nix-direnv. Fragments are
 # payload files beside this module; the lane sorts by (target, domain,
 # order) - nix/lib/shell-lane.nix.
 {
@@ -129,25 +129,6 @@ let
 in
 {
   options.workstation.foundation = {
-    tailscale.enable = lib.mkOption {
-      type = lib.types.bool;
-      default = false;
-      description = ''
-        The fleet transport (ssh, the dashboard's --host binding, all host
-        convergence ride it). The system legs declare services.tailscale
-        through the system module; the host's MagicDNS name comes from
-        workstation.host.tailscale.fqdn.
-      '';
-    };
-    tailscale.acceptDns = lib.mkOption {
-      type = lib.types.bool;
-      default = true;
-      description = ''
-        Accept the tailnet's DNS settings on the transport. Declared per
-        host; the wiring lands with the first transport module that carries
-        the option (the NixOS module integrates the tailnet DNS on enable).
-      '';
-    };
     shell.extras = lib.mkOption {
       type = lib.types.lines;
       default = "";
@@ -231,7 +212,7 @@ in
       # service on NixOS/darwin legs; tailscaled is the host-owned
       # prerequisite on any standalone leg)
     ]
-    ++ lib.optionals config.workstation.foundation.tailscale.enable [ pkgs.tailscale ];
+    ++ lib.optionals config.workstation.network.tailscale.enable [ pkgs.tailscale ];
 
     # the hsql agent skill: the build-time-generated tree (above), served
     # as a declared entry symlink by the agent module — the activation

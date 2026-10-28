@@ -272,9 +272,13 @@
           map (f: import f foundationPkgs) [
             ./modules/foundation/overlay.nix
             ./modules/terminal/overlay.nix
+            ./modules/terminal/nunchux/overlay.nix
             ./modules/editor/overlay.nix
             ./modules/languages/overlay.nix
             ./modules/agent/overlay.nix
+            ./modules/database/overlay.nix
+            ./modules/secrets/overlay.nix
+            ./modules/fonts/overlay.nix
           ]
         ) final prev;
 
