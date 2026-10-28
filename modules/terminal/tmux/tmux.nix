@@ -69,7 +69,7 @@ let
   # drains the late OSC 11 colour reply (leaks as `11;rgb:...` on
   # high-latency links); bash + zsh variants
 
-  drainBash = pkgs.writeText "tmux-drain.bash" '''
+  drainBash = pkgs.writeText "tmux-drain.bash" ''
     tmux() {
       command tmux "$@"
       local _rc=$?
@@ -77,7 +77,7 @@ let
       return $_rc
     }
   '';
-  drainZsh = pkgs.writeText "tmux-drain.zsh" '''
+  drainZsh = pkgs.writeText "tmux-drain.zsh" ''
     tmux() {
       command tmux "$@"
       local _rc=$?
@@ -88,8 +88,6 @@ let
 in
 {
   config = lib.mkIf (config.workstation.terminal.enable && config.workstation.terminal.tmux.enable) {
-    # the tmux binary belongs to the capability that deploys its config
-    # and plugins (the tool ships beside the surface it configures)
     home.packages = [ pkgs.tmux ];
 
     # the reply-drain wrappers ride the rc lane (bash + zsh), in the
