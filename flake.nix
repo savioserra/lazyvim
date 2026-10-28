@@ -310,9 +310,18 @@
                   ./nix/modules/workstation-home.nix
                 ];
             }).activationPackage;
+          # the hsql assert expects the version the substrate actually
+          # pins: the skill derivation names itself after the OVERLAYED
+          # harlequin (the nixpkgs-foundation input's — the base nixpkgs
+          # package predates hsql), so the driver's expectation reads the
+          # same input. This block's bare pkgs carries no overlay.
           e2e-driver = pkgs.callPackage ./tests/nix/e2e.nix {
             inherit self;
-            harlequinVersion = pkgs.harlequin.version;
+            harlequinVersion =
+              (import nixpkgs-foundation {
+                system = hostSystem;
+                config.allowUnfreePredicate = licensePredicate;
+              }).harlequin.version;
           };
 
           # the container E2E lane: stages THE entry (bin/run-container-e2e)
