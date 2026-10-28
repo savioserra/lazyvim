@@ -1,7 +1,7 @@
 # The base shell environment: the rc lane + fd, rg, lazygit (floored),
-# mise, whiptail, direnv + nix-direnv. Fragments are
-# payload files beside this module; the lane sorts by (target, domain,
-# order) - nix/lib/shell-lane.nix.
+# mise, whiptail, direnv + nix-direnv. Fragments are payload files beside
+# this module; the lane sorts by (target, domain, order) -
+# nix/lib/shell-lane.nix.
 {
   config,
   lib,
@@ -13,7 +13,7 @@ let
   # the foundation tools ride nixpkgs (operator ruling 2026-10-27: the
   # pins machinery is redundant — nixpkgs maintains these five, security
   # backports included). Each is floored at the retired download pin's
-  # version (the harlequin precedent): the pinned 25.05 set predates the
+  # version: the pinned 25.05 set predates the
   # floors, so the flake's pin-override overlay must be applied — an
   # unapplied overlay (or a lagging lock) dies here instead of quietly
   # downgrading the fleet.
@@ -108,24 +108,6 @@ let
   # list is gated on the option above).
   operatorExtras = builtins.toFile "workstation-operator-extras" config.workstation.foundation.shell.extras;
 
-  # the hsql agent skill: generated from the installed derivation by the
-  # tool's own --skill generator (the hsql precedent — a tool that ships
-  # one serves its skill version-matched, offline, from the store). The
-  # generator decides file-vs-dir by the target's existence, so the build
-  # stages into a pre-created dir and copies out — one shape, always.
-  hsqlSkill =
-    pkgs.runCommand "hsql-agent-skill-${pkgs.harlequin.version}"
-      {
-        nativeBuildInputs = [ pkgs.harlequin ];
-        passthru.version = pkgs.harlequin.version;
-      }
-      ''
-        export HOME="$TMPDIR/home"
-        mkdir -p "$HOME" "$TMPDIR/skill"
-        hsql --skill -o "$TMPDIR/skill"
-        mkdir -p "$out"
-        cp -a "$TMPDIR/skill/." "$out/"
-      '';
 in
 {
   options.workstation.foundation = {
@@ -197,30 +179,11 @@ in
       # dialogs prefilled with the detected values. A prerequisite of the
       # bin surface, shipped by the substrate so every managed host has it.
       pkgs.newt
-      # harlequin + hsql: one upstream distribution (the terminal SQL IDE
-      # and its headless agent CLI share adapters, config and engine). The
-      # pinned nixpkgs (25.05) predates hsql — the version rides the
-      # flake's pin-override overlay; the floor makes an unapplied overlay
-      # die loudly here instead of quietly shipping a hsql-less IDE.
-      (
-        assert
-          lib.versionAtLeast (pkgs.harlequin.version or "0") "2.9"
-          || throw "workstation-foundation: pkgs.harlequin ${pkgs.harlequin.version or "?"} predates hsql — the flake's overlays.default (the foundation domain's pin surface) must be applied (nixpkgs.overlays)";
-        pkgs.harlequin
-      )
       # the tailscale CLI on the home PATH (the daemon is the system
       # service on NixOS/darwin legs; tailscaled is the host-owned
       # prerequisite on any standalone leg)
     ]
     ++ lib.optionals config.workstation.network.tailscale.enable [ pkgs.tailscale ];
-
-    # the hsql agent skill: the build-time-generated tree (above), served
-    # as a declared entry symlink by the agent module — the activation
-    # copy provision retired with the copy contract
-    programs.hermes.skills.hsql = {
-      enable = true;
-      source = hsqlSkill;
-    };
 
     # direnv + nix-direnv: the nix ecosystem's standard per-repo
     # environment layer (`use flake`/`use nix`, the evaluation cache, and
