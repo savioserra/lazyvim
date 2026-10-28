@@ -9,7 +9,10 @@
 }:
 {
   config = lib.mkIf config.workstation.terminal.enable {
-    home.packages = [ pkgs.eza ];
+    home.packages = [
+      pkgs.eza
+      pkgs.starship
+    ];
 
     workstation.shell.fragments = [
       {
