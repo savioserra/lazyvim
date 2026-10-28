@@ -136,8 +136,13 @@ in
     # the config deployment: the managed tree (payload + the composed
     # language profile) syncs into the live nvim dir - managed paths
     # overwrite, the runtime lazy-lock and any operator extras survive.
-    # Without this the editor module builds a tree nothing deploys.
-    home.activation.deploy-nvim-config = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    # The sync runs BEFORE checkLinkTargets: the live tree is a writable
+    # copy (never a home-manager link), so a generation whose composed
+    # profile changed (a selection apply, a plugin bump) must meet the
+    # check with refreshed content or the differing managed file aborts
+    # the whole switch. Without this the editor module builds a tree
+    # nothing deploys.
+    home.activation.deploy-nvim-config = lib.hm.dag.entryBefore [ "checkLinkTargets" ] ''
       mkdir -p "$HOME/.config/nvim"
       cp -a ${configTree}/. "$HOME/.config/nvim/"
       # the store modes are read-only; the deployed copy must stay
