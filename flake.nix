@@ -120,20 +120,7 @@
           ;
       };
 
-      macHost = import ./hosts/mac/default.nix {
-        inherit
-          self
-          nixpkgs
-          home-manager
-          nix-darwin
-          ;
-      };
-      # the two standalone home configurations (the linux leg's rebuild key
-      # + the e2e persona): bound here so the outputs and the checks read
-      # the same values
       linuxHome = home-manager.lib.homeManagerConfiguration {
-        # the overlay carries the domains' version floors; the license
-        # acceptance carries the secrets domain's CLI
         pkgs = import nixpkgs {
           system = hostSystem;
           overlays = [ self.overlays.default ];
@@ -148,79 +135,26 @@
             {
               home.username = linuxHost.user;
               home.homeDirectory = linuxHost.homeDir;
-              # the domains' pin surface (version-currency overrides) and
-              # the secrets domain's license acceptance
               nixpkgs.overlays = [ self.overlays.default ];
               nixpkgs.config.allowUnfreePredicate = licensePredicate;
-              # the switch driver's default targets: derived from the host
-              # identity (never hand-typed)
               workstation.switch.homeAttr = linuxHost.homeKey;
               workstation.switch.systemAttr = linuxHost.name;
-              # the operator's shell extras: the identity file is the
-              # per-machine declaration point (shellExtras, optional)
               workstation.foundation.shell.extras = (import ./hosts/identity.nix).shellExtras or "";
             }
           )
-          # this machine's capability selection (hosts/selections.nix)
           (selectionsLib.translationModule ./hosts/selections.nix)
           ./nix/modules/workstation-home.nix
         ];
       };
 
-      # the E2E persona's standalone home: the exact shape the linux leg
-      # applies — and the container E2E's apply target inside the throwaway
-      # container (the shared persona body: tests/nix/e2e-home.nix). The
-      # persona's selection is a tracked FIXTURE (never the operator's
-      # hosts/selections.nix — the lane stays hermetic against local
-      # state): the full fixture pins every language the driver asserts;
-      # the minus-go fixture removes one member for the removal proof.
-      e2eHomeModules = selectionsFile: [
-        {
-          nixpkgs.overlays = [ self.overlays.default ];
-          nixpkgs.config.allowUnfreePredicate = licensePredicate;
-        }
-        ./tests/nix/e2e-home.nix
-        (selectionsLib.translationModule selectionsFile)
-        ./nix/modules/workstation-home.nix
-      ];
-      e2eHome = home-manager.lib.homeManagerConfiguration {
-        pkgs = import nixpkgs {
-          system = hostSystem;
-          overlays = [ self.overlays.default ];
-          config.allowUnfreePredicate = licensePredicate;
-        };
-        extraSpecialArgs = {
-          inherit self;
-        };
-        modules = e2eHomeModules ./tests/nix/e2e-selections.nix;
+      macHost = import ./hosts/mac/default.nix {
+        inherit
+          self
+          nixpkgs
+          home-manager
+          nix-darwin
+          ;
       };
-      e2eMinusGoHome = home-manager.lib.homeManagerConfiguration {
-        pkgs = import nixpkgs {
-          system = hostSystem;
-          overlays = [ self.overlays.default ];
-          config.allowUnfreePredicate = licensePredicate;
-        };
-        extraSpecialArgs = {
-          inherit self;
-        };
-        modules = e2eHomeModules ./tests/nix/e2e-selections-minus-go.nix;
-      };
-
-      # the container E2E's proof driver: the lane's consumers (the
-      # container script's in-container build and the check's staging)
-      # read the same derivation
-      e2eDriver =
-        let
-          e2ePkgs = import nixpkgs {
-            system = hostSystem;
-            overlays = [ self.overlays.default ];
-            config.allowUnfreePredicate = licensePredicate;
-          };
-        in
-        e2ePkgs.callPackage ./tests/nix/e2e.nix {
-          inherit self;
-          harlequinVersion = e2ePkgs.harlequin.version;
-        };
     in
     {
       workstation.report = reportVerbs;
@@ -228,17 +162,6 @@
       # the rebuild key is DERIVED from the host identity (${user}@<host>),
       # never hand-typed
       homeConfigurations.${linuxHost.homeKey} = linuxHome;
-      homeConfigurations."e2e@container" = e2eHome;
-      # the removal proof: the persona home with go deselected
-      homeConfigurations."e2e-minus-go@container" = e2eMinusGoHome;
-
-      # the container E2E's surface — the lane's ONE wiring point: the
-      # persona home (also a homeConfiguration above) and the proof driver,
-      # both built inside the container from the mounted flake
-      workstationE2E = {
-        home = e2eHome;
-        driver = e2eDriver;
-      };
 
       # the mac leg: nix-darwin + the substrate. Brew keeps ONLY casks
       # (GUI apps); every retired-from-brew formula must exist in the nix
@@ -334,15 +257,63 @@
             pkgs.runCommand "workstation-check-home-legs-eval"
               {
                 linux = builtins.unsafeDiscardStringContext linuxHome.activationPackage.drvPath;
-                e2e = builtins.unsafeDiscardStringContext e2eHome.activationPackage.drvPath;
-                e2e-minus-go = builtins.unsafeDiscardStringContext e2eMinusGoHome.activationPackage.drvPath;
               }
               ''
                 mkdir -p "$out"
                 printf '%s\n' "$linux" > "$out/linux.drv"
-                printf '%s\n' "$e2e" > "$out/e2e.drv"
-                printf '%s\n' "$e2e-minus-go" > "$out/e2e-minus-go.drv"
               '';
+
+          # the container E2E lane: the persona homes (selection fixtures),
+          # the proof driver, and the staged entry. The personas live HERE -
+          # test surface, not product output - and the driver reads them
+          # off self.checks, so the in-container builds resolve through the
+          # mounted flake.
+          e2e-home =
+            (home-manager.lib.homeManagerConfiguration {
+              pkgs = import nixpkgs {
+                system = hostSystem;
+                overlays = [ self.overlays.default ];
+                config.allowUnfreePredicate = licensePredicate;
+              };
+              extraSpecialArgs = {
+                inherit self;
+              };
+              modules =
+                [
+                  {
+                    nixpkgs.overlays = [ self.overlays.default ];
+                    nixpkgs.config.allowUnfreePredicate = licensePredicate;
+                  }
+                  ./tests/nix/e2e-home.nix
+                  (selectionsLib.translationModule ./tests/nix/e2e-selections.nix)
+                  ./nix/modules/workstation-home.nix
+                ];
+            }).activationPackage;
+          e2e-minus-go-home =
+            (home-manager.lib.homeManagerConfiguration {
+              pkgs = import nixpkgs {
+                system = hostSystem;
+                overlays = [ self.overlays.default ];
+                config.allowUnfreePredicate = licensePredicate;
+              };
+              extraSpecialArgs = {
+                inherit self;
+              };
+              modules =
+                [
+                  {
+                    nixpkgs.overlays = [ self.overlays.default ];
+                    nixpkgs.config.allowUnfreePredicate = licensePredicate;
+                  }
+                  ./tests/nix/e2e-home.nix
+                  (selectionsLib.translationModule ./tests/nix/e2e-selections-minus-go.nix)
+                  ./nix/modules/workstation-home.nix
+                ];
+            }).activationPackage;
+          e2e-driver = pkgs.callPackage ./tests/nix/e2e.nix {
+            inherit self;
+            harlequinVersion = pkgs.harlequin.version;
+          };
 
           # the container E2E lane: stages THE entry (bin/run-container-e2e)
           # — the lane script plus the flake source it mounts, so the

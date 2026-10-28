@@ -64,7 +64,7 @@ echo "== the container E2E: $image, store volume $volume, source $src =="
 # Inner script — the container's root with HOME at the persona home (the
 # nix image runs single-user; the residual — user-plane separation and the
 # service-manager probes — is named in docs/testing.md). The two build
-# attrs are the lane's ONE wiring point: the flake's workstationE2E
+# attrs are the lane's ONE wiring point: the flake's e2e checks
 # output, plus the persona home the apply step targets.
 docker run --rm \
 	-v "$src:/workstation:ro" \
@@ -79,10 +79,10 @@ max-jobs = 2
 cores = 2"
 		echo "== container: building the persona home + the proof driver =="
 		nix build --print-build-logs \
-			"/workstation#homeConfigurations.\"e2e@container\".activationPackage" \
+			"/workstation#checks.x86_64-linux.e2e-home" \
 			--out-link /tmp/e2e-home
 		nix build --print-build-logs \
-			"/workstation#workstationE2E.driver" \
+			"/workstation#checks.x86_64-linux.e2e-driver" \
 			--out-link /tmp/e2e-driver
 		echo "workstation: container staged (the persona closure is realized)"
 		home=/home/e2e

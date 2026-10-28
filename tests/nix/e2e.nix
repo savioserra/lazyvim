@@ -29,7 +29,7 @@ let
   # the standalone home the apply targets (built from the mounted flake by
   # run-container.sh so both the activation and the profile registration
   # hit realized store paths)
-  activation = self.homeConfigurations."e2e@container".activationPackage;
+  activation = self.checks.x86_64-linux.e2e-home;
 
   # the SAME driver derivation workstation-home.nix stages (identical
   # arguments, one store path) — referenced absolutely so the proof does
@@ -59,7 +59,7 @@ let
   # minus languages/go). The driver's second apply activates this: the go
   # toolchain and its profile entry leave, the other selections ride, nvim
   # still boots — the selection removal semantics, proven on a real home.
-  activationMinusGo = self.homeConfigurations."e2e-minus-go@container".activationPackage;
+  activationMinusGo = self.checks.x86_64-linux.e2e-minus-go-home;
 in
 writeShellScriptBin "workstation-e2e" ''
   set -u
