@@ -108,9 +108,15 @@ let
         && !(builtins.elem "config" keys)
         && !(builtins.elem "options" keys)
         && !(builtins.elem "imports" keys);
+      mixed =
+        value != null
+        && builtins.any (k: builtins.elem k moduleKeys) keys
+        && !builtins.all (k: builtins.elem k moduleKeys) keys;
     in
     if unplaceable then
       throw "workstation-capabilities: ${toString file} carries module keys (${lib.concatStringsSep ", " keys}) in no standard module shape (config, options, imports) — classification would silently drop it; give it a standard shape or move it out of modules/"
+    else if mixed then
+      throw "workstation-capabilities: ${toString file} mixes module keys with plain config keys (${lib.concatStringsSep ", " keys}) — classification would silently drop it; move the config attrs under config"
     else
       value != null && builtins.all (k: builtins.elem k moduleKeys) keys;
 

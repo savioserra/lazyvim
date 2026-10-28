@@ -119,10 +119,10 @@ in
   # the selection gate (workstation.editor.enable, nix/lib/selections.nix):
   # disabled = the definitions skip, never the files — the walk, the fold
   # and the retire lists stay complete
-  # the parser-install CLI the editor's tooling drives
-  home.packages = [ pkgs.workstation-tree-sitter ];
-
   config = lib.mkIf cfg.enable {
+    # the parser-install CLI the editor's tooling drives
+    home.packages = [ pkgs.workstation-tree-sitter ];
+
     home.file = {
       ".config/nvim" = {
         source = configTree;
@@ -132,6 +132,16 @@ in
       # now the declaration itself (the bootstrap archive pin is retired)
       ".local/bin/nvim".source = "${nvim}/bin/nvim";
     };
+
+    # the config deployment: the managed tree (payload + the composed
+    # language profile) syncs into the live nvim dir - managed paths
+    # overwrite, the runtime lazy-lock and any operator extras survive.
+    # Without this the editor module builds a tree nothing deploys.
+    home.activation.deploy-nvim-config = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+      mkdir -p "$HOME/.config/nvim"
+      cp -a ${configTree}/. "$HOME/.config/nvim/"
+      echo "workstation: nvim config synced (${config.home.homeDirectory}/.config/nvim)"
+    '';
 
     # the lock merge: seed an absent lock from the pinned baseline,
     # reconcile a drifted one (engine pins win, installed host extras
