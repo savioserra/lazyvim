@@ -24,9 +24,29 @@
   };
 
   config = lib.mkIf (config.workstation.network.enable && config.workstation.network.tailscale.enable) {
-    # the CLI on the home PATH (the daemon is the system service on
-    # NixOS/darwin legs; tailscaled is the host-owned prerequisite on any
-    # standalone leg)
+    # the CLI + the daemon binary on the home PATH
     home.packages = [ pkgs.tailscale ];
+
+    # the daemon provision: NixOS/darwin legs declare services.tailscale
+    # in the system module; a standalone leg gets the ensure - enable and
+    # start the unit when it exists (root via sudo), defer with the exact
+    # command when it does not. Idempotent: an active unit is a no-op.
+    home.activation.ensure-tailscaled = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+      if command -v systemctl >/dev/null 2>&1 && systemctl list-unit-files tailscaled.service >/dev/null 2>&1; then
+        state=$(systemctl is-active tailscaled 2>/dev/null || true)
+        enabled=$(systemctl is-enabled tailscaled 2>/dev/null || true)
+        if [ "$state" = active ] && [ "$enabled" = enabled ]; then
+          echo "workstation: tailscaled already provisioned (active, enabled)"
+        elif sudo -n true 2>/dev/null; then
+          sudo systemctl enable --now tailscaled &&
+            echo "workstation: tailscaled provisioned (enabled + started)" ||
+            echo "workstation: tailscaled provision deferred - systemctl failed"
+        else
+          echo "workstation: tailscaled provision deferred - run: sudo systemctl enable --now tailscaled"
+        fi
+      else
+        echo "workstation: no tailscaled unit on this host - install tailscaled (the host's package manager) or flip the leg to a system substrate"
+      fi
+    '';
   };
 }
