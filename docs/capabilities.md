@@ -224,8 +224,16 @@ and sorted, never hidden.
   all supported.
 
 ### `nvim`
-- The editor payload (`files/.config/nvim/**`) as `home.file` surfaces;
-  the nixpkgs neovim (floored at 0.12) at `.local/bin/nvim`.
+- The editor payload (`files/.config/nvim/**`) deployed by the editor
+  domain's activation (`deploy-nvim-config`): managed paths overwrite,
+  the paths the previous deploy managed that the tree dropped are
+  pruned (the state tree's `nvim-managed.list` — a deselected
+  language's plugin module leaves with its selection), operator extras
+  and the runtime lazy-lock survive. The tree is deliberately not a
+  `home.file` surface: the deployed copy is writable, so HM's manifest
+  could only refuse a changed managed file, and HM's cleanup only
+  deletes its own links. The nixpkgs neovim (floored at 0.12) at
+  `.local/bin/nvim` is the domain's `home.file` surface.
 - The composed language profile: language capabilities declare profile
   entries as module data (`lazyvim_extras`, `plugin_module`, mason
   packages); one derivation composes them, in declared order, into

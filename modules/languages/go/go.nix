@@ -4,6 +4,7 @@
   config,
   lib,
   pkgs,
+  self,
   ...
 }:
 let
@@ -33,7 +34,15 @@ in
         id = "go";
         requires = [ "go" ];
         lazyvim_extras = [ "lazyvim.plugins.extras.lang.go" ];
+        # the payload spec module rides the selection: deselecting go
+        # drops both the profile entry and the deployed file (the
+        # editor deploy's managed-path prune)
+        plugin_module = "languages.plugins.go";
       }
+    ];
+
+    workstation.editor.languagePlugins = [
+      (self + "/modules/languages/go/files/languages/plugins/go.lua")
     ];
   };
 }

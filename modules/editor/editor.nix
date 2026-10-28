@@ -4,11 +4,22 @@
 #
 # What the walker's nvim-profile lane never did — deploy the composed
 # profile.lua — this module does:
-#   - the static config payload deploys as one recursive home.file tree
-#     (everything under nvim/files/.config/nvim — the payload co-located
-#     beside this module
-#     EXCEPT lazy-lock.json — the lock is runtime-extended application state
-#     and is never byte-compared);
+#   - the static config payload deploys through the editor's own
+#     activation (everything under nvim/files/.config/nvim — the payload
+#     co-located beside this module, EXCEPT lazy-lock.json — the lock is
+#     runtime-extended application state and is never byte-compared).
+#     The tree is deliberately NOT a home.file surface: the deployed
+#     copy is writable (store modes read-only), so a manifest entry
+#     could only ever refuse a changed managed file — HM's collision
+#     check fired before any sync could reconcile, killing every switch
+#     that edits a managed nvim file (a language selection change), and
+#     HM's own cleanup refuses a copied file it never linked ("does not
+#     link into a Home Manager generation"), so a deselected language's
+#     plugin module would survive forever. The activation owns the
+#     plane: managed paths overwrite, the paths the previous deploy
+#     managed that this tree dropped are pruned (a deselected language's
+#     plugin module leaves with its selection), operator extras and the
+#     runtime lazy-lock are never touched;
 #   - profile.lua composes from the language entries the editor and the
 #     language modules declare (workstation.editor.languages) via
 #     lib.generators.toLua, landing at lua/languages/profile.lua inside the
@@ -124,30 +135,52 @@ in
     home.packages = [ pkgs.workstation-tree-sitter ];
 
     home.file = {
-      ".config/nvim" = {
-        source = configTree;
-        recursive = true;
-      };
       # the nixpkgs neovim on PATH — the nvim-profile lane's bin override,
-      # now the declaration itself (the bootstrap archive pin is retired)
+      # now the declaration itself (the bootstrap archive pin is retired).
+      # The config TREE rides the activation below, deliberately outside
+      # this manifest: the writable plane can never satisfy HM's
+      # content-diffed relink (a manifest entry refused every generation
+      # that changed a managed nvim file) nor HM's cleanup (it only
+      # deletes its own links).
       ".local/bin/nvim".source = "${nvim}/bin/nvim";
     };
 
-    # the config deployment: the managed tree (payload + the composed
-    # language profile) syncs into the live nvim dir - managed paths
-    # overwrite, the runtime lazy-lock and any operator extras survive.
-    # The sync runs BEFORE checkLinkTargets: the live tree is a writable
-    # copy (never a home-manager link), so a generation whose composed
-    # profile changed (a selection apply, a plugin bump) must meet the
-    # check with refreshed content or the differing managed file aborts
-    # the whole switch. Without this the editor module builds a tree
-    # nothing deploys.
-    home.activation.deploy-nvim-config = lib.hm.dag.entryBefore [ "checkLinkTargets" ] ''
-      mkdir -p "$HOME/.config/nvim"
-      cp -a ${configTree}/. "$HOME/.config/nvim/"
+    # the config deployment: the activation OWNS the nvim tree's plane —
+    # the managed tree (payload + the composed language profile) syncs
+    # into the live nvim dir: managed paths overwrite, the paths the
+    # PREVIOUS deploy managed that this tree no longer carries are
+    # pruned (a deselected language's plugin module leaves with its
+    # selection), and the runtime lazy-lock and any operator extras
+    # survive (never in the managed list). Without this the editor
+    # module builds a tree nothing deploys.
+    home.activation.deploy-nvim-config = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+      tree="$HOME/.config/nvim"
+      src="${configTree}"
+      list="${config.home.homeDirectory}/.local/state/workstation/nvim-managed.list"
+      # the prune: the previous deploy's managed paths dropped by this
+      # tree — a fresh host carries no list and prunes nothing
+      if [ -f "$list" ]; then
+        while IFS= read -r rel || [ -n "$rel" ]; do
+          [ -n "$rel" ] || continue
+          if [ ! -e "$src/$rel" ]; then
+            rm -f -- "$tree/$rel"
+            d=$(dirname -- "$tree/$rel")
+            while [ "$d" != "$tree" ]; do
+              rmdir -- "$d" 2>/dev/null || break
+              d=$(dirname -- "$d")
+            done
+          fi
+        done < "$list"
+      fi
+      mkdir -p "$tree"
+      cp -a "$src/." "$tree/"
       # the store modes are read-only; the deployed copy must stay
       # writable or the next apply (and the lazy-lock merge) fails
-      chmod -R u+w "$HOME/.config/nvim"
+      chmod -R u+w "$tree"
+      # the deployed paths are the next apply's prune set
+      mkdir -p -- "$(dirname -- "$list")"
+      ${pkgs.findutils}/bin/find "$src" -mindepth 1 -type f -printf '%P\n' > "$list.new"
+      mv -f -- "$list.new" "$list"
       echo "workstation: nvim config synced (${config.home.homeDirectory}/.config/nvim)"
     '';
 

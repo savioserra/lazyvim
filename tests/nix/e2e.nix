@@ -178,6 +178,8 @@ writeShellScriptBin "workstation-e2e" ''
     || fail "deployed language profile" "the elixir plugin module did not deploy"
   [ -r "$home/.config/nvim/lua/languages/plugins/typescript.lua" ] \
     || fail "deployed language profile" "the typescript plugin module did not deploy"
+  [ -r "$home/.config/nvim/lua/languages/plugins/go.lua" ] \
+    || fail "deployed language profile" "the go plugin module did not deploy"
   pass "deployed language profile"
 
   step "lazy-lock merge (seeded from the pinned baseline)"
@@ -557,6 +559,11 @@ writeShellScriptBin "workstation-e2e" ''
     && fail "the removal" "the go profile entry survived the go-deselected generation"
   grep -q 'lazyvim.plugins.extras.lang.elixir' "$prof" \
     || fail "the removal" "the elixir entry must ride the go-deselected generation"
+  # the rendered plugin file leaves with its selection: the previous
+  # generation deployed go.lua, this tree drops it — the editor deploy's
+  # managed-path prune must take it from the live tree
+  [ ! -e "$home/.config/nvim/lua/languages/plugins/go.lua" ] \
+    || fail "the removal" "the go plugin module survived the go-deselected apply (the managed-path prune died)"
   if go_gone=$(find_client go); then
     fail "the removal" "go is still on PATH at $go_gone after the go-deselected generation"
   fi

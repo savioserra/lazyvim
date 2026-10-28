@@ -6,6 +6,7 @@
 | Distribution | LazyVim |
 | Plugin manager | lazy.nvim |
 | Managed source | `modules/editor/nvim/files/.config/nvim/` |
+| Deployment | Activation-owned (`deploy-nvim-config`): managed paths overwrite, dropped managed paths prune via the state tree's `nvim-managed.list`, operator extras and the runtime lazy-lock survive |
 
 ## Startup and composition
 
