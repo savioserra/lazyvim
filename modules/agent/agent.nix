@@ -1,53 +1,19 @@
-# The agent domain: hermes and herdr, fully declarative (LM1 —
-# docs/absorption.md's copy/git-into-.hermes lanes close here under
-# programs.hermes).
+# The agent domain: hermes (runtime pin, launcher, skills, extensions)
+# and herdr. Hot-home owners: the pinned checkout
+# (~/.hermes/hermes-agent - clone/fetch only when absent or clean-and-
+# behind; dirty or runtime-advanced trees are never touched; a failed git
+# step defers with a named receipt). The deployed pin manifest
+# (.local/opt/hermes/pin.json) is the verify lane's only anchor.
 #
-# The hot-home surfaces and their owners:
-#   the runtime pin   — programs.hermes.pin: the flake input's fetchGit rev
-#                       (outputs.hermesAgentPin, framed per capability as
-#                       inputs.hermes-agent). The pinned checkout stays hot
-#                       home — hermes' update machinery, pm store and
-#                       recovery closures write into the tree — so the pin
-#                       owns WHERE the checkout points and the activation
-#                       ensure owns moving it: clone/fetch only when absent
-#                       or clean-and-behind; a dirty or runtime-advanced
-#                       tree is never touched. A failed git step defers with
-#                       a named receipt (the checkout is the one network
-#                       surface; the verify lane catches real drift on
-#                       converged hosts). The deployed pin manifest
-#                       (.local/opt/hermes/pin.json) is the verify lane's
-#                       only anchor — the deployed pin, never a repo file.
-#   skills            — programs.hermes.skills: ONE entry symlink per skill
-#                       per target profile (default = ~/.hermes/skills, a
-#                       named profile = ~/.hermes/profiles/<name>/skills).
-#                       The entry is atomic — a switch replaces the whole
-#                       skill, an in-place edit fails on the read-only store
-#                       (declared truth wins, loudly) — while the skills
-#                       PARENT stays hot: skills_sync seeds and updates
-#                       hermes' bundled skills there, the curator archives
-#                       there, and none of them ever write into a declared
-#                       name (a build-time assertion refuses a name the
-#                       pinned tree bundles).
-#   extensions        — programs.hermes.extensions: gateway plugin trees as
-#                       derivations (the python-env pattern), linked as
-#                       entry symlinks into ~/.hermes/plugins — user
-#                       discovery outranks bundled, so a declared extension
-#                       shadows a same-named bundled plugin; per-plugin
-#                       enablement stays live state (hermes plugins enable).
+# skills: one entry symlink per skill per target profile; the skills
+# PARENT stays hot (hermes seeds its bundled skills there) - a declared
+# name shadows a bundled one (asserted at eval). extensions: gateway
+# plugin trees as derivations, entry-linked into ~/.hermes/plugins.
+# Skill payloads are never copied into hot home.
 #
-# The copy contract is retired: skill payloads are never copied or
-# per-file-linked into hot home — the declared entry symlink is the whole
-# surface. Adopt is explicit: a pre-link activation step makes way for the
-# first generation's symlinks by removing the copy-contract trees (real
-# dirs only, named receipt), then HM links the store entries.
-#
-# The runtime stack (operator ruling 2026-10-27: the pins machinery is
-# redundant — nixpkgs owns the interpreter): the hermes interpreter is
-# pkgs.python314 at .local/opt/hermes/python, floored at the release the
-# pinned hermes rev's pm/lock.json carries (the eval dies loud on a
-# mismatch — the rev is the authority for which interpreter build the
-# runtime expects). The engine launcher rides PATH; herdr has NO nixpkgs
-# coverage — it keeps a download pin, inline in its owning module below.
+# The interpreter is pkgs.python314, floored at the release the pinned
+# rev's pm/lock.json carries (loud eval on mismatch). herdr has no
+# nixpkgs coverage: one download pin, inline below.
 {
   config,
   lib,
@@ -57,6 +23,22 @@
 }:
 let
   hermes = config.programs.hermes;
+
+  # the runtime pin: the agent domain's own declared data (owner/repo/rev
+  # + the hermetic hash - one pin, one owner, one surface). The tree feeds
+  # the interpreter floor's lock read; it never enters the closure.
+  hermesRev = "b23600860f82bd66d345c0a1baefd0f264605955";
+  hermesTree = pkgs.fetchFromGitHub {
+    owner = "NousResearch";
+    repo = "hermes-agent";
+    rev = hermesRev;
+    hash = "sha256-RSsNOW1WqtaxORPVkUyXnUzIjOEjx7Vzvx49HQsue8A=";
+  };
+  hermesPin = {
+    url = "https://github.com/NousResearch/hermes-agent";
+    rev = hermesRev;
+    tree = hermesTree;
+  };
 
   # the interpreter's version floor: the release the pinned hermes rev's
   # pm/lock.json names (packages.python.version — "3.14.7+<buildtag>"; the
@@ -169,12 +151,11 @@ in
           };
         }
       );
-      default = if self ? hermesAgentPin then self.hermesAgentPin else null;
-      defaultText = lib.literalExpression "self.hermesAgentPin";
+      default = hermesPin;
+      defaultText = lib.literalExpression "hermesPin";
       description = ''
         The hermes-agent runtime pin (upstream URL, pinned rev, pinned
-        tree). The flake surfaces it as outputs.hermesAgentPin from its
-        inputs.hermes-agent.
+        tree), declared by this module.
       '';
     };
 
@@ -279,8 +260,3 @@ in
     workstation.retire = [ ".hermes/skills/lazyvim/SKILL.md" ];
   };
 }
-# The selection gate wraps the CONFIG block above
-# (workstation.agent.enable, nix/lib/selections.nix) — the option
-# DECLARATIONS (programs.hermes.pin/package) stay ungated so every
-# composition that loads the domain modules still carries them; disabled =
-# the definitions skip, never the files.

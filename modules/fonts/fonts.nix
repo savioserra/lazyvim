@@ -1,10 +1,7 @@
-# The fonts domain: the JetBrainsMono Nerd Font from nixpkgs (operator
-# ruling 2026-10-27: the pins machinery is redundant — the package rides
-# the foundation domain's pin-override overlay, current with the retired
-# 3.5.0 download pin) and the fontconfig discovery. The font FILES deploy
-# at the same per-platform targets the pin tree used (linux:
-# ~/.local/share/fonts; darwin: ~/Library/Fonts) — the claim reaches into
-# the package's fontconfig-visible tree.
+# The fonts domain: the JetBrainsMono Nerd Font (nixpkgs, via the
+# foundation overlay) and fontconfig discovery. Files deploy at the
+# per-platform targets: linux ~/.local/share/fonts, darwin
+# ~/Library/Fonts.
 {
   config,
   lib,

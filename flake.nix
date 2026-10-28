@@ -15,19 +15,7 @@
       url = "github:LnL7/nix-darwin/nix-darwin-25.05";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    # the foundation domain's pin surface (the input law: each domain owns
-    # its pins): harlequin + hsql ship as ONE upstream distribution, and
-    # the pinned nixpkgs (25.05) predates hsql — the foundation's tool
-    # rides this input through the pin-override overlay
     nixpkgs-foundation.url = "github:NixOS/nixpkgs/nixos-unstable";
-
-    # the agent domain's pin surface: hermes-agent, pinned by fetchGit rev
-    # (outputs.hermesAgentPin surfaces it as programs.hermes.pin; the
-    # checkout stays hot home — the pin owns where it points). A pin bump
-    # moves this rev and the consumer together, then `nix flake lock`.
-    # The input's own dependency tree stays its own — never traverse
-    # inputs (only the source tree is read).
-    hermes-agent.url = "git+https://github.com/NousResearch/hermes-agent?rev=b23600860f82bd66d345c0a1baefd0f264605955";
   };
 
   outputs =
@@ -38,7 +26,6 @@
       nixos-wsl,
       nix-darwin,
       nixpkgs-foundation,
-      hermes-agent,
     }:
     let
       # the fold runs on the host system's nixpkgs; the report itself pins
@@ -121,11 +108,9 @@
 
       # per-host identity lives ONLY in hosts/<host>/default.nix: the flake
       # derives the rebuild key and every username/home path from the host
-      # module — this body carries zero personal strings (the identity gate
-      # in check.sh enforces it)
-      # the two legs the flake targets: the linux leg (WSL counted under
-      # it) and the mac leg — operator ruling 2026-10-22 (platform-two;
-      # no distro-named legs anywhere)
+      # module - this body carries zero personal strings (the identity gate
+      # in check.sh enforces it). Two targets: linux (WSL counts under it)
+      # and mac.
       linuxHost = import ./hosts/linux/default.nix {
         inherit
           self
@@ -221,10 +206,9 @@
         modules = e2eHomeModules ./tests/nix/e2e-selections-minus-go.nix;
       };
 
-      # the container E2E's proof driver: wired once here (the same wiring
-      # the retired VM proof host carried) so the lane's consumers — the container
-      # script's in-container build and the check's staging — read the same
-      # derivation
+      # the container E2E's proof driver: the lane's consumers (the
+      # container script's in-container build and the check's staging)
+      # read the same derivation
       e2eDriver =
         let
           e2ePkgs = import nixpkgs {
@@ -245,9 +229,7 @@
       # never hand-typed
       homeConfigurations.${linuxHost.homeKey} = linuxHome;
       homeConfigurations."e2e@container" = e2eHome;
-      # the removal proof's target: the persona home re-applied with go
-      # deselected (the container driver's second apply — the same home,
-      # the next generation)
+      # the removal proof: the persona home with go deselected
       homeConfigurations."e2e-minus-go@container" = e2eMinusGoHome;
 
       # the container E2E's surface — the lane's ONE wiring point: the
@@ -265,19 +247,9 @@
 
       nixosConfigurations.${linuxHost.name} = linuxHost.nixosConfig;
 
-      # the capability outputs consumer flakes take (binding spec
-      # 2026-10-22): the agent's managed skills and the theme tokens
-      hermesSkills = import ./modules/agent/skills.nix { inherit self; };
-
-      # the agent domain's runtime pin, surfaced to programs.hermes.pin
-      # (modules/agent/agent.nix reads it off `self`): the clone URL, the
-      # pinned rev (the input's sourceInfo — the fetchGit pin), and the
-      # pinned tree (build-time assertions only; never a closure member)
-      hermesAgentPin = {
-        url = "https://github.com/NousResearch/hermes-agent";
-        rev = hermes-agent.sourceInfo.rev;
-        tree = hermes-agent;
-      };
+      # the capability outputs consumer flakes take: the agent's managed
+      # skills and the theme tokens
+      hermesSkills = (import ./modules/agent/outputs.nix { inherit self; }).skills;
 
       workstationTheme.lib = import ./modules/theme/theme.nix {
         lib = nixpkgs.lib;
@@ -286,22 +258,11 @@
 
       homeManagerModules.workstation = ./nix/modules/workstation-home.nix;
 
-      # pin overrides ONLY: the domains' version-currency surface lives
-      # here (operator ruling 2026-10-27 — the download pins retired,
-      # nixpkgs owns the tools). Each row pulls the named tool from the
-      # foundation input (nixos-unstable, locked) because the pinned 25.05
-      # set predates the floor the owning module asserts; a lagging lock
-      # dies loudly at the floor. THE OVERRIDES MAY NOT RETARGET A NAME
-      # NIXPKGS-INTERNAL PACKAGES CONSUME AS A BUILD INPUT: the editor's
-      # libtree-sitter is built against the pinned set's tree-sitter, and
-      # swapping it underneath neovim 0.11.5 breaks the compile (tree-sitter
-      # 0.26 removed ts_parser_timeout_micros) — so the workstation's
-      # tree-sitter CLI rides the scoped `workstation-tree-sitter` name
-      # while nixpkgs' own `tree-sitter` stays stock for the editor. The
-      # foundation set carries the license acceptance too — a package's
-      # meta check fires where it was constructed, and the secrets
-      # domain's CLI is unfree (scoped, see nix/lib/license.nix). Nothing
-      # else may enter this overlay.
+      # the capability overlays, composed: each domain owns its tool
+      # overrides (modules/<domain>/overlay.nix); the root only wires the
+      # domain input into them. The license acceptance rides the
+      # foundation input's import (the secrets domain's CLI is unfree -
+      # nix/lib/license.nix).
       overlays.default =
         final: prev:
         let
@@ -310,55 +271,20 @@
             config.allowUnfreePredicate = licensePredicate;
           };
         in
-        {
-          inherit (foundationPkgs)
-            harlequin
-            fd
-            fzf
-            ripgrep
-            lazygit
-            pnpm
-            python314
-            _1password-cli
-            nerd-fonts
-            neovim
-            ;
+        nixpkgs.lib.composeManyExtensions (
+          map (f: import f foundationPkgs) [
+            ./modules/foundation/overlay.nix
+            ./modules/editor/overlay.nix
+            ./modules/languages/overlay.nix
+            ./modules/agent/overlay.nix
+          ]
+        ) final prev;
 
-          # the foundation domain's tree-sitter CLI, SCOPED: nixpkgs' own
-          # `tree-sitter` name is a build input of the editor (neovim links
-          # libtree-sitter from its own set) and must stay stock — see the
-          # overlay's scoping rule above
-          workstation-tree-sitter = foundationPkgs.tree-sitter;
-
-          # the Go toolchain and the Node runtime, SCOPED for the same rule:
-          # both names are nixpkgs BUILD TOOLCHAINS consumed by packages
-          # this workstation never touches — libcap alone builds its gobin
-          # support with go, and a retargeted go rehashed libcap → systemd →
-          # gtk3/pipewire/pulse/qemu, throwing the whole test closure off the
-          # binary cache into source builds. The languages' toolchains ride
-          # the scoped names; nixpkgs' own `go`/`nodejs_24` stay stock.
-          workstation-go = foundationPkgs.go;
-          workstation-node = foundationPkgs.nodejs_24;
-
-          # python314 stays a global retarget DELIBERATELY: 25.05's attr is
-          # a near-dead pre-release the agent domain's floor overshoots, and
-          # no nixpkgs-internal package in any leg's closure consumes it as
-          # a build input — the retarget's blast radius is the agent env
-          # alone (the flake-check closure proves it: zero rehash outside
-          # the hermes env).
-        };
-
-      # the validation surface: `nix flake check` is THE canonical entry
-      # locally and in CI. The eval gates force the declared-state reads
-      # and every host leg's toplevel (eval-only: nothing builds); the
-      # container E2E check stages THE lane entry — the runnable script
-      # plus the flake source it mounts — so the lane's whole surface
-      # (persona home, driver, script) evaluates and the one entry
-      # artifact is produced. A nix build cannot drive a docker daemon
-      # (the sandbox holds no daemon socket — the VM check's
-      # in-derivation boot has no container equivalent); the behavioral
-      # run is the staged entry ON a docker host: CI's container-e2e job,
-      # or the host's shell (docs/testing.md).
+      # the validation surface: `nix flake check` is the canonical entry.
+      # Eval gates force the declared-state reads and every host leg's
+      # toplevel (eval-only). The container E2E check stages the lane
+      # entry; the behavioral run happens on a docker host (CI's
+      # container-e2e job, or the host shell - docs/testing.md).
       checks.${hostSystem} =
         let
           pkgs = import nixpkgs { system = hostSystem; };
