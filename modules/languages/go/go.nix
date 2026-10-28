@@ -1,6 +1,5 @@
-# The Go language capability: the nixpkgs toolchain (floored at the
-# retired download pin's minor — operator ruling 2026-10-27: the pins
-# machinery is redundant) and the editor profile entry.
+# The go language capability: the toolchain (floored) and the
+# editor profile entry.
 {
   config,
   lib,
@@ -8,12 +7,8 @@
   ...
 }:
 let
-  # the floor guards the overlay: the pinned 25.05 set carries go 1.24 —
-  # the foundation input's current 1.26.x is the declared surface, and an
-  # unapplied overlay (or a lagging lock) dies here instead of quietly
-  # downgrading the toolchain (the retired pin carried 1.27.1; the locked
-  # foundation input carries 1.26.9 — the floor holds the minor, the next
-  # flake lock update raises it, nixpkgs owns the drift)
+  # the floor guards the overlay: a lagging lock dies loud instead of
+  # quietly downgrading the toolchain
   go =
     assert
       lib.versionAtLeast (pkgs.workstation-go.version or "0") "1.26"

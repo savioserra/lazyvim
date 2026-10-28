@@ -120,6 +120,9 @@
           ;
       };
 
+      # the agent domain's outputs (skills; the pin lives in the module)
+      agent = import ./modules/agent/outputs.nix { inherit self; };
+
       macHost = import ./hosts/mac/default.nix {
         inherit
           self
@@ -249,7 +252,7 @@
 
       # the capability outputs consumer flakes take: the agent's managed
       # skills and the theme tokens
-      hermesSkills = (import ./modules/agent/outputs.nix { inherit self; }).skills;
+      hermesSkills = agent.skills;
 
       workstationTheme.lib = import ./modules/theme/theme.nix {
         lib = nixpkgs.lib;
