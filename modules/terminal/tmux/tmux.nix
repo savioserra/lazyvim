@@ -67,6 +67,10 @@ let
   ) pluginPins;
 in
 {
+  # the tmux binary belongs to the capability that deploys its config and
+  # plugins (the tool ships beside the surface it configures)
+  home.packages = [ pkgs.tmux ];
+
   # the selection gate (workstation.terminal.tmux.enable AND the domain
   # enable — a member deploys under its domain, nix/lib/selections.nix):
   # disabled = the definitions skip, never the files
