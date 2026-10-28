@@ -114,6 +114,10 @@ in
             ;
         };
 
+        # the launcher's runtime dependency: fzf (the popup menus are fzf
+        # views; nunchux is its only consumer in the substrate)
+        home.packages = lib.optionals pkgs.stdenv.isLinux [ pkgs.fzf ];
+
         home.file = lib.mkIf pkgs.stdenv.isLinux {
           ".tmux/plugins/nunchux".source = nunchuxTree;
           ".config/nunchux/config".text = nunchuxConfig;
