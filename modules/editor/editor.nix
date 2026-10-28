@@ -140,6 +140,9 @@ in
     home.activation.deploy-nvim-config = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       mkdir -p "$HOME/.config/nvim"
       cp -a ${configTree}/. "$HOME/.config/nvim/"
+      # the store modes are read-only; the deployed copy must stay
+      # writable or the next apply (and the lazy-lock merge) fails
+      chmod -R u+w "$HOME/.config/nvim"
       echo "workstation: nvim config synced (${config.home.homeDirectory}/.config/nvim)"
     '';
 
