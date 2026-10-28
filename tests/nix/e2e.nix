@@ -60,6 +60,26 @@ let
   # toolchain and its profile entry leave, the other selections ride, nvim
   # still boots — the selection removal semantics, proven on a real home.
   activationMinusGo = self.checks.x86_64-linux.e2e-minus-go-home;
+
+  # the init step's userland: the image's bare root carries no sed, awk,
+  # hostname or cmp (the minimal nix profile greps and copies but merges
+  # nothing), and the shim's identity merge reads and rewrites
+  # hosts/identity.nix through exactly those. A real host carries them
+  # from the OS or the profile, so the init step alone stages the
+  # nixpkgs tools on PATH — every other step keeps proving the shim's
+  # read paths run on the bare image (the lane stays sed-free there).
+  initTools = pkgs.symlinkJoin {
+    name = "workstation-e2e-init-tools";
+    paths = [
+      pkgs.coreutils
+      pkgs.gnused
+      pkgs.gawk
+      pkgs.diffutils
+      # the shim detects the host with `hostname -s`; nixpkgs' coreutils
+      # ships hostid/uname but not hostname (it is its own package)
+      pkgs.hostname
+    ];
+  };
 in
 writeShellScriptBin "workstation-e2e" ''
   set -u
@@ -417,6 +437,55 @@ writeShellScriptBin "workstation-e2e" ''
     && [ -f "$home/.config/tmux/themes/tmux2k.conf/keep" ] \
     || fail "tombstone shapes planted" "the rehearsal shapes did not plant"
   pass "tombstone shapes planted (retire rehearsal)"
+
+  # 2d. the init merge, live (the identity-merge contract): the capture
+  #     MERGES hosts/identity.nix — the shipped TEMPLATE placeholders fill
+  #     from detection, the operator's set field (shellExtras — the line a
+  #     replace-style init once dropped on a re-run) survives byte for
+  #     byte, and a converged re-init is a byte-identical no-op. Like the
+  #     selection verbs below: the REAL shim against a writable checkout
+  #     copy (whiptail is off PATH here, so the capture takes the
+  #     detected values verbatim — the bare-box install shape). The
+  #     image's bare root lacks the merge's userland (sed, awk, hostname,
+  #     cmp), so this step alone stages the nixpkgs tools a real host
+  #     PATH carries.
+  step "init merge live (placeholders fill, shellExtras survives, the re-init is byte-identical)"
+  initlive=/tmp/ws-init
+  mkdir -p "$initlive"
+  cp -a /workstation/. "$initlive/"
+  printf '%s\n' \
+    '{' \
+    '  host = "TEMPLATE"; # captured by workstation init (hostname -s)' \
+    '  user = "TEMPLATE"; # captured by workstation init' \
+    '  home = "/home/TEMPLATE"; # captured by workstation init, the home path' \
+    '  shellExtras = "stty -ixon"; # the operator field, kept byte for byte' \
+    '}' >"$initlive/hosts/identity.nix"
+  init_path=${initTools}/bin:$PATH
+  out=$(PATH="$init_path" WORKSTATION_NO_APPLY=1 WORKSTATION_FLAKE="$initlive" "$shim_bin" init) \
+    || fail "init merge live" "init on the template-plus-shellExtras fixture failed"
+  printf '%s' "$out" | grep -q 'identity captured' \
+    || fail "init merge live" "the capture must say it captured"
+  grep -q TEMPLATE "$initlive/hosts/identity.nix" \
+    && fail "init merge live" "init must fill every TEMPLATE placeholder"
+  detected_host=$(PATH="$init_path" hostname -s)
+  grep -Fqx "  host = \"$detected_host\";" "$initlive/hosts/identity.nix" \
+    || fail "init merge live" "init must capture the detected host ($detected_host)"
+  grep -Fqx '  user = "e2e";' "$initlive/hosts/identity.nix" \
+    || fail "init merge live" "init must capture the detected user (e2e)"
+  grep -Fqx '  home = "/home/e2e";' "$initlive/hosts/identity.nix" \
+    || fail "init merge live" "init must capture the detected home (/home/e2e)"
+  grep -Fqx '  shellExtras = "stty -ixon"; # the operator field, kept byte for byte' \
+    "$initlive/hosts/identity.nix" \
+    || fail "init merge live" "the operator shellExtras line must survive the merge byte for byte"
+  cp "$initlive/hosts/identity.nix" "$initlive/identity.converged"
+  out=$(PATH="$init_path" WORKSTATION_NO_APPLY=1 WORKSTATION_FLAKE="$initlive" "$shim_bin" init) \
+    || fail "init merge live" "the converged re-init failed"
+  printf '%s' "$out" | grep -q 'merged' \
+    || fail "init merge live" "the converged re-init must say it merged"
+  PATH="$init_path" cmp -s "$initlive/identity.converged" "$initlive/hosts/identity.nix" \
+    || fail "init merge live" "a converged re-init must leave the file byte-identical"
+  rm -rf "$initlive"
+  pass "init merge live (placeholders fill, shellExtras survives, the re-init is byte-identical)"
 
   # 3. the apply-driven nix switch: the driver wraps the offline
   #    activation + generation registration, then writes the receipt.

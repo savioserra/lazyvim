@@ -58,6 +58,11 @@ The lane map — which lane proves what:
   owns, the lazy-lock merge, the theme token path, the language profile,
   the rc lane's declared order, the migrated tools running, the agent
   skills at pinned versions, the tmux/nunchux/foundation planes, the
+  init merge live against a writable checkout copy (the capture fills
+  the shipped TEMPLATE placeholders from detection, the operator's
+  `shellExtras` survives byte for byte, and a converged re-init is
+  byte-identical — the image's bare root lacks the merge's userland, so
+  the step stages the nixpkgs tools on PATH for itself alone), the
   selection verbs live against a writable checkout copy), the selection
   removal proof (the second apply re-activates the persona with go
   deselected: the toolchain and its profile entry leave, the rest rides,
