@@ -66,12 +66,9 @@ let
     }
   ) pluginPins;
 
-  # the tmux reply drain: tmux asks the terminal its background colour at
-  # startup (OSC 11); on a high-latency link the reply can cross the tty
-  # restore and the shell echoes the tail (`11;rgb:...`) at the next
-  # prompt. The wrapper drains that reply window after tmux returns -
-  # bash and zsh variants (the rc lane's interactive shells). The order
-  # slot is the terminal domain's own lane; other domains never see it.
+  # drains the late OSC 11 colour reply (leaks as `11;rgb:...` on
+  # high-latency links); bash + zsh variants
+
   drainBash = pkgs.writeText "tmux-drain.bash" '''
     tmux() {
       command tmux "$@"
