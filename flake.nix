@@ -247,8 +247,6 @@
 
       nixosConfigurations.${linuxHost.name} = linuxHost.nixosConfig;
 
-      # the capability outputs consumer flakes take: the agent's managed
-      # skills and the theme tokens
 
       workstationTheme.lib = import ./modules/theme/theme.nix {
         lib = nixpkgs.lib;
