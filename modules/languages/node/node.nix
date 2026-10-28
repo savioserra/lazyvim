@@ -1,11 +1,6 @@
-# The Node language capability: the nixpkgs runtime (the overlay's
-# scoped pkgs.workstation-node, nodejs_24 from the foundation input —
-# operator ruling 2026-10-27: nix owns the runtime; the nvm lane retired
-# with the pins machinery — nvm was the old world's version manager, and
-# its default-alias bug class dies structurally with it). The
-# .node-version declaration is DERIVED from the runtime (one source: the
-# nixpkgs version), so per-project version tools (mise et al) read the
-# version this generation actually ships.
+# The Node language capability: the runtime (nodejs_24 via the scoped
+# overlay - nix owns it), the .node-version derived from it, and the
+# editor profile entry.
 {
   config,
   lib,

@@ -31,7 +31,7 @@ let
   homeDir = id.home;
   hostKey = "${user}@${hostName}";
 
-  retiredBrew = import ./retired-brew.nix;
+  brewList = import ./brew.nix;
 
   # The nix set this host's CLI lives on: the nixpkgs toolchains the
   # substrate owns (mirrors the system leg's toolchain replacements; the
@@ -64,7 +64,7 @@ let
   assertions = map (name: {
     assertion = owns name;
     message = "workstation-nix: retired brew formula '${name}' is not in the darwin nix set — add it before retiring it from brew";
-  }) retiredBrew;
+  }) brewList;
 in
 {
   # identity surface the flake consumes — derive, never hand-type

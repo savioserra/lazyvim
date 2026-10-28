@@ -4,7 +4,7 @@ The mac runs the substrate through nix-darwin with the home-manager
 module integrated. Brew keeps ONLY casks (GUI apps); every CLI formula
 retires into the nix set, and the eval ENFORCES it:
 
-- `hosts/mac/retired-brew.nix` — the retired-from-brew formula list
+- `hosts/mac/brew.nix` — the formulas the nix set owns
   (operator data, seeded with tmux + btop: the substrate's terminal pins
   are nixpkgs-owned on the substrate). A formula may only be appended
   AFTER its nix package exists in `hosts/mac/default.nix`'s
@@ -43,6 +43,6 @@ workstation-switch apply   # exits 2 with the named fix
 - consumer smoke + live apply + `brew leaves` enumeration: NOT run — the
   mac host was unreachable from the runner (ssh `mac`: connection timed
   out; re-verified 2026-10-22). When reachable: enumerate `brew leaves`,
-  extend `retired-brew.nix` (the eval enforces nix ownership per entry),
+  extend `brew.nix` (the eval enforces nix ownership per entry),
   switch, then consumer-smoke `workstation --version` + the nvim profile
   link.

@@ -119,6 +119,9 @@ in
   # the selection gate (workstation.editor.enable, nix/lib/selections.nix):
   # disabled = the definitions skip, never the files — the walk, the fold
   # and the retire lists stay complete
+  # the parser-install CLI the editor's tooling drives
+  home.packages = [ pkgs.workstation-tree-sitter ];
+
   config = lib.mkIf cfg.enable {
     home.file = {
       ".config/nvim" = {
