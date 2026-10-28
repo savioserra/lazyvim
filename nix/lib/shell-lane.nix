@@ -40,7 +40,8 @@ let
 
       ambiguous = lib.filter (s: lib.length s.orders != 1 || lib.length s.domains != 1) idSlots;
       slots = map (s: {
-        inherit (s) id domain;
+        inherit (s) id;
+        domain = s.domain or "";
         order = builtins.head s.orders;
       }) idSlots;
 
