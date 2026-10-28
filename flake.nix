@@ -271,6 +271,7 @@
         nixpkgs.lib.composeManyExtensions (
           map (f: import f foundationPkgs) [
             ./modules/foundation/overlay.nix
+            ./modules/terminal/overlay.nix
             ./modules/editor/overlay.nix
             ./modules/languages/overlay.nix
             ./modules/agent/overlay.nix

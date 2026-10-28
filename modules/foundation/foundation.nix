@@ -1,8 +1,5 @@
 # The base shell environment: the rc lane + fd, fzf, rg, lazygit,
-# tree-sitter (nixpkgs, floored at the retired download pins' versions —
-# operator ruling 2026-10-27), eza + starship (nixpkgs — the prompt
-# capability dissolved here), mise (nixpkgs — the binary only, no managed
-# footprint), direnv + nix-direnv (nixpkgs — the per-repo environment
+# tree-sitter, starship, mise, direnv + nix-direnv (nixpkgs, floored)
 # layer; the hooks ride the fragment lane below), harlequin + hsql (one
 # upstream distribution;
 # the pinned nixpkgs predates hsql, so the foundation domain owns its pin
@@ -75,7 +72,6 @@ let
   fragments = [
     (frag "user-local-bin" 10 "# workstation: managed user-local bin")
     (frag "managed-profile" 20 "# workstation: load managed profile")
-    (frag "managed-eza" 40 "# workstation: managed eza ls")
     (frag "managed-starship" 50 "# workstation: managed starship prompt")
     (frag "managed-starship-zsh" 60 "# workstation: managed starship prompt")
     # the editor env defaults (EDITOR/VISUAL/GIT_EDITOR=nvim): substrate
@@ -94,10 +90,6 @@ let
       ".zshrc"
     ];
     managed-profile = [ ".bash_profile" ];
-    managed-eza = [
-      ".bashrc"
-      ".zshrc"
-    ];
     managed-starship = [ ".bashrc" ];
     managed-starship-zsh = [ ".zshrc" ];
     managed-editor-env = [
@@ -229,9 +221,6 @@ in
       tools.ripgrep
       tools.lazygit
       tools.tree-sitter
-      # the dissolved prompt capability: eza is the managed ls (icons),
-      # starship the cross-shell prompt — both nixpkgs-native
-      pkgs.eza
       pkgs.starship
       # mise (mise-en-place): the nixpkgs-native binary only — per-project
       # runtime versioning (`mise use`, `.mise.toml`, `mise x`) on every
