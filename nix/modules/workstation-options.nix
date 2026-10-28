@@ -85,6 +85,17 @@ in
               composition fails the eval on either.
             '';
           };
+          trailing = lib.mkOption {
+            type = lib.types.bool;
+            default = false;
+            description = ''
+              The operator's override rank: a trailing fragment composes
+              after EVERY domain's lane - the rc file's last word, where
+              the later definition wins. The operator-extras fragment
+              (the foundation shell.extras contract) is the declared
+              trailing fragment; managed fragments never set it.
+            '';
+          };
         };
       }
     );

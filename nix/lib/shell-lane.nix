@@ -2,15 +2,19 @@
 # is PATH semantics — and PATH semantics are CAPABILITY-LOCAL: a capability
 # orders its own fragments (the user-local bin fragment must lead the
 # foundation lane, the prompt must trail it) and never reasons about
-# another capability's slots. Cross-capability composition is the walk's
-# id sort — the registry order every other surface already reads — so a
-# new capability needs no knowledge of the lane's existing numbers.
+# another capability's slots. Cross-capability composition is the
+# (domain, order) key, so a new capability needs no knowledge of the lane's
+# existing numbers.
 #
 # Mechanically: each fragment carries `domain` (its own capability id)
-# and `order` (a slot in ITS domain's lane). The ONE sort both consumers
-# read (the home leg's rendered rc files and the report fold's
-# fragmentOrder) composes by (target, domain, order, id). The module
-# system's reverse-listOf merge is deliberately not the contract.
+# and `order` (a slot in ITS domain's lane), plus the optional trailing
+# rank (`trailing`, the operator's override plane): the ONE sort both
+# consumers read (the home leg's rendered rc files and the report fold's
+# fragmentOrder) composes by (trailing, domain, order) — the domains'
+# lanes first, then the operator's fragment after every domain (the
+# foundation shell.extras contract: the operator's lines compose last
+# and may override the managed ones). The module system's reverse-listOf
+# merge is deliberately not the contract.
 #
 # The contract fails the eval on ambiguity: one id carries exactly one
 # slot, and two distinct ids of the SAME domain may not share a slot.
@@ -50,9 +54,7 @@ let
       # semantics the domain exists to declare) — never a silent tie-break.
       # Distinct domains sharing a number compose in registry order: their
       # numbers are different lanes and never compared.
-      lanes = lib.mapAttrsToList (_: ss: ss) (
-        builtins.groupBy (s: s.domain or "") slots
-      );
+      lanes = lib.mapAttrsToList (_: ss: ss) (builtins.groupBy (s: s.domain or "") slots);
       shared = lib.filter (
         ss:
         let
@@ -65,22 +67,27 @@ let
       sharedNames = map (
         ss: "order ${toString (builtins.head ss).order}: ${lib.concatStringsSep " + " (map (s: s.id) ss)}"
       ) shared;
+
+      # the composition key: the trailing rank first (the managed lanes,
+      # then the operator's override plane), then the (domain, order)
+      # lane key
+      laneKey =
+        f: (if (f.trailing or false) then "1" else "0") + (f.domain or "") + "/" + toString f.order;
     in
     assert
       ambiguous == [ ]
       || throw "workstation-shell: fragment ids declare conflicting orders or domains across targets (${
         lib.concatStringsSep ", " (
           map (
-            s: "${s.id}: ${lib.concatStringsSep " vs " (map toString s.orders)} / domain ${
-              lib.concatStringsSep " vs " s.domains
-            }"
+            s:
+            "${s.id}: ${lib.concatStringsSep " vs " (map toString s.orders)} / domain ${lib.concatStringsSep " vs " s.domains}"
           ) ambiguous
         )
       }) — one fragment, one order slot, one domain";
     assert
       shared == [ ]
       || throw "workstation-shell: fragments of the same domain share an order slot (${lib.concatStringsSep "; " sharedNames}) — the order is the domain's PATH semantics; give each id its own slot";
-    lib.sort (a: b: (a.domain or "") + "/" + toString a.order < (b.domain or "") + "/" + toString b.order) fragments;
+    lib.sort (a: b: laneKey a < laneKey b) fragments;
 in
 {
   inherit sortedFragments;

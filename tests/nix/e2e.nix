@@ -291,12 +291,16 @@ writeShellScriptBin "workstation-e2e" ''
   pass "nunchux plane"
 
   step "rc lane order (the declared order contract — PATH semantics)"
-  # the slots: user-local-bin 10 leads, op-env 30 follows in .profile, the
-  # editor env 70 rides every rc target; .bashrc sources 10 (PATH), 40
-  # (eza), 50 (starship), 70 (editor env), 80 (direnv) and .zshrc sources
-  # 10/40/60/70/90 (the per-shell starship/direnv bodies) in slot order —
-  # the composition sorts by the fragments' `order`, never the module
-  # system's merged list order
+  # the declared contract (nix/lib/shell-lane.nix): a fragment's `order`
+  # is PATH semantics inside its own domain's lane, cross-domain
+  # composition is the (domain, order) key, and the operator's extras
+  # fragment is the lane's trailing override (its last-word position is
+  # the shell lane step's assert). The expectations below derive from the
+  # declared lanes, never hardcoded historic slots: .profile sources
+  # bin(10) < op-env(30) < editor-env(70); .bashrc sources bin(10), the
+  # foundation env lane (editor-env 70, direnv 80), then the terminal
+  # lane (tmux-drain 10, eza 10, starship 20); .zshrc the same with the
+  # per-shell bodies (direnv-zsh 90, the -zsh terminal ids)
   lane_slot() {
     # lane_slot <rc-file> <fragment-id> — the 1-based source line, empty
     # when absent
@@ -310,23 +314,36 @@ writeShellScriptBin "workstation-e2e" ''
   [ "$prof_bin" -lt "$prof_op" ] && [ "$prof_op" -lt "$prof_ed" ] \
     || fail "rc lane order" ".profile must source slots 10/30/70 in the declared order"
   bash_bin=$(lane_slot .bashrc user-local-bin)
-  bash_eza=$(lane_slot .bashrc managed-eza)
-  bash_star=$(lane_slot .bashrc managed-starship)
   bash_ed=$(lane_slot .bashrc managed-editor-env)
   bash_direnv=$(lane_slot .bashrc managed-direnv)
-  [ -n "$bash_bin" ] && [ -n "$bash_eza" ] && [ -n "$bash_star" ] && [ -n "$bash_ed" ] && [ -n "$bash_direnv" ] \
+  bash_drain=$(lane_slot .bashrc tmux-drain)
+  bash_eza=$(lane_slot .bashrc managed-eza)
+  bash_star=$(lane_slot .bashrc managed-starship)
+  [ -n "$bash_bin" ] && [ -n "$bash_ed" ] && [ -n "$bash_direnv" ] \
+    && [ -n "$bash_drain" ] && [ -n "$bash_eza" ] && [ -n "$bash_star" ] \
     || fail "rc lane order" ".bashrc does not source its declared fragments"
-  [ "$bash_bin" -lt "$bash_eza" ] && [ "$bash_eza" -lt "$bash_star" ] && [ "$bash_star" -lt "$bash_ed" ] && [ "$bash_ed" -lt "$bash_direnv" ] \
-    || fail "rc lane order" ".bashrc must source slots 10/40/50/70/80 in the declared order"
+  # bin leads (PATH semantics); the foundation env lane composes before
+  # the terminal lane (the (domain, order) key); starship's 20 trails the
+  # terminal 10s. The tmux-drain/eza tie (both terminal/10) is the
+  # declaration order, never contract — the lane contract names a shared
+  # same-domain slot an ambiguity, owned by the terminal surface
+  [ "$bash_bin" -lt "$bash_ed" ] && [ "$bash_ed" -lt "$bash_direnv" ] \
+    && [ "$bash_direnv" -lt "$bash_drain" ] && [ "$bash_direnv" -lt "$bash_eza" ] \
+    && [ "$bash_eza" -lt "$bash_star" ] \
+    || fail "rc lane order" ".bashrc must compose bin < the foundation env lane < the terminal lane in the declared order"
   zsh_bin=$(lane_slot .zshrc user-local-bin)
-  zsh_eza=$(lane_slot .zshrc managed-eza)
-  zsh_star=$(lane_slot .zshrc managed-starship-zsh)
   zsh_ed=$(lane_slot .zshrc managed-editor-env)
   zsh_direnv=$(lane_slot .zshrc managed-direnv-zsh)
-  [ -n "$zsh_bin" ] && [ -n "$zsh_eza" ] && [ -n "$zsh_star" ] && [ -n "$zsh_ed" ] && [ -n "$zsh_direnv" ] \
+  zsh_drain=$(lane_slot .zshrc tmux-drain-zsh)
+  zsh_eza=$(lane_slot .zshrc managed-eza-zsh)
+  zsh_star=$(lane_slot .zshrc managed-starship-zsh)
+  [ -n "$zsh_bin" ] && [ -n "$zsh_ed" ] && [ -n "$zsh_direnv" ] \
+    && [ -n "$zsh_drain" ] && [ -n "$zsh_eza" ] && [ -n "$zsh_star" ] \
     || fail "rc lane order" ".zshrc does not source its declared fragments"
-  [ "$zsh_bin" -lt "$zsh_eza" ] && [ "$zsh_eza" -lt "$zsh_star" ] && [ "$zsh_star" -lt "$zsh_ed" ] && [ "$zsh_ed" -lt "$zsh_direnv" ] \
-    || fail "rc lane order" ".zshrc must source slots 10/40/60/70/90 in the declared order"
+  [ "$zsh_bin" -lt "$zsh_ed" ] && [ "$zsh_ed" -lt "$zsh_direnv" ] \
+    && [ "$zsh_direnv" -lt "$zsh_drain" ] && [ "$zsh_direnv" -lt "$zsh_eza" ] \
+    && [ "$zsh_eza" -lt "$zsh_star" ] \
+    || fail "rc lane order" ".zshrc must compose bin < the foundation env lane < the terminal lane in the declared order"
   pass "rc lane order"
 
   step "migrated tools run (nixpkgs-owned — operator ruling 2026-10-27)"
@@ -588,10 +605,10 @@ writeShellScriptBin "workstation-e2e" ''
 
   # the shell lane's operator extras (17cd11f5): the persona home declares
   # workstation.foundation.shell.extras, so the apply-driven switch
-  # rendered the lane's LAST fragment (operator-extras, slot 100,
-  # .bashrc/.zshrc) — its marker must source after every managed one, and
-  # the editor env the lane carries must speak in a fresh login shell.
-  # Both assertions mirror the host verify's smoke
+  # rendered the lane's trailing override (operator-extras, the lane's
+  # LAST fragment, .bashrc/.zshrc) — its marker must source after every
+  # managed one, and the editor env the lane carries must speak in a
+  # fresh login shell. Both assertions mirror the host verify's smoke
   # (modules/foundation/verify/prompt.sh) — mirrored here, never invoked.
   step "shell lane: the operator extras ride last, the editor env speaks in a login shell"
   command -v bash >/dev/null 2>&1 \
@@ -601,7 +618,7 @@ writeShellScriptBin "workstation-e2e" ''
       || fail "shell lane" "$rc carries no operator-extras fragment"
     last_marker=$(grep "^# workstation:" "$home/$rc" | tail -n 1)
     [ "$last_marker" = "# workstation: operator extras" ] \
-      || fail "shell lane" "$rc does not source the operator extras last (slot 100 must trail the lane)"
+      || fail "shell lane" "$rc does not source the operator extras last (the trailing override must close the lane)"
   done
   grep -Fqx "stty -ixon" "$home/.config/workstation/shell/operator-extras.sh" \
     || fail "shell lane" "the operator-extras fragment does not carry the persona's declared extras line"

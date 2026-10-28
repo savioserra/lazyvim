@@ -109,11 +109,13 @@ in
         The operator's shell lines (the stty -ixon class): per-machine
         interactive preferences with no substrate opinion, declared in the
         identity file (hosts/identity.nix, shellExtras — the ONLY per-host
-        surface) and wired by the host legs. Rendered as the rc lane's LAST
-        fragment (.bashrc/.zshrc, marker-guarded) so the operator's lines
-        compose after every managed one and may override them; every switch
-        re-renders them, so the prefs hold across applies. Empty (the
-        template) renders no fragment and leaves the lane exactly managed.
+        surface) and wired by the host legs. Rendered as the rc lane's
+        trailing override (the lane's LAST fragment, .bashrc/.zshrc,
+        marker-guarded — the renderer composes it after every domain's
+        lane) so the operator's lines may override the managed ones; every
+        switch re-renders them, so the prefs hold across applies. Empty
+        (the template) renders no fragment and leaves the lane exactly
+        managed.
       '';
     };
   };
@@ -131,6 +133,11 @@ in
           id = "operator-extras";
           order = 100;
           domain = "foundation";
+          # the operator's override rank: the lane's trailing key composes
+          # this after every domain's fragments — the documented contract
+          # (a slot number alone cannot: any other domain's lane would
+          # outrank or be outranked by the string comparison)
+          trailing = true;
           marker = "# workstation: operator extras";
           payload = operatorExtras;
         }
@@ -139,6 +146,7 @@ in
           id = "operator-extras";
           order = 100;
           domain = "foundation";
+          trailing = true;
           marker = "# workstation: operator extras";
           payload = operatorExtras;
         }
