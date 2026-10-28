@@ -1,6 +1,8 @@
-# The nix substrate's write plane: `workstation-switch` — the mutating
-# operators (apply / rollback / update / sync) as thin wrappers around
-# `home-manager switch` / `nixos-rebuild switch`.
+# The nix substrate's write plane: `workstation-switch` - the mutating
+# operators (apply / rollback / update / sync). The home plane builds the
+# declared homeConfiguration's activationPackage from the flake and runs
+# its activate - no home-manager CLI dependency. The system plane wraps
+# the platform's rebuild (nixos-rebuild / darwin-rebuild).
 #
 # The seam law: nix owns the write plane end to end. The driver's tail
 # writes the generation RECEIPT — the one event a switch carries. There is
@@ -152,19 +154,21 @@ pkgs.writeShellScriptBin "workstation-switch" ''
       if [ -n "$home_activate" ]; then
         "$home_activate"
       else
-        home-manager switch --flake "$flake#$home_attr"
+        gen="$(nix build --no-link --print-out-paths "$flake#homeConfigurations.$home_attr.activationPackage" | tail -n 1)"
+        "$gen/activate"
       fi
       ${resolveHomeProfile}
       ;;
     home:rollback)
-      home-manager rollback
       ${resolveHomeProfile}
+      nix-env --profile "$profile" --rollback
+      "$profile/activate"
       ;;
     home:update)
       need_home
       nix flake update --flake "$flake"
-      home-manager switch --flake "$flake#$home_attr"
-      ${resolveHomeProfile}
+      gen="$(nix build --no-link --print-out-paths "$flake#homeConfigurations.$home_attr.activationPackage" | tail -n 1)"
+      "$gen/activate"
       ;;
     system:apply|system:sync)
       need_system
