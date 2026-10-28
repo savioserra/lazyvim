@@ -1,20 +1,7 @@
-# The base shell environment: the rc lane + fd, fzf, rg, lazygit,
-# tree-sitter, starship, mise, direnv + nix-direnv (nixpkgs, floored)
-# layer; the hooks ride the fragment lane below), harlequin + hsql (one
-# upstream distribution;
-# the pinned nixpkgs predates hsql, so the foundation domain owns its pin
-# surface through the flake's pin-override overlay), and the tailscale
-# transport (the system legs declare services.tailscale through the system
-# module; workstation.foundation.tailscale.* is the options surface).
-#
-# Shell fragments: the bodies are payload files beside this module; each
-# declares its `order` slot — the rc lane's composition order is PATH
-# semantics and is never derived (nix/lib/shell-lane.nix sorts the lane;
-# a shared or ambiguous slot fails the eval). The hsql agent skill is
-# generated from the INSTALLED derivation at build time (hsql --skill) —
-# version-matched by construction, offline — and serves as a declared entry
-# symlink (programs.hermes.skills.hsql); no activation lane writes into
-# hot home.
+# The base shell environment: the rc lane + fd, rg, lazygit (floored),
+# mise, whiptail, direnv + nix-direnv, the tailscale CLI. Fragments are
+# payload files beside this module; the lane sorts by (target, domain,
+# order) - nix/lib/shell-lane.nix.
 {
   config,
   lib,
@@ -72,8 +59,6 @@ let
   fragments = [
     (frag "user-local-bin" 10 "# workstation: managed user-local bin")
     (frag "managed-profile" 20 "# workstation: load managed profile")
-    (frag "managed-starship" 50 "# workstation: managed starship prompt")
-    (frag "managed-starship-zsh" 60 "# workstation: managed starship prompt")
     # the editor env defaults (EDITOR/VISUAL/GIT_EDITOR=nvim): substrate
     # facts — the editor domain's nvim IS the workstation editor, so the
     # env rides the managed shell environment on every rc target (a
@@ -90,8 +75,6 @@ let
       ".zshrc"
     ];
     managed-profile = [ ".bash_profile" ];
-    managed-starship = [ ".bashrc" ];
-    managed-starship-zsh = [ ".zshrc" ];
     managed-editor-env = [
       ".profile"
       ".bashrc"
@@ -217,11 +200,8 @@ in
       # overlay or a lagging lock die at eval — a quiet downgrade of the
       # fleet's tool set is never a silent act)
       tools.fd
-      tools.fzf
       tools.ripgrep
       tools.lazygit
-      tools.tree-sitter
-      pkgs.starship
       # mise (mise-en-place): the nixpkgs-native binary only — per-project
       # runtime versioning (`mise use`, `.mise.toml`, `mise x`) on every
       # managed host, the pin riding the nixpkgs lock. The engine owns
