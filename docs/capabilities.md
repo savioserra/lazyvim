@@ -144,7 +144,7 @@ and sorted, never hidden.
   fd, fzf, rg, lazygit, tree-sitter; eza + starship; harlequin + hsql
   (the hsql agent skill generated from the harlequin derivation at build
   time); whiptail (the shim's install-time UI).
-- The tailscale transport (`workstation.foundation.tailscale.*`;
+- The tailscale transport (`workstation.network.tailscale.*`;
   `services.tailscale` on the system legs).
 - Verify: `modules/foundation/verify/prompt.sh` — tools speak, payload
   deployed, rc wired, fresh login shell.

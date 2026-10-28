@@ -24,9 +24,9 @@ in
       description = "Additional system packages for this host's workstation plane.";
     };
 
-    # the tailscale transport (the fleet's layer) — declared per host;
-    # options mirrored at home scope by modules/foundation/foundation.nix
-    foundation.tailscale.enable = lib.mkOption {
+    # the tailscale transport (the fleet's layer) — the system-plane
+    # options; the home plane's module (modules/network) declares its own
+    network.tailscale.enable = lib.mkOption {
       type = lib.types.bool;
       default = false;
       description = ''
@@ -35,7 +35,7 @@ in
         workstation.host.tailscale.fqdn.
       '';
     };
-    foundation.tailscale.acceptDns = lib.mkOption {
+    network.tailscale.acceptDns = lib.mkOption {
       type = lib.types.bool;
       default = true;
       description = ''
@@ -61,7 +61,7 @@ in
     # neither the NixOS nor the nix-darwin module carried the option at the
     # pin; the NixOS module integrates the tailnet DNS through the resolver
     # on enable.
-    services.tailscale.enable = lib.mkIf cfg.foundation.tailscale.enable true;
+    services.tailscale.enable = lib.mkIf cfg.network.tailscale.enable true;
 
     # activation marker (kmsg surfaces on the serial console; plain stdout
     # serves human `switch` runs)
