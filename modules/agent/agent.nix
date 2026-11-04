@@ -14,6 +14,12 @@
 # The interpreter is pkgs.python314, floored at the release the pinned
 # rev's pm/lock.json carries (loud eval on mismatch). herdr has no
 # nixpkgs coverage: one download pin, inline below.
+#
+# a2a: the A2A node (programs.hermes.a2a) — the inbound platform, the
+# a2a toolset, the tailnet bind and the declared peers, converged into
+# config.yaml/.env by an activation through the hermes CLI
+# (files/a2a-converge.sh); peers come from the machine's discovery file
+# (hosts/peers.nix, written by `workstation peers`).
 {
   config,
   lib,
@@ -116,6 +122,30 @@ let
     python = pkgs.python314.version;
   };
 
+  # --- the A2A node --------------------------------------------------------
+  a2a = hermes.a2a;
+  helpers = import ./packages.nix { inherit pkgs; };
+  # the outbound token's env name per peer: the config entry carries the
+  # ${...} reference, the operator's .env carries the value
+  tokenEnv = alias: "A2A_PEER_TOKEN_" + lib.toUpper (lib.replaceStrings [ "-" ] [ "_" ] alias);
+  dnsLabel = "[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?";
+  # the declared state the converge reads (a store file: no secret values)
+  a2aDesired = pkgs.writeText "hermes-a2a.json" (
+    builtins.toJSON {
+      inherit (a2a) enable port tailnet;
+      name = if a2a.name == null then "" else a2a.name;
+      platforms = a2a.toolsetPlatforms;
+      peers = lib.mapAttrs (alias: peer: {
+        inherit (peer) url timeout capabilities;
+        auth = {
+          type = "bearer";
+          token = "\${${tokenEnv alias}}";
+        };
+      }) a2a.peers;
+      tokenEnvs = lib.mapAttrs (alias: _: tokenEnv alias) a2a.peers;
+    }
+  );
+
   # the agent's authored skills: the option setters' source - each tree
   # serves as ONE entry symlink per target profile (the rendering lane
   # lives in nix/modules/workstation-options.nix, so the report fold
@@ -169,6 +199,77 @@ in
         PATH as .local/bin/hermes.
       '';
     };
+
+    a2a = {
+      enable =
+        lib.mkEnableOption "the A2A node: the inbound platform, the a2a toolset, the tailnet bind and the declared peers"
+        // {
+          default = true;
+        };
+
+      port = lib.mkOption {
+        type = lib.types.port;
+        default = 9900;
+        description = ''
+          The inbound A2A port (platforms.a2a.extra.port): the port this
+          node serves, the port `workstation peers` probes.
+        '';
+      };
+
+      name = lib.mkOption {
+        type = lib.types.nullOr (lib.types.strMatching "[A-Za-z0-9.-]+");
+        default = null;
+        description = ''
+          This node's MagicDNS name: the Agent Card name (A2A_AGENT_NAME)
+          and the advertised URL http://<name>:<port> (A2A_PUBLIC_URL, set
+          with the tailnet bind). The legs set the captured identity's
+          host; null leaves hermes' hostname-derived default.
+        '';
+      };
+
+      tailnet =
+        lib.mkEnableOption "the tailnet bind: A2A_HOST is this node's tailnet IPv4 (hermes widens past loopback only once an inbound token exists)"
+        // {
+          default = true;
+        };
+
+      toolsetPlatforms = lib.mkOption {
+        type = lib.types.listOf (lib.types.strMatching "[a-z0-9_]+");
+        default = [ "cli" ];
+        description = "The hermes platforms whose sessions get the a2a client toolset.";
+      };
+
+      peers = lib.mkOption {
+        type = lib.types.attrsOf (
+          lib.types.submodule {
+            options = {
+              url = lib.mkOption {
+                type = lib.types.strMatching "https?://[A-Za-z0-9.-]+(:[0-9]+)?/?";
+                description = "The peer's A2A endpoint: http://<node>:<port> (its MagicDNS name).";
+              };
+              timeout = lib.mkOption {
+                type = lib.types.ints.between 1 3600;
+                default = 120;
+                description = "Seconds a call to this peer may take.";
+              };
+              capabilities = lib.mkOption {
+                type = lib.types.listOf (lib.types.strMatching "[A-Za-z0-9._-]+");
+                default = [ ];
+                description = "The capabilities a2a_orchestrate routes to this peer.";
+              };
+            };
+          }
+        );
+        default = { };
+        description = ''
+          The peers this node calls, keyed by MagicDNS name — the name is
+          also the peer's inbound identity (a2a.trusted_peers, the name in
+          its A2A_PEER_TOKENS row). Each renders an a2a_agents entry whose
+          bearer token is the env reference A2A_PEER_TOKEN_<NAME>. The
+          legs import hosts/peers.nix.
+        '';
+      };
+    };
   };
 
   # the selection gate (workstation.agent.enable, nix/lib/selections.nix)
@@ -194,7 +295,13 @@ in
         + "hermes-agent bundles — skills_sync owns that name at runtime "
         + "and would fight the declared entry symlink; rename the "
         + "declared skill";
-    }) (builtins.attrNames (lib.filterAttrs (_: skill: skill.enable) hermes.skills));
+    }) (builtins.attrNames (lib.filterAttrs (_: skill: skill.enable) hermes.skills))
+    ++ map (alias: {
+      assertion = builtins.match dnsLabel alias != null;
+      message =
+        "programs.hermes.a2a.peers.${alias}: a peer is keyed by its MagicDNS name "
+        + "(a DNS label: lowercase letters, digits, '-')";
+    }) (builtins.attrNames a2a.peers);
 
     # --- the agent's authored skills + the runtime stack --------------------
     # (the skill ENTRY rendering lives in nix/modules/workstation-options.nix
@@ -254,6 +361,23 @@ in
         fi
       fi
     '';
+
+    # --- the A2A node (hot home; activation-managed) ------------------------
+    # config.yaml and .env are the runtime's: the converge writes only the
+    # declared keys, through the hermes CLI, and retracts the ones the
+    # declaration drops (a disabled node retracts everything it set). A
+    # failed step defers with a named receipt — the switch never fails on it.
+    home.activation.converge-hermes-a2a =
+      lib.hm.dag.entryAfter [ "linkGeneration" "ensure-hermes-checkout" ]
+        ''
+          if HERMES_HOME="$HOME/.hermes" WORKSTATION_STATE="$HOME/.local/state/workstation" \
+            ${helpers.workstation-a2a-converge}/bin/workstation-a2a-converge \
+            ${a2aDesired} "${hermes.package}/hermes-launcher"; then
+            :
+          else
+            echo "workstation: a2a converge deferred — the receipts above name the step; the next apply retries"
+          fi
+        '';
 
     # --- the domain's tombstone --------------------------------------------
     workstation.retire = [ ".hermes/skills/lazyvim/SKILL.md" ];

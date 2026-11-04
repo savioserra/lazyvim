@@ -152,6 +152,10 @@ in
                   # the operator's shell extras: the identity file is the
                   # per-machine declaration point (shellExtras, optional)
                   workstation.foundation.shell.extras = id.shellExtras or "";
+                  # the A2A node: the card names this host (its MagicDNS
+                  # name); the peers are the machine's discovery file
+                  programs.hermes.a2a.name = id.host;
+                  programs.hermes.a2a.peers = import ../peers.nix;
                   # the mac's mutating seam is the --system plane
                   # (darwin-rebuild); the driver's default system target is
                   # derived from the identity block (never hand-typed).

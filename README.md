@@ -57,6 +57,22 @@ uncommitted, exactly like the identity. `workstation report.plan` carries
 the machine's pins; `workstation selected` renders every path's resolved
 on/off/baseline/unavailable state with dependency notes.
 
+## Agent peers (A2A)
+
+The agent serves A2A on the tailnet and calls the peers this machine
+pairs with:
+
+```sh
+workstation peers    # the hub: discover, add, pair, tune, save
+workstation apply    # serve the change
+```
+
+| Step | What happens |
+| --- | --- |
+| discover | the tailnet's online nodes whose Agent Card answers on :9900 |
+| pair | Pair on one machine, `workstation peers` on the other: one shared token, exchanged over the tailnet, stored in `~/.hermes/.env` |
+| peers | `hosts/peers.nix` — keep it uncommitted, like the identity |
+
 ## Reads
 
 ```sh

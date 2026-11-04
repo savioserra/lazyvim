@@ -30,10 +30,12 @@ state; it has two precise carve-outs, both declarative:
 - **skill leaves** — `modules/agent/agent.nix` renders managed skill files
   as store-path `home.file` entries. The agent consumes them read-only; an
   in-place edit is replaced at the next switch (declared truth wins).
-- **activation scripts** — the checkout ensure and the retire list mutate
-  hot state at switch time under explicit guards (clone/fetch only when
-  absent or clean-and-behind; `rm -f` of named legacy paths), and the file
-  plane still tracks nothing.
+- **activation scripts** — the checkout ensure, the retire list and the
+  A2A converge mutate hot state at switch time under explicit guards
+  (clone/fetch only when absent or clean-and-behind; `rm -f` of named
+  legacy paths; `config.yaml`/`.env` keys written only through the hermes
+  CLI, only the declared ones, on drift), and the file plane still tracks
+  nothing.
 
 Everything else under a hot home — checkout internals, tool stores, pm
 closures, profiles, boards, memories, sessions — stays untracked forever.
@@ -58,8 +60,17 @@ through an activation merge script and stays the editor's between switches.
 
 The state root (the destination home's
 `.local/state/workstation` tree, never in ambient XDG roots, the source
-checkout or Git) carries only read-side state: the switch receipt
-(`switch.log`) and the theme token link. Nothing recreates legacy trees.
+checkout or Git) carries only read-side state:
+
+| Entry | Owner |
+| --- | --- |
+| `switch.log` | the switch receipt |
+| `theme.json` | the theme token link |
+| `nvim-managed.list` | the editor deploy's managed paths |
+| `hermes-a2a.owned` | the A2A converge's declared keys |
+| `hermes-a2a.restart` | a pairing awaiting the gateway (consumed by the converge) |
+
+Nothing recreates legacy trees.
 
 `workstation plan` previews the attributable declared state from the report
 (capability, lane, target). The declared-vs-applied diff story is the nix

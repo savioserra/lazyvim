@@ -140,6 +140,8 @@
               workstation.switch.homeAttr = linuxHost.homeKey;
               workstation.switch.systemAttr = linuxHost.name;
               workstation.foundation.shell.extras = (import ./hosts/identity.nix).shellExtras or "";
+              programs.hermes.a2a.name = linuxHost.name;
+              programs.hermes.a2a.peers = import ./hosts/peers.nix;
             }
           )
           (selectionsLib.translationModule ./hosts/selections.nix)
@@ -177,6 +179,12 @@
       };
 
       homeManagerModules.workstation = ./nix/modules/workstation-home.nix;
+
+      # the agent domain's helper programs (`workstation peers` builds
+      # workstation-peers from here)
+      packages = nixpkgs.lib.genAttrs [ hostSystem macHost.system ] (
+        system: import ./modules/agent/packages.nix { pkgs = nixpkgs.legacyPackages.${system}; }
+      );
 
       # the capability overlays, composed: each domain owns its tool
       # overrides (modules/<domain>/overlay.nix); the root only wires the

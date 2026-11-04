@@ -93,6 +93,10 @@ in
                   # the operator's shell extras: the identity file is the
                   # per-machine declaration point (shellExtras, optional)
                   workstation.foundation.shell.extras = id.shellExtras or "";
+                  # the A2A node: the card names this host (its MagicDNS
+                  # name); the peers are the machine's discovery file
+                  programs.hermes.a2a.name = id.host;
+                  programs.hermes.a2a.peers = import ../peers.nix;
                   # the switch driver's default targets: this host's flake
                   # attrs, derived from the identity block (never hand-typed)
                   workstation.switch.homeAttr = homeKey;
