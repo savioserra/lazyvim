@@ -406,20 +406,62 @@ in
     # --- the fleet member service --------------------------------------------
     # the same program on both platforms: a systemd user unit (linux) or a
     # launchd agent (darwin), restarted on failure, bound to the tailnet
-    # IPv4 once the tailnet is up
-    systemd.user.startServices = lib.mkIf (fleetOn && pkgs.stdenv.hostPlatform.isLinux) (
-      lib.mkDefault "sd-switch"
+    # IPv4 once the tailnet is up. The linux unit is a plain config file
+    # plus its own activation: home-manager's systemd module skips root.
+    xdg.configFile."systemd/user/workstation-fleet.service" =
+      lib.mkIf (fleetOn && pkgs.stdenv.hostPlatform.isLinux)
+        {
+          text = ''
+            [Unit]
+            Description=workstation fleet member (A2A tailnet pairing)
+
+            [Service]
+            ExecStart=${helpers.workstation-fleet}/bin/workstation-fleet serve
+            ${
+              lib.concatStrings (lib.mapAttrsToList (name: value: "Environment=${name}=${value}\n") fleetEnv)
+            }Restart=always
+            RestartSec=10
+
+            [Install]
+            WantedBy=default.target
+          '';
+        };
+    home.activation.workstation-fleet = lib.mkIf pkgs.stdenv.hostPlatform.isLinux (
+      lib.hm.dag.entryAfter [ "linkGeneration" ] ''
+        # systemctl/loginctl are the host's: outside the activation PATH
+        PATH=$PATH:/usr/bin:/bin
+        ws_unit=${config.xdg.configHome}/systemd/user/workstation-fleet.service
+        ws_stamp=${config.home.homeDirectory}/.local/state/workstation/fleet.unit
+        if [ -e "$ws_unit" ]; then
+          if systemctl --user show-environment >/dev/null 2>&1; then
+            ws_want=$(readlink -f "$ws_unit")
+            systemctl --user daemon-reload
+            systemctl --user enable workstation-fleet.service >/dev/null 2>&1 || true
+            if [ "$(cat "$ws_stamp" 2>/dev/null)" != "$ws_want" ] ||
+              ! systemctl --user is-active -q workstation-fleet.service; then
+              if systemctl --user restart workstation-fleet.service; then
+                mkdir -p "''${ws_stamp%/*}" && printf '%s\n' "$ws_want" >"$ws_stamp"
+                echo "workstation: fleet member service running (port ${toString a2a.fleet.port})"
+              else
+                echo "workstation: fleet member service failed to start — journalctl --user -u workstation-fleet"
+              fi
+            fi
+            # a user service outlives the login session only with linger
+            if [ "$(loginctl show-user "$(id -un)" -p Linger --value 2>/dev/null)" = no ]; then
+              loginctl enable-linger "$(id -un)" 2>/dev/null ||
+                echo "workstation: the fleet stops at logout — run: sudo loginctl enable-linger $(id -un)"
+            fi
+          else
+            echo "workstation: fleet member service deferred — no user systemd session; run: systemctl --user enable --now workstation-fleet"
+          fi
+        elif [ -f "$ws_stamp" ]; then
+          systemctl --user stop workstation-fleet.service 2>/dev/null || true
+          rm -f "${config.xdg.configHome}/systemd/user/default.target.wants/workstation-fleet.service" "$ws_stamp"
+          systemctl --user daemon-reload 2>/dev/null || true
+          echo "workstation: fleet member service stopped (the fleet is off)"
+        fi
+      ''
     );
-    systemd.user.services.workstation-fleet = lib.mkIf (fleetOn && pkgs.stdenv.hostPlatform.isLinux) {
-      Unit.Description = "workstation fleet member (A2A tailnet pairing)";
-      Service = {
-        ExecStart = "${helpers.workstation-fleet}/bin/workstation-fleet serve";
-        Environment = lib.mapAttrsToList (name: value: "${name}=${value}") fleetEnv;
-        Restart = "always";
-        RestartSec = 10;
-      };
-      Install.WantedBy = [ "default.target" ];
-    };
     launchd.agents.workstation-fleet = lib.mkIf (fleetOn && pkgs.stdenv.hostPlatform.isDarwin) {
       enable = true;
       config = {
