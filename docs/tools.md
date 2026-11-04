@@ -52,7 +52,10 @@ manifests: `.local/opt/hermes/pin.json` (agent),
   systemd unit on standalone-HM linux hosts (a previous apt/dnf/pacman/snap
   install is removed, `/var/lib/tailscale` kept, a copy under
   `/var/lib/workstation/tailscale-pre-substrate-<stamp>/`);
-  `services.tailscale` on NixOS-WSL and nix-darwin.
+  `services.tailscale` on NixOS-WSL and nix-darwin. On darwin a previous
+  Tailscale.app, its CLI shim or the brew formula goes first (the system
+  extension deactivates with the console user's approval; the app's node
+  identity stays with the app — the substrate daemon logs in as a new node).
 - **whiptail** — ships with the substrate (`pkgs.newt`); a bare box before
   its first switch falls back to the detected identity values.
 

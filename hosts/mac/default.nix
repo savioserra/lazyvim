@@ -106,6 +106,8 @@ in
             user = user;
             homeDirectory = homeDir;
           };
+          # the system plane (the toolchains, the tailscale transport)
+          workstation.enable = true;
           # the fleet transport (the shared system module owns the wiring);
           # the identity's fleet choice: standalone turns it off
           workstation.network.tailscale.enable = (id.fleet or "member") != "standalone";

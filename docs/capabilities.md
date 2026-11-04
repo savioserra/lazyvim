@@ -153,7 +153,12 @@ and sorted, never hidden.
   `workstation-tailscaled` activation: the substrate's systemd unit, a
   previous apt/dnf/pacman/snap install removed with its sources moved
   aside, `/var/lib/tailscale` kept; off retracts the unit only). The
-  identity's `fleet = "standalone"` turns the transport off.
+  identity's `fleet = "standalone"` turns the transport off. On darwin
+  the system activation removes a previous Tailscale.app (its system
+  extension deactivated with the console user's approval), the app's CLI
+  shim and the brew formula, moved aside under
+  `/var/lib/workstation/tailscale-pre-substrate-<stamp>/`; the substrate
+  daemon then logs in as a new node.
 - Verify: `modules/foundation/verify/prompt.sh` — tools speak, payload
   deployed, rc wired, fresh login shell.
 - Hosts: all.

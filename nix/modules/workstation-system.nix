@@ -1,4 +1,4 @@
-# The system leg: the substrate's system plane on a NixOS system — the
+# The system leg: the substrate's system plane on NixOS and nix-darwin — the
 # nixpkgs toolchains and the transport wiring. The workstation client is a
 # HOME lane concern (the launcher shim and the switch driver stage into the
 # user's profile); this module owns the system plane only:
@@ -13,6 +13,15 @@
 }:
 let
   cfg = config.workstation;
+  isDarwin = pkgs.stdenv.hostPlatform.isDarwin;
+  # the darwin cutover: a previous Tailscale install goes before
+  # services.tailscale takes the node
+  tailscaleCutover = pkgs.writeShellApplication {
+    name = "workstation-tailscale-cutover";
+    runtimeInputs = [ pkgs.coreutils ];
+    bashOptions = [ ];
+    text = builtins.readFile ../../modules/network/files/tailscale-darwin-cutover.sh;
+  };
 in
 {
   options.workstation = {
@@ -46,31 +55,39 @@ in
     };
   };
 
-  config = lib.mkIf cfg.enable {
-    environment.systemPackages = [
-      # the toolchain replacements (the terminal/tmux lane:
-      # tmux 3.7c, btop 1.4.7 — versions now nixpkgs-owned)
-      pkgs.tmux
-      pkgs.btop
+  config = lib.mkIf cfg.enable (
+    lib.mkMerge [
+      {
+        environment.systemPackages = [
+          # the toolchain replacements (the terminal/tmux lane:
+          # tmux 3.7c, btop 1.4.7 — versions now nixpkgs-owned)
+          pkgs.tmux
+          pkgs.btop
+        ]
+        ++ cfg.extraPackages;
+        # --- the tailscale transport (the fleet's layer) -----------------------
+        # ssh, the dashboard's --host binding and all host convergence ride it;
+        # the host's MagicDNS name is workstation.host.tailscale.fqdn (set only
+        # in hosts/<host>/default.nix). acceptDns stays the declared surface —
+        # neither the NixOS nor the nix-darwin module carried the option at the
+        # pin; the NixOS module integrates the tailnet DNS through the resolver
+        # on enable.
+        services.tailscale.enable = lib.mkIf cfg.network.tailscale.enable true;
+      }
+      (lib.mkIf (!isDarwin) {
+        # activation marker (kmsg surfaces on the serial console; plain stdout
+        # serves human `switch` runs)
+        system.activationScripts.workstation = {
+          deps = [ "users" ];
+          text = ''
+            echo "workstation: substrate staged (system plane)"
+            echo "workstation: substrate staged (system plane)" > /dev/kmsg 2>/dev/null || true
+          '';
+        };
+      })
+      (lib.mkIf (isDarwin && cfg.network.tailscale.enable) {
+        system.activationScripts.preActivation.text = lib.mkAfter "${tailscaleCutover}/bin/workstation-tailscale-cutover";
+      })
     ]
-    ++ cfg.extraPackages;
-    # --- the tailscale transport (the fleet's layer) -----------------------
-    # ssh, the dashboard's --host binding and all host convergence ride it;
-    # the host's MagicDNS name is workstation.host.tailscale.fqdn (set only
-    # in hosts/<host>/default.nix). acceptDns stays the declared surface —
-    # neither the NixOS nor the nix-darwin module carried the option at the
-    # pin; the NixOS module integrates the tailnet DNS through the resolver
-    # on enable.
-    services.tailscale.enable = lib.mkIf cfg.network.tailscale.enable true;
-
-    # activation marker (kmsg surfaces on the serial console; plain stdout
-    # serves human `switch` runs)
-    system.activationScripts.workstation = {
-      deps = [ "users" ];
-      text = ''
-        echo "workstation: substrate staged (system plane)"
-        echo "workstation: substrate staged (system plane)" > /dev/kmsg 2>/dev/null || true
-      '';
-    };
-  };
+  );
 }
