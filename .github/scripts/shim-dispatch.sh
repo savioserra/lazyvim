@@ -513,6 +513,12 @@ if [ "\$kind" = --yesno ]; then [ "\$ans" = yes ]; exit; fi
 printf '%s\n' "\$ans" >&2
 STUB
 chmod +x "$stub_dir/whiptail"
+# the tailnet login, pinned: logged out unless $root/ts-online says 0
+cat >"$stub_dir/tailscale" <<STUB
+#!/bin/sh
+exit "\$(cat '$root/ts-online' 2>/dev/null || echo 1)"
+STUB
+chmod +x "$stub_dir/tailscale"
 fl=$root/fleetflake
 mkdir -p "$fl/hosts" "$fl/bin"
 : >"$fl/bin/workstation"
@@ -565,6 +571,14 @@ out=$(WORKSTATION_FLAKE=$fl "$shim" fleet 2>&1) || fail 'a deferred login must n
 grep -q 'workstation-fleet join' "$root/stub.log" && fail 'a logged-out node must not join'
 printf '%s' "$out" | grep -q 'tailscale up' || fail 'the deferred login must name the command'
 rm -f "$root/fleet-online"
+# 9h. a node already on the tailnet goes straight to the menu
+printf '0\n' >"$root/ts-online"
+: >"$root/stub.log"
+printf '%s\n' standalone >"$root/wt-queue"
+WORKSTATION_FLAKE=$fl "$shim" fleet >/dev/null 2>&1 || fail 'fleet on a logged-in node must succeed'
+grep -q 'whiptail --yesno' "$root/stub.log" && fail 'a logged-in node must skip the tailscale question'
+grep -q '^  fleet = "standalone";$' "$fl/hosts/identity.nix" || fail 'the menu answer must land without the tailscale question'
+rm -f "$root/ts-online"
 # 9g. a template identity refuses
 fleet_template
 rc=0

@@ -191,7 +191,10 @@ fleet_network() {
 fleet_choose() {
 	fleet_mode=''
 	command -v whiptail >/dev/null 2>&1 || return 0
-	if ! whiptail --title " $3 " --yes-button 'Turn on' --no-button 'Not now' --yesno \
+	# a node already on the tailnet skips the transport question
+	if command -v tailscale >/dev/null 2>&1 && tailscale status >/dev/null 2>&1; then
+		:
+	elif ! whiptail --title " $3 " --yes-button 'Turn on' --no-button 'Not now' --yesno \
 		"Turn on tailscale?\n\nIt is the private network your machines' agents use to find and call each other (the agent fleet)." 12 70; then
 		fleet_set "$1" standalone
 		whiptail --title " $3 " --msgbox \
