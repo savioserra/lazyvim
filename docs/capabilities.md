@@ -24,6 +24,8 @@ bin/workstation (POSIX sh: flake resolution, verb dispatch)
   select: workstation add|remove <path>  (hosts/selections.nix, validated
           against workstation.report.selectable; selected renders
           workstation.report.selections)
+  peers:  workstation peers  (hosts/peers.nix + pairing; the flake's
+          workstation-peers helper)
   writes: `workstation apply` (execs the staged switch driver)
 ```
 
@@ -187,6 +189,39 @@ and sorted, never hidden.
   harlequin derivation by `hsql --skill` at build time.
 - Gateway extensions: `programs.hermes.extensions` → entry symlinks into
   `~/.hermes/plugins/<name>`.
+- The A2A node: `programs.hermes.a2a` (on by default), converged by the
+  `converge-hermes-a2a` activation through the hermes CLI:
+
+  | Declared | Lands in `~/.hermes` |
+  | --- | --- |
+  | `enable`, `port` (9900) | `platforms.a2a.enabled`, `platforms.a2a.extra.port` |
+  | `toolsetPlatforms` (`cli`) | the `a2a` toolset per platform |
+  | `name` (the identity's host) | `A2A_AGENT_NAME`; with the tailnet bind, `A2A_PUBLIC_URL` `http://<name>:<port>` |
+  | `tailnet` | `A2A_HOST` — the node's tailnet IPv4; with no inbound credential, a node-local lock `A2A_BEARER_TOKEN` (generated inside python, held by nobody) widens the bind: the Agent Card is public on the tailnet, calls stay closed until a pairing |
+  | `peers` (`hosts/peers.nix`) | one `a2a_agents.<node>` entry each, bearer token `${A2A_PEER_TOKEN_<NODE>}`; `a2a.trusted_peers` |
+
+  - Writes run on drift only and verify by re-read; the declaration's keys
+    are listed in the state tree's `hermes-a2a.owned` and retracted when
+    dropped; operator keys stay untouched.
+  - A change restarts a running gateway, unless the apply runs inside it
+    (the receipt names `hermes gateway restart`).
+  - Tokens: one per node pair, stored by `workstation peers` (pairing) in
+    `.env` — `A2A_PEER_TOKEN_<NODE>` out, the `<node>:<token>` row of
+    `A2A_PEER_TOKENS` in. The converge reads token names for presence
+    only; a pairing leaves `hermes-a2a.restart`, which the next apply
+    serves.
+- `workstation peers`: the hub over the tailnet's A2A agents (the online
+  linux/macOS/windows nodes whose Agent Card answers on the A2A port).
+
+  | Action | Effect |
+  | --- | --- |
+  | add | the agent joins `hosts/peers.nix` with every advertised skill and 120s |
+  | pair (tailnet) | a one-shot offer on this node's tailnet IPv4 (A2A port + 1), answered only to the peer's tailnet IPv4, serving the token once; `workstation peers` on the peer finds it and accepts |
+  | pair (by hand) | paste the peer's token, or generate one (printed once at exit) — any A2A agent |
+  | capabilities, timeout, remove | edit the entry; remove also drops its tokens |
+
+  Token values travel only through the environment into hermes' own `.env`
+  writer — never argv, a file or a log.
 - Verify: `modules/agent/verify/hermes.sh` — checkout at the deployed pin,
   store-symlink skills, interpreter, launcher `--version` consumer smoke;
   full-stack or exit 1. Hosts: all.
@@ -321,6 +356,7 @@ Fail-closed at eval:
 | switch / rollback | `workstation apply` / `workstation rollback` | Build the generation from the flake, activate atomically, write the receipt to `switch.log` |
 | `plan` / `status` / `capabilities` / `selected` | `nix eval` over `workstation.report` | Answer the declared state; mutate nothing |
 | select | `workstation add <path>...` / `workstation remove <path>...` | Validate against the walk-derived `selectable`, edit `hosts/selections.nix` canonically, offer the apply (idempotent; the baseline refuses) |
+| peers | `workstation peers` | Discover the tailnet's A2A agents, add, pair, tune; write `hosts/peers.nix`, store the pair tokens, offer the apply |
 | verify lane | `modules/*/verify/*.sh` | Consumer smokes against the recorded pins |
 
 Reads are pure evals. The container E2E (`tests/nix`) asserts the shape

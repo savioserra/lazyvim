@@ -31,6 +31,14 @@ local rewrite uncommitted, same lifecycle as identity.nix):
   them all). add and remove are idempotent, accept multiple paths, and
   offer `apply now?` on a TTY (WORKSTATION_NO_APPLY=1 skips the offer).
 
+peers (the A2A node's peers, hosts/peers.nix — keep the local rewrite
+uncommitted, same lifecycle as identity.nix):
+  peers           one screen over the tailnet's A2A agents (the online
+                  nodes whose Agent Card answers on the A2A port): add a
+                  peer, pair it (a shared token, exchanged over the
+                  tailnet), tune its capabilities and timeout; then offer
+                  the apply. init offers it when a tailnet answers
+
 reads (the declared state, answered by nix eval over
 #workstation.report.<verb>):
   status          the declared inventory: counts, capability order
@@ -90,14 +98,16 @@ quote_lines() {
 # the apply offer (the init precedent): whiptail yes/no where the dialog
 # tool exists, a printed next step otherwise; WORKSTATION_NO_APPLY=1 skips.
 # On yes this execs the same write plane the apply verb takes.
+# offer_apply [<what>] — the saved surface the messages name (selection)
 offer_apply() {
+	what=${1:-selection}
 	if [ "${WORKSTATION_NO_APPLY:-}" = 1 ]; then
-		printf 'workstation: selection saved; apply skipped (WORKSTATION_NO_APPLY=1) — next: workstation apply\n'
+		printf 'workstation: %s saved; apply skipped (WORKSTATION_NO_APPLY=1) — next: workstation apply\n' "$what"
 		return 0
 	fi
 	if command -v whiptail >/dev/null 2>&1; then
-		if whiptail --title ' workstation selection ' --yesno \
-			'Apply the new selection now?' 9 68; then
+		if whiptail --title " workstation $what " --yesno \
+			"Apply the new $what now?" 9 68; then
 			if [ -f "$flake/hosts/identity.nix" ] &&
 				grep -q '"TEMPLATE"' "$flake/hosts/identity.nix"; then
 				die 'identity not captured — run: workstation init' 2
@@ -107,10 +117,17 @@ offer_apply() {
 			fi
 			die 'the write plane is the generation'\''s workstation-switch driver and it is not on PATH — apply the substrate first (the home lane stages it)' 2
 		fi
-		printf 'workstation: selection saved; apply deferred — next: workstation apply\n'
+		printf 'workstation: %s saved; apply deferred — next: workstation apply\n' "$what"
 		return 0
 	fi
-	printf 'workstation: selection saved — next: workstation apply\n'
+	printf 'workstation: %s saved — next: workstation apply\n' "$what"
+}
+
+# the discovery helper: the flake's own build (its tools ride the closure,
+# never the PATH) — one invocation builds and prints the path
+peers_helper() {
+	nix --extra-experimental-features 'nix-command flakes' \
+		build --no-link --print-out-paths "$flake#workstation-peers"
 }
 
 flake=""
@@ -319,6 +336,25 @@ init)
 		printf 'workstation: capture done; apply skipped (WORKSTATION_NO_APPLY=1) — next: workstation apply\n'
 		exit 0
 	fi
+	# the A2A peers: offered when a tailnet answers (workstation peers
+	# re-runs the same discovery any time); a skipped or failed discovery
+	# never blocks the switch
+	if command -v whiptail >/dev/null 2>&1 && command -v tailscale >/dev/null 2>&1 &&
+		tailscale status >/dev/null 2>&1; then
+		if whiptail --title ' workstation init ' --yesno \
+			'Discover A2A agents on the tailnet now (workstation peers)?' 9 68; then
+			rc=0
+			if helper=$(peers_helper); then
+				"$helper/bin/workstation-peers" "$flake/hosts/peers.nix" || rc=$?
+			else
+				rc=1
+			fi
+			case $rc in
+			0 | 10) ;;
+			*) printf 'workstation: peers skipped — run later: workstation peers\n' ;;
+			esac
+		fi
+	fi
 	if command -v whiptail >/dev/null 2>&1; then
 		if ! whiptail --title ' workstation init ' --yesno \
 			'Apply the substrate now (the first switch)?' 9 68; then
@@ -462,6 +498,31 @@ add | remove)
 		offer_apply
 	else
 		printf 'workstation: selection unchanged\n'
+	fi
+	;;
+peers)
+	# A2A peer discovery into hosts/peers.nix (the machine-local file):
+	# the helper probes, the operator picks and configures, the file is
+	# rewritten whole; the apply is offered only when the file changed
+	[ $# -eq 0 ] || die 'peers takes no arguments' 2
+	[ -n "$flake" ] ||
+		die 'no checkout found — run inside the workstation repo clone' 2
+	peers_file=$flake/hosts/peers.nix
+	[ -f "$peers_file" ] || die "peers: $peers_file missing (unexpected tree)" 1
+	[ -w "$peers_file" ] ||
+		die "peers: $peers_file is read-only — run inside the workstation repo clone (the staged snapshot is not editable)" 2
+	helper=$(peers_helper) || die 'peers: the discovery helper did not build (nix build failed)' 1
+	# the helper's exit: 0 nothing to apply, 10 saved (the file or a
+	# pairing), anything else a failure
+	before=$(cksum <"$peers_file")
+	rc=0
+	"$helper/bin/workstation-peers" "$peers_file" || rc=$?
+	case $rc in
+	0 | 10) ;;
+	*) exit "$rc" ;;
+	esac
+	if [ "$rc" = 10 ] || [ "$before" != "$(cksum <"$peers_file")" ]; then
+		offer_apply peers
 	fi
 	;;
 apply | rollback | update | sync)

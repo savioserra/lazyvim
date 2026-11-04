@@ -46,9 +46,15 @@ repo=${WORKSTATION_REPO:-https://github.com/savioserra/lazyvim.git}
 checkout=${WORKSTATION_CHECKOUT:-"$HOME/lazyvim"}
 if [ -d "$checkout/.git" ]; then
 	log "checkout exists at $checkout — updating"
-	# the machine files (identity, selections) are uncommitted by law;
-	# stash them across the pull, init re-merges them after
-	git -C "$checkout" stash push -q -- hosts/identity.nix hosts/selections.nix 2>/dev/null || true
+	# the machine files (identity, selections, peers) are uncommitted by
+	# law; stash them across the pull, init re-merges them after. Only the
+	# files the checkout carries: a pathspec the old tree lacks fails the
+	# whole stash
+	set --
+	for f in hosts/identity.nix hosts/selections.nix hosts/peers.nix; do
+		if [ -e "$checkout/$f" ]; then set -- "$@" "$f"; fi
+	done
+	git -C "$checkout" stash push -q -- "$@" 2>/dev/null || true
 	git -C "$checkout" pull --ff-only
 	git -C "$checkout" stash pop -q 2>/dev/null || true
 else

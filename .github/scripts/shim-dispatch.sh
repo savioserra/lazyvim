@@ -31,6 +31,11 @@
 #      (shellExtras) survive every re-run, a converged identity re-inits
 #      byte-identical, a cancelled dialog writes nothing, and a missing
 #      template file refuses.
+#   7. peers builds the flake's workstation-peers helper and runs it on
+#      hosts/peers.nix: arguments refuse, a missing or read-only file
+#      refuses, a failed build or helper fails closed, and the apply is
+#      offered only when the helper changed the file or reports a saved
+#      pairing (exit 10).
 set -eu
 progname='shim-dispatch.sh'
 repo_root=$(CDPATH='' cd -P "$(dirname "$0")/../.." && pwd -P)
@@ -52,6 +57,11 @@ cat >"$stub_dir/nix" <<STUB
 printf '%s\n' "\$*" >> '$root/stub.log'
 s=''
 case "\$*" in
+  *"#workstation-peers"*)
+    [ -f '$root/peers-build-fails' ] && exit 1
+    printf '%s\n' '$root/peers-helper'
+    exit 0
+    ;;
   *"selections.pins.enable"*) s=enable ;;
   *"selections.pins.disable"*) s=disable ;;
   *"report.selectable."*)
@@ -90,6 +100,23 @@ for t in \$tokens; do out="\$out\"\$t\","; done
 printf '[%s]\n' "\$(printf '%s' "\$out" | sed 's/,\$//')"
 STUB
 chmod +x "$stub_dir/nix"
+
+# the stub discovery helper: log the invocation; the mode file picks the
+# outcome (touch: change the peers file, paired: exit 10 with the file
+# unchanged, fail: exit 1, absent: no change)
+mkdir -p "$root/peers-helper/bin"
+cat >"$root/peers-helper/bin/workstation-peers" <<STUB
+#!/bin/sh
+printf 'workstation-peers %s\n' "\$*" >> '$root/stub.log'
+mode=\$(cat '$root/peers-mode' 2>/dev/null || true)
+case "\$mode" in
+  touch) printf '# changed\n' >> "\$1" ;;
+  paired) exit 10 ;;
+  fail) exit 1 ;;
+esac
+exit 0
+STUB
+chmod +x "$root/peers-helper/bin/workstation-peers"
 
 # the stub switch driver: log the invocation
 {
@@ -356,4 +383,59 @@ grep -q 'missing (unexpected tree)' "$root/err" ||
 	fail 'the missing-template refusal must name it'
 mv "$root/identity.hold" "$init2/hosts/identity.nix"
 
-echo "$progname: OK (dispatch, resolution order, delegation, fail-closed, selection and init-merge paths all hold)"
+# 7. peers: the helper build, the file guards, the change-gated offer
+peers_fixture=$root/peersflake
+mkdir -p "$peers_fixture/hosts"
+printf '{ }\n' >"$peers_fixture/hosts/peers.nix"
+rc=0
+WORKSTATION_FLAKE=$peers_fixture "$shim" peers extra >/dev/null 2>&1 || rc=$?
+[ "$rc" = 2 ] || fail "peers with an argument must exit 2 (got $rc)"
+# 7a. unchanged file: the helper runs on the file, no apply offer
+rm -f "$root/peers-mode"
+out=$(WORKSTATION_NO_APPLY=1 WORKSTATION_FLAKE=$peers_fixture "$shim" peers) ||
+	fail 'peers with an unchanged file must succeed'
+expect_log "#workstation-peers"
+expect_log "workstation-peers $peers_fixture/hosts/peers.nix"
+printf '%s' "$out" | grep -q 'peers saved' &&
+	fail 'an unchanged peers file must not offer the apply'
+# 7b. a changed file: the apply offer names the peers
+printf 'touch\n' >"$root/peers-mode"
+out=$(WORKSTATION_NO_APPLY=1 WORKSTATION_FLAKE=$peers_fixture "$shim" peers) ||
+	fail 'peers with a changed file must succeed'
+printf '%s' "$out" | grep -q 'peers saved; apply skipped' ||
+	fail 'a changed peers file must offer the apply'
+# 7b'. a pairing with the file unchanged (exit 10): the apply is offered
+printf 'paired\n' >"$root/peers-mode"
+out=$(WORKSTATION_NO_APPLY=1 WORKSTATION_FLAKE=$peers_fixture "$shim" peers) ||
+	fail 'a saved pairing (exit 10) must not fail the verb'
+printf '%s' "$out" | grep -q 'peers saved; apply skipped' ||
+	fail 'a saved pairing must offer the apply'
+# 7c. a failing helper fails closed
+printf 'fail\n' >"$root/peers-mode"
+rc=0
+WORKSTATION_NO_APPLY=1 WORKSTATION_FLAKE=$peers_fixture "$shim" peers >/dev/null 2>&1 || rc=$?
+[ "$rc" = 1 ] || fail "a failing helper must exit 1 (got $rc)"
+rm -f "$root/peers-mode"
+# 7d. a failed build fails closed naming the helper
+: >"$root/peers-build-fails"
+rc=0
+WORKSTATION_FLAKE=$peers_fixture "$shim" peers >/dev/null 2>"$root/err" || rc=$?
+[ "$rc" = 1 ] || fail "a failed helper build must exit 1 (got $rc)"
+grep -q 'did not build' "$root/err" || fail 'the failed build must say so'
+rm -f "$root/peers-build-fails"
+# 7e. a missing or read-only file refuses before any build
+chmod a-w "$peers_fixture/hosts/peers.nix"
+rc=0
+WORKSTATION_FLAKE=$peers_fixture "$shim" peers >/dev/null 2>"$root/err" || rc=$?
+chmod u+w "$peers_fixture/hosts/peers.nix"
+if [ "$(id -u)" != 0 ]; then
+	[ "$rc" = 2 ] || fail "a read-only peers file must exit 2 (got $rc)"
+	grep -q 'read-only' "$root/err" || fail 'the read-only refusal must name it'
+fi
+rm "$peers_fixture/hosts/peers.nix"
+rc=0
+WORKSTATION_FLAKE=$peers_fixture "$shim" peers >/dev/null 2>"$root/err" || rc=$?
+[ "$rc" = 1 ] || fail "a missing peers file must exit 1 (got $rc)"
+grep -q 'peers.nix missing' "$root/err" || fail 'the missing-file refusal must name it'
+
+echo "$progname: OK (dispatch, resolution order, delegation, fail-closed, selection, init-merge and peers paths all hold)"
