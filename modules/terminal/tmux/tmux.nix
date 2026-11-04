@@ -66,32 +66,16 @@ let
     }
   ) pluginPins;
 
-  # drains the late OSC 11 colour reply (leaks as `11;rgb:...` on
-  # high-latency links); bash + zsh variants
-
-  drainBash = pkgs.writeText "tmux-drain.bash" ''
-    tmux() {
-      command tmux "$@"
-      local _rc=$?
-      read -t 0.5 -r _ </dev/tty 2>/dev/null
-      return $_rc
-    }
-  '';
-  drainZsh = pkgs.writeText "tmux-drain.zsh" ''
-    tmux() {
-      command tmux "$@"
-      local _rc=$?
-      read -t 0.5 -r _ </dev/tty 2>/dev/null
-      return $_rc
-    }
-  '';
 in
 {
   config = lib.mkIf (config.workstation.terminal.enable && config.workstation.terminal.tmux.enable) {
     home.packages = [ pkgs.tmux ];
 
-    # the reply-drain wrappers ride the rc lane (bash + zsh) at slot 30 —
-    # session glue ahead of the alias block on the shared scale
+    # the reply-drain wrapper (drains the late OSC 11 colour reply that
+    # leaks as `11;rgb:...` on high-latency links) rides the rc lane
+    # (bash + zsh) at slot 30 — session glue ahead of the alias block on
+    # the shared scale. A repo payload file: the lane reads payload bytes
+    # at eval, so a derivation here would be import-from-derivation
     workstation.shell.fragments = [
       {
         target = ".bashrc";
@@ -99,7 +83,7 @@ in
         order = 30;
         domain = "terminal";
         marker = "# workstation: tmux reply drain";
-        payload = drainBash;
+        payload = ./fragments/tmux-drain.sh;
       }
       {
         target = ".zshrc";
@@ -107,7 +91,7 @@ in
         order = 30;
         domain = "terminal";
         marker = "# workstation: tmux reply drain";
-        payload = drainZsh;
+        payload = ./fragments/tmux-drain.sh;
       }
     ];
 
