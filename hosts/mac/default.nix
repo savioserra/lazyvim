@@ -106,8 +106,9 @@ in
             user = user;
             homeDirectory = homeDir;
           };
-          # the fleet transport (the shared system module owns the wiring)
-          workstation.network.tailscale.enable = true;
+          # the fleet transport (the shared system module owns the wiring);
+          # the identity's fleet choice: standalone turns it off
+          workstation.network.tailscale.enable = (id.fleet or "member") != "standalone";
           # the canonical declaration derives from the identity option —
           # never a second literal
           networking.hostName = config.workstation.host.name;

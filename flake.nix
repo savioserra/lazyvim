@@ -142,6 +142,8 @@
               workstation.foundation.shell.extras = (import ./hosts/identity.nix).shellExtras or "";
               programs.hermes.a2a.name = linuxHost.name;
               programs.hermes.a2a.enable = ((import ./hosts/identity.nix).fleet or "member") != "standalone";
+              workstation.network.tailscale.enable =
+                ((import ./hosts/identity.nix).fleet or "member") != "standalone";
               programs.hermes.a2a.peers = import ./hosts/peers.nix;
             }
           )
@@ -207,6 +209,7 @@
           ./modules/languages/overlay.nix
           ./modules/agent/overlay.nix
           ./modules/database/overlay.nix
+          ./modules/network/overlay.nix
           ./modules/secrets/overlay.nix
           ./modules/fonts/overlay.nix
         ]) final prev;

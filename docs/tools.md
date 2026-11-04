@@ -28,7 +28,7 @@ Platforms: linux x86_64 (WSL counts as linux), macOS arm64.
 | direnv + nix-direnv | 2.36.0 / 3.0.7 | nixpkgs via Home Manager (`programs.direnv`) | `use flake`/`use nix` with the evaluation cache and GC roots; the shell hooks ride the rc fragment lane; complements mise: direnv owns repos with a flake/shell.nix, mise owns repos without nix awareness | linux-x86_64, darwin-arm64 |
 | 1Password CLI | 2.41.x | nixpkgs (`modules/secrets/secrets.nix`; unfree — the acceptance is `nix/lib/license.nix`) | `op` on PATH via `home.packages` | linux-x86_64, darwin-arm64 |
 | Hermes Agent | rev `b23600860f8` + interpreter `pkgs.python314` | github.com/NousResearch/hermes-agent; nixpkgs | Pinned checkout `~/.hermes/hermes-agent` (activation ensure); interpreter at `.local/opt/hermes/python`; launcher at `.local/bin/hermes`; skills as store entry symlinks (`programs.hermes.skills`); extensions into `~/.hermes/plugins`; verify anchor `.local/opt/hermes/pin.json` | linux-x86_64, darwin-arm64 |
-| A2A helpers | yq-go 4.45.4, socat 1.8.0.3, curl 8.14.1, jq 1.7.1, newt 0.52.24, tailscale 1.82.5, findutils | nixpkgs (`modules/agent/packages.nix`) | in the closures of `workstation-a2a-converge` (the activation), `workstation-peers` (`workstation peers`), `workstation-fleet` (the fleet service, `workstation fleet`) and `workstation-a2a-token`, never on PATH | linux-x86_64, darwin-arm64 |
+| A2A helpers | yq-go 4.45.4, socat 1.8.0.3, curl 8.14.1, jq 1.7.1, newt 0.52.24, tailscale 1.104.1 (the foundation input), findutils | nixpkgs (`modules/agent/packages.nix`) | in the closures of `workstation-a2a-converge` (the activation), `workstation-peers` (`workstation peers`), `workstation-fleet` (the fleet service, `workstation fleet`) and `workstation-a2a-token`, never on PATH | linux-x86_64, darwin-arm64 |
 | JetBrainsMono Nerd Font | 3.5.0 | nixpkgs (`modules/fonts/fonts.nix`) | linux `.local/share/fonts/JetBrainsMonoNerdFont`; darwin `Library/Fonts/JetBrainsMonoNerdFont`; fontconfig enabled | linux-x86_64, darwin-arm64 |
 | nunchux | 3.1.3 | github.com/datamadsen/nunchux | pinned checkout `.tmux/plugins/nunchux` (`fetchFromGitHub`) + the `bin/.platform` marker; package is linux-only | linux-x86_64 |
 | tmux | 3.7c | nixpkgs (the system legs' host configuration) | the system legs' tmux package; darwin keeps brew | linux-x86_64 |
@@ -48,8 +48,11 @@ manifests: `.local/opt/hermes/pin.json` (agent),
 
 - **nix** with flakes enabled — host-owned on standalone-HM hosts,
   platform-managed on NixOS and nix-darwin.
-- **tailscaled** — host-owned on standalone-HM linux hosts (the substrate
-  ships the CLI); system-module-owned on NixOS-WSL and nix-darwin.
+- **tailscaled** — provisioned by the substrate: the `workstation-tailscaled`
+  systemd unit on standalone-HM linux hosts (a previous apt/dnf/pacman/snap
+  install is removed, `/var/lib/tailscale` kept, a copy under
+  `/var/lib/workstation/tailscale-pre-substrate-<stamp>/`);
+  `services.tailscale` on NixOS-WSL and nix-darwin.
 - **whiptail** — ships with the substrate (`pkgs.newt`); a bare box before
   its first switch falls back to the detected identity values.
 

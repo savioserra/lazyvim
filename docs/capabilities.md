@@ -149,7 +149,11 @@ and sorted, never hidden.
   (the hsql agent skill generated from the harlequin derivation at build
   time); whiptail (the shim's install-time UI).
 - The tailscale transport (`workstation.network.tailscale.*`;
-  `services.tailscale` on the system legs).
+  `services.tailscale` on the system legs; on standalone linux the
+  `workstation-tailscaled` activation: the substrate's systemd unit, a
+  previous apt/dnf/pacman/snap install removed with its sources moved
+  aside, `/var/lib/tailscale` kept; off retracts the unit only). The
+  identity's `fleet = "standalone"` turns the transport off.
 - Verify: `modules/foundation/verify/prompt.sh` — tools speak, payload
   deployed, rc wired, fresh login shell.
 - Hosts: all.

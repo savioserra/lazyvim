@@ -179,11 +179,7 @@ in
       # dialogs prefilled with the detected values. A prerequisite of the
       # bin surface, shipped by the substrate so every managed host has it.
       pkgs.newt
-      # the tailscale CLI on the home PATH (the daemon is the system
-      # service on NixOS/darwin legs; tailscaled is the host-owned
-      # prerequisite on any standalone leg)
-    ]
-    ++ lib.optionals config.workstation.network.tailscale.enable [ pkgs.tailscale ];
+    ];
 
     # direnv + nix-direnv: the nix ecosystem's standard per-repo
     # environment layer (`use flake`/`use nix`, the evaluation cache, and

@@ -1,7 +1,12 @@
 # The network domain: the fleet transport (ssh, the dashboard's --host
-# binding, all host convergence ride the tailnet). The system legs declare
-# services.tailscale through the system module; the host's MagicDNS name
-# comes from workstation.host.name.
+# binding, all host convergence ride the tailnet).
+#
+# | Leg | Daemon |
+# | --- | --- |
+# | NixOS, darwin | services.tailscale through the system module |
+# | standalone linux (systemd) | the substrate unit (workstation-tailscaled, files/tailscaled-ensure.sh); a previous install is removed, the node state kept |
+#
+# The host's MagicDNS name comes from workstation.host.name.
 {
   config,
   lib,
@@ -26,31 +31,31 @@
   };
 
   config =
-    lib.mkIf (config.workstation.network.enable && config.workstation.network.tailscale.enable)
-      {
+    let
+      on = config.workstation.network.enable && config.workstation.network.tailscale.enable;
+      # the standalone linux leg's daemon: provisioned (any previous install
+      # goes), retracted when off; NixOS and darwin run the system module's
+      ensure = pkgs.writeShellApplication {
+        name = "workstation-tailscaled";
+        runtimeInputs = [
+          pkgs.coreutils
+          pkgs.diffutils
+          pkgs.gnugrep
+        ];
+        bashOptions = [ ];
+        text = "TAILSCALE_PKG=${pkgs.tailscale}\n" + builtins.readFile ./files/tailscaled-ensure.sh;
+      };
+    in
+    lib.mkMerge [
+      (lib.mkIf on {
         # the CLI + the daemon binary on the home PATH
         home.packages = [ pkgs.tailscale ];
-
-        # the daemon provision: NixOS/darwin legs declare services.tailscale
-        # in the system module; a standalone leg gets the ensure - enable and
-        # start the unit when it exists (root via sudo), defer with the exact
-        # command when it does not. Idempotent: an active unit is a no-op.
+      })
+      (lib.mkIf pkgs.stdenv.hostPlatform.isLinux {
         home.activation.ensure-tailscaled = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-          if command -v systemctl >/dev/null 2>&1 && systemctl list-unit-files tailscaled.service >/dev/null 2>&1; then
-            state=$(systemctl is-active tailscaled 2>/dev/null || true)
-            enabled=$(systemctl is-enabled tailscaled 2>/dev/null || true)
-            if [ "$state" = active ] && [ "$enabled" = enabled ]; then
-              echo "workstation: tailscaled already provisioned (active, enabled)"
-            elif sudo -n true 2>/dev/null; then
-              sudo systemctl enable --now tailscaled &&
-                echo "workstation: tailscaled provisioned (enabled + started)" ||
-                echo "workstation: tailscaled provision deferred - systemctl failed"
-            else
-              echo "workstation: tailscaled provision deferred - run: sudo systemctl enable --now tailscaled"
-            fi
-          else
-            echo "workstation: no tailscaled unit on this host - install tailscaled (the host's package manager) or flip the leg to a system substrate"
-          fi
+          ${ensure}/bin/workstation-tailscaled ${if on then "on" else "off"} ||
+            echo "workstation: tailscaled provision failed — the receipt above names the step; the next apply retries"
         '';
-      };
+      })
+    ];
 }

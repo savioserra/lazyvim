@@ -64,8 +64,9 @@ in
           // (lib.optionalAttrs ((id.tailscaleFqdn or "") != "") {
             tailscale.fqdn = id.tailscaleFqdn;
           });
-          # the fleet transport (the shared system module owns the wiring)
-          workstation.network.tailscale.enable = true;
+          # the fleet transport (the shared system module owns the wiring);
+          # the identity's fleet choice: standalone turns it off
+          workstation.network.tailscale.enable = (id.fleet or "member") != "standalone";
 
           wsl = {
             enable = true;
