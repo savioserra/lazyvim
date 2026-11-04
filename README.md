@@ -21,8 +21,8 @@ sh -c "$(curl -fsSL https://raw.githubusercontent.com/savioserra/lazyvim/main/in
 
 `install.sh` ensures nix (the one prerequisite), clones the repo to
 `~/lazyvim` (`WORKSTATION_CHECKOUT` overrides), and runs `workstation
-init` — the identity capture and the first switch. Every later update is
-`workstation apply`.
+init` — the identity capture, the fleet choice and the first switch.
+Every later update is `workstation apply`.
 
 `workstation init` runs whiptail dialogs prefilled with the detected
 values (hostname, user, home, tailscale fqdn) and writes
@@ -57,10 +57,24 @@ uncommitted, exactly like the identity. `workstation report.plan` carries
 the machine's pins; `workstation selected` renders every path's resolved
 on/off/baseline/unavailable state with dependency notes.
 
-## Agent peers (A2A)
+## Agent fleet (A2A)
 
-The agent serves A2A on the tailnet and calls the peers this machine
-pairs with:
+The machines' agents call each other over tailscale. `workstation init`
+asks once; `workstation fleet` changes the choice any time:
+
+| Choice | What happens |
+| --- | --- |
+| Start a new fleet | tailscale on, the tailscale login if needed; this machine serves the fleet |
+| Join a fleet | the same, then this machine pairs with every fleet member of your tailscale user |
+| Standalone | no tailscale, no agent fleet (`fleet = "standalone"` in the identity) |
+
+| Fleet member | Detail |
+| --- | --- |
+| service | `workstation-fleet serve` (systemd user unit / launchd agent) on the tailnet IPv4, port 9902 |
+| trust | a join is accepted when `tailscale whois` names the caller as this node's tailscale user |
+| pairing | one fresh token per pair, stored at both ends in `~/.hermes/.env`; the peer entry and the trust land in the hermes config, the gateway restarts |
+
+Agents outside the fleet, and per-peer tuning, go through the peers hub:
 
 ```sh
 workstation peers    # the hub: discover, add, pair, tune, save

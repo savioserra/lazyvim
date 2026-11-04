@@ -12,7 +12,9 @@
   options.workstation.network.enable = lib.mkEnableOption "the network domain (the tailscale transport)";
 
   options.workstation.network.tailscale = {
-    enable = lib.mkEnableOption "the tailscale transport (the CLI on the home PATH)";
+    enable = lib.mkEnableOption "the tailscale transport (the CLI on the home PATH)" // {
+      default = true;
+    };
     acceptDns = lib.mkOption {
       type = lib.types.bool;
       default = true;

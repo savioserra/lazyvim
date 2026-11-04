@@ -155,6 +155,9 @@ in
                   # the A2A node: the card names this host (its MagicDNS
                   # name); the peers are the machine's discovery file
                   programs.hermes.a2a.name = id.host;
+                  # the fleet choice (init / workstation fleet): standalone
+                  # turns the A2A node off; absent means member
+                  programs.hermes.a2a.enable = (id.fleet or "member") != "standalone";
                   programs.hermes.a2a.peers = import ../peers.nix;
                   # the mac's mutating seam is the --system plane
                   # (darwin-rebuild); the driver's default system target is

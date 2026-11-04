@@ -125,6 +125,13 @@ let
   # --- the A2A node --------------------------------------------------------
   a2a = hermes.a2a;
   helpers = import ./packages.nix { inherit pkgs; };
+  # the fleet member service runs where the node serves on the tailnet
+  fleetOn = a2a.enable && a2a.tailnet && a2a.fleet.enable;
+  fleetEnv = {
+    WORKSTATION_FLEET_PORT = toString a2a.fleet.port;
+    WORKSTATION_A2A_PORT = toString a2a.port;
+    WORKSTATION_HERMES = "${hermes.package}/hermes-launcher";
+  };
   # the outbound token's env name per peer: the config entry carries the
   # ${...} reference, the operator's .env carries the value
   tokenEnv = alias: "A2A_PEER_TOKEN_" + lib.toUpper (lib.replaceStrings [ "-" ] [ "_" ] alias);
@@ -237,6 +244,23 @@ in
         type = lib.types.listOf (lib.types.strMatching "[a-z0-9_]+");
         default = [ "cli" ];
         description = "The hermes platforms whose sessions get the a2a client toolset.";
+      };
+
+      fleet = {
+        enable =
+          lib.mkEnableOption "the fleet member service: tailnet nodes of this tailscale user pair with this node automatically (workstation-fleet serve)"
+          // {
+            default = true;
+          };
+        port = lib.mkOption {
+          type = lib.types.port;
+          default = 9902;
+          description = ''
+            The fleet port on the tailnet IPv4: `GET /fleet` marks a member,
+            `POST /join` pairs the caller (identified by `tailscale whois`,
+            accepted only for this node's tailscale user).
+          '';
+        };
       };
 
       peers = lib.mkOption {
@@ -378,6 +402,37 @@ in
             echo "workstation: a2a converge deferred — the receipts above name the step; the next apply retries"
           fi
         '';
+
+    # --- the fleet member service --------------------------------------------
+    # the same program on both platforms: a systemd user unit (linux) or a
+    # launchd agent (darwin), restarted on failure, bound to the tailnet
+    # IPv4 once the tailnet is up
+    systemd.user.startServices = lib.mkIf (fleetOn && pkgs.stdenv.hostPlatform.isLinux) (
+      lib.mkDefault "sd-switch"
+    );
+    systemd.user.services.workstation-fleet = lib.mkIf (fleetOn && pkgs.stdenv.hostPlatform.isLinux) {
+      Unit.Description = "workstation fleet member (A2A tailnet pairing)";
+      Service = {
+        ExecStart = "${helpers.workstation-fleet}/bin/workstation-fleet serve";
+        Environment = lib.mapAttrsToList (name: value: "${name}=${value}") fleetEnv;
+        Restart = "always";
+        RestartSec = 10;
+      };
+      Install.WantedBy = [ "default.target" ];
+    };
+    launchd.agents.workstation-fleet = lib.mkIf (fleetOn && pkgs.stdenv.hostPlatform.isDarwin) {
+      enable = true;
+      config = {
+        ProgramArguments = [
+          "${helpers.workstation-fleet}/bin/workstation-fleet"
+          "serve"
+        ];
+        EnvironmentVariables = fleetEnv;
+        KeepAlive = true;
+        RunAtLoad = true;
+        StandardErrorPath = "${config.home.homeDirectory}/Library/Logs/workstation-fleet.log";
+      };
+    };
 
     # --- the domain's tombstone --------------------------------------------
     workstation.retire = [ ".hermes/skills/lazyvim/SKILL.md" ];

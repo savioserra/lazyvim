@@ -134,78 +134,17 @@ else
 	hermes_ready=0
 fi
 
-# hermes' own .env writer on the pinned interpreter: the value arrives in
-# WS_VALUE. hermes_bootstrap re-executes the interpreter into the runtime's
-# environment (same pid), so the value leaves os.environ right after that
-# import and before any hermes_cli import; a failure names its class only
-# (a message could carry the value)
-writer='import os, sys
-sys.dont_write_bytecode = True
-os.environ.pop("PYTHONHOME", None)
-os.environ.pop("PYTHONPATH", None)
-sys.path.insert(0, os.environ["HERMES_ENGINE_CHECKOUT"])
-try:
-    import hermes_bootstrap  # noqa: F401
-    value = os.environ.pop("WS_VALUE", "")
-    from hermes_cli.config import get_env_value_prefer_dotenv, remove_env_value, require_env_writable, save_env_value
-    node, key, op = os.environ["WS_NODE"], os.environ["WS_KEY"], os.environ["WS_OP"]
-    if op == "set" and not value:
-        raise ValueError("no token value")
-    for k in (key, "A2A_PEER_TOKENS"):
-        require_env_writable(k, "set")
-    rows = [r.strip() for r in (get_env_value_prefer_dotenv("A2A_PEER_TOKENS") or "").split(",") if r.strip()]
-    rows = [r for r in rows if r.split(":", 1)[0].strip() != node]
-    if op == "set":
-        save_env_value(key, value)
-        rows.append(node + ":" + value)
-    else:
-        remove_env_value(key)
-    if rows:
-        save_env_value("A2A_PEER_TOKENS", ",".join(rows))
-    else:
-        remove_env_value("A2A_PEER_TOKENS")
-except Exception as exc:
-    print("token write failed (" + type(exc).__name__ + ")", file=sys.stderr)
-    sys.exit(1)
-'
-
-# the data root's first bootstrap installs dependencies (subprocesses):
-# the root is prepared once, by a secret-free call, before the first write
-prepared=0
-prepare_hermes() {
-	[ "$prepared" = 1 ] && return 0
-	HERMES_HOME=$HOME/.hermes HERMES_ENGINE_CHECKOUT=$checkout "$python" -I -c 'import os, sys
-sys.dont_write_bytecode = True
-sys.path.insert(0, os.environ["HERMES_ENGINE_CHECKOUT"])
-import hermes_bootstrap  # noqa: F401
-from hermes_cli.config import save_env_value  # noqa: F401
-' </dev/null >/dev/null 2>"$work/writer.err" || return 1
-	prepared=1
-}
-
 tokens_changed=0
 write_token() {
-	# write_token <node> <set|drop> [<value>] — a function argument, never a
-	# process argument: the value reaches python through the environment
-	prepare_hermes || return 1
-	if (
-		WS_NODE=$1
-		WS_OP=$2
-		WS_KEY=$(token_env "$1")
-		HERMES_HOME=$HOME/.hermes
-		HERMES_ENGINE_CHECKOUT=$checkout
-		export WS_NODE WS_OP WS_KEY HERMES_HOME HERMES_ENGINE_CHECKOUT
-		if [ "$2" = set ]; then
-			WS_VALUE=$3
-			export WS_VALUE
-		fi
-		exec "$python" -I -c "$writer"
-	) </dev/null >/dev/null 2>"$work/writer.err"; then
-		tokens_changed=1
-		mkdir -p "${marker%/*}" && : >"$marker"
-		return 0
-	fi
-	return 1
+	# write_token <node> <set|drop> [<value>] — the pair-token store; the
+	# value travels on stdin (printf is a builtin: never argv)
+	if [ "$2" = set ]; then
+		printf '%s' "$3" | workstation-a2a-token set "$1" >/dev/null 2>"$work/writer.err"
+	else
+		workstation-a2a-token drop "$1" </dev/null >/dev/null 2>"$work/writer.err"
+	fi || return 1
+	tokens_changed=1
+	mkdir -p "${marker%/*}" && : >"$marker"
 }
 
 # --- the peers state: one directory per peer -----------------------------------

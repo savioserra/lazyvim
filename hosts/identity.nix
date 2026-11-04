@@ -13,6 +13,7 @@
   # appended LAST in the managed rc lane (.bashrc/.zshrc) — absent or
   # empty renders no operator fragment; once set here it survives every
   # re-init (the merge never touches a field you set)
-  # tailscaleFqdn = ""; # optional: the host's MagicDNS name — the fleet
-  # transport and host-binding consumers derive from it when set
+  # fleet = "member"; # captured by workstation init / workstation fleet:
+  # "member" (the A2A node pairs with this tailscale user's fleet) or
+  # "standalone" (no A2A); absent means member
 }

@@ -273,8 +273,18 @@ if [ "$(want .enable)" = true ]; then
 		token=$(want_raw '.tokenEnvs[strenv(WS_A2A_ALIAS)]')
 		env_present "$token" || say "peer $alias is not paired — run: workstation peers"
 	done
-	if [ -n "$aliases" ]; then
-		ensure_cfg a2a.trusted_peers "$(want '.peers | keys | sort')" ' | sort'
+	# trusted: the declared peers plus the fleet roster (members the fleet
+	# agent paired at run time — workstation-fleet keeps the roster)
+	trusted=$(
+		{
+			want_raw '.peers | keys | .[]'
+			[ -f "$state/fleet.members" ] && cat "$state/fleet.members"
+		} | grep -Ex '[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?' | sort -u
+	)
+	if [ -n "$trusted" ]; then
+		# the names passed the DNS-label grammar: a plain JSON list is safe
+		# shellcheck disable=SC2086 # one name per word, by design
+		ensure_cfg a2a.trusted_peers "[$(printf '"%s",' $trusted | sed 's/,$//')]" ' | sort'
 	fi
 fi
 

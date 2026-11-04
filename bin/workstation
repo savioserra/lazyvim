@@ -31,13 +31,20 @@ local rewrite uncommitted, same lifecycle as identity.nix):
   them all). add and remove are idempotent, accept multiple paths, and
   offer `apply now?` on a TTY (WORKSTATION_NO_APPLY=1 skips the offer).
 
+fleet (the agents' private network — tailscale + the A2A fleet):
+  fleet           turn tailscale and the agent fleet on or off: start a
+                  new fleet, join one (pairs with every member of your
+                  tailscale user automatically) or stay standalone; init
+                  asks the same once
+
 peers (the A2A node's peers, hosts/peers.nix — keep the local rewrite
 uncommitted, same lifecycle as identity.nix):
   peers           one screen over the tailnet's A2A agents (the online
                   nodes whose Agent Card answers on the A2A port): add a
                   peer, pair it (a shared token, exchanged over the
                   tailnet), tune its capabilities and timeout; then offer
-                  the apply. init offers it when a tailnet answers
+                  the apply. Fleet members pair on their own (fleet);
+                  peers adds other agents and tunes any peer
 
 reads (the declared state, answered by nix eval over
 #workstation.report.<verb>):
@@ -132,6 +139,114 @@ offer_apply() {
 peers_helper() {
 	nix --extra-experimental-features 'nix-command flakes' \
 		build --no-link --print-out-paths "$flake#workstation-peers"
+}
+
+# --- the fleet: the A2A node's membership on the tailnet ---------------------
+# The choice lives in the identity file (`fleet = "member" | "standalone"`,
+# absent means member); the member service pairs fleet nodes of the same
+# tailscale user automatically (workstation-fleet, the flake's helper).
+fleet_helper() {
+	nix --extra-experimental-features 'nix-command flakes' \
+		build --no-link --print-out-paths "$flake#workstation-fleet"
+}
+
+# fleet_get <identity file> — the captured choice (member|standalone|empty)
+fleet_get() {
+	sed -nE 's/^[[:space:]]*fleet[[:space:]]*=[[:space:]]*"(member|standalone)"[[:space:]]*;.*/\1/p' "$1" | head -n 1
+}
+
+# fleet_set <identity file> <member|standalone> — replace the field, or
+# insert it before the closing brace (the values are fixed literals)
+fleet_set() {
+	WS_LINE="  fleet = \"$2\";" awk '
+		{ lines[NR] = $0 }
+		END {
+			hit = 0
+			for (i = 1; i <= NR; i++)
+				if (lines[i] ~ /^[ \t]*fleet[ \t]*=/) { lines[i] = ENVIRON["WS_LINE"]; hit = 1 }
+			at = 0
+			if (!hit)
+				for (i = NR; i >= 1; i--)
+					if (lines[i] ~ /^[ \t]*\}[ \t]*$/) { at = i; break }
+			for (i = 1; i <= NR; i++) {
+				if (i == at) print ENVIRON["WS_LINE"]
+				print lines[i]
+			}
+		}
+	' "$1" >"$1.fleet.$$" && mv "$1.fleet.$$" "$1"
+}
+
+# fleet_network <selections file> — the home leg (linux) carries tailscale
+# through the network domain; the system legs always run it
+fleet_network() {
+	[ "$(uname -s)" = Linux ] || return 0
+	grep -q '"network"' "$1" && return 0
+	awk '{ print } /^[ \t]*enable = \[/ && !done { print "    \"network\""; done = 1 }' "$1" >"$1.net.$$" &&
+		mv "$1.net.$$" "$1"
+}
+
+# fleet_choose <identity file> <selections file> <title> — the dialogs;
+# fleet_mode becomes start|join|standalone (empty without whiptail: the
+# identity keeps its default)
+fleet_choose() {
+	fleet_mode=''
+	command -v whiptail >/dev/null 2>&1 || return 0
+	if ! whiptail --title " $3 " --yes-button 'Turn on' --no-button 'Not now' --yesno \
+		"Turn on tailscale?\n\nIt is the private network your machines' agents use to find and call each other (the agent fleet)." 12 70; then
+		fleet_set "$1" standalone
+		whiptail --title " $3 " --msgbox \
+			"Tailscale and the agent fleet stay off on this machine.\n\nTurn them on any time: workstation fleet" 10 70
+		fleet_mode=standalone
+		return 0
+	fi
+	choice=$(whiptail --title " $3 " --notags --ok-button Select --cancel-button 'Not now' --menu \
+		"This machine's agent fleet:" 13 70 3 \
+		start 'Start a new fleet (this is the first machine)' \
+		join 'Join a fleet (pair with every member on your tailnet)' \
+		standalone 'Standalone (no agent fleet)' 3>&1 1>&2 2>&3) || choice=standalone
+	case $choice in
+	start | join)
+		fleet_set "$1" member
+		fleet_network "$2"
+		fleet_mode=$choice
+		;;
+	*)
+		fleet_set "$1" standalone
+		fleet_mode=standalone
+		;;
+	esac
+}
+
+# fleet_after <mode> — after the switch: the tailscale login, then the join
+fleet_after() {
+	case $1 in
+	start | join) ;;
+	*) return 0 ;;
+	esac
+	if ! helper=$(fleet_helper); then
+		printf 'workstation: the fleet helper did not build — run later: workstation fleet\n'
+		return 0
+	fi
+	if ! "$helper/bin/workstation-fleet" online; then
+		if command -v whiptail >/dev/null 2>&1 && whiptail --title ' workstation fleet ' \
+			--yes-button 'Log in' --no-button 'Later' --yesno \
+			"This machine is not logged into tailscale yet.\n\nLog in now? tailscale shows a login URL." 11 70; then
+			"$helper/bin/workstation-fleet" login || true
+		fi
+		if ! "$helper/bin/workstation-fleet" online; then
+			printf 'workstation: the fleet waits on tailscale — log in (tailscale up), then: workstation fleet\n'
+			return 0
+		fi
+	fi
+	case $1 in
+	start)
+		printf 'workstation: this machine starts the fleet — on the next machine, run the one-line install and choose Join\n'
+		;;
+	join)
+		"$helper/bin/workstation-fleet" join ||
+			printf 'workstation: the join paired part of the fleet or none — re-run: workstation fleet\n'
+		;;
+	esac
 }
 
 flake=""
@@ -350,28 +465,15 @@ init)
 	# homeConfiguration's activationPackage is built from THIS flake — the
 	# flake's own pinned home-manager, never a stray CLI. After this switch
 	# the staged driver exists and `workstation apply` owns every later one.
+	# the fleet: asked once (a captured choice is kept; workstation fleet
+	# changes it), served by the switch below, joined after it
+	fleet_mode=''
+	if [ -z "$(fleet_get "$id_file")" ]; then
+		fleet_choose "$id_file" "$flake/hosts/selections.nix" 'workstation init'
+	fi
 	if [ "${WORKSTATION_NO_APPLY:-}" = 1 ]; then
 		printf 'workstation: capture done; apply skipped (WORKSTATION_NO_APPLY=1) — next: workstation apply\n'
 		exit 0
-	fi
-	# the A2A peers: offered when a tailnet answers (workstation peers
-	# re-runs the same discovery any time); a skipped or failed discovery
-	# never blocks the switch
-	if command -v whiptail >/dev/null 2>&1 && command -v tailscale >/dev/null 2>&1 &&
-		tailscale status >/dev/null 2>&1; then
-		if whiptail --title ' workstation init ' --yesno \
-			'Discover A2A agents on the tailnet now (workstation peers)?' 9 68; then
-			rc=0
-			if helper=$(peers_helper); then
-				"$helper/bin/workstation-peers" "$flake/hosts/peers.nix" || rc=$?
-			else
-				rc=1
-			fi
-			case $rc in
-			0 | 10) ;;
-			*) printf 'workstation: peers skipped — run later: workstation peers\n' ;;
-			esac
-		fi
 	fi
 	if command -v whiptail >/dev/null 2>&1; then
 		if ! whiptail --title ' workstation init ' --yesno \
@@ -390,8 +492,12 @@ init)
 		drv=$(nix --extra-experimental-features 'nix-command flakes' \
 			build --no-link --print-out-paths \
 			github:LnL7/nix-darwin#darwin-rebuild)
-		exec sudo env NIX_CONFIG="extra-experimental-features = nix-command flakes" \
-			"$drv/bin/darwin-rebuild" switch --flake "$flake#$key"
+		sudo env NIX_CONFIG="extra-experimental-features = nix-command flakes" \
+			"$drv/bin/darwin-rebuild" switch --flake "$flake#$key" ||
+			die 'init: the first darwin switch failed' 1
+		printf 'workstation: applied — every later update is: workstation apply --system\n'
+		fleet_after "$fleet_mode"
+		exit 0
 		;;
 	esac
 	printf 'workstation: first activation (home plane, %s) ...\n' "$key"
@@ -402,6 +508,37 @@ init)
 		"$flake#homeConfigurations.$key.activationPackage")
 	"$store_path/activate"
 	printf 'workstation: applied — every later update is: workstation apply\n'
+	fleet_after "$fleet_mode"
+	;;
+fleet)
+	# the fleet choice, the switch that serves it, the login and the join
+	[ $# -eq 0 ] || die 'fleet takes no arguments' 2
+	[ -n "$flake" ] || die 'no checkout found — run inside the workstation repo clone' 2
+	id_file=$flake/hosts/identity.nix
+	[ -f "$id_file" ] || die "fleet: $id_file missing (unexpected tree)" 1
+	[ -w "$id_file" ] ||
+		die "fleet: $id_file is read-only — run inside the workstation repo clone (the staged snapshot is not editable)" 2
+	if grep -q '"TEMPLATE"' "$id_file"; then
+		die 'identity not captured — run: workstation init' 2
+	fi
+	command -v whiptail >/dev/null 2>&1 || die 'fleet: the dialogs need whiptail (it ships with the substrate)' 2
+	before=$(cat "$id_file" "$flake/hosts/selections.nix" 2>/dev/null | cksum)
+	fleet_choose "$id_file" "$flake/hosts/selections.nix" 'workstation fleet'
+	if [ "$before" != "$(cat "$id_file" "$flake/hosts/selections.nix" 2>/dev/null | cksum)" ]; then
+		command -v workstation-switch >/dev/null 2>&1 ||
+			die 'the write plane is the generation'\''s workstation-switch driver and it is not on PATH — apply the substrate first (the home lane stages it)' 2
+		switch_flake
+		printf 'workstation: the switch serves the fleet choice ...\n'
+		case "$(uname -s)" in
+		Darwin)
+			sudo env NIX_CONFIG="extra-experimental-features = nix-command flakes" \
+				WORKSTATION_SWITCH_FLAKE="${WORKSTATION_SWITCH_FLAKE:-}" \
+				"$(command -v workstation-switch)" apply --system || die 'fleet: the switch failed' 1
+			;;
+		*) workstation-switch apply || die 'fleet: the switch failed' 1 ;;
+		esac
+	fi
+	fleet_after "$fleet_mode"
 	;;
 status | plan | capabilities)
 	[ -n "$flake" ] ||

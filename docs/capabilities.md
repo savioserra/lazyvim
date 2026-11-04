@@ -24,6 +24,8 @@ bin/workstation (POSIX sh: flake resolution, verb dispatch)
   select: workstation add|remove <path>  (hosts/selections.nix, validated
           against workstation.report.selectable; selected renders
           workstation.report.selections)
+  fleet:  workstation fleet  (the identity's fleet choice + the switch;
+          the flake's workstation-fleet helper: login, join)
   peers:  workstation peers  (hosts/peers.nix + pairing; the flake's
           workstation-peers helper)
   writes: `workstation apply` (execs the staged switch driver)
@@ -198,7 +200,9 @@ and sorted, never hidden.
   | `toolsetPlatforms` (`cli`) | the `a2a` toolset per platform |
   | `name` (the identity's host) | `A2A_AGENT_NAME`; with the tailnet bind, `A2A_PUBLIC_URL` `http://<name>:<port>` |
   | `tailnet` | `A2A_HOST` — the node's tailnet IPv4; with no inbound credential, a node-local lock `A2A_BEARER_TOKEN` (generated inside python, held by nobody) widens the bind: the Agent Card is public on the tailnet, calls stay closed until a pairing |
-  | `peers` (`hosts/peers.nix`) | one `a2a_agents.<node>` entry each, bearer token `${A2A_PEER_TOKEN_<NODE>}`; `a2a.trusted_peers` |
+  | `peers` (`hosts/peers.nix`) | one `a2a_agents.<node>` entry each, bearer token `${A2A_PEER_TOKEN_<NODE>}`; `a2a.trusted_peers` (with the fleet roster) |
+  | `fleet.enable`, `fleet.port` (9902) | the fleet member service `workstation-fleet serve` (systemd user unit / launchd agent) |
+  | the identity's `fleet` | `"standalone"` turns `enable` off; absent or `"member"` keeps it on |
 
   - Writes run on drift only and verify by re-read; the declaration's keys
     are listed in the state tree's `hermes-a2a.owned` and retracted when
@@ -210,6 +214,21 @@ and sorted, never hidden.
     `A2A_PEER_TOKENS` in. The converge reads token names for presence
     only; a pairing leaves `hermes-a2a.restart`, which the next apply
     serves.
+- The fleet: members of one tailscale user pair automatically.
+
+  | Endpoint (tailnet IPv4, fleet port) | Answer |
+  | --- | --- |
+  | `GET /fleet` | `workstation-fleet v1 member=<node>` — the discovery marker |
+  | `POST /join` | a fresh pair token, when `tailscale whois` names the caller as this node's tailscale user |
+
+  - A pairing lands at both ends: the token through `workstation-a2a-token`
+    (stdin), the runtime entry `a2a_agents.<node>` (the card's skills,
+    120s), `a2a.trusted_peers`, the roster `fleet.members` in the state
+    tree; the gateway restarts.
+  - `workstation fleet` / `workstation init`: Turn on → Start (serve) or
+    Join (serve, then pair with every online member of the same tailscale
+    user); Not now → standalone. A logged-out node offers `tailscale up`
+    first. On the linux home leg, turning on selects the `network` domain.
 - `workstation peers`: the hub over the tailnet's A2A agents (the online
   linux/macOS/windows nodes whose Agent Card answers on the A2A port).
 
@@ -356,6 +375,7 @@ Fail-closed at eval:
 | switch / rollback | `workstation apply` / `workstation rollback` | Build the generation from the flake, activate atomically, write the receipt to `switch.log`; the flake is the resolved workstation checkout (`--flake`, `$WORKSTATION_FLAKE`, the enclosing checkout), else the staged snapshot; an explicit `WORKSTATION_SWITCH_FLAKE` wins |
 | `plan` / `status` / `capabilities` / `selected` | `nix eval` over `workstation.report` | Answer the declared state; mutate nothing |
 | select | `workstation add <path>...` / `workstation remove <path>...` | Validate against the walk-derived `selectable`, edit `hosts/selections.nix` canonically, offer the apply (idempotent; the baseline refuses) |
+| fleet | `workstation fleet` (and `init`, once) | Choose start / join / standalone; write the identity's `fleet` and the network selection, switch on a change, log in to tailscale, join |
 | peers | `workstation peers` | Discover the tailnet's A2A agents, add, pair, tune; write `hosts/peers.nix`, store the pair tokens, offer the apply |
 | verify lane | `modules/*/verify/*.sh` | Consumer smokes against the recorded pins |
 

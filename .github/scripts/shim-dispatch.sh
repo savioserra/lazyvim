@@ -36,6 +36,12 @@
 #      WORKSTATION_SWITCH_FLAKE for apply and the verbs' apply offer; a
 #      foreign flake and the staged snapshot never do; an operator-set
 #      WORKSTATION_SWITCH_FLAKE is kept.
+#   9. the fleet: init asks once (Turn on -> start/join/standalone, Not
+#      now -> standalone), writes `fleet` into the identity and the network
+#      domain into the selections (linux), and a re-init keeps the choice;
+#      `workstation fleet` re-asks, switches only on a change, then runs
+#      the helper (online/login, join) — start never joins, a template
+#      identity refuses.
 #   7. peers builds the flake's workstation-peers helper and runs it on
 #      hosts/peers.nix: arguments refuse, a missing or read-only file
 #      refuses, a failed build or helper fails closed, and the apply is
@@ -62,6 +68,10 @@ cat >"$stub_dir/nix" <<STUB
 printf '%s\n' "\$*" >> '$root/stub.log'
 s=''
 case "\$*" in
+  *"#workstation-fleet"*)
+    printf '%s\n' '$root/fleet-helper'
+    exit 0
+    ;;
   *"#workstation-peers"*)
     [ -f '$root/peers-build-fails' ] && exit 1
     printf '%s\n' '$root/peers-helper'
@@ -479,4 +489,87 @@ mkdir -p "$root/snaphome/.local/opt/workstation/flake/hosts" "$root/snaphome/.lo
 [ "$(last_switch)" = "switch-flake=/operator/flake" ] ||
 	fail "an operator-set WORKSTATION_SWITCH_FLAKE must win (got: $(last_switch))"
 
-echo "$progname: OK (dispatch, resolution order, delegation, fail-closed, selection, init-merge, peers and switch-checkout paths all hold)"
+# 9. the fleet
+mkdir -p "$root/fleet-helper/bin"
+cat >"$root/fleet-helper/bin/workstation-fleet" <<STUB
+#!/bin/sh
+printf 'workstation-fleet %s\n' "\$*" >> '$root/stub.log'
+[ "\$1" = online ] && exit "\$(cat '$root/fleet-online' 2>/dev/null || echo 0)"
+exit 0
+STUB
+chmod +x "$root/fleet-helper/bin/workstation-fleet"
+# the queue whiptail: answers in order (yes/no for --yesno, a tag otherwise);
+# an exhausted queue is ESC
+cat >"$stub_dir/whiptail" <<STUB
+#!/bin/sh
+kind=''
+for a; do case \$a in --yesno|--menu|--msgbox|--inputbox) kind=\$a ;; esac; done
+[ "\$kind" = --msgbox ] && exit 0
+q='$root/wt-queue'
+[ -s "\$q" ] || exit 1
+ans=\$(head -n 1 "\$q"); sed -i '1d' "\$q"
+printf 'whiptail %s -> %s\n' "\$kind" "\$ans" >> '$root/stub.log'
+if [ "\$kind" = --yesno ]; then [ "\$ans" = yes ]; exit; fi
+printf '%s\n' "\$ans" >&2
+STUB
+chmod +x "$stub_dir/whiptail"
+fl=$root/fleetflake
+mkdir -p "$fl/hosts" "$fl/bin"
+: >"$fl/bin/workstation"
+: >"$fl/flake.nix"
+fleet_template() {
+	printf '%s\n' '{' '  host = "TEMPLATE";' '  user = "TEMPLATE";' '  home = "/home/TEMPLATE";' \
+		'  # fleet = "member"; # the commented example never matches' '}' >"$fl/hosts/identity.nix"
+	printf '{\n  enable = [\n  ];\n}\n' >"$fl/hosts/selections.nix"
+}
+# 9a. init: Turn on -> Join (detected values accepted: the queue answers
+# the three captures with their defaults first)
+fleet_template
+printf '%s\n' "$(hostname -s 2>/dev/null || hostname)" "${USER:-$(id -un)}" "$HOME" yes join >"$root/wt-queue"
+WORKSTATION_NO_APPLY=1 WORKSTATION_FLAKE=$fl "$shim" init >/dev/null 2>&1 || fail 'init with the fleet join must succeed'
+grep -q '^  fleet = "member";$' "$fl/hosts/identity.nix" || fail 'Join must capture fleet = "member"'
+grep -q '^  # fleet = "member";' "$fl/hosts/identity.nix" || fail 'the commented example must survive'
+if [ "$(uname -s)" = Linux ]; then
+	grep -q '"network"' "$fl/hosts/selections.nix" || fail 'Join must select the network domain on the home leg'
+fi
+# 9b. a re-init keeps the choice and asks nothing (an empty queue is ESC)
+cp "$fl/hosts/identity.nix" "$root/fleet-9b"
+: >"$root/wt-queue"
+WORKSTATION_NO_APPLY=1 WORKSTATION_FLAKE=$fl "$shim" init >/dev/null 2>&1 || fail 'a converged re-init must succeed'
+cmp -s "$root/fleet-9b" "$fl/hosts/identity.nix" || fail 'a re-init must keep the fleet choice byte for byte'
+# 9c. init: Not now -> standalone
+fleet_template
+printf '%s\n' "$(hostname -s 2>/dev/null || hostname)" "${USER:-$(id -un)}" "$HOME" no >"$root/wt-queue"
+WORKSTATION_NO_APPLY=1 WORKSTATION_FLAKE=$fl "$shim" init >/dev/null 2>&1 || fail 'init with Not now must succeed'
+grep -q '^  fleet = "standalone";$' "$fl/hosts/identity.nix" || fail 'Not now must capture fleet = "standalone"'
+grep -q '"network"' "$fl/hosts/selections.nix" && fail 'Not now must not select the network domain'
+# 9d. workstation fleet: standalone -> Start switches once, never joins
+: >"$root/stub.log"
+printf '%s\n' yes start >"$root/wt-queue"
+WORKSTATION_FLAKE=$fl "$shim" fleet >/dev/null 2>&1 || fail 'fleet start must succeed'
+grep -q '^  fleet = "member";$' "$fl/hosts/identity.nix" || fail 'Start must capture fleet = "member"'
+[ "$(grep -c '^apply$' "$root/stub.log")" = 1 ] || fail 'a changed choice must switch once'
+grep -q 'workstation-fleet online' "$root/stub.log" || fail 'the fleet must check the tailnet login'
+grep -q 'workstation-fleet join' "$root/stub.log" && fail 'Start must never join'
+# 9e. workstation fleet: an unchanged choice joins without a switch
+: >"$root/stub.log"
+printf '%s\n' yes join >"$root/wt-queue"
+WORKSTATION_FLAKE=$fl "$shim" fleet >/dev/null 2>&1 || fail 'fleet join must succeed'
+grep -q '^apply$' "$root/stub.log" && fail 'an unchanged choice must not switch'
+grep -q 'workstation-fleet join' "$root/stub.log" || fail 'Join must run the helper join'
+# 9f. logged out and Later: no join, the fix named
+: >"$root/stub.log"
+printf '1\n' >"$root/fleet-online"
+printf '%s\n' yes join no >"$root/wt-queue"
+out=$(WORKSTATION_FLAKE=$fl "$shim" fleet 2>&1) || fail 'a deferred login must not fail the verb'
+grep -q 'workstation-fleet join' "$root/stub.log" && fail 'a logged-out node must not join'
+printf '%s' "$out" | grep -q 'tailscale up' || fail 'the deferred login must name the command'
+rm -f "$root/fleet-online"
+# 9g. a template identity refuses
+fleet_template
+rc=0
+WORKSTATION_FLAKE=$fl "$shim" fleet >/dev/null 2>"$root/err" || rc=$?
+[ "$rc" = 2 ] || fail "fleet on a template identity must exit 2 (got $rc)"
+grep -q 'workstation init' "$root/err" || fail 'the refusal must name workstation init'
+
+echo "$progname: OK (dispatch, resolution order, delegation, fail-closed, selection, init-merge, peers, switch-checkout and fleet paths all hold)"

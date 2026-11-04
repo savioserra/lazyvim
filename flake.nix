@@ -141,6 +141,7 @@
               workstation.switch.systemAttr = linuxHost.name;
               workstation.foundation.shell.extras = (import ./hosts/identity.nix).shellExtras or "";
               programs.hermes.a2a.name = linuxHost.name;
+              programs.hermes.a2a.enable = ((import ./hosts/identity.nix).fleet or "member") != "standalone";
               programs.hermes.a2a.peers = import ./hosts/peers.nix;
             }
           )
