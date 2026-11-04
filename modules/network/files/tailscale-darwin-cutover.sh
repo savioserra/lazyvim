@@ -41,7 +41,6 @@ if [ ! -d "$app" ] && [ "$has_shim" = 0 ] && [ "$has_brew" = 0 ]; then
 fi
 
 backup=/var/lib/workstation/tailscale-pre-substrate-$(date -u +%Y%m%dT%H%M%SZ)
-mkdir -p "$backup"
 
 if [ -d "$app" ]; then
 	if [ -z "$user" ] || [ "$user" = root ] || [ "$user" = loginwindow ]; then
@@ -58,10 +57,10 @@ if [ -d "$app" ]; then
 	fi
 	launchctl asuser "$uid" sudo -u "$user" osascript -e 'quit app "Tailscale"' >/dev/null 2>&1 || true
 	pkill -x Tailscale >/dev/null 2>&1 || true
-	mv "$app" "$backup/" && say "moved $app to $backup"
+	mkdir -p "$backup" && mv "$app" "$backup/" && say "moved $app to $backup"
 fi
 if [ "$has_shim" = 1 ]; then
-	mv "$shim" "$backup/" && say "moved the app's CLI shim $shim to $backup"
+	mkdir -p "$backup" && mv "$shim" "$backup/" && say "moved the app's CLI shim $shim to $backup"
 fi
 if [ "$has_brew" = 1 ]; then
 	sudo -u "$user" "$brew" services stop tailscale >/dev/null 2>&1 || true
