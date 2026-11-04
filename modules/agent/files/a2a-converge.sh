@@ -19,6 +19,11 @@
 # - Secrets: token env names are checked for presence only; no value is
 #   read, written or printed. `workstation peers` stores the tokens and
 #   leaves `hermes-a2a.restart`, which counts as a change here.
+# - The lock: with the tailnet bind and no inbound credential, hermes
+#   would serve loopback only and the node would stay undiscoverable. A
+#   node-local A2A_BEARER_TOKEN, generated inside python (never in shell,
+#   argv or a file) and held by nobody, widens the bind: the Agent Card is
+#   public on the tailnet, calls stay closed until a pairing.
 # - A verified change restarts a running gateway, unless this process
 #   runs inside it (the restart would take the apply down).
 set -u
@@ -30,6 +35,8 @@ state=${WORKSTATION_STATE:?WORKSTATION_STATE unset}
 config=$home/config.yaml
 env_file=$home/.env
 owned=$state/hermes-a2a.owned
+python=$HOME/.local/opt/hermes/python/bin/python3
+checkout=${HERMES_ENGINE_CHECKOUT:-$HOME/.hermes/hermes-agent}
 # the service managers the gateway verbs drive (systemctl, launchctl) live
 # outside the activation PATH
 PATH=$PATH:/run/current-system/sw/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
@@ -38,7 +45,7 @@ export PATH HERMES_HOME
 changed=0
 failed=0
 next=$(mktemp "${TMPDIR:-/tmp}/ws-a2a.XXXXXX") || exit 1
-trap 'rm -f "$next"' EXIT
+trap 'rm -f "$next" "$next.err"' EXIT
 
 say() {
 	printf 'workstation: a2a %s\n' "$*"
@@ -147,10 +154,39 @@ retract() {
 		toolset_on "$2" || return 0
 		run tools disable a2a --platform "$2" || return 0
 		;;
+	lock)
+		env_present "$2" || return 0
+		run config unset "$2" || return 0
+		;;
 	*) return 0 ;;
 	esac
 	changed=$((changed + 1))
 	say "retracted $2"
+}
+
+lock() {
+	# lock — the node-local lock token, generated and stored by hermes' own
+	# .env writer on the pinned interpreter (after the bootstrap's re-exec:
+	# the value exists only inside that process); 3 = an inbound credential
+	# already exists
+	HERMES_ENGINE_CHECKOUT=$checkout "$python" -I -c 'import os, sys, secrets
+sys.dont_write_bytecode = True
+os.environ.pop("PYTHONHOME", None)
+os.environ.pop("PYTHONPATH", None)
+sys.path.insert(0, os.environ["HERMES_ENGINE_CHECKOUT"])
+try:
+    import hermes_bootstrap  # noqa: F401
+    from hermes_cli.config import get_env_value_prefer_dotenv, require_env_writable, save_env_value
+    if get_env_value_prefer_dotenv("A2A_PEER_TOKENS") or get_env_value_prefer_dotenv("A2A_BEARER_TOKEN"):
+        sys.exit(3)
+    require_env_writable("A2A_BEARER_TOKEN", "set")
+    save_env_value("A2A_BEARER_TOKEN", secrets.token_hex(32))
+except SystemExit:
+    raise
+except Exception as exc:
+    print("lock write failed (" + type(exc).__name__ + ")", file=sys.stderr)
+    sys.exit(1)
+' </dev/null >/dev/null 2>"$next.err"
 }
 
 inside_gateway() {
@@ -206,9 +242,26 @@ if [ "$(want .enable)" = true ]; then
 	fi
 	if [ -n "$bind" ]; then
 		[ -n "$name" ] && ensure_env A2A_PUBLIC_URL "http://$name:$port"
-		if ! env_present A2A_PEER_TOKENS && ! env_present A2A_BEARER_TOKEN; then
-			say "the tailnet bind waits on a pairing — run: workstation peers (hermes serves loopback until then)"
+		# the lock: owned when this converge made it (now or before)
+		if [ -f "$owned" ] && grep -Fqx 'lock A2A_BEARER_TOKEN' "$owned"; then
+			own lock A2A_BEARER_TOKEN
 		fi
+		if ! env_present A2A_PEER_TOKENS && ! env_present A2A_BEARER_TOKEN; then
+			lock
+			case $? in
+			0)
+				own lock A2A_BEARER_TOKEN
+				changed=$((changed + 1))
+				say "the card opens on the tailnet (a node-local lock token; calls stay closed until a pairing)"
+				;;
+			3) ;;
+			*)
+				say "the tailnet lock failed: $(tail -n 1 "$next.err" 2>/dev/null) — the node stays loopback-only"
+				failed=1
+				;;
+			esac
+		fi
+		env_present A2A_PEER_TOKENS || say "no pairing yet — run: workstation peers"
 	fi
 
 	# the peers: one a2a_agents entry each, trusted inbound by alias

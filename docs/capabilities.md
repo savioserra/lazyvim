@@ -197,7 +197,7 @@ and sorted, never hidden.
   | `enable`, `port` (9900) | `platforms.a2a.enabled`, `platforms.a2a.extra.port` |
   | `toolsetPlatforms` (`cli`) | the `a2a` toolset per platform |
   | `name` (the identity's host) | `A2A_AGENT_NAME`; with the tailnet bind, `A2A_PUBLIC_URL` `http://<name>:<port>` |
-  | `tailnet` | `A2A_HOST` — the node's tailnet IPv4 (hermes widens past loopback only once an inbound token exists) |
+  | `tailnet` | `A2A_HOST` — the node's tailnet IPv4; with no inbound credential, a node-local lock `A2A_BEARER_TOKEN` (generated inside python, held by nobody) widens the bind: the Agent Card is public on the tailnet, calls stay closed until a pairing |
   | `peers` (`hosts/peers.nix`) | one `a2a_agents.<node>` entry each, bearer token `${A2A_PEER_TOKEN_<NODE>}`; `a2a.trusted_peers` |
 
   - Writes run on drift only and verify by re-read; the declaration's keys
