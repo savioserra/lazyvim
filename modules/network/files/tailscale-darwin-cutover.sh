@@ -14,7 +14,7 @@
 # - A failed extension removal exits 1: the activation stops with the
 #   previous install still serving the tailnet.
 set -u
-PATH=$PATH:/usr/bin:/bin:/usr/sbin:/sbin
+PATH=/usr/bin:/bin:/usr/sbin:/sbin:$PATH
 export PATH
 
 app=/Applications/Tailscale.app
@@ -25,7 +25,8 @@ say() {
 	printf 'workstation: tailscale %s\n' "$*"
 }
 
-user=$(stat -f %Su /dev/console 2>/dev/null)
+# the BSD stat (GNU stat reads -f as filesystem status)
+user=$(/usr/bin/stat -f %Su /dev/console 2>/dev/null)
 has_brew=0
 if [ -n "$user" ] && [ "$user" != root ] && [ -x "$brew" ] &&
 	sudo -u "$user" "$brew" list --formula tailscale >/dev/null 2>&1; then

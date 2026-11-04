@@ -18,7 +18,8 @@ let
   # services.tailscale takes the node
   tailscaleCutover = pkgs.writeShellApplication {
     name = "workstation-tailscale-cutover";
-    runtimeInputs = [ pkgs.coreutils ];
+    # macOS's own tools (BSD stat, launchctl, osascript): no GNU shadows
+    runtimeInputs = [ ];
     bashOptions = [ ];
     text = builtins.readFile ../../modules/network/files/tailscale-darwin-cutover.sh;
   };
