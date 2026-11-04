@@ -48,6 +48,9 @@ reads (the declared state, answered by nix eval over
 
 write plane (the generation's workstation-switch driver):
   apply|rollback|update|sync [--system]
+                  inside a checkout (or with --flake / $WORKSTATION_FLAKE)
+                  the switch builds that checkout; elsewhere it rebuilds
+                  the staged generation snapshot
 
 other:
   help            this text
@@ -113,6 +116,7 @@ offer_apply() {
 				die 'identity not captured — run: workstation init' 2
 			fi
 			if command -v workstation-switch >/dev/null 2>&1; then
+				switch_flake
 				exec workstation-switch apply
 			fi
 			die 'the write plane is the generation'\''s workstation-switch driver and it is not on PATH — apply the substrate first (the home lane stages it)' 2
@@ -193,6 +197,20 @@ fi
 if [ -z "$flake" ] && [ -e "${HOME:?}/.local/opt/workstation/flake" ]; then
 	flake=$HOME/.local/opt/workstation/flake
 fi
+
+# The write plane switches the flake the reads resolved: a workstation
+# checkout (explicit, $WORKSTATION_FLAKE or the enclosing walk — the files
+# init captures) is handed to the driver, so an apply after an edit
+# (add/remove/peers, a pull) builds the checkout, never the previous
+# generation's snapshot. The staged snapshot and a foreign flake.nix stay
+# the driver's own default; an operator-set WORKSTATION_SWITCH_FLAKE wins.
+switch_flake() {
+	[ -z "${WORKSTATION_SWITCH_FLAKE:-}" ] || return 0
+	[ -n "$flake" ] && [ "$flake" != "$HOME/.local/opt/workstation/flake" ] || return 0
+	[ -f "$flake/hosts/identity.nix" ] && [ -f "$flake/bin/workstation" ] || return 0
+	WORKSTATION_SWITCH_FLAKE=$(CDPATH='' cd -P "$flake" && pwd -P) || return 0
+	export WORKSTATION_SWITCH_FLAKE
+}
 
 case "$verb" in
 init)
@@ -534,6 +552,7 @@ apply | rollback | update | sync)
 		die 'identity not captured — run: workstation init' 2
 	fi
 	if command -v workstation-switch >/dev/null 2>&1; then
+		switch_flake
 		exec workstation-switch "$verb" "$@"
 	fi
 	die 'the write plane is the generation'\''s workstation-switch driver and it is not on PATH — apply the substrate first (the home lane stages it)' 2

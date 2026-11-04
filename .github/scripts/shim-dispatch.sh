@@ -31,6 +31,11 @@
 #      (shellExtras) survive every re-run, a converged identity re-inits
 #      byte-identical, a cancelled dialog writes nothing, and a missing
 #      template file refuses.
+#   8. the write plane switches the resolved checkout: a workstation
+#      checkout (identity + shim present) reaches the driver as
+#      WORKSTATION_SWITCH_FLAKE for apply and the verbs' apply offer; a
+#      foreign flake and the staged snapshot never do; an operator-set
+#      WORKSTATION_SWITCH_FLAKE is kept.
 #   7. peers builds the flake's workstation-peers helper and runs it on
 #      hosts/peers.nix: arguments refuse, a missing or read-only file
 #      refuses, a failed build or helper fails closed, and the apply is
@@ -118,11 +123,12 @@ exit 0
 STUB
 chmod +x "$root/peers-helper/bin/workstation-peers"
 
-# the stub switch driver: log the invocation
-{
-	printf '#!/bin/sh\n'
-	printf 'printf "%%s\\n" "$*" >> %s\n' "'$root/stub.log'"
-} > "$stub_dir/workstation-switch"
+# the stub switch driver: log the invocation and the flake it was handed
+cat > "$stub_dir/workstation-switch" <<STUB
+#!/bin/sh
+printf '%s\n' "\$*" >> '$root/stub.log'
+printf 'switch-flake=%s\n' "\${WORKSTATION_SWITCH_FLAKE:-}" >> '$root/stub.log'
+STUB
 chmod +x "$stub_dir/workstation-switch"
 
 # stub whiptails: the apply offer answered deterministically (no/yes)
@@ -136,7 +142,7 @@ expect_log() {
 
 PATH=$stub_dir:/usr/bin:/bin
 export PATH
-unset WORKSTATION_FLAKE
+unset WORKSTATION_FLAKE WORKSTATION_SWITCH_FLAKE
 
 # 1. the help contract
 out=$("$shim" help) || fail 'help must exit 0'
@@ -438,4 +444,39 @@ WORKSTATION_FLAKE=$peers_fixture "$shim" peers >/dev/null 2>"$root/err" || rc=$?
 [ "$rc" = 1 ] || fail "a missing peers file must exit 1 (got $rc)"
 grep -q 'peers.nix missing' "$root/err" || fail 'the missing-file refusal must name it'
 
-echo "$progname: OK (dispatch, resolution order, delegation, fail-closed, selection, init-merge and peers paths all hold)"
+# 8. the write plane switches the resolved checkout
+last_switch() { grep '^switch-flake=' "$root/stub.log" | tail -n 1; }
+co=$root/checkout
+mkdir -p "$co/hosts" "$co/bin" "$co/docs"
+printf '{ host = "cohost"; user = "couser"; home = "/home/couser"; }\n' >"$co/hosts/identity.nix"
+printf '{\n  enable = [\n  ];\n}\n' >"$co/hosts/selections.nix"
+: >"$co/bin/workstation"
+: >"$co/flake.nix"
+co_real=$(CDPATH='' cd -P "$co" && pwd -P)
+# 8a. apply inside the checkout (the enclosing walk) hands it over
+(cd "$co/docs" && "$shim" apply >/dev/null 2>&1) || fail 'apply inside a checkout must delegate'
+[ "$(last_switch)" = "switch-flake=$co_real" ] ||
+	fail "apply inside a checkout must hand the checkout to the driver (got: $(last_switch))"
+# 8b. the apply offer after an edit hands it over too (stub whiptail: yes)
+printf '#!/bin/sh\nexit 0\n' > "$stub_dir/whiptail"
+WORKSTATION_FLAKE=$co "$shim" add languages/go >/dev/null 2>&1 || fail 'add in a checkout must succeed'
+[ "$(last_switch)" = "switch-flake=$co_real" ] ||
+	fail "the apply offer must switch the edited checkout (got: $(last_switch))"
+printf '#!/bin/sh\nexit 1\n' > "$stub_dir/whiptail"
+# 8c. a foreign flake (no identity, no shim) is never handed over
+WORKSTATION_FLAKE=$fixture "$shim" apply >/dev/null 2>&1 || fail 'apply must delegate'
+[ "$(last_switch)" = "switch-flake=" ] ||
+	fail "a non-checkout flake must not reach the driver (got: $(last_switch))"
+# 8d. the staged snapshot stays the driver's default
+mkdir -p "$root/snaphome/.local/opt/workstation/flake/hosts" "$root/snaphome/.local/opt/workstation/flake/bin"
+: >"$root/snaphome/.local/opt/workstation/flake/hosts/identity.nix"
+: >"$root/snaphome/.local/opt/workstation/flake/bin/workstation"
+(cd "$root/snaphome" && HOME=$root/snaphome "$shim" apply >/dev/null 2>&1) || fail 'apply via the snapshot must delegate'
+[ "$(last_switch)" = "switch-flake=" ] ||
+	fail "the staged snapshot must not be handed over (got: $(last_switch))"
+# 8e. an operator-set override wins
+(cd "$co" && WORKSTATION_SWITCH_FLAKE=/operator/flake "$shim" apply >/dev/null 2>&1) || fail 'apply must delegate'
+[ "$(last_switch)" = "switch-flake=/operator/flake" ] ||
+	fail "an operator-set WORKSTATION_SWITCH_FLAKE must win (got: $(last_switch))"
+
+echo "$progname: OK (dispatch, resolution order, delegation, fail-closed, selection, init-merge, peers and switch-checkout paths all hold)"

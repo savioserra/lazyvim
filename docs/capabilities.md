@@ -353,7 +353,7 @@ Fail-closed at eval:
 
 | Phase | Owner | Responsibility |
 | --- | --- | --- |
-| switch / rollback | `workstation apply` / `workstation rollback` | Build the generation from the flake, activate atomically, write the receipt to `switch.log` |
+| switch / rollback | `workstation apply` / `workstation rollback` | Build the generation from the flake, activate atomically, write the receipt to `switch.log`; the flake is the resolved workstation checkout (`--flake`, `$WORKSTATION_FLAKE`, the enclosing checkout), else the staged snapshot; an explicit `WORKSTATION_SWITCH_FLAKE` wins |
 | `plan` / `status` / `capabilities` / `selected` | `nix eval` over `workstation.report` | Answer the declared state; mutate nothing |
 | select | `workstation add <path>...` / `workstation remove <path>...` | Validate against the walk-derived `selectable`, edit `hosts/selections.nix` canonically, offer the apply (idempotent; the baseline refuses) |
 | peers | `workstation peers` | Discover the tailnet's A2A agents, add, pair, tune; write `hosts/peers.nix`, store the pair tokens, offer the apply |
