@@ -525,7 +525,7 @@ fleet_template() {
 # 9a. init: Turn on -> Join (detected values accepted: the queue answers
 # the three captures with their defaults first)
 fleet_template
-printf '%s\n' "$(hostname -s 2>/dev/null || hostname)" "${USER:-$(id -un)}" "$HOME" yes join >"$root/wt-queue"
+printf '%s\n' "$(uname -n | cut -d. -f1)" "${USER:-$(id -un)}" "$HOME" yes join >"$root/wt-queue"
 WORKSTATION_NO_APPLY=1 WORKSTATION_FLAKE=$fl "$shim" init >/dev/null 2>&1 || fail 'init with the fleet join must succeed'
 grep -q '^  fleet = "member";$' "$fl/hosts/identity.nix" || fail 'Join must capture fleet = "member"'
 grep -q '^  # fleet = "member";' "$fl/hosts/identity.nix" || fail 'the commented example must survive'
@@ -539,7 +539,7 @@ WORKSTATION_NO_APPLY=1 WORKSTATION_FLAKE=$fl "$shim" init >/dev/null 2>&1 || fai
 cmp -s "$root/fleet-9b" "$fl/hosts/identity.nix" || fail 'a re-init must keep the fleet choice byte for byte'
 # 9c. init: Not now -> standalone
 fleet_template
-printf '%s\n' "$(hostname -s 2>/dev/null || hostname)" "${USER:-$(id -un)}" "$HOME" no >"$root/wt-queue"
+printf '%s\n' "$(uname -n | cut -d. -f1)" "${USER:-$(id -un)}" "$HOME" no >"$root/wt-queue"
 WORKSTATION_NO_APPLY=1 WORKSTATION_FLAKE=$fl "$shim" init >/dev/null 2>&1 || fail 'init with Not now must succeed'
 grep -q '^  fleet = "standalone";$' "$fl/hosts/identity.nix" || fail 'Not now must capture fleet = "standalone"'
 grep -q '"network"' "$fl/hosts/selections.nix" && fail 'Not now must not select the network domain'

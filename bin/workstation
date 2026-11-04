@@ -342,7 +342,9 @@ init)
 	[ -n "$flake" ] || die 'init: no checkout found — run inside the workstation repo clone' 2
 	[ -f "$flake/hosts/identity.nix" ] || die "init: $flake/hosts/identity.nix missing (unexpected tree)" 1
 	id_file=$flake/hosts/identity.nix
-	host=$(hostname -s 2>/dev/null || hostname)
+	# uname -n is POSIX; hostname(1) is absent on minimal images
+	host=$(uname -n 2>/dev/null)
+	host=${host%%.*}
 	user=${USER:-$(id -un)}
 	home_dir=$HOME
 	# nix-string escape (backslash, quote) — the capture writes a nix file
