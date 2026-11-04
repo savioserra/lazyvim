@@ -172,7 +172,6 @@
 
       nixosConfigurations.${linuxHost.name} = linuxHost.nixosConfig;
 
-
       workstationTheme.lib = import ./modules/theme/theme.nix {
         lib = nixpkgs.lib;
         inherit self;
@@ -199,19 +198,17 @@
             config.allowUnfreePredicate = licensePredicate;
           };
         in
-        nixpkgs.lib.composeManyExtensions (
-          map (f: import f foundationPkgs) [
-            ./modules/foundation/overlay.nix
-            ./modules/terminal/overlay.nix
-            ./modules/terminal/nunchux/overlay.nix
-            ./modules/editor/overlay.nix
-            ./modules/languages/overlay.nix
-            ./modules/agent/overlay.nix
-            ./modules/database/overlay.nix
-            ./modules/secrets/overlay.nix
-            ./modules/fonts/overlay.nix
-          ]
-        ) final prev;
+        nixpkgs.lib.composeManyExtensions (map (f: import f foundationPkgs) [
+          ./modules/foundation/overlay.nix
+          ./modules/terminal/overlay.nix
+          ./modules/terminal/nunchux/overlay.nix
+          ./modules/editor/overlay.nix
+          ./modules/languages/overlay.nix
+          ./modules/agent/overlay.nix
+          ./modules/database/overlay.nix
+          ./modules/secrets/overlay.nix
+          ./modules/fonts/overlay.nix
+        ]) final prev;
 
       # the validation surface: `nix flake check` is the canonical entry.
       # Eval gates force the declared-state reads and every host leg's
@@ -286,16 +283,15 @@
               extraSpecialArgs = {
                 inherit self;
               };
-              modules =
-                [
-                  {
-                    nixpkgs.overlays = [ self.overlays.default ];
-                    nixpkgs.config.allowUnfreePredicate = licensePredicate;
-                  }
-                  ./tests/nix/e2e-home.nix
-                  (selectionsLib.translationModule ./tests/nix/e2e-selections.nix)
-                  ./nix/modules/workstation-home.nix
-                ];
+              modules = [
+                {
+                  nixpkgs.overlays = [ self.overlays.default ];
+                  nixpkgs.config.allowUnfreePredicate = licensePredicate;
+                }
+                ./tests/nix/e2e-home.nix
+                (selectionsLib.translationModule ./tests/nix/e2e-selections.nix)
+                ./nix/modules/workstation-home.nix
+              ];
             }).activationPackage;
           e2e-minus-go-home =
             (home-manager.lib.homeManagerConfiguration {
@@ -307,16 +303,15 @@
               extraSpecialArgs = {
                 inherit self;
               };
-              modules =
-                [
-                  {
-                    nixpkgs.overlays = [ self.overlays.default ];
-                    nixpkgs.config.allowUnfreePredicate = licensePredicate;
-                  }
-                  ./tests/nix/e2e-home.nix
-                  (selectionsLib.translationModule ./tests/nix/e2e-selections-minus-go.nix)
-                  ./nix/modules/workstation-home.nix
-                ];
+              modules = [
+                {
+                  nixpkgs.overlays = [ self.overlays.default ];
+                  nixpkgs.config.allowUnfreePredicate = licensePredicate;
+                }
+                ./tests/nix/e2e-home.nix
+                (selectionsLib.translationModule ./tests/nix/e2e-selections-minus-go.nix)
+                ./nix/modules/workstation-home.nix
+              ];
             }).activationPackage;
           # the hsql assert expects the version the substrate actually
           # pins: the skill derivation names itself after the OVERLAYED
