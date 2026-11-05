@@ -2,7 +2,6 @@
 # home-manager. Brew keeps casks only; a formula retired from brew must be
 # in the nix set below.
 {
-  self,
   nixpkgs,
   home-manager,
   nix-darwin,
@@ -39,9 +38,6 @@ in
 
   darwinConfig = nix-darwin.lib.darwinSystem {
     inherit system;
-    specialArgs = {
-      inherit self;
-    };
     modules = [
       ../../nix/modules/workstation-system.nix
       ../../nix/modules/host.nix
@@ -80,9 +76,6 @@ in
             useGlobalPkgs = true;
             useUserPackages = true;
             backupFileExtension = "pre-nix-darwin";
-            extraSpecialArgs = {
-              inherit self;
-            };
             users.${machine.user}.imports = machine.homeModules ++ [
               { workstation.switch.systemAttr = machine.key; }
               ../../nix/modules/workstation-home.nix

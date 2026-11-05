@@ -28,7 +28,6 @@ let
 
   switchDriver = import ../../nix/workstation-switch.nix {
     inherit pkgs;
-    flake = self;
     homeAttr = "e2e@container";
     systemAttr = null;
   };
@@ -258,8 +257,9 @@ writeShellScriptBin "workstation-e2e" ''
   direnv_line=$(grep -n 'direnv.* hook bash' "$home/.bashrc" | head -n 1 | cut -d: -f1)
   [ -n "$direnv_line" ] && [ "$direnv_line" -gt "$starship_line" ] \
     || fail "shell init" "the bash direnv hook does not follow the starship init"
-  grep -q '/etc/pi/op.env' "$home/.profile" \
-    || fail "shell init" ".profile carries no op env"
+  session_vars=$(grep -o '/nix/store/[^"]*hm-session-vars.sh' "$home/.profile" | head -n 1)
+  [ -n "$session_vars" ] && grep -q '/etc/pi/op.env' "$session_vars" \
+    || fail "shell init" "the session variables .profile sources carry no op env"
   [ -r "$home/.config/starship.toml" ] \
     || fail "shell init" "the starship config did not deploy"
   [ -d "$home/.local/share/fonts/JetBrainsMonoNerdFont" ] \
@@ -422,23 +422,15 @@ writeShellScriptBin "workstation-e2e" ''
     || fail "switch receipt" "no 'generation N applied' line in switch.log"
   pass "switch receipt in switch.log"
 
-  # 5. the staged client: the shim's read flake (the generation's snapshot
-  #    at ~/.local/opt/workstation/flake) and the write driver are staged —
-  #    the reads themselves are nix evals and are proven HOST-side (the
-  #    same flake the container applied answers status, plan and
-  #    capabilities there, where the eval's inputs exist)
-  step "staged client (flake snapshot, launcher, switch driver)"
-  [ -L "$home/.local/opt/workstation/flake" ] \
-    || fail "staged client" "$home/.local/opt/workstation/flake is not the generation's flake snapshot link"
-  case "$(readlink -f "$home/.local/opt/workstation/flake")" in
-    /nix/store/*) ;;
-    *) fail "staged client" "the flake snapshot does not resolve into the store" ;;
-  esac
+  # 5. the staged client: the launcher and the write driver, no repo copy
+  step "staged client (launcher, switch driver, no flake snapshot)"
+  [ ! -e "$home/.local/opt/workstation/flake" ] \
+    || fail "staged client" "the generation still stages a flake snapshot"
   command -v workstation-switch >/dev/null 2>&1 \
     || [ -x "$home/.nix-profile/bin/workstation-switch" ] \
     || [ -x "/etc/profiles/per-user/e2e/bin/workstation-switch" ] \
     || fail "staged client" "the workstation-switch driver is not staged"
-  pass "staged client (flake snapshot, launcher, switch driver)"
+  pass "staged client (launcher, switch driver, no flake snapshot)"
 
   echo "workstation-e2e: OK"
 ''

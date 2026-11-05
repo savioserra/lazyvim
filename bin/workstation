@@ -57,9 +57,11 @@ write plane (the generation's workstation-switch driver):
 other:
   help            this text
 
-The read flake resolves in this order: --flake PATH, $WORKSTATION_FLAKE,
+The checkout resolves in this order: --flake PATH, $WORKSTATION_FLAKE,
 the enclosing checkout (the first flake.nix walking up from $PWD), the
-staged generation snapshot (~/.local/opt/workstation/flake).
+checkout init recorded ($WORKSTATION_CHECKOUT). Reads and switches build
+the checkout's committed HEAD with the working tree's hosts/ machine files;
+WORKSTATION_WORKTREE=1 builds the working tree instead.
 EOF
 }
 
@@ -68,8 +70,16 @@ die() {
 	exit "${2:-1}"
 }
 
+nixf() {
+	if [ -n "$mdir" ]; then
+		nix --extra-experimental-features 'nix-command flakes' "$@" --override-input machine-files "path:$mdir"
+	else
+		nix --extra-experimental-features 'nix-command flakes' "$@"
+	fi
+}
+
 nix_eval() {
-	nix --extra-experimental-features 'nix-command flakes' eval --json "$@"
+	nixf eval --json "$@"
 }
 
 # jq: the staged launcher carries it; a bare checkout builds it from the
@@ -131,14 +141,14 @@ offer_apply() {
 }
 
 peers_helper() {
-	nix --extra-experimental-features 'nix-command flakes' \
-		build --no-link --print-out-paths "$flake#workstation-peers"
+	nixf \
+		build --no-link --print-out-paths "$ref#workstation-peers"
 }
 
 # --- the fleet: the A2A node's membership on the tailnet ---------------------
 fleet_helper() {
-	nix --extra-experimental-features 'nix-command flakes' \
-		build --no-link --print-out-paths "$flake#workstation-fleet"
+	nixf \
+		build --no-link --print-out-paths "$ref#workstation-fleet"
 }
 
 # fleet_get — member|standalone, empty when never chosen
@@ -254,8 +264,7 @@ if [ -n "$verb" ]; then
 	shift
 fi
 
-# the read flake: explicit, then the enclosing checkout, then the staged
-# generation snapshot
+# the checkout: explicit, then the enclosing checkout, then the recorded one
 if [ -z "$flake" ] && [ -n "${WORKSTATION_FLAKE:-}" ]; then
 	flake=$WORKSTATION_FLAKE
 fi
@@ -275,20 +284,35 @@ if [ -z "$flake" ]; then
 		[ "$links" -le 64 ] || die 'walked too far up looking for flake.nix' 1
 	done
 fi
-if [ -z "$flake" ] && [ -e "${HOME:?}/.local/opt/workstation/flake" ]; then
-	flake=$HOME/.local/opt/workstation/flake
+if [ -z "$flake" ] && [ -n "${WORKSTATION_CHECKOUT:-}" ] && [ -f "$WORKSTATION_CHECKOUT/flake.nix" ]; then
+	flake=$WORKSTATION_CHECKOUT
+fi
+
+# the build ref: the committed HEAD, so work in progress stays out of the
+# generation; the machine files ride the machine-files input from hosts/
+ref=$flake
+mdir=
+if [ -n "$flake" ] && [ -d "$flake" ]; then
+	flake=$(CDPATH='' cd -P "$flake" && pwd -P)
+	ref=$flake
+	if [ -z "${WORKSTATION_WORKTREE:-}" ] && command -v git >/dev/null 2>&1 &&
+		[ "$(git -C "$flake" rev-parse --show-toplevel 2>/dev/null)" = "$flake" ] &&
+		head=$(git -C "$flake" rev-parse --verify -q HEAD 2>/dev/null); then
+		ref="git+file://$flake?rev=$head"
+	fi
+	[ ! -f "$flake/hosts/machine.json" ] || mdir=$flake/hosts
 fi
 machine=${flake:+$flake/hosts/machine.json}
 
-# a workstation checkout is handed to the driver, so an apply after an edit
-# builds the checkout; the staged snapshot and a foreign flake stay the
-# driver's default; an operator-set WORKSTATION_SWITCH_FLAKE wins
+# the driver builds what the reads read; an operator-set
+# WORKSTATION_SWITCH_FLAKE wins
 switch_flake() {
+	[ -n "$flake" ] || return 0
+	export WORKSTATION_SWITCH_CHECKOUT="$flake"
 	[ -z "${WORKSTATION_SWITCH_FLAKE:-}" ] || return 0
-	[ -n "$flake" ] && [ "$flake" != "$HOME/.local/opt/workstation/flake" ] || return 0
 	[ -f "$flake/hosts/machine.json" ] && [ -f "$flake/bin/workstation" ] || return 0
-	WORKSTATION_SWITCH_FLAKE=$(CDPATH='' cd -P "$flake" && pwd -P) || return 0
-	export WORKSTATION_SWITCH_FLAKE
+	export WORKSTATION_SWITCH_FLAKE="$ref"
+	export WORKSTATION_SWITCH_MACHINE="$mdir"
 }
 
 # writable_machine <verb> — the checkout's machine file, editable
@@ -296,7 +320,7 @@ writable_machine() {
 	[ -n "$flake" ] || die 'no checkout found — run inside the workstation repo clone' 2
 	[ -f "$machine" ] || die "$1: $machine missing (unexpected tree)" 1
 	[ -w "$machine" ] ||
-		die "$1: $machine is read-only — run inside the workstation repo clone (the staged snapshot is not editable)" 2
+		die "$1: $machine is read-only — run inside the workstation repo clone" 2
 }
 
 case "$verb" in
@@ -344,6 +368,9 @@ init)
 	capture_field home 'home directory' "$home_dir"
 	if [ -z "$(jqx -r '.system // ""' "$machine")" ]; then
 		machine_edit '.system = $s' --arg s "$system"
+	fi
+	if [ "$(jqx -r '.checkout // ""' "$machine")" != "$flake" ]; then
+		machine_edit '.checkout = $c' --arg c "$flake"
 		changed=1
 	fi
 	if [ "$changed" -eq 1 ]; then
@@ -377,7 +404,8 @@ init)
 			build --no-link --print-out-paths --inputs-from "$flake" \
 			nix-darwin#darwin-rebuild)
 		sudo env NIX_CONFIG="extra-experimental-features = nix-command flakes" \
-			"$drv/bin/darwin-rebuild" switch --flake "$flake#$key" ||
+			"$drv/bin/darwin-rebuild" switch --flake "$ref#$key" \
+			${mdir:+--override-input machine-files "path:$mdir"} ||
 			die 'init: the first darwin switch failed' 1
 		printf 'workstation: applied — every later update is: workstation apply --system\n'
 		fleet_after "$fleet_mode"
@@ -385,9 +413,8 @@ init)
 		;;
 	esac
 	printf 'workstation: first activation (home plane, %s) ...\n' "$key"
-	store_path=$(nix --extra-experimental-features 'nix-command flakes' \
-		build --no-link --print-out-paths \
-		"$flake#homeConfigurations.\"$key\".activationPackage")
+	store_path=$(nixf build --no-link --print-out-paths \
+		"$ref#homeConfigurations.\"$key\".activationPackage")
 	"$store_path/activate"
 	printf 'workstation: applied — every later update is: workstation apply\n'
 	fleet_after "$fleet_mode"
@@ -410,6 +437,7 @@ fleet)
 		Darwin)
 			sudo env NIX_CONFIG="extra-experimental-features = nix-command flakes" \
 				WORKSTATION_SWITCH_FLAKE="${WORKSTATION_SWITCH_FLAKE:-}" \
+				WORKSTATION_SWITCH_MACHINE="${WORKSTATION_SWITCH_MACHINE:-}" \
 				"$(command -v workstation-switch)" apply --system || die 'fleet: the switch failed' 1
 			;;
 		*) workstation-switch apply || die 'fleet: the switch failed' 1 ;;
@@ -419,7 +447,7 @@ fleet)
 	;;
 status | plan | capabilities)
 	[ -n "$flake" ] ||
-		die 'no flake to read — pass --flake PATH, run inside a checkout, or apply the substrate once (it stages ~/.local/opt/workstation/flake)' 2
+		die 'no checkout to read — pass --flake PATH or run inside a checkout' 2
 	scope=''
 	for arg in "$@"; do
 		case "$arg" in
@@ -429,15 +457,15 @@ status | plan | capabilities)
 		esac
 		scope="$scope.\"$arg\""
 	done
-	exec nix --extra-experimental-features 'nix-command flakes' \
-		eval --json "$flake#workstation.report.$verb$scope"
+	nix_eval "$ref#workstation.report.$verb$scope"
+	exit
 	;;
 selected)
 	[ -n "$flake" ] ||
-		die 'no flake to read — pass --flake PATH, run inside a checkout, or apply the substrate once (it stages ~/.local/opt/workstation/flake)' 2
+		die 'no checkout to read — pass --flake PATH or run inside a checkout' 2
 	[ $# -eq 0 ] || die 'selected takes no arguments' 2
-	exec nix --extra-experimental-features 'nix-command flakes' \
-		eval --json "$flake#workstation.report.selections"
+	nix_eval "$ref#workstation.report.selections"
+	exit
 	;;
 add | remove)
 	[ $# -ge 1 ] || die "usage: workstation $verb <path>... (see: workstation help)" 2
@@ -449,7 +477,7 @@ add | remove)
 			die "invalid path: $path (the grammar is <domain> or <domain>/<member>, [A-Za-z0-9_-] only)" 2
 			;;
 		esac
-		row=$(nix_eval "$flake#workstation.report.selectable.\"$path\"") ||
+		row=$(nix_eval "$ref#workstation.report.selectable.\"$path\"") ||
 			die "unknown path: $path (workstation selected lists the valid paths)" 2
 		if printf '%s' "$row" | grep -q '"baseline":true'; then
 			die "$path is baseline — always on" 2
@@ -503,7 +531,7 @@ peers)
 	peers_file=$flake/hosts/peers.nix
 	[ -f "$peers_file" ] || die "peers: $peers_file missing (unexpected tree)" 1
 	[ -w "$peers_file" ] ||
-		die "peers: $peers_file is read-only — run inside the workstation repo clone (the staged snapshot is not editable)" 2
+		die "peers: $peers_file is read-only — run inside the workstation repo clone" 2
 	helper=$(peers_helper) || die 'peers: the discovery helper did not build (nix build failed)' 1
 	# the helper's exit: 0 nothing to apply, 10 saved, anything else a failure
 	before=$(cksum <"$peers_file")

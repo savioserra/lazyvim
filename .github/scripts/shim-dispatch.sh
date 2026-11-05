@@ -81,6 +81,7 @@ cat > "$stub_dir/workstation-switch" <<STUB
 #!/bin/sh
 printf '%s\n' "\$*" >> '$root/stub.log'
 printf 'switch-flake=%s\n' "\${WORKSTATION_SWITCH_FLAKE:-}" >> '$root/stub.log'
+printf 'switch-machine=%s\n' "\${WORKSTATION_SWITCH_MACHINE:-}" >> '$root/stub.log'
 STUB
 chmod +x "$stub_dir/workstation-switch"
 
@@ -103,7 +104,9 @@ q() { "$jq" -r "$2" "$1/hosts/machine.json"; }
 
 PATH=$stub_dir:/usr/bin:/bin
 export PATH
-unset WORKSTATION_FLAKE WORKSTATION_SWITCH_FLAKE
+unset WORKSTATION_FLAKE WORKSTATION_SWITCH_FLAKE WORKSTATION_CHECKOUT WORKSTATION_WORKTREE
+repo_ref="git+file://$repo_root?rev=$(git -C "$repo_root" rev-parse HEAD)"
+repo_ovr="--override-input machine-files path:$repo_root/hosts"
 
 # 1
 out=$("$shim" help) || fail 'help must exit 0'
@@ -121,21 +124,21 @@ rc=0
 # 2
 out=$("$shim" --flake "$repo_root" status) || fail 'status with an explicit flake failed'
 [ "$out" = '{"stub":true}' ] || fail 'the read must print the eval stdout unchanged'
-expect_log "eval --json $repo_root#workstation.report.status"
+expect_log "eval --json $repo_ref#workstation.report.status $repo_ovr"
 
 # 3
 WORKSTATION_FLAKE=$repo_root "$shim" plan >/dev/null || fail 'plan via WORKSTATION_FLAKE failed'
-expect_log "$repo_root#workstation.report.plan"
+expect_log "$repo_ref#workstation.report.plan"
 (cd "$repo_root/docs" && "$shim" capabilities >/dev/null) || fail 'capabilities via the checkout walk failed'
-expect_log "$repo_root#workstation.report.capabilities"
-mkdir -p "$root/home/.local/opt/workstation"
-printf 'flake.snapshot\n' > "$root/home/.local/opt/workstation/flake"
-(cd "$root/home" && HOME=$root/home "$shim" status >/dev/null) || fail 'status via the staged snapshot failed'
-expect_log "$root/home/.local/opt/workstation/flake#workstation.report.status"
+expect_log "$repo_ref#workstation.report.capabilities"
+mkdir -p "$root/home"
+: >"$root/stub.log"
+(cd "$root/home" && HOME=$root/home WORKSTATION_CHECKOUT=$repo_root "$shim" status >/dev/null) || fail 'status via the recorded checkout failed'
+expect_log "$repo_ref#workstation.report.status"
 (cd "$root" && HOME=$root/bare "$shim" status 2>"$root/err") && fail 'a bare host read must fail closed'
-grep -q 'no flake to read' "$root/err" || fail 'the bare-host failure must name the fix'
+grep -q 'no checkout to read' "$root/err" || fail 'the bare-host failure must name the fix'
 (cd "$repo_root" && "$shim" capabilities languages/go >/dev/null) || fail 'a scoped read failed'
-expect_log "$repo_root#workstation.report.capabilities.\"languages/go\""
+expect_log "$repo_ref#workstation.report.capabilities.\"languages/go\""
 "$shim" capabilities 'bad;name' >/dev/null 2>&1 && fail 'a scope element must be a plain attribute name'
 
 # 4
@@ -308,11 +311,24 @@ WORKSTATION_FLAKE=$co "$shim" add languages/go >/dev/null 2>&1 || fail 'add in a
 printf '#!/bin/sh\nexit 1\n' > "$stub_dir/whiptail"
 WORKSTATION_FLAKE=$fixture "$shim" apply >/dev/null 2>&1 || fail 'apply must delegate'
 [ "$(last_switch)" = "switch-flake=" ] || fail "a flake without the launcher must not reach the driver (got: $(last_switch))"
-mkdir -p "$root/snaphome/.local/opt/workstation/flake/hosts" "$root/snaphome/.local/opt/workstation/flake/bin"
-printf '%s\n' "$captured" >"$root/snaphome/.local/opt/workstation/flake/hosts/machine.json"
-: >"$root/snaphome/.local/opt/workstation/flake/bin/workstation"
-(cd "$root/snaphome" && HOME=$root/snaphome "$shim" apply >/dev/null 2>&1) || fail 'apply via the snapshot must delegate'
-[ "$(last_switch)" = "switch-flake=" ] || fail "the staged snapshot must not be handed over (got: $(last_switch))"
+last_machine() { grep '^switch-machine=' "$root/stub.log" | tail -n 1; }
+[ "$(last_machine)" = "switch-machine=" ] || fail "a flake without the launcher must not hand over machine files (got: $(last_machine))"
+gco=$root/gitcheckout
+machine "$gco" "$captured"
+mkdir -p "$gco/bin"
+: >"$gco/bin/workstation"
+: >"$gco/flake.nix"
+git -C "$gco" init -q
+git -C "$gco" add -A
+git -C "$gco" -c user.name=t -c user.email=t@t commit -qm fixture
+gco_real=$(CDPATH='' cd -P "$gco" && pwd -P)
+gco_rev=$(git -C "$gco" rev-parse HEAD)
+printf 'work in progress\n' >"$gco/bin/workstation"
+(cd "$gco" && "$shim" apply >/dev/null 2>&1) || fail 'apply in a git checkout must delegate'
+[ "$(last_switch)" = "switch-flake=git+file://$gco_real?rev=$gco_rev" ] || fail "a git checkout must hand over its committed HEAD (got: $(last_switch))"
+[ "$(last_machine)" = "switch-machine=$gco_real/hosts" ] || fail "a git checkout must hand over its working-tree machine files (got: $(last_machine))"
+(cd "$gco" && WORKSTATION_WORKTREE=1 "$shim" apply >/dev/null 2>&1) || fail 'apply with WORKSTATION_WORKTREE must delegate'
+[ "$(last_switch)" = "switch-flake=$gco_real" ] || fail "WORKSTATION_WORKTREE must hand over the working tree (got: $(last_switch))"
 (cd "$co" && WORKSTATION_SWITCH_FLAKE=/operator/flake "$shim" apply >/dev/null 2>&1) || fail 'apply must delegate'
 [ "$(last_switch)" = "switch-flake=/operator/flake" ] || fail "an operator-set WORKSTATION_SWITCH_FLAKE must win (got: $(last_switch))"
 

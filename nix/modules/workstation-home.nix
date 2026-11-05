@@ -4,7 +4,6 @@
   config,
   lib,
   pkgs,
-  self,
   ...
 }:
 {
@@ -17,6 +16,11 @@
         default = null;
         description = "The flake attr of this host's homeConfiguration: the switch driver's home-plane target.";
       };
+      checkout = lib.mkOption {
+        type = lib.types.nullOr lib.types.str;
+        default = null;
+        description = "The workstation checkout: the launcher's flake outside a checkout.";
+      };
       systemAttr = lib.mkOption {
         type = lib.types.nullOr lib.types.str;
         default = null;
@@ -26,16 +30,16 @@
   };
 
   config = {
-    home.file.".local/opt/workstation/flake".source = self;
-
     home.packages = [
       (pkgs.writeShellScriptBin "workstation" (
         "WORKSTATION_JQ=\${WORKSTATION_JQ:-${pkgs.jq}/bin/jq}\n"
-        + builtins.readFile (self + "/bin/workstation")
+        + lib.optionalString (
+          config.workstation.switch.checkout != null
+        ) "WORKSTATION_CHECKOUT=\${WORKSTATION_CHECKOUT:-${config.workstation.switch.checkout}}\n"
+        + builtins.readFile ../../bin/workstation
       ))
       (import ../workstation-switch.nix {
         inherit pkgs;
-        flake = self;
         homeAttr = config.workstation.switch.homeAttr;
         systemAttr = config.workstation.switch.systemAttr;
       })

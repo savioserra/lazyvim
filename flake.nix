@@ -15,6 +15,10 @@
       url = "github:nix-darwin/nix-darwin";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    machine-files = {
+      url = "path:./hosts";
+      flake = false;
+    };
   };
 
   outputs =
@@ -24,6 +28,7 @@
       home-manager,
       nixos-wsl,
       nix-darwin,
+      machine-files,
     }:
     let
       lib = nixpkgs.lib;
@@ -46,16 +51,13 @@
 
       machine = import ./nix/lib/machine.nix {
         inherit lib;
-        root = ./.;
+        root = machine-files;
       };
 
       home =
         system: modules:
         home-manager.lib.homeManagerConfiguration {
           pkgs = pkgsFor.${system};
-          extraSpecialArgs = {
-            inherit self;
-          };
           modules = modules ++ [ ./nix/modules/workstation-home.nix ];
         };
 
@@ -71,7 +73,6 @@
 
       linuxHost = import ./hosts/linux/default.nix {
         inherit
-          self
           nixpkgs
           home-manager
           nixos-wsl
@@ -80,7 +81,6 @@
       };
       macHost = import ./hosts/mac/default.nix {
         inherit
-          self
           nixpkgs
           home-manager
           nix-darwin
@@ -114,7 +114,10 @@
           '';
     in
     {
-      workstation.report = report;
+      workstation = {
+        inherit report;
+        rev = self.rev or self.dirtyRev or "unknown";
+      };
 
       homeConfigurations = lib.optionalAttrs (lib.hasSuffix "-linux" machine.system) {
         ${machine.key} = machineHome;

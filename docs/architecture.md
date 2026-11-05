@@ -102,9 +102,11 @@ Tools come from the one nixpkgs input.
 
 ## The client law
 
-`bin/workstation` stays plain POSIX sh: resolve the flake (`--flake` >
-`$WORKSTATION_FLAKE` > the enclosing checkout > the staged generation
-snapshot), dispatch the verb, exec. Reads exec `nix eval --json` over the
+`bin/workstation` stays plain POSIX sh: resolve the checkout (`--flake` >
+`$WORKSTATION_FLAKE` > the enclosing checkout > `$WORKSTATION_CHECKOUT`,
+recorded by init), build its committed `HEAD` (`git+file://…?rev=`) with
+`--override-input machine-files path:<checkout>/hosts`, dispatch the verb,
+exec. Reads exec `nix eval --json` over the
 report attrs and print the answer unchanged; writes exec the staged
 `workstation apply` (the staged driver); help exits 0, usage errors exit 2, a read with no
 resolvable flake fails closed naming the fix. The shim dispatch gate

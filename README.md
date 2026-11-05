@@ -99,9 +99,13 @@ workstation selected               # this machine's selection rows
 workstation help                   # the verb contract
 ```
 
-The shim reads the generation's flake snapshot
-(`~/.local/opt/workstation/flake`) on a switched host, or the enclosing
-checkout inside one. Reads mutate nothing. Ownership and history over time:
+The shim reads the enclosing checkout, or the checkout `init` recorded
+when run elsewhere. Reads and switches build the checkout's committed
+`HEAD` with the working tree's `hosts/` machine files (the `machine-files`
+input), so uncommitted work stays out of the generation and a commit that
+touches nothing deployed leaves the generation unchanged;
+`WORKSTATION_WORKTREE=1` builds the working tree. The switch receipt in
+`switch.log` names the commit (`self.rev`). Reads mutate nothing. Ownership and history over time:
 `home-manager generations`, `nix store diff-closures`.
 
 The switch re-points the theme token path

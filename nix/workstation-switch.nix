@@ -1,8 +1,9 @@
 # The write plane: workstation-switch apply|rollback|update|sync, with a
-# receipt line in ~/.local/state/workstation/switch.log.
+# receipt line in ~/.local/state/workstation/switch.log. The flake ref and
+# the machine files come from the launcher (WORKSTATION_SWITCH_FLAKE,
+# WORKSTATION_SWITCH_MACHINE); the driver carries no copy of the repo.
 {
   pkgs,
-  flake,
   homeAttr ? null,
   systemAttr ? null,
 }:
@@ -25,6 +26,10 @@ let
       message="generation $gen applied (rollback available at $((gen - 1)))"
     else
       message="generation $gen applied (no prior generation)"
+    fi
+    if [ -n "$flake" ]; then
+      rev="$(nix eval --raw "$flake#workstation.rev" "''${override[@]}" 2>/dev/null || true)"
+      [ -z "$rev" ] || message="$message at $rev"
     fi
     echo "workstation-switch: $message"
     state_dir="''${XDG_STATE_HOME:-$HOME/.local/state}/workstation"
@@ -59,6 +64,12 @@ let
         exit 2
       fi
     }
+    need_flake() {
+      if [ -z "$flake" ]; then
+        echo "workstation-switch: no flake to build — run it through the launcher (workstation apply) or set WORKSTATION_SWITCH_FLAKE" >&2
+        exit 2
+      fi
+    }
   '';
 in
 pkgs.writeShellScriptBin "workstation-switch" ''
@@ -84,7 +95,11 @@ pkgs.writeShellScriptBin "workstation-switch" ''
   fi
   [ $# -eq 0 ] || usage
 
-  flake="''${WORKSTATION_SWITCH_FLAKE:-${flake}}"
+  flake="''${WORKSTATION_SWITCH_FLAKE:-}"
+  override=()
+  if [ -n "''${WORKSTATION_SWITCH_MACHINE:-}" ]; then
+    override=(--override-input machine-files "path:$WORKSTATION_SWITCH_MACHINE")
+  fi
   home_attr="''${WORKSTATION_SWITCH_HOME_ATTR:-${if homeAttr == null then "" else homeAttr}}"
   system_attr="''${WORKSTATION_SWITCH_SYSTEM_ATTR:-${if systemAttr == null then "" else systemAttr}}"
   home_activate="''${WORKSTATION_SWITCH_HOME_ACTIVATE:-}"
@@ -96,7 +111,8 @@ pkgs.writeShellScriptBin "workstation-switch" ''
       if [ -n "$home_activate" ]; then
         "$home_activate"
       else
-        gen="$(nix build --no-link --print-out-paths "$flake#homeConfigurations.$home_attr.activationPackage" | tail -n 1)"
+        need_flake
+        gen="$(nix build --no-link --print-out-paths "$flake#homeConfigurations.\"$home_attr\".activationPackage" "''${override[@]}" | tail -n 1)"
         "$gen/activate"
       fi
       ${resolveHomeProfile}
@@ -106,30 +122,27 @@ pkgs.writeShellScriptBin "workstation-switch" ''
       nix-env --profile "$profile" --rollback
       "$profile/activate"
       ;;
-    home:update)
-      need_home
-      nix flake update --flake "$flake"
-      gen="$(nix build --no-link --print-out-paths "$flake#homeConfigurations.$home_attr.activationPackage" | tail -n 1)"
-      "$gen/activate"
+    home:update|system:update)
+      checkout="''${WORKSTATION_SWITCH_CHECKOUT:-}"
+      if [ -z "$checkout" ]; then
+        echo "workstation-switch: update needs the checkout — run it through the launcher (workstation update)" >&2
+        exit 2
+      fi
+      nix flake update --flake "$checkout"
+      echo "workstation-switch: flake.lock updated in $checkout — commit it, then: workstation apply"
+      exit 0
       ;;
     system:apply|system:sync)
       need_system
-      ${rebuild} switch --flake "$flake#$system_attr"
+      need_flake
+      ${rebuild} switch --flake "$flake#$system_attr" "''${override[@]}"
       profile=/nix/var/nix/profiles/system
       ;;
     system:rollback)
       ${rebuild} switch --rollback
       profile=/nix/var/nix/profiles/system
       ;;
-    system:update)
-      need_system
-      nix flake update --flake "$flake"
-      ${rebuild} switch --flake "$flake#$system_attr"
-      profile=/nix/var/nix/profiles/system
-      ;;
   esac
 
-  # The receipt closes the run: a broken generation read fails the switch
-  # run loudly (exit 1), never silently.
   ${readAndPublish}
 ''

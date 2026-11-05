@@ -353,7 +353,7 @@ Fail-closed at eval:
 
 | Phase | Owner | Responsibility |
 | --- | --- | --- |
-| switch / rollback | `workstation apply` / `workstation rollback` | Build the generation from the flake, activate atomically, write the receipt to `switch.log`; the flake is the resolved workstation checkout (`--flake`, `$WORKSTATION_FLAKE`, the enclosing checkout), else the staged snapshot; an explicit `WORKSTATION_SWITCH_FLAKE` wins |
+| switch / rollback | `workstation apply` / `workstation rollback` | Build the generation from the flake, activate atomically, write the receipt to `switch.log`; the flake is the resolved checkout's committed `HEAD` (`--flake`, `$WORKSTATION_FLAKE`, the enclosing checkout, `$WORKSTATION_CHECKOUT`) with its working-tree machine files; `WORKSTATION_WORKTREE=1` builds the working tree; an explicit `WORKSTATION_SWITCH_FLAKE` wins; `update` moves `flake.lock` for a commit |
 | `plan` / `status` / `capabilities` / `selected` | `nix eval` over `workstation.report` | Answer the declared state; mutate nothing |
 | select | `workstation add <path>...` / `workstation remove <path>...` | Validate against `selectable`, set or drop the flag in `hosts/machine.json`, offer the apply (idempotent; the baseline refuses) |
 | fleet | `workstation fleet` (and `init`, once) | Choose start / join / standalone; write `programs.hermes.a2a.enable` and `workstation.network.enable`, switch on a change, log in to tailscale, join |

@@ -1,7 +1,6 @@
 # The linux system leg (NixOS-WSL): the system plane plus the machine's
 # home plane through home-manager.
 {
-  self,
   nixpkgs,
   home-manager,
   nixos-wsl,
@@ -10,9 +9,6 @@
 {
   nixosConfig = nixpkgs.lib.nixosSystem {
     inherit (machine) system;
-    specialArgs = {
-      inherit self;
-    };
     modules = [
       nixos-wsl.nixosModules.default
       ../../nix/modules/workstation-system.nix
@@ -40,9 +36,6 @@
           home-manager = {
             useGlobalPkgs = true;
             useUserPackages = true;
-            extraSpecialArgs = {
-              inherit self;
-            };
             users.${machine.user}.imports = machine.homeModules ++ [
               {
                 workstation.switch.homeAttr = machine.key;

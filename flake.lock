@@ -36,6 +36,18 @@
         "type": "github"
       }
     },
+    "machine-files": {
+      "flake": false,
+      "locked": {
+        "path": "./hosts",
+        "type": "path"
+      },
+      "original": {
+        "path": "./hosts",
+        "type": "path"
+      },
+      "parent": []
+    },
     "nix-darwin": {
       "inputs": {
         "nixpkgs": [
@@ -97,6 +109,7 @@
     "root": {
       "inputs": {
         "home-manager": "home-manager",
+        "machine-files": "machine-files",
         "nix-darwin": "nix-darwin",
         "nixos-wsl": "nixos-wsl",
         "nixpkgs": "nixpkgs"
