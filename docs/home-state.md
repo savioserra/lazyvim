@@ -10,9 +10,8 @@ provider state remain user-owned.
 
 | Step | Owner | Contract |
 | --- | --- | --- |
-| Declaration | `modules/<domain>/<domain>.nix` | Native nix: home.file surfaces, tools (nixpkgs), fragments, activation scripts |
+| Declaration | `modules/<domain>/<domain>.nix` | Native nix: home.file surfaces, tools (nixpkgs), upstream `programs.*`, activation scripts |
 | Payload | `modules/<domain>/` (co-located with the declaring module) | Referenced bytes, copied into the store at eval |
-| Fragment lane order | `nix/lib/shell-lane.nix` | The fragments' `order` slots sorted once — the rc files and the report read the same sort; shared/ambiguous slots fail the eval |
 | Claim composition | `modules/terminal/terminal.nix` (inline) | Overlapping dir claims compose into one derivation (the `.platform` marker — the one consumer) |
 | Deployment | the generation | `home-manager switch` links every target atomically |
 
@@ -30,10 +29,8 @@ state; it has two precise carve-outs, both declarative:
 - **skill leaves** — `modules/agent/agent.nix` renders managed skill files
   as store-path `home.file` entries. The agent consumes them read-only; an
   in-place edit is replaced at the next switch (declared truth wins).
-- **activation scripts** — the checkout ensure, the retire list and the
-  A2A converge mutate hot state at switch time under explicit guards
-  (clone/fetch only when absent or clean-and-behind; `rm -f` of named
-  legacy paths; `config.yaml`/`.env` keys written only through the hermes
+- **activation scripts** — the checkout ensure and the A2A converge mutate hot state at switch time under explicit guards
+  (clone/fetch only when absent or clean-and-behind; `config.yaml`/`.env` keys written only through the hermes
   CLI, only the declared ones, on drift), and the file plane still tracks
   nothing.
 
@@ -84,15 +81,8 @@ Two native shapes, both declared:
 - entries the file plane owned leave through the generation diff — a
   `home.file` entry dropped from the declarations is removed by the next
   switch;
-- legacy/foreign paths (files that predate the substrate or were never
-  file-plane-owned) go through the declared retire list: an idempotent
-  activation pass with a named receipt per outcome, dropped from the
-  declarations after the fleet has switched past it. A string entry is a
-  file/symlink tombstone (`rm -f`); a tree carries
-  `{ path = "..."; recursive = true; }` — the declaration is the consent,
-  and the hook removes exactly the declared path recursively. A directory
-  met without the consent is reported with the fix named and skipped,
-  never silently forced.
+- paths the file plane never owned are the operator's: the substrate
+  never deletes them.
 
 `modules/theme/tokens.lua` is the canonical token payload, and nix reads
 it directly (the extraction asserted at eval, `modules/theme/theme.nix`).

@@ -96,8 +96,8 @@ jobs:
   # on a docker host (the hosted runners carry docker). The persona home
   # plane activates in a throwaway nixos/nix container: the retirement
   # proof, the consumer smokes (the nvim headless boot with the languages
-  # composed, the lazy-lock merge, the theme tokens), the adopt rehearsal,
-  # the apply-driven switch and the receipt. The system plane keeps its
+  # composed, the lazy-lock merge, the theme tokens), the selection
+  # removal, the apply-driven switch and the receipt. The system plane keeps its
   # eval gate (the toplevel drvPath above — it never needed a boot).
   container-e2e:
     runs-on: ubuntu-24.04

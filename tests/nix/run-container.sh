@@ -5,7 +5,7 @@
 # the driver — the retirement proof (no daemon unit, no socket), the
 # consumer smokes (the launcher shim, the nvim headless boot with the
 # languages composed, the lazy-lock merge, the theme tokens, the agent and
-# terminal planes, the rc lane order), the adopt rehearsal, the
+# terminal planes, the shell init), the selection removal, the
 # apply-driven switch and the receipt — every step loud on the log the
 # host script greps. This is the fresh-host parity proof: a bare home, one
 # apply from the flake, the resulting home matching the declared

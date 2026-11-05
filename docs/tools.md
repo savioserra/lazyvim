@@ -18,14 +18,14 @@ Platforms: linux x86_64 (WSL counts as linux), macOS arm64.
 | pnpm | 12.x | nixpkgs | on PATH via `home.packages` | linux-x86_64, darwin-arm64 |
 | ripgrep | 15.2.x | nixpkgs | on PATH via `home.packages` | linux-x86_64, darwin-arm64 |
 | fd | 10.5.x | nixpkgs | on PATH via `home.packages` | linux-x86_64, darwin-arm64 |
-| eza | 0.23.5 | nixpkgs | on PATH; the managed `ls` alias rides the rc fragments | linux-x86_64, darwin-arm64 |
+| eza | 0.23.5 | nixpkgs via Home Manager (`programs.eza`) | `ls` = `eza -lh` | linux-x86_64, darwin-arm64 |
 | starship | 1.27.0 | nixpkgs | on PATH; per-shell init + `.config/starship.toml` | linux-x86_64, darwin-arm64 |
 | fzf | 0.74.x | nixpkgs | on PATH via `home.packages` | linux-x86_64, darwin-arm64 |
 | lazygit | 0.66.x | nixpkgs | on PATH via `home.packages` | linux-x86_64, darwin-arm64 |
 | tree-sitter (CLI) | 0.26.x | nixpkgs | on PATH via `home.packages` | linux-x86_64, darwin-arm64 |
 | harlequin + hsql | 2.16.2 | nixpkgs | harlequin + `hsql` in one derivation; the hsql agent skill generated from the derivation at build time | linux-x86_64, darwin-arm64 |
 | mise | 2025.5.3 | nixpkgs | on PATH — the binary only: per-project runtime versioning (`mise use`, `.mise.toml`, `mise x`); no managed data dir, no launcher, no activation fragment | linux-x86_64, darwin-arm64 |
-| direnv + nix-direnv | 2.36.0 / 3.0.7 | nixpkgs via Home Manager (`programs.direnv`) | `use flake`/`use nix` with the evaluation cache and GC roots; the shell hooks ride the rc fragment lane; complements mise: direnv owns repos with a flake/shell.nix, mise owns repos without nix awareness | linux-x86_64, darwin-arm64 |
+| direnv + nix-direnv | 2.36.0 / 3.0.7 | nixpkgs via Home Manager (`programs.direnv`) | `use flake`/`use nix` with the evaluation cache and GC roots; the bash hook follows the prompt init; complements mise: direnv owns repos with a flake/shell.nix, mise owns repos without nix awareness | linux-x86_64, darwin-arm64 |
 | 1Password CLI | 2.41.x | nixpkgs (`modules/secrets/secrets.nix`; unfree — the acceptance is `nix/lib/license.nix`) | `op` on PATH via `home.packages` | linux-x86_64, darwin-arm64 |
 | Hermes Agent | rev `b23600860f8` + interpreter `pkgs.python314` | github.com/NousResearch/hermes-agent; nixpkgs | Pinned checkout `~/.hermes/hermes-agent` (activation ensure); interpreter at `.local/opt/hermes/python`; launcher at `.local/bin/hermes`; skills as store entry symlinks (`programs.hermes.skills`); extensions into `~/.hermes/plugins`; verify anchor `.local/opt/hermes/pin.json` | linux-x86_64, darwin-arm64 |
 | A2A helpers | yq-go 4.45.4, socat 1.8.0.3, curl 8.14.1, jq 1.7.1, newt 0.52.24, tailscale 1.104.x, findutils | nixpkgs (`modules/agent/packages.nix`) | in the closures of `workstation-a2a-converge` (the activation), `workstation-peers` (`workstation peers`), `workstation-fleet` (the fleet service, `workstation fleet`) and `workstation-a2a-token`, never on PATH | linux-x86_64, darwin-arm64 |
@@ -33,16 +33,15 @@ Platforms: linux x86_64 (WSL counts as linux), macOS arm64.
 | nunchux | 3.1.3 | github.com/datamadsen/nunchux | pinned checkout `.tmux/plugins/nunchux` (`fetchFromGitHub`) + the `bin/.platform` marker; package is linux-only | linux-x86_64 |
 | tmux | 3.7c | nixpkgs (the system legs' host configuration) | the system legs' tmux package; darwin keeps brew | linux-x86_64 |
 | btop | 1.4.7 | nixpkgs (the system legs' host configuration) | same as tmux; darwin keeps brew | linux-x86_64 |
-| TPM plugin set | pinned commits | github.com/tmux-plugins/tpm, github.com/2KAbhishek/tmux2k, github.com/tmux-plugins/tmux-yank, github.com/tmux-plugins/tmux-resurrect, github.com/christoomey/vim-tmux-navigator | pinned checkouts `~/.tmux/plugins/<name>`; `~/.tmux/plugins.pins.json` is the verify anchor | linux-x86_64, darwin-arm64 |
+| TPM plugin set | pinned commits | github.com/tmux-plugins/tpm, github.com/2KAbhishek/tmux2k, github.com/tmux-plugins/tmux-yank, github.com/tmux-plugins/tmux-resurrect, github.com/christoomey/vim-tmux-navigator | pinned store checkouts `~/.tmux/plugins/<name>` | linux-x86_64, darwin-arm64 |
 
 ## Pin maintenance
 
 The nixpkgs lock is the version surface: `nix flake update` moves the set.
 Inline pins declare in their owning
 modules — one pin, one owner, one surface; a bump moves the row, its hash
-and the consumer together. The verify lanes anchor on the deployed
-manifests: `.local/opt/hermes/pin.json` (agent),
-`.tmux/plugins.pins.json` (terminal).
+and the consumer together. The agent's verify lane anchors on the
+deployed `.local/opt/hermes/pin.json`.
 
 ## Host prerequisites
 

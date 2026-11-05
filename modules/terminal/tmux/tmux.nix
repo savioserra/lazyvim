@@ -1,5 +1,5 @@
-# The tmux member: .tmux.conf, the pinned plugin checkouts and their pin
-# manifest (~/.tmux/plugins.pins.json).
+# The tmux member: .tmux.conf, the pinned plugin checkouts and the reply
+# drain function in bash and zsh.
 {
   config,
   lib,
@@ -7,6 +7,15 @@
   ...
 }:
 let
+  drain = ''
+    tmux() {
+      command tmux "$@"
+      local _rc=$?
+      read -t 0.5 -r _ </dev/tty 2>/dev/null
+      return $_rc
+    }
+  '';
+
   pluginPins = {
     "tpm" = {
       owner = "tmux-plugins";
@@ -53,66 +62,15 @@ let
 
 in
 {
-  options.workstation.terminal = {
-    tmux.enable = lib.mkEnableOption "the tmux config and plugin set" // {
-      default = true;
-    };
-    pins = lib.mkOption {
-      type = lib.types.attrsOf (
-        lib.types.submodule {
-          options = {
-            url = lib.mkOption {
-              type = lib.types.str;
-              description = "The upstream repository URL.";
-            };
-            rev = lib.mkOption {
-              type = lib.types.str;
-              description = "The pinned commit.";
-            };
-            version = lib.mkOption {
-              type = lib.types.nullOr lib.types.str;
-              default = null;
-              description = "The upstream release the pin carries.";
-            };
-            repo_linux_amd64_sha256 = lib.mkOption {
-              type = lib.types.nullOr lib.types.str;
-              default = null;
-              description = "The repo-tracked linux build's sha256.";
-            };
-          };
-        }
-      );
-      default = { };
-      description = "The deployed plugin pin rows (~/.tmux/plugins.pins.json), keyed by plugin name.";
-    };
+  options.workstation.terminal.tmux.enable = lib.mkEnableOption "the tmux config and plugin set" // {
+    default = true;
   };
 
   config = lib.mkIf (config.workstation.terminal.enable && config.workstation.terminal.tmux.enable) {
     home.packages = [ pkgs.tmux ];
 
-    workstation.shell.fragments = [
-      {
-        target = ".bashrc";
-        id = "tmux-drain";
-        order = 30;
-        domain = "terminal";
-        marker = "# workstation: tmux reply drain";
-        payload = ./fragments/tmux-drain.sh;
-      }
-      {
-        target = ".zshrc";
-        id = "tmux-drain-zsh";
-        order = 30;
-        domain = "terminal";
-        marker = "# workstation: tmux reply drain";
-        payload = ./fragments/tmux-drain.sh;
-      }
-    ];
-
-    workstation.terminal.pins = builtins.mapAttrs (_: pin: {
-      url = "https://github.com/${pin.owner}/${pin.repo}";
-      inherit (pin) rev;
-    }) pluginPins;
+    programs.bash.initExtra = drain;
+    programs.zsh.initContent = drain;
 
     home.file = lib.mkMerge (
       [
@@ -120,11 +78,6 @@ in
           ".tmux.conf".source = ./files/.tmux.conf;
           ".config/tmux/tmux.conf".source =
             config.lib.file.mkOutOfStoreSymlink "${config.home.homeDirectory}/.tmux.conf";
-          ".tmux/plugins.pins.json".text =
-            builtins.toJSON (
-              builtins.mapAttrs (_: row: lib.filterAttrs (_: v: v != null) row) config.workstation.terminal.pins
-            )
-            + "\n";
         }
       ]
       ++ lib.mapAttrsToList (name: tree: {
@@ -132,6 +85,5 @@ in
       }) plugins
     );
 
-    workstation.retire = [ ".config/tmux/themes/tmux2k.conf" ];
   };
 }

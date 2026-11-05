@@ -22,7 +22,7 @@ Read the nearest scoped `AGENTS.md` and follow the owning reference:
 ## Operating contract
 
 - A capability that names a tool ships the tool: resources-without-runtime (a clone, a symlink or a config with no provisioned, working binary) is a defect, not a documented manual step. Verify must smoke the consumer (`hermes --version`-class checks), not only fingerprints.
-- Edit source, not deployed state. Every payload lives with its owning capability under `modules/<domain>/` (module and bytes co-located); home state is declared and linked from the store, never checked in as deployed state. Never implicitly overwrite a clone; legacy payloads retire through the declared retire list.
+- Edit source, not deployed state. Every payload lives with its owning capability under `modules/<domain>/` (module and bytes co-located); home state is declared and linked from the store, never checked in as deployed state. Never implicitly overwrite a clone.
 - `workstation` is the sole public lifecycle interface (apply / rollback / update / sync / init / add / remove); the staged write-plane driver it execs is internal, never user-facing.
 - Keep domains self-contained: a domain declares its own options; it contributes to another only through an option that domain declares, guarded by its enable; no cross-domain imports.
 - Payload stays data: Lua appears only as deployed editor/theme data read as bytes, never executed.
@@ -59,5 +59,5 @@ declared surface. Native Linux and macOS arm64 acceptance stays explicit.
 | tmux plugin pin | the `fetchFromGitHub` rev in `modules/terminal/terminal.nix`, `docs/tmux.md` |
 | Capability | `modules/<domain>/` (module + payload bytes co-located), tests, docs |
 | Neovim language | the language entry in the language domain's module, lockfiles if needed, behavior case |
-| Removed deployed source | a retire-list entry in the owning capability's module (the generation diff retires file-plane-owned targets; the activation retire list retires legacy paths) |
+| Removed deployed source | drop the declaration: the generation diff removes what the file plane owned |
 | New platform condition | canonical asset metadata, capability support, CI/test coverage |

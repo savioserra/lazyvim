@@ -67,10 +67,7 @@ Pinning rules:
   in-store), linking
   the store checkout under `~/.tmux/plugins/`
   (tpm first — it must exist before the first tmux start, which sources
-  it via the `run-shell` at the end of `.tmux.conf`); the same
-  declaration deploys as `~/.tmux/plugins.pins.json` (url + rev rows
-  derived from the same literals), the verify lane's
-  anchor. TPM sees the pre-installed checkouts and sources
+  it via the `run-shell` at the end of `.tmux.conf`). TPM sees the pre-installed checkouts and sources
   them without cloning. Never run TPM's `prefix + I`: a TPM clone/pull
   would fight the pins — the next generation switch re-asserts them.
 - The plugin rows are asserted by the package tests (the payload seam).
@@ -87,7 +84,7 @@ TPM `user/repo#ref` supports branches/tags, not exact raw commits.
 
 | Plugin | Commit | Pin inventory |
 | --- | --- | --- |
-| `datamadsen/nunchux` | `1546eaa980d834c331496ea9d51942be07ea9fdd` (Release 3.1.3) | `modules/terminal/terminal.nix` declares the clone pin (url + rev) and the repo-tracked `bin/nunchux` build's SHA-256 (deployed as `~/.tmux/plugins.pins.json`); the `.platform` marker keeps `ensure_binary` off the release fetches |
+| `datamadsen/nunchux` | `1546eaa980d834c331496ea9d51942be07ea9fdd` (Release 3.1.3) | `modules/terminal/nunchux/nunchux.nix` declares the hash-pinned checkout; the `.platform` marker keeps `ensure_binary` off the release fetches |
 
 Nunchux (fzf popup launcher for apps, files and task runners) is ACTIVE:
 
@@ -107,9 +104,7 @@ The load-bearing pre-seed is that marker: upstream's `nunchux.tmux`
 `ensure_binary` fetches `releases/latest` — unchecksummed, the same
 exclusion-class defect as `tmux-fingers` — whenever `bin/.platform` is
 missing or names another platform. With the marker present, plugin load
-runs the commit-pinned repo binary and never fetches. Host-side pin
-assertion: `modules/terminal/nunchux/verify/nunchux.sh` (checkout HEAD, binary
-content pin, marker; read-only, never executes the binary).
+runs the commit-pinned repo binary and never fetches.
 
 The launch chord is **C-Space, root** (no prefix): `@nunchux-key` is set to
 `C-Space` — upstream's own default — and the activation block binds
@@ -197,22 +192,16 @@ scroll-style repaints as stacked lines):
 - the clock carries no seconds (`%a %H:%M`) — `%S` pins a 1Hz re-render;
 - `scroll-on-clear off` (inside `%if "#{>=:#{version},3.5}"`);
 - single-width `|` separators — PUA powerline arrows render double-width
-  without a nerd font;
-- `~/.config/tmux/themes/tmux2k.conf` is a retire-list tombstone in
-  `modules/terminal/terminal.nix`.
+  without a nerd font.
 
 
 ## Verification
 
-- assert each engine-provisioned checkout at its pinned commit —
-  `modules/terminal/tmux/verify/tmux.sh` reads the pin inventory's
-  `<plugin>_git_commit` rows and checks every `~/.tmux/plugins/<name>`
-  HEAD against its pin (read-only, fails closed on the first mismatch);
+- each plugin checkout is a store path: its pin is the derivation hash;
 - assert the XDG symlink target;
 - start an isolated tmux socket and server;
 - assert session name;
 - assert the `2KAbhishek/tmux2k` `@plugin` pin in `.tmux.conf`;
 - assert `@tmux2k-theme=onedark`, the `cpu ram time` right side and the btop popup pin ahead of TPM init;
-- assert the tmux2k row of the deployed `~/.tmux/plugins.pins.json` (commit + URL);
 - assert the pinned `TMUX_PLUGIN_MANAGER_PATH`;
 - kill the isolated server on success or failure.

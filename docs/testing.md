@@ -56,7 +56,8 @@ The lane map — which lane proves what:
   dispatch, the nvim headless boot with the languages composed — the
   composed profile.lua is a lua CHUNK, the regression the boot smoke
   owns, the lazy-lock merge, the theme token path, the language profile,
-  the rc lane's declared order, the migrated tools running, the agent
+  the shell init (eza, starship, the direnv hook after the prompt, the
+  op env, the editor env), the migrated tools running, the agent
   skills at pinned versions, the tmux/nunchux/foundation planes, the
   init capture live against a writable checkout copy (the placeholders
   fill from detection, the settings survive, a converged re-init is
@@ -64,11 +65,8 @@ The lane map — which lane proves what:
   selection verbs live against a writable checkout copy), the selection
   removal proof (the second apply re-activates the persona with go
   deselected: the toolchain and its profile entry leave, the rest rides,
-  nvim still boots), the
-  adopt rehearsal (a copy-contract tree makes way for the declared
-  symlink), the retire rehearsal (a planted tombstone tree leaves
-  through the declared `recursive = true` consent, verdict-receipted),
-  the apply-driven switch (`workstation apply` over the
+  nvim still boots), the operator extras closing the rc files, the
+  apply-driven switch (`workstation apply` over the
   offline activation override) and the switch receipt. This IS the
   fresh-host parity proof: a bare home, one apply from the flake, the
   resulting home matching the declared expectations, consumer-smoked end

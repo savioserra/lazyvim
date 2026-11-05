@@ -1,8 +1,7 @@
-# The terminal domain: eza and starship with their rc fragments.
+# The terminal domain: eza (ls) and the starship prompt.
 {
   config,
   lib,
-  pkgs,
   ...
 }:
 {
@@ -11,44 +10,15 @@
   };
 
   config = lib.mkIf config.workstation.terminal.enable {
-    home.packages = [
-      pkgs.eza
-      pkgs.starship
-    ];
+    programs.eza = {
+      enable = true;
+      icons = "auto";
+      extraOptions = [ "--group-directories-first" ];
+    };
+    programs.bash.shellAliases.ls = "eza -lh";
+    programs.zsh.shellAliases.ls = "eza -lh";
 
-    workstation.shell.fragments = [
-      {
-        target = ".bashrc";
-        id = "managed-eza";
-        order = 40;
-        domain = "terminal";
-        marker = "# workstation: managed eza ls";
-        payload = ./fragments/managed-eza.sh;
-      }
-      {
-        target = ".zshrc";
-        id = "managed-eza-zsh";
-        order = 40;
-        domain = "terminal";
-        marker = "# workstation: managed eza ls";
-        payload = ./fragments/managed-eza.sh;
-      }
-      {
-        target = ".bashrc";
-        id = "managed-starship";
-        order = 50;
-        domain = "terminal";
-        marker = "# workstation: managed starship prompt";
-        payload = ./fragments/managed-starship.sh;
-      }
-      {
-        target = ".zshrc";
-        id = "managed-starship-zsh";
-        order = 60;
-        domain = "terminal";
-        marker = "# workstation: managed starship prompt";
-        payload = ./fragments/managed-starship-zsh.sh;
-      }
-    ];
+    programs.starship.enable = true;
+    xdg.configFile."starship.toml".source = ./starship.toml;
   };
 }

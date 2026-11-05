@@ -90,6 +90,12 @@ in
   config = lib.mkIf cfg.enable {
     home.packages = [ pkgs.tree-sitter ];
 
+    home.sessionVariables = {
+      EDITOR = "nvim";
+      VISUAL = "nvim";
+      GIT_EDITOR = "nvim";
+    };
+
     home.file = {
       ".local/bin/nvim".source = "${nvim}/bin/nvim";
     };

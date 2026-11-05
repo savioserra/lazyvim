@@ -1,114 +1,51 @@
-# The foundation domain (always on): the rc lane fragments, fd, ripgrep,
-# lazygit, mise, newt, direnv + nix-direnv, the starship config.
+# The foundation domain (always on): bash and zsh, the user-local bin on
+# PATH, fd, ripgrep, lazygit, mise, newt, direnv + nix-direnv.
 {
   config,
   lib,
   pkgs,
-  self,
   ...
 }:
 let
-  tools = {
-    inherit (pkgs) fd ripgrep lazygit;
-  };
-
-  frag = id: order: marker: {
-    inherit id order marker;
-    domain = "foundation";
-    payload = ./fragments + "/${id}.sh";
-  };
-
-  fragments = [
-    (frag "user-local-bin" 10 "# workstation: managed user-local bin")
-    (frag "managed-profile" 20 "# workstation: load managed profile")
-    (frag "managed-editor-env" 70 "# workstation: managed editor env")
-    (frag "managed-direnv" 80 "# workstation: managed direnv hook")
-    (frag "managed-direnv-zsh" 90 "# workstation: managed direnv hook")
-  ];
-
-  fragmentTargets = {
-    user-local-bin = [
-      ".profile"
-      ".bashrc"
-      ".zshrc"
-    ];
-    managed-profile = [ ".bash_profile" ];
-    managed-editor-env = [
-      ".profile"
-      ".bashrc"
-      ".zshrc"
-    ];
-    managed-direnv = [ ".bashrc" ];
-    managed-direnv-zsh = [ ".zshrc" ];
-  };
-
-  fragmentEntries = lib.concatMap (
-    f:
-    map (target: {
-      inherit target;
-      id = f.id;
-      order = f.order;
-      domain = f.domain;
-      marker = f.marker;
-      payload = f.payload;
-    }) fragmentTargets.${f.id}
-  ) fragments;
-
-  starshipToml = ./starship.toml;
-
-  operatorExtras = builtins.toFile "workstation-operator-extras" config.workstation.foundation.shell.extras;
-
+  extras = config.workstation.foundation.shell.extras;
 in
 {
-  options.workstation.foundation = {
-    shell.extras = lib.mkOption {
-      type = lib.types.lines;
-      default = "";
-      description = "The operator's interactive shell lines, rendered last in .bashrc and .zshrc.";
-    };
+  options.workstation.foundation.shell.extras = lib.mkOption {
+    type = lib.types.lines;
+    default = "";
+    description = "The operator's interactive shell lines, rendered last in .bashrc and .zshrc.";
   };
 
-  config = {
-    workstation.shell.fragments =
-      fragmentEntries
-      ++ lib.optionals (config.workstation.foundation.shell.extras != "") [
-        {
-          target = ".bashrc";
-          id = "operator-extras";
-          order = 100;
-          domain = "foundation";
-          trailing = true;
-          marker = "# workstation: operator extras";
-          payload = operatorExtras;
-        }
-        {
-          target = ".zshrc";
-          id = "operator-extras";
-          order = 100;
-          domain = "foundation";
-          trailing = true;
-          marker = "# workstation: operator extras";
-          payload = operatorExtras;
-        }
+  config = lib.mkMerge [
+    {
+      programs.bash.enable = true;
+      programs.zsh.enable = true;
+
+      home.sessionPath = [
+        "$HOME/.local/bin"
+        "${config.home.profileDirectory}/bin"
       ];
 
-    home.file = {
-      ".config/starship.toml".source = starshipToml;
-    };
+      home.packages = [
+        pkgs.fd
+        pkgs.ripgrep
+        pkgs.lazygit
+        pkgs.mise
+        pkgs.newt
+      ];
 
-    home.packages = [
-      tools.fd
-      tools.ripgrep
-      tools.lazygit
-      pkgs.mise
-      pkgs.newt
-    ];
-
-    programs.direnv = {
-      enable = true;
-      nix-direnv.enable = true;
-      enableBashIntegration = false;
-      enableZshIntegration = false;
-    };
-  };
+      programs.direnv = {
+        enable = true;
+        nix-direnv.enable = true;
+        enableBashIntegration = false;
+      };
+      programs.bash.initExtra = lib.mkOrder 1950 ''
+        eval "$(${lib.getExe config.programs.direnv.package} hook bash)"
+      '';
+    }
+    (lib.mkIf (extras != "") {
+      programs.bash.initExtra = lib.mkOrder 2000 extras;
+      programs.zsh.initContent = lib.mkOrder 2000 extras;
+    })
+  ];
 }

@@ -18,13 +18,5 @@ in
     home.packages = [ nodejs ];
 
     home.file.".node-version".source = nodeVersionFile;
-
-    workstation.retire = [
-      ".config/shell/nvm.sh"
-      {
-        path = ".local/opt/nvm";
-        recursive = true;
-      }
-    ];
   };
 }

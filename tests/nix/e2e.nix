@@ -177,10 +177,7 @@ writeShellScriptBin "workstation-e2e" ''
     || fail "nvim boots headless" "nvim --headless +qa exited non-zero (see .cache/e2e-nvim-boot.err in the persona home)"
   pass "nvim boots headless with the languages composed"
 
-  # 2b. the agent domain: the pinned runtime stack, the linked secrets
-  #     skill, and the retire-list receipt (the checkout itself is the one
-  #     network surface — its ensure activation defers offline with a named
-  #     receipt, and the hermes verify lane is the drift gate on real hosts)
+  # 2b. the agent domain: the pinned runtime stack and the linked skills
   step "agent runtime stack (launcher, interpreter, herdr, pin manifest)"
   [ -x "$home/.local/bin/hermes" ] \
     || fail "agent runtime stack" "$home/.local/bin/hermes is not executable"
@@ -226,17 +223,6 @@ writeShellScriptBin "workstation-e2e" ''
   esac
   pass "hsql skill version"
 
-  step "retire-list receipt"
-  [ ! -e "$home/.hermes/skills/lazyvim/SKILL.md" ] \
-    || fail "retire-list receipt" "the lazyvim tombstone survived activation"
-  grep -q " .hermes/skills/lazyvim/SKILL.md absent$" \
-    "$home/.local/state/workstation/retire.log" 2>/dev/null \
-    || fail "retire-list receipt" "no lazyvim SKILL.md absent receipt from the boot activation"
-  grep -q " .config/tmux/themes/tmux2k.conf absent$" \
-    "$home/.local/state/workstation/retire.log" 2>/dev/null \
-    || fail "retire-list receipt" "no tmux2k.conf absent receipt from the boot activation"
-  pass "retire-list receipt"
-
   step "tmux plane (config, XDG link, pinned plugin checkouts)"
   [ -r "$home/.tmux.conf" ] \
     || fail "tmux plane" "$home/.tmux.conf missing"
@@ -261,62 +247,24 @@ writeShellScriptBin "workstation-e2e" ''
     && fail "nunchux plane" "unresolved slot references survived the render"
   pass "nunchux plane"
 
-  step "rc lane order (the declared order contract — PATH semantics)"
-  # the declared contract (nix/lib/shell-lane.nix): the round-tens `order`
-  # is the fragment's slot on the GLOBAL rc scale, composed by the
-  # (trailing, order, domain) key with the numbers compared numerically —
-  # .profile sources bin(10) < op-env(30) < editor-env(70); .bashrc
-  # sources bin(10) < tmux-drain(30) < eza(40) < starship(50) <
-  # editor-env(70) < direnv(80) and .zshrc bin(10) < tmux-drain-zsh(30) <
-  # eza-zsh(40) < starship-zsh(60) < editor-env(70) < direnv-zsh(90) —
-  # the direnv hook trails the prompt, and the operator's extras fragment
-  # is the lane's trailing override (its last-word position is the shell
-  # lane step's assert). The expectations read the rendered rc files,
-  # never the module system's merged list order.
-  lane_slot() {
-    # lane_slot <rc-file> <fragment-id> — the 1-based source line, empty
-    # when absent
-    grep -n "shell/$2.sh" "$home/$1" 2>/dev/null | cut -d: -f1 | head -1
-  }
-  prof_bin=$(lane_slot .profile user-local-bin)
-  prof_op=$(lane_slot .profile managed-op-env)
-  prof_ed=$(lane_slot .profile managed-editor-env)
-  [ -n "$prof_bin" ] && [ -n "$prof_op" ] && [ -n "$prof_ed" ] \
-    || fail "rc lane order" ".profile does not source its declared fragments"
-  [ "$prof_bin" -lt "$prof_op" ] && [ "$prof_op" -lt "$prof_ed" ] \
-    || fail "rc lane order" ".profile must source slots 10/30/70 in the declared order"
-  bash_bin=$(lane_slot .bashrc user-local-bin)
-  bash_ed=$(lane_slot .bashrc managed-editor-env)
-  bash_direnv=$(lane_slot .bashrc managed-direnv)
-  bash_drain=$(lane_slot .bashrc tmux-drain)
-  bash_eza=$(lane_slot .bashrc managed-eza)
-  bash_star=$(lane_slot .bashrc managed-starship)
-  [ -n "$bash_bin" ] && [ -n "$bash_ed" ] && [ -n "$bash_direnv" ] \
-    && [ -n "$bash_drain" ] && [ -n "$bash_eza" ] && [ -n "$bash_star" ] \
-    || fail "rc lane order" ".bashrc does not source its declared fragments"
-  # bin leads (PATH semantics — every later fragment may resolve through
-  # ~/.local/bin); the aliases and the prompt compose before the editor
-  # env; the direnv hook trails the prompt (the hook PREPENDS its export
-  # to PROMPT_COMMAND, so hooking after the prompt keeps the environment
-  # applied before each prompt rebuild)
-  [ "$bash_bin" -lt "$bash_drain" ] && [ "$bash_drain" -lt "$bash_eza" ] \
-    && [ "$bash_eza" -lt "$bash_star" ] && [ "$bash_star" -lt "$bash_ed" ] \
-    && [ "$bash_ed" -lt "$bash_direnv" ] \
-    || fail "rc lane order" ".bashrc must source slots 10/30/40/50/70/80 in the declared order"
-  zsh_bin=$(lane_slot .zshrc user-local-bin)
-  zsh_ed=$(lane_slot .zshrc managed-editor-env)
-  zsh_direnv=$(lane_slot .zshrc managed-direnv-zsh)
-  zsh_drain=$(lane_slot .zshrc tmux-drain-zsh)
-  zsh_eza=$(lane_slot .zshrc managed-eza-zsh)
-  zsh_star=$(lane_slot .zshrc managed-starship-zsh)
-  [ -n "$zsh_bin" ] && [ -n "$zsh_ed" ] && [ -n "$zsh_direnv" ] \
-    && [ -n "$zsh_drain" ] && [ -n "$zsh_eza" ] && [ -n "$zsh_star" ] \
-    || fail "rc lane order" ".zshrc does not source its declared fragments"
-  [ "$zsh_bin" -lt "$zsh_drain" ] && [ "$zsh_drain" -lt "$zsh_eza" ] \
-    && [ "$zsh_eza" -lt "$zsh_star" ] && [ "$zsh_star" -lt "$zsh_ed" ] \
-    && [ "$zsh_ed" -lt "$zsh_direnv" ] \
-    || fail "rc lane order" ".zshrc must source slots 10/30/40/60/70/90 in the declared order"
-  pass "rc lane order"
+  step "shell init (home-manager programs: eza, starship, direnv, the op env, the editor env)"
+  grep -q "alias -- ls='eza -lh'\|alias ls='eza -lh'" "$home/.bashrc" \
+    || fail "shell init" ".bashrc carries no eza ls alias"
+  grep -q 'starship init bash' "$home/.bashrc" \
+    || fail "shell init" ".bashrc carries no starship init"
+  grep -q 'starship init zsh' "$home/.zshrc" \
+    || fail "shell init" ".zshrc carries no starship init"
+  starship_line=$(grep -n 'starship init bash' "$home/.bashrc" | head -n 1 | cut -d: -f1)
+  direnv_line=$(grep -n 'direnv.* hook bash' "$home/.bashrc" | head -n 1 | cut -d: -f1)
+  [ -n "$direnv_line" ] && [ "$direnv_line" -gt "$starship_line" ] \
+    || fail "shell init" "the bash direnv hook does not follow the starship init"
+  grep -q '/etc/pi/op.env' "$home/.profile" \
+    || fail "shell init" ".profile carries no op env"
+  [ -r "$home/.config/starship.toml" ] \
+    || fail "shell init" "the starship config did not deploy"
+  [ -d "$home/.local/share/fonts/JetBrainsMonoNerdFont" ] \
+    || fail "shell init" "the nerd font tree did not deploy"
+  pass "shell init"
 
   step "migrated tools run (nixpkgs-owned)"
   for t in fd fzf rg lazygit tree-sitter node pnpm op; do
@@ -341,47 +289,6 @@ writeShellScriptBin "workstation-e2e" ''
     || fail "node runtime single-source" ".node-version ($nv) does not match the runtime ($runtime)"
   pass "node runtime single-source"
 
-  step "nvm retired (the old runtime manager stays gone)"
-  [ ! -e "$home/.local/opt/nvm" ] \
-    || fail "nvm retired" ".local/opt/nvm is still deployed"
-  [ ! -e "$home/.config/shell/nvm.sh" ] \
-    || fail "nvm retired" ".config/shell/nvm.sh is still deployed"
-  grep -q " .local/opt/nvm absent$" \
-    "$home/.local/state/workstation/retire.log" 2>/dev/null \
-    || fail "nvm retired" "no .local/opt/nvm absent receipt from the boot activation"
-  pass "nvm retired"
-
-  step "foundation plane (rc lane, starship fragment, fonts)"
-  # the rc lane: .profile sources its fragments in the declared order
-  # (user-local-bin, managed-op-env)
-  grep -q 'shell/user-local-bin.sh' "$home/.profile" \
-    || fail "foundation plane" ".profile does not source the PATH fragment"
-  grep -q 'shell/managed-op-env.sh' "$home/.profile" \
-    || fail "foundation plane" ".profile does not source the op-env fragment"
-  [ -r "$home/.config/workstation/shell/managed-starship-zsh.sh" ] \
-    || fail "foundation plane" "the per-shell starship fragment did not deploy"
-  grep -q 'starship init zsh' "$home/.config/workstation/shell/managed-starship-zsh.sh" \
-    || fail "foundation plane" "the zsh fragment carries the wrong init body"
-  # the editor env defaults (managed-editor-env, slot 70, every rc
-  # target): the fragment body carries the three nvim exports
-  for editor_export in 'export EDITOR="nvim"' 'export VISUAL="nvim"' 'export GIT_EDITOR="nvim"'; do
-    grep -Fqx "$editor_export" "$home/.config/workstation/shell/managed-editor-env.sh" \
-      || fail "foundation plane" "the editor-env fragment misses: $editor_export"
-  done
-  # the font tree (the nixpkgs nerd-fonts package's font dir)
-  [ -d "$home/.local/share/fonts/JetBrainsMonoNerdFont" ] \
-    || fail "foundation plane" "the nerd font tree did not deploy"
-  pass "foundation plane"
-
-  step "terminal pin manifest (the deployed verify anchor)"
-  [ -r "$home/.tmux/plugins.pins.json" ] \
-    || fail "terminal pin manifest" "the deployed plugin pin manifest did not deploy"
-  grep -q '"tpm":{' "$home/.tmux/plugins.pins.json" \
-    || fail "terminal pin manifest" "no tpm pin in the deployed manifest"
-  grep -q '"nunchux":{' "$home/.tmux/plugins.pins.json" \
-    || fail "terminal pin manifest" "no nunchux pin in the deployed manifest"
-  pass "terminal pin manifest"
-
   step "theme token path deployed (the switch-time push surface)"
   totop="$home/.local/state/workstation/theme.json"
   [ -L "$totop" ] \
@@ -395,32 +302,6 @@ writeShellScriptBin "workstation-e2e" ''
   grep -q '#[0-9a-fA-F]\{6\}' "$totop" \
     || fail "theme token path" "the token file carries no hex roles"
   pass "theme token path deployed"
-
-  # 2c. the adopt rehearsal: a copy-contract tree at a declared entry path
-  #     (what real hosts carry from the retired shapes) makes way for the
-  #     declared symlink at the next generation
-  step "copy-contract tree planted (adopt rehearsal)"
-  rm -rf "$home/.hermes/skills/secrets"
-  mkdir -p "$home/.hermes/skills/secrets"
-  echo "copy-contract drift" >"$home/.hermes/skills/secrets/SKILL.md"
-  [ -f "$home/.hermes/skills/secrets/SKILL.md" ] \
-    || fail "copy-contract tree planted" "the rehearsal tree did not plant"
-  pass "copy-contract tree planted"
-
-  # the retire rehearsal: a real directory at a recursive tombstone, a
-  # plain-file tombstone and a directory at a no-consent tombstone, planted
-  # after the boot activation so the apply-driven switch meets them present.
-  step "tombstone shapes planted (retire rehearsal)"
-  mkdir -p "$home/.local/opt/nvm/bin" "$home/.config/shell" "$home/.config/tmux/themes"
-  echo "stub" >"$home/.local/opt/nvm/bin/node"
-  echo "legacy nvm loader" >"$home/.config/shell/nvm.sh"
-  mkdir -p "$home/.config/tmux/themes/tmux2k.conf"
-  echo "foreign drift" >"$home/.config/tmux/themes/tmux2k.conf/keep"
-  [ -f "$home/.local/opt/nvm/bin/node" ] \
-    && [ -f "$home/.config/shell/nvm.sh" ] \
-    && [ -f "$home/.config/tmux/themes/tmux2k.conf/keep" ] \
-    || fail "tombstone shapes planted" "the rehearsal shapes did not plant"
-  pass "tombstone shapes planted (retire rehearsal)"
 
   step "init capture live (placeholders fill, settings survive, the re-init is byte-identical)"
   initlive=/tmp/ws-init
@@ -514,61 +395,19 @@ writeShellScriptBin "workstation-e2e" ''
     || fail "nvim still boots after the removal" "nvim --headless +qa exited non-zero (see .cache/e2e-nvim-boot-removal.err in the persona home)"
   pass "nvim still boots after the removal"
 
-  step "adopt step: the declared symlink replaced the copy-contract tree"
-  [ -L "$home/.hermes/skills/secrets" ] \
-    || fail "adopt step" "$home/.hermes/skills/secrets did not become the declared symlink"
-  [ -r "$home/.hermes/skills/secrets/SKILL.md" ] \
-    || fail "adopt step" "the declared skill is unreadable after the adopt"
-  grep -q " adopt .hermes/skills/secrets$" \
-    "$home/.local/state/workstation/retire.log" 2>/dev/null \
-    || fail "adopt step" "no adopt receipt in the retire log"
-  pass "adopt step"
-
-  # the retire rehearsal's verdict: the tree removed through the declared
-  # consent (removed-recursive), the file removed, the no-consent directory
-  # skipped, named and left standing.
-  step "retire rehearsal: the planted tombstones left, verdict-receipted"
-  [ ! -e "$home/.local/opt/nvm" ] \
-    || fail "retire rehearsal" ".local/opt/nvm survived the activation"
-  [ ! -e "$home/.config/shell/nvm.sh" ] \
-    || fail "retire rehearsal" ".config/shell/nvm.sh survived the activation"
-  [ -d "$home/.config/tmux/themes/tmux2k.conf" ] \
-    || fail "retire rehearsal" "the no-consent directory was forced (the skip contract died)"
-  grep -q " .local/opt/nvm removed-recursive$" \
-    "$home/.local/state/workstation/retire.log" 2>/dev/null \
-    || fail "retire rehearsal" "no removed-recursive receipt for .local/opt/nvm"
-  grep -q " .config/shell/nvm.sh removed$" \
-    "$home/.local/state/workstation/retire.log" 2>/dev/null \
-    || fail "retire rehearsal" "no removed receipt for .config/shell/nvm.sh"
-  grep -q " .config/tmux/themes/tmux2k.conf skipped-directory$" \
-    "$home/.local/state/workstation/retire.log" 2>/dev/null \
-    || fail "retire rehearsal" "no skipped-directory receipt for .config/tmux/themes/tmux2k.conf"
-  pass "retire rehearsal: the planted tombstones left, verdict-receipted"
-
-  # the shell lane's operator extras (17cd11f5): the persona home declares
-  # workstation.foundation.shell.extras, so the apply-driven switch
-  # rendered the lane's trailing override (operator-extras, the lane's
-  # LAST fragment, .bashrc/.zshrc) — its marker must source after every
-  # managed one, and the editor env the lane carries must speak in a
-  # fresh login shell. Both assertions mirror the host verify's smoke
-  # (modules/foundation/verify/prompt.sh) — mirrored here, never invoked.
-  step "shell lane: the operator extras ride last, the editor env speaks in a login shell"
+  step "shell lane: the operator extras close the rc files, the editor env speaks in a login shell"
   command -v bash >/dev/null 2>&1 \
     || fail "shell lane" "bash is absent — the login-shell editor-env smoke cannot run"
   for rc in .bashrc .zshrc; do
-    grep -Fqx "# workstation: operator extras" "$home/$rc" \
-      || fail "shell lane" "$rc carries no operator-extras fragment"
-    last_marker=$(grep "^# workstation:" "$home/$rc" | tail -n 1)
-    [ "$last_marker" = "# workstation: operator extras" ] \
-      || fail "shell lane" "$rc does not source the operator extras last (the trailing override must close the lane)"
+    last_line=$(grep -v '^[[:space:]]*$' "$home/$rc" | tail -n 1)
+    [ "$last_line" = "stty -ixon" ] \
+      || fail "shell lane" "$rc does not end with the persona's extras line (last: '$last_line')"
   done
-  grep -Fqx "stty -ixon" "$home/.config/workstation/shell/operator-extras.sh" \
-    || fail "shell lane" "the operator-extras fragment does not carry the persona's declared extras line"
   EDITOR_smoke=$(HOME="$home" bash -lc 'printf %s "$EDITOR"') \
     || fail "shell lane" "a fresh login shell failed to start (the editor-env smoke died)"
   [ "$EDITOR_smoke" = nvim ] \
     || fail "shell lane" "a fresh login shell carries EDITOR='$EDITOR_smoke', expected nvim"
-  pass "shell lane: the operator extras ride last, the editor env speaks in a login shell"
+  pass "shell lane"
 
   # 4. the switch receipt: the driver's tail appended the generation line
   #    to the state tree's switch.log (the daemon journal is gone with the

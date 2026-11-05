@@ -342,18 +342,6 @@ in
         ".local/bin/herdr".source = "${herdr}/bin/herdr";
       };
 
-    home.activation.adopt-hermes-entries = lib.hm.dag.entryBefore [ "checkLinkTargets" ] (
-      lib.concatMapStrings (entry: ''
-        target="$HOME/${entry.path}"
-        if [ -e "$target" ] && [ ! -L "$target" ]; then
-          rm -rf "$target"
-          mkdir -p "$HOME/.local/state/workstation"
-          echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) adopt ${entry.path}" >> "$HOME/.local/state/workstation/retire.log"
-          echo "workstation: adopted ${entry.path}"
-        fi
-      '') entries
-    );
-
     home.activation.ensure-hermes-checkout = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       url=${lib.escapeShellArg (if hermes.pin != null then hermes.pin.url else "")}
       rev=${lib.escapeShellArg (if hermes.pin != null then hermes.pin.rev else "")}
@@ -467,6 +455,5 @@ in
       };
     };
 
-    workstation.retire = [ ".hermes/skills/lazyvim/SKILL.md" ];
   };
 }

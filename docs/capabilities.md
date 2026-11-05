@@ -72,7 +72,6 @@ copy is the template; the local rewrite stays uncommitted.
 | `modules/default.nix` | The capability module list |
 | `modules/<domain>/<domain>.nix` | The domain's options and declarations, gated on `workstation.<domain>.enable` (members also on their own flag) |
 | `nix/report.nix` | The read verbs from one home eval: rows from the option tree, attribution from `definitionsWithLocations` |
-| `nix/lib/shell-lane.nix` | The fragment lane's order contract: `order` slots sorted once, read by the rendered rc files and the report's fragmentOrder; a shared or ambiguous slot fails the eval |
 | `nix/lib/license.nix` | The secrets domain's unfree acceptance (the 1Password CLI): one predicate, imported by every composition root |
 | `modules/agent/agent.nix` | The agent domain's hot-home surfaces: managed skill leaves, the checkout ensure, version-matched skill provisions |
 | `modules/<domain>/` payload dirs | Payload assets (`files/`, verify scripts), co-located with the declaring module |
@@ -94,11 +93,10 @@ copy is the template; the local rewrite stays uncommitted.
     checkout as the flake's `hermes-agent` input;
   - **dir claims** — a store tree linked at a home target; overlapping
     targets compose into one derivation;
-  - **shell fragments** — body bytes as payload files; the fragment list
-    (id, target, marker, payload, `order` slot) sourced by the rc lane in
-    the declared order (`nix/lib/shell-lane.nix` — the slot is PATH
-    semantics; the module system's merged list order is reverse module
-    order and is never used);
+  - **shell init** — upstream `programs.bash` / `programs.zsh` /
+    `programs.starship` / `programs.eza` / `programs.direnv`; ordered
+    lines ride `lib.mkOrder` on `initExtra` / `initContent`, env rides
+    `home.sessionVariables` (`.profile`, `.zshenv`);
   - **activation scripts** — hot-home and mutation surfaces, sequenced with
     `lib.hm.sequence`;
   - **the switch driver** — the one system-ordered surface: its tail writes
@@ -127,30 +125,25 @@ and sorted, never hidden.
 ## Capabilities
 
 ### `foundation`
-- The rc lane: fragment bodies as payload files, declared order slots,
-  bash-login `.bash_profile` include.
-- Editor env defaults (`EDITOR`/`VISUAL`/`GIT_EDITOR=nvim`) as the
-  `managed-editor-env` fragment on every rc target.
+- bash and zsh (`programs.bash`, `programs.zsh`), `~/.local/bin` on
+  PATH (`home.sessionPath`), direnv + nix-direnv (the bash hook after the
+  prompt init).
 - `workstation.foundation.shell.extras` (types.lines, default ""): the
   operator's per-machine rc lines (`settings.workstation.foundation.shell.extras`
-  in the machine file), rendered as the lane's last fragment.
-- Tools, all nixpkgs:
-  fd, fzf, rg, lazygit, tree-sitter; eza + starship; harlequin + hsql
-  (the hsql agent skill generated from the harlequin derivation at build
-  time); whiptail (the shim's install-time UI).
+  in the machine file), the last lines of `.bashrc` and `.zshrc`.
+- Tools, all nixpkgs: fd, ripgrep, lazygit, mise, newt (whiptail, the
+  shim's install-time UI).
 - The tailscale transport (`workstation.network.tailscale.*`;
   `services.tailscale` on the system legs; on standalone linux the
   `workstation-tailscaled` activation: the substrate's systemd unit, a
   previous apt/dnf/pacman/snap install removed with its sources moved
   aside, `/var/lib/tailscale` kept; off retracts the unit only). The
-  identity's `fleet = "standalone"` turns the transport off. On darwin
+  machine file's `workstation.network.enable = false` turns the transport off. On darwin
   the system activation removes a previous Tailscale.app (its system
   extension deactivated with the console user's approval), the app's CLI
   shim and the brew formula, moved aside under
   `/var/lib/workstation/tailscale-pre-substrate-<stamp>/`; the substrate
   daemon then logs in as a new node.
-- Verify: `modules/foundation/verify/prompt.sh` — tools speak, payload
-  deployed, rc wired, fresh login shell.
 - Hosts: all.
 
 ### `fonts`
@@ -272,7 +265,7 @@ and sorted, never hidden.
 ### `secrets`
 - `pkgs._1password-cli` (unfree — the
   acceptance is `nix/lib/license.nix`, named and scoped); the op env
-  fragment.
+  (`/etc/pi/op.env`) sourced from the session variables.
 - Verify: record + `--version` only, never account or vault state. Hosts:
   all supported.
 
@@ -292,6 +285,7 @@ and sorted, never hidden.
   packages); one derivation composes them, in declared order, into
   `.config/nvim/lua/languages/profile.lua` (`lib.generators.toLua`; the
   file must `return` the table).
+- `EDITOR`/`VISUAL`/`GIT_EDITOR=nvim` as `home.sessionVariables`.
 - `.config/nvim/lazy-lock.json`: seeded by the activation merge script
   from the payload baseline, never byte-compared afterwards
   (runtime-extended).
@@ -304,26 +298,26 @@ and sorted, never hidden.
   read fails the eval). Deploys no home target.
 - Verify: token bytes against the tokens module. Hosts: all.
 
+### `terminal`
+- `programs.eza` (`ls` = `eza -lh`) and `programs.starship` with
+  `.config/starship.toml`.
+- Hosts: all.
+
 ### `tmux`
 - The `terminal/tmux` member capability: plugin checkouts (tpm, tmux2k,
   tmux-yank, tmux-resurrect, vim-tmux-navigator) as hash-pinned
   `fetchFromGitHub`.
-- `.tmux.conf`; the `.config/tmux` link; the deployed pin manifest
-  `.tmux/plugins.pins.json` rendered from `workstation.terminal.pins`
-  (each terminal member contributes its rows); the stale `tmux2k.conf`
-  theme path retires through the retire list.
-- Verify: commits, server, theme. Hosts: linux/macOS.
+- `.tmux.conf`; the `.config/tmux` link; the reply-drain `tmux`
+  function in bash and zsh.
+- Hosts: linux/macOS.
 
 ### `nunchux`
 - The `terminal/nunchux` member capability (linux; enabling it on
   darwin fails an assertion): pinned checkout (`.tmux/plugins/nunchux` at
   the v3.1.3 commit, hash-pinned `fetchFromGitHub`, repo-tracked launcher
   binary) + the `.platform` marker composed in; theme-slot launcher
-  config rendered natively from `tokens.lua`; the manifest row rides
-  `workstation.terminal.pins`.
-- Verify: `modules/terminal/nunchux/verify/nunchux.sh` (checkout HEAD +
-  binary pin + marker; never executes the binary). Hosts: linux (darwin
-  deferred; no release-asset consumer).
+  config rendered natively from `tokens.lua`.
+- Hosts: linux (darwin deferred; no release-asset consumer).
 
 ## Fresh-host tools
 
@@ -332,9 +326,8 @@ prerequisite. The HOW: the nixpkgs lock carries the versions and
 `home.packages` puts the tools on PATH. Inline pins, by exception: herdr
 (`fetchurl`), the tmux/nunchux checkouts (`fetchFromGitHub`), the hermes
 checkout (the flake input). Every bump moves the owning row and its
-consumer together. The deployed manifests
-(`~/.tmux/plugins.pins.json`, `~/.local/opt/hermes/pin.json`) keep the
-verify lanes honest.
+consumer together. The hermes manifest (`~/.local/opt/hermes/pin.json`)
+keeps its verify lane honest; the plugin checkouts are store paths.
 
 ## Grain contract
 
@@ -352,8 +345,6 @@ Fail-closed at eval:
 - the machine file: unknown options and wrong types fail the module
   system (the shim validates paths before writing);
 - target collisions across capabilities throw;
-- the fragment order contract: no slot without a fragment id, no id with
-  two slots, no slot shared by two ids;
 - envelope identities in the report are asserted unique;
 - the identity gate holds personal identity to `hosts/machine.json`
   (uncommitted).
@@ -367,7 +358,7 @@ Fail-closed at eval:
 | select | `workstation add <path>...` / `workstation remove <path>...` | Validate against `selectable`, set or drop the flag in `hosts/machine.json`, offer the apply (idempotent; the baseline refuses) |
 | fleet | `workstation fleet` (and `init`, once) | Choose start / join / standalone; write `programs.hermes.a2a.enable` and `workstation.network.enable`, switch on a change, log in to tailscale, join |
 | peers | `workstation peers` | Discover the tailnet's A2A agents, add, pair, tune; write `hosts/peers.nix`, store the pair tokens, offer the apply |
-| verify lane | `modules/*/verify/*.sh` | Consumer smokes against the recorded pins |
+| verify lane | `modules/agent/verify/hermes.sh` | The agent stack's consumer smoke against its recorded pins |
 
 Reads are pure evals. The container E2E (`tests/nix`) asserts the shape
 itself: the switch receipt in `switch.log`, and the home carries only

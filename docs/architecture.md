@@ -14,7 +14,7 @@ switch.log receipt).
 | --- | --- |
 | `flake.nix`, `flake.lock` | The entry point: one nixpkgs input, home-manager, nix-darwin, NixOS-WSL; the machine's legs, the report verbs, the checks |
 | `modules/<domain>/` | One directory per capability domain: the module (options + declarations) and the bytes it deploys. `modules/default.nix` lists the modules |
-| `nix/` | Shared infrastructure: `report.nix` (the read verbs), `lib/machine.nix` (the machine file), `lib/shell-lane.nix` (the rc fragment order), `lib/license.nix` (the unfree acceptance), `workstation-switch.nix` (the write plane), `modules/` (the home plane, the system plane, the host options) |
+| `nix/` | Shared infrastructure: `report.nix` (the read verbs), `lib/machine.nix` (the machine file), `lib/license.nix` (the unfree acceptance), `workstation-switch.nix` (the write plane), `modules/` (the home plane, the system plane, the host options) |
 | `hosts/` | `linux/` and `mac/` (the system legs), `machine.json` (identity + settings) and `peers.nix` (A2A peers): templates rewritten per machine by `workstation init` / `add|remove` / `fleet` / `peers`, kept uncommitted |
 | `bin/workstation` | The launcher (POSIX sh): reads are `nix eval`s over `workstation.report.<verb>`; `add|remove|fleet` edit `hosts/machine.json` (jq); `peers` runs `workstation-peers` on `hosts/peers.nix`; writes exec the staged switch driver |
 | `tests/` | The container E2E: `run-container.sh`, `e2e.nix` (the driver), `e2e-home.nix` (the persona), `e2e-selections*.nix` (its flag modules) |
@@ -53,8 +53,8 @@ eval, and the container E2E lane's staged entry) and `workstationTheme.lib`.
   remaining pins (herdr, the tmux/nunchux checkouts, the hermes checkout
   input) are pinned declarations. No unpinned downloads, no `sudo`, no
   OS-package-manager installation of managed tools.
-- **Foundation inventory.** The shell rc lane (the fragments' declared
-  order slots) + fd, fzf, rg, lazygit, tree-sitter, node, pnpm, go, op,
+- **Foundation inventory.** bash and zsh through home-manager's
+  `programs.*` modules + fd, fzf, rg, lazygit, tree-sitter, node, pnpm, go, op,
   btop, the JetBrainsMono Nerd Font + eza, starship, harlequin+hsql
   (nixpkgs) + the tailscale transport (system legs: `services.tailscale`;
   standalone-HM linux legs: the CLI in `home.packages`, tailscaled the
@@ -73,20 +73,18 @@ eval, and the container E2E lane's staged entry) and `workstationTheme.lib`.
 
 ## The declared state and the read verbs
 
-The report carries the declared surface structurally: counts, the target
-lists (file targets and tree claims), the capability order, the fragment
-lane (per-target, in the capabilities' declared order), and the
-per-capability accounting rows (id, foundation, the declared surfaces, the
-retire tombstones). The fold's integrity assertions run at eval time — a
-misclassified module file, a fragment lane that does not compose, or an
-absolute (identity-carrying) target fails the evaluation; nothing serves.
+The report reads one evaluation of the machine's home plane: each
+declaration is attributed to the capability whose module defines it
+(`definitionsWithLocations`). It carries counts, the capability order,
+the target lists (file targets and tree claims), the upstream
+`programs.*` each capability enables, and per-capability rows.
 
 The flake projects the report as the read verbs (the operator-facing
 contract):
 
 - `status` — the declared inventory: counts + capability order.
 - `plan` — the surface the next switch applies (file targets, tree
-  claims, the fragment lane, the retire list) with the report digest —
+  claims, the enabled programs, the flag pins) with the report digest —
   the declared state's content id. Mutation is never a read's job:
   the write plane owns it (atomic generations, rollback, the receipt).
 - `capabilities` — the accounting keyed by capability id; attrpath

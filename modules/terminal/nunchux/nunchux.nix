@@ -14,8 +14,6 @@ let
     repo = "nunchux";
     rev = "1546eaa980d834c331496ea9d51942be07ea9fdd";
     hash = "sha256-C7sXigf8qB5umoZSU8nsqj6vPdd8NMhmTg8B64rysUw=";
-    version = "3.1.3";
-    repo_linux_amd64_sha256 = "8a6e46d937ee76ac6a483865c800de9208aabbe1dbc620473eb5e6b7d86b7b14";
   };
 
   compose =
@@ -77,15 +75,6 @@ in
             message = "workstation.terminal.nunchux is linux-only";
           }
         ];
-
-        workstation.terminal.pins.nunchux = {
-          url = "https://github.com/${nunchuxPin.owner}/${nunchuxPin.repo}";
-          inherit (nunchuxPin)
-            rev
-            version
-            repo_linux_amd64_sha256
-            ;
-        };
 
         home.packages = [ pkgs.fzf ];
 

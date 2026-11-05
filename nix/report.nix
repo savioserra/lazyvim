@@ -55,20 +55,17 @@ let
 
   byId = id: builtins.filter (d: d.id == id);
 
-  fragmentsOf =
+  programsOf =
     id:
-    lib.concatMap (
-      d:
-      map (f: {
-        inherit (f) id target;
-      }) d.value
-    ) (byId id (defsBy options.workstation.shell.fragments));
-
-  retireOf =
-    id:
-    lib.concatMap (d: map (e: if builtins.isString e then e else e.path) d.value) (
-      byId id (defsBy options.workstation.retire)
-    );
+    builtins.filter (
+      n:
+      let
+        o = options.programs.${n};
+      in
+      !(lib.isOption o)
+      && lib.isOption (o.enable or null)
+      && builtins.any (d: d.value == true) (byId id (defsBy o.enable))
+    ) (builtins.attrNames options.programs);
 
   packagesOf =
     id:
@@ -159,14 +156,6 @@ let
     disable = map (p: p.path) (builtins.filter (p: !p.value) pinRows);
   };
 
-  lane =
-    (import ./lib/shell-lane.nix { inherit lib; }).sortedFragments
-      config.workstation.shell.fragments;
-  fragmentOrder = map (t: {
-    target = t;
-    fragments = map (f: f.id) (builtins.filter (f: f.target == t) lane);
-  }) (lib.unique (map (f: f.target) lane));
-
   capabilities = builtins.listToAttrs (
     map (
       r:
@@ -175,9 +164,8 @@ let
         state = stateOf r;
         fileTargets = fileTargetsOf r.path;
         claimTargets = claimTargetsOf r.path;
-        fragments = fragmentsOf r.path;
-        retire = retireOf r.path;
         packages = packagesOf r.path;
+        programs = programsOf r.path;
       }
     ) rows
   );
@@ -185,14 +173,13 @@ let
   allOf = f: lib.sort (a: b: a < b) (lib.unique (lib.concatMap f paths));
   fileTargetNames = allOf fileTargetsOf;
   claimTargets = allOf claimTargetsOf;
-  retire = allOf retireOf;
+  programs = allOf programsOf;
 
   planBody = {
     inherit
       fileTargetNames
       claimTargets
-      fragmentOrder
-      retire
+      programs
       pins
       ;
   };
@@ -205,8 +192,7 @@ in
       enabled = builtins.length (builtins.filter (r: stateOf r != "off") rows);
       fileTargets = builtins.length fileTargetNames;
       claimTargets = builtins.length claimTargets;
-      fragments = builtins.length lane;
-      retire = builtins.length retire;
+      programs = builtins.length programs;
     };
   };
 
