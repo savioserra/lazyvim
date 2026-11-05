@@ -23,11 +23,7 @@ in
     network.tailscale.enable = lib.mkOption {
       type = lib.types.bool;
       default = false;
-      description = ''
-        The fleet transport (ssh, the dashboard's --host binding, all host
-        convergence ride it). The host's MagicDNS name comes from
-        workstation.host.tailscale.fqdn.
-      '';
+      description = "tailscale, the fleet transport.";
     };
   };
 

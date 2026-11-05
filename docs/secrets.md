@@ -49,9 +49,7 @@ service account instead:
 
 3. The managed `~/.profile` block (`# workstation: managed op env`) auto-exports
    `/etc/pi/op.env` in login shells when the file exists. The same pattern
-   applies to `/etc/ntfy/notifier.env` — a host-owned file whose block still
-   carries its legacy `# chezmoi: managed ntfy notifier env` marker (rename
-   it on the host, never in this repo).
+   applies to `/etc/ntfy/notifier.env`, a host-owned file.
 
 These are operator-run steps, not commands for an agent to execute. Values never
 enter Git, agent context or chat; `/etc` files stay the live mechanism and the

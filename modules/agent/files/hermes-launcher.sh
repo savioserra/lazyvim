@@ -27,7 +27,7 @@ fi
 HERMES_ENGINE_CHECKOUT=$checkout
 export HERMES_ENGINE_CHECKOUT
 # Same posture as upstream's launcher: isolated interpreter, no inherited
-# PYTHON* config, bytecode kept out of the engine-owned checkout.
+# PYTHON* config, bytecode kept out of the managed checkout.
 PYTHONPYCACHEPREFIX=${XDG_CACHE_HOME:-$HOME/.cache}/hermes-pycache
 export PYTHONPYCACHEPREFIX
 

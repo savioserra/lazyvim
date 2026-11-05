@@ -7,7 +7,7 @@
 #   ~/.hermes/hermes-agent           the pinned checkout (resources, hot)
 #   ~/.hermes/skills/<declared>      the declared skills (store symlinks)
 #   ~/.local/opt/hermes/python       the pinned interpreter (runtime pin)
-#   ~/.local/opt/hermes/bin/hermes   the engine launcher (runtime)
+#   ~/.local/opt/hermes/bin/hermes   the hermes launcher (runtime)
 #   ~/.local/bin/hermes              the PATH entry
 #
 # and this script asserts all of it on EVERY host, ending in the consumer
@@ -16,7 +16,7 @@
 # the agent module) — never a repo file. An absent or broken runtime is
 # provisioning drift — exit 1, never a documented state.
 #
-# The engine never runs this script; it is the host lane's assertion surface
+# The switch never runs this script; it is the host lane's assertion surface
 # (docs/capabilities.md "Payload rule"). Exits nonzero with a message on the
 # first failed assertion.
 set -eu
@@ -65,13 +65,13 @@ for entry in "$home"/.hermes/skills/*; do
   esac
 done
 
-# Runtime: the pinned interpreter, the engine launcher, and the consumer smoke.
+# Runtime: the pinned interpreter, the hermes launcher, and the consumer smoke.
 # The smoke runs with HOME anchored at the verify home: the launcher resolves
 # its interpreter and checkout from $HOME, exactly as a converged host's
 # interactive shell would.
 [ -x "$python" ] || fail "pinned interpreter missing at $python (the hermes_python download pin did not apply)"
 [ -f "$home/.local/opt/hermes/bin/hermes" ] ||
-  fail "engine launcher missing at $home/.local/opt/hermes/bin/hermes (the agent capability did not apply)"
+  fail "hermes launcher missing at $home/.local/opt/hermes/bin/hermes (the agent capability did not apply)"
 [ -x "$launcher" ] || fail "launcher at $launcher is not executable"
 smoke=$(timeout 120 env HOME="$home" "$launcher" --version 2>/dev/null | head -n 1) ||
   fail "launcher --version failed at $launcher (broken launcher or interpreter)"

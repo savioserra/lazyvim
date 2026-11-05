@@ -17,7 +17,7 @@ hardcode a color or slot name for a role carried here. Two layers per role:
 
 | Layer | Maps | Consumed by |
 | --- | --- | --- |
-| `slots` | role → terminal **named** palette slot | surfaces that follow the live terminal palette (the nunchux launcher config; the slot layer stays for future consumers after the tmux2k retirement); appearance-agnostic, zero regeneration on theme switch |
+| `slots` | role → terminal **named** palette slot | surfaces that follow the live terminal palette (the nunchux launcher config); appearance-agnostic, zero regeneration on theme switch |
 | `palette` | role → concrete color, per appearance (`dark`, `light`) | surfaces that cannot follow the terminal (rendered UI themes, exports) |
 
 Roles: `accent`, `ok`, `warn`, `err`, `chrome` (muted chrome/borders),
@@ -29,22 +29,6 @@ never color-alone), `inactive` (dimmed chrome: inactive tabs, stale rows),
 and the `ramp_start`/`ramp_mid`/`ramp_end` trio (magnitude ramp: freshness,
 drift age, load). Slot values are validated against the 16 ANSI names plus
 `default`; palette values must be `#rrggbb`.
-
-The per-domain panel border roles close the set — one per dashboard domain,
-all reusing existing palette hues:
-
-| Role | Domain | Hue (why) |
-| --- | --- | --- |
-| `border_engine` | engine panel | blue — engine-core forward view (`accent` = `@thm_primary #5badff` family) |
-| `border_plan` | plan panel (home + tab) | blue — the planned mutation surface |
-| `border_journal` | reserved (declared) | green — health-log semantics (`ok` = `@thm_green #7fcf78` family) |
-| `border_status` | status panel (home + tab) | green — health verdicts |
-| `border_capabilities` | capabilities panel + browser | yellow — pending-apply caution (`warn` = `@thm_yellow #f0e68c`, doubles as the theme's active-pane border hue) |
-| `border_diff` | reserved (declared) | red — the mutation surface (`err` = `@thm_red #ff7979` family) |
-
-They live in both layers (slots + per-appearance palette) and are
-overlay-settable like every other palette role. Panels outside the
-domain set (host, help, overlay surfaces) keep `chrome`.
 
 ## Distribution
 

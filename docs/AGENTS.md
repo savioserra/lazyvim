@@ -2,7 +2,7 @@
 
 - Write reference documentation, not chronological or decision-process narrative.
 - Prefer tables, invariants, commands, paths, and dependency diagrams.
-- Describe current behavior; label historical rationale explicitly and keep repair receipts in Git.
+- Describe current behavior only; history lives in Git.
 - Keep installation/daily use in `README.md`, detailed checks in `testing.md`, lifecycle/capability contracts in `capabilities.md`, home state law in `home-state.md`, and pins in `tools.md`.
 - Root `AGENTS.md` is the short operating contract; scoped files add local rules only. `index.md` is navigation, not another policy list.
 - Link to the owning reference instead of copying long lists.

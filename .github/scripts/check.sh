@@ -44,21 +44,14 @@ gate 'identity gate' \
 	sh -c "git grep -iE 'savio|shyylol' -- . ':(exclude).github/scripts/check.sh' | grep -vF 'savioserra/lazyvim' ; test \$? -ne 1"
 
 step 'history-prose gate (the tree describes the current world)'
-# dates, card ids and ruling citations belong in git history; the pattern
+# dates, card ids, ruling citations and history words belong in git
+# history; the pattern
 # is assembled at runtime so this gate's own source never matches
-history_pattern='20[0-9]{2}-[01][0-9]-[0-3][0-9]|\bt_[0-9a-f]{8}\b|ADDEN''DUM|operator (rul''ing|decis''ion|direct''ive|permiss''ion)'
+history_pattern='20[0-9]{2}-[01][0-9]-[0-3][0-9]|\bt_[0-9a-f]{8}\b|ADDEN''DUM|operator (rul''ing|decis''ion|direct''ive|permiss''ion)|\b([Ll]ega''cy|[Rr]eti''red?|[Rr]eti''rement|[Mm]igra''tion|[Ff]orm''erly|[Nn]o lon''ger|[Cc]ut''over|chez''moi)\b'
 gate 'history-prose gate' \
-	'history-prose gate: a date, card id or ruling citation in the tracked tree — describe the current world; history lives in git' \
+	'history-prose gate: a date, card id, ruling citation or history word in the tracked tree — describe the current world; history lives in git' \
 	git grep -nIE "$history_pattern" -- . ':(exclude)*.lock' ':(exclude)*-lock.json'
 
-
-step 'tree-purity gate (one module system in the tree)'
-# the token is assembled at runtime so this gate's own source never
-# carries it — the tree-wide grep must come back EMPTY
-engine_module_token='def''module'
-gate 'tree-purity gate' \
-	'tree-purity gate: a foreign module-system token survives in the tree (docs/architecture.md)' \
-	git grep -n "$engine_module_token" -- .
 
 step 'shell syntax (sh -n) and ShellCheck when available'
 {

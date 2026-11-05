@@ -18,7 +18,7 @@
 | Document | Scope |
 | --- | --- |
 | [`capabilities.md`](capabilities.md) | Dependency direction, declaration contract, lifecycle phases |
-| [`home-state.md`](home-state.md) | Home state law: native declarations, hot-home scope, legacy cutover |
+| [`home-state.md`](home-state.md) | Home state law: native declarations, hot-home scope, removal |
 | [`tools.md`](tools.md) | Managed tool inventory and platform coverage |
 | [`testing.md`](testing.md) | Offline checks, the docker-nix acceptance and the container E2E |
 | [`architecture.md`](architecture.md) | Declared state + two clients, the read verbs, the write plane |
@@ -31,10 +31,8 @@
 ## Substrate law (binding)
 
 The substrate is nixpkgs-native: declared state + two clients.
-There are **no deprecated or backward-compatibility surfaces**: one current
-shape per verb, per option, per pin — hard-cut. Retired paths are dropped
-in the lane that touches them — delete, don't deprecate. The filesystem is
-the capability registry; reads are `nix eval` over `workstation.report`;
+One current shape per verb, per option, per pin; no compatibility
+surfaces. `modules/default.nix` is the capability list; reads are `nix eval` over `workstation.report`;
 verification is behavioral (docs/architecture.md is the anchor). Lua appears
 only as live payload data (deployed editor config, theme tokens read as
 bytes), never executed.

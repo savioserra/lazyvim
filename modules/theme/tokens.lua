@@ -1,7 +1,7 @@
 local M = {}
 
 -- The canonical theme token module: the single place where workstation colors
--- are defined. Two layers, both keyed by shared engine role names:
+-- are defined. Two layers, both keyed by role names:
 --
 --   slots   - role -> terminal NAMED palette slot. Appearance-agnostic by
 --             design: the terminal remaps its palette live (OSC 4 retints),
@@ -9,12 +9,6 @@ local M = {}
 --             theme without any regeneration.
 --   palette - role -> concrete color per appearance, for consumers that
 --             cannot follow the terminal (rendered UI themes, exports).
---
--- border_roles is the closed set of dashboard border roles, one per panel
--- domain: border_engine/border_plan (blue, the engine-core forward views),
--- border_journal/border_status (green, health-log semantics),
--- border_capabilities (yellow, pending-apply caution), border_diff (red,
--- the mutation surface). All values reuse existing palette hues.
 --
 -- Roles are the API, values are data: no consumer template may hardcode a
 -- literal color or slot name for a role carried here. Re-branding edits only
@@ -40,12 +34,6 @@ M.slots = {
 	ramp_start = "green",
 	ramp_mid = "yellow",
 	ramp_end = "red",
-	border_engine = "blue",
-	border_journal = "green",
-	border_capabilities = "yellow",
-	border_plan = "blue",
-	border_diff = "red",
-	border_status = "green",
 }
 
 M.palette = {
@@ -63,12 +51,6 @@ M.palette = {
 		ramp_start = "#7fcf78",
 		ramp_mid = "#f0e68c",
 		ramp_end = "#ff7979",
-		border_engine = "#5badff",
-		border_journal = "#7fcf78",
-		border_capabilities = "#f0e68c",
-		border_plan = "#5badff",
-		border_diff = "#ff7979",
-		border_status = "#7fcf78",
 		bg = "#000000",
 		muted = "#666666",
 	},
@@ -86,12 +68,6 @@ M.palette = {
 		ramp_start = "#3b6837",
 		ramp_mid = "#665f22",
 		ramp_end = "#bc1313",
-		border_engine = "#023c75",
-		border_journal = "#3b6837",
-		border_capabilities = "#665f22",
-		border_plan = "#023c75",
-		border_diff = "#bc1313",
-		border_status = "#3b6837",
 		bg = "#f5f2ea",
 		muted = "#50463e",
 	},
@@ -99,10 +75,9 @@ M.palette = {
 
 -- Role order is the emission order for every derived artifact; new roles
 -- append after the base six: keyboard/selection affordances (shortcut,
--- selected pair, inactive), the magnitude ramp trio start->mid->end, then
--- the per-domain border roles.
-local slot_roles = { "accent", "ok", "warn", "err", "chrome", "text", "shortcut", "selected_bg", "selected_fg", "inactive", "ramp_start", "ramp_mid", "ramp_end", "border_engine", "border_journal", "border_capabilities", "border_plan", "border_diff", "border_status" }
-local palette_roles = { "accent", "ok", "warn", "err", "chrome", "text", "shortcut", "selected_bg", "selected_fg", "inactive", "ramp_start", "ramp_mid", "ramp_end", "border_engine", "border_journal", "border_capabilities", "border_plan", "border_diff", "border_status", "bg", "muted" }
+-- selected pair, inactive), then the magnitude ramp trio start->mid->end.
+local slot_roles = { "accent", "ok", "warn", "err", "chrome", "text", "shortcut", "selected_bg", "selected_fg", "inactive", "ramp_start", "ramp_mid", "ramp_end" }
+local palette_roles = { "accent", "ok", "warn", "err", "chrome", "text", "shortcut", "selected_bg", "selected_fg", "inactive", "ramp_start", "ramp_mid", "ramp_end", "bg", "muted" }
 local appearances = { "dark", "light" }
 
 -- Terminal NAMED colors slot consumers resolve through the live palette; the same

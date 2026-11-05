@@ -12,7 +12,6 @@ let
   cfg = config.workstation.editor;
 
   payloadNvim = ./nvim/files/.config/nvim;
-  modifyTemplate = ./nvim/files/modify/lazy-lock.json.sh;
   lazyLockBaseline = payloadNvim + "/lazy-lock.json";
 
   standardEntry = {
@@ -33,23 +32,12 @@ let
     "return " + lib.generators.toLua { } (map (e: lib.filterAttrs (_: v: v != null) e) entries) + ";";
 
   mergeLua =
-    let
-      lines = lib.splitString "\n" (builtins.readFile modifyTemplate);
-      start =
-        lib.lists.findFirstIndex
-          (l: lib.hasPrefix "cat >" l && lib.hasSuffix "<<'__WORKSTATION_LAZY_LOCK_LUA__'" l)
-          (throw "workstation-editor: the lazy-lock modify template's heredoc declaration is missing")
-          lines;
-      end = lib.lists.findFirstIndex (
-        l: l == "__WORKSTATION_LAZY_LOCK_LUA__"
-      ) (throw "workstation-editor: the lazy-lock modify template's heredoc delimiter is missing") lines;
-    in
-    assert
-      end > start + 1
-      || throw "workstation-editor: the lazy-lock modify template's heredoc body is empty";
-    builtins.replaceStrings [ "__WORKSTATION_ENGINE_PINS__" ] [ (builtins.readFile lazyLockBaseline) ] (
-      lib.concatStringsSep "\n" (lib.sublist (start + 1) (end - start - 1) lines)
-    );
+    builtins.replaceStrings
+      [ "__WORKSTATION_LAZY_LOCK_BASELINE__" ]
+      [
+        (builtins.readFile lazyLockBaseline)
+      ]
+      (builtins.readFile ./nvim/files/lazy-lock-merge.lua);
 
   mergeProgram = pkgs.writeText "ws-lazy-lock-merge.lua" mergeLua;
 

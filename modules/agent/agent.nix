@@ -206,7 +206,7 @@ in
       default = launcher;
       defaultText = lib.literalExpression "launcher";
       description = ''
-        The engine launcher derivation: resolves the pinned interpreter and
+        The hermes launcher derivation: resolves the pinned interpreter and
         the pinned checkout from $HOME at run time, fails closed when
         either is missing. Deployed at .local/opt/hermes/bin/hermes and on
         PATH as .local/bin/hermes.

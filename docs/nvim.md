@@ -35,8 +35,7 @@
 The deployed `languages/profile.lua` is **composed natively**: the editor
 capability's module (`modules/editor/editor.nix`) folds the language
 entries the language capabilities declare (`workstation.editor.languages`)
-through `lib.generators.toLua` in a build-time derivation — there is no
-engine in the loop. Entries compose in id order (the base/standard
+through `lib.generators.toLua` in a build-time derivation. Entries compose in id order (the base/standard
 entry is the editor module's own). The declared fields:
 
 | Field | Shape / use |
@@ -53,7 +52,7 @@ deployed file.
 
 Put language-specific LazyVim imports here, include parser/LSP cases for supported
 languages and formatter cases wherever formatting is promised. See
-[target-first engine loading](capabilities.md#neovim-package-and-profile).
+[the editor capability](capabilities.md#nvim).
 
 ### Editor specs versus lifecycle packages
 
@@ -64,7 +63,7 @@ capability owns it, declares the profile intent (`plugin_module =
 "languages.plugins.typescript"`) and verifies its own behavior through the
 nvim leaf helpers; `modules/editor/nvim/` owns editor sync, locks and
 base/standard/Go verification; `node` owns the host runtime. Deployed Neovim
-imports runtime configuration only, never capability factories or engine modules.
+imports runtime configuration only, never capability modules.
 
 `modules/languages/elixir/files/languages/plugins/elixir.lua` follows the same split
 for Elixir/HEEx: the `modules/languages/elixir/` capability declares the profile intent
@@ -100,9 +99,9 @@ capability's nixpkgs runtime (erlang 28 + elixir 1.18, on PATH).
 `lazy-lock.json` is substrate-seeded, runtime-extended mutable application
 state, not byte-owned configuration:
 
-- Deploys through a package-owned whole-body `modify` merge program
-  (`files/modify/lazy-lock.json.sh`, the committed asset embedded
-  verbatim) — never a whole-file recipe.
+- Deploys through the editor's merge program
+  (`modules/editor/nvim/files/lazy-lock-merge.lua`, the committed asset
+  embedded verbatim).
 - Absent targets seed the baseline byte-for-byte.
 - Drifted copies reconcile: substrate pins win; host extras with an
   installed plugin directory are preserved; stale extras are pruned;
@@ -135,12 +134,8 @@ Mason restore requirements:
 Rules:
 
 - oasis.nvim is the upstream port, deliberately NOT a colorscheme generated
-  from the workstation tokens: tokens.lua drives engine surfaces; editor
+  from the workstation tokens: tokens.lua drives the terminal surfaces; editor
   syntax rides the complete upstream palette.
-- Deployed lockfiles that still carry retired theme plugins reconcile on
-  the next apply: the pin left the seeded baseline, so it
-  becomes a host extra that prunes once its installed plugin directory goes
-  (documented lockfile merge semantics above).
 - Apply the colorscheme on the next Neovim start; running instances only get
   the terminal-palette retint, so a colorscheme reload needs a restart.
 

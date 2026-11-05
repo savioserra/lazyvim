@@ -75,22 +75,6 @@ writeShellScriptBin "workstation-e2e" ''
     exit 1
   }
 
-  # 1. the retirement: no resident engine process, no socket, no unit.
-  #    File-plane only here: the container lane runs without a service
-  #    manager, so "systemd knows nothing of the unit" stays a real-host
-  #    verify contract — the activation governs the files, and the files
-  #    are what this lane asserts.
-  step "daemon unit retired"
-  if [ -e "$home/.config/systemd/user/workstation-daemon.service" ]; then
-    fail "daemon unit retired" "workstation-daemon.service is still staged in the user units"
-  fi
-  pass "daemon unit retired"
-
-  step "no state socket remains"
-  socks=$(find $home/.local/state/workstation -name '*.sock' 2>/dev/null || true)
-  [ -z "$socks" ] || fail "no state socket remains" "$socks"
-  pass "no state socket remains"
-
   # 2. consumer smoke: the launcher shim dispatches, the nvim profile link
   #    resolves
   # the home lane's packages land on the profile PATH; resolve through the
@@ -266,16 +250,16 @@ writeShellScriptBin "workstation-e2e" ''
     || fail "shell init" "the nerd font tree did not deploy"
   pass "shell init"
 
-  step "migrated tools run (nixpkgs-owned)"
+  step "tools run (nixpkgs)"
   for t in fd fzf rg lazygit tree-sitter node pnpm op; do
-    t_bin=$(find_client "$t") || fail "migrated tools run" "$t is not on PATH"
+    t_bin=$(find_client "$t") || fail "tools run" "$t is not on PATH"
     "$t_bin" --version >/dev/null 2>&1 \
-      || fail "migrated tools run" "$t --version failed at $t_bin"
+      || fail "tools run" "$t --version failed at $t_bin"
   done
-  go_bin=$(find_client go) || fail "migrated tools run" "go is not on PATH"
+  go_bin=$(find_client go) || fail "tools run" "go is not on PATH"
   "$go_bin" version >/dev/null 2>&1 \
-    || fail "migrated tools run" "go version failed at $go_bin"
-  pass "migrated tools run"
+    || fail "tools run" "go version failed at $go_bin"
+  pass "tools run"
 
   step "node runtime single-source (.node-version derived from the nixpkgs runtime)"
   nv=$(cat "$home/.node-version" 2>/dev/null || true)

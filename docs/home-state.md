@@ -67,16 +67,13 @@ checkout or Git) carries only read-side state:
 | `hermes-a2a.owned` | the A2A converge's declared keys |
 | `hermes-a2a.restart` | a pairing awaiting the gateway (consumed by the converge) |
 
-Nothing recreates legacy trees.
-
 `workstation plan` previews the attributable declared state from the report
 (capability, lane, target). The declared-vs-applied diff story is the nix
 generation diff (`nix store diff-closures` / `home-manager generations`).
 Plan reads never persist or forward home contents into logs.
 
-## Retirement of legacy paths
+## Removal
 
-Two native shapes, both declared:
 
 - entries the file plane owned leave through the generation diff — a
   `home.file` entry dropped from the declarations is removed by the next
@@ -92,8 +89,3 @@ it directly (the extraction asserted at eval, `modules/theme/theme.nix`).
 Reads are pure `nix eval`s over `workstation.report` (the shim wraps them)
 and mutate nothing; verification is behavioral — see
 [testing](testing.md#real-integration).
-
-## Breaking cutover
-
-The pre-substrate cutover procedure is Git history; a fresh host switches
-from `workstation init`.

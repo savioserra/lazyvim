@@ -36,7 +36,7 @@ Load order:
 3. `~/.tmux/plugins/tpm/tpm`.
 
 `~/.config/tmux/tmux.conf` is a managed symlink to `~/.tmux.conf` so tmux
-versions that load XDG config after the legacy file cannot let distribution or
+versions that load XDG config after `~/.tmux.conf` cannot let distribution or
 desktop defaults override the managed theme.
 
 TPM redirects its plugin root to `~/.config/tmux/plugins/` whenever an XDG
@@ -54,7 +54,7 @@ on an isolated server.
 | `tmux-plugins/tmux-yank` | `acfd36e4fcba99f8310a7dfb432111c242fe7392` |
 | `christoomey/vim-tmux-navigator` | `e41c431a0c7b7388ae7ba341f01a0d217eb3a432` |
 | `tmux-plugins/tmux-resurrect` | `cff343cf9e81983d3da0c8562b01616f12e8d548` |
-| `datamadsen/nunchux` | `1546eaa980d834c331496ea9d51942be07ea9fdd` (engine-provisioned; see below) |
+| `datamadsen/nunchux` | `1546eaa980d834c331496ea9d51942be07ea9fdd` (see below) |
 
 Pinning rules:
 
@@ -74,13 +74,11 @@ Pinning rules:
 - Keep the `TMUX_PLUGIN_MANAGER_PATH` pin ahead of the TPM `run-shell`; TPM's
   default path logic alone would select the unmanaged XDG plugin root.
 - Update this table with implementation pins, and the inventory rows with
-  it. Dropping a plugin from the terminal module retires its recorded
-  checkout at the next switch: the generation simply stops linking it
-  (atomic generations + rollback own convergence).
+  it. A plugin dropped from the tmux module leaves at the next switch.
 
 TPM `user/repo#ref` supports branches/tags, not exact raw commits.
 
-## Nunchux (engine-provisioned launcher)
+## Nunchux (launcher)
 
 | Plugin | Commit | Pin inventory |
 | --- | --- | --- |
@@ -100,7 +98,7 @@ Nunchux (fzf popup launcher for apps, files and task runners) is ACTIVE:
   `~/.config/nunchux/config` consuming theme slots — [theme](theme.md) —
   and the `bin/.platform` marker) lives in the `nunchux` package.
 
-The load-bearing pre-seed is that marker: upstream's `nunchux.tmux`
+The marker is load-bearing: upstream's `nunchux.tmux`
 `ensure_binary` fetches `releases/latest` — unchecksummed, the same
 exclusion-class defect as `tmux-fingers` — whenever `bin/.platform` is
 missing or names another platform. With the marker present, plugin load
@@ -111,17 +109,11 @@ The launch chord is **C-Space, root** (no prefix): `@nunchux-key` is set to
 `bind -n C-Space display-popup …` (exact nunchux.tmux popup command). TPM
 sources the plugin through the active `@plugin` pin, so the chord goes
 live together with the checkout. Tradeoff: root `C-Space` shadows the
-chord for applications inside tmux (e.g. insert-mode completion). Revert
-is one line: comment the bind line in `.tmux.conf` and switch (fully
-retiring the plugin means commenting the `@plugin` pin and removing the
-recipe with it).
+chord for applications inside tmux (e.g. insert-mode completion).
 
 Never run TPM's `prefix + I` for nunchux: the substrate owns the checkout,
 and a TPM clone/pull would fight the pin — the next generation switch
-re-asserts it. Homes carrying the old pre-seed (a `bin/nunchux`
-+ `bin/.platform` directory with no checkout): remove
-`~/.tmux/plugins/nunchux` once and switch; fresh homes link the store
-checkout directly.
+re-asserts it.
 
 Compliance flag: upstream ships NO LICENSE file, so the code is
 all-rights-reserved by default — running it is a user-owned choice; the
@@ -133,8 +125,6 @@ or its verify lane.
 | Plugin | Reason |
 | --- | --- |
 | `tmux-fingers` | Unchecksummed bootstrap and no Intel macOS executable |
-
-Setup removes stale `~/.tmux/plugins/tmux-fingers` checkouts.
 
 ## Status bar (tmux2k, onedark)
 
@@ -150,25 +140,15 @@ list: active blue, inactive gray via `@tmux2k-white`), the right-side
 plugin list (`cpu ram time` — clicking cpu opens btop, ram's popup is
 pinned to btop via `@tmux2k-ram-popup-cmd`) and the clock format ahead of
 TPM init. Everything else stays upstream onedark — the accents ARE the
-theme; they just stopped painting backgrounds.
+theme, without background paint.
 
 The pin (`d8c5c292`) carries upstream's early return on an empty plugin
-name in `get_plugin_colors`: older pins abort `main.sh` on bash 5.2
-(`plugin_colors: bad array subscript`) and leave the bar empty — a switch
-at the pin fixes it; re-running `2k.tmux` is the stopgap.
-
-Pin-move migration: a pinned clone never moves to a different commit in
-place (the pin is the checkout's identity — the substrate freezes each
-commit as its own store path), so a home carrying the tmux2k checkout at
-the pin is re-linked at `d8c5c292` by the next switch;
-the old checkout stays on disk only if something outside the generation
-put it there — remove it explicitly. Same pattern as the nunchux pre-seed
-migration note above.
+name in `get_plugin_colors`, which `main.sh` needs on bash 5.2.
 
 Live re-theming (experimenting with `@tmux2k-*` options on a running
 server): the server keeps every `@<plugin>-*` option ever set — a config
-reload sets but never unsets, so experiment leftovers (custom separators,
-old palettes) override the new theme's defaults. Unset them explicitly, then
+reload sets but never unsets, so options set earlier (custom separators,
+palettes) override the theme's defaults. Unset them explicitly, then
 reload in order:
 
 ```sh

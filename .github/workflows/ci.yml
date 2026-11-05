@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 jobs:
-  # the static battery: identity gate, engine-free gate, shell syntax +
+  # the static battery: identity gate, history-prose gate, shell syntax +
   # ShellCheck, the launcher shim's dispatch gate (stubbed nix — no nix
   # install needed), whitespace. The nix-eval read gate inside check.sh
   # self-skips here and is owned by the nix job below plus the docker
@@ -94,8 +94,8 @@ jobs:
 
   # the behavioral lane: the container E2E — the check's staged entry run
   # on a docker host (the hosted runners carry docker). The persona home
-  # plane activates in a throwaway nixos/nix container: the retirement
-  # proof, the consumer smokes (the nvim headless boot with the languages
+  # plane activates in a throwaway nixos/nix container: the consumer
+  # smokes (the nvim headless boot with the languages
   # composed, the lazy-lock merge, the theme tokens), the selection
   # removal, the apply-driven switch and the receipt. The system plane keeps its
   # eval gate (the toplevel drvPath above — it never needed a boot).

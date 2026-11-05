@@ -2,8 +2,7 @@
 # The container E2E: THE behavioral verification lane. A throwaway nix
 # container (nixos/nix) receives the flake source, builds the e2e persona's
 # home plane and the proof driver inside, stages the boot home, then runs
-# the driver — the retirement proof (no daemon unit, no socket), the
-# consumer smokes (the launcher shim, the nvim headless boot with the
+# the driver — the consumer smokes (the launcher shim, the nvim headless boot with the
 # languages composed, the lazy-lock merge, the theme tokens, the agent and
 # terminal planes, the shell init), the selection removal, the
 # apply-driven switch and the receipt — every step loud on the log the

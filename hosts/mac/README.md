@@ -1,32 +1,16 @@
-# The mac leg (nix-darwin, brew reduced to casks)
+# The mac leg (nix-darwin)
 
-The mac runs the substrate through nix-darwin with the home-manager
-module integrated. Brew keeps ONLY casks (GUI apps); every CLI formula
-retires into the nix set, and the eval ENFORCES it:
+The mac runs the substrate through nix-darwin with the home-manager module
+integrated. The machine file (`hosts/machine.json`, written by
+`workstation init`) carries the user, the host name and the settings; the
+darwin configuration key is `<user>@<host>`.
 
-- `hosts/mac/brew.nix` — the formulas the nix set owns
-  (operator data, seeded with tmux + btop: the substrate's terminal pins
-  are nixpkgs-owned on the substrate). A formula may only be appended
-  AFTER its nix package exists in `hosts/mac/default.nix`'s
-  `nixPackages` — the eval fails naming any retired formula nix does not
-  own.
-
-The rebuild key is DERIVED from `hosts/mac/default.nix`'s identity block
-(`${user}@${hostName}`) — that file is the only place the host's user and
-hostname live; flip them there and the darwin user, the HM user and the
-rebuild key all follow.
-
-## Apply (on the mac host)
+## Apply
 
 ```sh
-# from a clone of the program's anchor repo (the nix substrate remote):
-darwin-rebuild switch --flake .#<user>@<hostname>
-
-# the mutating seam (--system wraps darwin-rebuild on this host):
-workstation-switch apply --system
-
-# the default-verb home plane has no default target on this leg: the
-# staged driver fails closed naming the fix (set
-# workstation.switch.homeAttr in hosts/mac/default.nix to opt in)
-workstation-switch apply   # exits 2 with the named fix
+workstation apply --system   # darwin-rebuild switch over the committed HEAD
+workstation rollback --system
 ```
+
+The home plane rides the system switch; `workstation apply` without
+`--system` has no target on this leg and exits 2 naming the fix.

@@ -1,28 +1,9 @@
-#!/bin/sh
-# Workstation-owned lazy-lock.json merge program.
-#
-# The deployed plugin lockfile is engine-seeded, runtime-extended mutable
-# application state: Neovim records the ACTIVE spec set into it, which may
-# legitimately include host-provided specs (for example a followed desktop
-# theme). This program seeds the committed engine pin baseline on absent or
-# empty targets and reconciles drifted copies: engine pins win on conflict,
-# host extras whose plugin directory exists are preserved, and stale extras
-# without an installed directory are pruned. Input that is not a JSON object
-# fails closed; the deployed file is never silently replaced.
-#
-# The engine pins below are the committed files/.config/nvim/lazy-lock.json
-# asset embedded verbatim by packages/editor/nvim at contribution time. Bootstrap
-# guarantees the managed Neovim exists before any apply runs this program.
-set -eu
-nvim_bin=${HOME:?}/.local/opt/nvim/bin/nvim
-[ -x "$nvim_bin" ] || {
-	echo "lazy-lock merge: managed Neovim is missing at $nvim_bin" >&2
-	exit 1
-}
-work=$(mktemp)
-trap 'rm -f "$work"' EXIT HUP INT TERM
-cat >"$work" <<'__WORKSTATION_LAZY_LOCK_LUA__'
-local engine_pins_json = [===[__WORKSTATION_ENGINE_PINS__]===]
+-- The lazy-lock.json merge: Neovim records the active spec set into the
+-- deployed lockfile, which may include host-provided specs. An absent or
+-- empty lockfile gets the committed baseline; otherwise the baseline pins
+-- win on conflict, host extras with an installed plugin directory stay, the
+-- rest are pruned. Input that is not a JSON object fails closed.
+local baseline_json = [===[__WORKSTATION_LAZY_LOCK_BASELINE__]===]
 
 local canonical_fields = { "branch", "build", "commit", "version", "semver", "pinned" }
 
@@ -86,8 +67,8 @@ local function write_lockfile(pins)
 end
 
 local deployed_json = io.read("*a") or ""
-if deployed_json == "" or deployed_json == engine_pins_json then
-	io.stdout:write(engine_pins_json)
+if deployed_json == "" or deployed_json == baseline_json then
+	io.stdout:write(baseline_json)
 	return
 end
 
@@ -95,16 +76,16 @@ local ok_deployed, deployed = pcall(vim.json.decode, deployed_json)
 if not ok_deployed or type(deployed) ~= "table" then
 	fail("deployed lazy-lock.json is not a JSON object")
 end
-local ok_engine, engine = pcall(vim.json.decode, engine_pins_json)
-if not ok_engine or type(engine) ~= "table" then
-	fail("embedded engine pins are not a JSON object")
+local ok_baseline, baseline = pcall(vim.json.decode, baseline_json)
+if not ok_baseline or type(baseline) ~= "table" then
+	fail("the embedded baseline is not a JSON object")
 end
 
 local data_root = vim.env.XDG_DATA_HOME or ((vim.env.HOME or "") .. "/.local/share")
 local lazy_root = data_root .. "/nvim/lazy"
 
 local merged = {}
-for name, pin in pairs(engine) do
+for name, pin in pairs(baseline) do
 	merged[name] = pin
 end
 for name, pin in pairs(deployed) do
@@ -113,5 +94,3 @@ for name, pin in pairs(deployed) do
 	end
 end
 write_lockfile(merged)
-__WORKSTATION_LAZY_LOCK_LUA__
-exec "$nvim_bin" -l "$work"

@@ -51,13 +51,12 @@ The lane map — which lane proves what:
   staged entry; a host without host-nix runs the script straight from a
   checkout). A throwaway `nixos/nix` container receives the flake source,
   builds the e2e persona's home plane and the proof driver inside, stages
-  the boot home, then runs `tests/nix/e2e.nix`: the daemonless retirement
-  proof (no unit, no socket), the consumer smokes (the launcher shim
+  the boot home, then runs `tests/nix/e2e.nix`: the consumer smokes (the launcher shim
   dispatch, the nvim headless boot with the languages composed — the
   composed profile.lua is a lua CHUNK, the regression the boot smoke
   owns, the lazy-lock merge, the theme token path, the language profile,
   the shell init (eza, starship, the direnv hook after the prompt, the
-  op env, the editor env), the migrated tools running, the agent
+  op env, the editor env), the tools running, the agent
   skills at pinned versions, the tmux/nunchux/foundation planes, the
   init capture live against a writable checkout copy (the placeholders
   fill from detection, the settings survive, a converged re-init is
@@ -88,8 +87,7 @@ Named residuals (the container lane cannot prove what a boot proved):
 - The container runs the persona proof as the container's root with the
   persona home (the nix image is single-user, no service manager): the
   service-manager probes (systemd's view of the user units) and
-  user-plane separation stay real-host verify contracts; the retirement
-  probe is file-plane in the container.
+  user-plane separation stay real-host verify contracts.
 
 Work in a scratch context: never a live home, never the operator's store
 paths. Failures retain the build log, the container log and the failing
