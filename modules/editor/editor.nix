@@ -42,15 +42,7 @@
   ...
 }:
 let
-  # the editor's neovim, floored at the retired download pin's version
-  # (0.12.4): the overlay supplies the foundation set's prebuilt closure
-  # (self-consistent — foundation's neovim compiles against foundation's
-  # tree-sitter), so the workstation's nvim never drops below the pin line
-  nvim =
-    assert
-      lib.versionAtLeast (pkgs.neovim.version or "0") "0.12"
-      || throw "workstation-editor: neovim ${pkgs.neovim.version or "?"} predates the retired pin floor 0.12 — the flake's overlays.default must carry the foundation set's neovim";
-    pkgs.neovim;
+  nvim = pkgs.neovim;
   cfg = config.workstation.editor;
 
   payloadNvim = ./nvim/files/.config/nvim;
@@ -132,7 +124,7 @@ in
   # and the retire lists stay complete
   config = lib.mkIf cfg.enable {
     # the parser-install CLI the editor's tooling drives
-    home.packages = [ pkgs.workstation-tree-sitter ];
+    home.packages = [ pkgs.tree-sitter ];
 
     home.file = {
       # the nixpkgs neovim on PATH — the nvim-profile lane's bin override,

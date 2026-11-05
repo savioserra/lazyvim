@@ -43,7 +43,7 @@ let
   # darwin-built driver wraps darwin-rebuild (the nix-darwin leg), the
   # Linux-built one wraps nixos-rebuild. Both use the `system` profile, so
   # the generation read after the switch is shared.
-  rebuild = if pkgs.stdenv.isDarwin then "darwin-rebuild" else "nixos-rebuild";
+  rebuild = if pkgs.stdenv.hostPlatform.isDarwin then "darwin-rebuild" else "nixos-rebuild";
 
   # The receipt: read the switched profile's generation and write the
   # receipt — stdout plus the state tree's switch.log (append; the operator

@@ -1,6 +1,5 @@
-# The Node language capability: the runtime (nodejs_24 via the scoped
-# overlay - nix owns it), the .node-version derived from it, and the
-# editor profile entry.
+# The Node language capability: the runtime (nodejs_24), the
+# .node-version derived from it, and the editor profile entry.
 {
   config,
   lib,
@@ -9,14 +8,7 @@
   ...
 }:
 let
-  # the version-class pin: the 24 major rides the nixpkgs set (the
-  # foundation domain's pin-override overlay keeps it current); the patch
-  # drift is nixpkgs' to maintain, never a SHA to keep alive. The SCOPED
-  # name (pkgs.workstation-node, not pkgs.nodejs_24): nixpkgs' own
-  # nodejs_24 is a build toolchain its own packages consume, and
-  # retargeting the name would rehash those builds off the binary cache —
-  # the overlay's scoping rule (see overlays.default).
-  nodejs = pkgs.workstation-node;
+  nodejs = pkgs.nodejs_24;
 
   # the derived version declaration (the change-rule's canonical address —
   # a store text file, not a module literal, so it can never drift from

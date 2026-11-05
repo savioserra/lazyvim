@@ -93,8 +93,6 @@ in
           # management conflicts with the Determinate daemon (the switch
           # fails without this) — nix.* options stay unused on this leg
           nix.enable = false;
-          # the foundation domain's pin surface (harlequin + hsql)
-          nixpkgs.overlays = [ self.overlays.default ];
           # the secrets domain's license acceptance (the 1Password CLI rides
           # nixpkgs unfree — nix/lib/license.nix, named and scoped)
           nixpkgs.config.allowUnfreePredicate = import ../../nix/lib/license.nix { lib = nixpkgs.lib; };

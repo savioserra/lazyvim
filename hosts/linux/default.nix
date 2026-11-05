@@ -48,8 +48,6 @@ in
         {
           workstation.enable = true;
 
-          # the foundation domain's pin surface (harlequin + hsql)
-          nixpkgs.overlays = [ self.overlays.default ];
           # the secrets domain's license acceptance (the 1Password CLI rides
           # nixpkgs unfree — nix/lib/license.nix, named and scoped)
           nixpkgs.config.allowUnfreePredicate = import ../../nix/lib/license.nix { inherit lib; };

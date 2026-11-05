@@ -2,9 +2,9 @@
   description = "workstation — the operator's workstation state, declared in nix and rendered per-host";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     home-manager = {
-      url = "github:nix-community/home-manager/release-25.05";
+      url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     nixos-wsl = {
@@ -12,10 +12,9 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     nix-darwin = {
-      url = "github:LnL7/nix-darwin/nix-darwin-25.05";
+      url = "github:nix-darwin/nix-darwin";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    nixpkgs-foundation.url = "github:NixOS/nixpkgs/nixos-unstable";
   };
 
   outputs =
@@ -25,7 +24,6 @@
       home-manager,
       nixos-wsl,
       nix-darwin,
-      nixpkgs-foundation,
     }:
     let
       # the fold runs on the host system's nixpkgs; the report itself pins
@@ -43,12 +41,9 @@
       # attrs (bin/workstation). No release bakes it, no daemon serves it.
       report = import ./nix/report.nix {
         lib = nixpkgs.lib;
-        # the fold applies the substrate's pin-override overlay itself
-        # (the domains' version floors assert it) and carries the license
-        # acceptance
+        # the license acceptance rides the instance
         pkgs = import nixpkgs {
           system = hostSystem;
-          overlays = [ self.overlays.default ];
           config.allowUnfreePredicate = licensePredicate;
         };
         hm = home-manager.lib;
@@ -123,7 +118,6 @@
       linuxHome = home-manager.lib.homeManagerConfiguration {
         pkgs = import nixpkgs {
           system = hostSystem;
-          overlays = [ self.overlays.default ];
           config.allowUnfreePredicate = licensePredicate;
         };
         extraSpecialArgs = {
@@ -135,7 +129,6 @@
             {
               home.username = linuxHost.user;
               home.homeDirectory = linuxHost.homeDir;
-              nixpkgs.overlays = [ self.overlays.default ];
               nixpkgs.config.allowUnfreePredicate = licensePredicate;
               workstation.switch.homeAttr = linuxHost.homeKey;
               workstation.switch.systemAttr = linuxHost.name;
@@ -187,32 +180,6 @@
       packages = nixpkgs.lib.genAttrs [ hostSystem macHost.system ] (
         system: import ./modules/agent/packages.nix { pkgs = nixpkgs.legacyPackages.${system}; }
       );
-
-      # the capability overlays, composed: each domain owns its tool
-      # overrides (modules/<domain>/overlay.nix); the root only wires the
-      # domain input into them. The license acceptance rides the
-      # foundation input's import (the secrets domain's CLI is unfree -
-      # nix/lib/license.nix).
-      overlays.default =
-        final: prev:
-        let
-          foundationPkgs = import nixpkgs-foundation {
-            system = prev.system;
-            config.allowUnfreePredicate = licensePredicate;
-          };
-        in
-        nixpkgs.lib.composeManyExtensions (map (f: import f foundationPkgs) [
-          ./modules/foundation/overlay.nix
-          ./modules/terminal/overlay.nix
-          ./modules/terminal/nunchux/overlay.nix
-          ./modules/editor/overlay.nix
-          ./modules/languages/overlay.nix
-          ./modules/agent/overlay.nix
-          ./modules/database/overlay.nix
-          ./modules/network/overlay.nix
-          ./modules/secrets/overlay.nix
-          ./modules/fonts/overlay.nix
-        ]) final prev;
 
       # the validation surface: `nix flake check` is the canonical entry.
       # Eval gates force the declared-state reads and every host leg's
@@ -281,7 +248,6 @@
             (home-manager.lib.homeManagerConfiguration {
               pkgs = import nixpkgs {
                 system = hostSystem;
-                overlays = [ self.overlays.default ];
                 config.allowUnfreePredicate = licensePredicate;
               };
               extraSpecialArgs = {
@@ -289,7 +255,6 @@
               };
               modules = [
                 {
-                  nixpkgs.overlays = [ self.overlays.default ];
                   nixpkgs.config.allowUnfreePredicate = licensePredicate;
                 }
                 ./tests/nix/e2e-home.nix
@@ -301,7 +266,6 @@
             (home-manager.lib.homeManagerConfiguration {
               pkgs = import nixpkgs {
                 system = hostSystem;
-                overlays = [ self.overlays.default ];
                 config.allowUnfreePredicate = licensePredicate;
               };
               extraSpecialArgs = {
@@ -309,7 +273,6 @@
               };
               modules = [
                 {
-                  nixpkgs.overlays = [ self.overlays.default ];
                   nixpkgs.config.allowUnfreePredicate = licensePredicate;
                 }
                 ./tests/nix/e2e-home.nix
@@ -317,18 +280,9 @@
                 ./nix/modules/workstation-home.nix
               ];
             }).activationPackage;
-          # the hsql assert expects the version the substrate actually
-          # pins: the skill derivation names itself after the OVERLAYED
-          # harlequin (the nixpkgs-foundation input's — the base nixpkgs
-          # package predates hsql), so the driver's expectation reads the
-          # same input. This block's bare pkgs carries no overlay.
           e2e-driver = pkgs.callPackage ./tests/nix/e2e.nix {
             inherit self;
-            harlequinVersion =
-              (import nixpkgs-foundation {
-                system = hostSystem;
-                config.allowUnfreePredicate = licensePredicate;
-              }).harlequin.version;
+            harlequinVersion = pkgs.harlequin.version;
           };
 
           # the container E2E lane: stages THE entry (bin/run-container-e2e)

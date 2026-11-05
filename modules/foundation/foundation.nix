@@ -1,4 +1,4 @@
-# The base shell environment: the rc lane + fd, rg, lazygit (floored),
+# The base shell environment: the rc lane + fd, rg, lazygit,
 # mise, whiptail, direnv + nix-direnv. Fragments are payload files beside
 # this module; the lane sorts by (target, domain, order) -
 # nix/lib/shell-lane.nix.
@@ -10,19 +10,8 @@
   ...
 }:
 let
-  # the foundation tools ride nixpkgs, each floored at a minimum version:
-  # the pinned 25.05 set predates the floors, so the pin-override overlay
-  # must apply — an unapplied overlay or a lagging lock fails here.
-  floored =
-    name: floor: pkg:
-    assert
-      lib.versionAtLeast (pkg.version or "0") floor
-      || throw "workstation-foundation: pkgs.${name} ${pkg.version or "?"} predates the floor ${floor} — the flake's overlays.default (the foundation domain's pin surface) must be applied (nixpkgs.overlays) and its lock must carry the version";
-    pkg;
   tools = {
-    fd = floored "fd" "10.4.2" pkgs.fd;
-    ripgrep = floored "ripgrep" "15.2.0" pkgs.ripgrep;
-    lazygit = floored "lazygit" "0.63.1" pkgs.lazygit;
+    inherit (pkgs) fd ripgrep lazygit;
   };
 
   # the fragment payload (id, order slot, marker, payload path the rc lane

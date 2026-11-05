@@ -96,10 +96,8 @@ the empty template; the local rewrite stays uncommitted — the
 - A capability declares, natively:
   - **file/symlink surfaces** — `home.file` entries with store-path sources
     (intra-home links through `mkOutOfStoreSymlink`);
-  - **tools** — nixpkgs packages through `overlays.default` (the
-    `nixpkgs-foundation` input), floored in the owning module at its
-    declared version (an unapplied overlay or a lagging lock dies loudly at
-    the floor); the remaining pins declare inline: herdr's `fetchurl`, the
+  - **tools** — packages of the one nixpkgs input; the remaining pins
+    declare inline: herdr's `fetchurl`, the
     tmux/nunchux checkouts as hash-pinned `fetchFromGitHub`, the hermes
     checkout as the flake's `hermes-agent` input;
   - **dir claims** — a store tree linked at a home target; overlapping
@@ -144,7 +142,7 @@ and sorted, never hidden.
 - `workstation.foundation.shell.extras` (types.lines, default ""): the
   operator's per-machine rc lines (declared in the identity file as
   `shellExtras`), rendered as the lane's last fragment.
-- Tools, all nixpkgs through the foundation overlay, floored:
+- Tools, all nixpkgs:
   fd, fzf, rg, lazygit, tree-sitter; eza + starship; harlequin + hsql
   (the hsql agent skill generated from the harlequin derivation at build
   time); whiptail (the shim's install-time UI).
@@ -266,7 +264,7 @@ and sorted, never hidden.
 - Verify: fingerprint + link record. Hosts: all.
 
 ### `go`
-- `pkgs.go` through the foundation overlay, floored at 1.26.
+- `pkgs.go`.
 - Verify: `go version` (the container E2E asserts it). Hosts: linux/macOS.
 
 ### `elixir`
@@ -275,12 +273,12 @@ and sorted, never hidden.
   helpers. Hosts: all.
 
 ### `typescript`
-- `pkgs.pnpm` through the foundation overlay, floored at major 12.
+- `pkgs.pnpm`.
 - Verify: `pnpm --version` (the container E2E asserts it); own Mason/plugin
   surface. Hosts: all.
 
 ### `secrets`
-- `pkgs._1password-cli` through the foundation overlay (unfree — the
+- `pkgs._1password-cli` (unfree — the
   acceptance is `nix/lib/license.nix`, named and scoped); the op env
   fragment.
 - Verify: record + `--version` only, never account or vault state. Hosts:
@@ -295,7 +293,7 @@ and sorted, never hidden.
   and the runtime lazy-lock survive. The tree is deliberately not a
   `home.file` surface: the deployed copy is writable, so HM's manifest
   could only refuse a changed managed file, and HM's cleanup only
-  deletes its own links. The nixpkgs neovim (floored at 0.12) at
+  deletes its own links. The nixpkgs neovim at
   `.local/bin/nvim` is the domain's `home.file` surface.
 - The composed language profile: language capabilities declare profile
   entries as module data (`lazyvim_extras`, `plugin_module`, mason
@@ -339,12 +337,11 @@ and sorted, never hidden.
 ## Fresh-host tools
 
 Every tool class ships with the substrate; none stays a documented host
-prerequisite. The HOW: the flake's `overlays.default` carries the
-version-currency set, the owning modules assert the floors, and
+prerequisite. The HOW: the nixpkgs lock carries the versions and
 `home.packages` puts the tools on PATH. Inline pins, by exception: herdr
 (`fetchurl`), the tmux/nunchux checkouts (`fetchFromGitHub`), the hermes
 checkout (the flake input). Every bump moves the owning row and its
-consumer together. The floors and the deployed manifests
+consumer together. The deployed manifests
 (`~/.tmux/plugins.pins.json`, `~/.local/opt/hermes/pin.json`) keep the
 verify lanes honest.
 
@@ -371,8 +368,6 @@ Fail-closed at eval:
 - target collisions across capabilities throw;
 - the fragment order contract: no slot without a fragment id, no id with
   two slots, no slot shared by two ids;
-- version floors: a tool below its floor throws, naming the overlay and
-  the lock;
 - envelope identities in the report are asserted unique;
 - the identity gate holds personal identity to `hosts/identity.nix`
   (uncommitted).

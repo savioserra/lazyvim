@@ -1,5 +1,5 @@
-# The secrets domain: the nixpkgs 1Password CLI (through the foundation
-# domain's pin-override overlay) and the op environment fragment. The vault
+# The secrets domain: the nixpkgs 1Password CLI and the op environment
+# fragment. The vault
 # stays user-owned; the substrate never reads it.
 {
   config,
@@ -8,9 +8,7 @@
   ...
 }:
 let
-  # the overlay's current CLI (the retired pin was 2.39.0; the locked
-  # foundation input carries 2.41.0). The vault stays user-owned; this
-  # package never touches account or session state — the fragment only
+  # The vault stays user-owned; this package never touches account or session state — the fragment only
   # sources the host's env file.
   op = pkgs._1password-cli;
 in

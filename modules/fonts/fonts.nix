@@ -1,5 +1,5 @@
-# The fonts domain: the JetBrainsMono Nerd Font (nixpkgs, via the
-# foundation overlay) and fontconfig discovery. Files deploy at the
+# The fonts domain: the JetBrainsMono Nerd Font (nixpkgs) and fontconfig
+# discovery. Files deploy at the
 # per-platform targets: linux ~/.local/share/fonts, darwin
 # ~/Library/Fonts.
 {
@@ -16,7 +16,7 @@ let
   fontTree = "${fontPackage}/share/fonts/truetype/NerdFonts/JetBrainsMono";
 
   fontTarget =
-    if pkgs.stdenv.isDarwin then
+    if pkgs.stdenv.hostPlatform.isDarwin then
       "Library/Fonts/JetBrainsMonoNerdFont"
     else
       ".local/share/fonts/JetBrainsMonoNerdFont";

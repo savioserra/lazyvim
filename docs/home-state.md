@@ -10,7 +10,7 @@ provider state remain user-owned.
 
 | Step | Owner | Contract |
 | --- | --- | --- |
-| Declaration | `modules/<domain>/<domain>.nix` | Native nix: home.file surfaces, tools (overlay + floors), fragments, activation scripts |
+| Declaration | `modules/<domain>/<domain>.nix` | Native nix: home.file surfaces, tools (nixpkgs), fragments, activation scripts |
 | Payload | `modules/<domain>/` (co-located with the declaring module) | Referenced bytes, copied into the store at eval |
 | Fragment lane order | `nix/lib/shell-lane.nix` | The fragments' `order` slots sorted once — the rc files and the report read the same sort; shared/ambiguous slots fail the eval |
 | Claim composition | `modules/terminal/terminal.nix` (inline) | Overlapping dir claims compose into one derivation (the `.platform` marker — the one consumer) |

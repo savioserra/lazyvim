@@ -1,4 +1,4 @@
-# The TypeScript language capability: pnpm (floored), the editor
+# The TypeScript language capability: pnpm, the editor
 # profile entry, and the language's custom plugin module.
 {
   config,
@@ -8,13 +8,7 @@
   ...
 }:
 let
-  # the pnpm floor guards the overlay: a lagging lock dies loud instead
-  # of quietly downgrading the package manager
-  pnpm =
-    assert
-      lib.versionAtLeast (pkgs.pnpm.version or "0") "12"
-      || throw "workstation-typescript: pkgs.pnpm ${pkgs.pnpm.version or "?"} predates the floor 12 — the flake's overlays.default must be applied (nixpkgs.overlays)";
-    pkgs.pnpm;
+  pnpm = pkgs.pnpm;
 in
 {
   # the selection gate (workstation.languages.typescript.enable AND the

@@ -31,8 +31,7 @@ machine's selection pins —, `capabilities` — scope with an attrpath,
 linux system plane), `workstationE2E` (the container lane's inputs: the
 persona home + the proof driver), `checks.<system>` (`nix flake check` is
 the canonical validation entry: the declared-state reads, every host leg's
-eval, and the container E2E lane's staged entry), `overlays.default` (pin
-overrides only) and `workstationTheme.lib`.
+eval, and the container E2E lane's staged entry) and `workstationTheme.lib`.
 
 ## The invariants
 
@@ -58,14 +57,13 @@ overrides only) and `workstationTheme.lib`.
   within — never per-tool module files.
 - **Resources-without-runtime is a defect.** A capability that names a
   tool ships the tool; verify smokes the consumer, not a fingerprint.
-  Tools ride nixpkgs (the overlay + floors keep the eval loud); the
+  Tools ride the one nixpkgs input; the
   remaining pins (herdr, the tmux/nunchux checkouts, the hermes checkout
   input) are pinned declarations. No unpinned downloads, no `sudo`, no
   OS-package-manager installation of managed tools.
 - **Foundation inventory.** The shell rc lane (the fragments' declared
   order slots) + fd, fzf, rg, lazygit, tree-sitter, node, pnpm, go, op,
-  btop, the JetBrainsMono Nerd Font (nixpkgs via the foundation input,
-  floored in the owning modules) + eza, starship, harlequin+hsql
+  btop, the JetBrainsMono Nerd Font + eza, starship, harlequin+hsql
   (nixpkgs) + the tailscale transport (system legs: `services.tailscale`;
   standalone-HM linux legs: the CLI in `home.packages`, tailscaled the
   substrate's own systemd unit — a previous install is removed, the node

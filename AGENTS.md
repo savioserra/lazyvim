@@ -26,7 +26,7 @@ Read the nearest scoped `AGENTS.md` and follow the owning reference:
 - `workstation` is the sole public lifecycle interface (apply / rollback / update / sync / init / add / remove); the staged write-plane driver it execs is internal, never user-facing.
 - Keep core domain-neutral: no cross-domain imports; composition happens through the capability walk (`nix/lib/capabilities.nix`).
 - Payload stays data: Lua appears only as deployed editor/theme data read as bytes, never executed.
-- Tools come from nixpkgs through the flake's pin-override overlay (`overlays.default`) with version floors asserted in the owning modules, or an inline pin where nixpkgs lacks coverage (documented in the owning module). No unpinned downloads, no `sudo`, no OS-package-manager installation of managed tools.
+- Tools come from the one nixpkgs input (`nixos-unstable`, the lock is the version surface), or an inline pin where nixpkgs lacks coverage (documented in the owning module). No unpinned downloads, no `sudo`, no OS-package-manager installation of managed tools.
 - Keep language composition in the Neovim profile. Go is an editor toolchain here (no root Go CLI, no services, no Makefiles).
 - Never commit generated plugin/Mason/parser/cache/session/history state or secret values. Secret-reference/vault work requires explicit user `/skill:secrets` invocation; authentication stays user-owned.
 - The identity gate reds on personal strings anywhere in the tracked tree; `hosts/identity.nix` (the machine's captured identity) stays uncommitted.
@@ -52,8 +52,8 @@ declared surface. Native Linux and macOS arm64 acceptance stays explicit.
 
 | Change | Required updates |
 | --- | --- |
-| Tool version | the tool's floor in its owning capability's module, `docs/tools.md` |
-| Neovim version | the editor domain's neovim floor (`modules/editor/editor.nix`), `docs/tools.md` |
+| Tool version | `flake.lock` (`nix flake update`), `docs/tools.md` |
+| Neovim version | `flake.lock`, `docs/tools.md` |
 | Hermes Agent pin | the flake's `hermes-agent` input rev, `modules/agent/agent.nix`, `docs/tools.md` |
 | Managed Hermes skill | `modules/agent/skills/<name>/`, the `programs.hermes.skills` entry, `modules/agent/verify/hermes.sh`, `docs/capabilities.md` |
 | tmux plugin pin | the `fetchFromGitHub` rev in `modules/terminal/terminal.nix`, `docs/tmux.md` |

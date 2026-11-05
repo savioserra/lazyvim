@@ -50,7 +50,7 @@ let
   # pm/lock.json names (packages.python.version — "3.14.7+<buildtag>"; the
   # semver prefix is the floor). Read from the pinned tree so a hermes rev
   # bump re-derives the floor at eval — the eval dies naming both versions
-  # when the nixpkgs set (via the flake's pin-override overlay) lags.
+  # when the nixpkgs lock lags.
   lockedPythonVersion =
     if hermes.pin == null then
       null
@@ -67,7 +67,7 @@ let
     assert
       lockedPythonVersion == null
       || lib.versionAtLeast pkgs.python314.version lockedPythonVersion
-      || throw "workstation-agent: pkgs.python314 ${pkgs.python314.version} predates the release the pinned hermes rev's pm/lock.json carries (${lockedPythonVersion}) — the flake's overlays.default (the foundation domain's pin surface) must be applied (nixpkgs.overlays), or the hermes-agent rev must move to a lock the nixpkgs set satisfies";
+      || throw "workstation-agent: pkgs.python314 ${pkgs.python314.version} predates the release the pinned hermes rev's pm/lock.json carries (${lockedPythonVersion}) — update the nixpkgs lock, or the hermes-agent rev must move to a lock the nixpkgs set satisfies";
     pkgs.python314;
 
   # herdr keeps a download pin: no nixpkgs coverage (upstream ships
