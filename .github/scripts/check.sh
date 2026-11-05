@@ -15,7 +15,7 @@ fail=0
 
 step() { printf '\n== %s\n' "$1"; }
 
-step 'nix identity gate (the repo is a template: identity is captured at install time only — hosts/identity.nix, uncommitted on real machines)'
+step 'nix identity gate (the repo is a template: identity is captured at install time only — hosts/machine.json, uncommitted on real machines)'
 # A gate may only pass on a real no-match (git grep exit 1): a tooling
 # failure (exit 128 — not a checkout, a bad pathspec) fails CLOSED, never
 # reads as "no match".
@@ -40,7 +40,7 @@ gate() {
 	esac
 }
 gate 'identity gate' \
-	'identity gate: hardcoded personal identity in the tracked tree — the legs are templates; hosts/identity.nix (captured by workstation init, kept uncommitted) is the only identity surface' \
+	'identity gate: hardcoded personal identity in the tracked tree — the legs are templates; hosts/machine.json (captured by workstation init, kept uncommitted) is the only identity surface' \
 	sh -c "git grep -iE 'savio|shyylol' -- . ':(exclude).github/scripts/check.sh' | grep -vF 'savioserra/lazyvim' ; test \$? -ne 1"
 
 step 'history-prose gate (the tree describes the current world)'

@@ -1,40 +1,15 @@
-# The linux leg TEMPLATE: NixOS-WSL-flavored system plane + the home plane
-# (workstation-home, the native declarations -> HM). Identity is NOT here —
-# hosts/identity.nix holds it, captured by `workstation init` at install
-# time (the committed copy is the template; the local rewrite stays
-# uncommitted). The flake derives the rebuild key and every username/home
-# path from that file.
+# The linux system leg (NixOS-WSL): the system plane plus the machine's
+# home plane through home-manager.
 {
   self,
   nixpkgs,
   home-manager,
   nixos-wsl,
+  machine,
 }:
-let
-  system = "x86_64-linux";
-
-  # --- host identity --------------------------------------------------------
-  # NOT here. hosts/identity.nix holds the machine's identity, captured
-  # once by `workstation init` at install time (the local rewrite stays
-  # uncommitted; the committed copy is the template). This file is the
-  # linux leg TEMPLATE — flip nothing by hand.
-  id = import ../identity.nix;
-  user = id.user;
-  homeDir = id.home;
-  homeKey = "${user}@${id.host}";
-in
 {
-  # identity surface the flake consumes — derive, never hand-type
-  inherit
-    system
-    user
-    homeDir
-    homeKey
-    ;
-  name = id.host;
-
   nixosConfig = nixpkgs.lib.nixosSystem {
-    inherit system;
+    inherit (machine) system;
     specialArgs = {
       inherit self;
     };
@@ -47,36 +22,19 @@ in
         { config, lib, ... }:
         {
           workstation.enable = true;
-
-          # the secrets domain's license acceptance (the 1Password CLI rides
-          # nixpkgs unfree — nix/lib/license.nix, named and scoped)
           nixpkgs.config.allowUnfreePredicate = import ../../nix/lib/license.nix { inherit lib; };
 
-          # host identity: the ONLY place this host's facts are written
-          # (the options are declared in the substrate; consumers derive)
           workstation.host = {
-            name = id.host;
-            user = user;
-            homeDirectory = homeDir;
-          }
-          // (lib.optionalAttrs ((id.tailscaleFqdn or "") != "") {
-            tailscale.fqdn = id.tailscaleFqdn;
-          });
-          # the fleet transport (the shared system module owns the wiring);
-          # the identity's fleet choice: standalone turns it off
-          workstation.network.tailscale.enable = (id.fleet or "member") != "standalone";
+            name = machine.host;
+            inherit (machine) user;
+            homeDirectory = machine.home;
+          };
+          workstation.network.tailscale.enable = machine.networkEnable;
 
           wsl = {
             enable = true;
-            # nixos-wsl's own config literal collides on a root defaultUser
-            # (users.users.${defaultUser} and users.users.root in one
-            # attrset — an eval error since the template's operator user
-            # became root): a root operator user rides NixOS's own root
-            # user, and the defaultUser stays nixos-wsl's ("nixos")
-            defaultUser = lib.mkIf (user != "root") user;
+            defaultUser = lib.mkIf (machine.user != "root") machine.user;
           };
-          # the canonical declaration derives from the identity option —
-          # never a second literal
           networking.hostName = config.workstation.host.name;
 
           home-manager = {
@@ -85,34 +43,11 @@ in
             extraSpecialArgs = {
               inherit self;
             };
-            users.${user}.imports = [
-              (
-                { ... }:
-                {
-                  # the operator's shell extras: the identity file is the
-                  # per-machine declaration point (shellExtras, optional)
-                  workstation.foundation.shell.extras = id.shellExtras or "";
-                  # the A2A node: the card names this host (its MagicDNS
-                  # name); the peers are the machine's discovery file
-                  programs.hermes.a2a.name = id.host;
-                  # the fleet choice (init / workstation fleet): standalone
-                  # turns the A2A node off; absent means member
-                  programs.hermes.a2a.enable = (id.fleet or "member") != "standalone";
-                  programs.hermes.a2a.peers = import ../peers.nix;
-                  # the switch driver's default targets: this host's flake
-                  # attrs, derived from the identity block (never hand-typed)
-                  workstation.switch.homeAttr = homeKey;
-                  workstation.switch.systemAttr = id.host;
-                }
-              )
-              # this machine's capability selection (hosts/selections.nix)
-              (
-                (import ../../nix/lib/selections.nix {
-                  lib = nixpkgs.lib;
-                  treeRoot = ../..;
-                }).translationModule
-                  ../../hosts/selections.nix
-              )
+            users.${machine.user}.imports = machine.homeModules ++ [
+              {
+                workstation.switch.homeAttr = machine.key;
+                workstation.switch.systemAttr = machine.host;
+              }
               ../../nix/modules/workstation-home.nix
             ];
           };

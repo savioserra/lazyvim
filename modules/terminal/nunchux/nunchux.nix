@@ -1,31 +1,14 @@
-# The nunchux capability (terminal/nunchux): the pinned checkout
-# (.tmux/plugins/nunchux), the .platform marker composed into it, and the
-# theme-slot launcher config rendered natively from tokens.lua
-# (workstationTheme.lib), asserted unresolved-slot-free. The checkout is a
-# fetchFromGitHub pin; the `.platform` marker composes INTO the checkout
-# (immutable store cannot host a file inside a dir symlink — the claim
-# composition is a tiny local derivation), and with it present upstream's
-# ensure_binary never fetches releases/latest unchecksummed. The pin row
-# rides the terminal domain's declared manifest rows
-# (workstation.terminal.pins) so the deployed manifest always matches the
-# checkouts beside it. Nunchux is linux-only (its supported_hosts contract,
-# carried as the platform gate — a darwin eval deploys nothing and the
-# report's selections rows mark the path unavailable there).
+# The nunchux member (linux): the pinned checkout with its .platform marker
+# and the theme-rendered launcher config.
 {
   config,
   lib,
   pkgs,
-  self,
   ...
 }:
 let
-  theme = import ../../theme/theme.nix { inherit lib self; };
+  theme = config.workstation.theme.lib;
 
-  # the checkout pin: the repo-tracked linux build's sha is the verify
-  # lane's content pin; the release the rev carries rides the manifest row.
-  # The release-asset checksum rows of the old inventory retired with it —
-  # no build consumer (the `.platform` marker keeps upstream's
-  # ensure_binary off the unchecksummed release fetches).
   nunchuxPin = {
     owner = "datamadsen";
     repo = "nunchux";
@@ -35,11 +18,6 @@ let
     repo_linux_amd64_sha256 = "8a6e46d937ee76ac6a483865c800de9208aabbe1dbc620473eb5e6b7d86b7b14";
   };
 
-  # the claim composition: children (files or whole trees) overlay INTO
-  # the base tree — immutable store cannot host a file inside a dir
-  # symlink, so the composed tree is one derivation. One consumer left
-  # after the pins machinery retired (nvm's nested-node claim went with
-  # it), so the HOW lives inline here — the pins library stays retired.
   compose =
     base: children:
     if children == [ ] then
@@ -63,7 +41,6 @@ let
         )}
       '';
 
-  # the pinned checkout with the .platform marker composed in
   nunchuxTree =
     compose
       (pkgs.fetchFromGitHub {
@@ -81,30 +58,26 @@ let
         }
       ];
 
-  # the theme-slot launcher config, rendered natively: the template's slot
-  # references substitute from the extracted tokens (byte-equal to
-  # upstream's default config — only the two slot references carry the
-  # theme palette)
   nunchuxConfig = theme.assertNoUnresolved (
     theme.renderSlots (builtins.readFile ./files/.config/nunchux/config)
   );
 in
 {
-  # the selection gate (workstation.terminal.nunchux.enable AND the domain
-  # enable — a member deploys under its domain, nix/lib/selections.nix):
-  # disabled = the definitions skip, never the files. The checkout and its
-  # rendered config are platform-gated to linux INSIDE the file plane (the
-  # supported_hosts contract — the original module's proven gate shape: the
-  # platform read stays inside the declared option's value, never at the
-  # config structure, where it would recurse through config.nixpkgs.pkgs);
-  # the manifest row stays unconditional within the selection gate, exactly
-  # the original domain's semantics — the manifest lists the terminal
-  # domain's declared pins on every platform.
+  options.workstation.terminal.nunchux.enable = lib.mkEnableOption "the nunchux launcher (linux)" // {
+    default = pkgs.stdenv.hostPlatform.isLinux;
+    defaultText = lib.literalExpression "pkgs.stdenv.hostPlatform.isLinux";
+  };
+
   config =
     lib.mkIf (config.workstation.terminal.enable && config.workstation.terminal.nunchux.enable)
       {
-        # the manifest row rides the domain's declared rows (the tmux
-        # capability renders the file)
+        assertions = [
+          {
+            assertion = pkgs.stdenv.hostPlatform.isLinux;
+            message = "workstation.terminal.nunchux is linux-only";
+          }
+        ];
+
         workstation.terminal.pins.nunchux = {
           url = "https://github.com/${nunchuxPin.owner}/${nunchuxPin.repo}";
           inherit (nunchuxPin)
@@ -114,11 +87,9 @@ in
             ;
         };
 
-        # the launcher's runtime dependency: fzf (the popup menus are fzf
-        # views; nunchux is its only consumer in the substrate)
-        home.packages = lib.optionals pkgs.stdenv.hostPlatform.isLinux [ pkgs.fzf ];
+        home.packages = [ pkgs.fzf ];
 
-        home.file = lib.mkIf pkgs.stdenv.hostPlatform.isLinux {
+        home.file = {
           ".tmux/plugins/nunchux".source = nunchuxTree;
           ".config/nunchux/config".text = nunchuxConfig;
         };

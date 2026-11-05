@@ -6,9 +6,9 @@
 | --- | --- |
 | `README.md` | Host switching, the read verbs |
 | `AGENTS.md` | Repository-wide implementation rules |
-| `flake.nix`, `nix/` | The substrate: the capability walk, the declared-state report fold and its read verbs, the switch driver, the home/system/host modules |
+| `flake.nix`, `nix/` | The substrate: the machine file, the report verbs, the switch driver, the home/system/host modules |
 | `bin/workstation` | The launcher shim (POSIX sh): flake resolution + verb dispatch; reads are nix evals, writes run the staged switch driver — the operator types `workstation` only |
-| `hosts/` | `linux` (the linux leg; NixOS-WSL system plane), `mac` (nix-darwin); identity is the tracked template `hosts/identity.nix`, rewritten per machine by `workstation init` (kept uncommitted) |
+| `hosts/` | `linux` (the linux leg; NixOS-WSL system plane), `mac` (nix-darwin); the machine file is the tracked template `hosts/machine.json`, rewritten per machine by `workstation init` (kept uncommitted) |
 | `.github/workflows/ci.yml` | The static battery + the nix evaluation leg |
 | `.github/workflows/release.yml` | Tagged source archives |
 | `modules/` | Capability domains, one directory each — module + payload bytes co-located (adding a capability is adding one directory) — each domain owns its tools (nixpkgs via the overlay + floors) and its remaining pins |

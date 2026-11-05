@@ -1,12 +1,6 @@
-# The network domain: the fleet transport (ssh, the dashboard's --host
-# binding, all host convergence ride the tailnet).
-#
-# | Leg | Daemon |
-# | --- | --- |
-# | NixOS, darwin | services.tailscale through the system module |
-# | standalone linux (systemd) | the substrate unit (workstation-tailscaled, files/tailscaled-ensure.sh); a previous install is removed, the node state kept |
-#
-# The host's MagicDNS name comes from workstation.host.name.
+# The network domain: tailscale. Standalone linux runs the substrate's
+# tailscaled unit (files/tailscaled-ensure.sh); NixOS and darwin run
+# services.tailscale.
 {
   config,
   lib,
@@ -14,27 +8,11 @@
   ...
 }:
 {
-  options.workstation.network.enable = lib.mkEnableOption "the network domain (the tailscale transport)";
-
-  options.workstation.network.tailscale = {
-    enable = lib.mkEnableOption "the tailscale transport (the CLI on the home PATH)" // {
-      default = true;
-    };
-    acceptDns = lib.mkOption {
-      type = lib.types.bool;
-      default = true;
-      description = ''
-        Accept the tailnet's DNS settings. Declared per host; the wiring
-        lands with the system module that integrates the tailnet DNS.
-      '';
-    };
-  };
+  options.workstation.network.enable = lib.mkEnableOption "tailscale, the fleet transport";
 
   config =
     let
-      on = config.workstation.network.enable && config.workstation.network.tailscale.enable;
-      # the standalone linux leg's daemon: provisioned (any previous install
-      # goes), retracted when off; NixOS and darwin run the system module's
+      on = config.workstation.network.enable;
       ensure = pkgs.writeShellApplication {
         name = "workstation-tailscaled";
         runtimeInputs = [
@@ -47,8 +25,7 @@
       };
     in
     lib.mkMerge [
-      (lib.mkIf on {
-        # the CLI + the daemon binary on the home PATH
+      (lib.mkIf (on && pkgs.stdenv.hostPlatform.isLinux) {
         home.packages = [ pkgs.tailscale ];
       })
       (lib.mkIf pkgs.stdenv.hostPlatform.isLinux {

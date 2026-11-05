@@ -1,5 +1,3 @@
-# The 1Password CLI's unfree acceptance (allowUnfreePredicate), scoped to
-# that one package and imported by every composition root: the report fold,
-# the home configurations and the system legs.
+# The unfree acceptance: the 1Password CLI only.
 { lib }:
 pkg: lib.getName pkg == "1password-cli"

@@ -21,32 +21,18 @@
   writeShellScript,
   writeShellScriptBin,
   self,
-  # the foundation domain's pinned harlequin version (the flake overlay's —
-  # the caller's pkgs predates hsql and carries no real version)
   harlequinVersion,
 }:
 let
-  # the standalone home the apply targets (built from the mounted flake by
-  # run-container.sh so both the activation and the profile registration
-  # hit realized store paths)
   activation = self.checks.x86_64-linux.e2e-home;
 
-  # the SAME driver derivation workstation-home.nix stages (identical
-  # arguments, one store path) — referenced absolutely so the proof does
-  # not bet on PATH shape
   switchDriver = import ../../nix/workstation-switch.nix {
     inherit pkgs;
     flake = self;
     homeAttr = "e2e@container";
-    # the container lane has no system plane — the fail-closed guard is
-    # the designed behavior for a --system call with no target
     systemAttr = null;
   };
 
-  # the offline switch steps: activate + register, exactly what
-  # `home-manager switch` would have done for each generation. The boot
-  # staging (run-container.sh) activates the full persona directly; the
-  # driver's apply targets the minus-go persona below.
   homeActivateMinusGo = writeShellScript "workstation-e2e-home-activate-minus-go" ''
     set -eu
     ${activationMinusGo}/activate
@@ -54,20 +40,8 @@ let
       --set ${activationMinusGo}
   '';
 
-  # the removal proof's target: the SAME persona home re-applied with go
-  # deselected (tests/nix/e2e-selections-minus-go.nix — the full fixture
-  # minus languages/go). The driver's second apply activates this: the go
-  # toolchain and its profile entry leave, the other selections ride, nvim
-  # still boots — the selection removal semantics, proven on a real home.
   activationMinusGo = self.checks.x86_64-linux.e2e-minus-go-home;
 
-  # the init step's userland: the image's bare root carries no sed, awk,
-  # hostname or cmp (the minimal nix profile greps and copies but merges
-  # nothing), and the shim's identity merge reads and rewrites
-  # hosts/identity.nix through exactly those. A real host carries them
-  # from the OS or the profile, so the init step alone stages the
-  # nixpkgs tools on PATH — every other step keeps proving the shim's
-  # read paths run on the bare image (the lane stays sed-free there).
   initTools = pkgs.symlinkJoin {
     name = "workstation-e2e-init-tools";
     paths = [
@@ -75,9 +49,7 @@ let
       pkgs.gnused
       pkgs.gawk
       pkgs.diffutils
-      # the shim detects the host with `hostname -s`; nixpkgs' coreutils
-      # ships hostid/uname but not hostname (it is its own package)
-      pkgs.hostname
+      pkgs.jq
     ];
   };
 in
@@ -450,92 +422,64 @@ writeShellScriptBin "workstation-e2e" ''
     || fail "tombstone shapes planted" "the rehearsal shapes did not plant"
   pass "tombstone shapes planted (retire rehearsal)"
 
-  # 2d. the init merge, live (the identity-merge contract): the capture
-  #     MERGES hosts/identity.nix — the shipped TEMPLATE placeholders fill
-  #     from detection, the operator's set field (shellExtras — the line a
-  #     replace-style init once dropped on a re-run) survives byte for
-  #     byte, and a converged re-init is a byte-identical no-op. Like the
-  #     selection verbs below: the REAL shim against a writable checkout
-  #     copy (whiptail is off PATH here, so the capture takes the
-  #     detected values verbatim — the bare-box install shape). The
-  #     image's bare root lacks the merge's userland (sed, awk, hostname,
-  #     cmp), so this step alone stages the nixpkgs tools a real host
-  #     PATH carries.
-  step "init merge live (placeholders fill, shellExtras survives, the re-init is byte-identical)"
+  step "init capture live (placeholders fill, settings survive, the re-init is byte-identical)"
   initlive=/tmp/ws-init
   mkdir -p "$initlive"
   cp -a /workstation/. "$initlive/"
-  printf '%s\n' \
-    '{' \
-    '  host = "TEMPLATE"; # captured by workstation init (hostname -s)' \
-    '  user = "TEMPLATE"; # captured by workstation init' \
-    '  home = "/home/TEMPLATE"; # captured by workstation init, the home path' \
-    '  shellExtras = "stty -ixon"; # the operator field, kept byte for byte' \
-    '}' >"$initlive/hosts/identity.nix"
+  chmod -R u+w "$initlive"
+  printf '%s\n' '{"host":"TEMPLATE","user":"TEMPLATE","home":"/home/TEMPLATE","settings":{"workstation":{"foundation":{"shell":{"extras":"stty -ixon"}}},"programs":{"hermes":{"a2a":{"enable":true}}}}}' \
+    >"$initlive/hosts/machine.json"
   init_path=${initTools}/bin:$PATH
   out=$(PATH="$init_path" WORKSTATION_NO_APPLY=1 WORKSTATION_FLAKE="$initlive" "$shim_bin" init) \
-    || fail "init merge live" "init on the template-plus-shellExtras fixture failed"
-  printf '%s' "$out" | grep -q 'identity captured' \
-    || fail "init merge live" "the capture must say it captured"
-  grep -q TEMPLATE "$initlive/hosts/identity.nix" \
-    && fail "init merge live" "init must fill every TEMPLATE placeholder"
-  detected_host=$(PATH="$init_path" hostname -s)
-  grep -Fqx "  host = \"$detected_host\";" "$initlive/hosts/identity.nix" \
-    || fail "init merge live" "init must capture the detected host ($detected_host)"
-  grep -Fqx '  user = "e2e";' "$initlive/hosts/identity.nix" \
-    || fail "init merge live" "init must capture the detected user (e2e)"
-  grep -Fqx '  home = "/home/e2e";' "$initlive/hosts/identity.nix" \
-    || fail "init merge live" "init must capture the detected home (/home/e2e)"
-  grep -Fqx '  shellExtras = "stty -ixon"; # the operator field, kept byte for byte' \
-    "$initlive/hosts/identity.nix" \
-    || fail "init merge live" "the operator shellExtras line must survive the merge byte for byte"
-  cp "$initlive/hosts/identity.nix" "$initlive/identity.converged"
+    || fail "init capture live" "init on the template fixture failed"
+  printf '%s' "$out" | grep -q 'machine captured' \
+    || fail "init capture live" "the capture must say it captured"
+  grep -q TEMPLATE "$initlive/hosts/machine.json" \
+    && fail "init capture live" "init must fill every placeholder"
+  detected_host=$(PATH="$init_path" uname -n | cut -d. -f1)
+  m() { PATH="$init_path" jq -r "$1" "$initlive/hosts/machine.json"; }
+  [ "$(m .host)" = "$detected_host" ] || fail "init capture live" "init must capture the detected host ($detected_host)"
+  [ "$(m .user)" = e2e ] || fail "init capture live" "init must capture the detected user (e2e)"
+  [ "$(m .home)" = /home/e2e ] || fail "init capture live" "init must capture the detected home (/home/e2e)"
+  [ "$(m .system)" = x86_64-linux ] || fail "init capture live" "init must capture the system"
+  [ "$(m .settings.workstation.foundation.shell.extras)" = 'stty -ixon' ] \
+    || fail "init capture live" "the settings must survive the capture"
+  cp "$initlive/hosts/machine.json" "$initlive/machine.converged"
   out=$(PATH="$init_path" WORKSTATION_NO_APPLY=1 WORKSTATION_FLAKE="$initlive" "$shim_bin" init) \
-    || fail "init merge live" "the converged re-init failed"
-  printf '%s' "$out" | grep -q 'merged' \
-    || fail "init merge live" "the converged re-init must say it merged"
-  PATH="$init_path" cmp -s "$initlive/identity.converged" "$initlive/hosts/identity.nix" \
-    || fail "init merge live" "a converged re-init must leave the file byte-identical"
+    || fail "init capture live" "the converged re-init failed"
+  printf '%s' "$out" | grep -q 'already captured' \
+    || fail "init capture live" "the converged re-init must say so"
+  PATH="$init_path" cmp -s "$initlive/machine.converged" "$initlive/hosts/machine.json" \
+    || fail "init capture live" "a converged re-init must leave the file byte-identical"
   rm -rf "$initlive"
-  pass "init merge live (placeholders fill, shellExtras survives, the re-init is byte-identical)"
+  pass "init capture live (placeholders fill, settings survive, the re-init is byte-identical)"
 
-  # 3. the apply-driven nix switch: the driver wraps the offline
-  #    activation + generation registration, then writes the receipt.
-  #    THIS apply is also the selection REMOVAL proof: the activation
-  #    override targets the minus-go persona (the same home, the next
-  #    generation, go deselected), so the asserts after it prove the
-  #    removal semantics on a real home.
   step "selection verbs live (a writable checkout copy: selected, add, dedup, refusals)"
-  # /workstation is the read-only flake mount; the verbs edit
-  # hosts/selections.nix, so they run against a writable copy. The persona
-  # home's own selection is a tracked fixture — hermetic against this
-  # battery, which proves the shim<->report loop on the checkout copy.
   live=/tmp/ws-live
   mkdir -p "$live"
   cp -a /workstation/. "$live/"
+  chmod -R u+w "$live"
+  go_flag() { PATH="$init_path" jq -r '.settings.workstation.languages.go.enable // "unset"' "$live/hosts/machine.json"; }
   WORKSTATION_FLAKE=$live WORKSTATION_NO_APPLY=1 "$shim_bin" selected \
     | grep -o '"languages/go":{[^}]*}' | grep -q '"state":"off"' \
     || fail "selection verbs live" "selected must answer the template's off row for languages/go"
   WORKSTATION_FLAKE=$live WORKSTATION_NO_APPLY=1 "$shim_bin" add languages/go >/dev/null \
     || fail "selection verbs live" "add languages/go failed"
-  grep -q '"languages/go"' "$live/hosts/selections.nix" \
-    || fail "selection verbs live" "add did not write the row to the checkout's selections"
-  # the report reads the edited dirty tree back: the row flips the state
+  [ "$(go_flag)" = true ] || fail "selection verbs live" "add did not set the flag in the machine file"
   WORKSTATION_FLAKE=$live WORKSTATION_NO_APPLY=1 "$shim_bin" selected \
     | grep -o '"languages/go":{[^}]*}' | grep -q '"state":"on"' \
     || fail "selection verbs live" "selected must answer on after the add (the report must read the dirty tree)"
-  WORKSTATION_FLAKE=$live WORKSTATION_NO_APPLY=1 "$shim_bin" add languages/go >/dev/null \
+  sel_out=$(WORKSTATION_FLAKE=$live WORKSTATION_NO_APPLY=1 "$shim_bin" add languages/go) \
     || fail "selection verbs live" "the repeated add must succeed"
-  [ "$(grep -c '"languages/go"' "$live/hosts/selections.nix")" = 1 ] \
-    || fail "selection verbs live" "add must dedup by exact path"
+  printf '%s' "$sel_out" | grep -q 'already selected' \
+    || fail "selection verbs live" "a repeated add must say so"
   sel_out=$(WORKSTATION_FLAKE=$live WORKSTATION_NO_APPLY=1 "$shim_bin" add foundation 2>&1) \
     && fail "selection verbs live" "add foundation must refuse"
   printf '%s' "$sel_out" | grep -q 'baseline — always on' \
     || fail "selection verbs live" "the baseline refusal must say so"
   WORKSTATION_FLAKE=$live WORKSTATION_NO_APPLY=1 "$shim_bin" remove languages/go >/dev/null \
     || fail "selection verbs live" "remove languages/go failed"
-  grep -q '"languages/go"' "$live/hosts/selections.nix" \
-    && fail "selection verbs live" "the removed row must leave the file"
+  [ "$(go_flag)" = unset ] || fail "selection verbs live" "the removed flag must leave the file"
   unset shim_bin
   pass "selection verbs live (a writable checkout copy: selected, add, dedup, refusals)"
 

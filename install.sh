@@ -7,17 +7,15 @@
 #
 #   sh -c "$(curl -fsSL https://raw.githubusercontent.com/savioserra/lazyvim/main/install.sh)"
 #
-# What it does: ensures nix (the one hard prerequisite), clones this repo
-# to $WORKSTATION_CHECKOUT (default: ~/lazyvim), and runs `workstation
-# init` — the identity capture and the fleet choice (whiptail dialogs on
-# the terminal, prefilled with the detected values; no TTY falls back to
-# the detected values and a fleet member) and the first switch. Every
-# later update is `workstation apply`.
+# Ensures nix, clones this repo to $WORKSTATION_CHECKOUT (default
+# ~/lazyvim) and runs `workstation init`: the machine capture into
+# hosts/machine.json, the fleet choice and the first switch. Every later
+# update is `workstation apply`.
 #
 # Environment:
 #   WORKSTATION_CHECKOUT   where the clone lands (default ~/lazyvim)
 #   WORKSTATION_REPO       the clone URL (default: this repository)
-#   WORKSTATION_NO_APPLY=1 capture the identity, skip the first switch
+#   WORKSTATION_NO_APPLY=1 capture the machine, skip the first switch
 set -eu
 
 log() { printf 'install: %s\n' "$1"; }
@@ -47,12 +45,9 @@ repo=${WORKSTATION_REPO:-https://github.com/savioserra/lazyvim.git}
 checkout=${WORKSTATION_CHECKOUT:-"$HOME/lazyvim"}
 if [ -d "$checkout/.git" ]; then
 	log "checkout exists at $checkout — updating"
-	# the machine files (identity, selections, peers) are uncommitted by
-	# law; stash them across the pull, init re-merges them after. Only the
-	# files the checkout carries: a pathspec the old tree lacks fails the
-	# whole stash
+	# the machine files stay uncommitted: stashed across the pull
 	set --
-	for f in hosts/identity.nix hosts/selections.nix hosts/peers.nix; do
+	for f in hosts/machine.json hosts/peers.nix; do
 		if [ -e "$checkout/$f" ]; then set -- "$@" "$f"; fi
 	done
 	git -C "$checkout" stash push -q -- "$@" 2>/dev/null || true
@@ -65,11 +60,10 @@ fi
 [ -f "$checkout/bin/workstation" ] ||
 	{ printf 'install: %s is not a workstation checkout (no bin/workstation)\n' "$checkout" >&2; exit 1; }
 
-# --- identity capture, the fleet choice + the first switch -----------------
+# --- the machine capture, the fleet choice and the first switch ------------
 cd "$checkout"
-# the dialogs run on the terminal: `curl ... | sh` hands the script on
-# stdin, so init reads /dev/tty; whiptail comes from the checkout's pinned
-# nixpkgs until the first switch ships it
+# `curl ... | sh` holds stdin: the dialogs read /dev/tty; whiptail comes
+# from the checkout's nixpkgs until the first switch ships it
 tty_in=''
 if [ -t 0 ]; then
 	tty_in=stdin
@@ -84,7 +78,7 @@ if [ -n "$tty_in" ] && ! command -v whiptail >/dev/null 2>&1; then
 		log 'whiptail unavailable — init captures the detected values'
 	fi
 fi
-log 'capturing this machine'"'"'s identity and applying'
+log 'capturing this machine and applying'
 if [ "$tty_in" = /dev/tty ]; then
 	exec ./bin/workstation init </dev/tty
 fi

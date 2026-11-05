@@ -12,12 +12,12 @@ switch.log receipt).
 
 | Path | Role |
 | --- | --- |
-| `flake.nix`, `flake.lock` | The one entry point: inputs framed per domain (each domain owns its pin surface; `follows` dedupes shared nixpkgs/HM), the declared-state report verbs, the host legs, the mesh outputs |
-| `modules/<domain>/` | One directory per capability domain — the domain's module file AND the bytes it deploys, co-located: `modules/editor/{editor.nix, nvim/}`, `modules/terminal/{tmux/{tmux.nix, files/, verify/}, nunchux/{nunchux.nix, files/, verify/}}`, `modules/theme/{theme.nix, tokens.nix, tokens.lua}`, `modules/foundation/`, `modules/languages/{node,elixir,typescript,go}/`, `modules/agent/`, `modules/fonts/`, `modules/secrets/`. Adding a capability is adding one directory |
-| `nix/` | Shared substrate infrastructure, no capability of its own: `report.nix` (the declared-state fold + the selection lens), `lib/capabilities.nix` (the registry walk), `lib/selections.nix` (the per-machine capability selection: the pins file's read/validation and the enable-option translation), `lib/shell-lane.nix` (the fragment lane's order contract), `lib/license.nix` (the secrets domain's license acceptance), `workstation-switch.nix` (the write plane), `modules/` (the home leg, the system leg, the host-identity options) |
-| `hosts/{linux,mac}/` | The two target legs; WSL and any linux server count under the linux leg. `hosts/identity.nix` is the identity template, `hosts/selections.nix` the capability-selection template and `hosts/peers.nix` the A2A peers template — each rewritten per machine (`workstation init` / `workstation add|remove` / `workstation peers`) and kept uncommitted |
-| `bin/workstation` | The launcher shim: the whole client (POSIX sh). Reads are `nix eval`s over `workstation.report.<verb>`; the selection verbs (`add|remove|selected`) edit `hosts/selections.nix` through the report's validation; `peers` runs the flake's `workstation-peers` helper on `hosts/peers.nix`; writes run `workstation apply` (the staged switch driver implements them). The home lane stages the same bytes as a derivation onto the profile PATH |
-| `tests/` | The container E2E: `run-container.sh` (the lane), `e2e.nix` (the proof driver), `e2e-home.nix` (the persona), `e2e-selections*.nix` (the persona's tracked selection fixtures) — behavioral acceptance |
+| `flake.nix`, `flake.lock` | The entry point: one nixpkgs input, home-manager, nix-darwin, NixOS-WSL; the machine's legs, the report verbs, the checks |
+| `modules/<domain>/` | One directory per capability domain: the module (options + declarations) and the bytes it deploys. `modules/default.nix` lists the modules |
+| `nix/` | Shared infrastructure: `report.nix` (the read verbs), `lib/machine.nix` (the machine file), `lib/shell-lane.nix` (the rc fragment order), `lib/license.nix` (the unfree acceptance), `workstation-switch.nix` (the write plane), `modules/` (the home plane, the system plane, the host options) |
+| `hosts/` | `linux/` and `mac/` (the system legs), `machine.json` (identity + settings) and `peers.nix` (A2A peers): templates rewritten per machine by `workstation init` / `add|remove` / `fleet` / `peers`, kept uncommitted |
+| `bin/workstation` | The launcher (POSIX sh): reads are `nix eval`s over `workstation.report.<verb>`; `add|remove|fleet` edit `hosts/machine.json` (jq); `peers` runs `workstation-peers` on `hosts/peers.nix`; writes exec the staged switch driver |
+| `tests/` | The container E2E: `run-container.sh`, `e2e.nix` (the driver), `e2e-home.nix` (the persona), `e2e-selections*.nix` (its flag modules) |
 | `docs/` | The references; this file is the structure's anchor |
 | `.github/` | The static check battery, the CI (static + nix-eval jobs), tagged source archives |
 
@@ -36,25 +36,17 @@ eval, and the container E2E lane's staged entry) and `workstationTheme.lib`.
 ## The invariants
 
 - **Two targets.** mac and linux; WSL is linux.
-- **Identity is captured once per machine, at install time.**
-  `workstation init` writes `hosts/identity.nix` (hostname, user, home)
-  and the local rewrite stays uncommitted — the repo is a template
-  carrying no personal strings at HEAD; evals read the dirty working
-  tree. MagicDNS derives the host's tailscale name from the hostname.
-  The identity gate in `check.sh` reds on personal strings anywhere in
-  the tracked tree.
-- **Capability selection is per-machine and pinned beside the identity.**
-  `hosts/selections.nix` (template committed, local rewrite uncommitted)
-  pins `enable`/`disable` rows over the declared defaults — core domains
-  on, language members off, `foundation` baseline (unselectable). The
-  valid paths are the walk's ids (`<domain>`, `<domain>/<member>`); a
-  selected member implies its domain; every eval validates the file, so a
-  hand-broken pin fails loudly, never silently deploys.
-- **The filesystem is the capability registry.** No central catalog: the
-  walk (`nix/lib/capabilities.nix`) discovers `modules/<domain>/`, and
-  the report fold evaluates each capability once against home-manager.
-  Options are domain-level (`workstation.<domain>.*`); tools are entries
-  within — never per-tool module files.
+- **The machine is captured once, at install time.** `workstation init`
+  writes `hosts/machine.json` (host, user, home, system); the local rewrite
+  stays uncommitted and the identity gate reds on personal strings in the
+  tracked tree.
+- **Flags are options.** `settings` in the machine file is a home-manager
+  option tree; each domain declares `workstation.<domain>.enable` (members
+  `workstation.<domain>.<member>.enable`) and gates itself; the module
+  system validates every flag.
+- **Domains own their options.** A domain contributes to another only
+  through an option the other declares, guarded by its enable; no path
+  imports across domains.
 - **Resources-without-runtime is a defect.** A capability that names a
   tool ships the tool; verify smokes the consumer, not a fingerprint.
   Tools ride the one nixpkgs input; the
@@ -105,14 +97,10 @@ Ownership and baseline over time are the nix generation's story
 
 ## The capability-module law
 
-A capability is self-contained at its final address: `modules/<domain>/`
-holds the capability's home-manager module(s) beside the payload bytes it
-deploys. The filesystem is the registry: the capability walk
-(nix/lib/capabilities.nix) is the one discovery both the home leg's
-imports and the report's fold read; a hand-kept module list is a defect by
-definition. Adding a capability is adding one directory. Options are
-domain-level (`workstation.<domain>.*`); tools are entries within; per-tool
-module files are never created.
+A capability is self-contained at `modules/<domain>/`: its options, its
+declarations and its payload bytes. `modules/default.nix` lists the
+modules; every leg imports all of them and each gates on its own enable.
+Tools come from the one nixpkgs input.
 
 ## The client law
 
@@ -129,7 +117,7 @@ nix.
 
 The check battery (.github/scripts/check.sh) holds the lines in code: the
 identity gate (personal strings only in the machine-local
-`hosts/identity.nix`), the tree-purity gate (the tree-wide grep for a
+`hosts/machine.json`), the tree-purity gate (the tree-wide grep for a
 foreign module-system token stays empty), shell syntax + ShellCheck, the
 shim dispatch gate, the nix eval read gate. Verification beyond the
 battery is behavioral — the docker-nix closure acceptance and the

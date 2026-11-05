@@ -1,8 +1,8 @@
 #!/bin/sh
-# The workstation launcher: the nix substrate's whole client. Reads are
-# nix evals over the flake's declared-state report
-# (#workstation.report.<verb> — the capability modules' fold, nix/report.nix);
-# the write plane is the generation's workstation-switch driver.
+# The workstation launcher: reads are nix evals over #workstation.report.<verb>;
+# writes go through the generation's workstation-switch driver; the
+# machine's choices live in hosts/machine.json.
+# shellcheck disable=SC2016 # jq filters carry their own $variables
 set -eu
 
 usage() {
@@ -10,22 +10,18 @@ usage() {
 workstation — the nixpkgs-native workstation substrate
 
 install (once per machine):
-  init            capture this machine's identity into hosts/identity.nix
-                  (whiptail dialogs prefilled with the detected values;
-                  a re-run MERGES — the fields you set are kept, only the
-                  placeholders and missing fields are filled) and run the
-                  first activation — the whole install is:
+  init            capture this machine into hosts/machine.json (whiptail
+                  dialogs prefilled with the detected values; a re-run
+                  keeps every field you set) and run the first activation:
                     clone && workstation init
-                  keep the identity file uncommitted; every later update is
+                  keep the file uncommitted; every later update is
                   `workstation apply` (WORKSTATION_NO_APPLY=1 skips the
                   first switch)
 
-selection (per-machine capability flags, hosts/selections.nix — keep the
-local rewrite uncommitted, same lifecycle as identity.nix):
+selection (per-machine capability flags, hosts/machine.json settings):
   add <path>...        enable capability(ies) on this machine
   remove <path>...     disable capability(ies)
-  selected             this machine's resolved rows: per path on/off/
-                       baseline/unavailable + dependency notes
+  selected             this machine's rows: per path on/off/baseline + notes
   paths are <domain> or <domain>/<member> — `editor`,
   `languages/typescript`, `terminal/nunchux` (workstation selected lists
   them all). add and remove are idempotent, accept multiple paths, and
@@ -38,7 +34,7 @@ fleet (the agents' private network — tailscale + the A2A fleet):
                   asks the same once
 
 peers (the A2A node's peers, hosts/peers.nix — keep the local rewrite
-uncommitted, same lifecycle as identity.nix):
+uncommitted):
   peers           one screen over the tailnet's A2A agents (the online
                   nodes whose Agent Card answers on the A2A port): add a
                   peer, pair it (a shared token, exchanged over the
@@ -46,9 +42,8 @@ uncommitted, same lifecycle as identity.nix):
                   the apply. Fleet members pair on their own (fleet);
                   peers adds other agents and tunes any peer
 
-reads (the declared state, answered by nix eval over
-#workstation.report.<verb>):
-  status          the declared inventory: counts, capability order
+reads (nix eval over #workstation.report.<verb>):
+  status          counts and the capability paths
   plan            the declared surface the next switch applies
   capabilities    the per-capability declared surface
                   (scope with an attrpath: workstation capabilities editor)
@@ -64,8 +59,7 @@ other:
 
 The read flake resolves in this order: --flake PATH, $WORKSTATION_FLAKE,
 the enclosing checkout (the first flake.nix walking up from $PWD), the
-staged generation snapshot (~/.local/opt/workstation/flake — the home
-lane stages it at every switch).
+staged generation snapshot (~/.local/opt/workstation/flake).
 EOF
 }
 
@@ -74,41 +68,44 @@ die() {
 	exit "${2:-1}"
 }
 
-# --- the selection verbs' helpers -------------------------------------------
-# The pins, answered by the report (the shim never parses nix source — the
-# JSON projection of #workstation.report.selections.pins.<list> is the only
-# shape it reads).
 nix_eval() {
 	nix --extra-experimental-features 'nix-command flakes' eval --json "$@"
 }
-toList() {
-	# a JSON array of grammar-safe path strings -> newline tokens
-	printf '%s' "$1" | tr -d '[]"' | tr ',' '\n' | grep -v '^$' || true
+
+# jq: the staged launcher carries it; a bare checkout builds it from the
+# flake's own nixpkgs
+jqx() {
+	if [ -z "${WS_JQ:-}" ]; then
+		if [ -n "${WORKSTATION_JQ:-}" ] && [ -x "$WORKSTATION_JQ" ]; then
+			WS_JQ=$WORKSTATION_JQ
+		elif command -v jq >/dev/null 2>&1; then
+			WS_JQ=$(command -v jq)
+		else
+			WS_JQ=$(nix --extra-experimental-features 'nix-command flakes' build --no-link \
+				--print-out-paths --inputs-from "${flake:-.}" nixpkgs#jq.bin)/bin/jq ||
+				die 'jq is unavailable and did not build (nix build nixpkgs#jq.bin)' 1
+		fi
+	fi
+	"$WS_JQ" "$@"
 }
-has() {
-	# has <newline-list> <path> — exact-match membership
-	printf '%s\n' "$1" | grep -Fxq "$2"
+
+# machine_edit <jq filter> [jq args...] — rewrite hosts/machine.json in place
+machine_edit() {
+	filter=$1
+	shift
+	jqx "$@" "$filter" "$machine" >"$machine.edit.$$" || {
+		rm -f "$machine.edit.$$"
+		die "could not rewrite $machine" 1
+	}
+	mv "$machine.edit.$$" "$machine"
 }
-append() {
-	# append <newline-list> <path> — the canonical form keeps file order
-	[ -n "$1" ] && printf '%s\n%s\n' "$1" "$2" || printf '%s\n' "$2"
+
+uncaptured() {
+	grep -Eq '"(host|user)"[[:space:]]*:[[:space:]]*"TEMPLATE"' "$1"
 }
-drop() {
-	# drop <newline-list> <path> — exact-match removal
-	printf '%s\n' "$1" | grep -Fvx "$2" || true
-}
-quote_lines() {
-	# <newline-list> -> one quoted nix string per row, indented to the
-	# canonical form's depth (the loop word-splits the grammar-safe tokens
-	# and an empty list prints nothing)
-	for t in $1; do
-		printf '    "%s"\n' "$t"
-	done
-}
-# the apply offer (the init precedent): whiptail yes/no where the dialog
-# tool exists, a printed next step otherwise; WORKSTATION_NO_APPLY=1 skips.
-# On yes this execs the same write plane the apply verb takes.
-# offer_apply [<what>] — the saved surface the messages name (selection)
+
+# the apply offer: whiptail yes/no where the dialog tool exists, a printed
+# next step otherwise; WORKSTATION_NO_APPLY=1 skips
 offer_apply() {
 	what=${1:-selection}
 	if [ "${WORKSTATION_NO_APPLY:-}" = 1 ]; then
@@ -118,9 +115,8 @@ offer_apply() {
 	if command -v whiptail >/dev/null 2>&1; then
 		if whiptail --title " workstation $what " --yesno \
 			"Apply the new $what now?" 9 68; then
-			if [ -f "$flake/hosts/identity.nix" ] &&
-				grep -q '"TEMPLATE"' "$flake/hosts/identity.nix"; then
-				die 'identity not captured — run: workstation init' 2
+			if [ -f "$flake/hosts/machine.json" ] && uncaptured "$flake/hosts/machine.json"; then
+				die 'machine not captured — run: workstation init' 2
 			fi
 			if command -v workstation-switch >/dev/null 2>&1; then
 				switch_flake
@@ -134,87 +130,55 @@ offer_apply() {
 	printf 'workstation: %s saved — next: workstation apply\n' "$what"
 }
 
-# the discovery helper: the flake's own build (its tools ride the closure,
-# never the PATH) — one invocation builds and prints the path
 peers_helper() {
 	nix --extra-experimental-features 'nix-command flakes' \
 		build --no-link --print-out-paths "$flake#workstation-peers"
 }
 
 # --- the fleet: the A2A node's membership on the tailnet ---------------------
-# The choice lives in the identity file (`fleet = "member" | "standalone"`,
-# absent means member); the member service pairs fleet nodes of the same
-# tailscale user automatically (workstation-fleet, the flake's helper).
 fleet_helper() {
 	nix --extra-experimental-features 'nix-command flakes' \
 		build --no-link --print-out-paths "$flake#workstation-fleet"
 }
 
-# fleet_get <identity file> — the captured choice (member|standalone|empty)
+# fleet_get — member|standalone, empty when never chosen
 fleet_get() {
-	sed -nE 's/^[[:space:]]*fleet[[:space:]]*=[[:space:]]*"(member|standalone)"[[:space:]]*;.*/\1/p' "$1" | head -n 1
+	jqx -r '.settings.programs.hermes.a2a.enable | if . == null then "" elif . then "member" else "standalone" end' "$machine"
 }
 
-# fleet_set <identity file> <member|standalone> — replace the field, or
-# insert it before the closing brace (the values are fixed literals)
+# fleet_set <member|standalone> — the A2A node and the tailscale transport
 fleet_set() {
-	WS_LINE="  fleet = \"$2\";" awk '
-		{ lines[NR] = $0 }
-		END {
-			hit = 0
-			for (i = 1; i <= NR; i++)
-				if (lines[i] ~ /^[ \t]*fleet[ \t]*=/) { lines[i] = ENVIRON["WS_LINE"]; hit = 1 }
-			at = 0
-			if (!hit)
-				for (i = NR; i >= 1; i--)
-					if (lines[i] ~ /^[ \t]*\}[ \t]*$/) { at = i; break }
-			for (i = 1; i <= NR; i++) {
-				if (i == at) print ENVIRON["WS_LINE"]
-				print lines[i]
-			}
-		}
-	' "$1" >"$1.fleet.$$" && mv "$1.fleet.$$" "$1"
+	if [ "$1" = member ]; then on=true; else on=false; fi
+	machine_edit '.settings.programs.hermes.a2a.enable = $on | .settings.workstation.network.enable = $on' --argjson on "$on"
 }
 
-# fleet_network <selections file> — the home leg (linux) carries tailscale
-# through the network domain; the system legs always run it
-fleet_network() {
-	[ "$(uname -s)" = Linux ] || return 0
-	grep -q '"network"' "$1" && return 0
-	awk '{ print } /^[ \t]*enable = \[/ && !done { print "    \"network\""; done = 1 }' "$1" >"$1.net.$$" &&
-		mv "$1.net.$$" "$1"
-}
-
-# fleet_choose <identity file> <selections file> <title> — the dialogs;
-# fleet_mode becomes start|join|standalone (empty without whiptail: the
-# identity keeps its default)
+# fleet_choose <title> — the dialogs; fleet_mode becomes start|join|standalone
+# (empty without whiptail: the machine file keeps its default)
 fleet_choose() {
 	fleet_mode=''
 	command -v whiptail >/dev/null 2>&1 || return 0
-	# a node already on the tailnet skips the transport question
 	if command -v tailscale >/dev/null 2>&1 && tailscale status >/dev/null 2>&1; then
 		:
-	elif ! whiptail --title " $3 " --yes-button 'Turn on' --no-button 'Not now' --yesno \
+	elif ! whiptail --title " $1 " --yes-button 'Turn on' --no-button 'Not now' --yesno \
 		"Turn on tailscale?\n\nIt is the private network your machines' agents use to find and call each other (the agent fleet)." 12 70; then
-		fleet_set "$1" standalone
-		whiptail --title " $3 " --msgbox \
+		fleet_set standalone
+		whiptail --title " $1 " --msgbox \
 			"Tailscale and the agent fleet stay off on this machine.\n\nTurn them on any time: workstation fleet" 10 70
 		fleet_mode=standalone
 		return 0
 	fi
-	choice=$(whiptail --title " $3 " --notags --ok-button Select --cancel-button 'Not now' --menu \
+	choice=$(whiptail --title " $1 " --notags --ok-button Select --cancel-button 'Not now' --menu \
 		"This machine's agent fleet:" 13 70 3 \
 		start 'Start a new fleet (this is the first machine)' \
 		join 'Join a fleet (pair with every member on your tailnet)' \
 		standalone 'Standalone (no agent fleet)' 3>&1 1>&2 2>&3) || choice=standalone
 	case $choice in
 	start | join)
-		fleet_set "$1" member
-		fleet_network "$2"
+		fleet_set member
 		fleet_mode=$choice
 		;;
 	*)
-		fleet_set "$1" standalone
+		fleet_set standalone
 		fleet_mode=standalone
 		;;
 	esac
@@ -290,9 +254,8 @@ if [ -n "$verb" ]; then
 	shift
 fi
 
-# The read flake: explicit, then the enclosing checkout, then the staged
-# generation snapshot. A bare host with neither fails closed with the fix
-# named — the substrate has no embedded fallback to misread.
+# the read flake: explicit, then the enclosing checkout, then the staged
+# generation snapshot
 if [ -z "$flake" ] && [ -n "${WORKSTATION_FLAKE:-}" ]; then
 	flake=$WORKSTATION_FLAKE
 fi
@@ -315,166 +278,85 @@ fi
 if [ -z "$flake" ] && [ -e "${HOME:?}/.local/opt/workstation/flake" ]; then
 	flake=$HOME/.local/opt/workstation/flake
 fi
+machine=${flake:+$flake/hosts/machine.json}
 
-# The write plane switches the flake the reads resolved: a workstation
-# checkout (explicit, $WORKSTATION_FLAKE or the enclosing walk — the files
-# init captures) is handed to the driver, so an apply after an edit
-# (add/remove/peers, a pull) builds the checkout, never the previous
-# generation's snapshot. The staged snapshot and a foreign flake.nix stay
-# the driver's own default; an operator-set WORKSTATION_SWITCH_FLAKE wins.
+# a workstation checkout is handed to the driver, so an apply after an edit
+# builds the checkout; the staged snapshot and a foreign flake stay the
+# driver's default; an operator-set WORKSTATION_SWITCH_FLAKE wins
 switch_flake() {
 	[ -z "${WORKSTATION_SWITCH_FLAKE:-}" ] || return 0
 	[ -n "$flake" ] && [ "$flake" != "$HOME/.local/opt/workstation/flake" ] || return 0
-	[ -f "$flake/hosts/identity.nix" ] && [ -f "$flake/bin/workstation" ] || return 0
+	[ -f "$flake/hosts/machine.json" ] && [ -f "$flake/bin/workstation" ] || return 0
 	WORKSTATION_SWITCH_FLAKE=$(CDPATH='' cd -P "$flake" && pwd -P) || return 0
 	export WORKSTATION_SWITCH_FLAKE
 }
 
+# writable_machine <verb> — the checkout's machine file, editable
+writable_machine() {
+	[ -n "$flake" ] || die 'no checkout found — run inside the workstation repo clone' 2
+	[ -f "$machine" ] || die "$1: $machine missing (unexpected tree)" 1
+	[ -w "$machine" ] ||
+		die "$1: $machine is read-only — run inside the workstation repo clone (the staged snapshot is not editable)" 2
+}
+
 case "$verb" in
 init)
-	# Capture this machine's identity once, at install time. The file is
-	# the operator's (the local rewrite stays uncommitted — the repo
-	# carries no personal strings at HEAD; evals read the dirty tree),
-	# so the capture MERGES, never replaces: a field the file already
-	# sets wins over the detected default, the shipped template's
-	# TEMPLATE placeholders are the only lines rewritten in place, and
-	# a missing captured field is inserted before the closing brace.
-	# The operator's own surface — shellExtras, tailscaleFqdn, the
-	# comments — is never touched: a re-run of a converged identity
-	# leaves the file byte-identical.
-	[ -n "$flake" ] || die 'init: no checkout found — run inside the workstation repo clone' 2
-	[ -f "$flake/hosts/identity.nix" ] || die "init: $flake/hosts/identity.nix missing (unexpected tree)" 1
-	id_file=$flake/hosts/identity.nix
-	# uname -n is POSIX; hostname(1) is absent on minimal images
+	# capture once: a field the file already sets wins; the placeholders
+	# (TEMPLATE, /home/TEMPLATE) and absent fields are asked and filled
+	writable_machine init
 	host=$(uname -n 2>/dev/null)
 	host=${host%%.*}
 	user=${USER:-$(id -un)}
 	home_dir=$HOME
-	# nix-string escape (backslash, quote) — the capture writes a nix file
-	escape() {
-		printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'
-	}
-	# id_val <key> — the value the file carries for a captured field
-	# (the raw string between the quotes; empty when the key has no
-	# simple assignment). Values are only ever read: an existing line
-	# is kept byte for byte — an escape round-trip could corrupt an
-	# exotic value, and a re-emit could churn the operator's format.
-	id_val() {
-		sed -n "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*\"\(.*\)\"[[:space:]]*;.*/\1/p" \
-			"$id_file" | head -n 1
-	}
-	# id_raw <key> — the first line assigning the key in ANY form
-	# (empty when absent); a form id_val cannot read fails closed in
-	# capture_field below — init never guesses around a hand-written
-	# line and never writes a duplicate attribute.
-	id_raw() {
-		grep -E "^[[:space:]]*$1[[:space:]]*=" "$id_file" | head -n 1
-	}
-	# id_fill <key> <escaped-value> — merge one captured field: the
-	# shipped template's placeholders (TEMPLATE, and /home/TEMPLATE for
-	# home — the option's type requires an absolute path) are rewritten
-	# in place, an absent key is inserted before the closing brace, a set
-	# field is never touched, and the write is skipped entirely when the
-	# file already carries the final value. The value travels in the
-	# environment — never inside a regex or a sed/awk replacement, the
-	# only contexts where / & \ would be live.
-	id_fill() {
-		cur=$(id_val "$1")
-		[ "$cur" = "$2" ] && return 0
-		case $cur in
-		"" | TEMPLATE | "/home/TEMPLATE") ;;
-		*) return 0 ;; # the operator's value wins — untouched
-		esac
-		changed=1
-		tmp=$id_file.merge.$$
-		if [ -n "$cur" ]; then
-			ID_KEY=$1 ID_LINE=$(printf '  %s = "%s";' "$1" "$2") awk '
-				$0 ~ "^[ 	]*" ENVIRON["ID_KEY"] "[ 	]*=[ 	]*\"(TEMPLATE|/home/TEMPLATE)\"[ 	]*;" {
-					print ENVIRON["ID_LINE"]
-					next
-				}
-				{ print }
-			' "$id_file" >"$tmp" || { rm -f "$tmp"; die "init: could not rewrite $id_file" 1; }
-		else
-			ID_LINE=$(printf '  %s = "%s";' "$1" "$2") awk '
-				{ lines[NR] = $0 }
-				END {
-					at = 0
-					for (i = NR; i >= 1; i--)
-						if (lines[i] ~ /^[ \t]*\}[ \t]*$/) { at = i; break }
-					for (i = 1; i <= NR; i++) {
-						if (i == at) print ENVIRON["ID_LINE"]
-						print lines[i]
-					}
-					if (!at) print ENVIRON["ID_LINE"]
-				}
-			' "$id_file" >"$tmp" || { rm -f "$tmp"; die "init: could not rewrite $id_file" 1; }
-		fi
-		mv "$tmp" "$id_file"
-	}
-	# capture_field <key> <prompt> <detected> — one captured field's
-	# merge: the file's own value wins unless the field is absent or
-	# still the shipped placeholder; unreadable assignments fail
-	# closed; otherwise the value is asked (whiptail, prefilled with
-	# the detected default) and merged.
+	case "$(uname -m)" in
+	arm64 | aarch64) arch=aarch64 ;;
+	*) arch=x86_64 ;;
+	esac
+	case "$(uname -s)" in
+	Darwin) system=$arch-darwin ;;
+	*) system=$arch-linux ;;
+	esac
+	if command -v whiptail >/dev/null 2>&1; then
+		ask() {
+			whiptail --title ' workstation init ' --inputbox "$1" 9 68 "$2" \
+				3>&1 1>&2 2>&3
+		}
+	else
+		printf 'workstation: whiptail not on PATH — capturing the detected values verbatim\n' >&2
+		ask() {
+			printf '%s' "$2"
+		}
+	fi
+	changed=0
+	# capture_field <key> <prompt> <detected>
 	capture_field() {
-		cur=$(id_val "$1")
-		raw=$(id_raw "$1")
-		if [ -n "$raw" ] && [ -z "$cur" ]; then
-			die "init: $id_file assigns $1 in a form the capture cannot merge — the file wins; simplify the line or set it by hand" 1
-		fi
+		cur=$(jqx -r --arg k "$1" '.[$k] // "" | tostring' "$machine")
 		case $cur in
 		"" | TEMPLATE | "/home/TEMPLATE") ;;
 		*) return 0 ;;
 		esac
 		val=$(ask "$2" "$3") || die 'init: cancelled' 1
-		id_fill "$1" "$(escape "$val")"
+		machine_edit '.[$k] = $v' --arg k "$1" --arg v "$val"
+		changed=1
 	}
-	# The capture UI: whiptail dialogs prefilled with the detected values
-	# (the prerequisite ships in foundation; a bare box before its first
-	# switch falls back to the detected values verbatim).
-	if command -v whiptail >/dev/null 2>&1; then
-		ask() {
-			# ask <prompt> <default> — the value on stdout (whiptail writes
-			# the dialog to stderr; the fd swap brings the value back)
-			whiptail --title ' workstation init ' --inputbox "$1" 9 68 "$2" \
-				3>&1 1>&2 2>&3
-		}
-	else
-		printf 'workstation: whiptail not on PATH (prerequisite) — capturing the detected values verbatim\n' >&2
-		ask() {
-			# no dialog tool: the default is the capture
-			printf '%s' "$2"
-		}
-	fi
-	changed=0
 	capture_field host 'machine name (hostname)' "$host"
 	capture_field user 'operator user' "$user"
 	capture_field home 'home directory' "$home_dir"
+	if [ -z "$(jqx -r '.system // ""' "$machine")" ]; then
+		machine_edit '.system = $s' --arg s "$system"
+		changed=1
+	fi
 	if [ "$changed" -eq 1 ]; then
-		printf 'workstation: identity captured in %s/hosts/identity.nix (host=%s user=%s)\n' \
-			"$flake" "$(id_val host)" "$(id_val user)"
+		printf 'workstation: machine captured in %s (host=%s user=%s)\n' \
+			"$machine" "$(jqx -r .host "$machine")" "$(jqx -r .user "$machine")"
 	else
-		printf 'workstation: identity already captured in %s/hosts/identity.nix (host=%s user=%s) — merged; the fields you set were kept\n' \
-			"$flake" "$(id_val host)" "$(id_val user)"
+		printf 'workstation: machine already captured in %s (host=%s user=%s) — the fields you set were kept\n' \
+			"$machine" "$(jqx -r .host "$machine")" "$(jqx -r .user "$machine")"
 	fi
 	printf 'workstation: keep the file uncommitted\n'
-	# the capability selection: the template beside the identity (the
-	# add/remove verbs edit it; an existing selection is never clobbered)
-	if [ ! -f "$flake/hosts/selections.nix" ]; then
-		printf '{\n  enable = [\n  ];\n}\n' >"$flake/hosts/selections.nix"
-		printf 'workstation: selection template written to %s/hosts/selections.nix\n' "$flake"
-	fi
-	# The first activation rides init: one command per machine, the
-	# leg-native switch stays inside the shim (users never type it). The
-	# homeConfiguration's activationPackage is built from THIS flake — the
-	# flake's own pinned home-manager, never a stray CLI. After this switch
-	# the staged driver exists and `workstation apply` owns every later one.
-	# the fleet: asked once (a captured choice is kept; workstation fleet
-	# changes it), served by the switch below, joined after it
 	fleet_mode=''
-	if [ -z "$(fleet_get "$id_file")" ]; then
-		fleet_choose "$id_file" "$flake/hosts/selections.nix" 'workstation init'
+	if [ -z "$(fleet_get)" ]; then
+		fleet_choose 'workstation init'
 	fi
 	if [ "${WORKSTATION_NO_APPLY:-}" = 1 ]; then
 		printf 'workstation: capture done; apply skipped (WORKSTATION_NO_APPLY=1) — next: workstation apply\n'
@@ -487,16 +369,13 @@ init)
 			exit 0
 		fi
 	fi
-	key="$user@$host"
-	# the leg selects by PLATFORM, not by installed CLIs: a fresh mac has no
-	# darwin-rebuild yet, and the homeConfiguration key of the linux leg is
-	# the same identity-derived string on every host
+	key="$(jqx -r .user "$machine")@$(jqx -r .host "$machine")"
 	case "$(uname -s)" in
 	Darwin)
 		printf 'workstation: first activation (darwin plane, %s) ...\n' "$key"
 		drv=$(nix --extra-experimental-features 'nix-command flakes' \
-			build --no-link --print-out-paths \
-			github:LnL7/nix-darwin#darwin-rebuild)
+			build --no-link --print-out-paths --inputs-from "$flake" \
+			nix-darwin#darwin-rebuild)
 		sudo env NIX_CONFIG="extra-experimental-features = nix-command flakes" \
 			"$drv/bin/darwin-rebuild" switch --flake "$flake#$key" ||
 			die 'init: the first darwin switch failed' 1
@@ -506,30 +385,23 @@ init)
 		;;
 	esac
 	printf 'workstation: first activation (home plane, %s) ...\n' "$key"
-	# one invocation builds AND prints the out path - a separate eval would
-	# re-evaluate the dirty tree and could return a path this run never built
 	store_path=$(nix --extra-experimental-features 'nix-command flakes' \
 		build --no-link --print-out-paths \
-		"$flake#homeConfigurations.$key.activationPackage")
+		"$flake#homeConfigurations.\"$key\".activationPackage")
 	"$store_path/activate"
 	printf 'workstation: applied — every later update is: workstation apply\n'
 	fleet_after "$fleet_mode"
 	;;
 fleet)
-	# the fleet choice, the switch that serves it, the login and the join
 	[ $# -eq 0 ] || die 'fleet takes no arguments' 2
-	[ -n "$flake" ] || die 'no checkout found — run inside the workstation repo clone' 2
-	id_file=$flake/hosts/identity.nix
-	[ -f "$id_file" ] || die "fleet: $id_file missing (unexpected tree)" 1
-	[ -w "$id_file" ] ||
-		die "fleet: $id_file is read-only — run inside the workstation repo clone (the staged snapshot is not editable)" 2
-	if grep -q '"TEMPLATE"' "$id_file"; then
-		die 'identity not captured — run: workstation init' 2
+	writable_machine fleet
+	if uncaptured "$machine"; then
+		die 'machine not captured — run: workstation init' 2
 	fi
 	command -v whiptail >/dev/null 2>&1 || die 'fleet: the dialogs need whiptail (it ships with the substrate)' 2
-	before=$(cat "$id_file" "$flake/hosts/selections.nix" 2>/dev/null | cksum)
-	fleet_choose "$id_file" "$flake/hosts/selections.nix" 'workstation fleet'
-	if [ "$before" != "$(cat "$id_file" "$flake/hosts/selections.nix" 2>/dev/null | cksum)" ]; then
+	before=$(cksum <"$machine")
+	fleet_choose 'workstation fleet'
+	if [ "$before" != "$(cksum <"$machine")" ]; then
 		command -v workstation-switch >/dev/null 2>&1 ||
 			die 'the write plane is the generation'\''s workstation-switch driver and it is not on PATH — apply the substrate first (the home lane stages it)' 2
 		switch_flake
@@ -548,25 +420,19 @@ fleet)
 status | plan | capabilities)
 	[ -n "$flake" ] ||
 		die 'no flake to read — pass --flake PATH, run inside a checkout, or apply the substrate once (it stages ~/.local/opt/workstation/flake)' 2
-	# optional attrpath scope: `workstation capabilities editor` reads
-	# #workstation.report.capabilities.editor — every element must be a
-	# plain attribute name (never shell-interpreted, never an eval escape)
 	scope=''
 	for arg in "$@"; do
 		case "$arg" in
-		*[!A-Za-z0-9_.-]*)
+		*[!A-Za-z0-9_./-]*)
 			die "invalid scope element: $arg (attribute names only)" 2
 			;;
 		esac
-		scope="$scope.$arg"
+		scope="$scope.\"$arg\""
 	done
 	exec nix --extra-experimental-features 'nix-command flakes' \
 		eval --json "$flake#workstation.report.$verb$scope"
 	;;
 selected)
-	# this machine's resolved selection: #workstation.report.selections
-	# verbatim (the same thin-wrapper contract as the other reads — the
-	# rows carry per-path on/off/baseline/unavailable + dependency notes)
 	[ -n "$flake" ] ||
 		die 'no flake to read — pass --flake PATH, run inside a checkout, or apply the substrate once (it stages ~/.local/opt/workstation/flake)' 2
 	[ $# -eq 0 ] || die 'selected takes no arguments' 2
@@ -574,96 +440,63 @@ selected)
 		eval --json "$flake#workstation.report.selections"
 	;;
 add | remove)
-	# the selection verbs: validate every path against the walk-derived
-	# report BEFORE any file write (no shell or nix injection surface), edit
-	# hosts/selections.nix canonically, offer the apply
 	[ $# -ge 1 ] || die "usage: workstation $verb <path>... (see: workstation help)" 2
-	[ -n "$flake" ] ||
-		die 'no flake to read — pass --flake PATH, run inside a checkout, or apply the substrate once (it stages ~/.local/opt/workstation/flake)' 2
-	sel_file=$flake/hosts/selections.nix
-	[ -f "$sel_file" ] || die "selections: $sel_file missing (unexpected tree — workstation init writes it beside the identity)" 1
-	pins_enable=$(nix_eval "$flake#workstation.report.selections.pins.enable") ||
-		die 'selections: the report did not answer (nix eval failed — is nix on PATH?)' 1
-	pins_disable=$(nix_eval "$flake#workstation.report.selections.pins.disable") ||
-		die 'selections: the report did not answer (nix eval failed — is nix on PATH?)' 1
-	enable_list=$(toList "$pins_enable")
-	disable_list=$(toList "$pins_disable")
+	writable_machine selections
 	changed=0
 	for path do
-		# the grammar first: <domain> or <domain>/<member>, [A-Za-z0-9_-]
-		# only — a bad path never reaches an eval attrpath or the file
 		case $path in
 		*[!A-Za-z0-9_/-]* | "" | /* | */ | */*/*)
 			die "invalid path: $path (the grammar is <domain> or <domain>/<member>, [A-Za-z0-9_-] only)" 2
 			;;
 		esac
-		# the walk-derived row: kind, baseline, default, availability —
-		# the quoted attrpath segment is safe (the grammar excluded the
-		# quote) and an unknown path fails the eval
 		row=$(nix_eval "$flake#workstation.report.selectable.\"$path\"") ||
 			die "unknown path: $path (workstation selected lists the valid paths)" 2
 		if printf '%s' "$row" | grep -q '"baseline":true'; then
 			die "$path is baseline — always on" 2
 		fi
-		if printf '%s' "$row" | grep -q '"available":false'; then
-			printf 'workstation: note — %s deploys nothing on this platform (selected marks it unavailable)\n' "$path" >&2
-		fi
+		keys=$(printf '%s' "$path" | jqx -Rc 'split("/")')
+		cur=$(jqx -r --argjson p "$keys" '.settings.workstation | getpath($p + ["enable"]) | if . == null then "unset" else tostring end' "$machine")
 		if [ "$verb" = add ]; then
-			if has "$enable_list" "$path"; then
+			if [ "$cur" = true ]; then
 				printf 'workstation: %s already selected\n' "$path"
 				continue
 			fi
-			enable_list=$(append "$enable_list" "$path")
-			disable_list=$(drop "$disable_list" "$path")
+			machine_edit '.settings.workstation |= (setpath($p + ["enable"]; true)
+				| if ($p | length) == 2 and getpath([$p[0], "enable"]) == false
+				  then setpath([$p[0], "enable"]; true) else . end)' --argjson p "$keys"
 			changed=1
 			printf 'workstation: %s selected\n' "$path"
 		else
 			if printf '%s' "$row" | grep -q '"default":true'; then
-				pin_default=yes
+				default_on=yes
 			else
-				pin_default=no
+				default_on=no
 			fi
-			if has "$enable_list" "$path"; then
-				enable_list=$(drop "$enable_list" "$path")
-				# a default-on path springs back on unless pinned off
-				[ "$pin_default" = yes ] && disable_list=$(append "$disable_list" "$path")
+			if [ "$cur" = false ]; then
+				printf 'workstation: %s already off\n' "$path"
+			elif [ "$cur" = true ] && [ "$default_on" = no ]; then
+				machine_edit '.settings.workstation |= delpaths([$p + ["enable"]])' --argjson p "$keys"
 				changed=1
 				printf 'workstation: %s removed\n' "$path"
-			elif has "$disable_list" "$path"; then
-				printf 'workstation: %s already off\n' "$path"
-			elif [ "$pin_default" = yes ]; then
-				disable_list=$(append "$disable_list" "$path")
+			elif [ "$default_on" = yes ]; then
+				machine_edit '.settings.workstation |= setpath($p + ["enable"]; false)' --argjson p "$keys"
 				changed=1
-				printf 'workstation: %s removed (was on by default)\n' "$path"
+				printf 'workstation: %s removed\n' "$path"
 			else
 				printf 'workstation: %s already off (never selected)\n' "$path"
 			fi
 		fi
 	done
 	if [ "$changed" = 1 ]; then
-		{
-			printf "# The machine's capability selection — edited by workstation add|remove.\n"
-			printf '# Local edit — keep it uncommitted (the committed copy is the empty template).\n'
-			printf '{\n  enable = [\n'
-			quote_lines "$enable_list"
-			printf '  ];\n'
-			if [ -n "$disable_list" ]; then
-				printf '  disable = [\n'
-				quote_lines "$disable_list"
-				printf '  ];\n'
-			fi
-			printf '}\n'
-		} >"$sel_file"
-		printf 'workstation: selection saved in %s\n' "$sel_file"
+		machine_edit 'def prune: if type == "object" then with_entries(.value |= prune) | with_entries(select(.value != {})) else . end;
+			.settings |= prune'
+		printf 'workstation: selection saved in %s\n' "$machine"
 		offer_apply
 	else
 		printf 'workstation: selection unchanged\n'
 	fi
 	;;
 peers)
-	# A2A peer discovery into hosts/peers.nix (the machine-local file):
-	# the helper probes, the operator picks and configures, the file is
-	# rewritten whole; the apply is offered only when the file changed
 	[ $# -eq 0 ] || die 'peers takes no arguments' 2
 	[ -n "$flake" ] ||
 		die 'no checkout found — run inside the workstation repo clone' 2
@@ -672,8 +505,7 @@ peers)
 	[ -w "$peers_file" ] ||
 		die "peers: $peers_file is read-only — run inside the workstation repo clone (the staged snapshot is not editable)" 2
 	helper=$(peers_helper) || die 'peers: the discovery helper did not build (nix build failed)' 1
-	# the helper's exit: 0 nothing to apply, 10 saved (the file or a
-	# pairing), anything else a failure
+	# the helper's exit: 0 nothing to apply, 10 saved, anything else a failure
 	before=$(cksum <"$peers_file")
 	rc=0
 	"$helper/bin/workstation-peers" "$peers_file" || rc=$?
@@ -686,12 +518,9 @@ peers)
 	fi
 	;;
 apply | rollback | update | sync)
-	# The identity gate: writes refuse until `workstation init` captured
-	# this machine's identity — switching the bare template would create a
-	# TEMPLATE user's home on a real machine.
-	if [ -n "$flake" ] && [ -f "$flake/hosts/identity.nix" ] &&
-		grep -q '"TEMPLATE"' "$flake/hosts/identity.nix"; then
-		die 'identity not captured — run: workstation init' 2
+	# writes refuse until init captured the machine
+	if [ -n "$flake" ] && [ -f "$flake/hosts/machine.json" ] && uncaptured "$flake/hosts/machine.json"; then
+		die 'machine not captured — run: workstation init' 2
 	fi
 	if command -v workstation-switch >/dev/null 2>&1; then
 		switch_flake

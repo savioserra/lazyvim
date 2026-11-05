@@ -1,40 +1,10 @@
-# The shell fragment lane's ORDER CONTRACT. The rc lane's composition order
-# is PATH semantics — and PATH semantics live on ONE GLOBAL SCALE: the
-# round-tens `order` is the fragment's slot in the composed rc file (the
-# user-local bin fragment leads at 10, the secrets op-env rides 30, the
-# aliases own the 40s, the per-shell prompt init the 50s/60s, the editor
-# env 70, the direnv hook 80/90), so cross-capability composition compares
-# the numbers NUMERICALLY — never lexicographically (a "/100" slot must
-# trail "/90", not slot between "/10" and "/20"). A new capability slots
-# its fragments between its neighbours' numbers without renumbering
-# anyone.
-#
-# Mechanically: each fragment carries `order` (its round-tens rc slot on
-# the shared scale), `domain` (its declaring capability's id — the sort's
-# tiebreak, so distinct domains sharing a number compose in registry
-# order), and the optional trailing rank (`trailing`, the operator's
-# override plane). The ONE sort both consumers read (the home leg's
-# rendered rc files and the report fold's fragmentOrder) composes by
-# (trailing, order, domain) — the managed lanes first in slot order, then
-# the operator's fragment after every domain (the foundation shell.extras
-# contract: the operator's lines compose last and may override them). The
-# module system's reverse-listOf merge is deliberately not the contract.
-#
-# The contract fails the eval on ambiguity: one id carries exactly one
-# slot and one domain, and two distinct ids of the SAME domain may not
-# share a slot ON THE SAME TARGET (which one sources first there is
-# exactly the PATH semantics the domain exists to declare — never a silent
-# tie-break). The same (domain, slot) on disjoint targets is the per-shell
-# body pair (managed-eza / managed-eza-zsh) and never composes in one rc
-# file. Distinct domains sharing a number is by design — the numbers are
-# the shared scale and compose deterministically.
+# The rc lane order: fragments sort by (trailing, order, domain); an id
+# holds one slot; one domain never shares a slot on one target.
 { lib }:
 let
   sortedFragments =
     fragments:
     let
-      # the same fragment id may deploy to many targets (one body, three
-      # rc files); it always carries exactly one slot and one domain
       ids = lib.unique (map (f: f.id) fragments);
       idSlots = map (
         id:
@@ -54,10 +24,6 @@ let
 
       ambiguous = lib.filter (s: lib.length s.orders != 1 || lib.length s.domains != 1) idSlots;
 
-      # a slot claimed by two distinct ids of the SAME domain on the SAME
-      # target is an ambiguous lane (which one sources first there is
-      # exactly the PATH semantics the domain exists to declare) — never a
-      # silent tie-break
       slotGroups = lib.mapAttrsToList (_: ss: ss) (
         builtins.groupBy (s: s.domain + "/" + toString s.order) idSlots
       );
@@ -75,11 +41,6 @@ let
         }: ${lib.concatStringsSep " + " (map (s: s.id) ss)}"
       ) shared;
 
-      # the composition key: the trailing rank first (the managed lanes,
-      # then the operator's override plane), then the NUMERIC order (the
-      # global round-tens scale — a list key, so `order` never degrades to
-      # a string compare), then the domain (the registry-order tiebreak
-      # for shared numbers)
       laneKey = f: [
         (if (f.trailing or false) then 1 else 0)
         f.order

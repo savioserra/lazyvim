@@ -1,21 +1,9 @@
-# The theme domain: tokens.lua is the canonical byte source and nix reads
-# it directly — the theme capability owns data, not home targets.
-#
-# The extraction is a fail-closed line parse of the token module's closed
-# blocks (M.slots, M.palette.dark, M.palette.light): every listed key must
-# exist, every value must match its block's value shape, and the extracted
-# set is asserted non-empty — a tokens.lua restructure that the parser can
-# no longer read fails the eval loudly, never silently renders empty
-# tokens. Consumers substitute slots into their templates
-# (workstationTheme.lib exposes the surface; the flake output carries it).
-{
-  lib,
-  self,
-}:
+# The theme library: palette and slots parsed from tokens.lua, slot
+# rendering for templates.
+{ lib }:
 let
   lines = lib.splitString "\n" (builtins.readFile ./tokens.lua);
 
-  # the lines of a closed `M.<name> = {` ... `}` block
   blockLines =
     name:
     let
@@ -29,7 +17,6 @@ let
     in
     lib.sublist 0 end body;
 
-  # the lines of a nested `<name> = {` ... `<tab>},` section inside a block
   sectionLines =
     section: body:
     let
@@ -71,15 +58,11 @@ let
     );
   };
 
-  # fail closed on an empty extraction (a restructured tokens.lua the
-  # parser cannot read must die here, not render empty tokens downstream)
   assertNonEmpty =
     attrs: what:
     assert attrs != { } || throw "workstation-theme: extracted ${what} is empty";
     attrs;
 
-  # the substitution helper: one replaceStrings call for every extracted
-  # slot, `{{ .theme.slots.<name> }}` -> the slot value
   renderSlots =
     template:
     let

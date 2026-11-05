@@ -24,12 +24,12 @@ Read the nearest scoped `AGENTS.md` and follow the owning reference:
 - A capability that names a tool ships the tool: resources-without-runtime (a clone, a symlink or a config with no provisioned, working binary) is a defect, not a documented manual step. Verify must smoke the consumer (`hermes --version`-class checks), not only fingerprints.
 - Edit source, not deployed state. Every payload lives with its owning capability under `modules/<domain>/` (module and bytes co-located); home state is declared and linked from the store, never checked in as deployed state. Never implicitly overwrite a clone; legacy payloads retire through the declared retire list.
 - `workstation` is the sole public lifecycle interface (apply / rollback / update / sync / init / add / remove); the staged write-plane driver it execs is internal, never user-facing.
-- Keep core domain-neutral: no cross-domain imports; composition happens through the capability walk (`nix/lib/capabilities.nix`).
+- Keep domains self-contained: a domain declares its own options; it contributes to another only through an option that domain declares, guarded by its enable; no cross-domain imports.
 - Payload stays data: Lua appears only as deployed editor/theme data read as bytes, never executed.
 - Tools come from the one nixpkgs input (`nixos-unstable`, the lock is the version surface), or an inline pin where nixpkgs lacks coverage (documented in the owning module). No unpinned downloads, no `sudo`, no OS-package-manager installation of managed tools.
 - Keep language composition in the Neovim profile. Go is an editor toolchain here (no root Go CLI, no services, no Makefiles).
 - Never commit generated plugin/Mason/parser/cache/session/history state or secret values. Secret-reference/vault work requires explicit user `/skill:secrets` invocation; authentication stays user-owned.
-- The identity gate reds on personal strings anywhere in the tracked tree; `hosts/identity.nix` (the machine's captured identity) stays uncommitted.
+- The identity gate reds on personal strings anywhere in the tracked tree; `hosts/machine.json` (the machine's captured identity and settings) stays uncommitted.
 - Phase markers may ride transient comments for cross-phase handover; they
   do not ship in code — no phase-named files, options, config keys or
   commit messages survive to the merged tree.

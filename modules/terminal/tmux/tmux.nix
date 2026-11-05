@@ -1,15 +1,5 @@
-# The tmux capability (terminal/tmux): the .tmux.conf payload, the XDG
-# link, the pinned plugin checkouts, and the deployed pin manifest
-# (docs/absorption.md). The plugin checkouts are fetchFromGitHub pins from
-# the module's OWN declared pin data (one pin, one owner, one surface —
-# owner/repo/rev/hash literals here, the hashed hermetic fetch — never a
-# network-hungry fetchGit outside the lock). Deployed as store tree claims
-# at the managed plugin root. The manifest renders from the terminal
-# domain's declared pin rows (workstation.terminal.pins — the cross-member
-# contract in nix/modules/workstation-options.nix): this capability
-# contributes its plugin rows and renders the file, so the manifest is
-# always exactly the rows of the checkouts that deployed beside it. The
-# stale tmux2k theme path retires through the declared retire list.
+# The tmux member: .tmux.conf, the pinned plugin checkouts and their pin
+# manifest (~/.tmux/plugins.pins.json).
 {
   config,
   lib,
@@ -17,11 +7,6 @@
   ...
 }:
 let
-  # the checkout pins: dir name -> owner/repo/rev/hash, the capability's
-  # declared surface (a bump moves the row, its hash and the consumer
-  # together). tpm leads by deployment — it must exist before the first
-  # tmux start (the run-shell at the end of .tmux.conf sources it); store
-  # closure is order-free, the conf's own ordering is the contract.
   pluginPins = {
     "tpm" = {
       owner = "tmux-plugins";
@@ -68,14 +53,43 @@ let
 
 in
 {
+  options.workstation.terminal = {
+    tmux.enable = lib.mkEnableOption "the tmux config and plugin set" // {
+      default = true;
+    };
+    pins = lib.mkOption {
+      type = lib.types.attrsOf (
+        lib.types.submodule {
+          options = {
+            url = lib.mkOption {
+              type = lib.types.str;
+              description = "The upstream repository URL.";
+            };
+            rev = lib.mkOption {
+              type = lib.types.str;
+              description = "The pinned commit.";
+            };
+            version = lib.mkOption {
+              type = lib.types.nullOr lib.types.str;
+              default = null;
+              description = "The upstream release the pin carries.";
+            };
+            repo_linux_amd64_sha256 = lib.mkOption {
+              type = lib.types.nullOr lib.types.str;
+              default = null;
+              description = "The repo-tracked linux build's sha256.";
+            };
+          };
+        }
+      );
+      default = { };
+      description = "The deployed plugin pin rows (~/.tmux/plugins.pins.json), keyed by plugin name.";
+    };
+  };
+
   config = lib.mkIf (config.workstation.terminal.enable && config.workstation.terminal.tmux.enable) {
     home.packages = [ pkgs.tmux ];
 
-    # the reply-drain wrapper (drains the late OSC 11 colour reply that
-    # leaks as `11;rgb:...` on high-latency links) rides the rc lane
-    # (bash + zsh) at slot 30 — session glue ahead of the alias block on
-    # the shared scale. A repo payload file: the lane reads payload bytes
-    # at eval, so a derivation here would be import-from-derivation
     workstation.shell.fragments = [
       {
         target = ".bashrc";
@@ -95,8 +109,6 @@ in
       }
     ];
 
-    # this capability's manifest rows (the nunchux capability contributes
-    # its own when it deploys — the manifest renders the union)
     workstation.terminal.pins = builtins.mapAttrs (_: pin: {
       url = "https://github.com/${pin.owner}/${pin.repo}";
       inherit (pin) rev;
@@ -104,17 +116,10 @@ in
 
     home.file = lib.mkMerge (
       [
-        # the managed config: the payload file, and the XDG link to it
-        # (intra-home, declared)
         {
           ".tmux.conf".source = ./files/.tmux.conf;
           ".config/tmux/tmux.conf".source =
             config.lib.file.mkOutOfStoreSymlink "${config.home.homeDirectory}/.tmux.conf";
-          # the pin manifest: the declared rows (this capability's plugins
-          # plus any member rows set beside it), deployed beside the
-          # checkouts — the verify lane's only anchor (verified against the
-          # DEPLOYED pin, never a repo file). Nulls drop: a plugin row
-          # carries url and rev only.
           ".tmux/plugins.pins.json".text =
             builtins.toJSON (
               builtins.mapAttrs (_: row: lib.filterAttrs (_: v: v != null) row) config.workstation.terminal.pins
@@ -127,8 +132,6 @@ in
       }) plugins
     );
 
-    # the stale tmux2k theme path (the slot template the capability
-    # retired) — the capability's tombstone
     workstation.retire = [ ".config/tmux/themes/tmux2k.conf" ];
   };
 }

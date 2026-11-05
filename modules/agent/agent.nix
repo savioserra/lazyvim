@@ -1,38 +1,14 @@
-# The agent domain: hermes (runtime pin, launcher, skills, extensions)
-# and herdr. Hot-home owners: the pinned checkout
-# (~/.hermes/hermes-agent - clone/fetch only when absent or clean-and-
-# behind; dirty or runtime-advanced trees are never touched; a failed git
-# step defers with a named receipt). The deployed pin manifest
-# (.local/opt/hermes/pin.json) is the verify lane's only anchor.
-#
-# skills: one entry symlink per skill per target profile; the skills
-# PARENT stays hot (hermes seeds its bundled skills there) - a declared
-# name shadows a bundled one (asserted at eval). extensions: gateway
-# plugin trees as derivations, entry-linked into ~/.hermes/plugins.
-# Skill payloads are never copied into hot home.
-#
-# The interpreter is pkgs.python314, floored at the release the pinned
-# rev's pm/lock.json carries (loud eval on mismatch). herdr has no
-# nixpkgs coverage: one download pin, inline below.
-#
-# a2a: the A2A node (programs.hermes.a2a) — the inbound platform, the
-# a2a toolset, the tailnet bind and the declared peers, converged into
-# config.yaml/.env by an activation through the hermes CLI
-# (files/a2a-converge.sh); peers come from the machine's discovery file
-# (hosts/peers.nix, written by `workstation peers`).
+# The agent domain: hermes (pinned checkout, launcher, interpreter, skills,
+# extensions, the A2A node, the fleet member service) and herdr.
 {
   config,
   lib,
   pkgs,
-  self,
   ...
 }:
 let
   hermes = config.programs.hermes;
 
-  # the runtime pin: the agent domain's own declared data (owner/repo/rev
-  # + the hermetic hash - one pin, one owner, one surface). The tree feeds
-  # the interpreter floor's lock read; it never enters the closure.
   hermesRev = "b23600860f82bd66d345c0a1baefd0f264605955";
   hermesTree = pkgs.fetchFromGitHub {
     owner = "NousResearch";
@@ -46,11 +22,6 @@ let
     tree = hermesTree;
   };
 
-  # the interpreter's version floor: the release the pinned hermes rev's
-  # pm/lock.json names (packages.python.version — "3.14.7+<buildtag>"; the
-  # semver prefix is the floor). Read from the pinned tree so a hermes rev
-  # bump re-derives the floor at eval — the eval dies naming both versions
-  # when the nixpkgs lock lags.
   lockedPythonVersion =
     if hermes.pin == null then
       null
@@ -70,12 +41,6 @@ let
       || throw "workstation-agent: pkgs.python314 ${pkgs.python314.version} predates the release the pinned hermes rev's pm/lock.json carries (${lockedPythonVersion}) — update the nixpkgs lock, or the hermes-agent rev must move to a lock the nixpkgs set satisfies";
     pkgs.python314;
 
-  # herdr keeps a download pin: no nixpkgs coverage (upstream ships
-  # release binaries only — no package in either pinned nixpkgs set), so
-  # it stays the substrate's ONE download pin, inline in its owning
-  # module (one pin, one owner, one surface — a bump moves these rows and
-  # the consumer together). Archive-less: the fetched bytes ARE the
-  # binary.
   herdrVersion = "0.9.0";
   herdrPin =
     if pkgs.stdenv.hostPlatform.isx86_64 && pkgs.stdenv.hostPlatform.isLinux then
@@ -100,20 +65,10 @@ let
         install -Dm755 "$src" "$out/bin/herdr"
       '';
 
-  launcher =
-    pkgs.runCommand "ws-hermes-launcher" { }
-      # the payload lands 0644 in git; the launcher is a PATH entry, so the
-      # store copy carries the executable bit (the old envelope's
-      # `executable: true`, native)
-      ''
-        install -Dm755 ${./files/hermes-launcher.sh} "$out/hermes-launcher"
-      '';
+  launcher = pkgs.runCommand "ws-hermes-launcher" { } ''
+    install -Dm755 ${./files/hermes-launcher.sh} "$out/hermes-launcher"
+  '';
 
-  # the deployed pin manifest: the verify lane's only anchor (the checkout
-  # HEAD and the interpreter are verified against the DEPLOYED pin, never a
-  # repo file). Null-safe on the pin: a null pin deploys an empty engine
-  # row and the module's assertion fires the friendly message — the eval
-  # never dies on a type error first.
   pinJson = builtins.toJSON {
     engine = {
       url = if hermes.pin != null then hermes.pin.url else "";
@@ -122,21 +77,16 @@ let
     python = pkgs.python314.version;
   };
 
-  # --- the A2A node --------------------------------------------------------
   a2a = hermes.a2a;
   helpers = import ./packages.nix { inherit pkgs; };
-  # the fleet member service runs where the node serves on the tailnet
   fleetOn = a2a.enable && a2a.tailnet && a2a.fleet.enable;
   fleetEnv = {
     WORKSTATION_FLEET_PORT = toString a2a.fleet.port;
     WORKSTATION_A2A_PORT = toString a2a.port;
     WORKSTATION_HERMES = "${hermes.package}/hermes-launcher";
   };
-  # the outbound token's env name per peer: the config entry carries the
-  # ${...} reference, the operator's .env carries the value
   tokenEnv = alias: "A2A_PEER_TOKEN_" + lib.toUpper (lib.replaceStrings [ "-" ] [ "_" ] alias);
   dnsLabel = "[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?";
-  # the declared state the converge reads (a store file: no secret values)
   a2aDesired = pkgs.writeText "hermes-a2a.json" (
     builtins.toJSON {
       inherit (a2a) enable port tailnet;
@@ -153,18 +103,74 @@ let
     }
   );
 
-  # the agent's authored skills: the option setters' source - each tree
-  # serves as ONE entry symlink per target profile (the rendering lane
-  # lives in nix/modules/workstation-options.nix, so the report fold
-  # attributes every entry to the capability that set it)
-  authoredSkills = import ./skills.nix { inherit self; };
+  authoredSkills = {
+    secrets = ./skills/secrets;
+  };
+
+  skillEntries = lib.flatten (
+    lib.mapAttrsToList (
+      name: skill:
+      map (profile: {
+        path =
+          if profile == "default" then
+            ".hermes/skills/${name}"
+          else
+            ".hermes/profiles/${profile}/skills/${name}";
+        source = skill.source;
+      }) skill.profiles
+    ) (lib.filterAttrs (_: skill: skill.enable) hermes.skills)
+  );
+  extensionEntries = lib.mapAttrsToList (name: extension: {
+    path = ".hermes/plugins/${name}";
+    source = extension.package;
+  }) (lib.filterAttrs (_: extension: extension.enable) hermes.extensions);
+  entries = skillEntries ++ extensionEntries;
 in
 {
+  options.workstation.agent.enable =
+    lib.mkEnableOption "the hermes agent runtime and its served skills"
+    // {
+      default = true;
+    };
+
   options.programs.hermes = {
-    # the runtime pin: the flake input's fetchGit rev, surfaced per
-    # capability. Unset means the agent domain serves no runtime: an eval
-    # that reads hermes surfaces without a pin fails loudly with the name
-    # of the missing flake output.
+    skills = lib.mkOption {
+      type = lib.types.attrsOf (
+        lib.types.submodule {
+          options = {
+            enable = lib.mkEnableOption "serving this skill to the target profiles";
+            profiles = lib.mkOption {
+              type = lib.types.listOf lib.types.str;
+              default = [ "default" ];
+              description = "Target hermes profiles: default is ~/.hermes/skills, any other name ~/.hermes/profiles/<name>/skills.";
+            };
+            source = lib.mkOption {
+              type = lib.types.path;
+              description = "The skill tree as a store path.";
+            };
+          };
+        }
+      );
+      default = { };
+      description = "Skills served to hermes profiles as entry symlinks.";
+    };
+
+    extensions = lib.mkOption {
+      type = lib.types.attrsOf (
+        lib.types.submodule {
+          options = {
+            enable = lib.mkEnableOption "linking this extension into ~/.hermes/plugins";
+            package = lib.mkOption {
+              type = lib.types.package;
+              description = "The gateway plugin tree.";
+            };
+          };
+        }
+      );
+      default = { };
+      description = "Gateway extensions linked as entry symlinks into ~/.hermes/plugins/<name>.";
+    };
+
     pin = lib.mkOption {
       type = lib.types.nullOr (
         lib.types.submodule {
@@ -296,13 +302,7 @@ in
     };
   };
 
-  # the selection gate (workstation.agent.enable, nix/lib/selections.nix)
-  # wraps this CONFIG block: the option DECLARATIONS above
-  # (programs.hermes.pin/package) stay ungated so every composition that
-  # loads the domain modules still carries them; disabled = the definitions
-  # skip, never the files
   config = lib.mkIf config.workstation.agent.enable {
-    # --- the eval-time contract --------------------------------------------
     assertions = [
       {
         assertion = hermes.pin != null;
@@ -327,32 +327,33 @@ in
         + "(a DNS label: lowercase letters, digits, '-')";
     }) (builtins.attrNames a2a.peers);
 
-    # --- the agent's authored skills + the runtime stack --------------------
-    # (the skill ENTRY rendering lives in nix/modules/workstation-options.nix
-    # — the cross-capability lane — so the report fold attributes every
-    # entry to the capability that set it)
     programs.hermes.skills = lib.mapAttrs (_: source: {
       enable = true;
       inherit source;
     }) authoredSkills;
 
-    home.file = {
-      # the pinned interpreter tree the launcher resolves at run time
-      # (pkgs.python314, floored at the locked release — see above)
-      ".local/opt/hermes/python".source = hermesPython;
-      # the pin manifest: the verify lane's anchor (the deployed pin,
-      # never a repo file)
-      ".local/opt/hermes/pin.json".text = pinJson;
-      # the engine launcher: the payload file at its runtime home...
-      ".local/opt/hermes/bin/hermes".source = "${hermes.package}/hermes-launcher";
-      # ...and the PATH entry — the store path links directly, no
-      # ../opt indirection
-      ".local/bin/hermes".source = "${hermes.package}/hermes-launcher";
-      # herdr: the one download pin, the same direct store-path link
-      ".local/bin/herdr".source = "${herdr}/bin/herdr";
-    };
+    home.file =
+      builtins.listToAttrs (map (entry: lib.nameValuePair entry.path { source = entry.source; }) entries)
+      // {
+        ".local/opt/hermes/python".source = hermesPython;
+        ".local/opt/hermes/pin.json".text = pinJson;
+        ".local/opt/hermes/bin/hermes".source = "${hermes.package}/hermes-launcher";
+        ".local/bin/hermes".source = "${hermes.package}/hermes-launcher";
+        ".local/bin/herdr".source = "${herdr}/bin/herdr";
+      };
 
-    # --- the pinned checkout (hot home; activation-managed) ----------------
+    home.activation.adopt-hermes-entries = lib.hm.dag.entryBefore [ "checkLinkTargets" ] (
+      lib.concatMapStrings (entry: ''
+        target="$HOME/${entry.path}"
+        if [ -e "$target" ] && [ ! -L "$target" ]; then
+          rm -rf "$target"
+          mkdir -p "$HOME/.local/state/workstation"
+          echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) adopt ${entry.path}" >> "$HOME/.local/state/workstation/retire.log"
+          echo "workstation: adopted ${entry.path}"
+        fi
+      '') entries
+    );
+
     home.activation.ensure-hermes-checkout = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       url=${lib.escapeShellArg (if hermes.pin != null then hermes.pin.url else "")}
       rev=${lib.escapeShellArg (if hermes.pin != null then hermes.pin.rev else "")}
@@ -386,11 +387,6 @@ in
       fi
     '';
 
-    # --- the A2A node (hot home; activation-managed) ------------------------
-    # config.yaml and .env are the runtime's: the converge writes only the
-    # declared keys, through the hermes CLI, and retracts the ones the
-    # declaration drops (a disabled node retracts everything it set). A
-    # failed step defers with a named receipt — the switch never fails on it.
     home.activation.converge-hermes-a2a =
       lib.hm.dag.entryAfter [ "linkGeneration" "ensure-hermes-checkout" ]
         ''
@@ -403,11 +399,6 @@ in
           fi
         '';
 
-    # --- the fleet member service --------------------------------------------
-    # the same program on both platforms: a systemd user unit (linux) or a
-    # launchd agent (darwin), restarted on failure, bound to the tailnet
-    # IPv4 once the tailnet is up. The linux unit is a plain config file
-    # plus its own activation: home-manager's systemd module skips root.
     xdg.configFile."systemd/user/workstation-fleet.service" =
       lib.mkIf (fleetOn && pkgs.stdenv.hostPlatform.isLinux)
         {
@@ -476,7 +467,6 @@ in
       };
     };
 
-    # --- the domain's tombstone --------------------------------------------
     workstation.retire = [ ".hermes/skills/lazyvim/SKILL.md" ];
   };
 }

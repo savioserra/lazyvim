@@ -21,12 +21,12 @@ sh -c "$(curl -fsSL https://raw.githubusercontent.com/savioserra/lazyvim/main/in
 
 `install.sh` ensures nix (the one prerequisite), clones the repo to
 `~/lazyvim` (`WORKSTATION_CHECKOUT` overrides), and runs `workstation
-init` — the identity capture, the fleet choice and the first switch.
+init` — the machine capture, the fleet choice and the first switch.
 Every later update is `workstation apply`.
 
 `workstation init` runs whiptail dialogs prefilled with the detected
-values (hostname, user, home, tailscale fqdn) and writes
-`hosts/identity.nix`. Keep that file uncommitted. whiptail ships with the
+values (hostname, user, home) and writes `hosts/machine.json`. Keep that
+file uncommitted. whiptail ships with the
 substrate; on a bare box it falls back to the detected values.
 
 Prerequisite: nix with flakes enabled. The nix daemon is host-owned on
@@ -41,7 +41,7 @@ standalone-Home-Manager hosts, platform-managed on NixOS and nix-darwin.
 
 ## Selecting capabilities
 
-A machine pins its capability flags beside the identity:
+A machine's capability flags live in `hosts/machine.json` under `settings`:
 
 ```sh
 workstation add languages/typescript terminal/nunchux   # enable
@@ -49,13 +49,12 @@ workstation remove terminal/nunchux                      # disable
 workstation selected                                     # this machine's rows
 ```
 
-Paths are `<domain>` or `<domain>/<member>` (`workstation selected` lists
-them all). Defaults: core domains on, the language members off
-(languages are opt-in), `foundation` baseline. `add` and `remove` edit
-`hosts/selections.nix` and offer `apply now?` — keep that file
-uncommitted, exactly like the identity. `workstation report.plan` carries
-the machine's pins; `workstation selected` renders every path's resolved
-on/off/baseline/unavailable state with dependency notes.
+Paths are `<domain>` or `<domain>/<member>`, the option paths
+`workstation.<domain>.enable` and `workstation.<domain>.<member>.enable`
+(`workstation selected` lists them all). Defaults: domains on, `network`
+and the language members off, `foundation` baseline. `add` and `remove`
+set the flag and offer `apply now?`; the file can also be edited by hand —
+the module system rejects an unknown flag.
 
 ## Agent fleet (A2A)
 

@@ -1,8 +1,4 @@
-# The terminal domain's shell surface: eza is the managed ls (icons,
-# directories first), deployed beside the domain's tmux/nunchux
-# capabilities. The order slots are the rc lane's global round tens (40
-# the aliases, 50/60 the per-shell prompt init — the numbers are the
-# shared scale, nix/lib/shell-lane.nix).
+# The terminal domain: eza and starship with their rc fragments.
 {
   config,
   lib,
@@ -10,6 +6,10 @@
   ...
 }:
 {
+  options.workstation.terminal.enable = lib.mkEnableOption "eza, starship, tmux and nunchux" // {
+    default = true;
+  };
+
   config = lib.mkIf config.workstation.terminal.enable {
     home.packages = [
       pkgs.eza

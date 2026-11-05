@@ -1,9 +1,4 @@
-# The host identity options: the typed surface hosts/<host>/default.nix is
-# the only place to WRITE. Every consumer — the tailscale transport, the
-# dashboard's --host binding, the flake's configuration keys — derives from
-# config.workstation.host.*; no module hand-types an identity fact.
-# Imported by every system-level leg (NixOS, nix-darwin); the HM home scope
-# carries no identity of its own.
+# The host identity options for the system legs.
 {
   lib,
   ...
@@ -28,15 +23,6 @@
       type = lib.types.nullOr lib.types.str;
       default = null;
       description = "The operator user's home. Set only in hosts/<host>/default.nix.";
-    };
-    tailscale.fqdn = lib.mkOption {
-      type = lib.types.nullOr lib.types.str;
-      default = null;
-      description = ''
-        The host's tailscale FQDN (MagicDNS). The fleet transport and any
-        host-binding consumer (the dashboard's --host bind) derive from it;
-        a consumer that needs it fails loudly when the host never declared it.
-      '';
     };
   };
 }

@@ -48,7 +48,7 @@ removes exactly its marker+body block at the next switch; the declared
 order IS the shell contract, reviewed in diffs. One fragment belongs to
 the operator: `workstation.foundation.shell.extras` (default empty)
 renders the per-machine lines the operator keeps (the `stty -ixon` class)
-as the lane's LAST fragment, declared in the identity file (`shellExtras`)
+as the lane's LAST fragment, set in the machine file's settings
 and re-rendered by every switch — operator preferences hold across applies
 by construction, not by leaving them alone.
 

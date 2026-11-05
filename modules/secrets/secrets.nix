@@ -1,6 +1,4 @@
-# The secrets domain: the nixpkgs 1Password CLI and the op environment
-# fragment. The vault
-# stays user-owned; the substrate never reads it.
+# The secrets domain: the 1Password CLI and the op env fragment.
 {
   config,
   lib,
@@ -8,13 +6,15 @@
   ...
 }:
 let
-  # The vault stays user-owned; this package never touches account or session state — the fragment only
-  # sources the host's env file.
   op = pkgs._1password-cli;
 in
 {
-  # the selection gate (workstation.secrets.enable, nix/lib/selections.nix):
-  # disabled = the definitions skip, never the files
+  options.workstation.secrets.enable =
+    lib.mkEnableOption "the 1Password CLI and its env fragment"
+    // {
+      default = true;
+    };
+
   config = lib.mkIf config.workstation.secrets.enable {
     workstation.shell.fragments = [
       {

@@ -9,26 +9,21 @@ surface before its owning commit lands it.
 
 ```text
 flake.nix
-  -> modules/*            (native declarations; the capability walk
-                           nix/lib/capabilities.nix is the registry — the
-                           home leg and the report fold read the same walk)
-  -> nix/modules          (workstation-home, workstation-system, host identity)
-  -> nix/report.nix       (the declared-state fold; flake.nix projects
-                           workstation.report.{status,plan,capabilities})
-  -> nix/workstation-switch.nix  (the write plane behind workstation apply:
-                           switch.log receipt in its tail)
-  -> hosts/<host>         (linux / mac; identity in hosts/identity.nix)
+  -> nix/lib/machine.nix  (hosts/machine.json: identity + settings)
+  -> nix/modules          (workstation-home imports modules/; workstation-system, host)
+  -> modules/default.nix  (the domain and member modules, listed)
+  -> nix/report.nix       (workstation.report.<verb>: one home eval)
+  -> nix/workstation-switch.nix  (the write plane: switch.log receipt)
+  -> hosts/{linux,mac}    (the system legs)
 
 bin/workstation (POSIX sh: flake resolution, verb dispatch)
   reads:  nix eval --json <flake>#workstation.report.<verb>
-  select: workstation add|remove <path>  (hosts/selections.nix, validated
-          against workstation.report.selectable; selected renders
-          workstation.report.selections)
-  fleet:  workstation fleet  (the identity's fleet choice + the switch;
+  select: workstation add|remove <path>  (hosts/machine.json settings via jq,
+          validated against workstation.report.selectable)
+  fleet:  workstation fleet  (the a2a and network flags + the switch;
           the flake's workstation-fleet helper: login, join)
-  peers:  workstation peers  (hosts/peers.nix + pairing; the flake's
-          workstation-peers helper)
-  writes: `workstation apply` (execs the staged switch driver)
+  peers:  workstation peers  (hosts/peers.nix + pairing)
+  writes: workstation apply  (execs the staged switch driver)
 ```
 
 - Reads are pure `nix eval`; mutation is `workstation apply`.
@@ -37,49 +32,46 @@ bin/workstation (POSIX sh: flake resolution, verb dispatch)
 
 ## Capability selection
 
-Per-machine flags live in `hosts/selections.nix` (the committed copy is
-the empty template; the local rewrite stays uncommitted — the
-`hosts/identity.nix` lifecycle). The verb grammar is the file grammar:
+The machine file `hosts/machine.json` carries the identity and
+`settings`, a home-manager option tree applied as a module. The committed
+copy is the template; the local rewrite stays uncommitted.
 
-```nix
+```json
 {
-  enable = [ "languages/typescript" ];   # pinned ON
-  disable = [ "terminal/nunchux" ];      # pinned OFF (omitted when empty)
+  "host": "<host>",
+  "user": "<user>",
+  "home": "<home>",
+  "system": "x86_64-linux",
+  "settings": {
+    "workstation": {
+      "network": { "enable": true },
+      "languages": { "go": { "enable": true } },
+      "terminal": { "nunchux": { "enable": false } }
+    },
+    "programs": { "hermes": { "a2a": { "enable": true } } }
+  }
 }
 ```
 
-- Paths mirror the registry: `<domain>` or `<domain>/<member>`
-  (`editor`, `languages/typescript`, `terminal/nunchux`), `/`-separated,
-  `[A-Za-z0-9_-]` only — validated against `workstation.report.selectable`
-  before any write, and re-validated at every eval that reads the file.
-- Defaults fill everything unpinned: core domains (editor, terminal,
-  theme, fonts, secrets, agent) on; the language MEMBERS off — languages
-  are the opt-in granularity; `foundation` is baseline (always on, no
-  enable option, refused in both lists).
-- A member deploys iff `domain.enable && member.enable`: selecting a
-  member implies its domain (the translation in `nix/lib/selections.nix`
-  sets both enables), and disabling a domain takes its members with it.
-  Pinning a domain off while a member under it is selected is refused at
-  read time.
-- `workstation.report.selections` resolves every selectable path to
-  on/off/baseline/unavailable plus a dependency note (what a remove takes
-  with it — `workstation selected` serves it). Availability is probed per
-  member (the enable flag forced true vs false over the owning modules, a
-  platform truth: the nunchux darwin case renders `unavailable`).
-- Every eval of the fold applies the machine's pins, so `plan` and the
-  accounting answer for THIS machine's next switch, not the bare
-  substrate.
+| Rule | Mechanism |
+| --- | --- |
+| Paths | `<domain>` or `<domain>/<member>`: `workstation.<domain>.enable`, `workstation.<domain>.<member>.enable` |
+| Validation | the module system: unknown option and wrong type fail the eval |
+| Defaults | each enable option's default: domains on, `network` and language members off, `nunchux` on linux only |
+| Members | deploy iff `domain.enable && member.enable`; `add <member>` turns a disabled domain on |
+| Baseline | `foundation` has no enable option |
+| Platform | `terminal/nunchux` asserts linux |
+| Reads | `selected` serves `workstation.report.selections`: per path `on`/`off`/`baseline` and the option description |
 
 ## Module boundaries
 
 | Module | Contract |
 | --- | --- |
 | `bin/workstation` | Launcher shim: flake resolution order, verb dispatch, exit codes (dispatch gate: `.github/scripts/shim-dispatch.sh`) |
-| `flake.nix` `reportVerbs` | The read verbs' projection over the report fold |
-| `nix/lib/selections.nix` | The capability selection: pins-file read/validation (grammar, walk membership, baseline, contradictions), the enable-option translation (a member implies its domain), shared by the legs, the e2e personas and the report fold |
-| `modules/<domain>/<domain>.nix` | The domain's native declaration: `home.file` surfaces, tools, fragments, activation scripts — each gated on its `workstation.<domain>.enable` (members additionally on their own flag); disabled = definitions skipped, never files missing |
-| `nix/report.nix` | The declared-state fold: every capability evaluated once against home-manager, integrity-asserted |
-| `nix/lib/capabilities.nix` | The registry walk: discovers `modules/<domain>/` |
+| `nix/lib/machine.nix` | The machine file: identity, system, settings as home modules |
+| `modules/default.nix` | The capability module list |
+| `modules/<domain>/<domain>.nix` | The domain's options and declarations, gated on `workstation.<domain>.enable` (members also on their own flag) |
+| `nix/report.nix` | The read verbs from one home eval: rows from the option tree, attribution from `definitionsWithLocations` |
 | `nix/lib/shell-lane.nix` | The fragment lane's order contract: `order` slots sorted once, read by the rendered rc files and the report's fragmentOrder; a shared or ambiguous slot fails the eval |
 | `nix/lib/license.nix` | The secrets domain's unfree acceptance (the 1Password CLI): one predicate, imported by every composition root |
 | `modules/agent/agent.nix` | The agent domain's hot-home surfaces: managed skill leaves, the checkout ensure, version-matched skill provisions |
@@ -140,8 +132,8 @@ and sorted, never hidden.
 - Editor env defaults (`EDITOR`/`VISUAL`/`GIT_EDITOR=nvim`) as the
   `managed-editor-env` fragment on every rc target.
 - `workstation.foundation.shell.extras` (types.lines, default ""): the
-  operator's per-machine rc lines (declared in the identity file as
-  `shellExtras`), rendered as the lane's last fragment.
+  operator's per-machine rc lines (`settings.workstation.foundation.shell.extras`
+  in the machine file), rendered as the lane's last fragment.
 - Tools, all nixpkgs:
   fd, fzf, rg, lazygit, tree-sitter; eza + starship; harlequin + hsql
   (the hsql agent skill generated from the harlequin derivation at build
@@ -323,9 +315,8 @@ and sorted, never hidden.
 - Verify: commits, server, theme. Hosts: linux/macOS.
 
 ### `nunchux`
-- The `terminal/nunchux` member capability (linux-only — the platform
-  gate lives inside the file plane; the report marks the path
-  `unavailable` on darwin): pinned checkout (`.tmux/plugins/nunchux` at
+- The `terminal/nunchux` member capability (linux; enabling it on
+  darwin fails an assertion): pinned checkout (`.tmux/plugins/nunchux` at
   the v3.1.3 commit, hash-pinned `fetchFromGitHub`, repo-tracked launcher
   binary) + the `.platform` marker composed in; theme-slot launcher
   config rendered natively from `tokens.lua`; the manifest row rides
@@ -358,18 +349,13 @@ verify lanes honest.
 
 Fail-closed at eval:
 
-- the fold's integrity assertions — a misclassified module file throws,
-  never silently shrinks the report; declared fragments/retire lists agree
-  between the fold and the composed surface;
-- the selections file: malformed paths, unknown paths, baseline pins, and
-  domain-disabled-under-a-selected-member contradictions all throw at
-  every eval that reads it (the shim validates before writing; the
-  library validates before every read)
+- the machine file: unknown options and wrong types fail the module
+  system (the shim validates paths before writing);
 - target collisions across capabilities throw;
 - the fragment order contract: no slot without a fragment id, no id with
   two slots, no slot shared by two ids;
 - envelope identities in the report are asserted unique;
-- the identity gate holds personal identity to `hosts/identity.nix`
+- the identity gate holds personal identity to `hosts/machine.json`
   (uncommitted).
 
 ## Lifecycle
@@ -378,8 +364,8 @@ Fail-closed at eval:
 | --- | --- | --- |
 | switch / rollback | `workstation apply` / `workstation rollback` | Build the generation from the flake, activate atomically, write the receipt to `switch.log`; the flake is the resolved workstation checkout (`--flake`, `$WORKSTATION_FLAKE`, the enclosing checkout), else the staged snapshot; an explicit `WORKSTATION_SWITCH_FLAKE` wins |
 | `plan` / `status` / `capabilities` / `selected` | `nix eval` over `workstation.report` | Answer the declared state; mutate nothing |
-| select | `workstation add <path>...` / `workstation remove <path>...` | Validate against the walk-derived `selectable`, edit `hosts/selections.nix` canonically, offer the apply (idempotent; the baseline refuses) |
-| fleet | `workstation fleet` (and `init`, once) | Choose start / join / standalone; write the identity's `fleet` and the network selection, switch on a change, log in to tailscale, join |
+| select | `workstation add <path>...` / `workstation remove <path>...` | Validate against `selectable`, set or drop the flag in `hosts/machine.json`, offer the apply (idempotent; the baseline refuses) |
+| fleet | `workstation fleet` (and `init`, once) | Choose start / join / standalone; write `programs.hermes.a2a.enable` and `workstation.network.enable`, switch on a change, log in to tailscale, join |
 | peers | `workstation peers` | Discover the tailnet's A2A agents, add, pair, tune; write `hosts/peers.nix`, store the pair tokens, offer the apply |
 | verify lane | `modules/*/verify/*.sh` | Consumer smokes against the recorded pins |
 

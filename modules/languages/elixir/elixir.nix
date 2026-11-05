@@ -1,39 +1,33 @@
-# The Elixir language capability: the nixpkgs beam toolchain (the mise
-# lane's native replacement — the same OTP the engine release builds on)
-# and the editor profile entry with its payload plugin module. The
-# behavior cases died with the manifest (the editor domain's precedent:
-# they fed the walker's verify lane, never the deployed file).
+# The elixir member: the beam toolchain and its editor profile entry.
 {
   config,
   lib,
   pkgs,
-  self,
   ...
 }:
+let
+  cfg = config.workstation.languages.elixir;
+in
 {
-  # the selection gate (workstation.languages.elixir.enable AND the domain
-  # enable — a member deploys under its domain, nix/lib/selections.nix):
-  # disabled = the definitions skip, never the files
-  config =
-    lib.mkIf (config.workstation.languages.enable && config.workstation.languages.elixir.enable)
-      {
-        # the toolchain: elixir 1.18.5 on the beam set's erlang_28 — nixpkgs
-        # carries it, no pin, no probe gate (the toolchain pattern; the mise
-        # binary pin, its activation fragment and the .config/mise composition
-        # retired with the lane)
-        home.packages = [ pkgs.beam.packages.erlang_28.elixir ];
+  options.workstation.languages.elixir.enable =
+    lib.mkEnableOption "the elixir toolchain and its editor profile";
 
-        workstation.editor.languages = [
-          {
-            id = "elixir";
-            lazyvim_extras = [ "lazyvim.plugins.extras.lang.elixir" ];
-            mason_packages = [ "elixir-ls" ];
-            plugin_module = "languages.plugins.elixir";
-          }
-        ];
+  config = lib.mkIf (config.workstation.languages.enable && cfg.enable) {
+    home.packages = [ pkgs.beam.packages.erlang_28.elixir ];
 
-        workstation.editor.languagePlugins = [
-          (self + "/modules/languages/elixir/files/languages/plugins/elixir.lua")
-        ];
-      };
+    workstation.editor = lib.mkIf config.workstation.editor.enable {
+      languages = [
+        {
+          id = "elixir";
+          lazyvim_extras = [ "lazyvim.plugins.extras.lang.elixir" ];
+          mason_packages = [ "elixir-ls" ];
+          plugin_module = "languages.plugins.elixir";
+        }
+      ];
+
+      languagePlugins = [
+        ./files/languages/plugins/elixir.lua
+      ];
+    };
+  };
 }

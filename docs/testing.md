@@ -7,7 +7,7 @@ sh .github/scripts/check.sh
 ```
 
 The static battery: the nix identity gate (per-host identity lives only in
-`hosts/<host>/default.nix`), the tree-purity gate (the tree-wide grep for a
+`hosts/machine.json`, uncommitted), the tree-purity gate (the tree-wide grep for a
 foreign module-system token stays empty), `sh -n` +
 ShellCheck over the shell surfaces, the launcher shim's dispatch gate (a
 stub `nix` and a stub `workstation-switch` — dispatch, flake resolution
@@ -18,8 +18,8 @@ nix is absent; the docker acceptance owns it there), and
 absence.
 
 Verification beyond the battery is behavioral (docs/architecture.md decision 2):
-structural assertions live in the eval (the report fold's integrity
-checks), never as byte contracts.
+structural assertions live in the eval (module assertions), never as
+byte contracts.
 Never run fixtures directly against a switched home: they write fake Node/npm state.
 For bounded Linux source checks, use a cleared environment, network denial,
 120-second deadline and a **4 MiB per-file** limit (`ulimit -f 4096` in a shell
@@ -58,11 +58,9 @@ The lane map — which lane proves what:
   owns, the lazy-lock merge, the theme token path, the language profile,
   the rc lane's declared order, the migrated tools running, the agent
   skills at pinned versions, the tmux/nunchux/foundation planes, the
-  init merge live against a writable checkout copy (the capture fills
-  the shipped TEMPLATE placeholders from detection, the operator's
-  `shellExtras` survives byte for byte, and a converged re-init is
-  byte-identical — the image's bare root lacks the merge's userland, so
-  the step stages the nixpkgs tools on PATH for itself alone), the
+  init capture live against a writable checkout copy (the placeholders
+  fill from detection, the settings survive, a converged re-init is
+  byte-identical), the
   selection verbs live against a writable checkout copy), the selection
   removal proof (the second apply re-activates the persona with go
   deselected: the toolchain and its profile entry leave, the rest rides,
