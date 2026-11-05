@@ -1,9 +1,7 @@
 #!/bin/sh
 # agent verify — the hermes provisioning contract (read-only smoke).
 #
-# The agent capability provisions the FULL stack (operator ruling
-# 2026-10-15: resources-without-runtime is a defect, not a documented
-# manual step). A converged host carries
+# A converged host carries the full stack:
 #
 #   ~/.local/opt/hermes/pin.json     the deployed pin manifest (the anchor)
 #   ~/.hermes/hermes-agent           the pinned checkout (resources, hot)

@@ -1,8 +1,6 @@
-# The secrets domain: the nixpkgs 1Password CLI (operator ruling
-# 2026-10-27: the pins machinery is redundant — the CLI rides the
-# foundation domain's pin-override overlay, current past the retired
-# 2.39.0 download pin) and the op environment fragment. The vault stays
-# user-owned; the substrate never reads it.
+# The secrets domain: the nixpkgs 1Password CLI (through the foundation
+# domain's pin-override overlay) and the op environment fragment. The vault
+# stays user-owned; the substrate never reads it.
 {
   config,
   lib,

@@ -1,17 +1,10 @@
 #!/bin/sh
-# prompt verify — the dissolved capability's consumer smoke (read-only).
+# prompt verify — the foundation prompt's consumer smoke (read-only).
 #
-# The prompt capability dissolved into the foundation domain (operator
-# ruling 2026-10-22): eza and starship are nixpkgs packages, the starship
-# config deploys from the foundation module, and the managed rc fragments
-# source from .config/workstation/shell/. This script asserts the host
-# carries the result: both tools on PATH and SPEAKING, the starship
-# payload deployed, and the rc lane wired — markers present per shell and
-# the per-shell starship init exact in the fragment files (the walker's
-# id-keyed file map used to collapse the two bodies; the declared lane
-# gives each shell its own). The engine never runs this script; it is the
-# host lane's assertion surface (docs/capabilities.md "Package payload
-# rule"). Exits nonzero with a message on the first failed assertion.
+# Asserts eza and starship on PATH and answering, the starship config
+# deployed, and the rc lane wired: markers per shell and the per-shell
+# starship init in the fragment files. Exits nonzero with a message on the
+# first failed assertion.
 set -eu
 
 home=${WORKSTATION_VERIFY_HOME:-$HOME}

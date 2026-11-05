@@ -19,14 +19,14 @@
 | `default-terminal` | `tmux-256color` |
 | `terminal-features[100]` | `xterm-256color:RGB` |
 | `@tmux_navigator_disable_when_zoomed` | `1` |
-| `scroll-on-clear` | `off` inside `%if "#{>=:#{version},3.5}"` — the guard keeps the conf parse-safe on tmux releases without the option (pre-3.4); this host's 3.4 has it default-on (aurora mobile-client mitigation) |
+| `scroll-on-clear` | `off` inside `%if "#{>=:#{version},3.5}"` — the guard keeps the conf parse-safe on tmux releases without the option; limited mobile clients render scroll-style repaints as stacked lines |
 | `@tmux2k-theme` | `onedark` |
 | `@tmux2k-bg-main` / `@tmux2k-bg-alt` / `@tmux2k-dark-blue` | `default` — the window no-background slots; tmux2k's variable indirection turns them into `bg=default` |
 | `@tmux2k-white` | onedark comment gray — inactive window text |
 | `@tmux2k-window-list-colors` | `blue dark_blue` — active window = onedark blue text, no background |
 | `@tmux2k-window-list-left-sep` / `-right-sep` | empty — the window separator spans style zero characters, so they paint nothing (module segments keep upstream powerline pills) |
 | `@tmux2k-right-plugins` | `cpu ram time` — clicking cpu opens btop; ram's popup is pinned to btop too |
-| `@tmux2k-time-format` | `%a %H:%M` — no seconds: a seconds clock pins the status bar to a 1Hz re-render, which limited mobile clients render as stacked lines (aurora mobile-client mitigation) |
+| `@tmux2k-time-format` | `%a %H:%M` — no seconds: a seconds clock pins the status bar to a 1Hz re-render, which limited mobile clients render as stacked lines |
 | Window cycling | root `S-Left` / `S-Right` — `previous-window` / `next-window`, no prefix |
 
 Load order:
@@ -145,8 +145,8 @@ Setup removes stale `~/.tmux/plugins/tmux-fingers` checkouts.
 
 The status bar is the pinned `tmux2k` plugin at the upstream `onedark`
 theme, rendered TEXT-ONLY: no segment backgrounds — the terminal's own
-background shows through and segments are highlighted by text color alone
-(operator decision, 2026-10-14). `.tmux.conf` sets the `@plugin` pin, the
+background shows through and segments are highlighted by text color alone.
+`.tmux.conf` sets the `@plugin` pin, the
 theme, `@tmux2k-show-powerline false` (drops the separator paint), the
 no-background color slots (`@tmux2k-bg-main`/`-bg-alt`/`-dark-blue` =
 `default`), the per-segment `@tmux2k-*-colors` text pairs (session white,
@@ -157,20 +157,10 @@ pinned to btop via `@tmux2k-ram-popup-cmd`) and the clock format ahead of
 TPM init. Everything else stays upstream onedark — the accents ARE the
 theme; they just stopped painting backgrounds.
 
-Bash 5.x empty-lookahead abort (fixed by the pin move, 2026-10-14): tmux2k's
-powerline assembly looks ahead one plugin (`${plugins[$((plugin_index + 1))]}`)
-to draw each separator; for the LAST plugin of each side that expansion is
-empty, and the old pin's `get_plugin_colors ""` indexed `plugin_colors[]`
-with the empty subscript — on bash 5.2 a fatal `plugin_colors: bad array
-subscript` (its main.sh line 96) that aborted `main.sh` mid-assembly and left
-the status bar empty until `2k.tmux` was re-run (the crash was intermittent;
-a re-run could crash once before succeeding). Upstream fixed the class with
-an early return on an empty plugin name in `get_plugin_colors` (`55e597e`,
-2026-09-15; its caller already falls back to the main background for an empty
-lookahead), and the pin moved to upstream HEAD `d8c5c292` — proven on a bash
-5.2.21 host: `source-file` + `2k.tmux` twice, status-left/right non-empty both
-times. Interim recovery on a home still carrying the old pin is the `2k.tmux`
-re-run; the real fix is a switch at the new pin.
+The pin (`d8c5c292`) carries upstream's early return on an empty plugin
+name in `get_plugin_colors`: older pins abort `main.sh` on bash 5.2
+(`plugin_colors: bad array subscript`) and leave the bar empty — a switch
+at the pin fixes it; re-running `2k.tmux` is the stopgap.
 
 Pin-move migration: a pinned clone never moves to a different commit in
 place (the pin is the checkout's identity — the substrate freezes each
@@ -201,30 +191,15 @@ they render empty and mimic a broken bar, which costs a false debugging
 loop. Popups run in tmux's shell: a popup-resolved binary (e.g. btop) must
 be on the PATH the activation fragments build, not just on the SSH session's.
 
-Recorded tradeoffs: ADDENDUM 2 dropped tmux2k for the tmux-oasis
-starlight_dark statusline (operator permission, 2026-10-12); the aurora
-investigation (2026-10-13) reverted it — oasis's seconds clock pinned a 1Hz
-status re-render whose scroll-style repaints stacked on limited mobile
-clients (Termius/iOS), while tmux2k's `|` separators and HH:MM clock are
-narrow-phone-safe. The tokens slot layer stays in [theme](theme.md) for
-future consumers; the `~/.config/tmux/themes/tmux2k.conf` target
-is a declared retire-list tombstone in `modules/terminal/terminal.nix`
-(an idempotent activation `rm -f` with a named receipt — already-absent
-no-op on homes that never had it).
+Mobile-client constraints (limited clients such as Termius/iOS render
+scroll-style repaints as stacked lines):
 
-Mobile-client redraw mitigation (aurora, 2026-10-13): the aurora
-investigation reproduced Termius/iOS stacking the powerline bar on re-render
-at byte level — tmux 3.7's status re-renders emit heavy scroll-style
-repaints (242 EL+CRLF + scroll-region resets per 18s idle vs 66 on tmux 3.4,
-same config) that limited mobile clients render as stacked lines instead of
-replacing the screen. `.tmux.conf` mitigates: the tmux2k clock format
-carries no seconds (`%a %H:%M` — a `%S` format pins a 1Hz re-render on
-every client), `scroll-on-clear off` keeps the clear-scrolls-history
-repaint out of the picture (wrapped in `%if "#{>=:#{version},3.5}"` so
-releases without the option never see it at parse time), and the tmux2k
-separator set is single-width (`|`) rather than PUA powerline arrows, which
-clients without a nerd font render double-width. Re-enabling seconds or
-powerline arrows is a deliberate local choice.
+- the clock carries no seconds (`%a %H:%M`) — `%S` pins a 1Hz re-render;
+- `scroll-on-clear off` (inside `%if "#{>=:#{version},3.5}"`);
+- single-width `|` separators — PUA powerline arrows render double-width
+  without a nerd font;
+- `~/.config/tmux/themes/tmux2k.conf` is a retire-list tombstone in
+  `modules/terminal/terminal.nix`.
 
 
 ## Verification

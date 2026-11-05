@@ -92,8 +92,7 @@ Two native shapes, both declared:
   `{ path = "..."; recursive = true; }` — the declaration is the consent,
   and the hook removes exactly the declared path recursively. A directory
   met without the consent is reported with the fix named and skipped,
-  never silently forced (the vps cutover, 2026-10-27: the nvm tombstone
-  taught the tree-consent shape).
+  never silently forced.
 
 `modules/theme/tokens.lua` is the canonical token payload, and nix reads
 it directly (the extraction asserted at eval, `modules/theme/theme.nix`).

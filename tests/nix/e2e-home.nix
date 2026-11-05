@@ -21,11 +21,8 @@
     "default"
     "fresh"
   ];
-  # the operator's shell extras (the stty -ixon class): the persona
-  # declares them, so the lane renders its LAST fragment (operator-extras,
-  # slot 100, .bashrc/.zshrc) and the apply-driven switch re-renders it —
-  # the container proof covers the option's non-empty form (the template's
-  # empty default renders no fragment; the vps identity is the real-world
-  # shape of this line)
+  # the operator's shell extras: the last rc fragment (operator-extras,
+  # slot 100) renders and the apply-driven switch re-renders it — the
+  # option's non-empty form.
   workstation.foundation.shell.extras = "stty -ixon";
 }

@@ -102,12 +102,10 @@ in
 
   config = {
     # --- the declared retire list (workstation.retire) ---------------------
-    # The declaration is the consent: a plain entry removes a file or
-    # symlink (rm -f); { path; recursive = true; } removes the declared
-    # directory tree (rm -rf of exactly that path). A directory met
-    # WITHOUT the consent is reported with the fix named and skipped —
-    # no failed-rm noise, no silent destruction (the vps cutover,
-    # 2026-10-27). Every outcome carries its verdict in the receipt log.
+    #   - a plain entry: rm -f of the file or symlink
+    #   - { path; recursive = true; }: rm -rf of exactly that tree
+    #   - a directory without the consent: skipped, the fix named
+    # Every outcome writes a receipt to the log.
     home.activation.workstation-retire = lib.hm.dag.entryAfter [ "writeBoundary" ] (
       lib.concatMapStrings (
         entry:

@@ -43,6 +43,14 @@ gate 'identity gate' \
 	'identity gate: hardcoded personal identity in the tracked tree — the legs are templates; hosts/identity.nix (captured by workstation init, kept uncommitted) is the only identity surface' \
 	sh -c "git grep -iE 'savio|shyylol' -- . ':(exclude).github/scripts/check.sh' | grep -vF 'savioserra/lazyvim' ; test \$? -ne 1"
 
+step 'history-prose gate (the tree describes the current world)'
+# dates, card ids and ruling citations belong in git history; the pattern
+# is assembled at runtime so this gate's own source never matches
+history_pattern='20[0-9]{2}-[01][0-9]-[0-3][0-9]|\bt_[0-9a-f]{8}\b|ADDEN''DUM|operator (rul''ing|decis''ion|direct''ive|permiss''ion)'
+gate 'history-prose gate' \
+	'history-prose gate: a date, card id or ruling citation in the tracked tree — describe the current world; history lives in git' \
+	git grep -nIE "$history_pattern" -- . ':(exclude)*.lock' ':(exclude)*-lock.json'
+
 
 step 'tree-purity gate (one module system in the tree)'
 # the token is assembled at runtime so this gate's own source never

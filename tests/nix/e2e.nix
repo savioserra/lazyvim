@@ -190,12 +190,9 @@ writeShellScriptBin "workstation-e2e" ''
     || fail "lazy-lock merge" "$lock does not carry the pinned baseline"
   pass "lazy-lock merge"
 
-  # the regression smoke (the vps cutover, 2026-10-27): a composed
-  # profile.lua is a lua CHUNK, not a text file — content greps passed
-  # while nvim died with E5113 on require. The boot is the proof: nvim
-  # headless must exit 0 with every language module composed. First boot
-  # restores the lock's plugins (the container is online); the bound keeps
-  # a clone storm from hanging the lane.
+  # the composed profile.lua is a lua chunk: nvim headless exits 0 with
+  # every language module composed (content greps miss E5113 on require).
+  # First boot restores the lock's plugins; the bound stops a clone storm.
   step "nvim boots headless with the languages composed"
   nvim_boot() {
     if command -v timeout >/dev/null 2>&1; then
@@ -349,7 +346,7 @@ writeShellScriptBin "workstation-e2e" ''
     || fail "rc lane order" ".zshrc must source slots 10/30/40/60/70/90 in the declared order"
   pass "rc lane order"
 
-  step "migrated tools run (nixpkgs-owned — operator ruling 2026-10-27)"
+  step "migrated tools run (nixpkgs-owned)"
   for t in fd fzf rg lazygit tree-sitter node pnpm op; do
     t_bin=$(find_client "$t") || fail "migrated tools run" "$t is not on PATH"
     "$t_bin" --version >/dev/null 2>&1 \
@@ -438,14 +435,9 @@ writeShellScriptBin "workstation-e2e" ''
     || fail "copy-contract tree planted" "the rehearsal tree did not plant"
   pass "copy-contract tree planted"
 
-  # the retire rehearsal: the vps cutover's failing shape (2026-10-27) —
-  # a real directory at a declared tombstone path (the node module's
-  # recursive = true is the consent that removes it), the plain-file
-  # tombstone beside it, and a directory at a NO-consent tombstone (the
-  # skip contract: reported with the fix named, never forced). Planted
-  # AFTER the boot activation so the apply-driven switch's retire lane
-  # meets them present (a fresh home would receipt them absent and
-  # prove nothing).
+  # the retire rehearsal: a real directory at a recursive tombstone, a
+  # plain-file tombstone and a directory at a no-consent tombstone, planted
+  # after the boot activation so the apply-driven switch meets them present.
   step "tombstone shapes planted (retire rehearsal)"
   mkdir -p "$home/.local/opt/nvm/bin" "$home/.config/shell" "$home/.config/tmux/themes"
   echo "stub" >"$home/.local/opt/nvm/bin/node"
@@ -588,11 +580,9 @@ writeShellScriptBin "workstation-e2e" ''
     || fail "adopt step" "no adopt receipt in the retire log"
   pass "adopt step"
 
-  # the retire rehearsal's verdict: the planted shapes met the
-  # apply-driven activation — the nvm tree left through the declared
-  # consent (removed-recursive: the exact shape plain rm died on in the
-  # vps cutover), the file through the plain tombstone (removed), and
-  # the no-consent directory was skipped, named, and left standing.
+  # the retire rehearsal's verdict: the tree removed through the declared
+  # consent (removed-recursive), the file removed, the no-consent directory
+  # skipped, named and left standing.
   step "retire rehearsal: the planted tombstones left, verdict-receipted"
   [ ! -e "$home/.local/opt/nvm" ] \
     || fail "retire rehearsal" ".local/opt/nvm survived the activation"

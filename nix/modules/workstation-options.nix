@@ -115,16 +115,11 @@ in
     '';
   };
 
-  # the declared retire list: legacy/foreign tombstones the generation
-  # diff cannot remove (they predate the substrate or live in hot home).
-  # One idempotent activation pass for the whole list, once per
-  # generation, each outcome leaving a named receipt in the host's
-  # workstation state log. A string entry is a file/symlink tombstone
-  # (rm -f); { path; recursive = true; } is the declared consent that
-  # removes a directory tree — rm -rf of exactly the declared path, and
-  # nothing else. A directory met WITHOUT the consent is reported with
-  # the fix named and skipped (the vps cutover, 2026-10-27: plain rm on
-  # the nvm tree failed and the tombstone silently stayed).
+  # the declared retire list: tombstones the generation diff cannot remove,
+  # one idempotent pass per generation, a named receipt each:
+  #   - a string entry: rm -f of the file or symlink
+  #   - { path; recursive = true; }: rm -rf of exactly that tree
+  #   - a directory without the consent: skipped, the fix named
   options.workstation.retire = lib.mkOption {
     type = lib.types.listOf (
       lib.types.coercedTo lib.types.str (p: { path = p; }) (

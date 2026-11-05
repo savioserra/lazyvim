@@ -20,3 +20,6 @@ deps/
 .builds/
 erl_crash.dump
 t_*.err
+
+# agent memory/state from tooling never enters the repo
+.pi/

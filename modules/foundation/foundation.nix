@@ -10,13 +10,9 @@
   ...
 }:
 let
-  # the foundation tools ride nixpkgs (operator ruling 2026-10-27: the
-  # pins machinery is redundant — nixpkgs maintains these five, security
-  # backports included). Each is floored at the retired download pin's
-  # version: the pinned 25.05 set predates the
-  # floors, so the flake's pin-override overlay must be applied — an
-  # unapplied overlay (or a lagging lock) dies here instead of quietly
-  # downgrading the fleet.
+  # the foundation tools ride nixpkgs, each floored at a minimum version:
+  # the pinned 25.05 set predates the floors, so the pin-override overlay
+  # must apply — an unapplied overlay or a lagging lock fails here.
   floored =
     name: floor: pkg:
     assert
@@ -165,14 +161,9 @@ in
       tools.fd
       tools.ripgrep
       tools.lazygit
-      # mise (mise-en-place): the nixpkgs-native binary only — per-project
-      # runtime versioning (`mise use`, `.mise.toml`, `mise x`) on every
-      # managed host, the pin riding the nixpkgs lock. The engine owns
-      # nothing around it: no managed MISE_DATA_DIR, no `.local/bin/mise`
-      # launcher, no activation fragment — the retired managed-mise lane's
-      # split-brain (t_1ae61704) stays structurally dead, and shell
-      # activation (`mise activate`) is operator opt-in (its own card, if
-      # ever — it shadows PATH tools).
+      # mise: the nixpkgs binary only (`mise use`, `.mise.toml`, `mise x`);
+      # no managed data dir, launcher or activation fragment — `mise
+      # activate` is operator opt-in.
       pkgs.mise
       # whiptail (the newt package): the launcher shim's install-time UI —
       # `workstation init` captures the machine's identity through whiptail

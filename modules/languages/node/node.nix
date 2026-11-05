@@ -34,15 +34,9 @@ in
 
         home.file.".node-version".source = nodeVersionFile;
 
-        # the nvm lane's tombstones: the provisioned tree (the store claim at
-        # .local/opt/nvm) and the rc loader payload — hosts carrying them from
-        # the pin world lose them at the next activation, each with a named
-        # receipt (the generation diff also retires them; the tombstones make
-        # the retirement hold even where the diff is bypassed). The tree
-        # entry's recursive = true is the declared consent: the activation
-        # removes exactly that path recursively (the vps cutover, 2026-10-27:
-        # a bare string entry met the tree with plain rm and the tombstone
-        # silently stayed).
+        # the nvm lane's tombstones, each removed with a named receipt:
+        # the provisioned tree (.local/opt/nvm, recursive = true) and the rc
+        # loader payload.
         workstation.retire = [
           ".config/shell/nvm.sh"
           {
