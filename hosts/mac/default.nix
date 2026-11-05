@@ -1,9 +1,10 @@
-# The mac leg: nix-darwin plus the machine's home plane through
-# home-manager.
+# The mac leg: nix-darwin, Homebrew pinned by nix-homebrew, and the
+# machine's home plane through home-manager.
 {
   nixpkgs,
   home-manager,
   nix-darwin,
+  nix-homebrew,
   machine,
 }:
 let
@@ -18,6 +19,7 @@ in
       ../../nix/modules/workstation-system.nix
       ../../nix/modules/host.nix
       home-manager.darwinModules.home-manager
+      nix-homebrew.darwinModules.nix-homebrew
       (
         { config, lib, ... }:
         {
@@ -36,15 +38,12 @@ in
           users.users.${machine.user}.home = machine.home;
           system.primaryUser = machine.user;
 
-          homebrew = {
+          nix-homebrew = {
             enable = true;
-            onActivation = {
-              autoUpdate = true;
-              upgrade = true;
-            };
-            brews = [ ];
-            casks = [ ];
+            inherit (machine) user;
+            autoMigrate = true;
           };
+          homebrew.enable = true;
 
           home-manager = {
             useGlobalPkgs = true;

@@ -13,6 +13,7 @@ Platforms: linux x86_64 (WSL counts as linux), macOS arm64.
 | --- | --- | --- | --- | --- |
 | Neovim | 0.12.x | nixpkgs (`modules/editor/editor.nix`) | `.local/bin/nvim`; the language profile composes in the editor module | linux-x86_64, darwin-arm64 |
 | Go | 1.26.x | nixpkgs | on PATH via `home.packages` | linux-x86_64, darwin-arm64 |
+| Homebrew | 7.0.x | github.com/Homebrew/brew via `nix-homebrew` (`flake.lock`) | the darwin leg installs and pins brew at the default prefix; `homebrew.*` declares its packages | darwin-arm64 |
 | Herdr | 0.9.0 | github.com/herdrdev/herdr | The one inline `fetchurl` pin (no nixpkgs coverage); `.local/bin/herdr` from the store derivation | linux-x86_64, darwin-arm64 |
 | Node.js | 24.x (`pkgs.nodejs_24`) | nixpkgs (`modules/languages/node/node.nix`) | on PATH via `home.packages`; `~/.node-version` derives from the runtime | linux-x86_64, darwin-arm64 |
 | pnpm | 12.x | nixpkgs | on PATH via `home.packages` | linux-x86_64, darwin-arm64 |
@@ -31,8 +32,8 @@ Platforms: linux x86_64 (WSL counts as linux), macOS arm64.
 | A2A helpers | yq-go 4.45.4, socat 1.8.0.3, curl 8.14.1, jq 1.7.1, newt 0.52.24, tailscale 1.104.x, findutils | nixpkgs (`modules/agent/packages.nix`) | in the closures of `workstation-a2a-converge` (the activation), `workstation-peers` (`workstation peers`), `workstation-fleet` (the fleet service, `workstation fleet`) and `workstation-a2a-token`, never on PATH | linux-x86_64, darwin-arm64 |
 | JetBrainsMono Nerd Font | 3.5.0 | nixpkgs (`modules/fonts/fonts.nix`) | linux `.local/share/fonts/JetBrainsMonoNerdFont`; darwin `Library/Fonts/JetBrainsMonoNerdFont`; fontconfig enabled | linux-x86_64, darwin-arm64 |
 | nunchux | 3.1.3 | github.com/datamadsen/nunchux | pinned checkout `.tmux/plugins/nunchux` (`fetchFromGitHub`) + the `bin/.platform` marker; package is linux-only | linux-x86_64 |
-| tmux | 3.7c | nixpkgs (the system legs' host configuration) | the system legs' tmux package; darwin keeps brew | linux-x86_64 |
-| btop | 1.4.7 | nixpkgs (the system legs' host configuration) | same as tmux; darwin keeps brew | linux-x86_64 |
+| tmux | 3.7c | nixpkgs | the tmux member's `home.packages` and the system legs | linux-x86_64, darwin-arm64 |
+| btop | 1.4.7 | nixpkgs | the system legs (NixOS, darwin) | linux-x86_64, darwin-arm64 |
 | TPM plugin set | pinned commits | github.com/tmux-plugins/tpm, github.com/2KAbhishek/tmux2k, github.com/tmux-plugins/tmux-yank, github.com/tmux-plugins/tmux-resurrect, github.com/christoomey/vim-tmux-navigator | pinned store checkouts `~/.tmux/plugins/<name>` | linux-x86_64, darwin-arm64 |
 
 ## Pin maintenance
@@ -59,7 +60,6 @@ deployed `.local/opt/hermes/pin.json`.
 | Tool | Why | Where it's handled |
 | --- | --- | --- |
 | Git on Linux | Distro-provided; no first-party static git passes the acquisition audit | Distro install; nix hosts carry git in the host configuration |
-| tmux >=3.2, btop, Bash >=5.2 on macOS | User/CI prerequisites; no lifecycle OS installs | brew prerequisites on darwin; linux hosts get both through the host configurations |
 | C compiler/build tools, Linux fontconfig, macOS CLT | Build and font-verification prerequisites | User or CI image |
 | ShellCheck | CI validation tool | `.github/scripts/check.sh` |
 | 1Password desktop app + session | Interactive authentication is outside source state | Official app, CLI integration, interactive sign-in |

@@ -15,6 +15,7 @@
       url = "github:nix-darwin/nix-darwin";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    nix-homebrew.url = "github:zhaofengli/nix-homebrew";
     machine-files = {
       url = "path:./hosts";
       flake = false;
@@ -28,6 +29,7 @@
       home-manager,
       nixos-wsl,
       nix-darwin,
+      nix-homebrew,
       machine-files,
     }:
     let
@@ -84,6 +86,7 @@
           nixpkgs
           home-manager
           nix-darwin
+          nix-homebrew
           machine
           ;
       };
