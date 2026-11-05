@@ -30,6 +30,15 @@
       # no platform beyond that
       hostSystem = "x86_64-linux";
 
+      # one nixpkgs instance per system, shared by every consumer
+      pkgsFor = nixpkgs.lib.genAttrs [ hostSystem ] (
+        system:
+        import nixpkgs {
+          inherit system;
+          config.allowUnfreePredicate = licensePredicate;
+        }
+      );
+
       # the secrets domain's license acceptance (nix/lib/license.nix) — the
       # 1Password CLI rides nixpkgs unfree, named and scoped
       licensePredicate = import ./nix/lib/license.nix { inherit (nixpkgs) lib; };
@@ -42,10 +51,7 @@
       report = import ./nix/report.nix {
         lib = nixpkgs.lib;
         # the license acceptance rides the instance
-        pkgs = import nixpkgs {
-          system = hostSystem;
-          config.allowUnfreePredicate = licensePredicate;
-        };
+        pkgs = pkgsFor.${hostSystem};
         hm = home-manager.lib;
         treeRoot = self;
         # no default may bake an identity: the eval's home.homeDirectory
@@ -116,10 +122,7 @@
       };
 
       linuxHome = home-manager.lib.homeManagerConfiguration {
-        pkgs = import nixpkgs {
-          system = hostSystem;
-          config.allowUnfreePredicate = licensePredicate;
-        };
+        pkgs = pkgsFor.${hostSystem};
         extraSpecialArgs = {
           inherit self;
         };
@@ -129,7 +132,6 @@
             {
               home.username = linuxHost.user;
               home.homeDirectory = linuxHost.homeDir;
-              nixpkgs.config.allowUnfreePredicate = licensePredicate;
               workstation.switch.homeAttr = linuxHost.homeKey;
               workstation.switch.systemAttr = linuxHost.name;
               workstation.foundation.shell.extras = (import ./hosts/identity.nix).shellExtras or "";
@@ -188,7 +190,7 @@
       # container-e2e job, or the host shell - docs/testing.md).
       checks.${hostSystem} =
         let
-          pkgs = import nixpkgs { system = hostSystem; };
+          pkgs = nixpkgs.legacyPackages.${hostSystem};
         in
         {
           # the declared-state reads answer: the fold evaluated through the
@@ -246,17 +248,11 @@
           # mounted flake.
           e2e-home =
             (home-manager.lib.homeManagerConfiguration {
-              pkgs = import nixpkgs {
-                system = hostSystem;
-                config.allowUnfreePredicate = licensePredicate;
-              };
+              pkgs = pkgsFor.${hostSystem};
               extraSpecialArgs = {
                 inherit self;
               };
               modules = [
-                {
-                  nixpkgs.config.allowUnfreePredicate = licensePredicate;
-                }
                 ./tests/nix/e2e-home.nix
                 (selectionsLib.translationModule ./tests/nix/e2e-selections.nix)
                 ./nix/modules/workstation-home.nix
@@ -264,17 +260,11 @@
             }).activationPackage;
           e2e-minus-go-home =
             (home-manager.lib.homeManagerConfiguration {
-              pkgs = import nixpkgs {
-                system = hostSystem;
-                config.allowUnfreePredicate = licensePredicate;
-              };
+              pkgs = pkgsFor.${hostSystem};
               extraSpecialArgs = {
                 inherit self;
               };
               modules = [
-                {
-                  nixpkgs.config.allowUnfreePredicate = licensePredicate;
-                }
                 ./tests/nix/e2e-home.nix
                 (selectionsLib.translationModule ./tests/nix/e2e-selections-minus-go.nix)
                 ./nix/modules/workstation-home.nix
