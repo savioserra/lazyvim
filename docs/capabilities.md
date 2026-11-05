@@ -135,15 +135,10 @@ and sorted, never hidden.
   shim's install-time UI).
 - The tailscale transport (`workstation.network.tailscale.*`;
   `services.tailscale` on the system legs; on standalone linux the
-  `workstation-tailscaled` activation: the substrate's systemd unit, a
-  previous apt/dnf/pacman/snap install removed with its sources moved
-  aside, `/var/lib/tailscale` kept; off retracts the unit only). The
-  machine file's `workstation.network.enable = false` turns the transport off. On darwin
-  the system activation removes a previous Tailscale.app (its system
-  extension deactivated with the console user's approval), the app's CLI
-  shim and the brew formula, moved aside under
-  `/var/lib/workstation/tailscale-pre-substrate-<stamp>/`; the substrate
-  daemon then logs in as a new node.
+  `workstation-tailscaled` activation: the substrate's systemd unit; a
+  package, snap or foreign unit already owning tailscaled stops the
+  provision, named; off retracts the unit only). The
+  machine file's `workstation.network.enable = false` turns the transport off.
 - Hosts: all.
 
 ### `fonts`

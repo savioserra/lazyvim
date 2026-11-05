@@ -9,12 +9,6 @@
 let
   cfg = config.workstation;
   isDarwin = pkgs.stdenv.hostPlatform.isDarwin;
-  tailscaleCutover = pkgs.writeShellApplication {
-    name = "workstation-tailscale-cutover";
-    runtimeInputs = [ ];
-    bashOptions = [ ];
-    text = builtins.readFile ../../modules/network/files/tailscale-darwin-cutover.sh;
-  };
 in
 {
   options.workstation = {
@@ -55,9 +49,6 @@ in
             echo "workstation: substrate staged (system plane)" > /dev/kmsg 2>/dev/null || true
           '';
         };
-      })
-      (lib.mkIf (isDarwin && cfg.network.tailscale.enable) {
-        system.activationScripts.preActivation.text = lib.mkAfter "${tailscaleCutover}/bin/workstation-tailscale-cutover";
       })
     ]
   );

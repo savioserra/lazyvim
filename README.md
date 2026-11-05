@@ -63,7 +63,7 @@ asks once; `workstation fleet` changes the choice any time:
 
 | Choice | What happens |
 | --- | --- |
-| Start a new fleet | tailscale on (the substrate's daemon — a previous install is removed, the node state kept), the tailscale login if needed; this machine serves the fleet |
+| Start a new fleet | tailscale on (the substrate's daemon; another tailscale install stops the apply, named), the tailscale login if needed; this machine serves the fleet |
 | Join a fleet | the same, then this machine pairs with every fleet member of your tailscale user |
 | Standalone | no tailscale, no agent fleet (`fleet = "standalone"` in the identity) |
 

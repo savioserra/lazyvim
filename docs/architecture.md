@@ -58,8 +58,8 @@ eval, and the container E2E lane's staged entry) and `workstationTheme.lib`.
   btop, the JetBrainsMono Nerd Font + eza, starship, harlequin+hsql
   (nixpkgs) + the tailscale transport (system legs: `services.tailscale`;
   standalone-HM linux legs: the CLI in `home.packages`, tailscaled the
-  substrate's own systemd unit — a previous install is removed, the node
-  state kept).
+  substrate's own systemd unit; another tailscale install stops the apply,
+  named).
 - **Verification is behavioral.** Container activation runs, consumer
   smokes, HM idempotency/rollback. Structural assertions (counts, the
   fold's union checks) stay assertions — no byte-goldens, no re-record

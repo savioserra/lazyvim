@@ -2,19 +2,17 @@
 # a standalone linux leg (systemd, not NixOS; NixOS and darwin run the
 # system module's services.tailscale).
 #
-#   workstation-tailscaled on    the substrate daemon; any previous install goes
+#   workstation-tailscaled on    the substrate daemon
 #   workstation-tailscaled off   retract the substrate daemon (the state stays)
 #
 # | Surface | Owner |
 # | --- | --- |
 # | `/etc/systemd/system/tailscaled.service` | the substrate unit (the marker line), rewritten each apply |
 # | `/nix/var/nix/gcroots/workstation-tailscaled` | the GC root of the running package |
-# | `/var/lib/tailscale` | the node state — kept across the cutover, never deleted |
-# | `/var/lib/workstation/tailscale-pre-substrate-<stamp>/` | the state copy and the moved-aside sources/units of a previous install |
+# | `/var/lib/tailscale` | the node state, never deleted |
 #
-# - A previous install (apt/dnf/pacman package, snap, a foreign unit) is
-#   stopped, removed and replaced; package removal never purges (the apt
-#   purge deletes /var/lib/tailscale, the node's identity).
+# - Another tailscale install (a package, a snap, a foreign unit at the
+#   substrate's path) is the operator's: the provision stops and names it.
 # - Converged hosts need no root: the checks read world-readable state;
 #   a change re-executes under sudo (non-interactive, or a prompt on a
 #   terminal) and otherwise defers naming the exact command.
@@ -79,7 +77,7 @@ ours() {
 }
 
 foreign_pkg() {
-	# the package manager owning a previous install (empty: none)
+	# the package manager owning another tailscale install (empty: none)
 	if command -v dpkg-query >/dev/null 2>&1 &&
 		dpkg-query -W -f='${Status}' tailscale 2>/dev/null | grep -q 'install ok installed'; then
 		echo apt
@@ -112,6 +110,18 @@ elif ! ours; then
 	exit 0
 fi
 
+if [ "$want" = on ]; then
+	pm=$(foreign_pkg)
+	if [ -n "$pm" ]; then
+		say "provision stopped — the $pm package tailscale owns tailscaled; remove it (keep $state_dir), then apply again"
+		exit 1
+	fi
+	if { [ -e "$unit" ] || [ -L "$unit" ]; } && ! ours; then
+		say "provision stopped — $unit is not the substrate's; remove it, then apply again"
+		exit 1
+	fi
+fi
+
 if [ "$(id -u)" != 0 ]; then
 	if command -v sudo >/dev/null 2>&1 && { sudo -n true 2>/dev/null || [ -t 0 ]; }; then
 		exec sudo "$0" "$want"
@@ -126,69 +136,6 @@ if [ "$want" = off ]; then
 	systemctl daemon-reload
 	say "stopped and removed (the substrate unit; the node state stays in $state_dir)"
 	exit 0
-fi
-
-# --- a previous install goes ------------------------------------------------
-backup=/var/lib/workstation/tailscale-pre-substrate-$(date -u +%Y%m%dT%H%M%SZ)
-backup_state() {
-	if [ -d "$state_dir" ] && [ ! -d "$backup/var-lib-tailscale" ]; then
-		mkdir -p "$backup" && cp -a "$state_dir" "$backup/var-lib-tailscale" &&
-			say "node state copied to $backup/var-lib-tailscale"
-	fi
-}
-
-pm=$(foreign_pkg)
-foreign_unit=0
-if [ -e "$unit" ] || [ -L "$unit" ]; then
-	ours || foreign_unit=1
-fi
-if [ -n "$pm" ] || [ "$foreign_unit" = 1 ]; then
-	backup_state
-	systemctl disable --now tailscaled.service >/dev/null 2>&1
-fi
-case $pm in
-apt)
-	# remove, never purge: the purge deletes /var/lib/tailscale
-	DEBIAN_FRONTEND=noninteractive apt-get remove -y -q tailscale >/dev/null 2>&1 ||
-		{ say 'removing the apt package tailscale failed — run: apt-get remove tailscale'; exit 1; }
-	say 'removed the previous install (apt package tailscale)'
-	for f in /etc/apt/sources.list.d/tailscale.list /etc/apt/sources.list.d/tailscale.sources \
-		/usr/share/keyrings/tailscale-archive-keyring.gpg; do
-		if [ -e "$f" ]; then
-			mkdir -p "$backup" && mv "$f" "$backup/" && say "moved the apt source $f to $backup"
-		fi
-	done
-	;;
-pacman)
-	pacman -R --noconfirm tailscale >/dev/null 2>&1 ||
-		{ say 'removing the pacman package tailscale failed — run: pacman -R tailscale'; exit 1; }
-	say 'removed the previous install (pacman package tailscale)'
-	;;
-rpm)
-	{ dnf remove -y tailscale || yum remove -y tailscale; } >/dev/null 2>&1 ||
-		{ say 'removing the rpm package tailscale failed — run: dnf remove tailscale'; exit 1; }
-	f=/etc/yum.repos.d/tailscale.repo
-	if [ -e "$f" ]; then
-		mkdir -p "$backup" && mv "$f" "$backup/" && say "moved the repo $f to $backup"
-	fi
-	say 'removed the previous install (rpm package tailscale)'
-	;;
-snap)
-	# the snap keeps its state under /var/snap: carried over first
-	snap_state=/var/snap/tailscale/common/tailscaled.state
-	if [ -f "$snap_state" ] && [ ! -f "$state_dir/tailscaled.state" ]; then
-		mkdir -p "$state_dir" && chmod 0700 "$state_dir" && cp -a "$snap_state" "$state_dir/tailscaled.state" &&
-			say "node state carried over from the snap ($snap_state)"
-	fi
-	snap remove tailscale >/dev/null 2>&1 ||
-		{ say 'removing the snap tailscale failed — run: snap remove tailscale'; exit 1; }
-	say 'removed the previous install (snap tailscale)'
-	;;
-esac
-# a foreign unit at the substrate's path (a hand-written unit, the package's
-# removal mask) moves aside
-if { [ -e "$unit" ] || [ -L "$unit" ]; } && ! ours; then
-	mkdir -p "$backup" && mv "$unit" "$backup/" && say "moved the previous unit $unit to $backup"
 fi
 
 # --- the substrate daemon ----------------------------------------------------
