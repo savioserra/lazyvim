@@ -105,7 +105,7 @@ when run elsewhere. Reads and switches build the checkout's committed
 input), so uncommitted work stays out of the generation and a commit that
 touches nothing deployed leaves the generation unchanged;
 `WORKSTATION_WORKTREE=1` builds the working tree. The switch receipt in
-`switch.log` names the commit (`self.rev`). Reads mutate nothing. Ownership and history over time:
+`switch.log` names the commit. Reads mutate nothing. Ownership and history over time:
 `home-manager generations`, `nix store diff-closures`.
 
 The switch re-points the theme token path

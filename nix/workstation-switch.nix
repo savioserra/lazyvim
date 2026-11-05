@@ -28,8 +28,16 @@ let
       message="generation $gen applied (no prior generation)"
     fi
     if [ -n "$flake" ]; then
-      rev="$(nix eval --raw "$flake#workstation.rev" "''${override[@]}" 2>/dev/null || true)"
-      [ -z "$rev" ] || message="$message at $rev"
+      case "$flake" in
+        *'?rev='*)
+          rev="''${flake##*\?rev=}"
+          rev="''${rev%%&*}"
+          ;;
+        *) rev="$(nix eval --raw "$flake#workstation.rev" "''${override[@]}" 2>/dev/null || true)" ;;
+      esac
+      if [ -n "$rev" ] && [ "$rev" != unknown ]; then
+        message="$message at $rev"
+      fi
     fi
     echo "workstation-switch: $message"
     state_dir="''${XDG_STATE_HOME:-$HOME/.local/state}/workstation"
