@@ -30,8 +30,7 @@
       })
       (lib.mkIf pkgs.stdenv.hostPlatform.isLinux {
         home.activation.ensure-tailscaled = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-          ${ensure}/bin/workstation-tailscaled ${if on then "on" else "off"} ||
-            echo "workstation: tailscaled provision failed — the receipt above names the step; the next apply retries"
+          ${ensure}/bin/workstation-tailscaled ${if on then "on" else "off"} || true
         '';
       })
     ];
