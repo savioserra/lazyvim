@@ -13,8 +13,7 @@
 # update is `workstation apply`.
 #
 # Environment:
-#   WORKSTATION_CHECKOUT   where the clone lands (default ~/workstation; an
-#                          existing ~/lazyvim checkout keeps its path)
+#   WORKSTATION_CHECKOUT   where the clone lands (default ~/workstation)
 #   WORKSTATION_REPO       the clone URL (default: this repository)
 #   WORKSTATION_NO_APPLY=1 capture the machine, skip the first switch
 set -eu
@@ -44,9 +43,6 @@ export NIX_CONFIG="extra-experimental-features = nix-command flakes"
 # --- the clone -------------------------------------------------------------
 repo=${WORKSTATION_REPO:-https://github.com/savioserra/workstation.git}
 checkout=${WORKSTATION_CHECKOUT:-"$HOME/workstation"}
-if [ ! -d "$checkout/.git" ] && [ -d "$HOME/lazyvim/.git" ]; then
-	checkout=$HOME/lazyvim
-fi
 if [ -d "$checkout/.git" ]; then
 	log "checkout exists at $checkout — updating"
 	git -C "$checkout" pull --ff-only

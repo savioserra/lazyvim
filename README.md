@@ -38,7 +38,7 @@ sh -c "$(curl -fsSL https://raw.githubusercontent.com/savioserra/workstation/mai
 ```
 
 The installer clones to `~/workstation` (`WORKSTATION_CHECKOUT`
-overrides; an existing `~/lazyvim` checkout is updated in place) and runs
+overrides) and runs
 `workstation init`: a few dialogs prefilled with the detected hostname,
 user and home, the fleet choice, and the first switch. Every later update
 is the same one-liner or `workstation apply` after a `git pull`.
