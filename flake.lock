@@ -56,11 +56,11 @@
     "machine-files": {
       "flake": false,
       "locked": {
-        "path": "./hosts",
+        "path": "./hosts/template",
         "type": "path"
       },
       "original": {
-        "path": "./hosts",
+        "path": "./hosts/template",
         "type": "path"
       },
       "parent": []

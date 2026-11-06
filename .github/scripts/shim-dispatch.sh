@@ -8,7 +8,7 @@
 # | 2 | a read evals #workstation.report.<verb> on the resolved flake and prints it unchanged |
 # | 3 | resolution: --flake > $WORKSTATION_FLAKE > the enclosing checkout > the staged snapshot; none fails closed |
 # | 4 | writes delegate to workstation-switch; an uncaptured machine refuses; no driver fails closed |
-# | 5 | add/remove: grammar, report row, baseline refusal; hosts/machine.json settings edited, pruned, apply offered |
+# | 5 | add/remove: grammar, report row, baseline refusal; hosts/local/machine.json settings edited, pruned, apply offered |
 # | 6 | init: placeholders filled from detection, set fields kept, a converged re-init byte-identical, cancel writes nothing |
 # | 7 | peers: helper build, file guards, change-gated apply offer |
 # | 8 | the write plane switches the resolved checkout only |
@@ -94,19 +94,21 @@ expect_log() {
 }
 # machine <dir> <json> — a fixture checkout's machine file
 machine() {
-	mkdir -p "$1/hosts"
-	printf '%s\n' "$2" >"$1/hosts/machine.json"
+	mkdir -p "$1/hosts/local" "$1/hosts/template"
+	printf '%s\n' "$2" >"$1/hosts/local/machine.json"
+	[ -f "$1/hosts/template/peers.nix" ] || printf '{ }\n' >"$1/hosts/template/peers.nix"
 }
 captured='{"host":"testhost","user":"testuser","home":"/home/testuser","system":"x86_64-linux","settings":{}}'
 template='{"host":"TEMPLATE","user":"TEMPLATE","home":"/home/TEMPLATE","settings":{}}'
 # q <dir> <jq filter> — query a fixture's machine file
-q() { "$jq" -r "$2" "$1/hosts/machine.json"; }
+q() { "$jq" -r "$2" "$1/hosts/local/machine.json"; }
 
 PATH=$stub_dir:/usr/bin:/bin
 export PATH
 unset WORKSTATION_FLAKE WORKSTATION_SWITCH_FLAKE WORKSTATION_CHECKOUT WORKSTATION_WORKTREE
 repo_ref="git+file://$repo_root?rev=$(git -C "$repo_root" rev-parse HEAD)"
-repo_ovr="--override-input machine-files path:$repo_root/hosts"
+repo_ovr=''
+[ ! -f "$repo_root/hosts/local/machine.json" ] || repo_ovr=" --override-input machine-files path:$repo_root/hosts/local"
 
 # 1
 out=$("$shim" help) || fail 'help must exit 0'
@@ -124,7 +126,7 @@ rc=0
 # 2
 out=$("$shim" --flake "$repo_root" status) || fail 'status with an explicit flake failed'
 [ "$out" = '{"stub":true}' ] || fail 'the read must print the eval stdout unchanged'
-expect_log "eval --json $repo_ref#workstation.report.status $repo_ovr"
+expect_log "eval --json $repo_ref#workstation.report.status$repo_ovr"
 
 # 3
 WORKSTATION_FLAKE=$repo_root "$shim" plan >/dev/null || fail 'plan via WORKSTATION_FLAKE failed'
@@ -168,13 +170,13 @@ sel() { WORKSTATION_FLAKE=$sf "$shim" "$@"; }
 out=$(sel add languages/go) || fail 'add must succeed'
 [ "$(q "$sf" .settings.workstation.languages.go.enable)" = true ] || fail 'add must set the enable'
 printf '%s' "$out" | grep -q 'next: workstation apply' || fail 'the offer must name the next step'
-before=$(cat "$sf/hosts/machine.json")
+before=$(cat "$sf/hosts/local/machine.json")
 out=$(sel add languages/go) || fail 'a repeated add must succeed'
 printf '%s' "$out" | grep -q 'already selected' || fail 'a repeated add must say so'
-[ "$before" = "$(cat "$sf/hosts/machine.json")" ] || fail 'a repeated add must not touch the file'
+[ "$before" = "$(cat "$sf/hosts/local/machine.json")" ] || fail 'a repeated add must not touch the file'
 out=$(sel remove languages/node) || fail 'remove of an unselected default-off path must succeed'
 printf '%s' "$out" | grep -q 'already off' || fail 'the no-op remove must say so'
-[ "$before" = "$(cat "$sf/hosts/machine.json")" ] || fail 'the no-op remove must not touch the file'
+[ "$before" = "$(cat "$sf/hosts/local/machine.json")" ] || fail 'the no-op remove must not touch the file'
 sel add languages/node languages/go >/dev/null || fail 'a multi-path add must succeed'
 [ "$(q "$sf" .settings.workstation.languages.node.enable)" = true ] || fail 'the multi-path add must set its second path'
 printf '#!/bin/sh\nexit 0\n' > "$stub_dir/whiptail"
@@ -193,7 +195,7 @@ sel remove languages/go >/dev/null || fail 'remove of a selected language must s
 sel remove languages >/dev/null || fail 'remove of the languages domain must succeed'
 sel add languages/go >/dev/null || fail 'a member add under a disabled domain must succeed'
 [ "$(q "$sf" .settings.workstation.languages.enable)" = true ] || fail 'a member add must turn its disabled domain on'
-before=$(cat "$sf/hosts/machine.json")
+before=$(cat "$sf/hosts/local/machine.json")
 out=$(sel add foundation 2>&1) && fail 'add foundation must refuse'
 printf '%s' "$out" | grep -q 'baseline — always on' || fail 'the baseline refusal must say so'
 for bad in foundation 'bad;path' a/b/c /leading nonsense; do
@@ -201,13 +203,13 @@ for bad in foundation 'bad;path' a/b/c /leading nonsense; do
 	sel add "$bad" >/dev/null 2>&1 || rc=$?
 	[ "$rc" = 2 ] || fail "add '$bad' must exit 2 (got $rc)"
 done
-[ "$before" = "$(cat "$sf/hosts/machine.json")" ] || fail 'the refusals must not touch the file'
+[ "$before" = "$(cat "$sf/hosts/local/machine.json")" ] || fail 'the refusals must not touch the file'
 nofile=$root/nofileflake
 mkdir -p "$nofile/hosts"
 rc=0
 WORKSTATION_FLAKE=$nofile "$shim" add editor 2>"$root/err" || rc=$?
-[ "$rc" = 1 ] || fail "a missing machine file must fail closed (got $rc)"
-grep -q 'machine.json missing' "$root/err" || fail 'the missing-file failure must name it'
+[ "$rc" = 2 ] || fail "a missing machine file must fail closed (got $rc)"
+grep -q 'workstation init' "$root/err" || fail 'the missing-file failure must name workstation init'
 sel selected >/dev/null || fail 'selected must eval the report'
 expect_log '#workstation.report.selections'
 rc=0
@@ -224,45 +226,58 @@ init=$root/initflake
 machine "$init" '{"host":"TEMPLATE","user":"TEMPLATE","home":"/home/TEMPLATE","settings":{"workstation":{"foundation":{"shell":{"extras":"stty -ixon"}}},"programs":{"hermes":{"a2a":{"enable":true}}}}}'
 out=$(WORKSTATION_NO_APPLY=1 WORKSTATION_FLAKE=$init "$shim" init) || fail 'init on the template must succeed'
 printf '%s' "$out" | grep -q 'machine captured' || fail 'the capture must say it captured'
-grep -q TEMPLATE "$init/hosts/machine.json" && fail 'init must fill every placeholder'
+grep -q TEMPLATE "$init/hosts/local/machine.json" && fail 'init must fill every placeholder'
 [ "$(q "$init" .host)" = "$(uname -n | cut -d. -f1)" ] || fail 'init must capture the host'
 [ "$(q "$init" .home)" = "$HOME" ] || fail 'init must capture the home'
 q "$init" .system | grep -Eq '^(x86_64|aarch64)-(linux|darwin)$' || fail 'init must capture the system'
 [ "$(q "$init" .settings.workstation.foundation.shell.extras)" = 'stty -ixon' ] || fail 'init must keep the settings'
-cp "$init/hosts/machine.json" "$root/init-before"
+cp "$init/hosts/local/machine.json" "$root/init-before"
 out=$(WORKSTATION_NO_APPLY=1 WORKSTATION_FLAKE=$init "$shim" init) || fail 'a converged re-init must succeed'
 printf '%s' "$out" | grep -q 'already captured' || fail 'the converged re-init must say so'
-cmp -s "$root/init-before" "$init/hosts/machine.json" || fail 'a converged re-init must not touch the file'
+cmp -s "$root/init-before" "$init/hosts/local/machine.json" || fail 'a converged re-init must not touch the file'
 machine "$init" '{"host":"myhost","user":"TEMPLATE","home":"/home/TEMPLATE","system":"aarch64-linux","settings":{"programs":{"hermes":{"a2a":{"enable":true}}}}}'
 WORKSTATION_NO_APPLY=1 WORKSTATION_FLAKE=$init "$shim" init >/dev/null || fail 'init on a half-captured machine must succeed'
 [ "$(q "$init" .host)" = myhost ] || fail 'init must keep the operator host'
 [ "$(q "$init" .system)" = aarch64-linux ] || fail 'init must keep the operator system'
 [ "$(q "$init" .user)" != TEMPLATE ] || fail 'init must fill the placeholder user'
 machine "$init" "$template"
-cp "$init/hosts/machine.json" "$root/init-before"
+cp "$init/hosts/local/machine.json" "$root/init-before"
 printf '#!/bin/sh\nexit 1\n' >"$stub_dir/whiptail"
 rc=0
 WORKSTATION_NO_APPLY=1 WORKSTATION_FLAKE=$init "$shim" init >/dev/null 2>"$root/err" || rc=$?
 [ "$rc" = 1 ] || fail "a cancelled capture must exit 1 (got $rc)"
 grep -q 'cancelled' "$root/err" || fail 'the cancelled capture must say so'
-cmp -s "$root/init-before" "$init/hosts/machine.json" || fail 'a cancelled capture must not touch the file'
-rm "$init/hosts/machine.json"
+cmp -s "$root/init-before" "$init/hosts/local/machine.json" || fail 'a cancelled capture must not touch the file'
+rm "$init/hosts/local/machine.json"
+mkdir -p "$init/hosts/template"
+printf '%s\n' "$template" >"$init/hosts/template/machine.json"
+printf '{ }\n' >"$init/hosts/template/peers.nix"
+cat >"$stub_dir/whiptail" <<'STUB'
+#!/bin/sh
+for a; do :; done
+printf '%s\n' "$a" >&2
+STUB
+WORKSTATION_NO_APPLY=1 WORKSTATION_FLAKE=$init "$shim" init >/dev/null 2>&1 || fail 'init must seed hosts/local from the template'
+[ -f "$init/hosts/local/peers.nix" ] || fail 'init must seed peers.nix from the template'
+grep -q TEMPLATE "$init/hosts/local/machine.json" && fail 'the seeded capture must fill every placeholder'
+rm -r "$init/hosts/local" "$init/hosts/template"
+printf '#!/bin/sh\nexit 1\n' >"$stub_dir/whiptail"
 rc=0
 WORKSTATION_NO_APPLY=1 WORKSTATION_FLAKE=$init "$shim" init >/dev/null 2>"$root/err" || rc=$?
-[ "$rc" = 1 ] || fail "init without the machine file must exit 1 (got $rc)"
-grep -q 'missing (unexpected tree)' "$root/err" || fail 'the missing-file refusal must name it'
+[ "$rc" = 1 ] || fail "init without a template must exit 1 (got $rc)"
+grep -q 'missing (unexpected tree)' "$root/err" || fail 'the missing-template refusal must name it'
 
 # 7
 pf=$root/peersflake
-mkdir -p "$pf/hosts"
-printf '{ }\n' >"$pf/hosts/peers.nix"
+mkdir -p "$pf/hosts/local"
+printf '{ }\n' >"$pf/hosts/local/peers.nix"
 rc=0
 WORKSTATION_FLAKE=$pf "$shim" peers extra >/dev/null 2>&1 || rc=$?
 [ "$rc" = 2 ] || fail "peers with an argument must exit 2 (got $rc)"
 rm -f "$root/peers-mode"
 out=$(WORKSTATION_NO_APPLY=1 WORKSTATION_FLAKE=$pf "$shim" peers) || fail 'peers with an unchanged file must succeed'
 expect_log "#workstation-peers"
-expect_log "workstation-peers $pf/hosts/peers.nix"
+expect_log "workstation-peers $pf/hosts/local/peers.nix"
 printf '%s' "$out" | grep -q 'peers saved' && fail 'an unchanged peers file must not offer the apply'
 printf 'touch\n' >"$root/peers-mode"
 out=$(WORKSTATION_NO_APPLY=1 WORKSTATION_FLAKE=$pf "$shim" peers) || fail 'peers with a changed file must succeed'
@@ -281,15 +296,15 @@ WORKSTATION_FLAKE=$pf "$shim" peers >/dev/null 2>"$root/err" || rc=$?
 [ "$rc" = 1 ] || fail "a failed helper build must exit 1 (got $rc)"
 grep -q 'did not build' "$root/err" || fail 'the failed build must say so'
 rm -f "$root/peers-build-fails"
-chmod a-w "$pf/hosts/peers.nix"
+chmod a-w "$pf/hosts/local/peers.nix"
 rc=0
 WORKSTATION_FLAKE=$pf "$shim" peers >/dev/null 2>"$root/err" || rc=$?
-chmod u+w "$pf/hosts/peers.nix"
+chmod u+w "$pf/hosts/local/peers.nix"
 if [ "$(id -u)" != 0 ]; then
 	[ "$rc" = 2 ] || fail "a read-only peers file must exit 2 (got $rc)"
 	grep -q 'read-only' "$root/err" || fail 'the read-only refusal must name it'
 fi
-rm "$pf/hosts/peers.nix"
+rm "$pf/hosts/local/peers.nix"
 rc=0
 WORKSTATION_FLAKE=$pf "$shim" peers >/dev/null 2>"$root/err" || rc=$?
 [ "$rc" = 1 ] || fail "a missing peers file must exit 1 (got $rc)"
@@ -318,6 +333,7 @@ machine "$gco" "$captured"
 mkdir -p "$gco/bin"
 : >"$gco/bin/workstation"
 : >"$gco/flake.nix"
+printf 'hosts/local/\n' >"$gco/.gitignore"
 git -C "$gco" init -q
 git -C "$gco" add -A
 git -C "$gco" -c user.name=t -c user.email=t@t commit -qm fixture
@@ -326,7 +342,7 @@ gco_rev=$(git -C "$gco" rev-parse HEAD)
 printf 'work in progress\n' >"$gco/bin/workstation"
 (cd "$gco" && "$shim" apply >/dev/null 2>&1) || fail 'apply in a git checkout must delegate'
 [ "$(last_switch)" = "switch-flake=git+file://$gco_real?rev=$gco_rev" ] || fail "a git checkout must hand over its committed HEAD (got: $(last_switch))"
-[ "$(last_machine)" = "switch-machine=$gco_real/hosts" ] || fail "a git checkout must hand over its working-tree machine files (got: $(last_machine))"
+[ "$(last_machine)" = "switch-machine=$gco_real/hosts/local" ] || fail "a git checkout must hand over its working-tree machine files (got: $(last_machine))"
 (cd "$gco" && WORKSTATION_WORKTREE=1 "$shim" apply >/dev/null 2>&1) || fail 'apply with WORKSTATION_WORKTREE must delegate'
 [ "$(last_switch)" = "switch-flake=$gco_real" ] || fail "WORKSTATION_WORKTREE must hand over the working tree (got: $(last_switch))"
 (cd "$co" && WORKSTATION_SWITCH_FLAKE=/operator/flake "$shim" apply >/dev/null 2>&1) || fail 'apply must delegate'
@@ -368,10 +384,10 @@ machine "$fl" "$template"
 printf '%s\n' "$(uname -n | cut -d. -f1)" "${USER:-$(id -un)}" "$HOME" yes join >"$root/wt-queue"
 WORKSTATION_NO_APPLY=1 WORKSTATION_FLAKE=$fl "$shim" init >/dev/null 2>&1 || fail 'init with the fleet join must succeed'
 [ "$(fleet_state)" = 'true true' ] || fail "Join must turn the A2A node and the network on (got: $(fleet_state))"
-cp "$fl/hosts/machine.json" "$root/fleet-before"
+cp "$fl/hosts/local/machine.json" "$root/fleet-before"
 : >"$root/wt-queue"
 WORKSTATION_NO_APPLY=1 WORKSTATION_FLAKE=$fl "$shim" init >/dev/null 2>&1 || fail 'a converged re-init must succeed'
-cmp -s "$root/fleet-before" "$fl/hosts/machine.json" || fail 'a re-init must keep the fleet choice byte for byte'
+cmp -s "$root/fleet-before" "$fl/hosts/local/machine.json" || fail 'a re-init must keep the fleet choice byte for byte'
 machine "$fl" "$template"
 printf '%s\n' "$(uname -n | cut -d. -f1)" "${USER:-$(id -un)}" "$HOME" no >"$root/wt-queue"
 WORKSTATION_NO_APPLY=1 WORKSTATION_FLAKE=$fl "$shim" init >/dev/null 2>&1 || fail 'init with Not now must succeed'

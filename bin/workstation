@@ -1,7 +1,7 @@
 #!/bin/sh
 # The workstation launcher: reads are nix evals over #workstation.report.<verb>;
 # writes go through the generation's workstation-switch driver; the
-# machine's choices live in hosts/machine.json.
+# machine's choices live in hosts/local/machine.json (gitignored).
 # shellcheck disable=SC2016 # jq filters carry their own $variables
 set -eu
 
@@ -10,15 +10,15 @@ usage() {
 workstation — the nixpkgs-native workstation substrate
 
 install (once per machine):
-  init            capture this machine into hosts/machine.json (whiptail
+  init            capture this machine into hosts/local/machine.json (whiptail
                   dialogs prefilled with the detected values; a re-run
                   keeps every field you set) and run the first activation:
                     clone && workstation init
-                  keep the file uncommitted; every later update is
+                  every later update is
                   `workstation apply` (WORKSTATION_NO_APPLY=1 skips the
                   first switch)
 
-selection (per-machine capability flags, hosts/machine.json settings):
+selection (per-machine capability flags, hosts/local/machine.json settings):
   add <path>...        enable capability(ies) on this machine
   remove <path>...     disable capability(ies)
   selected             this machine's rows: per path on/off/baseline + notes
@@ -33,8 +33,7 @@ fleet (the agents' private network — tailscale + the A2A fleet):
                   tailscale user automatically) or stay standalone; init
                   asks the same once
 
-peers (the A2A node's peers, hosts/peers.nix — keep the local rewrite
-uncommitted):
+peers (the A2A node's peers, hosts/local/peers.nix):
   peers           one screen over the tailnet's A2A agents (the online
                   nodes whose Agent Card answers on the A2A port): add a
                   peer, pair it (a shared token, exchanged over the
@@ -60,7 +59,7 @@ other:
 The checkout resolves in this order: --flake PATH, $WORKSTATION_FLAKE,
 the enclosing checkout (the first flake.nix walking up from $PWD), the
 checkout init recorded ($WORKSTATION_CHECKOUT). Reads and switches build
-the checkout's committed HEAD with the working tree's hosts/ machine files;
+the checkout's committed HEAD with the machine files in hosts/local;
 WORKSTATION_WORKTREE=1 builds the working tree instead.
 EOF
 }
@@ -99,7 +98,7 @@ jqx() {
 	"$WS_JQ" "$@"
 }
 
-# machine_edit <jq filter> [jq args...] — rewrite hosts/machine.json in place
+# machine_edit <jq filter> [jq args...] — rewrite hosts/local/machine.json in place
 machine_edit() {
 	filter=$1
 	shift
@@ -125,7 +124,7 @@ offer_apply() {
 	if command -v whiptail >/dev/null 2>&1; then
 		if whiptail --title " workstation $what " --yesno \
 			"Apply the new $what now?" 9 68; then
-			if [ -f "$flake/hosts/machine.json" ] && uncaptured "$flake/hosts/machine.json"; then
+			if uncaptured_checkout; then
 				die 'machine not captured — run: workstation init' 2
 			fi
 			if command -v workstation-switch >/dev/null 2>&1; then
@@ -289,7 +288,7 @@ if [ -z "$flake" ] && [ -n "${WORKSTATION_CHECKOUT:-}" ] && [ -f "$WORKSTATION_C
 fi
 
 # the build ref: the committed HEAD, so work in progress stays out of the
-# generation; the machine files ride the machine-files input from hosts/
+# generation; the machine files ride the machine-files input from hosts/local
 ref=$flake
 mdir=
 if [ -n "$flake" ] && [ -d "$flake" ]; then
@@ -300,9 +299,9 @@ if [ -n "$flake" ] && [ -d "$flake" ]; then
 		head=$(git -C "$flake" rev-parse --verify -q HEAD 2>/dev/null); then
 		ref="git+file://$flake?rev=$head"
 	fi
-	[ ! -f "$flake/hosts/machine.json" ] || mdir=$flake/hosts
+	[ ! -f "$flake/hosts/local/machine.json" ] || mdir=$flake/hosts/local
 fi
-machine=${flake:+$flake/hosts/machine.json}
+machine=${flake:+$flake/hosts/local/machine.json}
 
 # the driver builds what the reads read; an operator-set
 # WORKSTATION_SWITCH_FLAKE wins
@@ -310,15 +309,30 @@ switch_flake() {
 	[ -n "$flake" ] || return 0
 	export WORKSTATION_SWITCH_CHECKOUT="$flake"
 	[ -z "${WORKSTATION_SWITCH_FLAKE:-}" ] || return 0
-	[ -f "$flake/hosts/machine.json" ] && [ -f "$flake/bin/workstation" ] || return 0
+	[ -f "$machine" ] && [ -f "$flake/bin/workstation" ] || return 0
 	export WORKSTATION_SWITCH_FLAKE="$ref"
 	export WORKSTATION_SWITCH_MACHINE="$mdir"
+}
+
+# uncaptured_checkout — a workstation checkout whose machine is not captured
+uncaptured_checkout() {
+	[ -n "$flake" ] || return 1
+	if [ -f "$machine" ]; then uncaptured "$machine"; else [ -f "$flake/bin/workstation" ]; fi
+}
+
+# seed_local — hosts/local from hosts/template, the files absent there
+seed_local() {
+	for f in machine.json peers.nix; do
+		[ ! -f "$flake/hosts/local/$f" ] || continue
+		[ -f "$flake/hosts/template/$f" ] || die "init: $flake/hosts/template/$f missing (unexpected tree)" 1
+		mkdir -p "$flake/hosts/local" && cp "$flake/hosts/template/$f" "$flake/hosts/local/$f"
+	done
 }
 
 # writable_machine <verb> — the checkout's machine file, editable
 writable_machine() {
 	[ -n "$flake" ] || die 'no checkout found — run inside the workstation repo clone' 2
-	[ -f "$machine" ] || die "$1: $machine missing (unexpected tree)" 1
+	[ -f "$machine" ] || die 'machine not captured — run: workstation init' 2
 	[ -w "$machine" ] ||
 		die "$1: $machine is read-only — run inside the workstation repo clone" 2
 }
@@ -327,6 +341,8 @@ case "$verb" in
 init)
 	# capture once: a field the file already sets wins; the placeholders
 	# (TEMPLATE, /home/TEMPLATE) and absent fields are asked and filled
+	[ -n "$flake" ] || die 'no checkout found — run inside the workstation repo clone' 2
+	seed_local
 	writable_machine init
 	host=$(uname -n 2>/dev/null)
 	host=${host%%.*}
@@ -380,7 +396,6 @@ init)
 		printf 'workstation: machine already captured in %s (host=%s user=%s) — the fields you set were kept\n' \
 			"$machine" "$(jqx -r .host "$machine")" "$(jqx -r .user "$machine")"
 	fi
-	printf 'workstation: keep the file uncommitted\n'
 	fleet_mode=''
 	if [ -z "$(fleet_get)" ]; then
 		fleet_choose 'workstation init'
@@ -528,8 +543,8 @@ peers)
 	[ $# -eq 0 ] || die 'peers takes no arguments' 2
 	[ -n "$flake" ] ||
 		die 'no checkout found — run inside the workstation repo clone' 2
-	peers_file=$flake/hosts/peers.nix
-	[ -f "$peers_file" ] || die "peers: $peers_file missing (unexpected tree)" 1
+	peers_file=$flake/hosts/local/peers.nix
+	[ -f "$peers_file" ] || die "peers: $peers_file missing — run: workstation init" 1
 	[ -w "$peers_file" ] ||
 		die "peers: $peers_file is read-only — run inside the workstation repo clone" 2
 	helper=$(peers_helper) || die 'peers: the discovery helper did not build (nix build failed)' 1
@@ -547,7 +562,7 @@ peers)
 	;;
 apply | rollback | update | sync)
 	# writes refuse until init captured the machine
-	if [ -n "$flake" ] && [ -f "$flake/hosts/machine.json" ] && uncaptured "$flake/hosts/machine.json"; then
+	if uncaptured_checkout; then
 		die 'machine not captured — run: workstation init' 2
 	fi
 	if command -v workstation-switch >/dev/null 2>&1; then

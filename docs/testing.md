@@ -7,8 +7,7 @@ sh .github/scripts/check.sh
 ```
 
 The static battery: the nix identity gate (per-host identity lives only in
-`hosts/machine.json`, uncommitted), the tree-purity gate (the tree-wide grep for a
-foreign module-system token stays empty), `sh -n` +
+`hosts/local/`, gitignored), the history-prose gate, `sh -n` +
 ShellCheck over the shell surfaces, the launcher shim's dispatch gate (a
 stub `nix` and a stub `workstation-switch` — dispatch, flake resolution
 order, delegation and fail-closed paths, no nix install needed), the nix

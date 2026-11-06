@@ -296,7 +296,7 @@ in
           also the peer's inbound identity (a2a.trusted_peers, the name in
           its A2A_PEER_TOKENS row). Each renders an a2a_agents entry whose
           bearer token is the env reference A2A_PEER_TOKEN_<NAME>. The
-          legs import hosts/peers.nix.
+          legs import hosts/local/peers.nix.
         '';
       };
     };

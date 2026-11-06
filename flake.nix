@@ -17,7 +17,7 @@
     };
     nix-homebrew.url = "github:zhaofengli/nix-homebrew";
     machine-files = {
-      url = "path:./hosts";
+      url = "path:./hosts/template";
       flake = false;
     };
   };

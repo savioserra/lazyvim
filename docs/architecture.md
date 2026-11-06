@@ -15,8 +15,8 @@ switch.log receipt).
 | `flake.nix`, `flake.lock` | The entry point: one nixpkgs input, home-manager, nix-darwin, NixOS-WSL; the machine's legs, the report verbs, the checks |
 | `modules/<domain>/` | One directory per capability domain: the module (options + declarations) and the bytes it deploys. `modules/default.nix` lists the modules |
 | `nix/` | Shared infrastructure: `report.nix` (the read verbs), `lib/machine.nix` (the machine file), `lib/license.nix` (the unfree acceptance), `workstation-switch.nix` (the write plane), `modules/` (the home plane, the system plane, the host options) |
-| `hosts/` | `linux/` and `mac/` (the system legs), `machine.json` (identity + settings) and `peers.nix` (A2A peers): templates rewritten per machine by `workstation init` / `add|remove` / `fleet` / `peers`, kept uncommitted |
-| `bin/workstation` | The launcher (POSIX sh): reads are `nix eval`s over `workstation.report.<verb>`; `add|remove|fleet` edit `hosts/machine.json` (jq); `peers` runs `workstation-peers` on `hosts/peers.nix`; writes exec the staged switch driver |
+| `hosts/` | `linux/` and `mac/` (the system legs); `template/` (`machine.json`, `peers.nix`); `local/` (gitignored): the machine's copies, written by `workstation init` / `add|remove` / `fleet` / `peers` |
+| `bin/workstation` | The launcher (POSIX sh): reads are `nix eval`s over `workstation.report.<verb>`; `add|remove|fleet` edit `hosts/local/machine.json` (jq); `peers` runs `workstation-peers` on `hosts/local/peers.nix`; writes exec the staged switch driver |
 | `tests/` | The container E2E: `run-container.sh`, `e2e.nix` (the driver), `e2e-home.nix` (the persona), `e2e-selections*.nix` (its flag modules) |
 | `docs/` | The references; this file is the structure's anchor |
 | `.github/` | The static check battery, the CI (static + nix-eval jobs), tagged source archives |
@@ -37,9 +37,8 @@ eval, and the container E2E lane's staged entry) and `workstationTheme.lib`.
 
 - **Two targets.** mac and linux; WSL is linux.
 - **The machine is captured once, at install time.** `workstation init`
-  writes `hosts/machine.json` (host, user, home, system); the local rewrite
-  stays uncommitted and the identity gate reds on personal strings in the
-  tracked tree.
+  writes `hosts/local/machine.json` (host, user, home, system), gitignored;
+  the identity gate reds on personal strings in the tracked tree.
 - **Flags are options.** `settings` in the machine file is a home-manager
   option tree; each domain declares `workstation.<domain>.enable` (members
   `workstation.<domain>.<member>.enable`) and gates itself; the module
@@ -117,8 +116,7 @@ nix.
 
 The check battery (.github/scripts/check.sh) holds the lines in code: the
 identity gate (personal strings only in the machine-local
-`hosts/machine.json`), the tree-purity gate (the tree-wide grep for a
-foreign module-system token stays empty), shell syntax + ShellCheck, the
+`hosts/local/`), the history-prose gate, shell syntax + ShellCheck, the
 shim dispatch gate, the nix eval read gate. Verification beyond the
 battery is behavioral — the docker-nix closure acceptance and the
 container E2E (docs/testing.md).

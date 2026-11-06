@@ -25,8 +25,8 @@ init` — the machine capture, the fleet choice and the first switch.
 Every later update is `workstation apply`.
 
 `workstation init` runs whiptail dialogs prefilled with the detected
-values (hostname, user, home) and writes `hosts/machine.json`. Keep that
-file uncommitted. whiptail ships with the
+values (hostname, user, home) and writes `hosts/local/machine.json`
+(gitignored, seeded from `hosts/template/`). whiptail ships with the
 substrate; on a bare box it falls back to the detected values.
 
 Prerequisite: nix with flakes enabled. The nix daemon is host-owned on
@@ -41,7 +41,7 @@ standalone-Home-Manager hosts, platform-managed on NixOS and nix-darwin.
 
 ## Selecting capabilities
 
-A machine's capability flags live in `hosts/machine.json` under `settings`:
+A machine's capability flags live in `hosts/local/machine.json` under `settings`:
 
 ```sh
 workstation add languages/typescript terminal/nunchux   # enable
@@ -84,7 +84,7 @@ workstation apply    # serve the change
 | --- | --- |
 | discover | the tailnet's online nodes whose Agent Card answers on :9900 |
 | pair | Pair on one machine, `workstation peers` on the other: one shared token, exchanged over the tailnet, stored in `~/.hermes/.env` |
-| peers | `hosts/peers.nix` — keep it uncommitted, like the identity |
+| peers | `hosts/local/peers.nix` (gitignored) |
 
 ## Reads
 
@@ -142,7 +142,7 @@ sessions, or vault state belong to the substrate. See
 sh .github/scripts/check.sh
 ```
 
-Covers the identity gate, the tree-purity gate, shell checks, the shim
+Covers the identity gate, the history-prose gate, shell checks, the shim
 dispatch gate, and the nix eval reads. Never run fixtures against a
 switched home. Behavioral acceptance: the container E2E. CI runs the
 static battery plus the nix evaluation leg. Release CI validates tagged

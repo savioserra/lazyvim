@@ -299,29 +299,30 @@ writeShellScriptBin "workstation-e2e" ''
   mkdir -p "$initlive"
   cp -a /workstation/. "$initlive/"
   chmod -R u+w "$initlive"
+  mkdir -p "$initlive/hosts/local"
   printf '%s\n' '{"host":"TEMPLATE","user":"TEMPLATE","home":"/home/TEMPLATE","settings":{"workstation":{"foundation":{"shell":{"extras":"stty -ixon"}}},"programs":{"hermes":{"a2a":{"enable":true}}}}}' \
-    >"$initlive/hosts/machine.json"
+    >"$initlive/hosts/local/machine.json"
   init_path=${initTools}/bin:$PATH
   out=$(PATH="$init_path" WORKSTATION_NO_APPLY=1 WORKSTATION_FLAKE="$initlive" "$shim_bin" init) \
     || fail "init capture live" "init on the template fixture failed"
   printf '%s' "$out" | grep -q 'machine captured' \
     || fail "init capture live" "the capture must say it captured"
-  grep -q TEMPLATE "$initlive/hosts/machine.json" \
+  grep -q TEMPLATE "$initlive/hosts/local/machine.json" \
     && fail "init capture live" "init must fill every placeholder"
   detected_host=$(PATH="$init_path" uname -n | cut -d. -f1)
-  m() { PATH="$init_path" jq -r "$1" "$initlive/hosts/machine.json"; }
+  m() { PATH="$init_path" jq -r "$1" "$initlive/hosts/local/machine.json"; }
   [ "$(m .host)" = "$detected_host" ] || fail "init capture live" "init must capture the detected host ($detected_host)"
   [ "$(m .user)" = e2e ] || fail "init capture live" "init must capture the detected user (e2e)"
   [ "$(m .home)" = /home/e2e ] || fail "init capture live" "init must capture the detected home (/home/e2e)"
   [ "$(m .system)" = x86_64-linux ] || fail "init capture live" "init must capture the system"
   [ "$(m .settings.workstation.foundation.shell.extras)" = 'stty -ixon' ] \
     || fail "init capture live" "the settings must survive the capture"
-  cp "$initlive/hosts/machine.json" "$initlive/machine.converged"
+  cp "$initlive/hosts/local/machine.json" "$initlive/machine.converged"
   out=$(PATH="$init_path" WORKSTATION_NO_APPLY=1 WORKSTATION_FLAKE="$initlive" "$shim_bin" init) \
     || fail "init capture live" "the converged re-init failed"
   printf '%s' "$out" | grep -q 'already captured' \
     || fail "init capture live" "the converged re-init must say so"
-  PATH="$init_path" cmp -s "$initlive/machine.converged" "$initlive/hosts/machine.json" \
+  PATH="$init_path" cmp -s "$initlive/machine.converged" "$initlive/hosts/local/machine.json" \
     || fail "init capture live" "a converged re-init must leave the file byte-identical"
   rm -rf "$initlive"
   pass "init capture live (placeholders fill, settings survive, the re-init is byte-identical)"
@@ -331,7 +332,9 @@ writeShellScriptBin "workstation-e2e" ''
   mkdir -p "$live"
   cp -a /workstation/. "$live/"
   chmod -R u+w "$live"
-  go_flag() { PATH="$init_path" jq -r '.settings.workstation.languages.go.enable // "unset"' "$live/hosts/machine.json"; }
+  mkdir -p "$live/hosts/local"
+  cp "$live/hosts/template/machine.json" "$live/hosts/template/peers.nix" "$live/hosts/local/"
+  go_flag() { PATH="$init_path" jq -r '.settings.workstation.languages.go.enable // "unset"' "$live/hosts/local/machine.json"; }
   WORKSTATION_FLAKE=$live WORKSTATION_NO_APPLY=1 "$shim_bin" selected \
     | grep -o '"languages/go":{[^}]*}' | grep -q '"state":"off"' \
     || fail "selection verbs live" "selected must answer the template's off row for languages/go"

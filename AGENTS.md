@@ -29,7 +29,7 @@ Read the nearest scoped `AGENTS.md` and follow the owning reference:
 - Tools come from the one nixpkgs input (`nixos-unstable`, the lock is the version surface), or an inline pin where nixpkgs lacks coverage (documented in the owning module). No unpinned downloads, no `sudo`, no OS-package-manager installation of managed tools.
 - Keep language composition in the Neovim profile. Go is an editor toolchain here (no root Go CLI, no services, no Makefiles).
 - Never commit generated plugin/Mason/parser/cache/session/history state or secret values. Secret-reference/vault work requires explicit user `/skill:secrets` invocation; authentication stays user-owned.
-- The identity gate reds on personal strings anywhere in the tracked tree; `hosts/machine.json` (the machine's captured identity and settings) stays uncommitted.
+- The identity gate reds on personal strings anywhere in the tracked tree; `hosts/local/` (the machine's captured identity, settings and peers) is gitignored.
 - Phase markers may ride transient comments for cross-phase handover; they
   do not ship in code — no phase-named files, options, config keys or
   commit messages survive to the merged tree.

@@ -9,7 +9,7 @@ surface before its owning commit lands it.
 
 ```text
 flake.nix
-  -> nix/lib/machine.nix  (hosts/machine.json: identity + settings)
+  -> nix/lib/machine.nix  (hosts/local/machine.json: identity + settings)
   -> nix/modules          (workstation-home imports modules/; workstation-system, host)
   -> modules/default.nix  (the domain and member modules, listed)
   -> nix/report.nix       (workstation.report.<verb>: one home eval)
@@ -18,11 +18,11 @@ flake.nix
 
 bin/workstation (POSIX sh: flake resolution, verb dispatch)
   reads:  nix eval --json <flake>#workstation.report.<verb>
-  select: workstation add|remove <path>  (hosts/machine.json settings via jq,
+  select: workstation add|remove <path>  (hosts/local/machine.json settings via jq,
           validated against workstation.report.selectable)
   fleet:  workstation fleet  (the a2a and network flags + the switch;
           the flake's workstation-fleet helper: login, join)
-  peers:  workstation peers  (hosts/peers.nix + pairing)
+  peers:  workstation peers  (hosts/local/peers.nix + pairing)
   writes: workstation apply  (execs the staged switch driver)
 ```
 
@@ -32,9 +32,9 @@ bin/workstation (POSIX sh: flake resolution, verb dispatch)
 
 ## Capability selection
 
-The machine file `hosts/machine.json` carries the identity and
-`settings`, a home-manager option tree applied as a module. The committed
-copy is the template; the local rewrite stays uncommitted.
+The machine file `hosts/local/machine.json` (gitignored, seeded from
+`hosts/template/`) carries the identity and `settings`, a home-manager
+option tree applied as a module.
 
 ```json
 {
@@ -187,7 +187,7 @@ and sorted, never hidden.
   | `toolsetPlatforms` (`cli`) | the `a2a` toolset per platform |
   | `name` (the identity's host) | `A2A_AGENT_NAME`; with the tailnet bind, `A2A_PUBLIC_URL` `http://<name>:<port>` |
   | `tailnet` | `A2A_HOST` — the node's tailnet IPv4; with no inbound credential, a node-local lock `A2A_BEARER_TOKEN` (generated inside python, held by nobody) widens the bind: the Agent Card is public on the tailnet, calls stay closed until a pairing |
-  | `peers` (`hosts/peers.nix`) | one `a2a_agents.<node>` entry each, bearer token `${A2A_PEER_TOKEN_<NODE>}`; `a2a.trusted_peers` (with the fleet roster) |
+  | `peers` (`hosts/local/peers.nix`) | one `a2a_agents.<node>` entry each, bearer token `${A2A_PEER_TOKEN_<NODE>}`; `a2a.trusted_peers` (with the fleet roster) |
   | `fleet.enable`, `fleet.port` (9902) | the fleet member service `workstation-fleet serve` (systemd user unit / launchd agent) |
   | the identity's `fleet` | `"standalone"` turns `enable` off; absent or `"member"` keeps it on |
 
@@ -221,7 +221,7 @@ and sorted, never hidden.
 
   | Action | Effect |
   | --- | --- |
-  | add | the agent joins `hosts/peers.nix` with every advertised skill and 120s |
+  | add | the agent joins `hosts/local/peers.nix` with every advertised skill and 120s |
   | pair (tailnet) | a one-shot offer on this node's tailnet IPv4 (A2A port + 1), answered only to the peer's tailnet IPv4, serving the token once; `workstation peers` on the peer finds it and accepts |
   | pair (by hand) | paste the peer's token, or generate one (printed once at exit) — any A2A agent |
   | capabilities, timeout, remove | edit the entry; remove also drops its tokens |
@@ -341,8 +341,8 @@ Fail-closed at eval:
   system (the shim validates paths before writing);
 - target collisions across capabilities throw;
 - envelope identities in the report are asserted unique;
-- the identity gate holds personal identity to `hosts/machine.json`
-  (uncommitted).
+- the identity gate holds personal identity to `hosts/local/`
+  (gitignored).
 
 ## Lifecycle
 
@@ -350,9 +350,9 @@ Fail-closed at eval:
 | --- | --- | --- |
 | switch / rollback | `workstation apply` / `workstation rollback` | Build the generation from the flake, activate atomically, write the receipt to `switch.log`; the flake is the resolved checkout's committed `HEAD` (`--flake`, `$WORKSTATION_FLAKE`, the enclosing checkout, `$WORKSTATION_CHECKOUT`) with its working-tree machine files; `WORKSTATION_WORKTREE=1` builds the working tree; an explicit `WORKSTATION_SWITCH_FLAKE` wins; `update` moves `flake.lock` for a commit |
 | `plan` / `status` / `capabilities` / `selected` | `nix eval` over `workstation.report` | Answer the declared state; mutate nothing |
-| select | `workstation add <path>...` / `workstation remove <path>...` | Validate against `selectable`, set or drop the flag in `hosts/machine.json`, offer the apply (idempotent; the baseline refuses) |
+| select | `workstation add <path>...` / `workstation remove <path>...` | Validate against `selectable`, set or drop the flag in `hosts/local/machine.json`, offer the apply (idempotent; the baseline refuses) |
 | fleet | `workstation fleet` (and `init`, once) | Choose start / join / standalone; write `programs.hermes.a2a.enable` and `workstation.network.enable`, switch on a change, log in to tailscale, join |
-| peers | `workstation peers` | Discover the tailnet's A2A agents, add, pair, tune; write `hosts/peers.nix`, store the pair tokens, offer the apply |
+| peers | `workstation peers` | Discover the tailnet's A2A agents, add, pair, tune; write `hosts/local/peers.nix`, store the pair tokens, offer the apply |
 | verify lane | `modules/agent/verify/hermes.sh` | The agent stack's consumer smoke against its recorded pins |
 
 Reads are pure evals. The container E2E (`tests/nix`) asserts the shape

@@ -23,3 +23,4 @@ t_*.err
 
 # agent memory/state from tooling never enters the repo
 .pi/
+hosts/local/

@@ -169,7 +169,6 @@ done
 
 render() {
 	printf "# This machine's A2A peers — written by workstation peers.\n"
-	printf '# Local edit — keep it uncommitted (the committed copy is the empty template).\n'
 	set -- "$work"/p/*
 	if [ ! -d "$1" ]; then
 		printf '{ }\n'

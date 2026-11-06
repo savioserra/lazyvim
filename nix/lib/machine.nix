@@ -1,5 +1,5 @@
-# The machine files (the flake's machine-files input: hosts/ in the
-# checkout's working tree): machine.json, identity plus `settings`, a
+# The machine files (the flake's machine-files input: hosts/template in the
+# tree, hosts/local on a machine): machine.json, identity plus `settings`, a
 # home-manager option tree; peers.nix, the A2A peers.
 { lib, root }:
 let

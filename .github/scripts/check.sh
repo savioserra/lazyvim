@@ -5,8 +5,7 @@
 # E2E (activation + consumers) — is owned by docs/testing.md.
 #
 # Ordering: the identity gate runs first (cheap source grep), then the
-# tree-purity gate (one module system in the tree),
-# then the shell checks, then the nix eval reads (skipped with a loud note
+# history-prose gate, then the shell checks, then the nix eval reads (skipped with a loud note
 # where nix is absent — the docker acceptance owns them there).
 set -eu
 repo_root=$(CDPATH='' cd -P "$(dirname "$0")/../.." && pwd -P)
@@ -15,7 +14,7 @@ fail=0
 
 step() { printf '\n== %s\n' "$1"; }
 
-step 'nix identity gate (the repo is a template: identity is captured at install time only — hosts/machine.json, uncommitted on real machines)'
+step 'nix identity gate (the repo is a template: identity is captured at install time only — hosts/local/machine.json, gitignoreds)'
 # A gate may only pass on a real no-match (git grep exit 1): a tooling
 # failure (exit 128 — not a checkout, a bad pathspec) fails CLOSED, never
 # reads as "no match".
@@ -40,7 +39,7 @@ gate() {
 	esac
 }
 gate 'identity gate' \
-	'identity gate: hardcoded personal identity in the tracked tree — the legs are templates; hosts/machine.json (captured by workstation init, kept uncommitted) is the only identity surface' \
+	'identity gate: hardcoded personal identity in the tracked tree — the legs are templates; hosts/local/machine.json (captured by workstation init, kept uncommitted) is the only identity surface' \
 	sh -c "git grep -iE 'savio|shyylol' -- . ':(exclude).github/scripts/check.sh' | grep -vF 'savioserra/lazyvim' ; test \$? -ne 1"
 
 step 'history-prose gate (the tree describes the current world)'

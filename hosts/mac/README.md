@@ -5,7 +5,7 @@ integrated. Homebrew is a managed dependency: `nix-homebrew` installs it at
 the default prefix from the brew release its lock pins (an existing
 install is taken over, its installed packages kept), and nix-darwin's
 `homebrew.*` options declare what it installs. `nix flake update
-nix-homebrew` moves the brew pin. The machine file (`hosts/machine.json`, written by
+nix-homebrew` moves the brew pin. The machine file (`hosts/local/machine.json`, written by
 `workstation init`) carries the user, the host name and the settings; the
 darwin configuration key is `<user>@<host>`.
 

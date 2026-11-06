@@ -9,7 +9,7 @@
 #
 # Ensures nix, clones this repo to $WORKSTATION_CHECKOUT (default
 # ~/lazyvim) and runs `workstation init`: the machine capture into
-# hosts/machine.json, the fleet choice and the first switch. Every later
+# hosts/local/machine.json, the fleet choice and the first switch. Every later
 # update is `workstation apply`.
 #
 # Environment:
@@ -45,21 +45,7 @@ repo=${WORKSTATION_REPO:-https://github.com/savioserra/lazyvim.git}
 checkout=${WORKSTATION_CHECKOUT:-"$HOME/lazyvim"}
 if [ -d "$checkout/.git" ]; then
 	log "checkout exists at $checkout — updating"
-	# the machine files stay uncommitted: stashed across the pull
-	set --
-	for f in hosts/machine.json hosts/peers.nix; do
-		if [ -e "$checkout/$f" ]; then set -- "$@" "$f"; fi
-	done
-	stashed=''
-	if [ $# -gt 0 ] && ! git -C "$checkout" diff --quiet -- "$@"; then
-		git -C "$checkout" stash push -q -- "$@"
-		stashed=$(git -C "$checkout" rev-parse -q --verify refs/stash)
-	fi
 	git -C "$checkout" pull --ff-only
-	if [ -n "$stashed" ] && ! git -C "$checkout" stash pop -q; then
-		printf 'install: the pull changed your machine files; they are kept in stash %s — resolve in %s, then re-run\n' "$stashed" "$checkout" >&2
-		exit 1
-	fi
 else
 	log "cloning into $checkout"
 	git clone "$repo" "$checkout"
