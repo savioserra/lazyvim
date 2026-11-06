@@ -93,6 +93,8 @@ cores = 2"
 		# the profile dirs the activation registers the generation into
 		# (a bare container has neither until a first switch makes them)
 		mkdir -p "$home/.local/state/nix/profiles" /nix/var/nix/profiles/per-user/e2e
+		# a distro-shipped rc file the first switch must move aside
+		echo "# distro bashrc" >"$home/.bashrc"
 		echo "== container: staging the boot home =="
 		/tmp/e2e-home/activate
 		nix-env --profile "${XDG_STATE_HOME:-$HOME/.local/state}/nix/profiles/home-manager" \

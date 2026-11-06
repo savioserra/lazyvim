@@ -46,5 +46,6 @@
     ];
 
     home.stateVersion = "25.05";
+    home.backupFileExtension = "hm-backup";
   };
 }

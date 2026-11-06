@@ -230,6 +230,13 @@ writeShellScriptBin "workstation-e2e" ''
     && fail "nunchux plane" "unresolved slot references survived the render"
   pass "nunchux plane"
 
+  step "pre-existing rc file moved aside by the first switch"
+  grep -qx '# distro bashrc' "$home/.bashrc.hm-backup" 2>/dev/null \
+    || fail "pre-existing rc file" "the distro .bashrc was not kept as .bashrc.hm-backup"
+  [ -L "$home/.bashrc" ] \
+    || fail "pre-existing rc file" ".bashrc is not the managed link"
+  pass "pre-existing rc file moved aside by the first switch"
+
   step "shell init (home-manager programs: eza, starship, direnv, the op env, the editor env)"
   grep -q "alias -- ls='eza -lh'\|alias ls='eza -lh'" "$home/.bashrc" \
     || fail "shell init" ".bashrc carries no eza ls alias"

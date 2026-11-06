@@ -48,7 +48,6 @@ in
           home-manager = {
             useGlobalPkgs = true;
             useUserPackages = true;
-            backupFileExtension = "pre-nix-darwin";
             users.${machine.user}.imports = machine.homeModules ++ [
               { workstation.switch.systemAttr = machine.key; }
               ../../nix/modules/workstation-home.nix
