@@ -44,7 +44,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
-          name="lazyvim-${GITHUB_REF_NAME}"
+          name="workstation-${GITHUB_REF_NAME}"
           git archive --format=tar.gz --prefix="${name}/" -o "dist/${name}.tar.gz" "${GITHUB_SHA}"
           git archive --format=zip --prefix="${name}/" -o "dist/${name}.zip" "${GITHUB_SHA}"
           (cd dist && sha256sum "${name}.tar.gz" "${name}.zip" > SHA256SUMS)

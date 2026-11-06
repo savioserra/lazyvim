@@ -1,19 +1,20 @@
 #!/bin/sh
 # The workstation one-line install:
 #
-#   curl -fsSL https://raw.githubusercontent.com/savioserra/lazyvim/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/savioserra/workstation/main/install.sh | sh
 #
 # The guarded form (read what runs, then execute) is the recommended one:
 #
-#   sh -c "$(curl -fsSL https://raw.githubusercontent.com/savioserra/lazyvim/main/install.sh)"
+#   sh -c "$(curl -fsSL https://raw.githubusercontent.com/savioserra/workstation/main/install.sh)"
 #
 # Ensures nix, clones this repo to $WORKSTATION_CHECKOUT (default
-# ~/lazyvim) and runs `workstation init`: the machine capture into
+# ~/workstation) and runs `workstation init`: the machine capture into
 # hosts/local/machine.json, the fleet choice and the first switch. Every later
 # update is `workstation apply`.
 #
 # Environment:
-#   WORKSTATION_CHECKOUT   where the clone lands (default ~/lazyvim)
+#   WORKSTATION_CHECKOUT   where the clone lands (default ~/workstation; an
+#                          existing ~/lazyvim checkout keeps its path)
 #   WORKSTATION_REPO       the clone URL (default: this repository)
 #   WORKSTATION_NO_APPLY=1 capture the machine, skip the first switch
 set -eu
@@ -41,8 +42,11 @@ command -v nix >/dev/null 2>&1 ||
 export NIX_CONFIG="extra-experimental-features = nix-command flakes"
 
 # --- the clone -------------------------------------------------------------
-repo=${WORKSTATION_REPO:-https://github.com/savioserra/lazyvim.git}
-checkout=${WORKSTATION_CHECKOUT:-"$HOME/lazyvim"}
+repo=${WORKSTATION_REPO:-https://github.com/savioserra/workstation.git}
+checkout=${WORKSTATION_CHECKOUT:-"$HOME/workstation"}
+if [ ! -d "$checkout/.git" ] && [ -d "$HOME/lazyvim/.git" ]; then
+	checkout=$HOME/lazyvim
+fi
 if [ -d "$checkout/.git" ]; then
 	log "checkout exists at $checkout — updating"
 	git -C "$checkout" pull --ff-only

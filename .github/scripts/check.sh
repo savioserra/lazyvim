@@ -40,7 +40,7 @@ gate() {
 }
 gate 'identity gate' \
 	'identity gate: hardcoded personal identity in the tracked tree — the legs are templates; hosts/local/machine.json (captured by workstation init, kept uncommitted) is the only identity surface' \
-	sh -c "git grep -iE 'savio|shyylol' -- . ':(exclude).github/scripts/check.sh' | grep -vF 'savioserra/lazyvim' ; test \$? -ne 1"
+	sh -c "git grep -iE 'savio|shyylol' -- . ':(exclude).github/scripts/check.sh' | grep -vF 'savioserra/workstation' ; test \$? -ne 1"
 
 step 'history-prose gate (the tree describes the current world)'
 # dates, card ids, ruling citations and history words belong in git

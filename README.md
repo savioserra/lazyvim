@@ -10,17 +10,18 @@ writes a receipt to `~/.local/state/workstation/switch.log`.
 ## Install
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/savioserra/lazyvim/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/savioserra/workstation/main/install.sh | sh
 ```
 
 The guarded form (read what runs first) is the recommended one:
 
 ```sh
-sh -c "$(curl -fsSL https://raw.githubusercontent.com/savioserra/lazyvim/main/install.sh)"
+sh -c "$(curl -fsSL https://raw.githubusercontent.com/savioserra/workstation/main/install.sh)"
 ```
 
 `install.sh` ensures nix (the one prerequisite), clones the repo to
-`~/lazyvim` (`WORKSTATION_CHECKOUT` overrides), and runs `workstation
+`~/workstation` (`WORKSTATION_CHECKOUT` overrides; an existing `~/lazyvim`
+checkout is updated in place), and runs `workstation
 init` — the machine capture, the fleet choice and the first switch.
 Every later update is `workstation apply`.
 
