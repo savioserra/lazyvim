@@ -51,7 +51,7 @@ workstation rollback         # back to the previous generation
 workstation add <path>       # turn a capability on  (workstation remove ...)
 workstation selected         # this machine's rows: on, off, baseline
 workstation status           # the declared inventory
-workstation fleet            # start / join / leave the agent fleet
+workstation fleet            # start / join / standalone — the fleet choice
 workstation peers            # pair with agents outside the fleet
 workstation help             # the full contract
 ```
