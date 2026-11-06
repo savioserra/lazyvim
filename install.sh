@@ -50,9 +50,16 @@ if [ -d "$checkout/.git" ]; then
 	for f in hosts/machine.json hosts/peers.nix; do
 		if [ -e "$checkout/$f" ]; then set -- "$@" "$f"; fi
 	done
-	git -C "$checkout" stash push -q -- "$@" 2>/dev/null || true
+	stashed=''
+	if [ $# -gt 0 ] && ! git -C "$checkout" diff --quiet -- "$@"; then
+		git -C "$checkout" stash push -q -- "$@"
+		stashed=$(git -C "$checkout" rev-parse -q --verify refs/stash)
+	fi
 	git -C "$checkout" pull --ff-only
-	git -C "$checkout" stash pop -q 2>/dev/null || true
+	if [ -n "$stashed" ] && ! git -C "$checkout" stash pop -q; then
+		printf 'install: the pull changed your machine files; they are kept in stash %s — resolve in %s, then re-run\n' "$stashed" "$checkout" >&2
+		exit 1
+	fi
 else
 	log "cloning into $checkout"
 	git clone "$repo" "$checkout"
