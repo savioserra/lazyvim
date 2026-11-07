@@ -79,7 +79,7 @@ Named residuals (the container lane cannot prove what a boot proved):
 - A nix build cannot drive a docker daemon (the sandbox holds no daemon
   socket), so `checks.<system>.container-e2e` STAGES the lane's one entry
   (`bin/run-container-e2e` + the flake source it mounts) instead of
-  running it — `nix flake check` proves the lane's whole surface
+  running it — `nix flake check` (the check surface lives in `tests/nix/checks.nix`) proves the lane's whole surface
   evaluates and produces the entry; the behavioral run is the staged
   entry on a docker host. The VM check's in-derivation boot has no
   container equivalent; there is no VM lane anywhere.

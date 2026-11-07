@@ -98,23 +98,6 @@
         inherit (machine) settings;
       };
 
-      e2eHome =
-        selections:
-        (home ciSystem [
-          ./tests/nix/e2e-home.nix
-          selections
-        ]).activationPackage;
-
-      evalCheck =
-        name: drvPath:
-        pkgsFor.${ciSystem}.runCommand "workstation-check-${name}"
-          {
-            drv = builtins.unsafeDiscardStringContext drvPath;
-          }
-          ''
-            mkdir -p "$out"
-            printf '%s\n' "$drv" > "$out/drv"
-          '';
     in
     {
       workstation = {
@@ -136,39 +119,19 @@
         system: import ./modules/agent/packages.nix { pkgs = nixpkgs.legacyPackages.${system}; }
       );
 
-      checks.${ciSystem} =
-        let
-          pkgs = nixpkgs.legacyPackages.${ciSystem};
-        in
-        {
-          report-reads = pkgs.runCommand "workstation-check-report-reads" {
-            report = builtins.toJSON report;
-            passAsFile = [ "report" ];
-          } ''mkdir -p "$out" && mv "$reportPath" "$out/report.json"'';
-
-          linux-leg-eval = evalCheck "linux-leg-eval" linuxHost.nixosConfig.config.system.build.toplevel.drvPath;
-          mac-leg-eval = evalCheck "mac-leg-eval" macHost.darwinConfig.config.system.build.toplevel.drvPath;
-          home-legs-eval = evalCheck "home-legs-eval" machineHome.activationPackage.drvPath;
-
-          e2e-home = e2eHome ./tests/nix/e2e-selections.nix;
-          e2e-minus-go-home = e2eHome ./tests/nix/e2e-selections-minus-go.nix;
-          e2e-driver = pkgs.callPackage ./tests/nix/e2e.nix {
-            inherit self;
-            harlequinVersion = pkgs.harlequin.version;
-          };
-
-          container-e2e =
-            pkgs.runCommand "workstation-check-container-e2e"
-              {
-                src = self;
-                script = ./tests/nix/run-container.sh;
-              }
-              ''
-                mkdir -p "$out/bin" "$out/share"
-                install -m 0755 "$script" "$out/bin/run-container-e2e"
-                printf '%s\n' "$src" > "$out/share/flake-src"
-                sh -n "$out/bin/run-container-e2e"
-              '';
+      checks.${ciSystem} = import ./tests/nix/checks.nix {
+        inherit
+          self
+          nixpkgs
+          home
+          ciSystem
+          report
+          ;
+        legs = {
+          linux = linuxHost.nixosConfig;
+          mac = macHost.darwinConfig;
+          home = machineHome;
         };
+      };
     };
 }
