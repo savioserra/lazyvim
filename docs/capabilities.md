@@ -351,7 +351,8 @@ Fail-closed at eval:
 | switch / rollback | `workstation apply` / `workstation rollback` | Build the generation from the flake, activate atomically, write the receipt to `switch.log`; the flake is the resolved checkout's committed `HEAD` (`--flake`, `$WORKSTATION_FLAKE`, the enclosing checkout, `$WORKSTATION_CHECKOUT`) with its working-tree machine files; `WORKSTATION_WORKTREE=1` builds the working tree; an explicit `WORKSTATION_SWITCH_FLAKE` wins; `update` moves `flake.lock` for a commit |
 | `plan` / `status` / `capabilities` / `selected` | `nix eval` over `workstation.report` | Answer the declared state; mutate nothing |
 | select | `workstation add <path>...` / `workstation remove <path>...` | Validate against `selectable`, set or drop the flag in `hosts/local/machine.json`, offer the apply (idempotent; the baseline refuses) |
-| fleet | `workstation fleet` (and `init`, once) | Choose start / join / standalone; write `programs.hermes.a2a.enable` and `workstation.network.enable`, switch on a change, log in to tailscale, join |
+| inquiry | `workstation init` (and `setup`, the full re-ask) | Capture the machine, offer the languages as a checklist pre-filled with the current selection, choose the fleet |
+| fleet | `workstation fleet` (and `init`/`setup`) | Choose start / join / standalone; write `programs.hermes.a2a.enable` and `workstation.network.enable`, switch on a change, log in to tailscale, join |
 | peers | `workstation peers` | Discover the tailnet's A2A agents, add, pair, tune; write `hosts/local/peers.nix`, store the pair tokens, offer the apply |
 | verify lane | `modules/agent/verify/hermes.sh` | The agent stack's consumer smoke against its recorded pins |
 

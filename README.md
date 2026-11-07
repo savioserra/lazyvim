@@ -50,6 +50,8 @@ workstation apply            # switch this machine to what main builds
 workstation rollback         # back to the previous generation
 workstation add <path>       # turn a capability on  (workstation remove ...)
 workstation selected         # this machine's rows: on, off, baseline
+workstation setup             # the inquiry again: answers prefilled, languages + fleet re-asked
+workstation setup             # the inquiry again: answers prefilled, languages + fleet re-asked
 workstation status           # the declared inventory
 workstation fleet            # start / join / standalone — the fleet choice
 workstation peers            # pair with agents outside the fleet

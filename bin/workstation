@@ -12,11 +12,15 @@ workstation — the nixpkgs-native workstation substrate
 install (once per machine):
   init            capture this machine into hosts/local/machine.json (whiptail
                   dialogs prefilled with the detected values; a re-run
-                  keeps every field you set) and run the first activation:
+                  keeps every field you set), choose the languages and
+                  the fleet, and run the first activation:
                     clone && workstation init
                   every later update is
                   `workstation apply` (WORKSTATION_NO_APPLY=1 skips the
                   first switch)
+  setup           the inquiry again: every dialog of init, the current
+                  answers prefilled — the identity, the languages and
+                  the fleet are all re-asked
 
 selection (per-machine capability flags, hosts/local/machine.json settings):
   add <path>...        enable capability(ies) on this machine
@@ -338,9 +342,12 @@ writable_machine() {
 }
 
 case "$verb" in
-init)
+init | setup)
 	# capture once: a field the file already sets wins; the placeholders
-	# (TEMPLATE, /home/TEMPLATE) and absent fields are asked and filled
+	# (TEMPLATE, /home/TEMPLATE) and absent fields are asked and filled.
+	# setup re-asks every dialog with the current answer prefilled.
+	reask=0
+	[ "$verb" = setup ] && reask=1
 	[ -n "$flake" ] || die 'no checkout found — run inside the workstation repo clone' 2
 	seed_local
 	writable_machine init
@@ -371,13 +378,59 @@ init)
 	# capture_field <key> <prompt> <detected>
 	capture_field() {
 		cur=$(jqx -r --arg k "$1" '.[$k] // "" | tostring' "$machine")
+		prefill=$3
 		case $cur in
 		"" | TEMPLATE | "/home/TEMPLATE") ;;
-		*) return 0 ;;
+		*)
+			[ "$reask" = 1 ] || return 0
+			prefill=$cur
+			;;
 		esac
-		val=$(ask "$2" "$3") || die 'init: cancelled' 1
+		val=$(ask "$2" "$prefill") || die 'init: cancelled' 1
 		machine_edit '.[$k] = $v' --arg k "$1" --arg v "$val"
 		changed=1
+	}
+
+	# the language members the report offers, as a checklist carrying the
+	# machine's current selection; a member turned off by the checklist
+	# returns to its default (the flag key leaves)
+	langs_step() {
+		command -v whiptail >/dev/null 2>&1 || {
+			printf 'workstation: languages unchanged (whiptail absent) — workstation add languages/<name>\n' >&2
+			return 0
+		}
+		rows=$(nix_eval "$ref#workstation.report.selectable" 2>/dev/null) || rows=
+		members=$(printf '%s' "$rows" |
+			jqx -r 'to_entries | map(select((.key | startswith("languages/")) and (.value.kind == "member")) | .key | ltrimstr("languages/")) | .[]' 2>/dev/null) ||
+			members=
+		[ -n "$members" ] || return 0
+		set --
+		for name in $members; do
+			if [ "$(jqx -r --arg n "$name" '.settings.workstation.languages[$n].enable // false' "$machine")" = true ]; then
+				set -- "$@" "$name" '' on
+			else
+				set -- "$@" "$name" '' off
+			fi
+		done
+		sel=$(whiptail --title " workstation $verb " --checklist \
+			'Languages to include on this machine' 14 60 5 "$@" \
+			3>&1 1>&2 2>&3) || die "$verb: cancelled" 1
+		for name in $members; do
+			cur=$(jqx -r --arg n "$name" '.settings.workstation.languages[$n].enable // false' "$machine")
+			case " $sel " in
+			*" $name "*)
+				[ "$cur" = true ] ||
+					{ machine_edit '.settings.workstation.languages[$n].enable = true' --arg n "$name"; changed=1; }
+				;;
+			*)
+				if [ "$cur" = true ]; then
+					machine_edit 'del(.settings.workstation.languages[$n].enable)' --arg n "$name"
+					changed=1
+				fi
+				;;
+			esac
+		done
+		printf 'workstation: languages: %s\n' "${sel:-none}"
 	}
 	capture_field host 'machine name (hostname)' "$host"
 	capture_field user 'operator user' "$user"
@@ -396,8 +449,9 @@ init)
 		printf 'workstation: machine already captured in %s (host=%s user=%s) — the fields you set were kept\n' \
 			"$machine" "$(jqx -r .host "$machine")" "$(jqx -r .user "$machine")"
 	fi
+	langs_step
 	fleet_mode=''
-	if [ -z "$(fleet_get)" ]; then
+	if [ -z "$(fleet_get)" ] || [ "$reask" = 1 ]; then
 		fleet_choose 'workstation init'
 	fi
 	if [ "${WORKSTATION_NO_APPLY:-}" = 1 ]; then

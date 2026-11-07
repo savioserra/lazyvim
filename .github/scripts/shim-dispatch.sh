@@ -58,6 +58,10 @@ case "\$*" in
     esac
     exit 0
     ;;
+  *"report.selectable"*)
+    printf '%s\n' '{"languages/elixir":{"baseline":false,"default":false,"kind":"member"},"languages/go":{"baseline":false,"default":false,"kind":"member"},"languages/node":{"baseline":false,"default":false,"kind":"member"},"languages/typescript":{"baseline":false,"default":false,"kind":"member"},"editor":{"baseline":false,"default":true,"kind":"domain"},"foundation":{"baseline":true,"default":true,"kind":"baseline"}}'
+    exit 0
+    ;;
 esac
 printf '{"stub":true}\n'
 STUB
@@ -267,6 +271,46 @@ WORKSTATION_NO_APPLY=1 WORKSTATION_FLAKE=$init "$shim" init >/dev/null 2>"$root/
 [ "$rc" = 1 ] || fail "init without a template must exit 1 (got $rc)"
 grep -q 'missing (unexpected tree)' "$root/err" || fail 'the missing-template refusal must name it'
 
+# 6b
+sp=$root/setupflake
+machine "$sp" '{"host":"oldhost","user":"testuser","home":"/home/testuser","system":"x86_64-linux","settings":{"workstation":{"languages":{"go":{"enable":true}}}}}'
+cat >"$stub_dir/whiptail" <<'STUB'
+#!/bin/sh
+kind=''
+prompt=''
+prev=''
+for a; do
+	case $prev in --inputbox|--yesno) prompt=$a ;; esac
+	case $a in --yesno|--menu|--msgbox|--inputbox|--checklist) kind=$a ;; esac
+	prev=$a
+done
+case $kind in
+--msgbox) exit 0 ;;
+--yesno) exit 1 ;;
+--checklist) printf 'elixir go\n' >&2; exit 0 ;;
+--menu) printf 'standalone\n' >&2; exit 0 ;;
+esac
+case $prompt in
+*hostname*) printf 'newhost\n' >&2 ;;
+*operator\ user*) printf 'testuser\n' >&2 ;;
+*home\ directory*) printf '/home/testuser\n' >&2 ;;
+*) exit 1 ;;
+esac
+STUB
+chmod +x "$stub_dir/whiptail"
+WORKSTATION_NO_APPLY=1 WORKSTATION_FLAKE=$sp "$shim" setup >/dev/null 2>&1 ||
+	fail 'setup must rerun the inquiry'
+[ "$(q "$sp" .host)" = newhost ] ||
+	fail "setup must re-ask a captured field (got host: $(q "$sp" .host))"
+[ "$(q "$sp" .settings.workstation.languages.elixir.enable)" = true ] ||
+	fail 'setup must record a checked language'
+[ "$(q "$sp" .settings.workstation.languages.go.enable)" = true ] ||
+	fail 'setup must keep an already-checked language checked'
+[ "$(q "$sp" '.settings.workstation.languages.node // "absent"')" = absent ] ||
+	fail 'an unchecked default-off language stays unset'
+fleet_state_sp() { q "$sp" '[.settings.programs.hermes.a2a.enable, .settings.workstation.network.enable] | map(tostring) | join(" ")'; }
+[ "$(fleet_state_sp)" = 'false false' ] || fail "setup must re-ask the fleet choice (got: $(fleet_state_sp))"
+
 # 7
 pf=$root/peersflake
 mkdir -p "$pf/hosts/local"
@@ -360,8 +404,9 @@ chmod +x "$root/fleet-helper/bin/workstation-fleet"
 cat >"$stub_dir/whiptail" <<STUB
 #!/bin/sh
 kind=''
-for a; do case \$a in --yesno|--menu|--msgbox|--inputbox) kind=\$a ;; esac; done
+for a; do case \$a in --yesno|--menu|--msgbox|--inputbox|--checklist) kind=\$a ;; esac; done
 [ "\$kind" = --msgbox ] && exit 0
+[ "\$kind" = --checklist ] && exit 0
 q='$root/wt-queue'
 [ -s "\$q" ] || exit 1
 ans=\$(head -n 1 "\$q"); sed -i '1d' "\$q"
