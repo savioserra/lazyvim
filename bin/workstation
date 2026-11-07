@@ -415,6 +415,7 @@ init | setup)
 		sel=$(whiptail --title " workstation $verb " --checklist \
 			'Languages to include on this machine' 14 60 5 "$@" \
 			3>&1 1>&2 2>&3) || die "$verb: cancelled" 1
+		sel=$(printf '%s' "$sel" | tr -d '"')
 		for name in $members; do
 			cur=$(jqx -r --arg n "$name" '.settings.workstation.languages[$n].enable // false' "$machine")
 			case " $sel " in
@@ -424,7 +425,7 @@ init | setup)
 				;;
 			*)
 				if [ "$cur" = true ]; then
-					machine_edit 'del(.settings.workstation.languages[$n].enable)' --arg n "$name"
+					machine_edit 'del(.settings.workstation.languages[$n])' --arg n "$name"
 					changed=1
 				fi
 				;;

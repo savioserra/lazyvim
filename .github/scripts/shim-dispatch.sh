@@ -287,7 +287,7 @@ done
 case $kind in
 --msgbox) exit 0 ;;
 --yesno) exit 1 ;;
---checklist) printf 'elixir go\n' >&2; exit 0 ;;
+--checklist) printf '"elixir" "go"\n' >&2; exit 0 ;;
 --menu) printf 'standalone\n' >&2; exit 0 ;;
 esac
 case $prompt in
